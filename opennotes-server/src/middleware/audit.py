@@ -9,30 +9,17 @@ from uuid import UUID
 import orjson
 import pendulum
 from fastapi import Request, Response
-from prometheus_client import Counter
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.auth.auth import verify_token
 from src.dbos_workflows.content_monitoring_workflows import call_persist_audit_log
+from src.monitoring.metrics import (
+    audit_events_published_total,
+    audit_publish_failures_total,
+    audit_publish_timeouts_total,
+)
 
 logger = logging.getLogger(__name__)
-
-audit_events_published_total = Counter(
-    "audit_events_published_total",
-    "Total number of audit events persisted via DBOS",
-    ["status"],
-)
-
-audit_publish_failures_total = Counter(
-    "audit_publish_failures_total",
-    "Total number of failed audit event persist operations",
-    ["error_type"],
-)
-
-audit_publish_timeouts_total = Counter(
-    "audit_publish_timeouts_total",
-    "Total number of audit event persist timeouts",
-)
 
 _audit_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="audit-persist")
 
@@ -114,7 +101,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
                 ),
                 timeout=5.0,
             )
-            audit_events_published_total.labels(status="success").inc()
+            audit_events_published_total.add(1, {"status": "success"})
         except TimeoutError:
             self._handle_audit_error(
                 "Audit event publish timeout after 5s",
@@ -151,9 +138,9 @@ class AuditMiddleware(BaseHTTPMiddleware):
         else:
             logger.error(message, extra={"user_id": user_id, "path": path})
         if error_type == "timeout":
-            audit_publish_timeouts_total.inc()
-        audit_publish_failures_total.labels(error_type=error_type).inc()
-        audit_events_published_total.labels(status="failure").inc()
+            audit_publish_timeouts_total.add(1, {})
+        audit_publish_failures_total.add(1, {"error_type": error_type})
+        audit_events_published_total.add(1, {"status": "failure"})
 
     def _truncate_large_arrays(self, obj: Any, max_array_len: int = 10) -> Any:
         """Truncate large arrays in the request body to keep audit log manageable."""

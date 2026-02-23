@@ -213,10 +213,7 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
                 f"Semaphore leak prevented: task_id={message.task_id} already has active semaphore "
                 f"for task={message.task_name}. Preserving original semaphore reference."
             )
-            semaphore_leak_prevented_total.labels(
-                task_name=message.task_name,
-                instance_id=self._instance_id,
-            ).inc()
+            semaphore_leak_prevented_total.add(1, {"task_name": message.task_name})
             return message
 
         semaphore = self._get_semaphore(rate_limit_name, capacity, max_sleep, expiry)
@@ -282,10 +279,7 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
                         f"Semaphore release attempt {attempt + 1}/{RELEASE_MAX_ATTEMPTS} "
                         f"failed for {task_name}: {e}. Retrying in {wait_time:.3f}s"
                     )
-                    semaphore_release_retries_total.labels(
-                        task_name=task_name,
-                        instance_id=self._instance_id,
-                    ).inc()
+                    semaphore_release_retries_total.add(1, {"task_name": task_name})
                     await asyncio.sleep(wait_time)
                 else:
                     logger.error(
@@ -302,10 +296,7 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
                 self._consecutive_release_failures = 0
             else:
                 self._consecutive_release_failures += 1
-                semaphore_release_failures_total.labels(
-                    task_name=message.task_name,
-                    instance_id=self._instance_id,
-                ).inc()
+                semaphore_release_failures_total.add(1, {"task_name": message.task_name})
                 if self._consecutive_release_failures >= CONSECUTIVE_FAILURES_ALERT_THRESHOLD:
                     logger.error(
                         f"ALERT: {self._consecutive_release_failures} consecutive semaphore release "

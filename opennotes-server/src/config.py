@@ -514,7 +514,11 @@ class Settings(BaseSettings):
         "Aligns with MIN_RATINGS_NEEDED for consistency.",
     )
 
-    ENABLE_METRICS: bool = Field(default=True, description="Enable Prometheus metrics")
+    ENABLE_METRICS: bool = Field(default=True, description="Enable metrics middleware")
+    OTEL_METRICS_EXPORTER: str = Field(
+        default="otlp",
+        description="Metrics exporter type. 'otlp' for OTLP export, 'none' to disable.",
+    )
     ENABLE_TRACING: bool = Field(default=True, description="Enable OpenTelemetry tracing")
     ENABLE_JSON_LOGGING: bool = Field(default=True, description="Enable JSON structured logging")
 

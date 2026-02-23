@@ -3,7 +3,6 @@ import time
 from typing import Any
 
 from src.monitoring import metrics
-from src.monitoring.instance import InstanceMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +21,7 @@ class BayesianAverageScorer:
         self._clamping_count = 0
         self._zero_rating_count = 0
 
-        instance_id = InstanceMetadata.get_instance_id()
-        metrics.bayesian_prior_value.labels(instance_id=instance_id).set(self.m)
+        metrics.bayesian_prior_value.set(self.m)
 
         logger.info(
             "BayesianAverageScorer initialized",
@@ -38,21 +36,16 @@ class BayesianAverageScorer:
 
     def calculate_score(self, ratings: list[float], note_id: str | None = None) -> float:
         start_time = time.perf_counter()
-        instance_id = InstanceMetadata.get_instance_id()
-        metrics.bayesian_scorer_invocations_total.labels(instance_id=instance_id).inc()
+        metrics.bayesian_scorer_invocations_total.add(1, {})
 
         try:
             if not ratings:
                 self._zero_rating_count += 1
-                metrics.bayesian_no_data_scores_total.labels(instance_id=instance_id).inc()
-                metrics.bayesian_rating_count_distribution.labels(instance_id=instance_id).observe(
-                    0
-                )
+                metrics.bayesian_no_data_scores_total.add(1, {})
+                metrics.bayesian_rating_count_distribution.record(0)
 
                 duration = time.perf_counter() - start_time
-                metrics.bayesian_scoring_duration_seconds.labels(instance_id=instance_id).observe(
-                    duration
-                )
+                metrics.bayesian_scoring_duration_seconds.record(duration)
 
                 logger.info(
                     "No ratings provided, returning prior mean",
@@ -73,23 +66,19 @@ class BayesianAverageScorer:
 
             score = (self.C * self.m + ratings_sum) / (self.C + n)
 
-            metrics.bayesian_rating_count_distribution.labels(instance_id=instance_id).observe(n)
+            metrics.bayesian_rating_count_distribution.record(n)
 
             score_deviation = abs(score - self.m)
-            metrics.bayesian_score_deviation_from_prior.labels(instance_id=instance_id).observe(
-                score_deviation
-            )
+            metrics.bayesian_score_deviation_from_prior.record(score_deviation)
 
             if n < self.min_ratings_for_confidence:
-                metrics.bayesian_provisional_scores_total.labels(instance_id=instance_id).inc()
+                metrics.bayesian_provisional_scores_total.add(1, {})
                 confidence_level = "provisional"
             else:
                 confidence_level = "standard"
 
             duration = time.perf_counter() - start_time
-            metrics.bayesian_scoring_duration_seconds.labels(instance_id=instance_id).observe(
-                duration
-            )
+            metrics.bayesian_scoring_duration_seconds.record(duration)
 
             logger.info(
                 "Calculated Bayesian Average score",
@@ -111,14 +100,10 @@ class BayesianAverageScorer:
 
         except Exception as e:
             error_type = type(e).__name__
-            metrics.bayesian_fallback_activations_total.labels(
-                error_type=error_type, instance_id=instance_id
-            ).inc()
+            metrics.bayesian_fallback_activations_total.add(1, {"error_type": error_type})
 
             duration = time.perf_counter() - start_time
-            metrics.bayesian_scoring_duration_seconds.labels(instance_id=instance_id).observe(
-                duration
-            )
+            metrics.bayesian_scoring_duration_seconds.record(duration)
 
             logger.error(
                 "Error calculating Bayesian Average score, returning prior mean",
@@ -138,12 +123,11 @@ class BayesianAverageScorer:
 
     def _clamp_ratings(self, ratings: list[float]) -> list[float]:
         clamped = []
-        instance_id = InstanceMetadata.get_instance_id()
         for rating in ratings:
             if rating < 0.0 or rating > 1.0:
                 clamped_value = max(0.0, min(1.0, rating))
                 self._clamping_count += 1
-                metrics.bayesian_rating_clamp_events_total.labels(instance_id=instance_id).inc()
+                metrics.bayesian_rating_clamp_events_total.add(1, {})
 
                 logger.warning(
                     "Rating value outside valid range [0, 1], clamping",
@@ -225,9 +209,8 @@ class BayesianAverageScorer:
             )
 
         self.m = clamped_avg
-        instance_id = InstanceMetadata.get_instance_id()
-        metrics.bayesian_prior_updates_total.labels(instance_id=instance_id).inc()
-        metrics.bayesian_prior_value.labels(instance_id=instance_id).set(self.m)
+        metrics.bayesian_prior_updates_total.add(1, {})
+        metrics.bayesian_prior_value.set(self.m)
 
         prior_change = abs(self.m - old_prior)
 

@@ -108,13 +108,9 @@ def setup_traceloop(
         if is_cloud_run_environment():
             try:
                 from opentelemetry.exporter.cloud_logging import CloudLoggingExporter
-                from opentelemetry.exporter.cloud_monitoring import (
-                    CloudMonitoringMetricsExporter,
-                )
 
-                init_kwargs["metrics_exporter"] = CloudMonitoringMetricsExporter()
                 init_kwargs["logging_exporter"] = CloudLoggingExporter()
-                logger.info("Traceloop configured with GCP metrics and logging exporters")
+                logger.info("Traceloop configured with GCP logging exporter")
             except ImportError:
                 logger.warning("GCP exporter packages not installed, skipping GCP exporters")
 

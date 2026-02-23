@@ -70,16 +70,12 @@ class ClaimRelevanceService:
         cfg = self._settings
 
         if not cfg.RELEVANCE_CHECK_ENABLED:
-            relevance_check_total.labels(
-                outcome="disabled", decision="skipped", instance_id=cfg.INSTANCE_ID
-            ).inc()
+            relevance_check_total.add(1, {"outcome": "disabled", "decision": "skipped"})
             return (RelevanceOutcome.RELEVANT, "Relevance check disabled")
 
         if not self.llm_service:
             logger.warning("LLM service not configured for relevance check")
-            relevance_check_total.labels(
-                outcome="not_configured", decision="fail_open", instance_id=cfg.INSTANCE_ID
-            ).inc()
+            relevance_check_total.add(1, {"outcome": "not_configured", "decision": "fail_open"})
             return (RelevanceOutcome.INDETERMINATE, "LLM service not configured")
 
         start_time = time.monotonic()
@@ -174,9 +170,7 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
                 )
 
             decision = "flagged" if result.is_relevant else "filtered"
-            relevance_check_total.labels(
-                outcome="success", decision=decision, instance_id=cfg.INSTANCE_ID
-            ).inc()
+            relevance_check_total.add(1, {"outcome": "success", "decision": decision})
 
             outcome = (
                 RelevanceOutcome.RELEVANT if result.is_relevant else RelevanceOutcome.NOT_RELEVANT
@@ -222,11 +216,9 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
             f"Relevance check {metric_outcome}, returning indeterminate for tighter threshold",
             extra=log_extra,
         )
-        relevance_check_total.labels(
-            outcome=metric_outcome,
-            decision="fail_open_indeterminate",
-            instance_id=cfg.INSTANCE_ID,
-        ).inc()
+        relevance_check_total.add(
+            1, {"outcome": metric_outcome, "decision": "fail_open_indeterminate"}
+        )
         return (RelevanceOutcome.INDETERMINATE, message)
 
     async def _retry_without_fact_check(
@@ -291,11 +283,9 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
                         "latency_ms": round(latency_ms, 2),
                     },
                 )
-                relevance_check_total.labels(
-                    outcome="content_filter",
-                    decision="message_filtered",
-                    instance_id=cfg.INSTANCE_ID,
-                ).inc()
+                relevance_check_total.add(
+                    1, {"outcome": "content_filter", "decision": "message_filtered"}
+                )
                 return (
                     RelevanceOutcome.CONTENT_FILTERED,
                     "Message content triggered safety filter",
@@ -328,13 +318,15 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
                     "finish_reason": response.finish_reason,
                 },
             )
-            relevance_check_total.labels(
-                outcome=metric_outcome,
-                decision="factcheck_filtered"
-                if response.finish_reason == "stop"
-                else "indeterminate",
-                instance_id=cfg.INSTANCE_ID,
-            ).inc()
+            relevance_check_total.add(
+                1,
+                {
+                    "outcome": metric_outcome,
+                    "decision": "factcheck_filtered"
+                    if response.finish_reason == "stop"
+                    else "indeterminate",
+                },
+            )
             return (RelevanceOutcome.INDETERMINATE, reasoning)
 
         except TimeoutError:
@@ -346,11 +338,9 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
                     "latency_ms": round(latency_ms, 2),
                 },
             )
-            relevance_check_total.labels(
-                outcome="content_filter_retry_timeout",
-                decision="indeterminate",
-                instance_id=cfg.INSTANCE_ID,
-            ).inc()
+            relevance_check_total.add(
+                1, {"outcome": "content_filter_retry_timeout", "decision": "indeterminate"}
+            )
             return (
                 RelevanceOutcome.INDETERMINATE,
                 f"Retry timed out after {cfg.RELEVANCE_CHECK_TIMEOUT}s",
@@ -366,11 +356,9 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
                     "latency_ms": round(latency_ms, 2),
                 },
             )
-            relevance_check_total.labels(
-                outcome="content_filter_retry_error",
-                decision="indeterminate",
-                instance_id=cfg.INSTANCE_ID,
-            ).inc()
+            relevance_check_total.add(
+                1, {"outcome": "content_filter_retry_error", "decision": "indeterminate"}
+            )
             return (
                 RelevanceOutcome.INDETERMINATE,
                 f"Retry failed: {e}",

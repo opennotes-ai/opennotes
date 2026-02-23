@@ -822,11 +822,7 @@ class BulkContentScanService:
     ) -> bool:
         """Evaluate relevance outcome and emit metrics. Returns True if should flag."""
         if outcome == RelevanceOutcome.RELEVANT:
-            relevance_check_total.labels(
-                outcome="candidate_relevant",
-                decision="flagged",
-                instance_id=settings.INSTANCE_ID,
-            ).inc()
+            relevance_check_total.add(1, {"outcome": "candidate_relevant", "decision": "flagged"})
             return True
 
         if outcome == RelevanceOutcome.INDETERMINATE:
@@ -843,11 +839,9 @@ class BulkContentScanService:
                         "reasoning": reasoning,
                     },
                 )
-                relevance_check_total.labels(
-                    outcome="indeterminate",
-                    decision="tighter_threshold_passed",
-                    instance_id=settings.INSTANCE_ID,
-                ).inc()
+                relevance_check_total.add(
+                    1, {"outcome": "indeterminate", "decision": "tighter_threshold_passed"}
+                )
                 return True
 
             logger.info(
@@ -862,27 +856,21 @@ class BulkContentScanService:
                     "reasoning": reasoning,
                 },
             )
-            relevance_check_total.labels(
-                outcome="indeterminate",
-                decision="tighter_threshold_filtered",
-                instance_id=settings.INSTANCE_ID,
-            ).inc()
+            relevance_check_total.add(
+                1, {"outcome": "indeterminate", "decision": "tighter_threshold_filtered"}
+            )
             return False
 
         if outcome == RelevanceOutcome.CONTENT_FILTERED:
-            relevance_check_total.labels(
-                outcome="content_filter",
-                decision="user_message_flagged",
-                instance_id=settings.INSTANCE_ID,
-            ).inc()
+            relevance_check_total.add(
+                1, {"outcome": "content_filter", "decision": "user_message_flagged"}
+            )
             return False
 
         if outcome == RelevanceOutcome.NOT_RELEVANT:
-            relevance_check_total.labels(
-                outcome="candidate_not_relevant",
-                decision="filtered",
-                instance_id=settings.INSTANCE_ID,
-            ).inc()
+            relevance_check_total.add(
+                1, {"outcome": "candidate_not_relevant", "decision": "filtered"}
+            )
 
         return False
 

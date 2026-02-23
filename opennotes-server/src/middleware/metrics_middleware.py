@@ -17,17 +17,20 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         start = time.time()
 
         if request.method == "OPTIONS":
-            cors_preflight_requests_total.labels(
-                origin=request.headers.get("origin", "unknown"),
-                path=request.url.path,
-            ).inc()
+            cors_preflight_requests_total.add(
+                1,
+                {
+                    "origin": request.headers.get("origin", "unknown"),
+                    "path": request.url.path,
+                },
+            )
 
         response = await call_next(request)
 
         duration = time.time() - start
-        middleware_execution_duration_seconds.labels(
-            method=request.method,
-            endpoint=request.url.path,
-        ).observe(duration)
+        middleware_execution_duration_seconds.record(
+            duration,
+            {"method": request.method, "endpoint": request.url.path},
+        )
 
         return response

@@ -468,8 +468,8 @@ class TestMiddlewareBasedLockRelease:
         assert message.task_id not in middleware._active_semaphores
 
     @pytest.mark.asyncio
-    async def test_release_failure_increments_prometheus_metrics(self, middleware):
-        """Verify Prometheus metrics updated on release failure."""
+    async def test_release_failure_increments_otel_metrics(self, middleware):
+        """Verify OTEL metrics updated on release failure."""
         message = MagicMock()
         message.task_id = "metrics-task-123"
         message.task_name = "test_task"
@@ -485,15 +485,10 @@ class TestMiddlewareBasedLockRelease:
                 "src.tasks.rate_limit_middleware.semaphore_release_failures_total"
             ) as mock_metric,
         ):
-            mock_counter = MagicMock()
-            mock_metric.labels.return_value = mock_counter
+            mock_metric.add = MagicMock()
             await middleware._release_semaphore(message)
 
-            mock_metric.labels.assert_called_once_with(
-                task_name="test_task",
-                instance_id="test",
-            )
-            mock_counter.inc.assert_called_once()
+            mock_metric.add.assert_called_once_with(1, {"task_name": "test_task"})
 
 
 class TestRateLimitExpiryLabel:

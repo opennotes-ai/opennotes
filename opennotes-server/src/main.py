@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import FastAPI, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -93,14 +93,13 @@ from src.middleware.validation_error_handler import sanitized_validation_excepti
 from src.monitoring import (
     DistributedHealthCoordinator,
     HealthChecker,
-    MetricsMiddleware,
     get_logger,
-    get_metrics,
     initialize_instance_metadata,
     parse_log_level_overrides,
     setup_logging,
 )
 from src.monitoring.health import ComponentHealth, HealthStatus
+from src.monitoring.middleware import MetricsMiddleware
 from src.notes.note_publisher_jsonapi_router import (
     router as note_publisher_jsonapi_router,
 )
@@ -725,20 +724,6 @@ app.include_router(health_router)
 # ensuring each HTTP request starts a new independent trace.
 # Must be applied AFTER all middleware/routes are configured.
 asgi_app = wrap_app_with_gcp_trace_filter(app)
-
-
-@app.get(
-    "/metrics",
-    response_class=Response,
-    responses={
-        200: {"content": {"text/plain": {"schema": {"type": "string"}}}},
-        404: {"description": "Metrics disabled"},
-    },
-)
-async def metrics() -> Response:
-    if not settings.ENABLE_METRICS:
-        raise HTTPException(status_code=404, detail="Metrics disabled")
-    return Response(content=get_metrics(), media_type="text/plain")
 
 
 @app.exception_handler(Exception)

@@ -45,7 +45,6 @@ from src.batch_jobs.progress_tracker import (
 )
 from src.batch_jobs.schemas import BatchJobStatus
 from src.batch_jobs.service import BatchJobService
-from src.config import settings
 from src.monitoring import get_logger
 from src.monitoring.metrics import batch_job_stale_cleanup_total
 
@@ -505,10 +504,7 @@ class RechunkBatchJobService:
             if failed_job is not None:
                 failed_jobs.append(failed_job)
                 await tracker.clear_processed_bitmap(job.id)
-                batch_job_stale_cleanup_total.labels(
-                    job_type=job.job_type,
-                    instance_id=settings.INSTANCE_ID,
-                ).inc()
+                batch_job_stale_cleanup_total.add(1, {"job_type": job.job_type})
 
         if failed_jobs:
             await self._session.commit()

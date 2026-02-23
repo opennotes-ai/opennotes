@@ -26,7 +26,6 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from src.monitoring.instance import InstanceMetadata
 from src.monitoring.metrics import (
     ai_note_generation_duration_seconds,
     ai_notes_generated_total,
@@ -86,7 +85,6 @@ def generate_ai_note_step(
         from src.webhooks.rate_limit import rate_limiter
 
         start_time = time.time()
-        instance_id = InstanceMetadata.get_instance_id()
 
         with _tracer.start_as_current_span("content.ai_note") as span:
             span.set_attribute("task.community_server_id", community_server_id)
@@ -207,16 +205,17 @@ def generate_ai_note_step(
                     await session.refresh(note)
 
                     duration = time.time() - start_time
-                    ai_note_generation_duration_seconds.labels(
-                        community_server_id=community_server_id,
-                        instance_id=instance_id,
-                    ).observe(duration)
+                    ai_note_generation_duration_seconds.record(
+                        duration, {"community_server_id": community_server_id}
+                    )
 
-                    ai_notes_generated_total.labels(
-                        community_server_id=community_server_id,
-                        dataset_name=dataset_name,
-                        instance_id=instance_id,
-                    ).inc()
+                    ai_notes_generated_total.add(
+                        1,
+                        {
+                            "community_server_id": community_server_id,
+                            "dataset_name": dataset_name,
+                        },
+                    )
 
                     logger.info(
                         "Generated AI note",

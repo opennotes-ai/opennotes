@@ -332,33 +332,20 @@ async def batch_jobs_health(
 
     try:
         stuck_jobs = await get_stuck_jobs_info(db)
-        instance_id = settings.INSTANCE_ID
 
         by_type: dict[str, list[StuckJobInfo]] = {}
         for job in stuck_jobs:
             by_type.setdefault(job.job_type, []).append(job)
 
         for job_type, jobs in by_type.items():
-            batch_job_stuck_count.labels(
-                job_type=job_type,
-                instance_id=instance_id,
-            ).set(len(jobs))
+            batch_job_stuck_count.set(len(jobs), {"job_type": job_type})
             max_dur = max(j.stuck_duration_seconds for j in jobs)
-            batch_job_stuck_duration_seconds.labels(
-                job_type=job_type,
-                instance_id=instance_id,
-            ).set(max_dur)
+            batch_job_stuck_duration_seconds.set(max_dur, {"job_type": job_type})
 
         for job_type in ALL_BATCH_JOB_TYPES:
             if job_type not in by_type:
-                batch_job_stuck_count.labels(
-                    job_type=job_type,
-                    instance_id=instance_id,
-                ).set(0)
-                batch_job_stuck_duration_seconds.labels(
-                    job_type=job_type,
-                    instance_id=instance_id,
-                ).set(0)
+                batch_job_stuck_count.set(0, {"job_type": job_type})
+                batch_job_stuck_duration_seconds.set(0, {"job_type": job_type})
 
         latency_ms = (time.time() - start) * 1000
 

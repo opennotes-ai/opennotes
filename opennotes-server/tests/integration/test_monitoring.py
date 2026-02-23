@@ -11,13 +11,6 @@ from src.monitoring.metrics import (
 )
 
 
-def test_metrics_endpoint(client: TestClient) -> None:
-    response = client.get("/metrics")
-    assert response.status_code == 200
-    assert b"http_requests_total" in response.content
-    assert b"http_request_duration_seconds" in response.content
-
-
 def test_health_endpoint(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
@@ -43,56 +36,13 @@ def test_readiness_endpoint(client: TestClient) -> None:
     assert "ready" in data
 
 
-def test_metrics_collection() -> None:
-    from src.monitoring.instance import InstanceMetadata
-
-    instance_id = InstanceMetadata.get_instance_id()
-    initial_value = http_requests_total._metrics.get(("GET", "/test", "200", instance_id))
-    initial_count = initial_value._value._value if initial_value else 0
-
-    http_requests_total.labels(
-        method="GET", endpoint="/test", status="200", instance_id=instance_id
-    ).inc()
-
-    new_metric = http_requests_total._metrics.get(("GET", "/test", "200", instance_id))
-    assert new_metric is not None
-    new_count = new_metric._value._value
-    assert new_count == initial_count + 1
-
-
-def test_active_requests_gauge() -> None:
-    from src.monitoring.instance import InstanceMetadata
-
-    instance_id = InstanceMetadata.get_instance_id()
-    gauge = active_requests.labels(instance_id=instance_id)
-    initial_value = gauge._value._value if hasattr(gauge, "_value") else 0
-    gauge.inc()
-    assert gauge._value._value >= initial_value
-    gauge.dec()
-    assert gauge._value._value >= 0
-
-
-def test_histogram_observation() -> None:
-    from src.monitoring.instance import InstanceMetadata
-
-    instance_id = InstanceMetadata.get_instance_id()
-    http_request_duration_seconds.labels(
-        method="GET", endpoint="/test", instance_id=instance_id
-    ).observe(0.5)
-
-
-def test_error_metric() -> None:
-    from src.monitoring.instance import InstanceMetadata
-
-    instance_id = InstanceMetadata.get_instance_id()
-    errors_total.labels(error_type="TestError", endpoint="/test", instance_id=instance_id).inc()
-
-
-def test_business_metrics() -> None:
-    from src.monitoring.instance import InstanceMetadata
-
-    instance_id = InstanceMetadata.get_instance_id()
-    notes_scored_total.labels(status="success", instance_id=instance_id).inc(10)
+def test_otel_metrics_callable() -> None:
+    http_requests_total.add(1, {"method": "GET", "endpoint": "/test", "status": "200"})
+    active_requests.add(1)
+    active_requests.add(-1)
+    http_request_duration_seconds.record(0.5, {"method": "GET", "endpoint": "/test"})
+    errors_total.add(1, {"error_type": "TestError", "endpoint": "/test"})
+    notes_scored_total.add(10, {"status": "success"})
 
 
 def test_structured_logging() -> None:

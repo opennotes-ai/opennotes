@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from opentelemetry import context
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor, TracerProvider
     from opentelemetry.sdk.trace.export import SpanExporter
 
@@ -34,6 +36,7 @@ _otel_lock = threading.Lock()
 _otel_initialized = False
 _tracer_provider: "TracerProvider | None" = None
 _span_exporter: "SpanExporter | None" = None
+_meter_provider: "MeterProvider | None" = None
 
 BAGGAGE_KEYS_TO_PROPAGATE = [
     "discord.user_id",
@@ -256,6 +259,9 @@ def setup_otel(
             RedisInstrumentor().instrument()
             SQLAlchemyInstrumentor().instrument(enable_commenter=True)
 
+            global _meter_provider
+            _meter_provider = _setup_meter_provider(resource)
+
             _otel_initialized = True
             logger.info(
                 f"OpenTelemetry initialized: service={service_name}, "
@@ -269,6 +275,41 @@ def setup_otel(
         except Exception as e:
             logger.error(f"Failed to initialize OpenTelemetry: {e}")
             return False
+
+
+def _setup_meter_provider(resource: "Resource") -> "MeterProvider | None":
+    """Set up OTEL MeterProvider with OTLP export if configured.
+
+    Returns the configured MeterProvider, or None if export is disabled.
+    """
+    if os.getenv("OTEL_METRICS_EXPORTER", "otlp").lower() == "none":
+        logger.info("OTEL metrics export disabled via OTEL_METRICS_EXPORTER=none")
+        return None
+
+    metrics_endpoint = os.getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT") or os.getenv(
+        "OTEL_EXPORTER_OTLP_ENDPOINT"
+    )
+    if not metrics_endpoint:
+        logger.info("No metrics endpoint configured - OTEL metrics export disabled")
+        return None
+
+    try:
+        from opentelemetry import metrics as otel_metrics
+        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+            OTLPMetricExporter,
+        )
+        from opentelemetry.sdk.metrics import MeterProvider as SdkMeterProvider
+        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+        metric_exporter = OTLPMetricExporter(endpoint=metrics_endpoint, insecure=True)
+        metric_reader = PeriodicExportingMetricReader(metric_exporter, export_interval_millis=60000)
+        provider = SdkMeterProvider(resource=resource, metric_readers=[metric_reader])
+        otel_metrics.set_meter_provider(provider)
+        logger.info(f"OTEL MeterProvider configured: endpoint={metrics_endpoint}")
+        return provider
+    except ImportError:
+        logger.warning("OTLP metric exporter package not available, metrics export disabled")
+        return None
 
 
 def _parse_headers(headers_str: str | None) -> dict[str, str] | None:
@@ -295,7 +336,7 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
         flush_timeout_millis: Timeout for force_flush(). Defaults to
             OTEL_SHUTDOWN_FLUSH_TIMEOUT_MILLIS from settings.
     """
-    global _tracer_provider, _otel_initialized, _span_exporter
+    global _tracer_provider, _otel_initialized, _span_exporter, _meter_provider
 
     with _otel_lock:
         if not _otel_initialized:
@@ -333,8 +374,18 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
             _tracer_provider.shutdown()
             logger.info("OpenTelemetry tracer provider shut down")
 
+        if _meter_provider is not None:
+            try:
+                _meter_provider.force_flush(timeout_millis=flush_timeout_millis)
+                logger.info("OpenTelemetry metrics flushed before shutdown")
+            except Exception as e:
+                logger.warning(f"Failed to flush metrics during shutdown: {e}")
+            _meter_provider.shutdown()
+            logger.info("OpenTelemetry meter provider shut down")
+
         _tracer_provider = None
         _span_exporter = None
+        _meter_provider = None
         _otel_initialized = False
         BaggageSpanProcessor.instance = None
         logger.debug("OpenTelemetry state reset, ready for reinitialization")

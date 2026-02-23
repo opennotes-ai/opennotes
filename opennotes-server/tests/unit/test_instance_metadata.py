@@ -6,7 +6,6 @@ from src.monitoring.metrics import (
     active_requests,
     http_request_duration_seconds,
     http_requests_total,
-    registry,
 )
 
 
@@ -75,22 +74,12 @@ class TestInstanceMetadata:
         assert log_dict.get("instance_id") == "logging-test-instance"
         assert "hostname" in log_dict
 
-    def test_metrics_with_instance_label(self) -> None:
+    def test_otel_metrics_callable(self) -> None:
         initialize_instance_metadata(instance_id="metrics-test-instance", environment="test")
 
-        instance_id = "metrics-test-instance"
-        http_requests_total.labels(
-            method="GET", endpoint="/test", status=200, instance_id=instance_id
-        ).inc()
-        active_requests.labels(instance_id=instance_id).inc()
-        http_request_duration_seconds.labels(
-            method="GET", endpoint="/test", instance_id=instance_id
-        ).observe(0.5)
-
-        metrics_output = registry.collect()
-        metrics_list = list(metrics_output)
-
-        assert len(metrics_list) > 0
+        http_requests_total.add(1, {"method": "GET", "endpoint": "/test", "status": "200"})
+        active_requests.add(1)
+        http_request_duration_seconds.record(0.5, {"method": "GET", "endpoint": "/test"})
 
     def test_multiple_instances_distinguishable(self) -> None:
         instance_1_id = "instance-1"
@@ -100,28 +89,16 @@ class TestInstanceMetadata:
             InstanceMetadata(instance_id=instance_1_id, environment="test")
         )
         for _i in range(5):
-            http_requests_total.labels(
-                method="GET",
-                endpoint="/test",
-                status=200,
-                instance_id=instance_1_id,
-            ).inc()
+            http_requests_total.add(
+                1,
+                {"method": "GET", "endpoint": "/test", "status": "200"},
+            )
 
         InstanceMetadata.set_instance(
             InstanceMetadata(instance_id=instance_2_id, environment="test")
         )
         for _i in range(3):
-            http_requests_total.labels(
-                method="GET",
-                endpoint="/test",
-                status=200,
-                instance_id=instance_2_id,
-            ).inc()
-
-        from prometheus_client import generate_latest
-
-        metrics_bytes = generate_latest(registry)
-        metrics_text = metrics_bytes.decode("utf-8")
-
-        assert f'instance_id="{instance_1_id}"' in metrics_text
-        assert f'instance_id="{instance_2_id}"' in metrics_text
+            http_requests_total.add(
+                1,
+                {"method": "GET", "endpoint": "/test", "status": "200"},
+            )

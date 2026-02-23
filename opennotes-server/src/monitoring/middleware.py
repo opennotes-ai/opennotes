@@ -6,7 +6,6 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.monitoring.errors import record_span_error
-from src.monitoring.instance import InstanceMetadata
 from src.monitoring.metrics import (
     active_requests,
     errors_total,
@@ -21,8 +20,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        instance_id = InstanceMetadata.get_instance_id()
-        active_requests.labels(instance_id=instance_id).inc()
+        active_requests.add(1)
         start_time = time.time()
 
         try:
@@ -33,12 +31,8 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             path = self._get_route_path(request)
             status = response.status_code
 
-            http_requests_total.labels(
-                method=method, endpoint=path, status=status, instance_id=instance_id
-            ).inc()
-            http_request_duration_seconds.labels(
-                method=method, endpoint=path, instance_id=instance_id
-            ).observe(duration)
+            http_requests_total.add(1, {"method": method, "endpoint": path, "status": str(status)})
+            http_request_duration_seconds.record(duration, {"method": method, "endpoint": path})
 
             return response
 
@@ -47,21 +41,15 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             method = request.method
             path = self._get_route_path(request)
 
-            http_requests_total.labels(
-                method=method, endpoint=path, status=500, instance_id=instance_id
-            ).inc()
-            http_request_duration_seconds.labels(
-                method=method, endpoint=path, instance_id=instance_id
-            ).observe(duration)
-            errors_total.labels(
-                error_type=type(e).__name__, endpoint=path, instance_id=instance_id
-            ).inc()
+            http_requests_total.add(1, {"method": method, "endpoint": path, "status": "500"})
+            http_request_duration_seconds.record(duration, {"method": method, "endpoint": path})
+            errors_total.add(1, {"error_type": type(e).__name__, "endpoint": path})
 
             record_span_error(e)
             raise
 
         finally:
-            active_requests.labels(instance_id=instance_id).dec()
+            active_requests.add(-1)
 
     def _get_route_path(self, request: Request) -> str:
         try:

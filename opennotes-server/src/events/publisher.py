@@ -34,7 +34,6 @@ from src.events.schemas import (
     UserRegisteredEvent,
     WebhookReceivedEvent,
 )
-from src.monitoring.instance import InstanceMetadata
 from src.monitoring.metrics import (
     nats_duplicate_events_total,
     nats_events_failed_total,
@@ -114,20 +113,17 @@ class EventPublisher:
         start_time = time.time()
         ack = await self.nats.publish(subject, data, headers=headers)
         duration = time.time() - start_time
-        instance_id = InstanceMetadata.get_instance_id()
 
-        nats_publish_duration_seconds.labels(
-            event_type=event.event_type.value, instance_id=instance_id
-        ).observe(duration)
+        nats_publish_duration_seconds.record(duration, {"event_type": event.event_type.value})
 
-        nats_events_published_total.labels(
-            event_type=event.event_type.value, stream=ack.stream, instance_id=instance_id
-        ).inc()
+        nats_events_published_total.add(
+            1, {"event_type": event.event_type.value, "stream": ack.stream}
+        )
 
         if ack.duplicate:
-            nats_duplicate_events_total.labels(
-                event_type=event.event_type.value, stream=ack.stream, instance_id=instance_id
-            ).inc()
+            nats_duplicate_events_total.add(
+                1, {"event_type": event.event_type.value, "stream": ack.stream}
+            )
             logger.warning(
                 f"Duplicate event detected: {event.event_id} (stream: {ack.stream}, seq: {ack.seq})"
             )
@@ -183,12 +179,13 @@ class EventPublisher:
                 return result
             except Exception as e:
                 error_type = e.__class__.__name__
-                instance_id = InstanceMetadata.get_instance_id()
-                nats_events_failed_total.labels(
-                    event_type=event.event_type.value,
-                    error_type=error_type,
-                    instance_id=instance_id,
-                ).inc()
+                nats_events_failed_total.add(
+                    1,
+                    {
+                        "event_type": event.event_type.value,
+                        "error_type": error_type,
+                    },
+                )
                 logger.error(
                     f"Failed to publish event {event.event_id} of type {event.event_type.value}: {e}",
                     extra={"event_id": event.event_id, "error_type": error_type},
