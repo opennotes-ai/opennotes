@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
+from src.llm_config.constants import ADC_SENTINEL, get_default_model_for_provider
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.models import CommunityServerLLMConfig
 from src.llm_config.providers.base import LLMProvider
@@ -272,34 +273,18 @@ class LLMClientManager:
         return LLMProviderFactory.create(provider, api_key, default_model, config.settings)
 
     def _get_default_model(self, provider: str) -> str:
-        """
-        Get the default model for a provider.
-
-        Uses settings.DEFAULT_FULL_MODEL for OpenAI (extracts model name from provider/model format).
-
-        Args:
-            provider: Provider name
-
-        Returns:
-            Default model identifier
-        """
-        if provider == "openai":
-            full_model = settings.DEFAULT_FULL_MODEL
-            return full_model.split("/")[-1] if "/" in full_model else full_model
-        defaults = {
-            "anthropic": "claude-3-opus-20240229",
-        }
-        return defaults.get(provider, "unknown")
+        return get_default_model_for_provider(provider)
 
     def _get_global_api_key(self, provider: str) -> str | None:
         """
         Get global API key for a provider from environment settings.
 
         Args:
-            provider: Provider name ('openai', 'anthropic', etc.)
+            provider: Provider name ('openai', 'anthropic', 'vertex_ai', etc.)
 
         Returns:
-            Global API key if configured, None otherwise
+            Global API key if configured, None otherwise.
+            Returns ADC_SENTINEL for vertex_ai/gemini (Application Default Credentials).
         """
         if provider == "openai":
             key: str | None = settings.OPENAI_API_KEY
@@ -307,6 +292,10 @@ class LLMClientManager:
         if provider == "anthropic":
             anthropic_key: str | None = getattr(settings, "ANTHROPIC_API_KEY", None)
             return anthropic_key
+        if provider in ("vertex_ai", "gemini"):
+            if settings.VERTEXAI_PROJECT:
+                return ADC_SENTINEL
+            return None
         return None
 
     def invalidate_cache(self, community_server_id: UUID, provider: str | None = None) -> None:

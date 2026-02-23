@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from src.llm_config.manager import LLMClientManager
+from src.llm_config.providers.base import LLMResponse
 from src.llm_config.service import LLMService
 
 
@@ -164,11 +165,13 @@ class TestLLMServiceDescribeImageRetry:
         mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
         community_server_id = uuid4()
 
-        mock_vision_response = MagicMock()
-        mock_vision_response.choices = [
-            MagicMock(message=MagicMock(content="An image showing a cat"))
-        ]
-        mock_vision_response.usage = MagicMock(total_tokens=20)
+        success_response = LLMResponse(
+            content="An image showing a cat",
+            model="gpt-5.1",
+            tokens_used=20,
+            finish_reason="stop",
+            provider="openai",
+        )
 
         call_count = 0
 
@@ -177,19 +180,18 @@ class TestLLMServiceDescribeImageRetry:
             call_count += 1
             if call_count < 2:
                 raise TimeoutError("Request timed out")
-            return mock_vision_response
+            return success_response
 
-        with patch("src.llm_config.service.litellm") as mock_litellm:
-            mock_litellm.acompletion = AsyncMock(side_effect=side_effect)
+        mock_llm_provider.complete = AsyncMock(side_effect=side_effect)
 
-            description = await llm_service.describe_image(
-                db=mock_db,
-                image_url="https://example.com/image.jpg",
-                community_server_id=community_server_id,
-            )
+        description = await llm_service.describe_image(
+            db=mock_db,
+            image_url="https://example.com/image.jpg",
+            community_server_id=community_server_id,
+        )
 
-            assert call_count == 2
-            assert description == "An image showing a cat"
+        assert call_count == 2
+        assert description == "An image showing a cat"
 
     @pytest.mark.asyncio
     async def test_describe_image_gives_up_after_max_retries(
@@ -203,17 +205,16 @@ class TestLLMServiceDescribeImageRetry:
         mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
         community_server_id = uuid4()
 
-        with patch("src.llm_config.service.litellm") as mock_litellm:
-            mock_litellm.acompletion = AsyncMock(side_effect=TimeoutError("Persistent timeout"))
+        mock_llm_provider.complete = AsyncMock(side_effect=TimeoutError("Persistent timeout"))
 
-            with pytest.raises(TimeoutError, match="Persistent timeout"):
-                await llm_service.describe_image(
-                    db=mock_db,
-                    image_url="https://example.com/image.jpg",
-                    community_server_id=community_server_id,
-                )
+        with pytest.raises(TimeoutError, match="Persistent timeout"):
+            await llm_service.describe_image(
+                db=mock_db,
+                image_url="https://example.com/image.jpg",
+                community_server_id=community_server_id,
+            )
 
-            assert mock_litellm.acompletion.call_count == 5
+        assert mock_llm_provider.complete.call_count == 5
 
 
 class TestRetryDecoratorConfiguration:

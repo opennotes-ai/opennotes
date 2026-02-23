@@ -172,7 +172,6 @@ def generate_ai_note_step(
                             db=session,
                             messages=messages,
                             community_server_id=community_server_uuid,
-                            provider="openai",
                             model=settings.AI_NOTE_WRITER_MODEL,
                             max_tokens=500,
                             temperature=0.7,

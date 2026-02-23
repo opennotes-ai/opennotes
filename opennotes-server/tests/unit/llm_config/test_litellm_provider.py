@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.llm_config.constants import ADC_SENTINEL
 from src.llm_config.providers.base import LLMMessage
 from src.llm_config.providers.litellm_provider import (
     LiteLLMCompletionParams,
@@ -504,3 +505,137 @@ class TestLiteLLMProvider:
 
             call_kwargs = mock_litellm.acompletion.call_args.kwargs
             assert call_kwargs["model"] == "gpt-5-mini"
+
+
+class TestLiteLLMProviderVertexAI:
+    """Tests for Vertex AI-specific behavior in LiteLLMProvider."""
+
+    @pytest.fixture
+    def vertex_provider(self) -> LiteLLMProvider:
+        return LiteLLMProvider(
+            api_key=ADC_SENTINEL,
+            default_model="gemini-2.5-flash",
+            settings=LiteLLMProviderSettings(),
+            provider_name="vertex_ai",
+        )
+
+    @pytest.fixture
+    def openai_provider(self) -> LiteLLMProvider:
+        return LiteLLMProvider(
+            api_key="sk-test-key",
+            default_model="gpt-5.1",
+            settings=LiteLLMProviderSettings(),
+            provider_name="openai",
+        )
+
+    @pytest.fixture
+    def mock_response(self) -> MagicMock:
+        response = MagicMock()
+        response.choices = [
+            MagicMock(
+                message=MagicMock(content="Test response"),
+                finish_reason="stop",
+            )
+        ]
+        response.model = "gemini-2.5-flash"
+        response.usage = MagicMock(total_tokens=15)
+        return response
+
+    @pytest.mark.asyncio
+    async def test_vertex_ai_omits_api_key(
+        self, vertex_provider: LiteLLMProvider, mock_response: MagicMock
+    ) -> None:
+        """When provider_name='vertex_ai', api_key should NOT be passed to litellm."""
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_response)
+
+            await vertex_provider.complete([LLMMessage(role="user", content="Hi")])
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert "api_key" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_openai_includes_api_key(
+        self, openai_provider: LiteLLMProvider, mock_response: MagicMock
+    ) -> None:
+        """When provider_name='openai', api_key SHOULD be passed to litellm."""
+        mock_response.model = "gpt-5.1"
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_response)
+
+            await openai_provider.complete([LLMMessage(role="user", content="Hi")])
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert call_kwargs["api_key"] == "sk-test-key"
+
+    @pytest.mark.asyncio
+    async def test_vertex_ai_stream_omits_api_key(self, vertex_provider: LiteLLMProvider) -> None:
+        """stream_complete() with vertex_ai should NOT pass api_key."""
+
+        async def mock_stream():
+            chunk = MagicMock()
+            chunk.choices = [MagicMock(delta=MagicMock(content="Hi"))]
+            yield chunk
+
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_stream())
+
+            async for _ in vertex_provider.stream_complete([LLMMessage(role="user", content="Hi")]):
+                pass
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert "api_key" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_validate_api_key_returns_true_for_vertex_ai(
+        self, vertex_provider: LiteLLMProvider
+    ) -> None:
+        """validate_api_key() should return True immediately for vertex_ai (ADC)."""
+        result = await vertex_provider.validate_api_key()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_api_key_returns_true_for_gemini(self) -> None:
+        """validate_api_key() should return True immediately for gemini provider."""
+        gemini_provider = LiteLLMProvider(
+            api_key=ADC_SENTINEL,
+            default_model="gemini-2.5-pro",
+            settings=LiteLLMProviderSettings(),
+            provider_name="gemini",
+        )
+        result = await gemini_provider.validate_api_key()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_vertex_ai_complete_returns_correct_provider(
+        self, vertex_provider: LiteLLMProvider, mock_response: MagicMock
+    ) -> None:
+        """complete() with vertex_ai should return 'vertex_ai' as provider."""
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_response)
+
+            result = await vertex_provider.complete([LLMMessage(role="user", content="Hello")])
+
+            assert result.provider == "vertex_ai"
+
+    @pytest.mark.asyncio
+    async def test_gemini_provider_omits_api_key(self) -> None:
+        """When provider_name='gemini', api_key should NOT be passed to litellm."""
+        gemini_provider = LiteLLMProvider(
+            api_key=ADC_SENTINEL,
+            default_model="gemini-2.5-pro",
+            settings=LiteLLMProviderSettings(),
+            provider_name="gemini",
+        )
+        mock_resp = MagicMock()
+        mock_resp.choices = [MagicMock(message=MagicMock(content="Hi"), finish_reason="stop")]
+        mock_resp.model = "gemini-2.5-pro"
+        mock_resp.usage = MagicMock(total_tokens=5)
+
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_resp)
+
+            await gemini_provider.complete([LLMMessage(role="user", content="Hi")])
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert "api_key" not in call_kwargs

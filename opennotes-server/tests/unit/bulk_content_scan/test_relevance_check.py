@@ -111,7 +111,7 @@ class TestCheckRelevanceWithLLM:
                         "reasoning": "The fact check directly addresses the flat earth claim in the message.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=50,
                 finish_reason="stop",
                 provider="openai",
@@ -152,7 +152,7 @@ class TestCheckRelevanceWithLLM:
                         "reasoning": "The fact check is about vaccine safety, not related to the weather discussion.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=45,
                 finish_reason="stop",
                 provider="openai",
@@ -215,7 +215,7 @@ class TestCheckRelevanceWithLLM:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content="This is not valid JSON",
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=10,
                 finish_reason="stop",
                 provider="openai",
@@ -285,7 +285,7 @@ class TestCheckRelevanceWithLLM:
                         "reasoning": "Content is relevant.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -342,7 +342,7 @@ class TestSimilarityScanRelevanceIntegration:
                         "reasoning": "The fact check is not related to the message.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=30,
                 finish_reason="stop",
                 provider="openai",
@@ -359,8 +359,7 @@ class TestSimilarityScanRelevanceIntegration:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -403,7 +402,7 @@ class TestSimilarityScanRelevanceIntegration:
                         "reasoning": "The fact check directly addresses the claim.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=30,
                 finish_reason="stop",
                 provider="openai",
@@ -420,8 +419,7 @@ class TestSimilarityScanRelevanceIntegration:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -473,8 +471,7 @@ class TestSimilarityScanRelevanceIntegration:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.INSTANCE_ID = "test"
@@ -519,8 +516,7 @@ class TestSimilarityScanRelevanceIntegration:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -549,7 +545,7 @@ class TestRelevanceCheckPrompt:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -589,7 +585,7 @@ class TestRelevanceCheckPrompt:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -629,7 +625,7 @@ class TestRelevanceCheckPrompt:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -677,7 +673,7 @@ class TestRelevanceCheckEdgeCases:
                         "reasoning": "Empty reference cannot be evaluated.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=15,
                 finish_reason="stop",
                 provider="openai",
@@ -715,7 +711,7 @@ class TestRelevanceCheckEdgeCases:
             await asyncio.sleep(10)
             return LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -733,8 +729,7 @@ class TestRelevanceCheckEdgeCases:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
 
             outcome, reasoning = await service._check_relevance_with_llm(
@@ -754,11 +749,11 @@ class TestRelevanceCheckEdgeCases:
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """Should use RELEVANCE_CHECK_PROVIDER from settings."""
+        """Should use RELEVANCE_CHECK_MODEL with provider prefix from settings."""
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-5-mini",
+                model="anthropic/claude-3-haiku",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="anthropic",
@@ -774,8 +769,7 @@ class TestRelevanceCheckEdgeCases:
 
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "anthropic"
-            mock_settings.RELEVANCE_CHECK_MODEL = "claude-3-haiku"
+            mock_settings.RELEVANCE_CHECK_MODEL = "anthropic/claude-3-haiku"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -786,8 +780,49 @@ class TestRelevanceCheckEdgeCases:
             )
 
         call_args = mock_llm_service.complete.call_args
-        assert call_args.kwargs.get("provider") == "anthropic"
-        assert call_args.kwargs.get("model") == "claude-3-haiku"
+        assert call_args.kwargs.get("model") == "anthropic/claude-3-haiku"
+
+    @pytest.mark.asyncio
+    async def test_provider_inferred_from_vertex_ai_model_prefix(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Provider should be inferred from model prefix (vertex_ai/gemini-2.5-flash)."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content=json.dumps({"is_relevant": True, "reasoning": "Relevant claim"}),
+                model="vertex_ai/gemini-2.5-flash",
+                tokens_used=30,
+                finish_reason="stop",
+                provider="vertex_ai",
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_MODEL = "vertex_ai/gemini-2.5-flash"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+
+            outcome, _reasoning = await service._check_relevance_with_llm(
+                original_message="The earth is flat.",
+                matched_content="The claim that the Earth is flat has been debunked.",
+                matched_source="https://example.com",
+            )
+
+        assert outcome == RelevanceOutcome.RELEVANT
+        call_args = mock_llm_service.complete.call_args
+        assert call_args.kwargs.get("model") == "vertex_ai/gemini-2.5-flash"
 
 
 class TestTopicMentionFiltering:
@@ -810,7 +845,7 @@ class TestTopicMentionFiltering:
                         "reasoning": "No claim present - just a topic mention.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=25,
                 finish_reason="stop",
                 provider="openai",
@@ -850,7 +885,7 @@ class TestTopicMentionFiltering:
                         "reasoning": "No specific claim - just mentions wanting information about a person.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=30,
                 finish_reason="stop",
                 provider="openai",
@@ -890,7 +925,7 @@ class TestTopicMentionFiltering:
                         "reasoning": "Just a name fragment, no verifiable claim.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -930,7 +965,7 @@ class TestTopicMentionFiltering:
                         "reasoning": "Contains a specific verifiable claim about Biden being a Confederate soldier.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=35,
                 finish_reason="stop",
                 provider="openai",
@@ -970,7 +1005,7 @@ class TestTopicMentionFiltering:
                         "reasoning": "This is a question, not a claim that can be fact-checked.",
                     }
                 ),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=25,
                 finish_reason="stop",
                 provider="openai",
@@ -1005,7 +1040,7 @@ class TestTopicMentionFiltering:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": False, "reasoning": "No claim"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -1054,14 +1089,14 @@ class TestContentFilterDetection:
             if call_count == 1:
                 return LLMResponse(
                     content="",
-                    model="gpt-5-mini",
+                    model="openai/gpt-5-mini",
                     tokens_used=0,
                     finish_reason="content_filter",
                     provider="openai",
                 )
             return LLMResponse(
                 content=json.dumps({"has_claims": True, "reasoning": "Contains claims"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -1098,7 +1133,7 @@ class TestContentFilterDetection:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content="",
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=0,
                 finish_reason="content_filter",
                 provider="openai",
@@ -1139,14 +1174,14 @@ class TestContentFilterDetection:
             if call_count == 1:
                 return LLMResponse(
                     content="",
-                    model="gpt-5-mini",
+                    model="openai/gpt-5-mini",
                     tokens_used=0,
                     finish_reason="content_filter",
                     provider="openai",
                 )
             return LLMResponse(
                 content=json.dumps({"has_claims": False, "reasoning": "No claims"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=15,
                 finish_reason="stop",
                 provider="openai",
@@ -1189,7 +1224,7 @@ class TestContentFilterDetection:
             if call_count == 1:
                 return LLMResponse(
                     content="",
-                    model="gpt-5-mini",
+                    model="openai/gpt-5-mini",
                     tokens_used=0,
                     finish_reason="content_filter",
                     provider="openai",
@@ -1197,7 +1232,7 @@ class TestContentFilterDetection:
             await asyncio.sleep(10)
             return LLMResponse(
                 content=json.dumps({"has_claims": True}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=15,
                 finish_reason="stop",
                 provider="openai",
@@ -1215,8 +1250,7 @@ class TestContentFilterDetection:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
 
@@ -1246,7 +1280,7 @@ class TestContentFilterDetection:
             if call_count == 1:
                 return LLMResponse(
                     content="",
-                    model="gpt-5-mini",
+                    model="openai/gpt-5-mini",
                     tokens_used=0,
                     finish_reason="content_filter",
                     provider="openai",
@@ -1293,14 +1327,14 @@ class TestContentFilterDetection:
             if call_count == 1:
                 return LLMResponse(
                     content="",
-                    model="gpt-5-mini",
+                    model="openai/gpt-5-mini",
                     tokens_used=0,
                     finish_reason="content_filter",
                     provider="openai",
                 )
             return LLMResponse(
                 content=json.dumps({"has_claims": True}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=15,
                 finish_reason="stop",
                 provider="openai",
@@ -1345,8 +1379,7 @@ class TestContentFilterDetection:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
@@ -1419,14 +1452,14 @@ class TestFilterCandidatesWithRelevanceIndeterminate:
             if call_count == 1:
                 return LLMResponse(
                     content="",
-                    model="gpt-5-mini",
+                    model="openai/gpt-5-mini",
                     tokens_used=0,
                     finish_reason="content_filter",
                     provider="openai",
                 )
             return LLMResponse(
                 content=json.dumps({"has_claims": True, "reasoning": "Contains claims"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -1469,8 +1502,7 @@ class TestFilterCandidatesWithRelevanceIndeterminate:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
@@ -1498,14 +1530,14 @@ class TestFilterCandidatesWithRelevanceIndeterminate:
             if call_count == 1:
                 return LLMResponse(
                     content="",
-                    model="gpt-5-mini",
+                    model="openai/gpt-5-mini",
                     tokens_used=0,
                     finish_reason="content_filter",
                     provider="openai",
                 )
             return LLMResponse(
                 content=json.dumps({"has_claims": True, "reasoning": "Contains claims"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -1548,8 +1580,7 @@ class TestFilterCandidatesWithRelevanceIndeterminate:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
@@ -1576,14 +1607,14 @@ class TestFilterCandidatesWithRelevanceIndeterminate:
             if call_count == 1:
                 return LLMResponse(
                     content="",
-                    model="gpt-5-mini",
+                    model="openai/gpt-5-mini",
                     tokens_used=0,
                     finish_reason="content_filter",
                     provider="openai",
                 )
             return LLMResponse(
                 content=json.dumps({"has_claims": True, "reasoning": "Contains claims"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -1626,8 +1657,7 @@ class TestFilterCandidatesWithRelevanceIndeterminate:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
@@ -1692,7 +1722,7 @@ class TestFailOpenWithTighterThreshold:
             await asyncio.sleep(10)
             return LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -1747,8 +1777,7 @@ class TestFailOpenWithTighterThreshold:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.INSTANCE_ID = "test"
 
@@ -1817,8 +1846,7 @@ class TestFailOpenWithTighterThreshold:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.INSTANCE_ID = "test"
@@ -1843,7 +1871,7 @@ class TestFailOpenWithTighterThreshold:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content="This is not valid JSON",
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=10,
                 finish_reason="stop",
                 provider="openai",
@@ -1896,8 +1924,7 @@ class TestFailOpenWithTighterThreshold:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.INSTANCE_ID = "test"
@@ -1925,7 +1952,7 @@ class TestFailOpenWithTighterThreshold:
             await asyncio.sleep(10)
             return LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-5-mini",
+                model="openai/gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -1980,8 +2007,7 @@ class TestFailOpenWithTighterThreshold:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.INSTANCE_ID = "test"
 
@@ -2051,8 +2077,7 @@ class TestFailOpenWithTighterThreshold:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.INSTANCE_ID = "test"
@@ -2122,8 +2147,7 @@ class TestFailOpenWithTighterThreshold:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.INSTANCE_ID = "test"

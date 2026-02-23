@@ -7,7 +7,7 @@ enabling consistent interaction with different LLM services.
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -20,11 +20,11 @@ class LLMMessage(BaseModel):
 
     Attributes:
         role: Message role ('system', 'user', 'assistant')
-        content: Message content
+        content: Message content (str for text, list[dict] for multimodal/vision)
     """
 
     role: str
-    content: str
+    content: str | list[dict[str, Any]]
 
 
 class LLMResponse(SQLAlchemySchema):
@@ -68,16 +68,16 @@ class LLMProvider(ABC, Generic[SettingsT, CompletionParamsT]):
         CompletionParamsT: Provider-specific completion parameters type
     """
 
-    def __init__(self, api_key: str, default_model: str, settings: SettingsT) -> None:
+    def __init__(self, api_key: str | None, default_model: str, settings: SettingsT) -> None:
         """
         Initialize LLM provider.
 
         Args:
-            api_key: API key for authentication
+            api_key: API key for authentication (None for ADC-based providers like Vertex AI)
             default_model: Default model to use for completions
             settings: Provider-specific settings
         """
-        self.api_key = api_key
+        self.api_key = api_key or ""
         self.default_model = default_model
         self.settings = settings
 

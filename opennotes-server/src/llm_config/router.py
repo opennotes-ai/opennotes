@@ -12,6 +12,7 @@ from src.auth.community_dependencies import verify_community_admin_by_uuid
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.database import get_db
+from src.llm_config.constants import get_default_model_for_provider
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.models import CommunityServer, CommunityServerLLMConfig
@@ -45,15 +46,7 @@ SAFE_ERROR_MESSAGES = {
 
 
 def _get_default_model_for_provider(provider: str) -> str:
-    """Get the default model for a provider from settings.
-
-    Extracts the model name from DEFAULT_FULL_MODEL for OpenAI,
-    otherwise returns provider-specific defaults.
-    """
-    if provider == "openai":
-        full_model = settings.DEFAULT_FULL_MODEL
-        return full_model.split("/")[-1] if "/" in full_model else full_model
-    return "claude-3-opus-20240229" if provider == "anthropic" else "unknown"
+    return get_default_model_for_provider(provider)
 
 
 @lru_cache

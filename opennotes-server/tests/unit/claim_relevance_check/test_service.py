@@ -27,8 +27,7 @@ def mock_settings():
     """Create a mock settings object with all relevance check attributes."""
     s = MagicMock()
     s.RELEVANCE_CHECK_ENABLED = True
-    s.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
-    s.RELEVANCE_CHECK_PROVIDER = "openai"
+    s.RELEVANCE_CHECK_MODEL = "openai/gpt-5-mini"
     s.RELEVANCE_CHECK_MAX_TOKENS = 150
     s.RELEVANCE_CHECK_TIMEOUT = 5.0
     s.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
@@ -237,15 +236,14 @@ class TestCheckRelevance:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="claude-3-haiku",
+                model="anthropic/claude-3-haiku",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="anthropic",
             )
         )
 
-        mock_settings.RELEVANCE_CHECK_PROVIDER = "anthropic"
-        mock_settings.RELEVANCE_CHECK_MODEL = "claude-3-haiku"
+        mock_settings.RELEVANCE_CHECK_MODEL = "anthropic/claude-3-haiku"
 
         service = ClaimRelevanceService(mock_llm_service, settings=mock_settings)
 
@@ -257,8 +255,7 @@ class TestCheckRelevance:
         )
 
         call_args = mock_llm_service.complete.call_args
-        assert call_args.kwargs.get("provider") == "anthropic"
-        assert call_args.kwargs.get("model") == "claude-3-haiku"
+        assert call_args.kwargs.get("model") == "anthropic/claude-3-haiku"
 
     @pytest.mark.asyncio
     async def test_prompt_includes_original_message(
