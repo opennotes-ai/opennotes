@@ -36,6 +36,7 @@ async def sim_registered_user(sim_test_user):
             user = result.scalar_one()
 
             user.discord_id = f"sim_discord_{uuid4().hex[:8]}"
+            user.is_superuser = True
 
             profile = UserProfile(
                 display_name=user.full_name or user.username,
@@ -192,7 +193,7 @@ class TestCreateSimulation:
             }
         }
 
-        response = await sim_auth_client.post("/api/v1/simulations", json=request_body)
+        response = await sim_auth_client.post("/api/v2/simulations", json=request_body)
 
         assert response.status_code == 201, (
             f"Expected 201, got {response.status_code}: {response.text}"
@@ -223,7 +224,7 @@ class TestCreateSimulation:
             }
         }
 
-        response = await sim_auth_client.post("/api/v1/simulations", json=request_body)
+        response = await sim_auth_client.post("/api/v2/simulations", json=request_body)
 
         assert response.status_code == 422
         data = response.json()
@@ -243,7 +244,7 @@ class TestCreateSimulation:
             }
         }
 
-        response = await sim_auth_client.post("/api/v1/simulations", json=request_body)
+        response = await sim_auth_client.post("/api/v2/simulations", json=request_body)
 
         assert response.status_code == 404
         data = response.json()
@@ -269,12 +270,38 @@ class TestCreateSimulation:
             }
         }
 
-        response = await sim_auth_client.post("/api/v1/simulations", json=request_body)
+        response = await sim_auth_client.post("/api/v2/simulations", json=request_body)
         assert response.status_code == 201
 
         mock_dispatch.assert_called_once()
         call_args = mock_dispatch.call_args
         assert isinstance(call_args[0][0], UUID)
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("DBOS unavailable"),
+    )
+    async def test_create_simulation_dispatch_failure_sets_failed(
+        self, mock_dispatch, sim_auth_client, playground_community, orchestrator
+    ):
+        request_body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {
+                    "orchestrator_id": str(orchestrator["id"]),
+                    "community_server_id": str(playground_community["id"]),
+                },
+            }
+        }
+
+        response = await sim_auth_client.post("/api/v2/simulations", json=request_body)
+
+        assert response.status_code == 500
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "failed"
+        assert data["data"]["attributes"]["error_message"] is not None
 
 
 class TestGetSimulation:
@@ -284,7 +311,7 @@ class TestGetSimulation:
     ):
         run = await simulation_run_factory("pending")
 
-        response = await sim_auth_client.get(f"/api/v1/simulations/{run['id']}")
+        response = await sim_auth_client.get(f"/api/v2/simulations/{run['id']}")
 
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
@@ -304,11 +331,31 @@ class TestGetSimulation:
     async def test_get_simulation_not_found(self, sim_auth_client):
         fake_id = str(uuid4())
 
-        response = await sim_auth_client.get(f"/api/v1/simulations/{fake_id}")
+        response = await sim_auth_client.get(f"/api/v2/simulations/{fake_id}")
 
         assert response.status_code == 404
         data = response.json()
         assert "errors" in data
+
+    @pytest.mark.asyncio
+    async def test_get_soft_deleted_simulation_returns_404(
+        self, sim_auth_client, simulation_run_factory
+    ):
+        run = await simulation_run_factory("pending")
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimulationRun
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == run["id"])
+            )
+            sim_run = result.scalar_one()
+            sim_run.soft_delete()
+            await session.commit()
+
+        response = await sim_auth_client.get(f"/api/v2/simulations/{run['id']}")
+        assert response.status_code == 404
 
 
 class TestListSimulations:
@@ -317,7 +364,7 @@ class TestListSimulations:
         await simulation_run_factory("pending")
         await simulation_run_factory("running")
 
-        response = await sim_auth_client.get("/api/v1/simulations?page[number]=1&page[size]=5")
+        response = await sim_auth_client.get("/api/v2/simulations?page[number]=1&page[size]=5")
 
         assert response.status_code == 200
         data = response.json()
@@ -330,7 +377,7 @@ class TestListSimulations:
 
     @pytest.mark.asyncio
     async def test_list_simulations_empty(self, sim_auth_client):
-        response = await sim_auth_client.get("/api/v1/simulations")
+        response = await sim_auth_client.get("/api/v2/simulations")
 
         assert response.status_code == 200
         data = response.json()
@@ -339,13 +386,38 @@ class TestListSimulations:
         assert "jsonapi" in data
         assert data["jsonapi"].get("version") == "1.1"
 
+    @pytest.mark.asyncio
+    async def test_list_simulations_excludes_soft_deleted(
+        self, sim_auth_client, simulation_run_factory
+    ):
+        run_visible = await simulation_run_factory("pending")
+        run_deleted = await simulation_run_factory("running")
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimulationRun
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == run_deleted["id"])
+            )
+            sim_run = result.scalar_one()
+            sim_run.soft_delete()
+            await session.commit()
+
+        response = await sim_auth_client.get("/api/v2/simulations")
+        assert response.status_code == 200
+        data = response.json()
+        returned_ids = {item["id"] for item in data["data"]}
+        assert str(run_visible["id"]) in returned_ids
+        assert str(run_deleted["id"]) not in returned_ids
+
 
 class TestPauseSimulation:
     @pytest.mark.asyncio
     async def test_pause_running_simulation(self, sim_auth_client, simulation_run_factory):
         run = await simulation_run_factory("running")
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{run['id']}/pause")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{run['id']}/pause")
 
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
@@ -359,7 +431,7 @@ class TestPauseSimulation:
     async def test_pause_non_running_returns_409(self, sim_auth_client, simulation_run_factory):
         run = await simulation_run_factory("pending")
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{run['id']}/pause")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{run['id']}/pause")
 
         assert response.status_code == 409
         data = response.json()
@@ -369,7 +441,7 @@ class TestPauseSimulation:
     async def test_pause_not_found(self, sim_auth_client):
         fake_id = str(uuid4())
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{fake_id}/pause")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{fake_id}/pause")
 
         assert response.status_code == 404
 
@@ -379,7 +451,7 @@ class TestResumeSimulation:
     async def test_resume_paused_simulation(self, sim_auth_client, simulation_run_factory):
         run = await simulation_run_factory("paused")
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{run['id']}/resume")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
@@ -392,7 +464,7 @@ class TestResumeSimulation:
     async def test_resume_non_paused_returns_409(self, sim_auth_client, simulation_run_factory):
         run = await simulation_run_factory("running")
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{run['id']}/resume")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 409
         data = response.json()
@@ -402,7 +474,7 @@ class TestResumeSimulation:
     async def test_resume_not_found(self, sim_auth_client):
         fake_id = str(uuid4())
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{fake_id}/resume")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{fake_id}/resume")
 
         assert response.status_code == 404
 
@@ -412,7 +484,7 @@ class TestCancelSimulation:
     async def test_cancel_running_simulation(self, sim_auth_client, simulation_run_factory):
         run = await simulation_run_factory("running")
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{run['id']}/cancel")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{run['id']}/cancel")
 
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
@@ -426,7 +498,7 @@ class TestCancelSimulation:
     async def test_cancel_pending_simulation(self, sim_auth_client, simulation_run_factory):
         run = await simulation_run_factory("pending")
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{run['id']}/cancel")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{run['id']}/cancel")
 
         assert response.status_code == 200
         data = response.json()
@@ -436,7 +508,7 @@ class TestCancelSimulation:
     async def test_cancel_paused_simulation(self, sim_auth_client, simulation_run_factory):
         run = await simulation_run_factory("paused")
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{run['id']}/cancel")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{run['id']}/cancel")
 
         assert response.status_code == 200
         data = response.json()
@@ -448,7 +520,7 @@ class TestCancelSimulation:
     ):
         run = await simulation_run_factory("completed")
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{run['id']}/cancel")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{run['id']}/cancel")
 
         assert response.status_code == 409
         data = response.json()
@@ -460,7 +532,7 @@ class TestCancelSimulation:
     ):
         run = await simulation_run_factory("cancelled")
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{run['id']}/cancel")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{run['id']}/cancel")
 
         assert response.status_code == 409
         data = response.json()
@@ -470,7 +542,7 @@ class TestCancelSimulation:
     async def test_cancel_failed_returns_409(self, sim_auth_client, simulation_run_factory):
         run = await simulation_run_factory("failed")
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{run['id']}/cancel")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{run['id']}/cancel")
 
         assert response.status_code == 409
         data = response.json()
@@ -480,6 +552,6 @@ class TestCancelSimulation:
     async def test_cancel_not_found(self, sim_auth_client):
         fake_id = str(uuid4())
 
-        response = await sim_auth_client.post(f"/api/v1/simulations/{fake_id}/cancel")
+        response = await sim_auth_client.post(f"/api/v2/simulations/{fake_id}/cancel")
 
         assert response.status_code == 404

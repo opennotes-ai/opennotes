@@ -1,4 +1,10 @@
+from __future__ import annotations
+
+import asyncio
+import ipaddress
+import socket
 from typing import Annotated
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -31,6 +37,52 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
+SSRF_ALLOWED_SCHEMES = {"http", "https"}
+URL_FETCH_TIMEOUT = 30
+URL_CONCURRENCY_LIMIT = 5
+
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _require_admin(user: User) -> None:
+    if not (user.is_superuser or user.is_service_account):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+
+
+def _validate_url_security(url_str: str) -> None:
+    parsed = urlparse(url_str)
+
+    if parsed.scheme not in SSRF_ALLOWED_SCHEMES:
+        raise ValueError(f"Scheme '{parsed.scheme}' is not allowed; use http or https")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL must contain a valid hostname")
+
+    try:
+        addr_infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"DNS resolution failed for hostname '{hostname}'") from exc
+
+    for _family, _type, _proto, _canonname, sockaddr in addr_infos:
+        ip_str = sockaddr[0]
+        ip = ipaddress.ip_address(ip_str)
+        for network in _PRIVATE_NETWORKS:
+            if ip in network:
+                raise ValueError("URLs pointing to private or reserved IP ranges are not allowed")
+
 
 def _create_error_response(
     status_code: int,
@@ -60,10 +112,13 @@ async def create_playground_note_requests(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
         result = await db.execute(
             select(CommunityServer).where(
                 CommunityServer.id == community_server_id,
+                CommunityServer.is_active.is_(True),
             )
         )
         community_server = result.scalar_one_or_none()
@@ -86,13 +141,40 @@ async def create_playground_note_requests(
         results: list[PlaygroundNoteRequestResultResource] = []
         succeeded = 0
         failed = 0
+        semaphore = asyncio.Semaphore(URL_CONCURRENCY_LIMIT)
 
-        for url in attrs.urls:
-            url_str = str(url)
+        async def _process_url(url_str: str) -> tuple[PlaygroundNoteRequestResultResource, bool]:
             request_id = f"playground-{uuid4().hex}"
 
             try:
-                extracted = await extract_content_from_url(url_str)
+                _validate_url_security(url_str)
+            except ValueError as exc:
+                logger.warning(
+                    "URL failed SSRF validation",
+                    extra={"url": url_str, "error": str(exc)},
+                )
+                return (
+                    PlaygroundNoteRequestResultResource(
+                        type="requests",
+                        id=request_id,
+                        attributes=PlaygroundNoteRequestResultAttributes(
+                            request_id=request_id,
+                            requested_by=attrs.requested_by,
+                            status="FAILED",
+                            community_server_id=str(community_server.id),
+                            url=url_str,
+                            error="URL validation failed",
+                        ),
+                    ),
+                    False,
+                )
+
+            try:
+                async with semaphore:
+                    extracted = await asyncio.wait_for(
+                        extract_content_from_url(url_str),
+                        timeout=URL_FETCH_TIMEOUT,
+                    )
 
                 message_archive = await MessageArchiveService.create_from_text(
                     db=db,
@@ -114,7 +196,7 @@ async def create_playground_note_requests(
                 db.add(note_request)
                 await db.flush()
 
-                results.append(
+                return (
                     PlaygroundNoteRequestResultResource(
                         type="requests",
                         id=str(note_request.id),
@@ -126,16 +208,16 @@ async def create_playground_note_requests(
                             content=extracted.text[:500] if extracted.text else None,
                             url=url_str,
                         ),
-                    )
+                    ),
+                    True,
                 )
-                succeeded += 1
 
             except ContentExtractionError as e:
                 logger.warning(
-                    f"Content extraction failed for URL: {url_str}",
+                    "Content extraction failed for URL",
                     extra={"url": url_str, "error": str(e)},
                 )
-                results.append(
+                return (
                     PlaygroundNoteRequestResultResource(
                         type="requests",
                         id=request_id,
@@ -147,16 +229,16 @@ async def create_playground_note_requests(
                             url=url_str,
                             error=str(e),
                         ),
-                    )
+                    ),
+                    False,
                 )
-                failed += 1
 
-            except Exception as e:
-                logger.exception(
-                    f"Unexpected error processing URL: {url_str}",
-                    extra={"url": url_str, "error": str(e)},
+            except TimeoutError:
+                logger.warning(
+                    "URL fetch timed out",
+                    extra={"url": url_str, "timeout": URL_FETCH_TIMEOUT},
                 )
-                results.append(
+                return (
                     PlaygroundNoteRequestResultResource(
                         type="requests",
                         id=request_id,
@@ -166,10 +248,39 @@ async def create_playground_note_requests(
                             status="FAILED",
                             community_server_id=str(community_server.id),
                             url=url_str,
-                            error=f"Unexpected error: {str(e)[:200]}",
+                            error="Content extraction timed out",
                         ),
-                    )
+                    ),
+                    False,
                 )
+
+            except Exception:
+                logger.exception(
+                    "Unexpected error processing URL",
+                    extra={"url": url_str},
+                )
+                return (
+                    PlaygroundNoteRequestResultResource(
+                        type="requests",
+                        id=request_id,
+                        attributes=PlaygroundNoteRequestResultAttributes(
+                            request_id=request_id,
+                            requested_by=attrs.requested_by,
+                            status="FAILED",
+                            community_server_id=str(community_server.id),
+                            url=url_str,
+                            error="Failed to process URL",
+                        ),
+                    ),
+                    False,
+                )
+
+        for url in attrs.urls:
+            resource, ok = await _process_url(str(url))
+            results.append(resource)
+            if ok:
+                succeeded += 1
+            else:
                 failed += 1
 
         await db.commit()
@@ -187,8 +298,8 @@ async def create_playground_note_requests(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to create playground note requests: {e}")
+    except Exception:
+        logger.exception("Failed to create playground note requests")
         await db.rollback()
         return _create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

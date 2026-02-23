@@ -3138,7 +3138,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/simulations": {
+    "/api/v2/simulations": {
         parameters: {
             query?: never;
             header?: never;
@@ -3146,17 +3146,17 @@ export interface paths {
             cookie?: never;
         };
         /** List Simulations */
-        get: operations["list_simulations_api_v1_simulations_get"];
+        get: operations["list_simulations_api_v2_simulations_get"];
         put?: never;
         /** Create Simulation */
-        post: operations["create_simulation_api_v1_simulations_post"];
+        post: operations["create_simulation_api_v2_simulations_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/simulations/{simulation_id}": {
+    "/api/v2/simulations/{simulation_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -3164,7 +3164,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Simulation */
-        get: operations["get_simulation_api_v1_simulations__simulation_id__get"];
+        get: operations["get_simulation_api_v2_simulations__simulation_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3173,7 +3173,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/simulations/{simulation_id}/pause": {
+    "/api/v2/simulations/{simulation_id}/pause": {
         parameters: {
             query?: never;
             header?: never;
@@ -3183,14 +3183,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Pause Simulation */
-        post: operations["pause_simulation_api_v1_simulations__simulation_id__pause_post"];
+        post: operations["pause_simulation_api_v2_simulations__simulation_id__pause_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/simulations/{simulation_id}/resume": {
+    "/api/v2/simulations/{simulation_id}/resume": {
         parameters: {
             query?: never;
             header?: never;
@@ -3200,14 +3200,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Resume Simulation */
-        post: operations["resume_simulation_api_v1_simulations__simulation_id__resume_post"];
+        post: operations["resume_simulation_api_v2_simulations__simulation_id__resume_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/simulations/{simulation_id}/cancel": {
+    "/api/v2/simulations/{simulation_id}/cancel": {
         parameters: {
             query?: never;
             header?: never;
@@ -3217,7 +3217,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Cancel Simulation */
-        post: operations["cancel_simulation_api_v1_simulations__simulation_id__cancel_post"];
+        post: operations["cancel_simulation_api_v2_simulations__simulation_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15109,7 +15109,7 @@ export interface operations {
             };
         };
     };
-    list_simulations_api_v1_simulations_get: {
+    list_simulations_api_v2_simulations_get: {
         parameters: {
             query?: {
                 "page[number]"?: number;
@@ -15143,7 +15143,7 @@ export interface operations {
             };
         };
     };
-    create_simulation_api_v1_simulations_post: {
+    create_simulation_api_v2_simulations_post: {
         parameters: {
             query?: never;
             header?: {
@@ -15178,7 +15178,7 @@ export interface operations {
             };
         };
     };
-    get_simulation_api_v1_simulations__simulation_id__get: {
+    get_simulation_api_v2_simulations__simulation_id__get: {
         parameters: {
             query?: never;
             header?: {
@@ -15211,7 +15211,7 @@ export interface operations {
             };
         };
     };
-    pause_simulation_api_v1_simulations__simulation_id__pause_post: {
+    pause_simulation_api_v2_simulations__simulation_id__pause_post: {
         parameters: {
             query?: never;
             header?: {
@@ -15244,7 +15244,7 @@ export interface operations {
             };
         };
     };
-    resume_simulation_api_v1_simulations__simulation_id__resume_post: {
+    resume_simulation_api_v2_simulations__simulation_id__resume_post: {
         parameters: {
             query?: never;
             header?: {
@@ -15277,7 +15277,7 @@ export interface operations {
             };
         };
     };
-    cancel_simulation_api_v1_simulations__simulation_id__cancel_post: {
+    cancel_simulation_api_v2_simulations__simulation_id__cancel_post: {
         parameters: {
             query?: never;
             header?: {

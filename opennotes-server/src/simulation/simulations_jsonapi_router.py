@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 import pendulum
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -38,6 +38,14 @@ VALID_PAUSE_FROM = {"running"}
 VALID_RESUME_FROM = {"paused"}
 VALID_CANCEL_FROM = {"pending", "running", "paused"}
 TERMINAL_STATUSES = {"completed", "cancelled", "failed"}
+
+
+def _require_admin(user: User) -> None:
+    if not (user.is_superuser or user.is_service_account):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
 
 
 class SimulationCreateAttributes(StrictInputSchema):
@@ -138,6 +146,8 @@ async def create_simulation(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
         attrs = body.data.attributes
 
@@ -159,6 +169,7 @@ async def create_simulation(
         cs_result = await db.execute(
             select(CommunityServer).where(
                 CommunityServer.id == attrs.community_server_id,
+                CommunityServer.is_active.is_(True),
             )
         )
         community_server = cs_result.scalar_one_or_none()
@@ -188,10 +199,35 @@ async def create_simulation(
 
         try:
             await dispatch_orchestrator(simulation_run.id)
-        except Exception as e:
-            logger.warning(
-                f"Failed to dispatch orchestrator workflow: {e}",
+        except Exception:
+            logger.exception(
+                "Failed to dispatch orchestrator workflow",
                 extra={"simulation_run_id": str(simulation_run.id)},
+            )
+            now = pendulum.now("UTC")
+            await db.execute(
+                update(SimulationRun)
+                .where(SimulationRun.id == simulation_run.id)
+                .values(
+                    status="failed",
+                    error_message="Failed to dispatch orchestrator workflow",
+                    completed_at=now,
+                    updated_at=now,
+                )
+            )
+            await db.commit()
+            await db.refresh(simulation_run)
+
+            resource = simulation_run_to_resource(simulation_run)
+            response = SimulationSingleResponse(
+                data=resource,
+                links=JSONAPILinks(self_=f"{str(request.url).rstrip('/')}/{simulation_run.id}"),
+            )
+
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content=response.model_dump(by_alias=True, mode="json"),
+                media_type=JSONAPI_CONTENT_TYPE,
             )
 
         resource = simulation_run_to_resource(simulation_run)
@@ -206,8 +242,10 @@ async def create_simulation(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to create simulation: {e}")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to create simulation")
         await db.rollback()
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -228,14 +266,17 @@ async def list_simulations(
     page_number: int = Query(1, ge=1, alias="page[number]"),
     page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
-        count_query = select(func.count(SimulationRun.id))
+        count_query = select(func.count(SimulationRun.id)).where(SimulationRun.deleted_at.is_(None))
         count_result = await db.execute(count_query)
         total = count_result.scalar() or 0
 
         offset = (page_number - 1) * page_size
         query = (
             select(SimulationRun)
+            .where(SimulationRun.deleted_at.is_(None))
             .order_by(desc(SimulationRun.created_at))
             .limit(page_size)
             .offset(offset)
@@ -264,8 +305,8 @@ async def list_simulations(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to list simulations: {e}")
+    except Exception:
+        logger.exception("Failed to list simulations")
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
@@ -284,8 +325,15 @@ async def get_simulation(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
-        result = await db.execute(select(SimulationRun).where(SimulationRun.id == simulation_id))
+        result = await db.execute(
+            select(SimulationRun).where(
+                SimulationRun.id == simulation_id,
+                SimulationRun.deleted_at.is_(None),
+            )
+        )
         run = result.scalar_one_or_none()
 
         if not run:
@@ -306,8 +354,8 @@ async def get_simulation(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to get simulation: {e}")
+    except Exception:
+        logger.exception("Failed to get simulation")
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
@@ -326,6 +374,8 @@ async def pause_simulation(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
         result = await db.execute(
             select(SimulationRun).where(SimulationRun.id == simulation_id).with_for_update()
@@ -366,8 +416,8 @@ async def pause_simulation(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to pause simulation: {e}")
+    except Exception:
+        logger.exception("Failed to pause simulation")
         await db.rollback()
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -387,6 +437,8 @@ async def resume_simulation(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
         result = await db.execute(
             select(SimulationRun).where(SimulationRun.id == simulation_id).with_for_update()
@@ -427,8 +479,8 @@ async def resume_simulation(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to resume simulation: {e}")
+    except Exception:
+        logger.exception("Failed to resume simulation")
         await db.rollback()
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -448,6 +500,8 @@ async def cancel_simulation(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
         result = await db.execute(
             select(SimulationRun).where(SimulationRun.id == simulation_id).with_for_update()
@@ -459,13 +513,6 @@ async def cancel_simulation(
                 status.HTTP_404_NOT_FOUND,
                 "Not Found",
                 f"SimulationRun {simulation_id} not found",
-            )
-
-        if run.status in TERMINAL_STATUSES:
-            return create_error_response(
-                status.HTTP_409_CONFLICT,
-                "Conflict",
-                f"Cannot cancel simulation in '{run.status}' status",
             )
 
         if run.status not in VALID_CANCEL_FROM:
@@ -495,8 +542,8 @@ async def cancel_simulation(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to cancel simulation: {e}")
+    except Exception:
+        logger.exception("Failed to cancel simulation")
         await db.rollback()
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

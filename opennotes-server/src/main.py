@@ -713,7 +713,7 @@ app.include_router(candidates_jsonapi_router, prefix=settings.API_V1_PREFIX)
 app.include_router(batch_jobs_router, prefix=settings.API_V1_PREFIX)
 app.include_router(
     simulations_jsonapi_router,
-    prefix=settings.API_V1_PREFIX,
+    prefix=settings.API_V2_PREFIX,
     tags=["simulations-jsonapi"],
 )
 

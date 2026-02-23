@@ -27,11 +27,11 @@ class SimAgentDeps:
 
 sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
     deps_type=SimAgentDeps,
-    output_type=SimAgentAction,
+    result_type=SimAgentAction,
 )
 
 
-@sim_agent.instructions
+@sim_agent.system_prompt
 def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
     return (
         "You are a Community Notes participant in a simulation. "
@@ -171,7 +171,7 @@ class OpenNotesSimAgent:
             model=self._model,
             usage_limits=usage_limits or UsageLimits(request_limit=3, total_tokens_limit=4000),
         )
-        return result.output, result.all_messages()
+        return result.data, result.all_messages()
 
     def _build_turn_prompt(self, deps: SimAgentDeps) -> str:
         sections = ["Here is the current state of the community:\n"]

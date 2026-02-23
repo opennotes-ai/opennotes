@@ -10117,13 +10117,13 @@
         }
       }
     },
-    "/api/v1/simulations": {
+    "/api/v2/simulations": {
       "post": {
         "tags": [
           "simulations-jsonapi"
         ],
         "summary": "Create Simulation",
-        "operationId": "create_simulation_api_v1_simulations_post",
+        "operationId": "create_simulation_api_v2_simulations_post",
         "security": [
           {
             "HTTPBearer": []
@@ -10185,7 +10185,7 @@
           "simulations-jsonapi"
         ],
         "summary": "List Simulations",
-        "operationId": "list_simulations_api_v1_simulations_get",
+        "operationId": "list_simulations_api_v2_simulations_get",
         "security": [
           {
             "HTTPBearer": []
@@ -10256,13 +10256,13 @@
         }
       }
     },
-    "/api/v1/simulations/{simulation_id}": {
+    "/api/v2/simulations/{simulation_id}": {
       "get": {
         "tags": [
           "simulations-jsonapi"
         ],
         "summary": "Get Simulation",
-        "operationId": "get_simulation_api_v1_simulations__simulation_id__get",
+        "operationId": "get_simulation_api_v2_simulations__simulation_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -10320,13 +10320,13 @@
         }
       }
     },
-    "/api/v1/simulations/{simulation_id}/pause": {
+    "/api/v2/simulations/{simulation_id}/pause": {
       "post": {
         "tags": [
           "simulations-jsonapi"
         ],
         "summary": "Pause Simulation",
-        "operationId": "pause_simulation_api_v1_simulations__simulation_id__pause_post",
+        "operationId": "pause_simulation_api_v2_simulations__simulation_id__pause_post",
         "security": [
           {
             "HTTPBearer": []
@@ -10384,13 +10384,13 @@
         }
       }
     },
-    "/api/v1/simulations/{simulation_id}/resume": {
+    "/api/v2/simulations/{simulation_id}/resume": {
       "post": {
         "tags": [
           "simulations-jsonapi"
         ],
         "summary": "Resume Simulation",
-        "operationId": "resume_simulation_api_v1_simulations__simulation_id__resume_post",
+        "operationId": "resume_simulation_api_v2_simulations__simulation_id__resume_post",
         "security": [
           {
             "HTTPBearer": []
@@ -10448,13 +10448,13 @@
         }
       }
     },
-    "/api/v1/simulations/{simulation_id}/cancel": {
+    "/api/v2/simulations/{simulation_id}/cancel": {
       "post": {
         "tags": [
           "simulations-jsonapi"
         ],
         "summary": "Cancel Simulation",
-        "operationId": "cancel_simulation_api_v1_simulations__simulation_id__cancel_post",
+        "operationId": "cancel_simulation_api_v2_simulations__simulation_id__cancel_post",
         "security": [
           {
             "HTTPBearer": []

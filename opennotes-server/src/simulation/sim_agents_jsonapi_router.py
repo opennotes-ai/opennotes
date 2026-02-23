@@ -2,11 +2,12 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
@@ -28,6 +29,14 @@ from src.users.models import User
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+def _require_admin(user: User) -> None:
+    if not (user.is_superuser or user.is_service_account):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
 
 
 class SimAgentCreateAttributes(StrictInputSchema):
@@ -161,6 +170,8 @@ async def create_sim_agent_jsonapi(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
         attrs = body.data.attributes
         agent = SimAgent(
@@ -191,8 +202,15 @@ async def create_sim_agent_jsonapi(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to create sim agent (JSON:API): {e}")
+    except IntegrityError:
+        await db.rollback()
+        return create_error_response(
+            status.HTTP_409_CONFLICT,
+            "Conflict",
+            "A sim agent with that name already exists",
+        )
+    except Exception:
+        logger.exception("Failed to create sim agent (JSON:API)")
         await db.rollback()
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -213,6 +231,8 @@ async def list_sim_agents_jsonapi(
     page_number: int = Query(1, ge=1, alias="page[number]"),
     page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
         count_query = select(func.count(SimAgent.id)).where(SimAgent.deleted_at.is_(None))
         count_result = await db.execute(count_query)
@@ -250,8 +270,8 @@ async def list_sim_agents_jsonapi(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to list sim agents (JSON:API): {e}")
+    except Exception:
+        logger.exception("Failed to list sim agents (JSON:API)")
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
@@ -270,6 +290,8 @@ async def get_sim_agent_jsonapi(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
         result = await db.execute(
             select(SimAgent).where(SimAgent.id == agent_id, SimAgent.deleted_at.is_(None))
@@ -294,8 +316,8 @@ async def get_sim_agent_jsonapi(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to get sim agent (JSON:API): {e}")
+    except Exception:
+        logger.exception("Failed to get sim agent (JSON:API)")
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
@@ -315,6 +337,8 @@ async def update_sim_agent_jsonapi(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
+    _require_admin(current_user)
+
     try:
         if str(agent_id) != body.data.id:
             return create_error_response(
@@ -353,8 +377,15 @@ async def update_sim_agent_jsonapi(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to update sim agent (JSON:API): {e}")
+    except IntegrityError:
+        await db.rollback()
+        return create_error_response(
+            status.HTTP_409_CONFLICT,
+            "Conflict",
+            "A sim agent with that name already exists",
+        )
+    except Exception:
+        logger.exception("Failed to update sim agent (JSON:API)")
         await db.rollback()
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -365,13 +396,14 @@ async def update_sim_agent_jsonapi(
 
 @router.delete(
     "/sim-agents/{agent_id}",
-    response_class=JSONResponse,
 )
 async def delete_sim_agent_jsonapi(
     agent_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
-) -> JSONResponse:
+) -> Response:
+    _require_admin(current_user)
+
     try:
         result = await db.execute(
             select(SimAgent).where(SimAgent.id == agent_id, SimAgent.deleted_at.is_(None))
@@ -388,10 +420,10 @@ async def delete_sim_agent_jsonapi(
         agent.soft_delete()
         await db.commit()
 
-        return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    except Exception as e:
-        logger.exception(f"Failed to delete sim agent (JSON:API): {e}")
+    except Exception:
+        logger.exception("Failed to delete sim agent (JSON:API)")
         await db.rollback()
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
