@@ -754,11 +754,11 @@ class TestRelevanceCheckEdgeCases:
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """Should use RELEVANCE_CHECK_PROVIDER from settings."""
+        """Should use RELEVANCE_CHECK_MODEL with provider prefix from settings."""
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-5-mini",
+                model="anthropic/claude-3-haiku",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="anthropic",
@@ -774,8 +774,7 @@ class TestRelevanceCheckEdgeCases:
 
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-            mock_settings.RELEVANCE_CHECK_PROVIDER = "anthropic"
-            mock_settings.RELEVANCE_CHECK_MODEL = "claude-3-haiku"
+            mock_settings.RELEVANCE_CHECK_MODEL = "anthropic/claude-3-haiku"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -786,8 +785,7 @@ class TestRelevanceCheckEdgeCases:
             )
 
         call_args = mock_llm_service.complete.call_args
-        assert call_args.kwargs.get("provider") == "anthropic"
-        assert call_args.kwargs.get("model") == "claude-3-haiku"
+        assert call_args.kwargs.get("model") == "anthropic/claude-3-haiku"
 
 
 class TestTopicMentionFiltering:
