@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.llm_config.constants import ADC_SENTINEL
+from src.llm_config.constants import ADC_SENTINEL, get_default_model_for_provider
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.models import CommunityServerLLMConfig
 from src.llm_config.providers.base import LLMProvider
@@ -273,25 +273,7 @@ class LLMClientManager:
         return LLMProviderFactory.create(provider, api_key, default_model, config.settings)
 
     def _get_default_model(self, provider: str) -> str:
-        """
-        Get the default model for a provider.
-
-        Uses settings.DEFAULT_FULL_MODEL for OpenAI (extracts model name from provider/model format).
-
-        Args:
-            provider: Provider name
-
-        Returns:
-            Default model identifier
-        """
-        if provider == "openai":
-            return settings.DEFAULT_FULL_MODEL
-        defaults = {
-            "anthropic": "anthropic/claude-3-opus-20240229",
-            "vertex_ai": "vertex_ai/gemini-2.5-pro",
-            "gemini": "gemini/gemini-2.5-pro",
-        }
-        return defaults.get(provider, "unknown")
+        return get_default_model_for_provider(provider)
 
     def _get_global_api_key(self, provider: str) -> str | None:
         """
