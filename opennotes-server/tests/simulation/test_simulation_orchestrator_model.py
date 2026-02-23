@@ -39,6 +39,7 @@ async def test_orchestrator_name_unique(db):
     db.add(SimulationOrchestrator(name=name))
     with pytest.raises(IntegrityError):
         await db.commit()
+    await db.rollback()
 
 
 @pytest.mark.asyncio
@@ -76,6 +77,7 @@ async def test_orchestrator_check_constraints_removal_rate(db):
     db.add(orch)
     with pytest.raises(IntegrityError):
         await db.commit()
+    await db.rollback()
 
 
 @pytest.mark.asyncio
@@ -86,6 +88,7 @@ async def test_orchestrator_check_constraints_cadence(db):
     db.add(orch)
     with pytest.raises(IntegrityError):
         await db.commit()
+    await db.rollback()
 
 
 @pytest.mark.asyncio

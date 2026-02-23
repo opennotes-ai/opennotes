@@ -142,12 +142,8 @@ async def test_handles_extraction_failure_per_url(
 ):
     from src.shared.content_extraction import ContentExtractionError
 
-    call_count = 0
-
     async def side_effect(url, config=None):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
+        if "good-article" in str(url):
             return ExtractedContent(
                 text="Good content",
                 url=url,

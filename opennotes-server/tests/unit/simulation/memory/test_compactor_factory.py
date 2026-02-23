@@ -93,9 +93,11 @@ class TestCompactorFactoryRegister:
                 pass
 
         CompactorFactory.register("custom_test", CustomCompactor)
-        compactor = CompactorFactory.create("custom_test")
-        assert isinstance(compactor, CustomCompactor)
-        CompactorFactory._registry.pop("custom_test", None)
+        try:
+            compactor = CompactorFactory.create("custom_test")
+            assert isinstance(compactor, CustomCompactor)
+        finally:
+            CompactorFactory._registry.pop("custom_test", None)
 
     def test_available_strategies_includes_builtins(self):
         strategies = CompactorFactory.available_strategies()

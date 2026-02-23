@@ -6,91 +6,9 @@ from httpx import ASGITransport, AsyncClient
 from src.main import app
 
 
-@pytest.fixture
-async def orchestrators_jsonapi_test_user():
-    return {
-        "username": f"orch_jsonapi_user_{uuid4().hex[:8]}",
-        "email": f"orch_jsonapi_{uuid4().hex[:8]}@example.com",
-        "password": "TestPassword123!",
-        "full_name": "Orchestrators JSONAPI Test User",
-    }
-
-
-@pytest.fixture
-async def orchestrators_jsonapi_registered_user(orchestrators_jsonapi_test_user):
-    from sqlalchemy import select
-
-    from src.database import get_session_maker
-    from src.users.models import User
-    from src.users.profile_models import UserIdentity, UserProfile
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        await client.post("/api/v1/auth/register", json=orchestrators_jsonapi_test_user)
-
-        async with get_session_maker()() as session:
-            stmt = select(User).where(User.username == orchestrators_jsonapi_test_user["username"])
-            result = await session.execute(stmt)
-            user = result.scalar_one()
-
-            user.discord_id = f"orch_jsonapi_discord_{uuid4().hex[:8]}"
-
-            profile = UserProfile(
-                display_name=user.full_name or user.username,
-                is_human=True,
-                is_active=True,
-            )
-            session.add(profile)
-            await session.flush()
-
-            identity = UserIdentity(
-                profile_id=profile.id,
-                provider="discord",
-                provider_user_id=user.discord_id,
-            )
-            session.add(identity)
-
-            await session.commit()
-            await session.refresh(user)
-            await session.refresh(profile)
-
-            return {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "full_name": user.full_name,
-                "role": user.role,
-                "is_active": user.is_active,
-                "is_superuser": user.is_superuser,
-                "discord_id": user.discord_id,
-                "profile_id": profile.id,
-            }
-
-
-@pytest.fixture
-async def orchestrators_jsonapi_auth_headers(orchestrators_jsonapi_registered_user):
-    from src.auth.auth import create_access_token
-
-    token_data = {
-        "sub": str(orchestrators_jsonapi_registered_user["id"]),
-        "username": orchestrators_jsonapi_registered_user["username"],
-        "role": orchestrators_jsonapi_registered_user["role"],
-    }
-    access_token = create_access_token(token_data)
-    return {"Authorization": f"Bearer {access_token}"}
-
-
-@pytest.fixture
-async def orchestrators_jsonapi_auth_client(orchestrators_jsonapi_auth_headers):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        client.headers.update(orchestrators_jsonapi_auth_headers)
-        yield client
-
-
 class TestOrchestratorsJSONAPICreate:
     @pytest.mark.asyncio
-    async def test_create_orchestrator_jsonapi(self, orchestrators_jsonapi_auth_client):
+    async def test_create_orchestrator_jsonapi(self, admin_auth_client):
         unique = uuid4().hex[:8]
         request_body = {
             "data": {
@@ -107,7 +25,7 @@ class TestOrchestratorsJSONAPICreate:
             }
         }
 
-        response = await orchestrators_jsonapi_auth_client.post(
+        response = await admin_auth_client.post(
             "/api/v2/simulation-orchestrators", json=request_body
         )
 
@@ -130,9 +48,7 @@ class TestOrchestratorsJSONAPICreate:
         assert "application/vnd.api+json" in content_type
 
     @pytest.mark.asyncio
-    async def test_create_orchestrator_jsonapi_missing_required_field(
-        self, orchestrators_jsonapi_auth_client
-    ):
+    async def test_create_orchestrator_jsonapi_missing_required_field(self, admin_auth_client):
         request_body = {
             "data": {
                 "type": "simulation-orchestrators",
@@ -145,7 +61,7 @@ class TestOrchestratorsJSONAPICreate:
             }
         }
 
-        response = await orchestrators_jsonapi_auth_client.post(
+        response = await admin_auth_client.post(
             "/api/v2/simulation-orchestrators", json=request_body
         )
 
@@ -173,8 +89,8 @@ class TestOrchestratorsJSONAPICreate:
 
 class TestOrchestratorsJSONAPIList:
     @pytest.mark.asyncio
-    async def test_list_orchestrators_jsonapi(self, orchestrators_jsonapi_auth_client):
-        response = await orchestrators_jsonapi_auth_client.get("/api/v2/simulation-orchestrators")
+    async def test_list_orchestrators_jsonapi(self, admin_auth_client):
+        response = await admin_auth_client.get("/api/v2/simulation-orchestrators")
 
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
@@ -191,8 +107,8 @@ class TestOrchestratorsJSONAPIList:
         assert "application/vnd.api+json" in content_type
 
     @pytest.mark.asyncio
-    async def test_list_orchestrators_jsonapi_pagination(self, orchestrators_jsonapi_auth_client):
-        response = await orchestrators_jsonapi_auth_client.get(
+    async def test_list_orchestrators_jsonapi_pagination(self, admin_auth_client):
+        response = await admin_auth_client.get(
             "/api/v2/simulation-orchestrators?page[number]=1&page[size]=5"
         )
 
@@ -203,9 +119,7 @@ class TestOrchestratorsJSONAPIList:
         assert "count" in data["meta"]
 
     @pytest.mark.asyncio
-    async def test_list_orchestrators_jsonapi_returns_created(
-        self, orchestrators_jsonapi_auth_client
-    ):
+    async def test_list_orchestrators_jsonapi_returns_created(self, admin_auth_client):
         unique = uuid4().hex[:8]
         create_body = {
             "data": {
@@ -219,12 +133,12 @@ class TestOrchestratorsJSONAPIList:
                 },
             }
         }
-        create_response = await orchestrators_jsonapi_auth_client.post(
+        create_response = await admin_auth_client.post(
             "/api/v2/simulation-orchestrators", json=create_body
         )
         assert create_response.status_code == 201
 
-        response = await orchestrators_jsonapi_auth_client.get("/api/v2/simulation-orchestrators")
+        response = await admin_auth_client.get("/api/v2/simulation-orchestrators")
         assert response.status_code == 200
 
         data = response.json()
@@ -234,7 +148,7 @@ class TestOrchestratorsJSONAPIList:
 
 class TestOrchestratorsJSONAPIGet:
     @pytest.mark.asyncio
-    async def test_get_orchestrator_jsonapi(self, orchestrators_jsonapi_auth_client):
+    async def test_get_orchestrator_jsonapi(self, admin_auth_client):
         unique = uuid4().hex[:8]
         create_body = {
             "data": {
@@ -248,15 +162,13 @@ class TestOrchestratorsJSONAPIGet:
                 },
             }
         }
-        create_response = await orchestrators_jsonapi_auth_client.post(
+        create_response = await admin_auth_client.post(
             "/api/v2/simulation-orchestrators", json=create_body
         )
         assert create_response.status_code == 201
         created_id = create_response.json()["data"]["id"]
 
-        response = await orchestrators_jsonapi_auth_client.get(
-            f"/api/v2/simulation-orchestrators/{created_id}"
-        )
+        response = await admin_auth_client.get(f"/api/v2/simulation-orchestrators/{created_id}")
 
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
@@ -273,12 +185,10 @@ class TestOrchestratorsJSONAPIGet:
         assert "application/vnd.api+json" in content_type
 
     @pytest.mark.asyncio
-    async def test_get_orchestrator_jsonapi_not_found(self, orchestrators_jsonapi_auth_client):
+    async def test_get_orchestrator_jsonapi_not_found(self, admin_auth_client):
         fake_id = str(uuid4())
 
-        response = await orchestrators_jsonapi_auth_client.get(
-            f"/api/v2/simulation-orchestrators/{fake_id}"
-        )
+        response = await admin_auth_client.get(f"/api/v2/simulation-orchestrators/{fake_id}")
 
         assert response.status_code == 404
         data = response.json()
@@ -287,7 +197,7 @@ class TestOrchestratorsJSONAPIGet:
 
 class TestOrchestratorsJSONAPIUpdate:
     @pytest.mark.asyncio
-    async def test_update_orchestrator_jsonapi(self, orchestrators_jsonapi_auth_client):
+    async def test_update_orchestrator_jsonapi(self, admin_auth_client):
         unique = uuid4().hex[:8]
         create_body = {
             "data": {
@@ -301,7 +211,7 @@ class TestOrchestratorsJSONAPIUpdate:
                 },
             }
         }
-        create_response = await orchestrators_jsonapi_auth_client.post(
+        create_response = await admin_auth_client.post(
             "/api/v2/simulation-orchestrators", json=create_body
         )
         assert create_response.status_code == 201
@@ -318,7 +228,7 @@ class TestOrchestratorsJSONAPIUpdate:
             }
         }
 
-        response = await orchestrators_jsonapi_auth_client.patch(
+        response = await admin_auth_client.patch(
             f"/api/v2/simulation-orchestrators/{created_id}", json=update_body
         )
 
@@ -337,7 +247,7 @@ class TestOrchestratorsJSONAPIUpdate:
         assert "application/vnd.api+json" in content_type
 
     @pytest.mark.asyncio
-    async def test_update_orchestrator_jsonapi_not_found(self, orchestrators_jsonapi_auth_client):
+    async def test_update_orchestrator_jsonapi_not_found(self, admin_auth_client):
         fake_id = str(uuid4())
 
         update_body = {
@@ -350,7 +260,7 @@ class TestOrchestratorsJSONAPIUpdate:
             }
         }
 
-        response = await orchestrators_jsonapi_auth_client.patch(
+        response = await admin_auth_client.patch(
             f"/api/v2/simulation-orchestrators/{fake_id}", json=update_body
         )
 
@@ -359,7 +269,7 @@ class TestOrchestratorsJSONAPIUpdate:
         assert "errors" in data
 
     @pytest.mark.asyncio
-    async def test_update_orchestrator_jsonapi_id_mismatch(self, orchestrators_jsonapi_auth_client):
+    async def test_update_orchestrator_jsonapi_id_mismatch(self, admin_auth_client):
         unique = uuid4().hex[:8]
         create_body = {
             "data": {
@@ -373,7 +283,7 @@ class TestOrchestratorsJSONAPIUpdate:
                 },
             }
         }
-        create_response = await orchestrators_jsonapi_auth_client.post(
+        create_response = await admin_auth_client.post(
             "/api/v2/simulation-orchestrators", json=create_body
         )
         assert create_response.status_code == 201
@@ -389,7 +299,7 @@ class TestOrchestratorsJSONAPIUpdate:
             }
         }
 
-        response = await orchestrators_jsonapi_auth_client.patch(
+        response = await admin_auth_client.patch(
             f"/api/v2/simulation-orchestrators/{created_id}", json=update_body
         )
 
@@ -398,7 +308,7 @@ class TestOrchestratorsJSONAPIUpdate:
 
 class TestOrchestratorsJSONAPIDelete:
     @pytest.mark.asyncio
-    async def test_delete_orchestrator_jsonapi(self, orchestrators_jsonapi_auth_client):
+    async def test_delete_orchestrator_jsonapi(self, admin_auth_client):
         unique = uuid4().hex[:8]
         create_body = {
             "data": {
@@ -412,34 +322,30 @@ class TestOrchestratorsJSONAPIDelete:
                 },
             }
         }
-        create_response = await orchestrators_jsonapi_auth_client.post(
+        create_response = await admin_auth_client.post(
             "/api/v2/simulation-orchestrators", json=create_body
         )
         assert create_response.status_code == 201
         created_id = create_response.json()["data"]["id"]
 
-        response = await orchestrators_jsonapi_auth_client.delete(
-            f"/api/v2/simulation-orchestrators/{created_id}"
-        )
+        response = await admin_auth_client.delete(f"/api/v2/simulation-orchestrators/{created_id}")
 
         assert response.status_code == 204, (
             f"Expected 204, got {response.status_code}: {response.text}"
         )
 
     @pytest.mark.asyncio
-    async def test_delete_orchestrator_jsonapi_not_found(self, orchestrators_jsonapi_auth_client):
+    async def test_delete_orchestrator_jsonapi_not_found(self, admin_auth_client):
         fake_id = str(uuid4())
 
-        response = await orchestrators_jsonapi_auth_client.delete(
-            f"/api/v2/simulation-orchestrators/{fake_id}"
-        )
+        response = await admin_auth_client.delete(f"/api/v2/simulation-orchestrators/{fake_id}")
 
         assert response.status_code == 404
         data = response.json()
         assert "errors" in data
 
     @pytest.mark.asyncio
-    async def test_delete_orchestrator_jsonapi_soft_delete(self, orchestrators_jsonapi_auth_client):
+    async def test_delete_orchestrator_jsonapi_soft_delete(self, admin_auth_client):
         unique = uuid4().hex[:8]
         create_body = {
             "data": {
@@ -453,20 +359,18 @@ class TestOrchestratorsJSONAPIDelete:
                 },
             }
         }
-        create_response = await orchestrators_jsonapi_auth_client.post(
+        create_response = await admin_auth_client.post(
             "/api/v2/simulation-orchestrators", json=create_body
         )
         assert create_response.status_code == 201
         created_id = create_response.json()["data"]["id"]
 
-        delete_response = await orchestrators_jsonapi_auth_client.delete(
+        delete_response = await admin_auth_client.delete(
             f"/api/v2/simulation-orchestrators/{created_id}"
         )
         assert delete_response.status_code == 204
 
-        get_response = await orchestrators_jsonapi_auth_client.get(
-            f"/api/v2/simulation-orchestrators/{created_id}"
-        )
+        get_response = await admin_auth_client.get(f"/api/v2/simulation-orchestrators/{created_id}")
         assert get_response.status_code == 404
 
         from sqlalchemy import select

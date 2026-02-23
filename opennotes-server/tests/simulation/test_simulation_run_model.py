@@ -57,6 +57,7 @@ async def test_simulation_run_status_check_constraint(db):
     db.add(run)
     with pytest.raises(IntegrityError):
         await db.commit()
+    await db.rollback()
 
 
 @pytest.mark.asyncio
@@ -133,3 +134,4 @@ async def test_simulation_run_orchestrator_fk_restrict(db):
 
     with pytest.raises(IntegrityError):
         await db.execute(delete(SimulationOrchestrator).where(SimulationOrchestrator.id == orch.id))
+    await db.rollback()

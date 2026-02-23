@@ -39,6 +39,7 @@ async def test_community_server_rejects_invalid_platform(db):
     db.add(server)
     with pytest.raises(IntegrityError):
         await db.commit()
+    await db.rollback()
 
 
 @pytest.mark.asyncio
