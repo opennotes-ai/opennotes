@@ -16,7 +16,7 @@ from src.simulation.schemas import SimAgentAction
 @dataclass
 class SimAgentDeps:
     db: AsyncSession
-    community_server_id: UUID
+    community_server_id: UUID | None
     agent_instance_id: UUID
     user_profile_id: UUID
     available_requests: list[dict]

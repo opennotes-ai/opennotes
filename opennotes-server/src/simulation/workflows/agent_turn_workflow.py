@@ -233,7 +233,7 @@ def execute_agent_turn_step(
                 db=session,
                 community_server_id=UUID(context["community_server_id"])
                 if context.get("community_server_id")
-                else UUID("00000000-0000-0000-0000-000000000000"),
+                else None,
                 agent_instance_id=UUID(context["agent_instance_id"]),
                 user_profile_id=UUID(context["user_profile_id"]),
                 available_requests=deps_data["available_requests"],
