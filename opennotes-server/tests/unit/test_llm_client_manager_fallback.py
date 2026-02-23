@@ -133,3 +133,54 @@ async def test_invalidate_cache_clears_global_fallback_clients(client_manager, d
         client2 = await client_manager.get_client(db_session, community_server_id, "openai")
 
         assert client1 is not client2  # Different instances
+
+
+class TestVertexAIFallback:
+    """Tests for Vertex AI / Gemini global fallback behavior."""
+
+    def test_get_global_api_key_returns_adc_for_vertex_ai(self, client_manager):
+        """_get_global_api_key('vertex_ai') should return 'ADC' sentinel."""
+        key = client_manager._get_global_api_key("vertex_ai")
+        assert key == "ADC"
+
+    def test_get_global_api_key_returns_adc_for_gemini(self, client_manager):
+        """_get_global_api_key('gemini') should return 'ADC' sentinel."""
+        key = client_manager._get_global_api_key("gemini")
+        assert key == "ADC"
+
+    def test_get_default_model_returns_gemini_for_vertex_ai(self, client_manager):
+        """_get_default_model('vertex_ai') should return 'gemini-2.5-pro'."""
+        model = client_manager._get_default_model("vertex_ai")
+        assert model == "gemini-2.5-pro"
+
+    def test_get_default_model_returns_gemini_for_gemini_provider(self, client_manager):
+        """_get_default_model('gemini') should return 'gemini-2.5-pro'."""
+        model = client_manager._get_default_model("gemini")
+        assert model == "gemini-2.5-pro"
+
+    @pytest.mark.asyncio
+    async def test_vertex_ai_client_created_without_db_key(self, client_manager, db_session):
+        """vertex_ai client should be created via global ADC when no DB config exists."""
+        community_server_id = uuid4()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        db_session.execute = AsyncMock(return_value=mock_result)
+
+        client = await client_manager.get_client(db_session, community_server_id, "vertex_ai")
+
+        assert client is not None
+        assert isinstance(client, LiteLLMProvider)
+        assert client.api_key == "ADC"
+        assert client.default_model == "gemini-2.5-pro"
+        assert client._provider_name == "vertex_ai"
+
+    @pytest.mark.asyncio
+    async def test_vertex_ai_global_client_no_community(self, client_manager, db_session):
+        """vertex_ai client should be created when community_server_id is None."""
+        client = await client_manager.get_client(db_session, None, "vertex_ai")
+
+        assert client is not None
+        assert isinstance(client, LiteLLMProvider)
+        assert client.api_key == "ADC"
+        assert client.default_model == "gemini-2.5-pro"

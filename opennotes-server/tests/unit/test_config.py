@@ -880,12 +880,12 @@ class TestLLMModelNameValidation:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.RELEVANCE_CHECK_MODEL == "gpt-5-mini"
+            assert settings.RELEVANCE_CHECK_MODEL == "openai/gpt-5-mini"
             assert settings.DEFAULT_FULL_MODEL == "openai/gpt-5.1"
             assert settings.DEFAULT_MINI_MODEL == "openai/gpt-5-mini"
             assert settings.EMBEDDING_MODEL == "text-embedding-3-small"
-            assert settings.VISION_MODEL == "gpt-5.1"
-            assert settings.AI_NOTE_WRITER_MODEL == "gpt-5.1"
+            assert settings.VISION_MODEL == "openai/gpt-5.1"
+            assert settings.AI_NOTE_WRITER_MODEL == "openai/gpt-5.1"
 
 
 class TestNATSServersConfiguration:
