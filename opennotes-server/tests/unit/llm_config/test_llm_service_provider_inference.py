@@ -1,7 +1,7 @@
 """Tests for LLMService provider inference from model strings."""
 
 import logging
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -329,6 +329,30 @@ class TestProviderConflictWarning:
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
 
     @pytest.mark.asyncio
+    async def test_complete_model_prefix_overrides_explicit_provider(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_response: LLMResponse,
+    ) -> None:
+        """When model='openai/gpt-5.1' and provider='anthropic', openai wins."""
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=mock_llm_response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        await llm_service.complete(
+            db=mock_db,
+            messages=messages,
+            provider="anthropic",
+            model="openai/gpt-5.1",
+        )
+
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "openai")
+
+    @pytest.mark.asyncio
     async def test_no_warning_when_provider_matches_model_prefix(
         self,
         llm_service: LLMService,
@@ -357,3 +381,81 @@ class TestProviderConflictWarning:
             for record in caplog.records
         )
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
+
+
+class TestDescribeImageSettingsProviderRouting:
+    """Tests that describe_image uses provider parsed from settings.VISION_MODEL (task-1137.07)."""
+
+    @pytest.fixture
+    def mock_client_manager(self) -> MagicMock:
+        return MagicMock(spec=LLMClientManager)
+
+    @pytest.fixture
+    def llm_service(self, mock_client_manager: MagicMock) -> LLMService:
+        return LLMService(client_manager=mock_client_manager)
+
+    @pytest.fixture
+    def mock_db(self) -> AsyncMock:
+        return AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_describe_image_uses_provider_from_vision_model_setting(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+    ) -> None:
+        """describe_image routes through provider parsed from VISION_MODEL setting."""
+        response = LLMResponse(
+            content="A mountain landscape",
+            model="gemini-2.5-flash",
+            tokens_used=25,
+            finish_reason="stop",
+            provider="vertex_ai",
+        )
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        with patch("src.llm_config.service.settings") as mock_settings:
+            mock_settings.VISION_MODEL = "vertex_ai/gemini-2.5-flash"
+            mock_settings.VISION_PROMPT = "Describe this image."
+
+            result = await llm_service.describe_image(
+                db=mock_db,
+                image_url="https://example.com/mountain.jpg",
+            )
+
+        assert result == "A mountain landscape"
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
+
+    @pytest.mark.asyncio
+    async def test_describe_image_defaults_to_openai_from_settings(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+    ) -> None:
+        """describe_image defaults to openai provider when VISION_MODEL has openai prefix."""
+        response = LLMResponse(
+            content="A cat on a mat",
+            model="gpt-5.1",
+            tokens_used=20,
+            finish_reason="stop",
+            provider="openai",
+        )
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        with patch("src.llm_config.service.settings") as mock_settings:
+            mock_settings.VISION_MODEL = "openai/gpt-5.1"
+            mock_settings.VISION_PROMPT = "Describe this image."
+
+            result = await llm_service.describe_image(
+                db=mock_db,
+                image_url="https://example.com/cat.jpg",
+            )
+
+        assert result == "A cat on a mat"
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "openai")

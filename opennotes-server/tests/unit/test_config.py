@@ -1133,3 +1133,74 @@ class TestVertexAIProjectValidation:
             settings = create_settings_no_env_file()
             assert settings.DEFAULT_MINI_MODEL == "vertex_ai/gemini-2.5-flash"
             assert settings.VERTEXAI_PROJECT is None
+
+
+class TestVertexAIDefaults:
+    """Test VERTEXAI_PROJECT and VERTEXAI_LOCATION default values (task-1137.07)."""
+
+    def test_vertexai_project_defaults_to_none(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.VERTEXAI_PROJECT is None
+
+    def test_vertexai_location_defaults_to_us_central1(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.VERTEXAI_LOCATION == "us-central1"
+
+
+class TestParseProviderModel:
+    """Test parse_provider_model edge cases (task-1137.07)."""
+
+    def test_parse_provider_model_leading_slash(self):
+        from src.config import parse_provider_model
+
+        provider, model = parse_provider_model("/model")
+        assert provider == ""
+        assert model == "model"
+
+    def test_parse_provider_model_trailing_slash(self):
+        from src.config import parse_provider_model
+
+        provider, model = parse_provider_model("provider/")
+        assert provider == "provider"
+        assert model == ""
+
+    def test_parse_provider_model_just_slash(self):
+        from src.config import parse_provider_model
+
+        provider, model = parse_provider_model("/")
+        assert provider == ""
+        assert model == ""
+
+    def test_parse_provider_model_no_slash(self):
+        from src.config import parse_provider_model
+
+        provider, model = parse_provider_model("model-name")
+        assert provider == "openai"
+        assert model == "model-name"
+
+    def test_parse_provider_model_multiple_slashes(self):
+        from src.config import parse_provider_model
+
+        provider, model = parse_provider_model("vertex_ai/gemini/latest")
+        assert provider == "vertex_ai"
+        assert model == "gemini/latest"
