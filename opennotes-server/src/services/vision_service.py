@@ -1,15 +1,14 @@
-"""Service for generating image descriptions using GPT-5.1 vision."""
+"""Service for generating image descriptions using LLM vision capabilities."""
 
 import hashlib
 from typing import Literal, cast
 
 from cachetools import TTLCache
-from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.llm_config.models import CommunityServer, CommunityServerLLMConfig
+from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 
@@ -18,23 +17,16 @@ logger = get_logger(__name__)
 
 class VisionService:
     """
-    Service for generating image descriptions using GPT-5.1 vision API.
+    Service for generating image descriptions using LLM vision capabilities.
 
     Uses LLMService for credential management and provider abstraction.
     """
 
     def __init__(self, llm_service: LLMService) -> None:
-        """
-        Initialize vision service.
-
-        Args:
-            llm_service: LLM service for generating image descriptions
-        """
         self.llm_service = llm_service
         self.description_cache: TTLCache[str, str] = TTLCache[str, str](
             maxsize=1000, ttl=settings.VISION_CACHE_TTL_SECONDS
         )
-        self.api_key_source_cache: dict[str, str] = {}
 
     async def describe_image(
         self,
@@ -109,74 +101,8 @@ class VisionService:
         key_data = f"{image_url}|{detail}|{max_tokens}"
         return hashlib.sha256(key_data.encode("utf-8")).hexdigest()
 
-    async def _get_openai_client(self, db: AsyncSession, community_server_id: str) -> AsyncOpenAI:
-        """
-        Get or create an OpenAI client for the community server.
-
-        Attempts to use community-specific configuration first, then falls back
-        to global API key. Tracks which source was used.
-
-        Args:
-            db: Database session
-            community_server_id: Community server ID (string/platform ID)
-
-        Returns:
-            Initialized AsyncOpenAI client
-
-        Raises:
-            ValueError: If no OpenAI configuration found for community server
-        """
-        result = await db.execute(
-            select(CommunityServerLLMConfig).where(
-                CommunityServerLLMConfig.community_server_id == community_server_id,
-                CommunityServerLLMConfig.provider == "openai",
-                CommunityServerLLMConfig.enabled == True,
-            )
-        )
-        config = result.scalar_one_or_none()
-
-        if config:
-            api_key = self.llm_service.client_manager.encryption_service.decrypt_api_key(
-                config.api_key_encrypted, config.encryption_key_id
-            )
-            self.api_key_source_cache[community_server_id] = "community"
-            logger.info(
-                "Using community OpenAI API key",
-                extra={
-                    "community_server_id": community_server_id,
-                    "api_key_source": "community",
-                },
-            )
-            return AsyncOpenAI(api_key=api_key, timeout=30.0)
-
-        if settings.OPENAI_API_KEY:
-            self.api_key_source_cache[community_server_id] = "global"
-            logger.info(
-                "Using global OpenAI API key as fallback",
-                extra={
-                    "community_server_id": community_server_id,
-                    "api_key_source": "global",
-                },
-            )
-            return AsyncOpenAI(api_key=settings.OPENAI_API_KEY, timeout=30.0)
-
-        raise ValueError(
-            f"No OpenAI configuration found for community server {community_server_id}"
-        )
-
     def invalidate_cache(self, community_server_id: str | None = None) -> None:
-        """
-        Invalidate cached image descriptions and API key source information.
-
-        Args:
-            community_server_id: Specific community server ID to invalidate,
-                                or None to clear all caches
-        """
         self.description_cache.clear()
-        if community_server_id is None:
-            self.api_key_source_cache.clear()
-        else:
-            self.api_key_source_cache.pop(community_server_id, None)
         logger.info(
             "Vision description cache invalidated",
             extra={"community_server_id": community_server_id},
