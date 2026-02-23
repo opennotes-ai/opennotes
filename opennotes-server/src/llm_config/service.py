@@ -96,7 +96,18 @@ class LLMService:
             Exception: If API call fails
         """
         if model and "/" in model:
-            provider = parse_provider_model(model)[0]
+            inferred_provider = parse_provider_model(model)[0]
+            if provider not in ("openai", inferred_provider):
+                logger.warning(
+                    "Model prefix provider differs from explicit provider param, "
+                    "using model prefix",
+                    extra={
+                        "explicit_provider": provider,
+                        "model_prefix_provider": inferred_provider,
+                        "model": model,
+                    },
+                )
+            provider = inferred_provider
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
@@ -152,7 +163,18 @@ class LLMService:
             Exception: If API call fails
         """
         if model and "/" in model:
-            provider = parse_provider_model(model)[0]
+            inferred_provider = parse_provider_model(model)[0]
+            if provider not in ("openai", inferred_provider):
+                logger.warning(
+                    "Model prefix provider differs from explicit provider param, "
+                    "using model prefix",
+                    extra={
+                        "explicit_provider": provider,
+                        "model_prefix_provider": inferred_provider,
+                        "model": model,
+                    },
+                )
+            provider = inferred_provider
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 

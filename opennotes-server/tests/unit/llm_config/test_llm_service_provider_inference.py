@@ -1,5 +1,6 @@
 """Tests for LLMService provider inference from model strings."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -228,4 +229,131 @@ class TestDescribeImageProviderRouting:
             model="vertex_ai/gemini-2.5-flash",
         )
 
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
+
+
+class TestProviderConflictWarning:
+    """Tests that a warning is logged when explicit provider conflicts with model prefix."""
+
+    @pytest.mark.asyncio
+    async def test_complete_warns_when_provider_conflicts_with_model_prefix(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_response: LLMResponse,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Model prefix takes precedence over explicit provider; warning is logged."""
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=mock_llm_response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        with caplog.at_level(logging.WARNING, logger="src.llm_config.service"):
+            await llm_service.complete(
+                db=mock_db,
+                messages=messages,
+                provider="anthropic",
+                model="openai/gpt-5.1",
+            )
+
+        assert any(
+            "Model prefix provider differs from explicit provider param" in record.message
+            for record in caplog.records
+        )
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "openai")
+
+    @pytest.mark.asyncio
+    async def test_stream_complete_warns_when_provider_conflicts_with_model_prefix(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """stream_complete() also logs warning on provider/model prefix conflict."""
+        mock_provider = MagicMock()
+
+        async def mock_stream(*args, **kwargs):
+            yield "chunk"
+
+        mock_provider.stream_complete = mock_stream
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        with caplog.at_level(logging.WARNING, logger="src.llm_config.service"):
+            async for _ in llm_service.stream_complete(
+                db=mock_db,
+                messages=messages,
+                provider="anthropic",
+                model="vertex_ai/gemini-2.5-flash",
+            ):
+                pass
+
+        assert any(
+            "Model prefix provider differs from explicit provider param" in record.message
+            for record in caplog.records
+        )
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
+
+    @pytest.mark.asyncio
+    async def test_no_warning_when_provider_is_default_openai(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_response: LLMResponse,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """No warning when provider is the default 'openai' (caller did not pass it explicitly)."""
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=mock_llm_response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        with caplog.at_level(logging.WARNING, logger="src.llm_config.service"):
+            await llm_service.complete(
+                db=mock_db,
+                messages=messages,
+                model="vertex_ai/gemini-2.5-flash",
+            )
+
+        assert not any(
+            "Model prefix provider differs from explicit provider param" in record.message
+            for record in caplog.records
+        )
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
+
+    @pytest.mark.asyncio
+    async def test_no_warning_when_provider_matches_model_prefix(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_response: LLMResponse,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """No warning when explicit provider matches the model prefix."""
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=mock_llm_response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        with caplog.at_level(logging.WARNING, logger="src.llm_config.service"):
+            await llm_service.complete(
+                db=mock_db,
+                messages=messages,
+                provider="vertex_ai",
+                model="vertex_ai/gemini-2.5-flash",
+            )
+
+        assert not any(
+            "Model prefix provider differs from explicit provider param" in record.message
+            for record in caplog.records
+        )
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
