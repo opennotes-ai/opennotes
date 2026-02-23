@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.llm_config.constants import ADC_SENTINEL
 from src.llm_config.providers.base import LLMMessage
 from src.llm_config.providers.litellm_provider import (
     LiteLLMCompletionParams,
@@ -512,7 +513,7 @@ class TestLiteLLMProviderVertexAI:
     @pytest.fixture
     def vertex_provider(self) -> LiteLLMProvider:
         return LiteLLMProvider(
-            api_key="ADC",
+            api_key=ADC_SENTINEL,
             default_model="gemini-2.5-flash",
             settings=LiteLLMProviderSettings(),
             provider_name="vertex_ai",
@@ -597,7 +598,7 @@ class TestLiteLLMProviderVertexAI:
     async def test_validate_api_key_returns_true_for_gemini(self) -> None:
         """validate_api_key() should return True immediately for gemini provider."""
         gemini_provider = LiteLLMProvider(
-            api_key="ADC",
+            api_key=ADC_SENTINEL,
             default_model="gemini-2.5-pro",
             settings=LiteLLMProviderSettings(),
             provider_name="gemini",
@@ -621,7 +622,7 @@ class TestLiteLLMProviderVertexAI:
     async def test_gemini_provider_omits_api_key(self) -> None:
         """When provider_name='gemini', api_key should NOT be passed to litellm."""
         gemini_provider = LiteLLMProvider(
-            api_key="ADC",
+            api_key=ADC_SENTINEL,
             default_model="gemini-2.5-pro",
             settings=LiteLLMProviderSettings(),
             provider_name="gemini",

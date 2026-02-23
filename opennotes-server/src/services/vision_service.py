@@ -37,9 +37,10 @@ class VisionService:
         max_tokens: int = 300,
     ) -> str:
         """
-        Generate description for an image using GPT-5.1 vision.
+        Generate description for an image using LLM vision capabilities.
 
         Automatically retries on errors with exponential backoff.
+        Routes through the appropriate provider based on the configured VISION_MODEL.
 
         Args:
             db: Database session
@@ -52,7 +53,7 @@ class VisionService:
             Generated description text
 
         Raises:
-            ValueError: If no OpenAI configuration found for community server
+            ValueError: If no LLM configuration found for community server
             Exception: If API call fails after retries
         """
         cache_key = self._get_cache_key(image_url, detail, max_tokens)
