@@ -22,7 +22,7 @@ def mock_extract_content():
 
 @pytest.mark.asyncio
 async def test_create_note_requests_full_flow(
-    async_client, auth_headers, playground_community_server, mock_extract_content
+    async_client, admin_auth_headers, playground_community_server, mock_extract_content
 ):
     response = await async_client.post(
         f"/api/v2/playgrounds/{playground_community_server}/note-requests",
@@ -34,7 +34,7 @@ async def test_create_note_requests_full_flow(
                 },
             }
         },
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
 
     assert response.status_code == 201
@@ -56,7 +56,7 @@ async def test_create_note_requests_full_flow(
 
 @pytest.mark.asyncio
 async def test_create_note_requests_custom_requested_by(
-    async_client, auth_headers, playground_community_server, mock_extract_content
+    async_client, admin_auth_headers, playground_community_server, mock_extract_content
 ):
     response = await async_client.post(
         f"/api/v2/playgrounds/{playground_community_server}/note-requests",
@@ -69,7 +69,7 @@ async def test_create_note_requests_custom_requested_by(
                 },
             }
         },
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
 
     assert response.status_code == 201
@@ -95,7 +95,7 @@ async def test_auth_required(async_client, playground_community_server):
 
 
 @pytest.mark.asyncio
-async def test_non_playground_rejected(async_client, auth_headers, community_server):
+async def test_non_playground_rejected(async_client, admin_auth_headers, community_server):
     response = await async_client.post(
         f"/api/v2/playgrounds/{community_server}/note-requests",
         json={
@@ -106,7 +106,7 @@ async def test_non_playground_rejected(async_client, auth_headers, community_ser
                 },
             }
         },
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
 
     assert response.status_code == 400
@@ -116,7 +116,7 @@ async def test_non_playground_rejected(async_client, auth_headers, community_ser
 
 
 @pytest.mark.asyncio
-async def test_nonexistent_community_server(async_client, auth_headers):
+async def test_nonexistent_community_server(async_client, admin_auth_headers):
     fake_id = uuid4()
     response = await async_client.post(
         f"/api/v2/playgrounds/{fake_id}/note-requests",
@@ -128,7 +128,7 @@ async def test_nonexistent_community_server(async_client, auth_headers):
                 },
             }
         },
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
 
     assert response.status_code == 404
@@ -138,7 +138,7 @@ async def test_nonexistent_community_server(async_client, auth_headers):
 
 @pytest.mark.asyncio
 async def test_handles_extraction_failure_per_url(
-    async_client, auth_headers, playground_community_server
+    async_client, admin_auth_headers, playground_community_server
 ):
     from src.shared.content_extraction import ContentExtractionError
 
@@ -170,7 +170,7 @@ async def test_handles_extraction_failure_per_url(
                     },
                 }
             },
-            headers=auth_headers,
+            headers=admin_auth_headers,
         )
 
     assert response.status_code == 201
