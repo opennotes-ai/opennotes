@@ -10873,27 +10873,6 @@
           }
         }
       }
-    },
-    "/metrics": {
-      "get": {
-        "summary": "Metrics",
-        "operationId": "metrics_metrics_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Metrics disabled"
-          }
-        }
-      }
     }
   },
   "components": {

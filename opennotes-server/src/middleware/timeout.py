@@ -8,7 +8,6 @@ from starlette.types import ASGIApp
 from src.config import settings
 from src.monitoring import get_logger
 from src.monitoring.errors import record_span_error
-from src.monitoring.instance import InstanceMetadata
 from src.monitoring.metrics import errors_total
 
 logger = get_logger(__name__)
@@ -36,10 +35,7 @@ class TimeoutMiddleware(BaseHTTPMiddleware):
                     "timeout_seconds": self.timeout_seconds,
                 },
             )
-            instance_id = InstanceMetadata.get_instance_id()
-            errors_total.labels(
-                error_type="timeout", endpoint=request.url.path, instance_id=instance_id
-            ).inc()
+            errors_total.add(1, {"error_type": "timeout", "endpoint": request.url.path})
 
             return Response(
                 content='{"detail":"Request timeout"}',

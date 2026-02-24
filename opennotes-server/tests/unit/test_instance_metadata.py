@@ -1,13 +1,10 @@
 import logging
 
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
 from src.monitoring.instance import InstanceMetadata, initialize_instance_metadata
 from src.monitoring.logging import CustomJsonFormatter
-from src.monitoring.metrics import (
-    active_requests,
-    http_request_duration_seconds,
-    http_requests_total,
-    registry,
-)
 
 
 class TestInstanceMetadata:
@@ -75,53 +72,19 @@ class TestInstanceMetadata:
         assert log_dict.get("instance_id") == "logging-test-instance"
         assert "hostname" in log_dict
 
-    def test_metrics_with_instance_label(self) -> None:
+    def test_otel_metrics_recorded(self) -> None:
         initialize_instance_metadata(instance_id="metrics-test-instance", environment="test")
 
-        instance_id = "metrics-test-instance"
-        http_requests_total.labels(
-            method="GET", endpoint="/test", status=200, instance_id=instance_id
-        ).inc()
-        active_requests.labels(instance_id=instance_id).inc()
-        http_request_duration_seconds.labels(
-            method="GET", endpoint="/test", instance_id=instance_id
-        ).observe(0.5)
+        reader = InMemoryMetricReader()
+        provider = MeterProvider(metric_readers=[reader])
+        meter = provider.get_meter("test-instance-metadata")
+        counter = meter.create_counter("test.http.requests")
+        histogram = meter.create_histogram("test.http.duration")
 
-        metrics_output = registry.collect()
-        metrics_list = list(metrics_output)
+        counter.add(1, {"method": "GET", "endpoint": "/test", "status": "200"})
+        histogram.record(0.5, {"method": "GET", "endpoint": "/test"})
 
-        assert len(metrics_list) > 0
-
-    def test_multiple_instances_distinguishable(self) -> None:
-        instance_1_id = "instance-1"
-        instance_2_id = "instance-2"
-
-        InstanceMetadata.set_instance(
-            InstanceMetadata(instance_id=instance_1_id, environment="test")
-        )
-        for _i in range(5):
-            http_requests_total.labels(
-                method="GET",
-                endpoint="/test",
-                status=200,
-                instance_id=instance_1_id,
-            ).inc()
-
-        InstanceMetadata.set_instance(
-            InstanceMetadata(instance_id=instance_2_id, environment="test")
-        )
-        for _i in range(3):
-            http_requests_total.labels(
-                method="GET",
-                endpoint="/test",
-                status=200,
-                instance_id=instance_2_id,
-            ).inc()
-
-        from prometheus_client import generate_latest
-
-        metrics_bytes = generate_latest(registry)
-        metrics_text = metrics_bytes.decode("utf-8")
-
-        assert f'instance_id="{instance_1_id}"' in metrics_text
-        assert f'instance_id="{instance_2_id}"' in metrics_text
+        metrics_data = reader.get_metrics_data()
+        assert metrics_data is not None
+        resource_metrics = metrics_data.resource_metrics
+        assert len(resource_metrics) > 0

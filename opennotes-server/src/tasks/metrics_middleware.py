@@ -1,7 +1,7 @@
 """
 TaskIQ metrics middleware for recording task execution duration.
 
-This middleware integrates with the existing Prometheus metrics registry
+This middleware integrates with the existing OTEL metrics
 to record execution time for all TaskIQ tasks, providing visibility into
 task performance in monitoring dashboards.
 
@@ -14,28 +14,12 @@ import logging
 import time
 from typing import Any
 
-from prometheus_client import Counter, Histogram
 from taskiq import TaskiqMiddleware, TaskiqResult
 from taskiq.message import TaskiqMessage
 
-from src.monitoring.metrics import registry
+from src.monitoring.metrics import taskiq_task_duration_seconds, taskiq_tasks_total
 
 logger = logging.getLogger(__name__)
-
-taskiq_task_duration_seconds = Histogram(
-    "taskiq_task_duration_seconds",
-    "Duration of TaskIQ task execution in seconds",
-    ["task_name", "instance_id"],
-    registry=registry,
-    buckets=(0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
-)
-
-taskiq_tasks_total = Counter(
-    "taskiq_tasks_total",
-    "Total TaskIQ tasks executed",
-    ["task_name", "status", "instance_id"],
-    registry=registry,
-)
 
 
 class TaskIQMetricsMiddleware(TaskiqMiddleware):
@@ -46,13 +30,12 @@ class TaskIQMetricsMiddleware(TaskiqMiddleware):
     - Task execution duration (histogram)
     - Task completion count by status (counter)
 
-    Uses the existing Prometheus registry for consistency with
+    Uses the existing OTEL metrics for consistency with
     other application metrics.
     """
 
-    def __init__(self, instance_id: str = "default") -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.instance_id = instance_id
         self._start_times: dict[str, float] = {}
 
     def pre_execute(self, message: TaskiqMessage) -> TaskiqMessage:
@@ -74,16 +57,9 @@ class TaskIQMetricsMiddleware(TaskiqMiddleware):
         duration = time.perf_counter() - start_time
         task_name = message.task_name
 
-        taskiq_task_duration_seconds.labels(
-            task_name=task_name,
-            instance_id=self.instance_id,
-        ).observe(duration)
+        taskiq_task_duration_seconds.record(duration, {"task_name": task_name})
 
         status = "error" if result.is_err else "success"
-        taskiq_tasks_total.labels(
-            task_name=task_name,
-            status=status,
-            instance_id=self.instance_id,
-        ).inc()
+        taskiq_tasks_total.add(1, {"task_name": task_name, "status": status})
 
         logger.debug(f"Task {task_name} completed in {duration:.3f}s with status {status}")

@@ -1,11 +1,12 @@
 import json
 import logging
 import uuid
+from unittest.mock import patch
 
 import pendulum
 import pytest
 
-from src.dbos_workflows.serializer import DBOS_PICKLE_FALLBACK_TOTAL, SafeJsonSerializer
+from src.dbos_workflows.serializer import SafeJsonSerializer
 
 pytestmark = pytest.mark.unit
 
@@ -160,19 +161,17 @@ class TestNonJsonFallback:
             serializer.deserialize("legacy-data-format")
         assert "Non-JSON data encountered" in caplog.text
 
-    def test_prometheus_counter_increments_on_non_json_data(
-        self, serializer: SafeJsonSerializer
-    ) -> None:
-        before = DBOS_PICKLE_FALLBACK_TOTAL._value.get()
-        serializer.deserialize("not-json-prefixed-data")
-        after = DBOS_PICKLE_FALLBACK_TOTAL._value.get()
-        assert after == before + 1
+    def test_otel_counter_called_on_non_json_data(self, serializer: SafeJsonSerializer) -> None:
+        with patch("src.dbos_workflows.serializer.DBOS_PICKLE_FALLBACK_TOTAL") as mock_counter:
+            result = serializer.deserialize("not-json-prefixed-data")
+            assert result == "not-json-prefixed-data"
+            mock_counter.add.assert_called_once_with(1, {})
 
-    def test_no_counter_increment_on_json_deserialize(self, serializer: SafeJsonSerializer) -> None:
-        before = DBOS_PICKLE_FALLBACK_TOTAL._value.get()
-        serializer.deserialize(serializer.serialize("hello"))
-        after = DBOS_PICKLE_FALLBACK_TOTAL._value.get()
-        assert after == before
+    def test_no_counter_on_json_deserialize(self, serializer: SafeJsonSerializer) -> None:
+        with patch("src.dbos_workflows.serializer.DBOS_PICKLE_FALLBACK_TOTAL") as mock_counter:
+            result = serializer.deserialize(serializer.serialize("hello"))
+            assert result == "hello"
+            mock_counter.add.assert_not_called()
 
 
 class TestNestedExceptionSerialization:

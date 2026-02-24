@@ -514,7 +514,7 @@ class Settings(BaseSettings):
         "Aligns with MIN_RATINGS_NEEDED for consistency.",
     )
 
-    ENABLE_METRICS: bool = Field(default=True, description="Enable Prometheus metrics")
+    ENABLE_METRICS: bool = Field(default=True, description="Enable metrics middleware")
     ENABLE_TRACING: bool = Field(default=True, description="Enable OpenTelemetry tracing")
     ENABLE_JSON_LOGGING: bool = Field(default=True, description="Enable JSON structured logging")
 

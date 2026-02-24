@@ -318,11 +318,13 @@ async def create_rating_jsonapi(
             )
         except Exception as e:
             error_type = type(e).__name__
-            nats_events_failed_total.labels(
-                event_type="note.score.updated",
-                error_type=error_type,
-                instance_id=settings.INSTANCE_ID,
-            ).inc()
+            nats_events_failed_total.add(
+                1,
+                {
+                    "event_type": "note.score.updated",
+                    "error_type": error_type,
+                },
+            )
             logger.warning(
                 "Failed to publish score update event (database already updated)",
                 extra={

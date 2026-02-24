@@ -210,9 +210,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
 
     tracing_middleware = SafeOpenTelemetryMiddleware()
 
-    metrics_middleware = TaskIQMetricsMiddleware(
-        instance_id=settings.INSTANCE_ID,
-    )
+    metrics_middleware = TaskIQMetricsMiddleware()
 
     rate_limit_middleware = DistributedRateLimitMiddleware(
         redis_client=rate_limiter_redis_client,

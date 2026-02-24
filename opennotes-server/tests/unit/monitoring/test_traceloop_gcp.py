@@ -7,22 +7,15 @@ TRACELOOP_PATH = "traceloop.sdk.Traceloop"
 class TestTraceloopGcpExporters:
     @patch(GCP_DETECTOR_PATH, return_value=True)
     @patch(TRACELOOP_PATH)
-    def test_passes_gcp_metrics_exporter_on_cloud_run(
-        self, mock_traceloop_cls, mock_is_gcp
-    ) -> None:
+    def test_no_gcp_metrics_exporter_on_cloud_run(self, mock_traceloop_cls, mock_is_gcp) -> None:
         import src.monitoring.traceloop as traceloop_mod
 
         traceloop_mod._traceloop_configured = False
 
         mock_exporter = MagicMock()
-        mock_metrics_cls = MagicMock()
         mock_logging_cls = MagicMock()
         with (
             patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False),
-            patch(
-                "opentelemetry.exporter.cloud_monitoring.CloudMonitoringMetricsExporter",
-                mock_metrics_cls,
-            ),
             patch(
                 "opentelemetry.exporter.cloud_logging.CloudLoggingExporter",
                 mock_logging_cls,
@@ -39,8 +32,7 @@ class TestTraceloopGcpExporters:
 
         assert result is True
         init_kwargs = mock_traceloop_cls.init.call_args[1]
-        assert "metrics_exporter" in init_kwargs
-        assert init_kwargs["metrics_exporter"] is not None
+        assert "metrics_exporter" not in init_kwargs
 
     @patch(GCP_DETECTOR_PATH, return_value=True)
     @patch(TRACELOOP_PATH)
@@ -52,14 +44,9 @@ class TestTraceloopGcpExporters:
         traceloop_mod._traceloop_configured = False
 
         mock_exporter = MagicMock()
-        mock_metrics_cls = MagicMock()
         mock_logging_cls = MagicMock()
         with (
             patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False),
-            patch(
-                "opentelemetry.exporter.cloud_monitoring.CloudMonitoringMetricsExporter",
-                mock_metrics_cls,
-            ),
             patch(
                 "opentelemetry.exporter.cloud_logging.CloudLoggingExporter",
                 mock_logging_cls,
@@ -117,7 +104,6 @@ class TestTraceloopGcpImportError:
             patch.dict(
                 "sys.modules",
                 {
-                    "opentelemetry.exporter.cloud_monitoring": None,
                     "opentelemetry.exporter.cloud_logging": None,
                 },
             ),

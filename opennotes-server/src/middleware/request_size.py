@@ -44,7 +44,9 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
                         "max_size": max_size,
                     },
                 )
-                errors_total.labels(error_type="payload_too_large", endpoint=request.url.path).inc()
+                errors_total.add(
+                    1, {"error_type": "payload_too_large", "endpoint": request.url.path}
+                )
 
                 return Response(
                     content='{"detail":"Request payload too large"}',

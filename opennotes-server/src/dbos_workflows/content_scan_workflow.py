@@ -1131,7 +1131,6 @@ def finalize_scan_step(
     settings = get_settings()
     scan_uuid = UUID(scan_id)
     community_uuid = UUID(community_server_id)
-    instance_id = settings.INSTANCE_ID
 
     async def _finalize() -> dict[str, Any]:
         redis_conn = await get_shared_redis_client(settings.REDIS_URL)
@@ -1232,12 +1231,10 @@ def finalize_scan_step(
 
     try:
         result = run_sync(_finalize())
-        bulk_scan_finalization_dispatch_total.labels(
-            outcome="success", instance_id=instance_id
-        ).inc()
+        bulk_scan_finalization_dispatch_total.add(1, {"outcome": "success"})
         return result
     except Exception:
-        bulk_scan_finalization_dispatch_total.labels(outcome="error", instance_id=instance_id).inc()
+        bulk_scan_finalization_dispatch_total.add(1, {"outcome": "error"})
         raise
 
 

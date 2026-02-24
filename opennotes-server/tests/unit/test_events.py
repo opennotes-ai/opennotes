@@ -866,7 +866,6 @@ async def test_note_score_updated_confidence_validation():
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_publish_event_increments_failure_metric_after_max_retries():
-    from src.monitoring.instance import InstanceMetadata
     from src.monitoring.metrics import nats_events_failed_total
 
     event = NoteCreatedEvent(
@@ -878,36 +877,38 @@ async def test_publish_event_increments_failure_metric_after_max_retries():
         classification="NOT_MISLEADING",
     )
 
-    # Get initial metric value
-    instance_id = InstanceMetadata.get_instance_id()
-    # Note: nats.errors.Error class name is "Error", not "NATSError"
-    initial_value = nats_events_failed_total.labels(
-        event_type="note.created", error_type="Error", instance_id=instance_id
-    )._value.get()
-
     async def always_failing_publish(*args, **kwargs):
         raise NATSError("Persistent connection issue")
 
-    with patch.object(nats_client, "is_connected", new_callable=AsyncMock, return_value=True):
+    with (
+        patch.object(
+            nats_events_failed_total, "add", wraps=nats_events_failed_total.add
+        ) as mock_add,
+        patch.object(nats_client, "is_connected", new_callable=AsyncMock, return_value=True),
+    ):
         with (
             patch.object(
-                nats_client, "publish", new_callable=AsyncMock, side_effect=always_failing_publish
+                nats_client,
+                "publish",
+                new_callable=AsyncMock,
+                side_effect=always_failing_publish,
             ),
             pytest.raises(NATSError, match="Persistent connection issue"),
         ):
             await event_publisher.publish_event(event)
 
-        # Verify metric was incremented exactly once (after all retries exhausted)
-        final_value = nats_events_failed_total.labels(
-            event_type="note.created", error_type="Error", instance_id=instance_id
-        )._value.get()
-        assert final_value == initial_value + 1
+        mock_add.assert_called_once_with(
+            1,
+            {
+                "event_type": "note.created",
+                "error_type": "Error",
+            },
+        )
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_publish_event_increments_failure_metric_with_correct_error_type():
-    from src.monitoring.instance import InstanceMetadata
     from src.monitoring.metrics import nats_events_failed_total
 
     event = NoteCreatedEvent(
@@ -919,26 +920,30 @@ async def test_publish_event_increments_failure_metric_with_correct_error_type()
         classification="NOT_MISLEADING",
     )
 
-    # Get initial metric value for TimeoutError
-    instance_id = InstanceMetadata.get_instance_id()
-    initial_value = nats_events_failed_total.labels(
-        event_type="note.created", error_type="TimeoutError", instance_id=instance_id
-    )._value.get()
-
     async def always_timeout_publish(*args, **kwargs):
         raise TimeoutError("Request timeout")
 
-    with patch.object(nats_client, "is_connected", new_callable=AsyncMock, return_value=True):
+    with (
+        patch.object(
+            nats_events_failed_total, "add", wraps=nats_events_failed_total.add
+        ) as mock_add,
+        patch.object(nats_client, "is_connected", new_callable=AsyncMock, return_value=True),
+    ):
         with (
             patch.object(
-                nats_client, "publish", new_callable=AsyncMock, side_effect=always_timeout_publish
+                nats_client,
+                "publish",
+                new_callable=AsyncMock,
+                side_effect=always_timeout_publish,
             ),
             pytest.raises(TimeoutError, match="Request timeout"),
         ):
             await event_publisher.publish_event(event)
 
-        # Verify metric was incremented with correct error_type label
-        final_value = nats_events_failed_total.labels(
-            event_type="note.created", error_type="TimeoutError", instance_id=instance_id
-        )._value.get()
-        assert final_value == initial_value + 1
+        mock_add.assert_called_once_with(
+            1,
+            {
+                "event_type": "note.created",
+                "error_type": "TimeoutError",
+            },
+        )

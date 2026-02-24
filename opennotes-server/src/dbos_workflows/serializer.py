@@ -16,14 +16,12 @@ import logging
 from typing import Any
 
 from dbos._serialization import Serializer
-from prometheus_client import Counter
+
+from src.monitoring.metrics import dbos_pickle_fallback_total
 
 logger = logging.getLogger(__name__)
 
-DBOS_PICKLE_FALLBACK_TOTAL = Counter(
-    "dbos_pickle_fallback_total",
-    "Number of times DBOS deserialization fell back to pickle from JSON",
-)
+DBOS_PICKLE_FALLBACK_TOTAL = dbos_pickle_fallback_total
 
 _SAFE_EXCEPTION_MODULES = frozenset(
     {
@@ -57,7 +55,7 @@ class SafeJsonSerializer(Serializer):
             json_str = serialized_data[len(self.JSON_PREFIX) :]
             raw = json.loads(json_str)
             return self._from_json_safe(raw)
-        DBOS_PICKLE_FALLBACK_TOTAL.inc()
+        DBOS_PICKLE_FALLBACK_TOTAL.add(1, {})
         logger.warning("Non-JSON data encountered in DBOS deserialization, returning as raw string")
         return serialized_data
 
