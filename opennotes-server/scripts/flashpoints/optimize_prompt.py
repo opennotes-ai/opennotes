@@ -49,9 +49,12 @@ from scripts.flashpoints.flashpoint_module import (
     set_reasoning_log_path,
 )
 from src.bulk_content_scan.flashpoint_utils import (
+    DETECTOR_TYPE_RUBRIC,
+    DETECTOR_TYPE_TWO_STAGE,
     RubricDetector,
     TwoStageFlashpointDetector,
     parse_derailment_score,
+    read_detector_type,
 )
 
 
@@ -771,9 +774,21 @@ Examples:
         lm = dspy.LM(args.model)
         dspy.configure(lm=lm)
         print(f"Loading existing model from {args.eval_only}...")
-        if args.detector_type == "two-stage":
+
+        saved_type = read_detector_type(str(args.eval_only))
+        effective_type = args.detector_type
+        if effective_type == "single" and saved_type != "single":
+            effective_type = saved_type
+            print(f"Auto-detected detector type from JSON: {effective_type}")
+        elif effective_type != saved_type:
+            print(
+                f"Warning: --detector-type={effective_type} overrides "
+                f"saved type '{saved_type}' in JSON"
+            )
+
+        if effective_type == DETECTOR_TYPE_TWO_STAGE:
             detector = TwoStageFlashpointDetector()
-        elif args.detector_type == "rubric":
+        elif effective_type == DETECTOR_TYPE_RUBRIC:
             detector = RubricDetector()
         else:
             detector = FlashpointDetector()

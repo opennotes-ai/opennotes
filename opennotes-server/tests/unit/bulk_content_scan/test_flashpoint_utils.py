@@ -1,12 +1,21 @@
 """Unit tests for flashpoint_utils."""
 
+import json
 import logging
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import dspy
 import pytest
 
-from src.bulk_content_scan.flashpoint_utils import parse_bool, parse_derailment_score
+from src.bulk_content_scan.flashpoint_utils import (
+    DETECTOR_TYPE_KEY,
+    FlashpointDetector,
+    RubricDetector,
+    TwoStageFlashpointDetector,
+    parse_bool,
+    parse_derailment_score,
+)
 
 
 class TestParseBool:
@@ -257,3 +266,74 @@ class TestRubricDetector:
 
         result = detector(context="test", message="test")
         assert result.derailment_score == 50
+
+
+class TestDetectorTypeMetadata:
+    """Tests for detector_type metadata in save/load."""
+
+    def test_flashpoint_detector_save_includes_detector_type(self, tmp_path: Path):
+        detector = FlashpointDetector()
+        path = tmp_path / "detector.json"
+        detector.save(str(path))
+
+        data = json.loads(path.read_text())
+        assert DETECTOR_TYPE_KEY in data
+        assert data[DETECTOR_TYPE_KEY] == "single"
+
+    def test_rubric_detector_save_includes_detector_type(self, tmp_path: Path):
+        detector = RubricDetector()
+        path = tmp_path / "detector.json"
+        detector.save(str(path))
+
+        data = json.loads(path.read_text())
+        assert DETECTOR_TYPE_KEY in data
+        assert data[DETECTOR_TYPE_KEY] == "rubric"
+
+    def test_two_stage_detector_save_includes_detector_type(self, tmp_path: Path):
+        detector = TwoStageFlashpointDetector()
+        path = tmp_path / "detector.json"
+        detector.save(str(path))
+
+        data = json.loads(path.read_text())
+        assert DETECTOR_TYPE_KEY in data
+        assert data[DETECTOR_TYPE_KEY] == "two-stage"
+
+    def test_load_reads_detector_type(self, tmp_path: Path):
+        detector = FlashpointDetector()
+        path = tmp_path / "detector.json"
+        detector.save(str(path))
+
+        loaded = FlashpointDetector()
+        loaded.load(str(path))
+        assert loaded.detector_type == "single"
+
+    def test_load_without_detector_type_defaults_to_single(self, tmp_path: Path):
+        detector = FlashpointDetector()
+        path = tmp_path / "detector.json"
+        detector.save(str(path))
+
+        data = json.loads(path.read_text())
+        del data[DETECTOR_TYPE_KEY]
+        path.write_text(json.dumps(data))
+
+        loaded = FlashpointDetector()
+        loaded.load(str(path))
+        assert loaded.detector_type == "single"
+
+    def test_read_detector_type_from_json(self, tmp_path: Path):
+        from src.bulk_content_scan.flashpoint_utils import read_detector_type
+
+        detector = RubricDetector()
+        path = tmp_path / "detector.json"
+        detector.save(str(path))
+
+        assert read_detector_type(str(path)) == "rubric"
+
+    def test_read_detector_type_missing_key_returns_single(self, tmp_path: Path):
+        from src.bulk_content_scan.flashpoint_utils import read_detector_type
+
+        data = {"metadata": {"dependency_versions": {}}}
+        path = tmp_path / "detector.json"
+        path.write_text(json.dumps(data))
+
+        assert read_detector_type(str(path)) == "single"
