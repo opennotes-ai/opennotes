@@ -101,6 +101,36 @@ class TestEmbeddingServiceUsesChunkSearch:
             assert call_kwargs["dataset_tags"] == test_tags
             assert call_kwargs["semantic_similarity_threshold"] == test_threshold
 
+    async def test_similarity_search_empty_dataset_tags_searches_all(self):
+        """Empty dataset_tags should pass None to hybrid_search (meaning all datasets)."""
+        from src.fact_checking.embedding_service import EmbeddingService
+
+        mock_llm_service = MagicMock()
+        service = EmbeddingService(mock_llm_service)
+
+        mock_db = AsyncMock()
+        mock_db.execute.return_value.scalar_one_or_none.return_value = "test-uuid"
+
+        mock_embedding = [0.1] * 1536
+
+        with (
+            patch.object(service, "generate_embedding", return_value=mock_embedding),
+            patch(
+                "src.fact_checking.embedding_service.hybrid_search_with_chunks"
+            ) as mock_chunk_search,
+        ):
+            mock_chunk_search.return_value = []
+
+            await service.similarity_search(
+                db=mock_db,
+                query_text="test query",
+                community_server_id="123456789",
+                dataset_tags=[],
+            )
+
+            call_kwargs = mock_chunk_search.call_args.kwargs
+            assert call_kwargs["dataset_tags"] is None
+
 
 class TestEmbeddingServiceChunkSearchImport:
     """Test that hybrid_search_with_chunks is properly imported."""

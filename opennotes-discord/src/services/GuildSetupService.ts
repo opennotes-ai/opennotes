@@ -82,7 +82,7 @@ export class GuildSetupService {
           name: channel.name,
           enabled: true,
           similarity_threshold: config.similaritySearchDefaultThreshold,
-          dataset_tags: ['snopes'],
+          dataset_tags: [],
           updated_by: null,
         };
 

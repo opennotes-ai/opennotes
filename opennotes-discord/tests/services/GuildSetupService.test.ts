@@ -91,7 +91,7 @@ describe('GuildSetupService', () => {
         name: 'general',
         enabled: true,
         similarity_threshold: 0.6,
-        dataset_tags: ['snopes'],
+        dataset_tags: [],
         updated_by: null,
       });
     });
@@ -397,7 +397,7 @@ describe('GuildSetupService', () => {
         name: 'general',
         enabled: true,
         similarity_threshold: 0.6,
-        dataset_tags: ['snopes'],
+        dataset_tags: [],
         updated_by: null,
       });
     });
