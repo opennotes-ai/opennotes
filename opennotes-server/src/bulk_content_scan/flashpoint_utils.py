@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -15,6 +17,28 @@ logger = logging.getLogger(__name__)
 
 DERAILMENT_SCORE_MIN = 0
 DERAILMENT_SCORE_MAX = 100
+
+DETECTOR_TYPE_KEY = "detector_type"
+DETECTOR_TYPE_SINGLE = "single"
+DETECTOR_TYPE_RUBRIC = "rubric"
+DETECTOR_TYPE_TWO_STAGE = "two-stage"
+
+
+def read_detector_type(path: str) -> str:
+    """Read the detector_type from a saved JSON without loading the full model."""
+    data = json.loads(Path(path).read_text())
+    return data.get(DETECTOR_TYPE_KEY, DETECTOR_TYPE_SINGLE)
+
+
+def _inject_detector_type(path: str, detector_type: str) -> None:
+    """Inject detector_type into an already-saved JSON file.
+
+    DSPy's save() writes the file; we read it back and add our key.
+    """
+    p = Path(path)
+    data = json.loads(p.read_text())
+    data[DETECTOR_TYPE_KEY] = detector_type
+    p.write_bytes(json.dumps(data, indent=2).encode())
 
 
 def parse_bool(value: Any) -> bool:
@@ -98,6 +122,8 @@ class FlashpointDetector:
     ``load``, ``save``, ``__call__``) are delegated to it.
     """
 
+    detector_type: str = DETECTOR_TYPE_SINGLE
+
     def __init__(self) -> None:
         dspy = _import_dspy()
         sig = FlashpointSignature.get()
@@ -117,11 +143,14 @@ class FlashpointDetector:
         return self._inner.forward(context=context, message=message)
 
     def load(self, path: str) -> None:
+        data = json.loads(Path(path).read_text())
+        self.detector_type = data.get(DETECTOR_TYPE_KEY, DETECTOR_TYPE_SINGLE)
         self._inner.load(path)
         self.predict = self._inner.predict
 
     def save(self, path: str) -> None:
         self._inner.save(path)
+        _inject_detector_type(path, self.detector_type)
 
     def __call__(self, context: str, message: str) -> dspy.Prediction:
         return self.forward(context=context, message=message)
@@ -194,6 +223,8 @@ class TwoStageFlashpointDetector:
     Same external API as FlashpointDetector (context, message -> derailment_score, reasoning).
     """
 
+    detector_type: str = DETECTOR_TYPE_TWO_STAGE
+
     def __init__(self) -> None:
         dspy = _import_dspy()
         summary_sig = EscalationSummarySignature.get()
@@ -221,12 +252,15 @@ class TwoStageFlashpointDetector:
         return self._inner.forward(context=context, message=message)
 
     def load(self, path: str) -> None:
+        data = json.loads(Path(path).read_text())
+        self.detector_type = data.get(DETECTOR_TYPE_KEY, DETECTOR_TYPE_TWO_STAGE)
         self._inner.load(path)
         self.summarize = self._inner.summarize
         self.score = self._inner.score
 
     def save(self, path: str) -> None:
         self._inner.save(path)
+        _inject_detector_type(path, self.detector_type)
 
     def __call__(self, context: str, message: str) -> dspy.Prediction:
         return self.forward(context=context, message=message)
@@ -310,6 +344,8 @@ class RubricDetector:
     Same external API as FlashpointDetector (context, message -> derailment_score, reasoning).
     """
 
+    detector_type: str = DETECTOR_TYPE_RUBRIC
+
     def __init__(self) -> None:
         dspy = _import_dspy()
         sig = CategoricalRiskSignature.get()
@@ -335,11 +371,14 @@ class RubricDetector:
         return self._inner.forward(context=context, message=message)
 
     def load(self, path: str) -> None:
+        data = json.loads(Path(path).read_text())
+        self.detector_type = data.get(DETECTOR_TYPE_KEY, DETECTOR_TYPE_RUBRIC)
         self._inner.load(path)
         self.assess = self._inner.assess
 
     def save(self, path: str) -> None:
         self._inner.save(path)
+        _inject_detector_type(path, self.detector_type)
 
     def __call__(self, context: str, message: str):
         return self.forward(context=context, message=message)

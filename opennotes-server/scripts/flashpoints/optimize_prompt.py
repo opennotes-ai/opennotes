@@ -52,6 +52,7 @@ from src.bulk_content_scan.flashpoint_utils import (
     RubricDetector,
     TwoStageFlashpointDetector,
     parse_derailment_score,
+    read_detector_type,
 )
 
 
@@ -174,6 +175,48 @@ class ShortInstructionProposer:
         return updated
 
 
+def _validate_gepa_state(log_dir: Path, trainer: dspy.Module) -> None:
+    """Check that gepa_state.bin predictor names match the current program.
+
+    If stale state from a different detector type is found, delete it and
+    warn the user so GEPA starts fresh instead of failing with
+    'Predictor not found' errors during reflective mutation.
+    """
+    state_path = log_dir / "gepa_state.bin"
+    if not state_path.exists():
+        return
+
+    import pickle
+
+    try:
+        with state_path.open("rb") as f:
+            state_data = pickle.load(f)
+    except Exception:
+        return
+
+    saved_names = set(state_data.get("list_of_named_predictors", []))
+    current_names = {name for name, _ in trainer.named_predictors()}
+
+    if saved_names and saved_names != current_names:
+        print(
+            f"WARNING: GEPA state has stale predictor names.\n"
+            f"  Saved:   {sorted(saved_names)}\n"
+            f"  Current: {sorted(current_names)}\n"
+            f"  Deleting {state_path} to start fresh."
+        )
+        state_path.unlink()
+
+
+def _create_detector(
+    detector_type: str,
+) -> FlashpointDetector | TwoStageFlashpointDetector | RubricDetector:
+    if detector_type == "two-stage":
+        return TwoStageFlashpointDetector()
+    if detector_type == "rubric":
+        return RubricDetector()
+    return FlashpointDetector()
+
+
 def optimize_flashpoint_detector(
     model: str = "openai/gpt-5-mini",
     auto: str = "medium",
@@ -192,6 +235,7 @@ def optimize_flashpoint_detector(
     max_bootstrapped_demos: int = 4,
     max_labeled_demos: int = 4,
     num_candidate_programs: int = 8,
+    clear_state: bool = False,
 ) -> FlashpointDetector | TwoStageFlashpointDetector | RubricDetector:
     """Run GEPA optimization on the flashpoint detector with comparative training.
 
@@ -252,6 +296,11 @@ def optimize_flashpoint_detector(
         gepa_kwargs["instruction_proposer"] = ShortInstructionProposer(reflection_lm)
     if log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
+        if clear_state:
+            state_path = log_dir / "gepa_state.bin"
+            if state_path.exists():
+                state_path.unlink()
+                print(f"Cleared GEPA state: {state_path}")
         gepa_kwargs["log_dir"] = str(log_dir)
 
     if log_dir:
@@ -259,15 +308,13 @@ def optimize_flashpoint_detector(
         set_reasoning_log_path(reasoning_log)
         print(f"Reasoning traces: {reasoning_log}")
 
-    optimizer = dspy.GEPA(**gepa_kwargs)
-
-    if detector_type == "two-stage":
-        detector = TwoStageFlashpointDetector()
-    elif detector_type == "rubric":
-        detector = RubricDetector()
-    else:
-        detector = FlashpointDetector()
+    detector = _create_detector(detector_type)
     trainer = FlashpointTrainerProgram(detector)
+
+    if log_dir and not clear_state:
+        _validate_gepa_state(log_dir, trainer)
+
+    optimizer = dspy.GEPA(**gepa_kwargs)
 
     if bootstrap:
         from dspy.teleprompt import BootstrapFewShotWithRandomSearch
@@ -753,6 +800,11 @@ Examples:
         help="Number of candidate demo sets to evaluate in bootstrap (default: 8)",
     )
     parser.add_argument(
+        "--clear-state",
+        action="store_true",
+        help="Delete gepa_state.bin before starting (required when switching --detector-type)",
+    )
+    parser.add_argument(
         "--safety-curves",
         action="store_true",
         help="Evaluate with ROC-style safety-at-audit-budget curves",
@@ -771,12 +823,19 @@ Examples:
         lm = dspy.LM(args.model)
         dspy.configure(lm=lm)
         print(f"Loading existing model from {args.eval_only}...")
-        if args.detector_type == "two-stage":
-            detector = TwoStageFlashpointDetector()
-        elif args.detector_type == "rubric":
-            detector = RubricDetector()
-        else:
-            detector = FlashpointDetector()
+
+        saved_type = read_detector_type(str(args.eval_only))
+        effective_type = args.detector_type
+        if effective_type == "single" and saved_type != "single":
+            effective_type = saved_type
+            print(f"Auto-detected detector type from JSON: {effective_type}")
+        elif effective_type != saved_type:
+            print(
+                f"Warning: --detector-type={effective_type} overrides "
+                f"saved type '{saved_type}' in JSON"
+            )
+
+        detector = _create_detector(effective_type)
         detector.load(str(args.eval_only))
         print("Model loaded successfully.")
     else:
@@ -798,6 +857,7 @@ Examples:
             max_bootstrapped_demos=args.max_bootstrapped_demos,
             max_labeled_demos=args.max_labeled_demos,
             num_candidate_programs=args.num_candidate_programs,
+            clear_state=args.clear_state,
         )
 
     _, _, testset = load_flashpoint_datasets()
