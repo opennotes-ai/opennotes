@@ -29,16 +29,16 @@ class TestRechunkQueueConfiguration:
         assert rechunk_queue.name == "rechunk"
 
     def test_queue_worker_concurrency(self) -> None:
-        """Worker concurrency is set for memory safety."""
+        """Worker concurrency bumped to accommodate token-gated waiting workflows."""
         from src.dbos_workflows.rechunk_workflow import rechunk_queue
 
-        assert rechunk_queue.worker_concurrency == 2
+        assert rechunk_queue.worker_concurrency == 6
 
     def test_queue_global_concurrency(self) -> None:
-        """Global concurrency matches SC-008 requirement (5-10 concurrent jobs)."""
+        """Global concurrency bumped to accommodate token-gated waiting workflows."""
         from src.dbos_workflows.rechunk_workflow import rechunk_queue
 
-        assert rechunk_queue.concurrency == 10
+        assert rechunk_queue.concurrency == 30
 
 
 class TestEmbeddingRetryConfig:
@@ -153,6 +153,7 @@ class TestRechunkWorkflow:
         item_ids = [str(uuid4()) for _ in range(3)]
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
             patch(
                 "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
@@ -192,6 +193,7 @@ class TestRechunkWorkflow:
             return {"success": True, "chunks_created": 1}
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
             patch(
                 "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
@@ -222,6 +224,7 @@ class TestRechunkWorkflow:
         item_ids = [str(uuid4()) for _ in range(10)]
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
             patch(
                 "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
@@ -253,6 +256,7 @@ class TestRechunkWorkflow:
         item_ids = [str(uuid4())]
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
             patch(
                 "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
@@ -283,6 +287,7 @@ class TestRechunkWorkflow:
         item_ids = [str(uuid4()) for _ in range(150)]
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
             patch(
                 "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
@@ -317,6 +322,7 @@ class TestChunkSingleFactCheckWorkflow:
         community_server_id = str(uuid4())
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
             patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
         ):
@@ -347,6 +353,7 @@ class TestChunkSingleFactCheckWorkflow:
         fact_check_id = str(uuid4())
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
             patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
         ):
@@ -369,6 +376,7 @@ class TestChunkSingleFactCheckWorkflow:
         fact_check_id = str(uuid4())
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
             patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
         ):
@@ -504,6 +512,7 @@ class TestCircuitBreakerIntegration:
             raise RuntimeError("Always fail")
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
             patch(
                 "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
@@ -546,6 +555,7 @@ class TestCircuitBreakerIntegration:
             raise RuntimeError("Intermittent fail")
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
             patch(
                 "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"

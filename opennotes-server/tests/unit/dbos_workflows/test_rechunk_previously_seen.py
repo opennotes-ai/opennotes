@@ -155,6 +155,7 @@ class TestRechunkPreviouslySeenWorkflow:
         item_ids = [str(uuid4()) for _ in range(3)]
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch(
                 "src.dbos_workflows.rechunk_workflow.process_previously_seen_item"
             ) as mock_process,
@@ -196,6 +197,7 @@ class TestRechunkPreviouslySeenWorkflow:
             return {"success": True, "chunks_created": 1}
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch(
                 "src.dbos_workflows.rechunk_workflow.process_previously_seen_item"
             ) as mock_process,
@@ -228,6 +230,7 @@ class TestRechunkPreviouslySeenWorkflow:
         item_ids = [str(uuid4()) for _ in range(10)]
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch(
                 "src.dbos_workflows.rechunk_workflow.process_previously_seen_item"
             ) as mock_process,
@@ -256,6 +259,7 @@ class TestRechunkPreviouslySeenWorkflow:
         item_ids = [str(uuid4())]
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch(
                 "src.dbos_workflows.rechunk_workflow.process_previously_seen_item"
             ) as mock_process,
@@ -288,6 +292,7 @@ class TestRechunkPreviouslySeenWorkflow:
         item_ids = [str(uuid4()) for _ in range(150)]
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch(
                 "src.dbos_workflows.rechunk_workflow.process_previously_seen_item"
             ) as mock_process,
@@ -487,6 +492,7 @@ class TestCircuitBreakerInPreviouslySeenWorkflow:
             raise RuntimeError("Always fail")
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch(
                 "src.dbos_workflows.rechunk_workflow.process_previously_seen_item"
             ) as mock_process,
@@ -526,6 +532,7 @@ class TestCircuitBreakerInPreviouslySeenWorkflow:
             raise RuntimeError("Intermittent fail")
 
         with (
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
             patch(
                 "src.dbos_workflows.rechunk_workflow.process_previously_seen_item"
             ) as mock_process,
