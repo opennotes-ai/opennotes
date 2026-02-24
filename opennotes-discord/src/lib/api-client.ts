@@ -1212,7 +1212,7 @@ export class ApiClient {
       body.server_stats = serverStats;
     }
     await this.fetchWithRetry<void>(
-      `/api/v2/community-servers/${encodeURIComponent(platformId)}/name`,
+      `/api/v1/community-servers/${encodeURIComponent(platformId)}/name`,
       {
         method: 'PATCH',
         body: JSON.stringify(body),
