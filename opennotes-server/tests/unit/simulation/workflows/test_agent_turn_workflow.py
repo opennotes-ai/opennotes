@@ -551,6 +551,7 @@ class TestRunAgentTurnWorkflow:
                     "persisted": True,
                 },
             ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
             patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "wf-test-123"
@@ -617,6 +618,7 @@ class TestRunAgentTurnWorkflow:
                 "src.simulation.workflows.agent_turn_workflow.persist_state_step",
                 side_effect=track_persist,
             ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
             patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "wf-test"
@@ -665,6 +667,7 @@ class TestRunAgentTurnWorkflow:
                     "persisted": True,
                 },
             ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
             patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "wf-test"

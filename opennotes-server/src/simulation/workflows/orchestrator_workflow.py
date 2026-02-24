@@ -10,6 +10,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.dbos_workflows.token_bucket.config import WorkflowWeight
+from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
 from src.simulation.models import SimAgentInstance, SimulationOrchestrator, SimulationRun
 from src.utils.async_compat import run_sync
@@ -23,8 +25,8 @@ CIRCUIT_BREAKER_RESET_TIMEOUT: float = 300.0
 
 simulation_orchestrator_queue = Queue(
     name="simulation_orchestrator",
-    worker_concurrency=1,
-    concurrency=2,
+    worker_concurrency=3,
+    concurrency=6,
 )
 
 
@@ -460,136 +462,145 @@ def _finalize_with_fallback(
 
 
 @DBOS.workflow()
-def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:
-    workflow_id = DBOS.workflow_id
-    assert workflow_id is not None
-
-    logger.info(
-        "Starting orchestrator workflow",
-        extra={
-            "workflow_id": workflow_id,
-            "simulation_run_id": simulation_run_id,
-        },
-    )
-
+def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
+    gate = TokenGate(pool="default", weight=WorkflowWeight.SIMULATION_ORCHESTRATOR)
+    gate.acquire()
     try:
-        config = initialize_run_step(simulation_run_id)
-    except Exception:
-        logger.exception(
-            "Failed to initialize orchestrator",
-            extra={"simulation_run_id": simulation_run_id},
-        )
-        return {"simulation_run_id": simulation_run_id, "status": "failed", "error": "init_failed"}
+        workflow_id = DBOS.workflow_id
+        assert workflow_id is not None
 
-    circuit_breaker = CircuitBreaker(
-        threshold=CIRCUIT_BREAKER_THRESHOLD,
-        reset_timeout=CIRCUIT_BREAKER_RESET_TIMEOUT,
-    )
-
-    final_status = "completed"
-    iteration = 0
-
-    while iteration < MAX_ITERATIONS:
-        iteration += 1
-
-        status = check_run_status_step(simulation_run_id)
-
-        if status == "cancelled":
-            final_status = "cancelled"
-            break
-
-        if status in ("completed", "failed"):
-            final_status = status
-            break
-
-        if status == "paused":
-            DBOS.sleep(config["turn_cadence_seconds"])
-            continue
-
-        try:
-            snapshot = get_population_snapshot_step(simulation_run_id)
-        except Exception:
-            logger.exception("Failed to get population snapshot")
-            continue
-
-        spawned_ids: list[str] = []
-        try:
-            spawned_ids = spawn_agents_step(
-                simulation_run_id,
-                config,
-                snapshot["active_count"],
-                snapshot["total_spawned"],
-            )
-        except Exception:
-            logger.exception("Failed to spawn agents")
-
-        removed_ids: list[str] = []
-        try:
-            removed_ids = remove_agents_step(
-                simulation_run_id,
-                config,
-                snapshot["active_count"] + len(spawned_ids),
-            )
-        except Exception:
-            logger.exception("Failed to remove agents")
-
-        dispatched_count = 0
-        try:
-            circuit_breaker.check()
-            turn_result = schedule_turns_step(simulation_run_id, config)
-            dispatched_count = turn_result["dispatched_count"]
-            circuit_breaker.record_success()
-        except CircuitOpenError:
-            logger.warning(
-                "Circuit breaker open, skipping turn scheduling",
-                extra={
-                    "simulation_run_id": simulation_run_id,
-                    "failures": circuit_breaker.failures,
-                },
-            )
-        except Exception:
-            logger.exception("Failed to schedule turns")
-            circuit_breaker.record_failure()
-
-        try:
-            update_metrics_step(
-                simulation_run_id,
-                dispatched_count=dispatched_count,
-                spawned_count=len(spawned_ids),
-                removed_count=len(removed_ids),
-            )
-        except Exception:
-            logger.exception("Failed to update metrics")
-
-        DBOS.sleep(config["turn_cadence_seconds"])
-
-    if iteration >= MAX_ITERATIONS:
-        logger.warning(
-            "Orchestrator reached max iterations",
+        logger.info(
+            "Starting orchestrator workflow",
             extra={
+                "workflow_id": workflow_id,
                 "simulation_run_id": simulation_run_id,
-                "max_iterations": MAX_ITERATIONS,
             },
         )
 
-    finalize_result, final_status = _finalize_with_fallback(simulation_run_id, final_status)
+        try:
+            config = initialize_run_step(simulation_run_id)
+        except Exception:
+            logger.exception(
+                "Failed to initialize orchestrator",
+                extra={"simulation_run_id": simulation_run_id},
+            )
+            return {
+                "simulation_run_id": simulation_run_id,
+                "status": "failed",
+                "error": "init_failed",
+            }
 
-    logger.info(
-        "Orchestrator workflow completed",
-        extra={
-            "workflow_id": workflow_id,
+        circuit_breaker = CircuitBreaker(
+            threshold=CIRCUIT_BREAKER_THRESHOLD,
+            reset_timeout=CIRCUIT_BREAKER_RESET_TIMEOUT,
+        )
+
+        final_status = "completed"
+        iteration = 0
+
+        while iteration < MAX_ITERATIONS:
+            iteration += 1
+
+            status = check_run_status_step(simulation_run_id)
+
+            if status == "cancelled":
+                final_status = "cancelled"
+                break
+
+            if status in ("completed", "failed"):
+                final_status = status
+                break
+
+            if status == "paused":
+                DBOS.sleep(config["turn_cadence_seconds"])
+                continue
+
+            try:
+                snapshot = get_population_snapshot_step(simulation_run_id)
+            except Exception:
+                logger.exception("Failed to get population snapshot")
+                continue
+
+            spawned_ids: list[str] = []
+            try:
+                spawned_ids = spawn_agents_step(
+                    simulation_run_id,
+                    config,
+                    snapshot["active_count"],
+                    snapshot["total_spawned"],
+                )
+            except Exception:
+                logger.exception("Failed to spawn agents")
+
+            removed_ids: list[str] = []
+            try:
+                removed_ids = remove_agents_step(
+                    simulation_run_id,
+                    config,
+                    snapshot["active_count"] + len(spawned_ids),
+                )
+            except Exception:
+                logger.exception("Failed to remove agents")
+
+            dispatched_count = 0
+            try:
+                circuit_breaker.check()
+                turn_result = schedule_turns_step(simulation_run_id, config)
+                dispatched_count = turn_result["dispatched_count"]
+                circuit_breaker.record_success()
+            except CircuitOpenError:
+                logger.warning(
+                    "Circuit breaker open, skipping turn scheduling",
+                    extra={
+                        "simulation_run_id": simulation_run_id,
+                        "failures": circuit_breaker.failures,
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to schedule turns")
+                circuit_breaker.record_failure()
+
+            try:
+                update_metrics_step(
+                    simulation_run_id,
+                    dispatched_count=dispatched_count,
+                    spawned_count=len(spawned_ids),
+                    removed_count=len(removed_ids),
+                )
+            except Exception:
+                logger.exception("Failed to update metrics")
+
+            DBOS.sleep(config["turn_cadence_seconds"])
+
+        if iteration >= MAX_ITERATIONS:
+            logger.warning(
+                "Orchestrator reached max iterations",
+                extra={
+                    "simulation_run_id": simulation_run_id,
+                    "max_iterations": MAX_ITERATIONS,
+                },
+            )
+
+        finalize_result, final_status = _finalize_with_fallback(simulation_run_id, final_status)
+
+        logger.info(
+            "Orchestrator workflow completed",
+            extra={
+                "workflow_id": workflow_id,
+                "simulation_run_id": simulation_run_id,
+                "final_status": final_status,
+                "iterations": iteration,
+            },
+        )
+
+        return {
             "simulation_run_id": simulation_run_id,
-            "final_status": final_status,
+            "status": final_status,
             "iterations": iteration,
-        },
-    )
-
-    return {
-        "simulation_run_id": simulation_run_id,
-        "status": final_status,
-        "iterations": iteration,
-        "instances_finalized": finalize_result["instances_finalized"],
-    }
+            "instances_finalized": finalize_result["instances_finalized"],
+        }
+    finally:
+        gate.release()
 
 
 RUN_ORCHESTRATOR_WORKFLOW_NAME: str = run_orchestrator.__qualname__

@@ -20,6 +20,7 @@ from src.cache import models as cache_models  # noqa: F401
 from src.community_config import models as community_config_models  # noqa: F401
 from src.config import settings
 from src.database import Base
+from src.dbos_workflows.token_bucket import models as token_bucket_models  # noqa: F401
 from src.fact_checking import (
     candidate_models,  # noqa: F401
     chunk_models,  # noqa: F401

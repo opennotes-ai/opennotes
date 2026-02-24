@@ -66,6 +66,7 @@ class TestDualWorkflowIsolation:
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize_a,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-a"
             mock_dbos.recv.side_effect = recv_fn_a
@@ -86,6 +87,7 @@ class TestDualWorkflowIsolation:
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize_b,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos_b,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos_b.workflow_id = "wf-b"
             mock_dbos_b.recv.side_effect = recv_fn_b
@@ -248,6 +250,7 @@ class TestDualWorkflowIsolation:
                     side_effect=capture_finalize,
                 ),
                 patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+                patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
             ):
                 mock_dbos.workflow_id = f"wf-{scan_id}"
                 mock_dbos.recv.side_effect = recv_fn

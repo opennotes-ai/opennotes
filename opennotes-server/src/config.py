@@ -875,6 +875,10 @@ class Settings(BaseSettings):
         description="DBOS Conductor API key for workflow observability and management",
         repr=False,
     )
+    TOKEN_POOL_CAPACITY: int = Field(
+        default=12,
+        description="Default token pool capacity for DBOS workflow concurrency control",
+    )
 
     @model_validator(mode="after")
     def validate_encryption_key_entropy(self) -> "Settings":

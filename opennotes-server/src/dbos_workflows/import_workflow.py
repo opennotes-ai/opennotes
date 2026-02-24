@@ -39,6 +39,8 @@ from src.dbos_workflows.batch_job_helpers import (
     finalize_batch_job_sync,
     start_batch_job_sync,
 )
+from src.dbos_workflows.token_bucket.config import WorkflowWeight
+from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
 from src.utils.async_compat import run_sync
 
@@ -90,8 +92,8 @@ def _compute_batch_success(completed_count: int, failed_count: int) -> bool:
 
 import_pipeline_queue = Queue(
     name="import_pipeline",
-    worker_concurrency=1,
-    concurrency=3,
+    worker_concurrency=3,
+    concurrency=9,
 )
 
 
@@ -341,89 +343,94 @@ def fact_check_import_workflow(
     dry_run: bool,
     enqueue_scrapes: bool,
 ) -> dict[str, Any]:
-    workflow_id = DBOS.workflow_id
-    job_uuid = UUID(batch_job_id)
-
-    logger.info(
-        "Starting fact-check import workflow",
-        extra={
-            "workflow_id": workflow_id,
-            "batch_job_id": batch_job_id,
-            "batch_size": batch_size,
-            "dry_run": dry_run,
-            "enqueue_scrapes": enqueue_scrapes,
-        },
-    )
-
-    started = start_import_step(batch_job_id)
-    if not started:
-        _finalize_job(
-            job_uuid,
-            success=False,
-            completed_tasks=0,
-            failed_tasks=0,
-            error_summary={"stage": "start", "error": "Failed to start batch job"},
-        )
-        return {"status": "failed", "error": "Failed to start batch job"}
-
-    completed_so_far = 0
-    failed_so_far = 0
-
+    gate = TokenGate(pool="default", weight=WorkflowWeight.IMPORT_PIPELINE)
+    gate.acquire()
     try:
-        final_stats = import_csv_step(
-            batch_job_id=batch_job_id,
-            batch_size=batch_size,
-            dry_run=dry_run,
-            enqueue_scrapes=enqueue_scrapes,
-        )
-
-        completed_so_far = final_stats.get("valid_rows", 0)
-        failed_so_far = final_stats.get("invalid_rows", 0)
-
-        _finalize_job(
-            job_uuid,
-            success=_compute_batch_success(completed_so_far, failed_so_far),
-            completed_tasks=completed_so_far,
-            failed_tasks=failed_so_far,
-            stats=final_stats,
-        )
+        workflow_id = DBOS.workflow_id
+        job_uuid = UUID(batch_job_id)
 
         logger.info(
-            "Fact-check import workflow completed",
+            "Starting fact-check import workflow",
             extra={
                 "workflow_id": workflow_id,
                 "batch_job_id": batch_job_id,
-                **final_stats,
+                "batch_size": batch_size,
+                "dry_run": dry_run,
+                "enqueue_scrapes": enqueue_scrapes,
             },
         )
 
-        return {"status": "completed", **final_stats}
+        started = start_import_step(batch_job_id)
+        if not started:
+            _finalize_job(
+                job_uuid,
+                success=False,
+                completed_tasks=0,
+                failed_tasks=0,
+                error_summary={"stage": "start", "error": "Failed to start batch job"},
+            )
+            return {"status": "failed", "error": "Failed to start batch job"}
 
-    except Exception as e:
-        error_summary = {
-            "exception": str(e),
-            "exception_type": type(e).__name__,
-            "stage": "import_csv",
-        }
+        completed_so_far = 0
+        failed_so_far = 0
 
-        _finalize_job(
-            job_uuid,
-            success=False,
-            completed_tasks=completed_so_far,
-            failed_tasks=failed_so_far,
-            error_summary=error_summary,
-        )
+        try:
+            final_stats = import_csv_step(
+                batch_job_id=batch_job_id,
+                batch_size=batch_size,
+                dry_run=dry_run,
+                enqueue_scrapes=enqueue_scrapes,
+            )
 
-        logger.error(
-            "Fact-check import workflow failed",
-            extra={
-                "workflow_id": workflow_id,
-                "batch_job_id": batch_job_id,
-                "error": str(e),
-            },
-        )
+            completed_so_far = final_stats.get("valid_rows", 0)
+            failed_so_far = final_stats.get("invalid_rows", 0)
 
-        raise
+            _finalize_job(
+                job_uuid,
+                success=_compute_batch_success(completed_so_far, failed_so_far),
+                completed_tasks=completed_so_far,
+                failed_tasks=failed_so_far,
+                stats=final_stats,
+            )
+
+            logger.info(
+                "Fact-check import workflow completed",
+                extra={
+                    "workflow_id": workflow_id,
+                    "batch_job_id": batch_job_id,
+                    **final_stats,
+                },
+            )
+
+            return {"status": "completed", **final_stats}
+
+        except Exception as e:
+            error_summary = {
+                "exception": str(e),
+                "exception_type": type(e).__name__,
+                "stage": "import_csv",
+            }
+
+            _finalize_job(
+                job_uuid,
+                success=False,
+                completed_tasks=completed_so_far,
+                failed_tasks=failed_so_far,
+                error_summary=error_summary,
+            )
+
+            logger.error(
+                "Fact-check import workflow failed",
+                extra={
+                    "workflow_id": workflow_id,
+                    "batch_job_id": batch_job_id,
+                    "error": str(e),
+                },
+            )
+
+            raise
+    finally:
+        gate.release()
 
 
 # ---------------------------------------------------------------------------
@@ -653,125 +660,130 @@ def scrape_candidates_workflow(
     concurrency: int = DEFAULT_SCRAPE_CONCURRENCY,
     base_delay: float = 1.0,
 ) -> dict[str, Any]:
-    workflow_id = DBOS.workflow_id
-    job_uuid = UUID(batch_job_id)
-
-    logger.info(
-        "Starting scrape candidates workflow",
-        extra={
-            "workflow_id": workflow_id,
-            "batch_job_id": batch_job_id,
-            "batch_size": batch_size,
-            "dry_run": dry_run,
-            "concurrency": concurrency,
-        },
-    )
-
-    scraped_so_far = 0
-    failed_so_far = 0
-
+    gate = TokenGate(pool="default", weight=WorkflowWeight.IMPORT_PIPELINE)
+    gate.acquire()
     try:
-        init_result = recover_and_count_scrape_step(batch_job_id)
-        total_candidates = init_result["total_candidates"]
-        recovered = init_result["recovered"]
+        workflow_id = DBOS.workflow_id
+        job_uuid = UUID(batch_job_id)
 
-        if init_result.get("start_failed"):
-            _finalize_job(
-                job_uuid,
-                success=False,
-                completed_tasks=0,
-                failed_tasks=0,
-                error_summary={"stage": "start", "error": "Failed to start batch job"},
+        logger.info(
+            "Starting scrape candidates workflow",
+            extra={
+                "workflow_id": workflow_id,
+                "batch_job_id": batch_job_id,
+                "batch_size": batch_size,
+                "dry_run": dry_run,
+                "concurrency": concurrency,
+            },
+        )
+
+        scraped_so_far = 0
+        failed_so_far = 0
+
+        try:
+            init_result = recover_and_count_scrape_step(batch_job_id)
+            total_candidates = init_result["total_candidates"]
+            recovered = init_result["recovered"]
+
+            if init_result.get("start_failed"):
+                _finalize_job(
+                    job_uuid,
+                    success=False,
+                    completed_tasks=0,
+                    failed_tasks=0,
+                    error_summary={"stage": "start", "error": "Failed to start batch job"},
+                )
+                return {"status": "failed", "error": "Failed to start batch job"}
+
+            if dry_run:
+                final_stats = {
+                    "total_candidates": total_candidates,
+                    "scraped": 0,
+                    "failed": 0,
+                    "recovered_stuck": recovered,
+                    "dry_run": True,
+                }
+                _finalize_job(
+                    job_uuid,
+                    success=True,
+                    completed_tasks=0,
+                    failed_tasks=0,
+                    stats=final_stats,
+                )
+
+                logger.info(
+                    "Scrape candidates dry run completed",
+                    extra={"workflow_id": workflow_id, **final_stats},
+                )
+                return {"status": "completed", **final_stats}
+
+            scrape_result = process_scrape_batch_step(
+                batch_job_id=batch_job_id,
+                batch_size=batch_size,
+                concurrency=concurrency,
+                base_delay=base_delay,
+                total_candidates=total_candidates,
+                scraped_so_far=0,
+                failed_so_far=0,
             )
-            return {"status": "failed", "error": "Failed to start batch job"}
 
-        if dry_run:
+            scraped_so_far = scrape_result["scraped"]
+            failed_so_far = scrape_result["failed"]
+
             final_stats = {
                 "total_candidates": total_candidates,
-                "scraped": 0,
-                "failed": 0,
+                "scraped": scraped_so_far,
+                "failed": failed_so_far,
                 "recovered_stuck": recovered,
-                "dry_run": True,
+                "dry_run": False,
             }
+
             _finalize_job(
                 job_uuid,
-                success=True,
-                completed_tasks=0,
-                failed_tasks=0,
+                success=_compute_batch_success(scraped_so_far, failed_so_far),
+                completed_tasks=scraped_so_far,
+                failed_tasks=failed_so_far,
                 stats=final_stats,
             )
 
             logger.info(
-                "Scrape candidates dry run completed",
-                extra={"workflow_id": workflow_id, **final_stats},
+                "Scrape candidates workflow completed",
+                extra={
+                    "workflow_id": workflow_id,
+                    "batch_job_id": batch_job_id,
+                    **final_stats,
+                },
             )
+
             return {"status": "completed", **final_stats}
 
-        scrape_result = process_scrape_batch_step(
-            batch_job_id=batch_job_id,
-            batch_size=batch_size,
-            concurrency=concurrency,
-            base_delay=base_delay,
-            total_candidates=total_candidates,
-            scraped_so_far=0,
-            failed_so_far=0,
-        )
+        except Exception as e:
+            error_summary = {
+                "exception": str(e),
+                "exception_type": type(e).__name__,
+                "stage": "scrape",
+            }
 
-        scraped_so_far = scrape_result["scraped"]
-        failed_so_far = scrape_result["failed"]
+            _finalize_job(
+                job_uuid,
+                success=False,
+                completed_tasks=scraped_so_far,
+                failed_tasks=failed_so_far,
+                error_summary=error_summary,
+            )
 
-        final_stats = {
-            "total_candidates": total_candidates,
-            "scraped": scraped_so_far,
-            "failed": failed_so_far,
-            "recovered_stuck": recovered,
-            "dry_run": False,
-        }
+            logger.error(
+                "Scrape candidates workflow failed",
+                extra={
+                    "workflow_id": workflow_id,
+                    "batch_job_id": batch_job_id,
+                    "error": str(e),
+                },
+            )
 
-        _finalize_job(
-            job_uuid,
-            success=_compute_batch_success(scraped_so_far, failed_so_far),
-            completed_tasks=scraped_so_far,
-            failed_tasks=failed_so_far,
-            stats=final_stats,
-        )
-
-        logger.info(
-            "Scrape candidates workflow completed",
-            extra={
-                "workflow_id": workflow_id,
-                "batch_job_id": batch_job_id,
-                **final_stats,
-            },
-        )
-
-        return {"status": "completed", **final_stats}
-
-    except Exception as e:
-        error_summary = {
-            "exception": str(e),
-            "exception_type": type(e).__name__,
-            "stage": "scrape",
-        }
-
-        _finalize_job(
-            job_uuid,
-            success=False,
-            completed_tasks=scraped_so_far,
-            failed_tasks=failed_so_far,
-            error_summary=error_summary,
-        )
-
-        logger.error(
-            "Scrape candidates workflow failed",
-            extra={
-                "workflow_id": workflow_id,
-                "batch_job_id": batch_job_id,
-                "error": str(e),
-            },
-        )
-
-        raise
+            raise
+    finally:
+        gate.release()
 
 
 # ---------------------------------------------------------------------------
@@ -920,120 +932,125 @@ def promote_candidates_workflow(
     batch_size: int,
     dry_run: bool,
 ) -> dict[str, Any]:
-    workflow_id = DBOS.workflow_id
-    job_uuid = UUID(batch_job_id)
-
-    logger.info(
-        "Starting promote candidates workflow",
-        extra={
-            "workflow_id": workflow_id,
-            "batch_job_id": batch_job_id,
-            "batch_size": batch_size,
-            "dry_run": dry_run,
-        },
-    )
-
-    promoted_so_far = 0
-    failed_so_far = 0
-
+    gate = TokenGate(pool="default", weight=WorkflowWeight.IMPORT_PIPELINE)
+    gate.acquire()
     try:
-        init_result = recover_and_count_promote_step(batch_job_id)
-        total_candidates = init_result["total_candidates"]
-        recovered = init_result["recovered"]
+        workflow_id = DBOS.workflow_id
+        job_uuid = UUID(batch_job_id)
 
-        if init_result.get("start_failed"):
-            _finalize_job(
-                job_uuid,
-                success=False,
-                completed_tasks=0,
-                failed_tasks=0,
-                error_summary={"stage": "start", "error": "Failed to start batch job"},
+        logger.info(
+            "Starting promote candidates workflow",
+            extra={
+                "workflow_id": workflow_id,
+                "batch_job_id": batch_job_id,
+                "batch_size": batch_size,
+                "dry_run": dry_run,
+            },
+        )
+
+        promoted_so_far = 0
+        failed_so_far = 0
+
+        try:
+            init_result = recover_and_count_promote_step(batch_job_id)
+            total_candidates = init_result["total_candidates"]
+            recovered = init_result["recovered"]
+
+            if init_result.get("start_failed"):
+                _finalize_job(
+                    job_uuid,
+                    success=False,
+                    completed_tasks=0,
+                    failed_tasks=0,
+                    error_summary={"stage": "start", "error": "Failed to start batch job"},
+                )
+                return {"status": "failed", "error": "Failed to start batch job"}
+
+            if dry_run:
+                final_stats = {
+                    "total_candidates": total_candidates,
+                    "promoted": 0,
+                    "failed": 0,
+                    "recovered_stuck": recovered,
+                    "dry_run": True,
+                }
+                _finalize_job(
+                    job_uuid,
+                    success=True,
+                    completed_tasks=0,
+                    failed_tasks=0,
+                    stats=final_stats,
+                )
+
+                logger.info(
+                    "Promote candidates dry run completed",
+                    extra={"workflow_id": workflow_id, **final_stats},
+                )
+                return {"status": "completed", **final_stats}
+
+            promote_result = process_promotion_batch_step(
+                batch_job_id=batch_job_id,
+                batch_size=batch_size,
+                total_candidates=total_candidates,
             )
-            return {"status": "failed", "error": "Failed to start batch job"}
 
-        if dry_run:
+            promoted_so_far = promote_result["promoted"]
+            failed_so_far = promote_result["failed"]
+
             final_stats = {
                 "total_candidates": total_candidates,
-                "promoted": 0,
-                "failed": 0,
+                "promoted": promoted_so_far,
+                "failed": failed_so_far,
                 "recovered_stuck": recovered,
-                "dry_run": True,
+                "dry_run": False,
             }
+
             _finalize_job(
                 job_uuid,
-                success=True,
-                completed_tasks=0,
-                failed_tasks=0,
+                success=_compute_batch_success(promoted_so_far, failed_so_far),
+                completed_tasks=promoted_so_far,
+                failed_tasks=failed_so_far,
                 stats=final_stats,
             )
 
             logger.info(
-                "Promote candidates dry run completed",
-                extra={"workflow_id": workflow_id, **final_stats},
+                "Promote candidates workflow completed",
+                extra={
+                    "workflow_id": workflow_id,
+                    "batch_job_id": batch_job_id,
+                    **final_stats,
+                },
             )
+
             return {"status": "completed", **final_stats}
 
-        promote_result = process_promotion_batch_step(
-            batch_job_id=batch_job_id,
-            batch_size=batch_size,
-            total_candidates=total_candidates,
-        )
+        except Exception as e:
+            error_summary = {
+                "exception": str(e),
+                "exception_type": type(e).__name__,
+                "stage": "promote",
+            }
 
-        promoted_so_far = promote_result["promoted"]
-        failed_so_far = promote_result["failed"]
+            _finalize_job(
+                job_uuid,
+                success=False,
+                completed_tasks=promoted_so_far,
+                failed_tasks=failed_so_far,
+                error_summary=error_summary,
+            )
 
-        final_stats = {
-            "total_candidates": total_candidates,
-            "promoted": promoted_so_far,
-            "failed": failed_so_far,
-            "recovered_stuck": recovered,
-            "dry_run": False,
-        }
+            logger.error(
+                "Promote candidates workflow failed",
+                extra={
+                    "workflow_id": workflow_id,
+                    "batch_job_id": batch_job_id,
+                    "error": str(e),
+                },
+            )
 
-        _finalize_job(
-            job_uuid,
-            success=_compute_batch_success(promoted_so_far, failed_so_far),
-            completed_tasks=promoted_so_far,
-            failed_tasks=failed_so_far,
-            stats=final_stats,
-        )
-
-        logger.info(
-            "Promote candidates workflow completed",
-            extra={
-                "workflow_id": workflow_id,
-                "batch_job_id": batch_job_id,
-                **final_stats,
-            },
-        )
-
-        return {"status": "completed", **final_stats}
-
-    except Exception as e:
-        error_summary = {
-            "exception": str(e),
-            "exception_type": type(e).__name__,
-            "stage": "promote",
-        }
-
-        _finalize_job(
-            job_uuid,
-            success=False,
-            completed_tasks=promoted_so_far,
-            failed_tasks=failed_so_far,
-            error_summary=error_summary,
-        )
-
-        logger.error(
-            "Promote candidates workflow failed",
-            extra={
-                "workflow_id": workflow_id,
-                "batch_job_id": batch_job_id,
-                "error": str(e),
-            },
-        )
-
-        raise
+            raise
+    finally:
+        gate.release()
 
 
 # ---------------------------------------------------------------------------

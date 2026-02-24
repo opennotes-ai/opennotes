@@ -53,6 +53,7 @@ from src.dbos_workflows.config import (
     get_dbos_client,
     validate_dbos_connection,
 )
+from src.dbos_workflows.token_bucket.router import router as token_pool_router
 from src.events.nats_client import nats_client
 from src.events.schemas import EventType
 from src.events.subscriber import event_subscriber
@@ -710,6 +711,7 @@ app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 app.include_router(fact_check_import_router, prefix=settings.API_V1_PREFIX)
 app.include_router(candidates_jsonapi_router, prefix=settings.API_V1_PREFIX)
 app.include_router(batch_jobs_router, prefix=settings.API_V1_PREFIX)
+app.include_router(token_pool_router)
 app.include_router(
     simulations_jsonapi_router,
     prefix=settings.API_V2_PREFIX,

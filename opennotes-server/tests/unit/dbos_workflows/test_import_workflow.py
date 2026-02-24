@@ -26,12 +26,12 @@ class TestImportPipelineQueueConfiguration:
     def test_queue_worker_concurrency(self) -> None:
         from src.dbos_workflows.import_workflow import import_pipeline_queue
 
-        assert import_pipeline_queue.worker_concurrency == 1
+        assert import_pipeline_queue.worker_concurrency == 3
 
     def test_queue_global_concurrency(self) -> None:
         from src.dbos_workflows.import_workflow import import_pipeline_queue
 
-        assert import_pipeline_queue.concurrency == 3
+        assert import_pipeline_queue.concurrency == 9
 
 
 class TestWorkflowNameConstants:
@@ -125,6 +125,7 @@ class TestFactCheckImportWorkflow:
             patch("src.dbos_workflows.import_workflow.import_csv_step") as mock_import,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_start.return_value = True
@@ -165,6 +166,7 @@ class TestFactCheckImportWorkflow:
             patch("src.dbos_workflows.import_workflow.import_csv_step") as mock_import,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_start.return_value = True
@@ -196,6 +198,7 @@ class TestFactCheckImportWorkflow:
             patch("src.dbos_workflows.import_workflow.start_import_step") as mock_start,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_start.return_value = False
@@ -223,6 +226,7 @@ class TestFactCheckImportWorkflow:
             patch("src.dbos_workflows.import_workflow.import_csv_step") as mock_import,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_start.return_value = True
@@ -254,6 +258,7 @@ class TestScrapeCandidatesWorkflow:
             patch("src.dbos_workflows.import_workflow.process_scrape_batch_step") as mock_process,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_init.return_value = {"recovered": 0, "total_candidates": 50}
@@ -285,6 +290,7 @@ class TestScrapeCandidatesWorkflow:
             patch("src.dbos_workflows.import_workflow.process_scrape_batch_step") as mock_process,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_init.return_value = {"recovered": 2, "total_candidates": 50}
@@ -318,6 +324,7 @@ class TestScrapeCandidatesWorkflow:
             patch("src.dbos_workflows.import_workflow.process_scrape_batch_step") as mock_process,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_init.return_value = {"recovered": 0, "total_candidates": 50}
@@ -344,6 +351,7 @@ class TestScrapeCandidatesWorkflow:
             patch("src.dbos_workflows.import_workflow.process_scrape_batch_step") as mock_process,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_init.return_value = {"recovered": 0, "total_candidates": 50}
@@ -376,6 +384,7 @@ class TestPromoteCandidatesWorkflow:
             ) as mock_process,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_init.return_value = {"recovered": 0, "total_candidates": 30}
@@ -409,6 +418,7 @@ class TestPromoteCandidatesWorkflow:
             ) as mock_process,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_init.return_value = {"recovered": 1, "total_candidates": 30}
@@ -443,6 +453,7 @@ class TestPromoteCandidatesWorkflow:
             ) as mock_process,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_init.return_value = {"recovered": 0, "total_candidates": 30}
@@ -471,6 +482,7 @@ class TestPromoteCandidatesWorkflow:
             ) as mock_process,
             patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.import_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_init.return_value = {"recovered": 0, "total_candidates": 30}

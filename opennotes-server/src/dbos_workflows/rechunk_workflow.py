@@ -29,6 +29,8 @@ from src.dbos_workflows.batch_job_helpers import (
 )
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
 from src.dbos_workflows.config import get_dbos_client
+from src.dbos_workflows.token_bucket.config import WorkflowWeight
+from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.fact_checking.chunking_service import use_chunking_service_sync
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
@@ -87,8 +89,8 @@ def _compute_batch_success(completed_count: int, failed_count: int) -> bool:
 
 rechunk_queue = Queue(
     name="rechunk",
-    worker_concurrency=2,
-    concurrency=10,
+    worker_concurrency=6,
+    concurrency=30,
 )
 
 EMBEDDING_RETRIES_ALLOWED: bool = True
@@ -215,100 +217,105 @@ def rechunk_fact_check_workflow(
     Returns:
         dict with completed_count, failed_count, and any errors
     """
-    workflow_id = DBOS.workflow_id
-    total_items = len(item_ids)
+    gate = TokenGate(pool="default", weight=WorkflowWeight.RECHUNK)
+    gate.acquire()
+    try:
+        workflow_id = DBOS.workflow_id
+        total_items = len(item_ids)
 
-    logger.info(
-        "Starting rechunk workflow",
-        extra={
-            "workflow_id": workflow_id,
-            "batch_job_id": batch_job_id,
-            "total_items": total_items,
-        },
-    )
+        logger.info(
+            "Starting rechunk workflow",
+            extra={
+                "workflow_id": workflow_id,
+                "batch_job_id": batch_job_id,
+                "total_items": total_items,
+            },
+        )
 
-    circuit_breaker = CircuitBreaker(
-        threshold=5,
-        reset_timeout=60,
-    )
+        circuit_breaker = CircuitBreaker(
+            threshold=5,
+            reset_timeout=60,
+        )
 
-    completed_count = 0
-    failed_count = 0
-    errors: list[dict[str, Any]] = []
+        completed_count = 0
+        failed_count = 0
+        errors: list[dict[str, Any]] = []
 
-    for i, item_id in enumerate(item_ids):
-        try:
-            circuit_breaker.check()
+        for i, item_id in enumerate(item_ids):
+            try:
+                circuit_breaker.check()
 
-            result = process_fact_check_item(
-                item_id=item_id,
-                community_server_id=community_server_id,
-            )
+                result = process_fact_check_item(
+                    item_id=item_id,
+                    community_server_id=community_server_id,
+                )
 
-            if result["success"]:
-                completed_count += 1
-                circuit_breaker.record_success()
-            else:
+                if result["success"]:
+                    completed_count += 1
+                    circuit_breaker.record_success()
+                else:
+                    failed_count += 1
+                    errors.append({"item_id": item_id, "error": result.get("error")})
+
+            except CircuitOpenError:
+                logger.error(
+                    "Circuit breaker open - aborting rechunk workflow",
+                    extra={
+                        "workflow_id": workflow_id,
+                        "consecutive_failures": circuit_breaker.failures,
+                    },
+                )
+                _finalize_job(
+                    UUID(batch_job_id),
+                    success=False,
+                    completed_tasks=completed_count,
+                    failed_tasks=failed_count,
+                    error_summary={
+                        "error": "Circuit breaker open",
+                        "consecutive_failures": circuit_breaker.failures,
+                        "errors": errors,
+                    },
+                )
+                raise
+
+            except Exception as e:
                 failed_count += 1
-                errors.append({"item_id": item_id, "error": result.get("error")})
+                errors.append({"item_id": item_id, "error": str(e)})
+                circuit_breaker.record_failure()
 
-        except CircuitOpenError:
-            logger.error(
-                "Circuit breaker open - aborting rechunk workflow",
-                extra={
-                    "workflow_id": workflow_id,
-                    "consecutive_failures": circuit_breaker.failures,
-                },
-            )
-            _finalize_job(
-                UUID(batch_job_id),
-                success=False,
-                completed_tasks=completed_count,
-                failed_tasks=failed_count,
-                error_summary={
-                    "error": "Circuit breaker open",
-                    "consecutive_failures": circuit_breaker.failures,
-                    "errors": errors,
-                },
-            )
-            raise
+            if (i + 1) % batch_size == 0 or (i + 1) == total_items:
+                update_batch_job_progress_sync(
+                    UUID(batch_job_id),
+                    completed_tasks=completed_count,
+                    failed_tasks=failed_count,
+                )
 
-        except Exception as e:
-            failed_count += 1
-            errors.append({"item_id": item_id, "error": str(e)})
-            circuit_breaker.record_failure()
+        success = _compute_batch_success(completed_count, failed_count)
+        error_summary = {"errors": errors} if errors else None
+        _finalize_job(
+            UUID(batch_job_id),
+            success=success,
+            completed_tasks=completed_count,
+            failed_tasks=failed_count,
+            error_summary=error_summary,
+        )
 
-        if (i + 1) % batch_size == 0 or (i + 1) == total_items:
-            update_batch_job_progress_sync(
-                UUID(batch_job_id),
-                completed_tasks=completed_count,
-                failed_tasks=failed_count,
-            )
+        logger.info(
+            "Rechunk workflow completed",
+            extra={
+                "workflow_id": workflow_id,
+                "completed": completed_count,
+                "failed": failed_count,
+            },
+        )
 
-    success = _compute_batch_success(completed_count, failed_count)
-    error_summary = {"errors": errors} if errors else None
-    _finalize_job(
-        UUID(batch_job_id),
-        success=success,
-        completed_tasks=completed_count,
-        failed_tasks=failed_count,
-        error_summary=error_summary,
-    )
-
-    logger.info(
-        "Rechunk workflow completed",
-        extra={
-            "workflow_id": workflow_id,
-            "completed": completed_count,
-            "failed": failed_count,
-        },
-    )
-
-    return {
-        "completed_count": completed_count,
-        "failed_count": failed_count,
-        "errors": errors,
-    }
+        return {
+            "completed_count": completed_count,
+            "failed_count": failed_count,
+            "errors": errors,
+        }
+    finally:
+        gate.release()
 
 
 @DBOS.step(
@@ -421,48 +428,53 @@ def chunk_single_fact_check_workflow(
     Returns:
         dict with success boolean and optional error message
     """
-    workflow_id = DBOS.workflow_id
-
-    logger.info(
-        "Starting single fact-check chunk workflow",
-        extra={
-            "workflow_id": workflow_id,
-            "fact_check_id": fact_check_id,
-            "community_server_id": community_server_id,
-        },
-    )
-
+    gate = TokenGate(pool="default", weight=WorkflowWeight.RECHUNK)
+    gate.acquire()
     try:
-        result = process_fact_check_item(
-            item_id=fact_check_id,
-            community_server_id=community_server_id,
-        )
+        workflow_id = DBOS.workflow_id
 
         logger.info(
-            "Single fact-check chunk workflow completed",
+            "Starting single fact-check chunk workflow",
             extra={
                 "workflow_id": workflow_id,
                 "fact_check_id": fact_check_id,
-                "success": result["success"],
+                "community_server_id": community_server_id,
             },
         )
 
-        return result
+        try:
+            result = process_fact_check_item(
+                item_id=fact_check_id,
+                community_server_id=community_server_id,
+            )
 
-    except Exception as e:
-        logger.error(
-            "Single fact-check chunk workflow failed",
-            extra={
-                "workflow_id": workflow_id,
-                "fact_check_id": fact_check_id,
+            logger.info(
+                "Single fact-check chunk workflow completed",
+                extra={
+                    "workflow_id": workflow_id,
+                    "fact_check_id": fact_check_id,
+                    "success": result["success"],
+                },
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(
+                "Single fact-check chunk workflow failed",
+                extra={
+                    "workflow_id": workflow_id,
+                    "fact_check_id": fact_check_id,
+                    "error": str(e),
+                },
+            )
+            return {
+                "success": False,
+                "item_id": fact_check_id,
                 "error": str(e),
-            },
-        )
-        return {
-            "success": False,
-            "item_id": fact_check_id,
-            "error": str(e),
-        }
+            }
+    finally:
+        gate.release()
 
 
 async def enqueue_single_fact_check_chunk(
@@ -637,101 +649,106 @@ def rechunk_previously_seen_workflow(
     Returns:
         dict with completed_count, failed_count, and any errors
     """
-    workflow_id = DBOS.workflow_id
-    total_items = len(item_ids)
+    gate = TokenGate(pool="default", weight=WorkflowWeight.RECHUNK)
+    gate.acquire()
+    try:
+        workflow_id = DBOS.workflow_id
+        total_items = len(item_ids)
 
-    logger.info(
-        "Starting previously-seen rechunk workflow",
-        extra={
-            "workflow_id": workflow_id,
-            "batch_job_id": batch_job_id,
-            "community_server_id": community_server_id,
-            "total_items": total_items,
-        },
-    )
+        logger.info(
+            "Starting previously-seen rechunk workflow",
+            extra={
+                "workflow_id": workflow_id,
+                "batch_job_id": batch_job_id,
+                "community_server_id": community_server_id,
+                "total_items": total_items,
+            },
+        )
 
-    circuit_breaker = CircuitBreaker(
-        threshold=5,
-        reset_timeout=60,
-    )
+        circuit_breaker = CircuitBreaker(
+            threshold=5,
+            reset_timeout=60,
+        )
 
-    completed_count = 0
-    failed_count = 0
-    errors: list[dict[str, Any]] = []
+        completed_count = 0
+        failed_count = 0
+        errors: list[dict[str, Any]] = []
 
-    for i, item_id in enumerate(item_ids):
-        try:
-            circuit_breaker.check()
+        for i, item_id in enumerate(item_ids):
+            try:
+                circuit_breaker.check()
 
-            result = process_previously_seen_item(
-                item_id=item_id,
-                community_server_id=community_server_id,
-            )
+                result = process_previously_seen_item(
+                    item_id=item_id,
+                    community_server_id=community_server_id,
+                )
 
-            if result["success"]:
-                completed_count += 1
-                circuit_breaker.record_success()
-            else:
+                if result["success"]:
+                    completed_count += 1
+                    circuit_breaker.record_success()
+                else:
+                    failed_count += 1
+                    errors.append({"item_id": item_id, "error": result.get("error")})
+
+            except CircuitOpenError:
+                logger.error(
+                    "Circuit breaker open - aborting previously-seen rechunk workflow",
+                    extra={
+                        "workflow_id": workflow_id,
+                        "consecutive_failures": circuit_breaker.failures,
+                    },
+                )
+                _finalize_job(
+                    UUID(batch_job_id),
+                    success=False,
+                    completed_tasks=completed_count,
+                    failed_tasks=failed_count,
+                    error_summary={
+                        "error": "Circuit breaker open",
+                        "consecutive_failures": circuit_breaker.failures,
+                        "errors": errors,
+                    },
+                )
+                raise
+
+            except Exception as e:
                 failed_count += 1
-                errors.append({"item_id": item_id, "error": result.get("error")})
+                errors.append({"item_id": item_id, "error": str(e)})
+                circuit_breaker.record_failure()
 
-        except CircuitOpenError:
-            logger.error(
-                "Circuit breaker open - aborting previously-seen rechunk workflow",
-                extra={
-                    "workflow_id": workflow_id,
-                    "consecutive_failures": circuit_breaker.failures,
-                },
-            )
-            _finalize_job(
-                UUID(batch_job_id),
-                success=False,
-                completed_tasks=completed_count,
-                failed_tasks=failed_count,
-                error_summary={
-                    "error": "Circuit breaker open",
-                    "consecutive_failures": circuit_breaker.failures,
-                    "errors": errors,
-                },
-            )
-            raise
+            if (i + 1) % batch_size == 0 or (i + 1) == total_items:
+                update_batch_job_progress_sync(
+                    UUID(batch_job_id),
+                    completed_tasks=completed_count,
+                    failed_tasks=failed_count,
+                )
 
-        except Exception as e:
-            failed_count += 1
-            errors.append({"item_id": item_id, "error": str(e)})
-            circuit_breaker.record_failure()
+        success = _compute_batch_success(completed_count, failed_count)
+        error_summary = {"errors": errors} if errors else None
+        _finalize_job(
+            UUID(batch_job_id),
+            success=success,
+            completed_tasks=completed_count,
+            failed_tasks=failed_count,
+            error_summary=error_summary,
+        )
 
-        if (i + 1) % batch_size == 0 or (i + 1) == total_items:
-            update_batch_job_progress_sync(
-                UUID(batch_job_id),
-                completed_tasks=completed_count,
-                failed_tasks=failed_count,
-            )
+        logger.info(
+            "Previously-seen rechunk workflow completed",
+            extra={
+                "workflow_id": workflow_id,
+                "completed": completed_count,
+                "failed": failed_count,
+            },
+        )
 
-    success = _compute_batch_success(completed_count, failed_count)
-    error_summary = {"errors": errors} if errors else None
-    _finalize_job(
-        UUID(batch_job_id),
-        success=success,
-        completed_tasks=completed_count,
-        failed_tasks=failed_count,
-        error_summary=error_summary,
-    )
-
-    logger.info(
-        "Previously-seen rechunk workflow completed",
-        extra={
-            "workflow_id": workflow_id,
-            "completed": completed_count,
-            "failed": failed_count,
-        },
-    )
-
-    return {
-        "completed_count": completed_count,
-        "failed_count": failed_count,
-        "errors": errors,
-    }
+        return {
+            "completed_count": completed_count,
+            "failed_count": failed_count,
+            "errors": errors,
+        }
+    finally:
+        gate.release()
 
 
 async def dispatch_dbos_previously_seen_rechunk_workflow(

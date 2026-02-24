@@ -10235,6 +10235,77 @@
         }
       }
     },
+    "/admin/token-pools/": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Token Pools",
+        "operationId": "list_token_pools_admin_token_pools__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TokenPoolStatus"
+                  },
+                  "type": "array",
+                  "title": "Response List Token Pools Admin Token Pools  Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/token-pools/{pool_name}/holds": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Pool Holds",
+        "operationId": "get_pool_holds_admin_token_pools__pool_name__holds_get",
+        "parameters": [
+          {
+            "name": "pool_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pool Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TokenHoldDetail"
+                  },
+                  "title": "Response Get Pool Holds Admin Token Pools  Pool Name  Holds Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/simulations": {
       "post": {
         "tags": [
@@ -21865,6 +21936,63 @@
           "expires_in"
         ],
         "title": "Token"
+      },
+      "TokenHoldDetail": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id"
+          },
+          "weight": {
+            "type": "integer",
+            "title": "Weight"
+          },
+          "acquired_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Acquired At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "weight",
+          "acquired_at"
+        ],
+        "title": "TokenHoldDetail"
+      },
+      "TokenPoolStatus": {
+        "properties": {
+          "pool_name": {
+            "type": "string",
+            "title": "Pool Name"
+          },
+          "capacity": {
+            "type": "integer",
+            "title": "Capacity"
+          },
+          "available": {
+            "type": "integer",
+            "title": "Available"
+          },
+          "active_hold_count": {
+            "type": "integer",
+            "title": "Active Hold Count"
+          },
+          "utilization_pct": {
+            "type": "number",
+            "title": "Utilization Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pool_name",
+          "capacity",
+          "available",
+          "active_hold_count",
+          "utilization_pct"
+        ],
+        "title": "TokenPoolStatus"
       },
       "UserCreate": {
         "properties": {

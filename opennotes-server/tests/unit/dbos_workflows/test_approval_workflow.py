@@ -81,6 +81,7 @@ class TestBulkApprovalWorkflowEmptyCandidates:
             patch("src.dbos_workflows.approval_workflow.start_batch_job_sync") as mock_start,
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.approval_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 0
@@ -147,6 +148,7 @@ class TestBulkApprovalWorkflowProcessesBatches:
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.approval_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 10
@@ -202,6 +204,7 @@ class TestBulkApprovalWorkflowProcessesBatches:
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync"),
             patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.approval_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 50
@@ -241,6 +244,7 @@ class TestBulkApprovalWorkflowCircuitBreaker:
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.approval_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 1000
@@ -301,6 +305,7 @@ class TestBulkApprovalWorkflowCircuitBreaker:
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.approval_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 1000
@@ -363,6 +368,7 @@ class TestBulkApprovalWorkflowErrorAggregation:
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync"),
             patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.approval_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 200
@@ -418,6 +424,7 @@ class TestBulkApprovalWorkflowWithFailedResult:
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.approval_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 10
@@ -457,6 +464,7 @@ class TestStartBatchJobSyncCheck:
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.approval_workflow.process_approval_batch_step") as mock_batch,
             patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.approval_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 50
@@ -581,6 +589,7 @@ class TestProgressUpdateGuard:
             ) as mock_progress,
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync"),
             patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.approval_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 10
