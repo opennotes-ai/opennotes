@@ -260,6 +260,7 @@ class TestRechunkWorkflowEndToEnd:
         with (
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_step,
             patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-e2e-test"
             mock_step.return_value = {
@@ -331,6 +332,7 @@ class TestRechunkWorkflowEndToEnd:
                 "src.dbos_workflows.rechunk_workflow.use_chunking_service_sync",
                 side_effect=mock_use_chunking_sync,
             ),
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-e2e-pipeline"
             mock_run_sync.side_effect = [
@@ -357,6 +359,7 @@ class TestRechunkWorkflowEndToEnd:
         with (
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_step,
             patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-e2e-fail"
             mock_step.side_effect = RuntimeError("Embedding API rate limited")
@@ -378,6 +381,7 @@ class TestRechunkWorkflowEndToEnd:
         with (
             patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_step,
             patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-null-community"
             mock_step.return_value = {
@@ -411,6 +415,7 @@ class TestRechunkWorkflowEndToEnd:
             ) as mock_progress,
             patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.rechunk_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-batch-e2e"
             mock_process.return_value = {"success": True, "chunks_created": 2}

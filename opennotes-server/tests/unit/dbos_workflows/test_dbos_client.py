@@ -195,7 +195,7 @@ class TestServerModeInitialization:
         from src.dbos_workflows.rechunk_workflow import rechunk_queue
 
         assert rechunk_queue.name == "rechunk"
-        assert rechunk_queue.worker_concurrency == 2
+        assert rechunk_queue.worker_concurrency == 6
 
     def test_dbos_client_config_uses_same_database(self) -> None:
         """DBOSClient uses the same system database as DBOS."""
