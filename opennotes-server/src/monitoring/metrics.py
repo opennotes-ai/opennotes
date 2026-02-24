@@ -12,6 +12,19 @@ http_request_duration_seconds = meter.create_histogram(
     "http.request.duration",
     description="HTTP request duration in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        5.0,
+        10.0,
+    ),
 )
 
 active_requests = meter.create_up_down_counter(
@@ -30,6 +43,7 @@ scoring_duration_seconds = meter.create_histogram(
     "scoring.duration",
     description="Duration of scoring operations in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
 
 ratings_processed_total = meter.create_counter(
@@ -48,6 +62,7 @@ webhook_processing_duration_seconds = meter.create_histogram(
     "webhook.processing.duration",
     description="Duration of webhook processing in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
 )
 
 database_queries_total = meter.create_counter(
@@ -60,6 +75,7 @@ database_query_duration_seconds = meter.create_histogram(
     "database.query.duration",
     description="Database query duration in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
 
 redis_operations_total = meter.create_counter(
@@ -72,6 +88,7 @@ redis_operation_duration_seconds = meter.create_histogram(
     "redis.operation.duration",
     description="Redis operation duration in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
 
 auth_attempts_total = meter.create_counter(
@@ -90,6 +107,19 @@ task_processing_duration_seconds = meter.create_histogram(
     "task.processing.duration",
     description="Duration of background task processing in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        5.0,
+        10.0,
+        30.0,
+        60.0,
+        120.0,
+        300.0,
+    ),
 )
 
 errors_total = meter.create_counter(
@@ -150,6 +180,7 @@ cache_operation_duration_seconds = meter.create_histogram(
     "cache.operation.duration",
     description="Cache operation duration in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
 
 cache_size_items = meter.create_gauge(
@@ -198,6 +229,7 @@ scoring_duration_by_tier = meter.create_histogram(
     "scoring.duration_by_tier",
     description="Scoring operation duration by tier in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
 
 scoring_failures_by_tier = meter.create_counter(
@@ -222,12 +254,14 @@ bayesian_rating_count_distribution = meter.create_histogram(
     "bayesian.rating_count.distribution",
     description="Distribution of rating counts when scoring with Bayesian Average",
     unit="1",
+    explicit_bucket_boundaries_advisory=(0, 1, 2, 3, 5, 10, 20, 50, 100),
 )
 
 bayesian_score_deviation_from_prior = meter.create_histogram(
     "bayesian.score_deviation_from_prior",
     description="Absolute deviation of calculated score from prior mean",
     unit="1",
+    explicit_bucket_boundaries_advisory=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5),
 )
 
 bayesian_prior_updates_total = meter.create_counter(
@@ -264,6 +298,7 @@ bayesian_scoring_duration_seconds = meter.create_histogram(
     "bayesian.scoring.duration",
     description="Duration of Bayesian Average score calculation in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
 
 bayesian_fallback_activations_total = meter.create_counter(
@@ -288,6 +323,7 @@ nats_publish_duration_seconds = meter.create_histogram(
     "nats.publish.duration",
     description="Duration of NATS publish operations in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
 
 nats_events_failed_total = meter.create_counter(
@@ -300,6 +336,7 @@ middleware_execution_duration_seconds = meter.create_histogram(
     "middleware.execution.duration",
     description="Total middleware execution time including all middleware layers",
     unit="s",
+    explicit_bucket_boundaries_advisory=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
 )
 
 cors_preflight_requests_total = meter.create_counter(
@@ -348,6 +385,7 @@ ai_note_generation_duration_seconds = meter.create_histogram(
     "ai.note_generation.duration",
     description="Duration of AI note generation in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
 )
 
 bulk_scan_finalization_dispatch_total = meter.create_counter(
@@ -432,6 +470,19 @@ taskiq_task_duration_seconds = meter.create_histogram(
     "taskiq.task.duration",
     description="Duration of TaskIQ task execution in seconds",
     unit="s",
+    explicit_bucket_boundaries_advisory=(
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        5.0,
+        10.0,
+        30.0,
+        60.0,
+        120.0,
+        300.0,
+    ),
 )
 
 taskiq_tasks_total = meter.create_counter(

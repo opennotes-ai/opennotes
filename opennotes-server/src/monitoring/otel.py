@@ -260,7 +260,12 @@ def setup_otel(
             SQLAlchemyInstrumentor().instrument(enable_commenter=True)
 
             global _meter_provider
-            _meter_provider = _setup_meter_provider(resource)
+            try:
+                _meter_provider = _setup_meter_provider(resource, otlp_insecure=otlp_insecure)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to set up meter provider, continuing with tracing only: {e}"
+                )
 
             _otel_initialized = True
             logger.info(
@@ -277,7 +282,9 @@ def setup_otel(
             return False
 
 
-def _setup_meter_provider(resource: "Resource") -> "MeterProvider | None":
+def _setup_meter_provider(
+    resource: "Resource", *, otlp_insecure: bool = False
+) -> "MeterProvider | None":
     """Set up OTEL MeterProvider with OTLP export if configured.
 
     Returns the configured MeterProvider, or None if export is disabled.
@@ -301,7 +308,7 @@ def _setup_meter_provider(resource: "Resource") -> "MeterProvider | None":
         from opentelemetry.sdk.metrics import MeterProvider as SdkMeterProvider
         from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
-        metric_exporter = OTLPMetricExporter(endpoint=metrics_endpoint, insecure=True)
+        metric_exporter = OTLPMetricExporter(endpoint=metrics_endpoint, insecure=otlp_insecure)
         metric_reader = PeriodicExportingMetricReader(metric_exporter, export_interval_millis=60000)
         provider = SdkMeterProvider(resource=resource, metric_readers=[metric_reader])
         otel_metrics.set_meter_provider(provider)
