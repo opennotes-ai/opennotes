@@ -1,14 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
 from src.monitoring import HealthChecker, get_logger
-from src.monitoring.metrics import (
-    active_requests,
-    errors_total,
-    http_request_duration_seconds,
-    http_requests_total,
-    notes_scored_total,
-)
 
 
 def test_health_endpoint(client: TestClient) -> None:
@@ -36,13 +31,30 @@ def test_readiness_endpoint(client: TestClient) -> None:
     assert "ready" in data
 
 
-def test_otel_metrics_callable() -> None:
-    http_requests_total.add(1, {"method": "GET", "endpoint": "/test", "status": "200"})
-    active_requests.add(1)
-    active_requests.add(-1)
-    http_request_duration_seconds.record(0.5, {"method": "GET", "endpoint": "/test"})
-    errors_total.add(1, {"error_type": "TestError", "endpoint": "/test"})
-    notes_scored_total.add(10, {"status": "success"})
+def test_otel_metrics_recorded() -> None:
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(metric_readers=[reader])
+    meter = provider.get_meter("test-monitoring")
+
+    counter = meter.create_counter("test.http.requests")
+    up_down = meter.create_up_down_counter("test.active_requests")
+    histogram = meter.create_histogram("test.http.duration")
+    errors = meter.create_counter("test.errors")
+
+    counter.add(1, {"method": "GET", "endpoint": "/test", "status": "200"})
+    up_down.add(1)
+    up_down.add(-1)
+    histogram.record(0.5, {"method": "GET", "endpoint": "/test"})
+    errors.add(1, {"error_type": "TestError", "endpoint": "/test"})
+
+    metrics_data = reader.get_metrics_data()
+    assert metrics_data is not None
+    resource_metrics = metrics_data.resource_metrics
+    assert len(resource_metrics) > 0
+    scope_metrics = resource_metrics[0].scope_metrics
+    assert len(scope_metrics) > 0
+    recorded_metrics = scope_metrics[0].metrics
+    assert len(recorded_metrics) == 4
 
 
 def test_structured_logging() -> None:

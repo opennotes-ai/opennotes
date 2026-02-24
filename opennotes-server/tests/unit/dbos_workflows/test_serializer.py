@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from unittest.mock import patch
 
 import pendulum
 import pytest
@@ -161,13 +162,16 @@ class TestNonJsonFallback:
         assert "Non-JSON data encountered" in caplog.text
 
     def test_otel_counter_called_on_non_json_data(self, serializer: SafeJsonSerializer) -> None:
-        result = serializer.deserialize("not-json-prefixed-data")
-        assert result == "not-json-prefixed-data"
+        with patch("src.dbos_workflows.serializer.DBOS_PICKLE_FALLBACK_TOTAL") as mock_counter:
+            result = serializer.deserialize("not-json-prefixed-data")
+            assert result == "not-json-prefixed-data"
+            mock_counter.add.assert_called_once_with(1, {})
 
     def test_no_counter_on_json_deserialize(self, serializer: SafeJsonSerializer) -> None:
-        serialized = serializer.serialize("hello")
-        result = serializer.deserialize(serialized)
-        assert result == "hello"
+        with patch("src.dbos_workflows.serializer.DBOS_PICKLE_FALLBACK_TOTAL") as mock_counter:
+            result = serializer.deserialize(serializer.serialize("hello"))
+            assert result == "hello"
+            mock_counter.add.assert_not_called()
 
 
 class TestNestedExceptionSerialization:

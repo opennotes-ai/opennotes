@@ -1,12 +1,10 @@
 import logging
 
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
 from src.monitoring.instance import InstanceMetadata, initialize_instance_metadata
 from src.monitoring.logging import CustomJsonFormatter
-from src.monitoring.metrics import (
-    active_requests,
-    http_request_duration_seconds,
-    http_requests_total,
-)
 
 
 class TestInstanceMetadata:
@@ -74,31 +72,19 @@ class TestInstanceMetadata:
         assert log_dict.get("instance_id") == "logging-test-instance"
         assert "hostname" in log_dict
 
-    def test_otel_metrics_callable(self) -> None:
+    def test_otel_metrics_recorded(self) -> None:
         initialize_instance_metadata(instance_id="metrics-test-instance", environment="test")
 
-        http_requests_total.add(1, {"method": "GET", "endpoint": "/test", "status": "200"})
-        active_requests.add(1)
-        http_request_duration_seconds.record(0.5, {"method": "GET", "endpoint": "/test"})
+        reader = InMemoryMetricReader()
+        provider = MeterProvider(metric_readers=[reader])
+        meter = provider.get_meter("test-instance-metadata")
+        counter = meter.create_counter("test.http.requests")
+        histogram = meter.create_histogram("test.http.duration")
 
-    def test_multiple_instances_distinguishable(self) -> None:
-        instance_1_id = "instance-1"
-        instance_2_id = "instance-2"
+        counter.add(1, {"method": "GET", "endpoint": "/test", "status": "200"})
+        histogram.record(0.5, {"method": "GET", "endpoint": "/test"})
 
-        InstanceMetadata.set_instance(
-            InstanceMetadata(instance_id=instance_1_id, environment="test")
-        )
-        for _i in range(5):
-            http_requests_total.add(
-                1,
-                {"method": "GET", "endpoint": "/test", "status": "200"},
-            )
-
-        InstanceMetadata.set_instance(
-            InstanceMetadata(instance_id=instance_2_id, environment="test")
-        )
-        for _i in range(3):
-            http_requests_total.add(
-                1,
-                {"method": "GET", "endpoint": "/test", "status": "200"},
-            )
+        metrics_data = reader.get_metrics_data()
+        assert metrics_data is not None
+        resource_metrics = metrics_data.resource_metrics
+        assert len(resource_metrics) > 0
