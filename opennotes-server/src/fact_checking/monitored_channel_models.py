@@ -31,7 +31,7 @@ class MonitoredChannel(Base):
     Configuration for Discord channels monitored for potential misinformation.
 
     Allows community administrators to opt-in specific channels for automatic
-    fact-checking against datasets like Snopes. Each channel can have custom
+    fact-checking against available datasets. Each channel can have custom
     similarity thresholds and dataset filtering.
 
     Attributes:
@@ -71,7 +71,7 @@ class MonitoredChannel(Base):
         Float, nullable=False, server_default="0.75"
     )
     dataset_tags: Mapped[list[str]] = mapped_column(
-        ARRAY(Text), nullable=False, server_default="{snopes}"
+        ARRAY(Text), nullable=False, server_default="{}"
     )
 
     # Previously seen message thresholds (NULL = use config defaults)

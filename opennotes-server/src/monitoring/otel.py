@@ -371,9 +371,11 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
 
             flush_timeout_millis = get_settings().OTEL_SHUTDOWN_FLUSH_TIMEOUT_MILLIS
 
+        resolved_timeout: int = flush_timeout_millis
+
         if _tracer_provider is not None:
             try:
-                _tracer_provider.force_flush(timeout_millis=flush_timeout_millis)
+                _tracer_provider.force_flush(timeout_millis=resolved_timeout)
                 logger.info("OpenTelemetry spans flushed before shutdown")
             except Exception as e:
                 logger.warning(f"Failed to flush spans during shutdown: {e}")
@@ -383,7 +385,7 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
 
         if _meter_provider is not None:
             try:
-                _meter_provider.force_flush(timeout_millis=flush_timeout_millis)
+                _meter_provider.force_flush(timeout_millis=resolved_timeout)
                 logger.info("OpenTelemetry metrics flushed before shutdown")
             except Exception as e:
                 logger.warning(f"Failed to flush metrics during shutdown: {e}")
