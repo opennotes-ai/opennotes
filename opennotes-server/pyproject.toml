@@ -195,7 +195,7 @@ reportUnnecessaryTypeIgnoreComment = false
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers --cov=src --cov-report=term-missing --cov-report=html"
+addopts = "-ra -q --strict-markers --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml:coverage.xml"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 python_files = ["test_*.py", "*_test.py"]
