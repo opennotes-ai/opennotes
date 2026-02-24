@@ -11,6 +11,8 @@ from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
+from src.dbos_workflows.token_bucket.config import WorkflowWeight
+from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
 from src.simulation.models import SimAgent, SimAgentInstance, SimAgentMemory
 from src.utils.async_compat import run_sync
@@ -25,8 +27,8 @@ DEFAULT_TOKEN_LIMIT: int = 4000
 
 simulation_turn_queue = Queue(
     name="simulation_turn",
-    worker_concurrency=2,
-    concurrency=8,
+    worker_concurrency=6,
+    concurrency=24,
 )
 
 
@@ -328,59 +330,64 @@ def persist_state_step(
 
 @DBOS.workflow()
 def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
-    workflow_id = DBOS.workflow_id
-    assert workflow_id is not None
+    gate = TokenGate(pool="default", weight=WorkflowWeight.SIMULATION_TURN)
+    gate.acquire()
+    try:
+        workflow_id = DBOS.workflow_id
+        assert workflow_id is not None
 
-    logger.info(
-        "Starting agent turn workflow",
-        extra={
-            "workflow_id": workflow_id,
+        logger.info(
+            "Starting agent turn workflow",
+            extra={
+                "workflow_id": workflow_id,
+                "agent_instance_id": agent_instance_id,
+            },
+        )
+
+        context = load_agent_context_step(agent_instance_id)
+
+        memory_result = compact_memory_step(
+            message_history=context["message_history"],
+            turn_count=context["instance_turn_count"],
+            strategy=context["memory_compaction_strategy"],
+            config=context["memory_compaction_config"],
+            compaction_interval=COMPACTION_INTERVAL,
+        )
+
+        deps_data = build_deps_step(
+            community_server_id=context.get("community_server_id"),
+        )
+
+        turn_result = execute_agent_turn_step(
+            context=context,
+            deps_data=deps_data,
+            messages=memory_result["messages"],
+        )
+
+        persist_result = persist_state_step(
+            agent_instance_id=agent_instance_id,
+            memory_id=context.get("memory_id"),
+            new_messages=turn_result["new_messages"],
+            action=turn_result["action"],
+        )
+
+        logger.info(
+            "Agent turn workflow completed",
+            extra={
+                "workflow_id": workflow_id,
+                "agent_instance_id": agent_instance_id,
+                "action_type": persist_result.get("action_type"),
+            },
+        )
+
+        return {
             "agent_instance_id": agent_instance_id,
-        },
-    )
-
-    context = load_agent_context_step(agent_instance_id)
-
-    memory_result = compact_memory_step(
-        message_history=context["message_history"],
-        turn_count=context["instance_turn_count"],
-        strategy=context["memory_compaction_strategy"],
-        config=context["memory_compaction_config"],
-        compaction_interval=COMPACTION_INTERVAL,
-    )
-
-    deps_data = build_deps_step(
-        community_server_id=context.get("community_server_id"),
-    )
-
-    turn_result = execute_agent_turn_step(
-        context=context,
-        deps_data=deps_data,
-        messages=memory_result["messages"],
-    )
-
-    persist_result = persist_state_step(
-        agent_instance_id=agent_instance_id,
-        memory_id=context.get("memory_id"),
-        new_messages=turn_result["new_messages"],
-        action=turn_result["action"],
-    )
-
-    logger.info(
-        "Agent turn workflow completed",
-        extra={
+            "action": turn_result["action"],
+            "persisted": persist_result["persisted"],
             "workflow_id": workflow_id,
-            "agent_instance_id": agent_instance_id,
-            "action_type": persist_result.get("action_type"),
-        },
-    )
-
-    return {
-        "agent_instance_id": agent_instance_id,
-        "action": turn_result["action"],
-        "persisted": persist_result["persisted"],
-        "workflow_id": workflow_id,
-    }
+        }
+    finally:
+        gate.release()
 
 
 RUN_AGENT_TURN_WORKFLOW_NAME: str = run_agent_turn.__qualname__

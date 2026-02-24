@@ -30,12 +30,12 @@ class TestContentScanQueueConfiguration:
     def test_queue_worker_concurrency(self) -> None:
         from src.dbos_workflows.content_scan_workflow import content_scan_queue
 
-        assert content_scan_queue.worker_concurrency == 2
+        assert content_scan_queue.worker_concurrency == 6
 
     def test_queue_global_concurrency(self) -> None:
         from src.dbos_workflows.content_scan_workflow import content_scan_queue
 
-        assert content_scan_queue.concurrency == 4
+        assert content_scan_queue.concurrency == 12
 
 
 class TestTimeoutConstants:
@@ -142,6 +142,7 @@ class TestContentScanOrchestrationWorkflow:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
@@ -200,6 +201,7 @@ class TestContentScanOrchestrationWorkflow:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
@@ -249,6 +251,7 @@ class TestContentScanOrchestrationWorkflow:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
@@ -300,6 +303,7 @@ class TestContentScanOrchestrationWorkflow:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
@@ -338,6 +342,7 @@ class TestContentScanOrchestrationWorkflow:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
@@ -379,6 +384,7 @@ class TestContentScanOrchestrationWorkflow:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = tracking_recv
@@ -428,6 +434,7 @@ class TestContentScanOrchestrationWorkflow:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = tracking_recv
@@ -482,6 +489,7 @@ class TestContentScanOrchestrationWorkflow:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = tracking_recv
@@ -622,6 +630,7 @@ class TestProcessContentScanBatch:
             patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step") as mock_fp,
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_preprocess.return_value = {
                 "filtered_messages_key": "test:filtered",
@@ -727,6 +736,7 @@ class TestProcessContentScanBatch:
             patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_pre.return_value = {
                 "filtered_messages_key": "k",
@@ -790,6 +800,7 @@ class TestProcessContentScanBatch:
         with (
             patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_pre.side_effect = RuntimeError("Step failed")
 
@@ -1308,6 +1319,7 @@ class TestSignalCoordination:
             patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_pre.return_value = {
                 "filtered_messages_key": "k",
@@ -1355,6 +1367,7 @@ class TestSignalCoordination:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
@@ -1398,6 +1411,7 @@ class TestSignalCoordination:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
@@ -1444,6 +1458,7 @@ class TestCountMismatchBreakCondition:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
@@ -1494,6 +1509,7 @@ class TestProgressTrackingThroughWorkflowSteps:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
@@ -1537,6 +1553,7 @@ class TestProgressTrackingThroughWorkflowSteps:
             ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
@@ -1560,6 +1577,7 @@ class TestProgressTrackingThroughWorkflowSteps:
             patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
         ):
             mock_pre.return_value = {
                 "filtered_messages_key": "k",

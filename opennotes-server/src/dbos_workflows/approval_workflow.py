@@ -36,6 +36,8 @@ from src.dbos_workflows.batch_job_helpers import (
     update_batch_job_progress_sync,
 )
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.dbos_workflows.token_bucket.config import WorkflowWeight
+from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.fact_checking.candidate_models import FactCheckedItemCandidate
 from src.fact_checking.import_pipeline.candidate_service import extract_high_confidence_rating
 from src.monitoring import get_logger
@@ -49,8 +51,8 @@ logger = get_logger(__name__)
 
 approval_queue = Queue(
     name="approval",
-    worker_concurrency=1,
-    concurrency=2,
+    worker_concurrency=3,
+    concurrency=6,
 )
 """Queue configuration for approval workflows.
 
@@ -335,7 +337,7 @@ def _finalize_and_warn(
 
 
 @DBOS.workflow()
-def bulk_approval_workflow(
+def bulk_approval_workflow(  # noqa: PLR0912
     batch_job_id: str,
     threshold: float,
     auto_promote: bool,
@@ -384,218 +386,217 @@ def bulk_approval_workflow(
     Returns:
         dict with approval stats
     """
-    workflow_id = DBOS.workflow_id
-    assert workflow_id is not None
-    job_uuid = UUID(batch_job_id)
-
-    logger.info(
-        "Starting bulk approval workflow",
-        extra={
-            "workflow_id": workflow_id,
-            "batch_job_id": batch_job_id,
-            "threshold": threshold,
-            "auto_promote": auto_promote,
-            "limit": limit,
-        },
-    )
-
-    circuit_breaker = CircuitBreaker(
-        threshold=5,
-        reset_timeout=60,
-    )
-
-    total_matching = count_approval_candidates_step(
-        status=status,
-        dataset_name=dataset_name,
-        dataset_tags=dataset_tags,
-        has_content=has_content,
-        published_date_from=published_date_from,
-        published_date_to=published_date_to,
-        limit=limit,
-    )
-
-    if not start_batch_job_sync(job_uuid, total_matching):
-        logger.error(
-            "Failed to start batch job - aborting workflow",
-            extra={"workflow_id": workflow_id, "batch_job_id": batch_job_id},
-        )
-        _finalize_and_warn(
-            job_uuid,
-            workflow_id,
-            batch_job_id,
-            success=False,
-            completed_tasks=0,
-            failed_tasks=0,
-            error_summary={"error": "Failed to transition job to IN_PROGRESS"},
-        )
-        return {"updated_count": 0, "promoted_count": 0, "error": "job_start_failed"}
-
-    if total_matching == 0:
-        _finalize_and_warn(
-            job_uuid,
-            workflow_id,
-            batch_job_id,
-            success=True,
-            completed_tasks=0,
-            failed_tasks=0,
-            stats={"updated_count": 0, "promoted_count": 0},
-        )
+    gate = TokenGate(pool="default", weight=WorkflowWeight.APPROVAL)
+    gate.acquire()
+    try:
+        workflow_id = DBOS.workflow_id
+        assert workflow_id is not None
+        job_uuid = UUID(batch_job_id)
 
         logger.info(
-            "Bulk approval workflow completed - no matching candidates",
-            extra={"workflow_id": workflow_id, "batch_job_id": batch_job_id},
-        )
-
-        return {"updated_count": 0, "promoted_count": 0}
-
-    updated_count = 0
-    promoted_count = 0
-    failed_count = 0
-    total_scanned = 0
-    circuit_breaker_tripped = False
-    errors: list[str] = []
-    last_processed_id: str | None = None
-    remaining = limit
-    max_iterations = (limit // BATCH_SIZE) * 10 + 20
-    iteration_count = 0
-
-    while remaining > 0 and iteration_count < max_iterations:
-        iteration_count += 1
-
-        try:
-            circuit_breaker.check()
-        except CircuitOpenError:
-            circuit_breaker_tripped = True
-            logger.error(
-                "Circuit breaker open - aborting bulk approval workflow",
-                extra={
-                    "workflow_id": workflow_id,
-                    "batch_job_id": batch_job_id,
-                    "consecutive_failures": circuit_breaker.failures,
-                },
-            )
-            update_batch_job_progress_sync(
-                job_uuid,
-                completed_tasks=updated_count,
-                failed_tasks=failed_count,
-            )
-            break
-
-        try:
-            batch_result = process_approval_batch_step(
-                threshold=threshold,
-                auto_promote=auto_promote,
-                status=status,
-                dataset_name=dataset_name,
-                dataset_tags=dataset_tags,
-                has_content=has_content,
-                published_date_from=published_date_from,
-                published_date_to=published_date_to,
-                last_processed_id=last_processed_id,
-                remaining=remaining,
-                errors_so_far=errors,
-            )
-
-            if batch_result.get("empty", False):
-                break
-
-            updated_count += batch_result["updated"]
-            promoted_count += batch_result["promoted"]
-            failed_count += batch_result["failed"]
-            total_scanned += batch_result["scanned"]
-            last_processed_id = batch_result["last_id"]
-            remaining -= batch_result["scanned"]
-            errors = batch_result["errors"]
-
-            circuit_breaker.record_success()
-
-        except Exception as e:
-            failed_count += 1
-            circuit_breaker.record_failure()
-            if len(errors) < MAX_STORED_ERRORS:
-                errors.append(f"Batch step failed: {e!s}")
-            logger.warning(
-                "Approval batch step failed",
-                extra={
-                    "workflow_id": workflow_id,
-                    "batch_job_id": batch_job_id,
-                    "iteration": iteration_count,
-                    "error": str(e),
-                },
-            )
-
-        should_update = total_scanned > 0 and total_scanned % PROGRESS_UPDATE_INTERVAL == 0
-        if should_update or remaining <= 0:
-            update_batch_job_progress_sync(
-                job_uuid,
-                completed_tasks=updated_count,
-                failed_tasks=failed_count,
-                current_item=f"Scanned {total_scanned}, updated {updated_count} candidates",
-            )
-
-    if iteration_count >= max_iterations:
-        logger.warning(
-            "Bulk approval reached max iterations",
+            "Starting bulk approval workflow",
             extra={
                 "workflow_id": workflow_id,
                 "batch_job_id": batch_job_id,
-                "iteration_count": iteration_count,
-                "max_iterations": max_iterations,
-                "remaining": remaining,
-                "total_scanned": total_scanned,
+                "threshold": threshold,
+                "auto_promote": auto_promote,
+                "limit": limit,
             },
         )
 
-    stats: dict[str, Any] = {
-        "updated_count": updated_count,
-        "promoted_count": promoted_count if auto_promote else None,
-        "threshold": threshold,
-        "total_scanned": total_scanned,
-        "iterations": iteration_count,
-        "circuit_breaker_tripped": circuit_breaker_tripped,
-    }
+        circuit_breaker = CircuitBreaker(
+            threshold=5,
+            reset_timeout=60,
+        )
 
-    if errors:
-        stats["errors"] = errors[:MAX_STORED_ERRORS]
-        stats["total_errors"] = len(errors)
+        total_matching = count_approval_candidates_step(
+            status=status,
+            dataset_name=dataset_name,
+            dataset_tags=dataset_tags,
+            has_content=has_content,
+            published_date_from=published_date_from,
+            published_date_to=published_date_to,
+            limit=limit,
+        )
 
-    success = not circuit_breaker_tripped and not (updated_count == 0 and failed_count > 0)
-    # Success semantics: a job is considered successful if:
-    #  1. The circuit breaker did not trip, AND
-    #  2. It is NOT the case that zero updates succeeded while failures occurred.
-    # Mixed results (e.g. 50 updated + 10 failed) count as success because partial
-    # progress is useful and the job can be re-run to pick up remaining candidates.
-    # Pure failure (0 updated, N failed) is marked FAILED so operators investigate.
-    error_summary = None
-    if not success:
-        error_summary = {"errors": errors[:MAX_STORED_ERRORS], "total_errors": len(errors)}
-        if circuit_breaker_tripped:
-            error_summary["circuit_breaker_tripped"] = True
+        if not start_batch_job_sync(job_uuid, total_matching):
+            logger.error(
+                "Failed to start batch job - aborting workflow",
+                extra={"workflow_id": workflow_id, "batch_job_id": batch_job_id},
+            )
+            _finalize_and_warn(
+                job_uuid,
+                workflow_id,
+                batch_job_id,
+                success=False,
+                completed_tasks=0,
+                failed_tasks=0,
+                error_summary={"error": "Failed to transition job to IN_PROGRESS"},
+            )
+            return {"updated_count": 0, "promoted_count": 0, "error": "job_start_failed"}
 
-    _finalize_and_warn(
-        job_uuid,
-        workflow_id,
-        batch_job_id,
-        success=success,
-        completed_tasks=updated_count,
-        failed_tasks=failed_count,
-        error_summary=error_summary,
-        stats=stats,
-    )
+        if total_matching == 0:
+            _finalize_and_warn(
+                job_uuid,
+                workflow_id,
+                batch_job_id,
+                success=True,
+                completed_tasks=0,
+                failed_tasks=0,
+                stats={"updated_count": 0, "promoted_count": 0},
+            )
 
-    logger.info(
-        "Bulk approval workflow completed",
-        extra={
-            "workflow_id": workflow_id,
-            "batch_job_id": batch_job_id,
+            logger.info(
+                "Bulk approval workflow completed - no matching candidates",
+                extra={"workflow_id": workflow_id, "batch_job_id": batch_job_id},
+            )
+
+            return {"updated_count": 0, "promoted_count": 0}
+
+        updated_count = 0
+        promoted_count = 0
+        failed_count = 0
+        total_scanned = 0
+        circuit_breaker_tripped = False
+        errors: list[str] = []
+        last_processed_id: str | None = None
+        remaining = limit
+        max_iterations = (limit // BATCH_SIZE) * 10 + 20
+        iteration_count = 0
+
+        while remaining > 0 and iteration_count < max_iterations:
+            iteration_count += 1
+
+            try:
+                circuit_breaker.check()
+            except CircuitOpenError:
+                circuit_breaker_tripped = True
+                logger.error(
+                    "Circuit breaker open - aborting bulk approval workflow",
+                    extra={
+                        "workflow_id": workflow_id,
+                        "batch_job_id": batch_job_id,
+                        "consecutive_failures": circuit_breaker.failures,
+                    },
+                )
+                update_batch_job_progress_sync(
+                    job_uuid,
+                    completed_tasks=updated_count,
+                    failed_tasks=failed_count,
+                )
+                break
+
+            try:
+                batch_result = process_approval_batch_step(
+                    threshold=threshold,
+                    auto_promote=auto_promote,
+                    status=status,
+                    dataset_name=dataset_name,
+                    dataset_tags=dataset_tags,
+                    has_content=has_content,
+                    published_date_from=published_date_from,
+                    published_date_to=published_date_to,
+                    last_processed_id=last_processed_id,
+                    remaining=remaining,
+                    errors_so_far=errors,
+                )
+
+                if batch_result.get("empty", False):
+                    break
+
+                updated_count += batch_result["updated"]
+                promoted_count += batch_result["promoted"]
+                failed_count += batch_result["failed"]
+                total_scanned += batch_result["scanned"]
+                last_processed_id = batch_result["last_id"]
+                remaining -= batch_result["scanned"]
+                errors = batch_result["errors"]
+
+                circuit_breaker.record_success()
+
+            except Exception as e:
+                failed_count += 1
+                circuit_breaker.record_failure()
+                if len(errors) < MAX_STORED_ERRORS:
+                    errors.append(f"Batch step failed: {e!s}")
+                logger.warning(
+                    "Approval batch step failed",
+                    extra={
+                        "workflow_id": workflow_id,
+                        "batch_job_id": batch_job_id,
+                        "iteration": iteration_count,
+                        "error": str(e),
+                    },
+                )
+
+            should_update = total_scanned > 0 and total_scanned % PROGRESS_UPDATE_INTERVAL == 0
+            if should_update or remaining <= 0:
+                update_batch_job_progress_sync(
+                    job_uuid,
+                    completed_tasks=updated_count,
+                    failed_tasks=failed_count,
+                    current_item=f"Scanned {total_scanned}, updated {updated_count} candidates",
+                )
+
+        if iteration_count >= max_iterations:
+            logger.warning(
+                "Bulk approval reached max iterations",
+                extra={
+                    "workflow_id": workflow_id,
+                    "batch_job_id": batch_job_id,
+                    "iteration_count": iteration_count,
+                    "max_iterations": max_iterations,
+                    "remaining": remaining,
+                    "total_scanned": total_scanned,
+                },
+            )
+
+        stats: dict[str, Any] = {
             "updated_count": updated_count,
-            "promoted_count": promoted_count,
-            "failed_count": failed_count,
+            "promoted_count": promoted_count if auto_promote else None,
             "threshold": threshold,
-        },
-    )
+            "total_scanned": total_scanned,
+            "iterations": iteration_count,
+            "circuit_breaker_tripped": circuit_breaker_tripped,
+        }
 
-    return stats
+        if errors:
+            stats["errors"] = errors[:MAX_STORED_ERRORS]
+            stats["total_errors"] = len(errors)
+
+        success = not circuit_breaker_tripped and not (updated_count == 0 and failed_count > 0)
+        error_summary = None
+        if not success:
+            error_summary = {"errors": errors[:MAX_STORED_ERRORS], "total_errors": len(errors)}
+            if circuit_breaker_tripped:
+                error_summary["circuit_breaker_tripped"] = True
+
+        _finalize_and_warn(
+            job_uuid,
+            workflow_id,
+            batch_job_id,
+            success=success,
+            completed_tasks=updated_count,
+            failed_tasks=failed_count,
+            error_summary=error_summary,
+            stats=stats,
+        )
+
+        logger.info(
+            "Bulk approval workflow completed",
+            extra={
+                "workflow_id": workflow_id,
+                "batch_job_id": batch_job_id,
+                "updated_count": updated_count,
+                "promoted_count": promoted_count,
+                "failed_count": failed_count,
+                "threshold": threshold,
+            },
+        )
+
+        return stats
+    finally:
+        gate.release()
 
 
 BULK_APPROVAL_WORKFLOW_NAME: str = bulk_approval_workflow.__qualname__

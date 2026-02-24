@@ -688,6 +688,7 @@ class TestRunOrchestratorWorkflow:
                 return_value={"final_status": "cancelled", "instances_finalized": 1},
             ),
             patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test-orch"
 
@@ -724,6 +725,7 @@ class TestRunOrchestratorWorkflow:
                 return_value={"final_status": "cancelled", "instances_finalized": 0},
             ),
             patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
 
@@ -756,6 +758,7 @@ class TestRunOrchestratorWorkflow:
                 return_value={"final_status": "cancelled", "instances_finalized": 0},
             ),
             patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
 
@@ -809,6 +812,7 @@ class TestRunOrchestratorWorkflow:
                 3,
             ),
             patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
 
@@ -844,6 +848,7 @@ class TestRunOrchestratorWorkflow:
                 side_effect=mock_finalize,
             ),
             patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
         ):
             mock_dbos.workflow_id = "wf-test"
             result = run_orchestrator.__wrapped__(simulation_run_id=run_id)

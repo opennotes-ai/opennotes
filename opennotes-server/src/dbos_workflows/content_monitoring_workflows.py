@@ -26,6 +26,8 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from src.dbos_workflows.token_bucket.config import WorkflowWeight
+from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring.metrics import (
     ai_note_generation_duration_seconds,
     ai_notes_generated_total,
@@ -41,8 +43,8 @@ AUDIT_LOG_WORKFLOW_NAME = "_audit_log_wrapper_workflow"
 
 content_monitoring_queue = Queue(
     name="content_monitoring",
-    worker_concurrency=2,
-    concurrency=4,
+    worker_concurrency=6,
+    concurrency=12,
 )
 
 
@@ -263,19 +265,24 @@ def ai_note_generation_workflow(
     similarity_score: float | None = None,
     moderation_metadata_json: str | None = None,
 ) -> dict[str, Any]:
-    moderation_metadata = (
-        orjson.loads(moderation_metadata_json) if moderation_metadata_json else None
-    )
+    gate = TokenGate(pool="default", weight=WorkflowWeight.CONTENT_MONITORING)
+    gate.acquire()
+    try:
+        moderation_metadata = (
+            orjson.loads(moderation_metadata_json) if moderation_metadata_json else None
+        )
 
-    return generate_ai_note_step(
-        community_server_id=community_server_id,
-        request_id=request_id,
-        content=content,
-        scan_type=scan_type,
-        fact_check_item_id=fact_check_item_id,
-        similarity_score=similarity_score,
-        moderation_metadata=moderation_metadata,
-    )
+        return generate_ai_note_step(
+            community_server_id=community_server_id,
+            request_id=request_id,
+            content=content,
+            scan_type=scan_type,
+            fact_check_item_id=fact_check_item_id,
+            similarity_score=similarity_score,
+            moderation_metadata=moderation_metadata,
+        )
+    finally:
+        gate.release()
 
 
 @DBOS.step()
@@ -373,11 +380,16 @@ def vision_description_workflow(
     image_url: str,
     community_server_id: str,
 ) -> dict[str, Any]:
-    return generate_vision_description_step(
-        message_archive_id=message_archive_id,
-        image_url=image_url,
-        community_server_id=community_server_id,
-    )
+    gate = TokenGate(pool="default", weight=WorkflowWeight.CONTENT_MONITORING)
+    gate.acquire()
+    try:
+        return generate_vision_description_step(
+            message_archive_id=message_archive_id,
+            image_url=image_url,
+            community_server_id=community_server_id,
+        )
+    finally:
+        gate.release()
 
 
 @DBOS.step()
