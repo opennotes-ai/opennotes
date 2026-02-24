@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.dependencies import get_current_user_or_api_key, require_admin
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
 )
@@ -51,14 +51,6 @@ _PRIVATE_NETWORKS = [
     ipaddress.ip_network("fc00::/7"),
     ipaddress.ip_network("fe80::/10"),
 ]
-
-
-def _require_admin(user: User) -> None:
-    if not (user.is_superuser or user.is_service_account):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin privileges required",
-        )
 
 
 def _validate_url_security(url_str: str) -> None:
@@ -112,7 +104,7 @@ async def create_playground_note_requests(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
-    _require_admin(current_user)
+    require_admin(current_user)
 
     try:
         result = await db.execute(

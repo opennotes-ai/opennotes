@@ -7271,6 +7271,124 @@
         }
       }
     },
+    "/api/v1/community-servers": {
+      "post": {
+        "tags": [
+          "community-servers"
+        ],
+        "summary": "Create Community Server",
+        "operationId": "create_community_server_api_v1_community_servers_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityServerCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityServerCreateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorized \u2014 requires admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Community server already exists for platform+id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/community-servers/lookup": {
       "get": {
         "tags": [
@@ -13085,6 +13203,183 @@
         ],
         "title": "CommunityServerAttributes",
         "description": "Community server attributes for JSON:API resource."
+      },
+      "CommunityServerCreateRequest": {
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "discord",
+              "reddit",
+              "slack",
+              "matrix",
+              "discourse",
+              "playground",
+              "other"
+            ],
+            "title": "Platform",
+            "description": "Platform type"
+          },
+          "platform_community_server_id": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Platform Community Server Id",
+            "description": "Platform-specific identifier"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Human-readable community server name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Optional community description"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings",
+            "description": "Community-specific settings"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "description": "Whether the community server is active",
+            "default": true
+          },
+          "is_public": {
+            "type": "boolean",
+            "title": "Is Public",
+            "description": "Whether the community server is publicly visible",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "platform",
+          "platform_community_server_id",
+          "name"
+        ],
+        "title": "CommunityServerCreateRequest"
+      },
+      "CommunityServerCreateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Internal community server UUID"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "discord",
+              "reddit",
+              "slack",
+              "matrix",
+              "discourse",
+              "playground",
+              "other"
+            ],
+            "title": "Platform",
+            "description": "Platform type"
+          },
+          "platform_community_server_id": {
+            "type": "string",
+            "title": "Platform Community Server Id",
+            "description": "Platform-specific identifier"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Community server name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Community description"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings",
+            "description": "Community-specific settings"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "description": "Whether the community server is active"
+          },
+          "is_public": {
+            "type": "boolean",
+            "title": "Is Public",
+            "description": "Whether the community server is publicly visible"
+          },
+          "flashpoint_detection_enabled": {
+            "type": "boolean",
+            "title": "Flashpoint Detection Enabled",
+            "description": "Whether flashpoint detection is enabled"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Creation timestamp"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Last update timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "platform",
+          "platform_community_server_id",
+          "name",
+          "is_active",
+          "is_public",
+          "flashpoint_detection_enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CommunityServerCreateResponse"
       },
       "CommunityServerLookupResponse": {
         "properties": {

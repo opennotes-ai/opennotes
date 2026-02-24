@@ -2327,6 +2327,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/community-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Community Server */
+        post: operations["create_community_server_api_v1_community_servers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/community-servers/lookup": {
         parameters: {
             query?: never;
@@ -4694,6 +4711,113 @@ export interface components {
             created_at?: string | null;
             /** Updated At */
             updated_at?: string | null;
+        };
+        /** CommunityServerCreateRequest */
+        CommunityServerCreateRequest: {
+            /**
+             * Platform
+             * @description Platform type
+             * @enum {string}
+             */
+            platform: "discord" | "reddit" | "slack" | "matrix" | "discourse" | "playground" | "other";
+            /**
+             * Platform Community Server Id
+             * @description Platform-specific identifier
+             */
+            platform_community_server_id: string;
+            /**
+             * Name
+             * @description Human-readable community server name
+             */
+            name: string;
+            /**
+             * Description
+             * @description Optional community description
+             */
+            description?: string | null;
+            /**
+             * Settings
+             * @description Community-specific settings
+             */
+            settings?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Is Active
+             * @description Whether the community server is active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Is Public
+             * @description Whether the community server is publicly visible
+             * @default true
+             */
+            is_public: boolean;
+        };
+        /** CommunityServerCreateResponse */
+        CommunityServerCreateResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Internal community server UUID
+             */
+            id: string;
+            /**
+             * Platform
+             * @description Platform type
+             * @enum {string}
+             */
+            platform: "discord" | "reddit" | "slack" | "matrix" | "discourse" | "playground" | "other";
+            /**
+             * Platform Community Server Id
+             * @description Platform-specific identifier
+             */
+            platform_community_server_id: string;
+            /**
+             * Name
+             * @description Community server name
+             */
+            name: string;
+            /**
+             * Description
+             * @description Community description
+             */
+            description?: string | null;
+            /**
+             * Settings
+             * @description Community-specific settings
+             */
+            settings?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Is Active
+             * @description Whether the community server is active
+             */
+            is_active: boolean;
+            /**
+             * Is Public
+             * @description Whether the community server is publicly visible
+             */
+            is_public: boolean;
+            /**
+             * Flashpoint Detection Enabled
+             * @description Whether flashpoint detection is enabled
+             */
+            flashpoint_detection_enabled: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Creation timestamp
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Last update timestamp
+             */
+            updated_at: string;
         };
         /**
          * CommunityServerLookupResponse
@@ -13441,6 +13565,74 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_community_server_api_v1_community_servers_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunityServerCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityServerCreateResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+            /** @description Not authorized — requires admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+            /** @description Community server already exists for platform+id */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
             };
             /** @description Validation Error */
             422: {

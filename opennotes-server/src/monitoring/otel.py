@@ -366,12 +366,12 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
         except Exception as e:
             logger.warning(f"Error during uninstrumentation: {e}")
 
+        if flush_timeout_millis is None:
+            from src.config import get_settings
+
+            flush_timeout_millis = get_settings().OTEL_SHUTDOWN_FLUSH_TIMEOUT_MILLIS
+
         if _tracer_provider is not None:
-            if flush_timeout_millis is None:
-                from src.config import get_settings
-
-                flush_timeout_millis = get_settings().OTEL_SHUTDOWN_FLUSH_TIMEOUT_MILLIS
-
             try:
                 _tracer_provider.force_flush(timeout_millis=flush_timeout_millis)
                 logger.info("OpenTelemetry spans flushed before shutdown")
