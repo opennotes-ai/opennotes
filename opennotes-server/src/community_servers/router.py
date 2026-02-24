@@ -1,10 +1,13 @@
 """Community servers API endpoints."""
 
-from typing import Annotated, Any
+from datetime import datetime
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import Field
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import get_community_server_by_platform_id
@@ -12,6 +15,7 @@ from src.auth.dependencies import get_current_user_or_api_key
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
+from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.users.models import User
 
@@ -101,6 +105,113 @@ class WelcomeMessageUpdateResponse(SQLAlchemySchema):
     welcome_message_id: str | None = Field(
         ..., description="Discord message ID of the welcome message"
     )
+
+
+class CommunityServerCreateRequest(StrictInputSchema):
+    platform: Literal[
+        "discord", "reddit", "slack", "matrix", "discourse", "playground", "other"
+    ] = Field(..., description="Platform type")
+    platform_community_server_id: str = Field(
+        ...,
+        description="Platform-specific identifier",
+        min_length=1,
+        max_length=255,
+    )
+    name: str = Field(
+        ...,
+        description="Human-readable community server name",
+        min_length=1,
+        max_length=255,
+    )
+    description: str | None = Field(None, description="Optional community description")
+    settings: dict[str, Any] | None = Field(None, description="Community-specific settings")
+    is_active: bool = Field(True, description="Whether the community server is active")
+    is_public: bool = Field(True, description="Whether the community server is publicly visible")
+
+
+class CommunityServerCreateResponse(SQLAlchemySchema):
+    id: UUID = Field(..., description="Internal community server UUID")
+    platform: str = Field(..., description="Platform type")
+    platform_community_server_id: str = Field(..., description="Platform-specific identifier")
+    name: str = Field(..., description="Community server name")
+    description: str | None = Field(None, description="Community description")
+    is_active: bool = Field(..., description="Whether the community server is active")
+    is_public: bool = Field(..., description="Whether the community server is publicly visible")
+    flashpoint_detection_enabled: bool = Field(
+        ..., description="Whether flashpoint detection is enabled"
+    )
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+
+@router.post(
+    "/community-servers",
+    response_model=CommunityServerCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        403: {"description": "Not authorized — requires admin"},
+        409: {"description": "Community server already exists for platform+id"},
+    },
+)
+async def create_community_server(
+    request_body: CommunityServerCreateRequest,
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CommunityServerCreateResponse:
+    if not (current_user.is_superuser or current_user.is_service_account):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only superusers or service accounts can create community servers",
+        )
+
+    existing = (
+        await db.execute(
+            select(CommunityServer).where(
+                CommunityServer.platform == request_body.platform,
+                CommunityServer.platform_community_server_id
+                == request_body.platform_community_server_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Community server already exists: {request_body.platform}:{request_body.platform_community_server_id}",
+        )
+
+    server = CommunityServer(
+        platform=request_body.platform,
+        platform_community_server_id=request_body.platform_community_server_id,
+        name=request_body.name,
+        description=request_body.description,
+        settings=request_body.settings,
+        is_active=request_body.is_active,
+        is_public=request_body.is_public,
+    )
+    db.add(server)
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Community server already exists: {request_body.platform}:{request_body.platform_community_server_id}",
+        )
+
+    await db.refresh(server)
+
+    logger.info(
+        "Community server created",
+        extra={
+            "community_server_id": str(server.id),
+            "platform": server.platform,
+            "platform_community_server_id": server.platform_community_server_id,
+        },
+    )
+
+    return CommunityServerCreateResponse.model_validate(server)
 
 
 @router.get("/community-servers/lookup", response_model=CommunityServerLookupResponse)
