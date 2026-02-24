@@ -30,7 +30,7 @@ class TestTaskIQMetricsMiddleware:
         """pre_execute should store the start time for the task."""
         from src.tasks.metrics_middleware import TaskIQMetricsMiddleware
 
-        middleware = TaskIQMetricsMiddleware(instance_id="test")
+        middleware = TaskIQMetricsMiddleware()
 
         message = TaskiqMessage(
             task_id="test-task-123",
@@ -50,7 +50,7 @@ class TestTaskIQMetricsMiddleware:
         """post_execute should record duration and success status."""
         from src.tasks.metrics_middleware import TaskIQMetricsMiddleware
 
-        middleware = TaskIQMetricsMiddleware(instance_id="test-instance")
+        middleware = TaskIQMetricsMiddleware()
 
         message = TaskiqMessage(
             task_id="test-task-456",
@@ -73,7 +73,7 @@ class TestTaskIQMetricsMiddleware:
 
         mock_metrics["duration"].record.assert_called_once()
         call_args = mock_metrics["duration"].record.call_args
-        assert call_args[1] == {} or call_args[0][1] == {"task_name": "content:batch_scan"}
+        assert call_args[0][1] == {"task_name": "content:batch_scan"}
 
         mock_metrics["total"].add.assert_called_once_with(
             1, {"task_name": "content:batch_scan", "status": "success"}
@@ -85,7 +85,7 @@ class TestTaskIQMetricsMiddleware:
         """post_execute should record error status when task fails."""
         from src.tasks.metrics_middleware import TaskIQMetricsMiddleware
 
-        middleware = TaskIQMetricsMiddleware(instance_id="test-instance")
+        middleware = TaskIQMetricsMiddleware()
 
         message = TaskiqMessage(
             task_id="test-task-789",
@@ -114,7 +114,7 @@ class TestTaskIQMetricsMiddleware:
         """post_execute should handle case where pre_execute wasn't called."""
         from src.tasks.metrics_middleware import TaskIQMetricsMiddleware
 
-        middleware = TaskIQMetricsMiddleware(instance_id="test-instance")
+        middleware = TaskIQMetricsMiddleware()
 
         message = TaskiqMessage(
             task_id="orphan-task",
@@ -140,7 +140,7 @@ class TestTaskIQMetricsMiddleware:
         """post_execute should remove the start time after recording."""
         from src.tasks.metrics_middleware import TaskIQMetricsMiddleware
 
-        middleware = TaskIQMetricsMiddleware(instance_id="test")
+        middleware = TaskIQMetricsMiddleware()
 
         message = TaskiqMessage(
             task_id="cleanup-test",
@@ -162,11 +162,3 @@ class TestTaskIQMetricsMiddleware:
 
         middleware.post_execute(message, result)
         assert "cleanup-test" not in middleware._start_times
-
-    def test_default_instance_id(self, mock_metrics) -> None:
-        """Middleware should use 'default' instance_id if not specified."""
-        from src.tasks.metrics_middleware import TaskIQMetricsMiddleware
-
-        middleware = TaskIQMetricsMiddleware()
-
-        assert middleware.instance_id == "default"

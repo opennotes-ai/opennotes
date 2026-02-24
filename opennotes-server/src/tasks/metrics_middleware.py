@@ -34,9 +34,8 @@ class TaskIQMetricsMiddleware(TaskiqMiddleware):
     other application metrics.
     """
 
-    def __init__(self, instance_id: str = "default") -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.instance_id = instance_id
         self._start_times: dict[str, float] = {}
 
     def pre_execute(self, message: TaskiqMessage) -> TaskiqMessage:

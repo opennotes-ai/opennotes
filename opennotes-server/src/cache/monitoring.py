@@ -1,7 +1,6 @@
 """Cache monitoring integration with OpenTelemetry metrics."""
 
 import logging
-from typing import TYPE_CHECKING
 
 from src.cache.interfaces import CacheMetrics
 from src.monitoring.metrics import (
@@ -11,9 +10,6 @@ from src.monitoring.metrics import (
     cache_misses_total,
     cache_size_items,
 )
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +56,6 @@ def update_cache_metrics(cache_type: str, metrics: "CacheMetrics") -> None:
             f"hit_rate={hit_rate:.2f}%, size={metrics.size}"
         )
 
-    except ImportError:
-        logger.debug("OTEL metrics not available, skipping cache metrics update")
     except Exception as e:
         logger.warning(f"Failed to update cache metrics: {e}")
 
