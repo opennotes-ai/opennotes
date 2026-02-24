@@ -1,21 +1,21 @@
 """Community servers API endpoints."""
 
+import json
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import Field
-from sqlalchemy import select
+from pydantic import Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import get_community_server_by_platform_id
-from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.dependencies import get_current_user_or_api_key, require_superuser_or_service_account
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
-from src.llm_config.models import CommunityServer
+from src.llm_config.models import CommunityServer, PlatformType
 from src.monitoring import get_logger
 from src.users.models import User
 
@@ -108,9 +108,7 @@ class WelcomeMessageUpdateResponse(SQLAlchemySchema):
 
 
 class CommunityServerCreateRequest(StrictInputSchema):
-    platform: Literal[
-        "discord", "reddit", "slack", "matrix", "discourse", "playground", "other"
-    ] = Field(..., description="Platform type")
+    platform: PlatformType = Field(..., description="Platform type")
     platform_community_server_id: str = Field(
         ...,
         description="Platform-specific identifier",
@@ -123,18 +121,28 @@ class CommunityServerCreateRequest(StrictInputSchema):
         min_length=1,
         max_length=255,
     )
-    description: str | None = Field(None, description="Optional community description")
+    description: str | None = Field(
+        None, description="Optional community description", max_length=10000
+    )
     settings: dict[str, Any] | None = Field(None, description="Community-specific settings")
     is_active: bool = Field(True, description="Whether the community server is active")
     is_public: bool = Field(True, description="Whether the community server is publicly visible")
 
+    @field_validator("settings")
+    @classmethod
+    def validate_settings_size(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        if v is not None and len(json.dumps(v)) > 65536:
+            raise ValueError("Settings JSON exceeds maximum size of 64KB")
+        return v
+
 
 class CommunityServerCreateResponse(SQLAlchemySchema):
     id: UUID = Field(..., description="Internal community server UUID")
-    platform: str = Field(..., description="Platform type")
+    platform: PlatformType = Field(..., description="Platform type")
     platform_community_server_id: str = Field(..., description="Platform-specific identifier")
     name: str = Field(..., description="Community server name")
     description: str | None = Field(None, description="Community description")
+    settings: dict[str, Any] | None = Field(None, description="Community-specific settings")
     is_active: bool = Field(..., description="Whether the community server is active")
     is_public: bool = Field(..., description="Whether the community server is publicly visible")
     flashpoint_detection_enabled: bool = Field(
@@ -144,35 +152,43 @@ class CommunityServerCreateResponse(SQLAlchemySchema):
     updated_at: datetime = Field(..., description="Last update timestamp")
 
 
+_ERROR_SCHEMA = {
+    "type": "object",
+    "properties": {"detail": {"type": "string"}},
+    "required": ["detail"],
+}
+
+
 @router.post(
     "/community-servers",
     response_model=CommunityServerCreateResponse,
     status_code=status.HTTP_201_CREATED,
     responses={
-        403: {"description": "Not authorized — requires admin"},
-        409: {"description": "Community server already exists for platform+id"},
+        401: {
+            "description": "Not authenticated",
+            "content": {"application/json": {"schema": _ERROR_SCHEMA}},
+        },
+        403: {
+            "description": "Not authorized — requires admin",
+            "content": {"application/json": {"schema": _ERROR_SCHEMA}},
+        },
+        409: {
+            "description": "Community server already exists for platform+id",
+            "content": {"application/json": {"schema": _ERROR_SCHEMA}},
+        },
     },
 )
 async def create_community_server(
     request_body: CommunityServerCreateRequest,
-    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    current_user: Annotated[User, Depends(require_superuser_or_service_account)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CommunityServerCreateResponse:
-    if not (current_user.is_superuser or current_user.is_service_account):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only superusers or service accounts can create community servers",
-        )
-
-    existing = (
-        await db.execute(
-            select(CommunityServer).where(
-                CommunityServer.platform == request_body.platform,
-                CommunityServer.platform_community_server_id
-                == request_body.platform_community_server_id,
-            )
-        )
-    ).scalar_one_or_none()
+    existing = await get_community_server_by_platform_id(
+        db=db,
+        community_server_id=request_body.platform_community_server_id,
+        platform=request_body.platform,
+        auto_create=False,
+    )
 
     if existing:
         raise HTTPException(
@@ -193,12 +209,16 @@ async def create_community_server(
 
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Community server already exists: {request_body.platform}:{request_body.platform_community_server_id}",
-        )
+        orig = exc.orig
+        constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", None)
+        if constraint_name == "idx_community_servers_platform_community_server_id":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Community server already exists: {request_body.platform}:{request_body.platform_community_server_id}",
+            )
+        raise
 
     await db.refresh(server)
 

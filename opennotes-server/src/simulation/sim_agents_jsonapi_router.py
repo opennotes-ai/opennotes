@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,7 +10,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.dependencies import get_current_user_or_api_key, require_admin
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
@@ -29,14 +29,6 @@ from src.users.models import User
 logger = get_logger(__name__)
 
 router = APIRouter()
-
-
-def _require_admin(user: User) -> None:
-    if not (user.is_superuser or user.is_service_account):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin privileges required",
-        )
 
 
 class SimAgentCreateAttributes(StrictInputSchema):
@@ -170,7 +162,7 @@ async def create_sim_agent_jsonapi(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
-    _require_admin(current_user)
+    require_admin(current_user)
 
     try:
         attrs = body.data.attributes
@@ -231,7 +223,7 @@ async def list_sim_agents_jsonapi(
     page_number: int = Query(1, ge=1, alias="page[number]"),
     page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
 ) -> JSONResponse:
-    _require_admin(current_user)
+    require_admin(current_user)
 
     try:
         count_query = select(func.count(SimAgent.id)).where(SimAgent.deleted_at.is_(None))
@@ -290,7 +282,7 @@ async def get_sim_agent_jsonapi(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
-    _require_admin(current_user)
+    require_admin(current_user)
 
     try:
         result = await db.execute(
@@ -337,7 +329,7 @@ async def update_sim_agent_jsonapi(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
-    _require_admin(current_user)
+    require_admin(current_user)
 
     try:
         if str(agent_id) != body.data.id:
@@ -402,7 +394,7 @@ async def delete_sim_agent_jsonapi(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> Response:
-    _require_admin(current_user)
+    require_admin(current_user)
 
     try:
         result = await db.execute(

@@ -169,9 +169,10 @@ class TestCreateCommunityServerEndpoint:
                 json=payload,
             )
 
-        assert response.status_code == 201
         data = response.json()
-        cleanup_servers.append(data["id"])
+        if "id" in data:
+            cleanup_servers.append(data["id"])
+        assert response.status_code == 201
         assert data["platform"] == payload["platform"]
         assert data["platform_community_server_id"] == payload["platform_community_server_id"]
         assert data["name"] == payload["name"]
@@ -196,20 +197,21 @@ class TestCreateCommunityServerEndpoint:
                 json=payload,
             )
 
-        assert response.status_code == 201
         data = response.json()
-        cleanup_servers.append(data["id"])
+        if "id" in data:
+            cleanup_servers.append(data["id"])
+        assert response.status_code == 201
         assert data["platform"] == payload["platform"]
 
     @pytest.mark.asyncio
-    async def test_create_playground_type(
+    async def test_create_discord_platform(
         self,
         create_service_account_headers: dict,
         cleanup_servers: list,
     ):
         from src.main import app
 
-        payload = _make_payload(platform="playground")
+        payload = _make_payload(platform="discord", platform_community_server_id="123456789")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
@@ -218,10 +220,11 @@ class TestCreateCommunityServerEndpoint:
                 json=payload,
             )
 
-        assert response.status_code == 201
         data = response.json()
-        cleanup_servers.append(data["id"])
-        assert data["platform"] == "playground"
+        if "id" in data:
+            cleanup_servers.append(data["id"])
+        assert response.status_code == 201
+        assert data["platform"] == "discord"
 
     @pytest.mark.asyncio
     async def test_create_with_optional_fields(
@@ -243,10 +246,12 @@ class TestCreateCommunityServerEndpoint:
                 json=payload,
             )
 
-        assert response.status_code == 201
         data = response.json()
-        cleanup_servers.append(data["id"])
+        if "id" in data:
+            cleanup_servers.append(data["id"])
+        assert response.status_code == 201
         assert data["description"] == "A test playground"
+        assert data["settings"] == {"max_notes": 100, "theme": "dark"}
 
     @pytest.mark.asyncio
     async def test_create_with_defaults(
@@ -265,12 +270,37 @@ class TestCreateCommunityServerEndpoint:
                 json=payload,
             )
 
-        assert response.status_code == 201
         data = response.json()
-        cleanup_servers.append(data["id"])
+        if "id" in data:
+            cleanup_servers.append(data["id"])
+        assert response.status_code == 201
         assert data["is_active"] is True
         assert data["is_public"] is True
         assert data["flashpoint_detection_enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_create_with_non_default_booleans(
+        self,
+        create_service_account_headers: dict,
+        cleanup_servers: list,
+    ):
+        from src.main import app
+
+        payload = _make_payload(is_active=False, is_public=False)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                ENDPOINT,
+                headers=create_service_account_headers,
+                json=payload,
+            )
+
+        data = response.json()
+        if "id" in data:
+            cleanup_servers.append(data["id"])
+        assert response.status_code == 201
+        assert data["is_active"] is False
+        assert data["is_public"] is False
 
     @pytest.mark.asyncio
     async def test_duplicate_conflict(
@@ -289,8 +319,10 @@ class TestCreateCommunityServerEndpoint:
                 json=payload,
             )
 
+        first_data = first.json()
+        if "id" in first_data:
+            cleanup_servers.append(first_data["id"])
         assert first.status_code == 201
-        cleanup_servers.append(first.json()["id"])
 
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             second = await client.post(
@@ -300,6 +332,9 @@ class TestCreateCommunityServerEndpoint:
             )
 
         assert second.status_code == 409
+        second_data = second.json()
+        assert "already exists" in second_data["detail"]
+        assert payload["platform"] in second_data["detail"]
 
     @pytest.mark.asyncio
     async def test_same_slug_different_platform(
@@ -322,8 +357,10 @@ class TestCreateCommunityServerEndpoint:
                 ),
             )
 
+        data1 = resp1.json()
+        if "id" in data1:
+            cleanup_servers.append(data1["id"])
         assert resp1.status_code == 201
-        cleanup_servers.append(resp1.json()["id"])
 
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp2 = await client.post(
@@ -335,8 +372,10 @@ class TestCreateCommunityServerEndpoint:
                 ),
             )
 
+        data2 = resp2.json()
+        if "id" in data2:
+            cleanup_servers.append(data2["id"])
         assert resp2.status_code == 201
-        cleanup_servers.append(resp2.json()["id"])
 
     @pytest.mark.asyncio
     async def test_regular_user_forbidden(
@@ -355,6 +394,9 @@ class TestCreateCommunityServerEndpoint:
             )
 
         assert response.status_code == 403
+        data = response.json()
+        assert "detail" in data
+        assert "admin" in data["detail"].lower() or "privilege" in data["detail"].lower()
 
     @pytest.mark.asyncio
     async def test_unauthenticated(self):
@@ -387,6 +429,8 @@ class TestCreateCommunityServerEndpoint:
             )
 
         assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data
 
     @pytest.mark.asyncio
     async def test_empty_name(
@@ -405,6 +449,8 @@ class TestCreateCommunityServerEndpoint:
             )
 
         assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data
 
     @pytest.mark.asyncio
     async def test_missing_required_fields(
@@ -422,6 +468,8 @@ class TestCreateCommunityServerEndpoint:
             )
 
         assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data
 
     @pytest.mark.asyncio
     async def test_extra_unknown_fields(
@@ -440,3 +488,105 @@ class TestCreateCommunityServerEndpoint:
             )
 
         assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data
+
+    @pytest.mark.asyncio
+    async def test_empty_platform_community_server_id(
+        self,
+        create_service_account_headers: dict,
+    ):
+        from src.main import app
+
+        payload = _make_payload(platform_community_server_id="")
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                ENDPOINT,
+                headers=create_service_account_headers,
+                json=payload,
+            )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data
+
+    @pytest.mark.asyncio
+    async def test_overlength_platform_community_server_id(
+        self,
+        create_service_account_headers: dict,
+    ):
+        from src.main import app
+
+        payload = _make_payload(platform_community_server_id="x" * 256)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                ENDPOINT,
+                headers=create_service_account_headers,
+                json=payload,
+            )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data
+
+    @pytest.mark.asyncio
+    async def test_overlength_name(
+        self,
+        create_service_account_headers: dict,
+    ):
+        from src.main import app
+
+        payload = _make_payload(name="x" * 256)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                ENDPOINT,
+                headers=create_service_account_headers,
+                json=payload,
+            )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data
+
+    @pytest.mark.asyncio
+    async def test_overlength_description(
+        self,
+        create_service_account_headers: dict,
+    ):
+        from src.main import app
+
+        payload = _make_payload(description="x" * 10001)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                ENDPOINT,
+                headers=create_service_account_headers,
+                json=payload,
+            )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data
+
+    @pytest.mark.asyncio
+    async def test_oversized_settings(
+        self,
+        create_service_account_headers: dict,
+    ):
+        from src.main import app
+
+        payload = _make_payload(settings={"data": "x" * 70000})
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                ENDPOINT,
+                headers=create_service_account_headers,
+                json=payload,
+            )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data

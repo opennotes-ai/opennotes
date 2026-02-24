@@ -8,7 +8,7 @@ Provides tables for:
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -34,6 +34,9 @@ from src.database import Base
 
 if TYPE_CHECKING:
     from src.community_config.models import CommunityConfig
+
+VALID_PLATFORMS = ("discord", "reddit", "slack", "matrix", "discourse", "playground", "other")
+PlatformType = Literal["discord", "reddit", "slack", "matrix", "discourse", "playground", "other"]
 
 
 class CommunityServer(Base):
@@ -111,7 +114,7 @@ class CommunityServer(Base):
         Index("idx_community_servers_is_active", "is_active"),
         Index("idx_community_servers_is_public", "is_public"),
         CheckConstraint(
-            "platform IN ('discord', 'reddit', 'slack', 'matrix', 'discourse', 'playground', 'other')",
+            f"platform IN ({', '.join(repr(p) for p in VALID_PLATFORMS)})",
             name="ck_community_servers_platform",
         ),
     )

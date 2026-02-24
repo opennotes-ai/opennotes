@@ -7323,13 +7323,58 @@
             }
           },
           "401": {
-            "description": "Not authenticated"
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
           },
           "403": {
-            "description": "Not authorized \u2014 requires admin"
+            "description": "Not authorized \u2014 requires admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
           },
           "409": {
-            "description": "Community server already exists for platform+id"
+            "description": "Community server already exists for platform+id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -13192,7 +13237,8 @@
           "description": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 10000
               },
               {
                 "type": "null"
@@ -13246,6 +13292,15 @@
           },
           "platform": {
             "type": "string",
+            "enum": [
+              "discord",
+              "reddit",
+              "slack",
+              "matrix",
+              "discourse",
+              "playground",
+              "other"
+            ],
             "title": "Platform",
             "description": "Platform type"
           },
@@ -13270,6 +13325,19 @@
             ],
             "title": "Description",
             "description": "Community description"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings",
+            "description": "Community-specific settings"
           },
           "is_active": {
             "type": "boolean",

@@ -138,3 +138,18 @@ def require_superuser(
             detail="Superuser access required",
         )
     return current_user
+
+
+def require_admin(user: User) -> None:
+    if not (user.is_superuser or user.is_service_account):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+
+
+def require_superuser_or_service_account(
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> User:
+    require_admin(current_user)
+    return current_user
