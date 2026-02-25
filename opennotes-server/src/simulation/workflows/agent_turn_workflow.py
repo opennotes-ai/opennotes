@@ -351,6 +351,7 @@ def persist_state_step(
                 .values(
                     turn_count=SimAgentInstance.turn_count + 1,
                     last_turn_at=now,
+                    retry_count=0,
                 )
             )
 
@@ -430,7 +431,9 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
 RUN_AGENT_TURN_WORKFLOW_NAME: str = run_agent_turn.__qualname__
 
 
-async def dispatch_agent_turn(agent_instance_id: UUID, turn_number: int) -> str:
+async def dispatch_agent_turn(
+    agent_instance_id: UUID, turn_number: int, retry_count: int = 0
+) -> str:
     import asyncio
 
     from dbos import EnqueueOptions
@@ -438,7 +441,7 @@ async def dispatch_agent_turn(agent_instance_id: UUID, turn_number: int) -> str:
     from src.dbos_workflows.config import get_dbos_client
 
     client = get_dbos_client()
-    wf_id = f"turn-{agent_instance_id}-{turn_number}"
+    wf_id = f"turn-{agent_instance_id}-{turn_number}-retry{retry_count}"
     options: EnqueueOptions = {
         "queue_name": "simulation_turn",
         "workflow_name": RUN_AGENT_TURN_WORKFLOW_NAME,
