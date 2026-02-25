@@ -155,6 +155,13 @@ class SimAgentListResponse(SQLAlchemySchema):
     meta: JSONAPIMeta | None = None
 
 
+def _parse_model_name_str(name: str) -> ModelNameResponse:
+    if ":" in name:
+        mid = ModelId.from_pydantic_ai(name)
+        return ModelNameResponse(provider=mid.provider, model=mid.model)
+    return ModelNameResponse(provider="unknown", model=name)
+
+
 def sim_agent_to_resource(agent: SimAgent) -> SimAgentResource:
     return SimAgentResource(
         type="sim-agents",
@@ -162,7 +169,7 @@ def sim_agent_to_resource(agent: SimAgent) -> SimAgentResource:
         attributes=SimAgentAttributes(
             name=agent.name,
             personality=agent.personality,
-            model_name=agent.model_name,
+            model_name=_parse_model_name_str(agent.model_name),
             model_params=agent.model_params,
             tool_config=agent.tool_config,
             memory_compaction_strategy=agent.memory_compaction_strategy,
