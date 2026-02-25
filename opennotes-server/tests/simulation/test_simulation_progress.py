@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from src.main import app
 
@@ -238,6 +239,55 @@ class TestGetSimulationProgress:
         assert attrs["notes_written"] == 0
         assert attrs["ratings_given"] == 0
         assert attrs["active_agents"] == 0
+
+    @pytest.mark.asyncio
+    async def test_progress_includes_deleted_agents_in_turns_completed(
+        self,
+        admin_auth_client,
+        sim_run,
+        agent_instance_factory,
+    ):
+        await agent_instance_factory(state="active", turn_count=5)
+        inst_deleted = await agent_instance_factory(state="removed", turn_count=7)
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimAgentInstance
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == inst_deleted["id"])
+            )
+            agent_inst = result.scalar_one()
+            agent_inst.soft_delete()
+            await session.commit()
+
+        response = await admin_auth_client.get(f"/api/v2/simulations/{sim_run['id']}/progress")
+
+        assert response.status_code == 200
+        attrs = response.json()["data"]["attributes"]
+        assert attrs["turns_completed"] == 12
+        assert attrs["active_agents"] == 1
+
+    @pytest.mark.asyncio
+    async def test_progress_redis_failure_falls_through_to_db(
+        self,
+        admin_auth_client,
+        sim_run,
+        agent_instance_factory,
+    ):
+        await agent_instance_factory(state="active", turn_count=3)
+
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(side_effect=ConnectionError("Redis unavailable"))
+        mock_redis.set = AsyncMock(side_effect=ConnectionError("Redis unavailable"))
+
+        with patch("src.simulation.simulations_jsonapi_router.redis_client", mock_redis):
+            response = await admin_auth_client.get(f"/api/v2/simulations/{sim_run['id']}/progress")
+
+        assert response.status_code == 200
+        attrs = response.json()["data"]["attributes"]
+        assert attrs["turns_completed"] == 3
+        assert attrs["active_agents"] == 1
 
     @pytest.mark.asyncio
     async def test_progress_uses_cache(

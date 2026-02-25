@@ -605,12 +605,15 @@ async def get_simulation_progress(
 
     try:
         cache_key = f"{PROGRESS_CACHE_KEY_PREFIX}{simulation_id}"
-        cached = await redis_client.get(cache_key)
-        if cached:
-            return JSONResponse(
-                content=json.loads(cached),
-                media_type=JSONAPI_CONTENT_TYPE,
-            )
+        try:
+            cached = await redis_client.get(cache_key)
+            if cached:
+                return JSONResponse(
+                    content=json.loads(cached),
+                    media_type=JSONAPI_CONTENT_TYPE,
+                )
+        except Exception:
+            logger.warning("Failed to read simulation progress cache", exc_info=True)
 
         run_result = await db.execute(
             select(SimulationRun).where(
@@ -630,13 +633,14 @@ async def get_simulation_progress(
         instances_result = await db.execute(
             select(SimAgentInstance).where(
                 SimAgentInstance.simulation_run_id == simulation_id,
-                SimAgentInstance.deleted_at.is_(None),
             )
         )
         instances = instances_result.scalars().all()
 
         turns_completed = sum(inst.turn_count for inst in instances)
-        active_agents = sum(1 for inst in instances if inst.state == "active")
+        active_agents = sum(
+            1 for inst in instances if inst.state == "active" and inst.deleted_at is None
+        )
 
         user_profile_ids = [inst.user_profile_id for inst in instances]
 
