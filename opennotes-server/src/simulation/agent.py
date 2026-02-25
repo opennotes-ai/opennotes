@@ -198,36 +198,7 @@ class OpenNotesSimAgent:
         if len(deps.available_notes) > MAX_CONTEXT_NOTES:
             notes = random.sample(deps.available_notes, MAX_CONTEXT_NOTES)
 
-        sections = ["Here is the current state of the community:\n"]
-
-        if requests:
-            sections.append("== Available Requests ==")
-            for req in requests:
-                sections.append(
-                    f"- Request ID: {req['request_id']}\n"
-                    f"  Content: {req.get('content', 'N/A')}\n"
-                    f"  Status: {req.get('status', 'N/A')}"
-                )
-        else:
-            sections.append("== No requests available ==")
-
-        sections.append("")
-
-        if notes:
-            sections.append("== Existing Notes ==")
-            for note in notes:
-                sections.append(
-                    f"- Note ID: {note['note_id']}\n"
-                    f"  Summary: {note.get('summary', 'N/A')}\n"
-                    f"  Classification: {note.get('classification', 'N/A')}\n"
-                    f"  Status: {note.get('status', 'N/A')}"
-                )
-        else:
-            sections.append("== No notes available ==")
-
-        sections.append("\nChoose an action: write a note, rate a note, or pass.")
-
-        prompt = "\n".join(sections)
+        prompt = self._format_sections(requests, notes)
 
         while estimate_tokens(prompt) > token_budget and (requests or notes):
             if notes:
@@ -244,11 +215,20 @@ class OpenNotesSimAgent:
         if requests:
             sections.append("== Available Requests ==")
             for req in requests:
-                sections.append(
+                block = (
                     f"- Request ID: {req['request_id']}\n"
                     f"  Content: {req.get('content', 'N/A')}\n"
                     f"  Status: {req.get('status', 'N/A')}"
                 )
+                req_notes = req.get("notes", [])
+                if req_notes:
+                    block += f"\n  Existing notes ({len(req_notes)}):"
+                    for rn in req_notes:
+                        summary = rn.get("summary", "")
+                        if len(summary) > 100:
+                            summary = summary[:100].rsplit(" ", 1)[0] + "..."
+                        block += f"\n    - [{rn.get('classification', 'N/A')}] {summary}"
+                sections.append(block)
         else:
             sections.append("== No requests available ==")
         sections.append("")

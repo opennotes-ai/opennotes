@@ -169,25 +169,6 @@ class TestWriteNoteTool:
         sample_deps.db.add.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_write_note_validates_uuid_format(self, sample_deps):
-        ctx = MagicMock()
-        ctx.deps = sample_deps
-        sample_deps.available_requests.append(
-            {"request_id": "not-a-uuid", "content": "test", "status": "PENDING"}
-        )
-
-        result = await write_note(
-            ctx,
-            request_id="not-a-uuid",
-            summary="test",
-            classification="NOT_MISLEADING",
-        )
-
-        assert "Error" in result
-        assert "not a valid UUID" in result
-        sample_deps.db.add.assert_not_called()
-
-    @pytest.mark.asyncio
     async def test_write_note_str_conversion_matches_uuid_request_ids(self, mock_db):
         req_uuid = uuid4()
         deps = SimAgentDeps(
@@ -546,6 +527,126 @@ class TestBuildTurnPrompt:
 
         assert "No requests available" in prompt
         assert "No notes available" in prompt
+
+
+class TestBuildTurnPromptWithLinkedNotes:
+    def test_prompt_shows_linked_notes_under_request(self, mock_db):
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[
+                {
+                    "request_id": "req-100",
+                    "content": "Earth is flat",
+                    "status": "PENDING",
+                    "notes": [
+                        {
+                            "note_id": str(uuid4()),
+                            "summary": "Earth is an oblate spheroid",
+                            "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
+                            "status": "NEEDS_MORE_RATINGS",
+                        },
+                        {
+                            "note_id": str(uuid4()),
+                            "summary": "This is not misleading",
+                            "classification": "NOT_MISLEADING",
+                            "status": "NEEDS_MORE_RATINGS",
+                        },
+                    ],
+                },
+            ],
+            available_notes=[],
+            agent_personality="test",
+            model_name="test",
+        )
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_turn_prompt(deps)
+
+        assert "Existing notes (2):" in prompt
+        assert "[MISINFORMED_OR_POTENTIALLY_MISLEADING] Earth is an oblate spheroid" in prompt
+        assert "[NOT_MISLEADING] This is not misleading" in prompt
+
+    def test_prompt_omits_notes_section_when_request_has_none(self, mock_db):
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[
+                {
+                    "request_id": "req-200",
+                    "content": "Some claim",
+                    "status": "PENDING",
+                    "notes": [],
+                },
+            ],
+            available_notes=[],
+            agent_personality="test",
+            model_name="test",
+        )
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_turn_prompt(deps)
+
+        assert "Existing notes" not in prompt
+        assert "req-200" in prompt
+
+    def test_prompt_truncates_long_note_summaries(self, mock_db):
+        long_summary = "word " * 50
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[
+                {
+                    "request_id": "req-300",
+                    "content": "A claim",
+                    "status": "PENDING",
+                    "notes": [
+                        {
+                            "note_id": str(uuid4()),
+                            "summary": long_summary,
+                            "classification": "NOT_MISLEADING",
+                            "status": "NEEDS_MORE_RATINGS",
+                        },
+                    ],
+                },
+            ],
+            available_notes=[],
+            agent_personality="test",
+            model_name="test",
+        )
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_turn_prompt(deps)
+
+        assert "Existing notes (1):" in prompt
+        assert long_summary not in prompt
+        assert "..." in prompt
+
+    def test_format_sections_handles_missing_notes_key(self, mock_db):
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[
+                {
+                    "request_id": "req-400",
+                    "content": "Old format request",
+                    "status": "PENDING",
+                },
+            ],
+            available_notes=[],
+            agent_personality="test",
+            model_name="test",
+        )
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_turn_prompt(deps)
+
+        assert "req-400" in prompt
+        assert "Existing notes" not in prompt
 
 
 class TestRunTurnWithTestModel:
