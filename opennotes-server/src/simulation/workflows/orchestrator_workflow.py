@@ -20,7 +20,9 @@ logger = get_logger(__name__)
 
 MAX_ITERATIONS: int = 10_000
 MAX_TURN_RETRIES: int = 3
+MAX_CONSECUTIVE_EMPTY: int = 10
 SPAWN_BATCH_SIZE: int = 5
+SCORING_INTERVAL: int = 10
 CIRCUIT_BREAKER_THRESHOLD: int = 5
 CIRCUIT_BREAKER_RESET_TIMEOUT: float = 300.0
 
@@ -348,6 +350,45 @@ def detect_stuck_agents_step(simulation_run_id: str) -> dict[str, int]:
 
 
 @DBOS.step()
+def check_content_availability_step(community_server_id: str) -> dict[str, Any]:
+    from src.database import get_session_maker
+    from src.notes.models import Note, Request
+
+    async def _check() -> dict[str, Any]:
+        cs_id = UUID(community_server_id)
+        async with get_session_maker()() as session:
+            req_result = await session.execute(
+                select(func.count())
+                .select_from(Request)
+                .where(
+                    Request.community_server_id == cs_id,
+                    Request.status == "PENDING",
+                    Request.deleted_at.is_(None),
+                )
+            )
+            pending_requests = req_result.scalar() or 0
+
+            note_result = await session.execute(
+                select(func.count())
+                .select_from(Note)
+                .where(
+                    Note.community_server_id == cs_id,
+                    Note.status == "NEEDS_MORE_RATINGS",
+                    Note.deleted_at.is_(None),
+                )
+            )
+            unrated_notes = note_result.scalar() or 0
+
+            return {
+                "has_content": pending_requests > 0 or unrated_notes > 0,
+                "pending_requests": pending_requests,
+                "unrated_notes": unrated_notes,
+            }
+
+    return run_sync(_check())
+
+
+@DBOS.step()
 def schedule_turns_step(
     simulation_run_id: str,
     config: dict[str, Any],
@@ -431,8 +472,17 @@ def update_metrics_step(
             )
             current_metrics = result.scalar_one_or_none() or {}
 
+            completed_result = await session.execute(
+                select(func.coalesce(func.sum(SimAgentInstance.turn_count), 0)).where(
+                    SimAgentInstance.simulation_run_id == run_uuid,
+                )
+            )
+            turns_completed = completed_result.scalar() or 0
+
             updated_metrics = {
-                "total_turns": current_metrics.get("total_turns", 0) + dispatched_count,
+                "turns_dispatched": current_metrics.get("turns_dispatched", 0) + dispatched_count,
+                "turns_completed": turns_completed,
+                "total_turns": turns_completed,
                 "agents_spawned": current_metrics.get("agents_spawned", 0) + spawned_count,
                 "agents_removed": current_metrics.get("agents_removed", 0) + removed_count,
                 "iterations": current_metrics.get("iterations", 0) + 1,
@@ -448,6 +498,28 @@ def update_metrics_step(
             return updated_metrics
 
     return run_sync(_update())
+
+
+@DBOS.step(
+    retries_allowed=True,
+    max_attempts=2,
+    interval_seconds=5.0,
+    backoff_rate=2.0,
+)
+def run_scoring_step(simulation_run_id: str) -> dict[str, Any]:
+    from src.database import get_session_maker
+    from src.simulation.scoring_integration import trigger_scoring_for_simulation
+
+    async def _score() -> dict[str, Any]:
+        async with get_session_maker()() as session:
+            result = await trigger_scoring_for_simulation(UUID(simulation_run_id), session)
+            return {
+                "scores_computed": result.scores_computed,
+                "tier": result.tier_name,
+                "scorer": result.scorer_type,
+            }
+
+    return run_sync(_score())
 
 
 @DBOS.step(
@@ -565,6 +637,7 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
 
         final_status = "completed"
         iteration = 0
+        consecutive_empty = 0
 
         while iteration < MAX_ITERATIONS:
             iteration += 1
@@ -582,6 +655,24 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
             if status == "paused":
                 DBOS.sleep(config["turn_cadence_seconds"])
                 continue
+
+            try:
+                content_check = check_content_availability_step(config["community_server_id"])
+                if not content_check["has_content"]:
+                    consecutive_empty += 1
+                    if consecutive_empty >= MAX_CONSECUTIVE_EMPTY:
+                        logger.warning(
+                            "No content available for %d consecutive iterations, pausing",
+                            consecutive_empty,
+                            extra={"simulation_run_id": simulation_run_id},
+                        )
+                        final_status = "paused"
+                        break
+                    DBOS.sleep(config["turn_cadence_seconds"])
+                    continue
+                consecutive_empty = 0
+            except Exception:
+                logger.exception("Failed to check content availability")
 
             try:
                 snapshot = get_population_snapshot_step(simulation_run_id)
@@ -642,6 +733,20 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 )
             except Exception:
                 logger.exception("Failed to update metrics")
+
+            if iteration % SCORING_INTERVAL == 0:
+                try:
+                    scoring_result = run_scoring_step(simulation_run_id)
+                    logger.info(
+                        "Scoring completed",
+                        extra={
+                            "simulation_run_id": simulation_run_id,
+                            "scores_computed": scoring_result["scores_computed"],
+                            "tier": scoring_result["tier"],
+                        },
+                    )
+                except Exception:
+                    logger.exception("Scoring failed, continuing")
 
             DBOS.sleep(config["turn_cadence_seconds"])
 
