@@ -308,6 +308,7 @@ def persist_state_step(
     memory_id: str | None,
     new_messages: list[dict[str, Any]],
     action: dict[str, Any],
+    simulation_run_id: str | None = None,
 ) -> dict[str, Any]:
     from src.database import get_session_maker
 
@@ -356,6 +357,20 @@ def persist_state_step(
             )
 
             await session.commit()
+
+        if simulation_run_id:
+            try:
+                from src.cache.redis_client import get_shared_redis_client
+
+                redis = await get_shared_redis_client()
+                cache_key = f"sim:progress:{simulation_run_id}"
+                await redis.delete(cache_key)
+            except Exception:
+                logger.warning(
+                    "Failed to invalidate progress cache",
+                    exc_info=True,
+                    extra={"simulation_run_id": simulation_run_id},
+                )
 
         return {
             "agent_instance_id": agent_instance_id,
@@ -407,6 +422,7 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             memory_id=context.get("memory_id"),
             new_messages=turn_result["new_messages"],
             action=turn_result["action"],
+            simulation_run_id=context.get("simulation_run_id"),
         )
 
         logger.info(
