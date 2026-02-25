@@ -10,6 +10,7 @@ import {
 import { ApiError } from './errors.js';
 import { logger } from '../logger.js';
 import { resolveUserProfileId } from './user-profile-resolver.js';
+import { sanitizeObject } from './sanitize.js';
 import {
   createAuthMiddleware,
   createTracingMiddleware,
@@ -485,10 +486,21 @@ function handleError<T>(result: { data?: T; error?: unknown; response: Response 
       `API request failed: ${result.response.status} ${result.response.statusText}`,
       endpoint,
       result.response.status,
-      result.error,
+      sanitizeObject(result.error),
     );
   }
   return result.data as T;
+}
+
+function handleVoidResponse(result: { error?: unknown; response: Response }, endpoint: string): void {
+  if (result.error !== undefined) {
+    throw new ApiError(
+      `API request failed: ${result.response.status} ${result.response.statusText}`,
+      endpoint,
+      result.response.status,
+      sanitizeObject(result.error),
+    );
+  }
 }
 
 export class ApiClient {
@@ -691,7 +703,7 @@ export class ApiClient {
       } as never,
       headers: this.profileHeaders(context),
     });
-    handleError(result, '/api/v2/requests');
+    handleVoidResponse(result, '/api/v2/requests');
   }
 
   async listRequests(filters?: ListRequestsFilters, context?: UserContext): Promise<JSONAPIListResponse<RequestAttributes>> {
@@ -753,7 +765,7 @@ export class ApiClient {
       params: { path: { platform_community_server_id: platformId } },
       body: body as never,
     });
-    handleError(result, `/api/v1/community-servers/${platformId}/name`);
+    handleVoidResponse(result, `/api/v1/community-servers/${platformId}/name`);
   }
 
   async getUserProfileByPlatformId(
@@ -859,7 +871,7 @@ export class ApiClient {
       body: { key, value: String(value), updated_by: updatedBy } as never,
       headers: this.profileHeaders(context),
     });
-    handleError(result, `/api/v1/community-config/${guildId}`);
+    handleVoidResponse(result, `/api/v1/community-config/${guildId}`);
   }
 
   async resetGuildConfig(guildId: string, context?: UserContext): Promise<void> {
@@ -867,7 +879,7 @@ export class ApiClient {
       params: { path: { community_server_id: guildId } },
       headers: this.profileHeaders(context),
     });
-    handleError(result, `/api/v1/community-config/${guildId}`);
+    handleVoidResponse(result, `/api/v1/community-config/${guildId}`);
   }
 
   async getNoteScore(noteId: string): Promise<NoteScoreJSONAPIResponse> {
@@ -1072,7 +1084,7 @@ export class ApiClient {
       params: { path: { channel_uuid: existing.data.id } },
       headers: this.profileHeaders(context),
     });
-    handleError(result, `/api/v2/monitored-channels/${existing.data.id}`);
+    handleVoidResponse(result, `/api/v2/monitored-channels/${existing.data.id}`);
     return true;
   }
 
@@ -1168,7 +1180,7 @@ export class ApiClient {
         },
       } as never,
     });
-    handleError(result, '/api/v2/note-publisher-posts');
+    handleVoidResponse(result, '/api/v2/note-publisher-posts');
   }
 
   async checkNoteDuplicate(
