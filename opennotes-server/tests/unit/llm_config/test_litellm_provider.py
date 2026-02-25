@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.llm_config.constants import ADC_SENTINEL
+from src.llm_config.model_id import ModelId
 from src.llm_config.providers.base import LLMMessage
 from src.llm_config.providers.litellm_provider import (
     LiteLLMCompletionParams,
@@ -68,6 +69,14 @@ class TestLiteLLMCompletionParams:
         assert params.temperature == 0.5
         assert params.presence_penalty == 0.3
         assert params.frequency_penalty is None
+
+    def test_model_accepts_model_id(self) -> None:
+        """model field should accept a ModelId."""
+        model_id = ModelId.from_litellm("openai/gpt-5.1")
+        params = LiteLLMCompletionParams(model=model_id)
+        assert params.model == model_id
+        assert params.model.provider == "openai"
+        assert params.model.model == "gpt-5.1"
 
 
 class TestLiteLLMProvider:
@@ -191,12 +200,12 @@ class TestLiteLLMProvider:
     async def test_complete_uses_param_model_when_specified(
         self, provider: LiteLLMProvider, mock_response: MagicMock
     ) -> None:
-        """complete() should use model from params when specified."""
+        """complete() should use model from params when specified as ModelId."""
         with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
             mock_litellm.acompletion = AsyncMock(return_value=mock_response)
 
             messages = [LLMMessage(role="user", content="Hi")]
-            params = LiteLLMCompletionParams(model="anthropic/claude-3-opus")
+            params = LiteLLMCompletionParams(model=ModelId.from_litellm("anthropic/claude-3-opus"))
             await provider.complete(messages, params)
 
             call_kwargs = mock_litellm.acompletion.call_args.kwargs
@@ -342,7 +351,6 @@ class TestLiteLLMProvider:
     @pytest.mark.asyncio
     async def test_stream_complete_with_penalty_params(self, provider: LiteLLMProvider) -> None:
         """stream_complete() should pass penalty parameters."""
-        from src.llm_config.providers.litellm_provider import LiteLLMCompletionParams
 
         async def mock_stream() -> AsyncGenerator[MagicMock, None]:
             chunk = MagicMock()
@@ -373,11 +381,6 @@ class TestLiteLLMProvider:
 
     def test_provider_name_is_set(self) -> None:
         """LiteLLMProvider should store provider_name."""
-        from src.llm_config.providers.litellm_provider import (
-            LiteLLMProvider,
-            LiteLLMProviderSettings,
-        )
-
         provider = LiteLLMProvider(
             api_key="test-key",
             default_model="gpt-5.1",
@@ -389,11 +392,6 @@ class TestLiteLLMProvider:
 
     def test_provider_name_defaults_to_litellm(self) -> None:
         """LiteLLMProvider should default provider_name to 'litellm'."""
-        from src.llm_config.providers.litellm_provider import (
-            LiteLLMProvider,
-            LiteLLMProviderSettings,
-        )
-
         provider = LiteLLMProvider(
             api_key="test-key",
             default_model="gpt-5.1",
@@ -407,11 +405,6 @@ class TestLiteLLMProvider:
         self, provider: LiteLLMProvider, mock_response: MagicMock
     ) -> None:
         """complete() should return the actual provider name in response."""
-        from src.llm_config.providers.litellm_provider import (
-            LiteLLMProvider,
-            LiteLLMProviderSettings,
-        )
-
         openai_provider = LiteLLMProvider(
             api_key="test-key",
             default_model="gpt-5.1",
@@ -438,14 +431,14 @@ class TestLiteLLMProvider:
         with pytest.raises(ValueError, match="Model name cannot be empty"):
             await provider.complete(
                 [LLMMessage(role="user", content="Hello")],
-                LiteLLMCompletionParams(model=""),
+                LiteLLMCompletionParams(),
             )
 
     @pytest.mark.asyncio
-    async def test_complete_uses_default_model_for_empty_param_model(
+    async def test_complete_uses_default_model_for_none_param_model(
         self, mock_response: MagicMock
     ) -> None:
-        """complete() should fall back to default_model when params.model is empty."""
+        """complete() should fall back to default_model when params.model is None."""
         provider = LiteLLMProvider(
             api_key="test-key",
             default_model="gpt-5-mini",
@@ -457,7 +450,7 @@ class TestLiteLLMProvider:
 
             await provider.complete(
                 [LLMMessage(role="user", content="Hello")],
-                LiteLLMCompletionParams(model=""),
+                LiteLLMCompletionParams(),
             )
 
             call_kwargs = mock_litellm.acompletion.call_args.kwargs
@@ -475,13 +468,13 @@ class TestLiteLLMProvider:
         with pytest.raises(ValueError, match="Model name cannot be empty"):
             async for _ in provider.stream_complete(
                 [LLMMessage(role="user", content="Hello")],
-                LiteLLMCompletionParams(model=""),
+                LiteLLMCompletionParams(),
             ):
                 pass
 
     @pytest.mark.asyncio
-    async def test_stream_complete_uses_default_model_for_empty_param_model(self) -> None:
-        """stream_complete() should fall back to default_model when params.model is empty."""
+    async def test_stream_complete_uses_default_model_for_none_param_model(self) -> None:
+        """stream_complete() should fall back to default_model when params.model is None."""
         provider = LiteLLMProvider(
             api_key="test-key",
             default_model="gpt-5-mini",
@@ -499,7 +492,7 @@ class TestLiteLLMProvider:
             chunks = []
             async for chunk in provider.stream_complete(
                 [LLMMessage(role="user", content="Hello")],
-                LiteLLMCompletionParams(model=""),
+                LiteLLMCompletionParams(),
             ):
                 chunks.append(chunk)
 

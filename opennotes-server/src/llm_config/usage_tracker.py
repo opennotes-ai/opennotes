@@ -15,7 +15,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
 from src.llm_config.cost_calculator import LLMCostCalculator
+from src.llm_config.model_id import ModelId
 from src.llm_config.models import CommunityServerLLMConfig, LLMUsageLog
+
+
+def _make_model_id(provider: str, model: str) -> ModelId:
+    """Construct a ModelId from separate provider and model strings."""
+    if "/" in model:
+        return ModelId.from_litellm(model)
+    return ModelId.from_litellm(f"{provider}/{model}")
 
 
 class LLMUsageLimitExceeded(Exception):  # noqa: N818
@@ -102,10 +110,9 @@ class LLMUsageTracker:
             if estimated_cost is None and estimated_tokens > 0 and model:
                 try:
                     estimated_cost = await LLMCostCalculator.calculate_cost_from_total_tokens_async(
-                        provider, model, estimated_tokens
+                        _make_model_id(provider, model), estimated_tokens
                     )
                 except ValueError:
-                    # Unknown model - skip cost check
                     pass
 
             if estimated_cost is not None:
@@ -182,7 +189,7 @@ class LLMUsageTracker:
                         try:
                             estimated_cost = (
                                 await LLMCostCalculator.calculate_cost_from_total_tokens_async(
-                                    provider, model, estimated_tokens
+                                    _make_model_id(provider, model), estimated_tokens
                                 )
                             )
                         except ValueError:
@@ -303,16 +310,16 @@ class LLMUsageTracker:
         # Calculate cost if not provided
         if cost_usd is None:
             try:
+                model_id = _make_model_id(provider, model)
                 if input_tokens is not None and output_tokens is not None:
                     cost_usd = await LLMCostCalculator.calculate_cost_async(
-                        provider, model, input_tokens, output_tokens
+                        model_id, input_tokens, output_tokens
                     )
                 else:
                     cost_usd = await LLMCostCalculator.calculate_cost_from_total_tokens_async(
-                        provider, model, tokens_used
+                        model_id, tokens_used
                     )
             except ValueError:
-                # Unknown model or provider - set cost to 0
                 cost_usd = Decimal("0.000000")
 
         # Update usage counters including cost
@@ -418,20 +425,19 @@ class LLMUsageTracker:
 
                     await self.db.refresh(config)
 
-                    # Calculate cost
                     try:
+                        model_id = _make_model_id(provider, model)
                         if input_tokens is not None and output_tokens is not None:
                             cost_usd = await LLMCostCalculator.calculate_cost_async(
-                                provider, model, input_tokens, output_tokens
+                                model_id, input_tokens, output_tokens
                             )
                         else:
                             cost_usd = (
                                 await LLMCostCalculator.calculate_cost_from_total_tokens_async(
-                                    provider, model, tokens_used
+                                    model_id, tokens_used
                                 )
                             )
                     except ValueError:
-                        # Unknown model or provider - set cost to 0
                         cost_usd = Decimal("0.000000")
 
                     new_daily_requests = config.current_daily_requests + 1
