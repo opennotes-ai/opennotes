@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 from pydantic import ValidationError
 
@@ -106,3 +108,55 @@ class TestSimAgentAttributesModelSerialization:
             memory_compaction_strategy="sliding_window",
         )
         assert attrs.model_name == {"provider": "anthropic", "model": "claude-3-haiku"}
+
+    def test_bare_model_name_uses_unknown_provider(self) -> None:
+        from src.simulation.sim_agents_jsonapi_router import SimAgentAttributes
+
+        attrs = SimAgentAttributes(
+            name="TestAgent",
+            personality="A test agent",
+            model_name="gpt-4o-mini",
+            memory_compaction_strategy="sliding_window",
+        )
+        assert attrs.model_name == {"provider": "unknown", "model": "gpt-4o-mini"}
+
+    def test_bare_model_name_without_dashes(self) -> None:
+        from src.simulation.sim_agents_jsonapi_router import SimAgentAttributes
+
+        attrs = SimAgentAttributes(
+            name="TestAgent",
+            personality="A test agent",
+            model_name="gpt4o",
+            memory_compaction_strategy="sliding_window",
+        )
+        assert attrs.model_name == {"provider": "unknown", "model": "gpt4o"}
+
+
+class TestSimAgentResponseModelSerialization:
+    def _make_response(self, **overrides: object) -> object:
+        from datetime import datetime
+
+        from src.simulation.schemas import SimAgentResponse
+
+        defaults: dict[str, object] = {
+            "id": "01936b1a-7e4a-7000-8000-000000000001",
+            "name": "TestAgent",
+            "personality": "A test agent",
+            "model_name": "openai:gpt-4o-mini",
+            "memory_compaction_strategy": "sliding_window",
+            "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+        defaults.update(overrides)
+        return SimAgentResponse(**defaults)
+
+    def test_colon_separated_model_name(self) -> None:
+        resp = self._make_response(model_name="openai:gpt-4o-mini")
+        assert resp.model_name == {"provider": "openai", "model": "gpt-4o-mini"}
+
+    def test_bare_model_name_uses_unknown_provider(self) -> None:
+        resp = self._make_response(model_name="gpt-4o-mini")
+        assert resp.model_name == {"provider": "unknown", "model": "gpt-4o-mini"}
+
+    def test_dict_model_name_passthrough(self) -> None:
+        resp = self._make_response(model_name={"provider": "anthropic", "model": "claude-3-haiku"})
+        assert resp.model_name == {"provider": "anthropic", "model": "claude-3-haiku"}

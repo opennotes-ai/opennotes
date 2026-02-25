@@ -95,8 +95,10 @@ class SimAgentResponse(TimestampSchema):
     @classmethod
     def parse_model_name(cls, v: Any) -> dict[str, str]:
         if isinstance(v, str):
-            mid = ModelId.from_pydantic_ai(v)
-            return {"provider": mid.provider, "model": mid.model}
+            if ":" in v:
+                mid = ModelId.from_pydantic_ai(v)
+                return {"provider": mid.provider, "model": mid.model}
+            return {"provider": "unknown", "model": v}
         if isinstance(v, dict):
             return v
         msg = f"Expected str or dict for model_name, got {type(v)}"

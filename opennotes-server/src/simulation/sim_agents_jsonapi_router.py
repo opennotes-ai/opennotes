@@ -123,8 +123,10 @@ class SimAgentAttributes(SQLAlchemySchema):
     @classmethod
     def parse_model_name(cls, v: Any) -> dict[str, str]:
         if isinstance(v, str):
-            mid = ModelId.from_pydantic_ai(v)
-            return {"provider": mid.provider, "model": mid.model}
+            if ":" in v:
+                mid = ModelId.from_pydantic_ai(v)
+                return {"provider": mid.provider, "model": mid.model}
+            return {"provider": "unknown", "model": v}
         if isinstance(v, dict):
             return v
         msg = f"Expected str or dict for model_name, got {type(v)}"
@@ -150,11 +152,6 @@ class SimAgentListResponse(SQLAlchemySchema):
     meta: JSONAPIMeta | None = None
 
 
-def _model_name_to_dict(name: str) -> dict[str, str]:
-    mid = ModelId.from_pydantic_ai(name)
-    return {"provider": mid.provider, "model": mid.model}
-
-
 def sim_agent_to_resource(agent: SimAgent) -> SimAgentResource:
     return SimAgentResource(
         type="sim-agents",
@@ -162,7 +159,7 @@ def sim_agent_to_resource(agent: SimAgent) -> SimAgentResource:
         attributes=SimAgentAttributes(
             name=agent.name,
             personality=agent.personality,
-            model_name=_model_name_to_dict(agent.model_name),
+            model_name=agent.model_name,
             model_params=agent.model_params,
             tool_config=agent.tool_config,
             memory_compaction_strategy=agent.memory_compaction_strategy,
