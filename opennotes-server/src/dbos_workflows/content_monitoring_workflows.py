@@ -198,6 +198,7 @@ def generate_ai_note_step(
                         community_server_id=community_server_uuid,
                         ai_generated=True,
                         ai_provider=settings.AI_NOTE_WRITER_MODEL.provider,
+                        ai_model=settings.AI_NOTE_WRITER_MODEL.model,
                     )
 
                     session.add(note)

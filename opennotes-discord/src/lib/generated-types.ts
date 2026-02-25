@@ -6385,6 +6385,8 @@ export interface components {
             ai_generated: boolean;
             /** Ai Provider */
             ai_provider?: string | null;
+            /** Ai Model */
+            ai_model?: string | null;
             /**
              * Force Published
              * @default false

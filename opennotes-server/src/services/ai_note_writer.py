@@ -160,6 +160,7 @@ class AINoteWriter:
                 community_server_id=request.community_server_id,
                 ai_generated=True,
                 ai_provider=settings.AI_NOTE_WRITER_MODEL.provider,
+                ai_model=settings.AI_NOTE_WRITER_MODEL.model,
             )
 
             db.add(note)
@@ -586,6 +587,7 @@ Community Note:"""
             community_server_id=community_server_uuid,
             ai_generated=True,
             ai_provider=settings.AI_NOTE_WRITER_MODEL.provider,
+            ai_model=settings.AI_NOTE_WRITER_MODEL.model,
         )
 
         db.add(note)

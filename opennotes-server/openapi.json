@@ -16570,6 +16570,17 @@
             ],
             "title": "Ai Provider"
           },
+          "ai_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Model"
+          },
           "force_published": {
             "type": "boolean",
             "title": "Force Published",
