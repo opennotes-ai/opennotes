@@ -109,6 +109,7 @@ class ProgressResource(BaseModel):
 
 
 class ProgressResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     data: ProgressResource
     jsonapi: dict[str, str] = {"version": "1.1"}
 
@@ -130,6 +131,7 @@ class ResultNoteResource(BaseModel):
 
 
 class ResultsListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     data: list[ResultNoteResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
