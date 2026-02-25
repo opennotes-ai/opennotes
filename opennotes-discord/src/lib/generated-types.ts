@@ -7686,6 +7686,58 @@ export interface components {
         ProfileUpdateRequest: {
             data: components["schemas"]["ProfileUpdateData"];
         };
+        /** ProgressAttributes */
+        ProgressAttributes: {
+            /**
+             * Turns Completed
+             * @default 0
+             */
+            turns_completed: number;
+            /**
+             * Turns Errored
+             * @default 0
+             */
+            turns_errored: number;
+            /**
+             * Notes Written
+             * @default 0
+             */
+            notes_written: number;
+            /**
+             * Ratings Given
+             * @default 0
+             */
+            ratings_given: number;
+            /**
+             * Active Agents
+             * @default 0
+             */
+            active_agents: number;
+        };
+        /** ProgressResource */
+        ProgressResource: {
+            /**
+             * Type
+             * @default simulation-progress
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["ProgressAttributes"];
+        };
+        /** ProgressResponse */
+        ProgressResponse: {
+            data: components["schemas"]["ProgressResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+        };
         /**
          * RatingAttributes
          * @description Rating attributes for JSON:API resource.
@@ -8214,6 +8266,50 @@ export interface components {
          */
         RequestUpdateRequest: {
             data: components["schemas"]["RequestUpdateData"];
+        };
+        /** ResultNoteAttributes */
+        ResultNoteAttributes: {
+            /** Note Id */
+            note_id: string;
+            /** Summary */
+            summary: string;
+            /** Classification */
+            classification: string;
+            /** Note Status */
+            note_status: string;
+            /** Author Profile Id */
+            author_profile_id: string;
+            /** Agent Instance Id */
+            agent_instance_id: string;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /** ResultNoteResource */
+        ResultNoteResource: {
+            /**
+             * Type
+             * @default simulation-result-notes
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["ResultNoteAttributes"];
+        };
+        /** ResultsListResponse */
+        ResultsListResponse: {
+            /** Data */
+            data: components["schemas"]["ResultNoteResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
         };
         /**
          * RiskLevel
@@ -15648,7 +15744,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProgressResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15685,7 +15781,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ResultsListResponse"];
                 };
             };
             /** @description Validation Error */
