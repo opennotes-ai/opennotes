@@ -15,6 +15,7 @@ from src.bulk_content_scan.flashpoint_service import (
 )
 from src.bulk_content_scan.flashpoint_utils import RubricDetector, parse_risk_level
 from src.bulk_content_scan.schemas import BulkScanMessage, ConversationFlashpointMatch
+from src.llm_config.model_id import ModelId
 
 
 def make_bulk_scan_message(
@@ -400,7 +401,7 @@ class TestFlashpointDetectionServiceInit:
     def test_default_model(self):
         """Default model should be gpt-5-mini."""
         service = FlashpointDetectionService()
-        assert service.model == "openai/gpt-5-mini"
+        assert service.model == ModelId.from_litellm("openai/gpt-5-mini")
 
     def test_custom_model(self):
         """Custom model can be specified."""

@@ -13,6 +13,7 @@ import pytest
 from src.llm_config.constants import ADC_SENTINEL
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
+from src.llm_config.model_id import ModelId
 from src.llm_config.providers import LiteLLMProvider
 
 
@@ -52,7 +53,7 @@ async def test_get_client_uses_community_config_when_exists(client_manager, db_s
     assert client is not None
     assert isinstance(client, LiteLLMProvider)
     assert client.api_key == "community-api-key"
-    assert client.default_model == "openai/gpt-5.1"
+    assert client.default_model == ModelId.from_litellm("openai/gpt-5.1")
 
 
 @pytest.mark.asyncio
@@ -71,7 +72,7 @@ async def test_get_client_falls_back_to_global_openai_key(client_manager, db_ses
         assert client is not None
         assert isinstance(client, LiteLLMProvider)
         assert client.api_key == "global-openai-key"
-        assert client.default_model == "openai/gpt-5.1"
+        assert client.default_model == ModelId.from_litellm("openai/gpt-5.1")
 
 
 @pytest.mark.asyncio

@@ -1,22 +1,47 @@
+from __future__ import annotations
+
 import base64
 import json
 import math
 import os
 import warnings
 from collections import Counter
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from cryptography.fernet import Fernet
-from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import (
+    AliasChoices,
+    BeforeValidator,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from src.llm_config.model_id import ModelId
+
+
+def _parse_model_id(v: Any) -> ModelId:
+    if isinstance(v, ModelId):
+        return v
+    if isinstance(v, str):
+        return ModelId.from_litellm(v)
+    msg = f"Expected str or ModelId, got {type(v)}"
+    raise ValueError(msg)
+
+
+LiteLLMModelId = Annotated[ModelId, NoDecode, BeforeValidator(_parse_model_id)]
 
 # Module-level singleton tracking variables
 # These must be outside the Settings class to avoid Pydantic treating them as PrivateAttr
-_settings_instance: "Settings | None" = None
+_settings_instance: Settings | None = None
 _settings_initialized: bool = False
 
 
-def parse_provider_model(model_str: str) -> tuple[str, str]:
+def parse_provider_model(model_str: str | ModelId) -> tuple[str, str]:
+    if isinstance(model_str, ModelId):
+        return (model_str.provider, model_str.model)
     if "/" in model_str:
         provider, _, model = model_str.partition("/")
         return (provider, model)
@@ -31,7 +56,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    def __new__(cls, **_kwargs: Any) -> "Settings":
+    def __new__(cls, **_kwargs: Any) -> Settings:
         global _settings_instance, _settings_initialized  # noqa: PLW0603 - Singleton pattern requires module-level state
         if _settings_instance is None:
             instance = super().__new__(cls)
@@ -700,10 +725,9 @@ class Settings(BaseSettings):
         default=24, description="Email verification token expiration time in hours"
     )
 
-    EMBEDDING_MODEL: str = Field(
-        default="text-embedding-3-small",
-        min_length=1,
-        description="OpenAI embedding model to use for generating embeddings",
+    EMBEDDING_MODEL: LiteLLMModelId = Field(
+        default="openai/text-embedding-3-small",
+        description="Embedding model in provider/model format for LiteLLM compatibility",
     )
     EMBEDDING_DIMENSIONS: int = Field(
         default=1536,
@@ -730,14 +754,12 @@ class Settings(BaseSettings):
         description="Global Anthropic API key for fallback when community servers don't have their own key configured",
     )
 
-    DEFAULT_MINI_MODEL: str = Field(
+    DEFAULT_MINI_MODEL: LiteLLMModelId = Field(
         default="openai/gpt-5-mini",
-        min_length=1,
         description="Default mini/fast model for quick tasks (provider/model format for LiteLLM compatibility)",
     )
-    DEFAULT_FULL_MODEL: str = Field(
+    DEFAULT_FULL_MODEL: LiteLLMModelId = Field(
         default="openai/gpt-5.1",
-        min_length=1,
         description="Default full-capability model for complex tasks (provider/model format for LiteLLM compatibility)",
     )
 
@@ -771,9 +793,8 @@ class Settings(BaseSettings):
         le=1.0,
     )
 
-    VISION_MODEL: str = Field(
+    VISION_MODEL: LiteLLMModelId = Field(
         default="openai/gpt-5.1",
-        min_length=1,
         description="Vision model in provider/model format for LiteLLM compatibility",
     )
     VISION_PROMPT: str = Field(
@@ -800,9 +821,8 @@ class Settings(BaseSettings):
         default=True,
         description="Enable LLM-based relevance filtering for hybrid search results",
     )
-    RELEVANCE_CHECK_MODEL: str = Field(
+    RELEVANCE_CHECK_MODEL: LiteLLMModelId = Field(
         default="openai/gpt-5-mini",
-        min_length=1,
         description="LLM model in provider/model format for relevance checking (should be fast and cheap)",
     )
     RELEVANCE_CHECK_MAX_TOKENS: int = Field(
@@ -825,9 +845,8 @@ class Settings(BaseSettings):
         default=True,
         description="Enable automatic AI-generated community notes for fact-check matches",
     )
-    AI_NOTE_WRITER_MODEL: str = Field(
+    AI_NOTE_WRITER_MODEL: LiteLLMModelId = Field(
         default="openai/gpt-5.1",
-        min_length=1,
         description="AI note generation model in provider/model format for LiteLLM compatibility",
     )
     AI_NOTE_WRITER_SYSTEM_PROMPT: str = Field(
@@ -881,7 +900,7 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def validate_encryption_key_entropy(self) -> "Settings":
+    def validate_encryption_key_entropy(self) -> Settings:
         if self.TESTING or not self.ENCRYPTION_MASTER_KEY:
             return self
 
@@ -915,7 +934,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def validate_production_settings(self) -> "Settings":
+    def validate_production_settings(self) -> Settings:
         if self.ENVIRONMENT == "production":
             if not self.JWT_SECRET_KEY or len(self.JWT_SECRET_KEY) < 32:
                 raise ValueError(
@@ -963,7 +982,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def validate_vertex_ai_config(self) -> "Settings":
+    def validate_vertex_ai_config(self) -> Settings:
         if self.TESTING:
             return self
         model_fields = [
@@ -973,7 +992,7 @@ class Settings(BaseSettings):
             self.RELEVANCE_CHECK_MODEL,
             self.AI_NOTE_WRITER_MODEL,
         ]
-        has_vertex_ai = any(m.startswith("vertex_ai/") for m in model_fields)
+        has_vertex_ai = any(m.provider == "vertex_ai" for m in model_fields)
         if has_vertex_ai and not self.VERTEXAI_PROJECT:
             raise ValueError(
                 "VERTEXAI_PROJECT must be set when using vertex_ai/ model prefix. "
