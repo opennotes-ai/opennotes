@@ -191,6 +191,53 @@ export type NoteAttributes = components['schemas']['NoteJSONAPIAttributes'];
 export type NoteJSONAPIResponse = components['schemas']['NoteSingleResponse'];
 export type NoteListJSONAPIResponse = components['schemas']['NoteListResponse'];
 
+export interface JSONAPILinks {
+  self?: string;
+  first?: string;
+  prev?: string;
+  next?: string;
+  last?: string;
+}
+
+export interface JSONAPIMeta {
+  count?: number;
+}
+
+export interface JSONAPIListResponse<T> {
+  data: JSONAPIResource<T>[];
+  jsonapi: { version: string };
+  links?: JSONAPILinks;
+  meta?: JSONAPIMeta;
+}
+
+export interface JSONAPISingleResponse<T> {
+  data: JSONAPIResource<T>;
+  jsonapi: { version: string };
+  links?: JSONAPILinks;
+}
+
+export interface NoteAttributes {
+  summary: string;
+  classification: string;
+  status: NoteStatus;
+  helpfulness_score: number;
+  author_id: string;
+  community_server_id: string;
+  channel_id?: string | null;
+  request_id?: string | null;
+  ratings_count: number;
+  force_published: boolean;
+  force_published_at?: string | null;
+  ai_generated?: boolean;
+  ai_provider?: string | null;
+  ai_model?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export type NoteJSONAPIResponse = JSONAPISingleResponse<NoteAttributes>;
+export type NoteListJSONAPIResponse = JSONAPIListResponse<NoteAttributes>;
+
 export interface NoteListJSONAPIResponseWithPagination extends NoteListJSONAPIResponse {
   total: number;
   page: number;
