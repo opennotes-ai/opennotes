@@ -311,7 +311,7 @@ def remove_agents_step(
 def detect_stuck_agents_step(simulation_run_id: str) -> dict[str, int]:
     from src.database import get_session_maker
 
-    async def _get_active_agents() -> list[tuple]:
+    async def _get_active_agents() -> list[tuple[UUID, int, int]]:
         run_uuid = UUID(simulation_run_id)
         async with get_session_maker()() as session:
             result = await session.execute(
@@ -324,11 +324,11 @@ def detect_stuck_agents_step(simulation_run_id: str) -> dict[str, int]:
                     SimAgentInstance.state == "active",
                 )
             )
-            return list(result.all())
+            return [(row[0], row[1], row[2]) for row in result.all()]
 
     agents = run_sync(_get_active_agents())
 
-    agents_to_retry: list[tuple] = []
+    agents_to_retry: list[tuple[UUID, int]] = []
     for agent_id, turn_count, retry_count in agents:
         wf_id = f"turn-{agent_id}-{turn_count + 1}-retry{retry_count}"
         wf_status = DBOS.get_workflow_status(wf_id)
