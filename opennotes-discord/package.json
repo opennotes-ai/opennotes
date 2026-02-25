@@ -7,7 +7,7 @@
   "scripts": {
     "types:generate": "openapi-typescript ../opennotes-server/openapi.json -o src/lib/generated-types.ts",
     "prebuild": "pnpm types:generate",
-    "build": "tsc && cp src/lib/openapi-schemas.json dist/lib/openapi-schemas.json && cp src/instrumentation.cjs dist/instrumentation.cjs",
+    "build": "tsc && cp src/instrumentation.cjs dist/instrumentation.cjs",
     "dev": "node --require ./src/instrumentation.cjs --import tsx src/index.ts",
     "dev:sharded": "node --require ./src/instrumentation.cjs --import tsx src/shard-entrypoint.ts",
     "start": "node --require ./dist/instrumentation.cjs dist/index.js",
@@ -20,10 +20,7 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:ci": "NODE_OPTIONS=--experimental-vm-modules jest --coverage --ci --forceExit",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
-    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
-    "test:schemas": "NODE_OPTIONS=--experimental-vm-modules jest tests/schema-validation.test.ts",
-    "schemas:extract": "node --loader ts-node/esm scripts/extract-openapi-schemas.ts",
-    "schemas:validate": "ENABLE_SCHEMA_VALIDATION=true pnpm test:schemas"
+    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage"
   },
   "dependencies": {
     "@opennotes/shared-types": "workspace:*",
@@ -38,8 +35,6 @@
     "@opentelemetry/sdk-trace-base": "^2.4.0",
     "@opentelemetry/semantic-conventions": "^1.29.0",
     "@sapphire/snowflake": "^3.5.5",
-    "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1",
     "discord.js": "^14.24.2",
     "dotenv": "^16.3.1",
     "express": "^4.21.2",
