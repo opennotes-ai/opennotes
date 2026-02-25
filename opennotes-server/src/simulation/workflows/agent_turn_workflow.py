@@ -368,11 +368,11 @@ def persist_state_step(
 
         if simulation_run_id:
             try:
-                from src.cache.redis_client import get_shared_redis_client
+                from src.cache.redis_client import redis_client
+                from src.simulation.constants import PROGRESS_CACHE_KEY_PREFIX
 
-                redis = await get_shared_redis_client()
-                cache_key = f"sim:progress:{simulation_run_id}"
-                await redis.delete(cache_key)
+                cache_key = f"{PROGRESS_CACHE_KEY_PREFIX}{simulation_run_id}"
+                await redis_client.delete(cache_key)
             except Exception:
                 logger.warning(
                     "Failed to invalidate progress cache",
