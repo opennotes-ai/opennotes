@@ -717,7 +717,7 @@ class Settings(BaseSettings):
     )
 
     EMBEDDING_MODEL: LiteLLMModelId = Field(
-        default="openai/text-embedding-3-small",
+        default=ModelId.from_litellm("openai/text-embedding-3-small"),
         description="Embedding model in provider/model format for LiteLLM compatibility",
     )
     EMBEDDING_DIMENSIONS: int = Field(
@@ -746,11 +746,11 @@ class Settings(BaseSettings):
     )
 
     DEFAULT_MINI_MODEL: LiteLLMModelId = Field(
-        default="openai/gpt-5-mini",
+        default=ModelId.from_litellm("openai/gpt-5-mini"),
         description="Default mini/fast model for quick tasks (provider/model format for LiteLLM compatibility)",
     )
     DEFAULT_FULL_MODEL: LiteLLMModelId = Field(
-        default="openai/gpt-5.1",
+        default=ModelId.from_litellm("openai/gpt-5.1"),
         description="Default full-capability model for complex tasks (provider/model format for LiteLLM compatibility)",
     )
 
@@ -785,7 +785,7 @@ class Settings(BaseSettings):
     )
 
     VISION_MODEL: LiteLLMModelId = Field(
-        default="openai/gpt-5.1",
+        default=ModelId.from_litellm("openai/gpt-5.1"),
         description="Vision model in provider/model format for LiteLLM compatibility",
     )
     VISION_PROMPT: str = Field(
@@ -813,7 +813,7 @@ class Settings(BaseSettings):
         description="Enable LLM-based relevance filtering for hybrid search results",
     )
     RELEVANCE_CHECK_MODEL: LiteLLMModelId = Field(
-        default="openai/gpt-5-mini",
+        default=ModelId.from_litellm("openai/gpt-5-mini"),
         description="LLM model in provider/model format for relevance checking (should be fast and cheap)",
     )
     RELEVANCE_CHECK_MAX_TOKENS: int = Field(
@@ -837,7 +837,7 @@ class Settings(BaseSettings):
         description="Enable automatic AI-generated community notes for fact-check matches",
     )
     AI_NOTE_WRITER_MODEL: LiteLLMModelId = Field(
-        default="openai/gpt-5.1",
+        default=ModelId.from_litellm("openai/gpt-5.1"),
         description="AI note generation model in provider/model format for LiteLLM compatibility",
     )
     AI_NOTE_WRITER_SYSTEM_PROMPT: str = Field(
