@@ -692,6 +692,17 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
 
     assert db.execute.call_count == 4
 
+    request_update_stmt = db.execute.call_args_list[3][0][0]
+    compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
+    sql_str = str(compiled)
+
+    assert "requests" in sql_str, f"SQL: {sql_str}"
+    assert "COMPLETED" in sql_str, f"SQL: {sql_str}"
+    assert "PENDING" in sql_str, f"SQL: {sql_str}"
+    assert "request_id" in sql_str, f"SQL: {sql_str}"
+    assert "note_id" in sql_str, f"SQL: {sql_str}"
+    assert "CURRENTLY_RATED_HELPFUL" in sql_str, f"SQL: {sql_str}"
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -748,6 +759,14 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
     assert result.scores_computed == 1
     assert db.execute.call_count == 4
 
+    request_update_stmt = db.execute.call_args_list[3][0][0]
+    compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
+    sql_str = str(compiled)
+
+    assert "requests" in sql_str
+    assert "COMPLETED" in sql_str
+    assert "CURRENTLY_RATED_HELPFUL" in sql_str
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -803,3 +822,11 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
 
     assert result.scores_computed == 1
     assert db.execute.call_count == 4
+
+    request_update_stmt = db.execute.call_args_list[3][0][0]
+    compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
+    sql_str = str(compiled)
+
+    assert "requests" in sql_str
+    assert "COMPLETED" in sql_str
+    assert "CURRENTLY_RATED_HELPFUL" in sql_str
