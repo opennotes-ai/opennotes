@@ -204,7 +204,7 @@ describe('API Persistence Integration Tests', () => {
       expect(result.data.type).toBe('notes');
       expect(result.data.attributes.author_id).toBe(createRequest.authorId);
       expect(result.data.attributes.summary).toBe(createRequest.content);
-      expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
+      expect(new Date(result.data.attributes.created_at!).getTime()).toBeGreaterThan(0);
 
       mockFetch.mockClear();
 
@@ -668,7 +668,7 @@ describe('API Persistence Integration Tests', () => {
       expect(result.data.type).toBe('notes');
       expect(result.data.attributes.author_id).toBe(request.authorId);
       expect(result.data.attributes.summary).toBe(request.content);
-      expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
+      expect(new Date(result.data.attributes.created_at!).getTime()).toBeGreaterThan(0);
       expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
@@ -926,11 +926,11 @@ describe('API Persistence Integration Tests', () => {
       const retrievedNotes = await client2.getNotes('msg-multi-note-001');
 
       expect(retrievedNotes.data).toHaveLength(3);
-      retrievedNotes.data.forEach((note: { id: string; attributes: { author_id: string; summary: string; created_at: string } }, i: number) => {
+      retrievedNotes.data.forEach((note, i: number) => {
         expect(note.id).toBe(`note-multi-${i}`);
         expect(note.attributes.author_id).toBe(notes[i].authorId);
         expect(note.attributes.summary).toBe(notes[i].content);
-        expect(new Date(note.attributes.created_at).getTime()).toBeGreaterThan(0);
+        expect(new Date(note.attributes.created_at!).getTime()).toBeGreaterThan(0);
       });
     });
   });
@@ -960,7 +960,7 @@ describe('API Persistence Integration Tests', () => {
       expect(result.data.attributes.author_id).toBe(request.authorId);
       expect(result.data.attributes.summary).toBe(request.content);
       expect(result.data.id).toBeTruthy();
-      expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
+      expect(new Date(result.data.attributes.created_at!).getTime()).toBeGreaterThan(0);
     });
 
     it('should verify rating data integrity', async () => {

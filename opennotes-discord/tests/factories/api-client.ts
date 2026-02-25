@@ -130,6 +130,7 @@ function createMockNoteJSONAPIResponse(params: {
         ratings_count: 0,
         force_published: false,
         force_published_at: null,
+        ai_generated: false,
         created_at: new Date().toISOString(),
         updated_at: null,
       },
