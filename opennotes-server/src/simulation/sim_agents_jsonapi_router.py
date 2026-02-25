@@ -6,8 +6,6 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from pydantic_ai.exceptions import UserError
-from pydantic_ai.models import infer_model
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +22,7 @@ from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
 from src.database import get_db
+from src.llm_config.model_id import ModelId
 from src.monitoring import get_logger
 from src.simulation.models import SimAgent
 from src.users.models import User
@@ -47,14 +46,12 @@ class SimAgentCreateAttributes(StrictInputSchema):
     @classmethod
     def validate_model_name(cls, v: str) -> str:
         try:
-            infer_model(v)
-        except UserError:
+            ModelId.from_pydantic_ai(v)
+        except ValueError:
             raise ValueError(
                 f"Invalid model name '{v}'. Use 'provider:model' format "
                 f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
             )
-        except Exception:
-            pass
         return v
 
 
@@ -87,14 +84,12 @@ class SimAgentUpdateAttributes(StrictInputSchema):
         if v is None:
             return v
         try:
-            infer_model(v)
-        except UserError:
+            ModelId.from_pydantic_ai(v)
+        except ValueError:
             raise ValueError(
                 f"Invalid model name '{v}'. Use 'provider:model' format "
                 f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
             )
-        except Exception:
-            pass
         return v
 
 
@@ -115,7 +110,7 @@ class SimAgentUpdateRequest(BaseModel):
 class SimAgentAttributes(SQLAlchemySchema):
     name: str
     personality: str
-    model_name: str
+    model_name: dict[str, str]
     model_params: dict[str, Any] | None = None
     tool_config: dict[str, Any] | None = None
     memory_compaction_strategy: str
@@ -123,6 +118,17 @@ class SimAgentAttributes(SQLAlchemySchema):
     community_server_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @field_validator("model_name", mode="before")
+    @classmethod
+    def parse_model_name(cls, v: Any) -> dict[str, str]:
+        if isinstance(v, str):
+            mid = ModelId.from_pydantic_ai(v)
+            return {"provider": mid.provider, "model": mid.model}
+        if isinstance(v, dict):
+            return v
+        msg = f"Expected str or dict for model_name, got {type(v)}"
+        raise ValueError(msg)
 
 
 class SimAgentResource(BaseModel):

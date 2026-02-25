@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.llm_config.model_id import ModelId
 from src.notes.models import Note, Rating
 from src.simulation.schemas import SimAgentAction
 
@@ -18,6 +19,9 @@ MAX_CONTEXT_REQUESTS: int = 5
 MAX_CONTEXT_NOTES: int = 5
 MAX_LINKED_NOTES_PER_REQUEST: int = 10
 TOKEN_BUDGET: int = 4000
+
+
+_DEFAULT_MODEL = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
 
 
 @dataclass
@@ -29,7 +33,7 @@ class SimAgentDeps:
     available_requests: list[dict]
     available_notes: list[dict]
     agent_personality: str
-    model_name: str
+    model_name: ModelId
 
 
 sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
@@ -94,7 +98,7 @@ async def write_note(
         status="NEEDS_MORE_RATINGS",
         community_server_id=ctx.deps.community_server_id,
         ai_generated=True,
-        ai_provider=ctx.deps.model_name,
+        ai_provider=ctx.deps.model_name.provider,
     )
     ctx.deps.db.add(note)
     try:
@@ -166,7 +170,7 @@ def pass_turn() -> str:
 
 
 class OpenNotesSimAgent:
-    def __init__(self, model: str = "openai:gpt-4o-mini"):
+    def __init__(self, model: ModelId = _DEFAULT_MODEL):
         self._agent = sim_agent
         self._model = model
 
@@ -181,7 +185,7 @@ class OpenNotesSimAgent:
             prompt,
             deps=deps,
             message_history=message_history,
-            model=self._model,
+            model=self._model.to_pydantic_ai(),
             usage_limits=usage_limits or UsageLimits(request_limit=3, total_tokens_limit=4000),
         )
         return result.data, result.all_messages()

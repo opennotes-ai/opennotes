@@ -8672,7 +8672,9 @@ export interface components {
             /** Personality */
             personality: string;
             /** Model Name */
-            model_name: string;
+            model_name: {
+                [key: string]: string;
+            };
             /** Model Params */
             model_params?: {
                 [key: string]: unknown;

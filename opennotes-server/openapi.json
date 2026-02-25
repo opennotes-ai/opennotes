@@ -21243,7 +21243,10 @@
             "title": "Personality"
           },
           "model_name": {
-            "type": "string",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
             "title": "Model Name"
           },
           "model_params": {

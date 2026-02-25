@@ -3,9 +3,10 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema, TimestampSchema
+from src.llm_config.model_id import ModelId
 
 
 class SimAgentBase(StrictInputSchema):
@@ -17,6 +18,18 @@ class SimAgentBase(StrictInputSchema):
     memory_compaction_strategy: str = Field(default="sliding_window", max_length=50)
     memory_compaction_config: dict[str, Any] | None = None
     community_server_id: UUID | None = None
+
+    @field_validator("model_name")
+    @classmethod
+    def validate_model_name(cls, v: str) -> str:
+        try:
+            ModelId.from_pydantic_ai(v)
+        except ValueError:
+            raise ValueError(
+                f"Invalid model name '{v}'. Use 'provider:model' format "
+                f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
+            )
+        return v
 
 
 class SimAgentCreate(SimAgentBase):
@@ -32,6 +45,20 @@ class SimAgentUpdate(StrictInputSchema):
     memory_compaction_strategy: str | None = Field(default=None, max_length=50)
     memory_compaction_config: dict[str, Any] | None = None
     community_server_id: UUID | None = None
+
+    @field_validator("model_name")
+    @classmethod
+    def validate_model_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        try:
+            ModelId.from_pydantic_ai(v)
+        except ValueError:
+            raise ValueError(
+                f"Invalid model name '{v}'. Use 'provider:model' format "
+                f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
+            )
+        return v
 
 
 class SimActionType(str, Enum):
@@ -56,13 +83,24 @@ class SimAgentResponse(TimestampSchema):
     id: UUID
     name: str
     personality: str
-    model_name: str
+    model_name: dict[str, str]
     model_params: dict[str, Any] | None = None
     tool_config: dict[str, Any] | None = None
     memory_compaction_strategy: str
     memory_compaction_config: dict[str, Any] | None = None
     community_server_id: UUID | None = None
     deleted_at: datetime | None = None
+
+    @field_validator("model_name", mode="before")
+    @classmethod
+    def parse_model_name(cls, v: Any) -> dict[str, str]:
+        if isinstance(v, str):
+            mid = ModelId.from_pydantic_ai(v)
+            return {"provider": mid.provider, "model": mid.model}
+        if isinstance(v, dict):
+            return v
+        msg = f"Expected str or dict for model_name, got {type(v)}"
+        raise ValueError(msg)
 
 
 class PlaygroundNoteRequestAttributes(StrictInputSchema):
