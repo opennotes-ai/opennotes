@@ -233,10 +233,36 @@ class TestEquality:
         m2 = ModelId.from_litellm("openai/gpt-4")
         assert m1 != m2
 
-    def test_not_equal_different_flavor(self):
+    def test_equal_different_flavor(self):
         m1 = ModelId(provider="openai", model="gpt-5.1", flavor=ModelFlavor.LITELLM)
         m2 = ModelId(provider="openai", model="gpt-5.1", flavor=ModelFlavor.PYDANTIC_AI)
-        assert m1 != m2
+        assert m1 == m2
+
+    def test_cross_flavor_from_constructors(self):
+        m1 = ModelId.from_litellm("openai/gpt-5")
+        m2 = ModelId.from_pydantic_ai("openai:gpt-5")
+        assert m1 == m2
+
+    def test_cross_flavor_hash_equality(self):
+        m1 = ModelId.from_litellm("openai/gpt-5")
+        m2 = ModelId.from_pydantic_ai("openai:gpt-5")
+        assert hash(m1) == hash(m2)
+
+    def test_cross_flavor_set_dedup(self):
+        m1 = ModelId.from_litellm("openai/gpt-5")
+        m2 = ModelId.from_pydantic_ai("openai:gpt-5")
+        assert len({m1, m2}) == 1
+
+    def test_cross_flavor_dict_key(self):
+        m1 = ModelId.from_litellm("openai/gpt-5")
+        m2 = ModelId.from_pydantic_ai("openai:gpt-5")
+        d = {m1: "value"}
+        assert d[m2] == "value"
+
+    def test_not_equal_to_non_model_id(self):
+        m = ModelId.from_litellm("openai/gpt-5")
+        assert m != "openai/gpt-5"
+        assert m != 42
 
 
 class TestGetDefaultModelForProvider:

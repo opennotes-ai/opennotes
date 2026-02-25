@@ -40,6 +40,14 @@ class ModelId(BaseModel, frozen=True):
         provider = adapt_provider(self.provider, self.flavor, ModelFlavor.PYDANTIC_AI)
         return f"{provider}:{self.model}"
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ModelId):
+            return NotImplemented
+        return self.provider == other.provider and self.model == other.model
+
+    def __hash__(self) -> int:
+        return hash((self.provider, self.model))
+
     def __str__(self) -> str:
         if self.flavor == ModelFlavor.LITELLM:
             return self.to_litellm()

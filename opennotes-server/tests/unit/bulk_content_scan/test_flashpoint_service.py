@@ -398,15 +398,22 @@ class TestFlashpointDetectionService:
 class TestFlashpointDetectionServiceInit:
     """Tests for FlashpointDetectionService initialization."""
 
-    def test_default_model(self):
-        """Default model should be gpt-5-mini."""
+    def test_default_model_is_str(self):
+        """Default model (from ModelId setting) is converted to str."""
         service = FlashpointDetectionService()
-        assert service.model == ModelId.from_litellm("openai/gpt-5-mini")
+        assert service.model == "openai/gpt-5-mini"
+        assert isinstance(service.model, str)
 
-    def test_custom_model(self):
-        """Custom model can be specified."""
+    def test_default_model_not_model_id_instance(self):
+        """DEFAULT_MINI_MODEL (ModelId) must not leak as ModelId on self.model."""
+        service = FlashpointDetectionService()
+        assert not isinstance(service.model, ModelId)
+
+    def test_custom_model_is_str(self):
+        """Custom model stays as str."""
         service = FlashpointDetectionService(model="anthropic/claude-3-haiku")
         assert service.model == "anthropic/claude-3-haiku"
+        assert isinstance(service.model, str)
 
     def test_default_score_threshold(self):
         """Default score threshold is 50."""

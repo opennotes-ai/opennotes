@@ -11,5 +11,5 @@ DEFAULT_MODELS_BY_PROVIDER: dict[str, str] = {
 
 def get_default_model_for_provider(provider: str) -> str:
     if provider == "openai":
-        return settings.DEFAULT_FULL_MODEL
+        return settings.DEFAULT_FULL_MODEL.to_litellm()
     return DEFAULT_MODELS_BY_PROVIDER.get(provider, "unknown")
