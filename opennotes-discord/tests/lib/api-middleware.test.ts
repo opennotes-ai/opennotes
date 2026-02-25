@@ -131,6 +131,47 @@ describe('createAuthMiddleware', () => {
   });
 });
 
+describe('initGCPDetection idempotency', () => {
+  beforeEach(() => {
+    resetGCPState();
+    mockIsRunningOnGCP.mockResolvedValue(true);
+    mockGetIdentityToken.mockResolvedValue('gcp-token');
+  });
+
+  it('only calls isRunningOnGCP once when called multiple times', async () => {
+    initGCPDetection();
+    initGCPDetection();
+    initGCPDetection();
+
+    const middleware = createAuthMiddleware({ baseUrl: 'https://api.example.com' });
+    await middleware.onRequest!({
+      request: makeRequest(),
+      schemaPath: '/test',
+      params: {},
+      id: '1',
+      options: {} as any,
+    });
+
+    expect(mockIsRunningOnGCP).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-detect after detection has completed', async () => {
+    initGCPDetection();
+
+    const middleware = createAuthMiddleware({ baseUrl: 'https://api.example.com' });
+    await middleware.onRequest!({
+      request: makeRequest(),
+      schemaPath: '/test',
+      params: {},
+      id: '1',
+      options: {} as any,
+    });
+
+    initGCPDetection();
+    expect(mockIsRunningOnGCP).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('createTracingMiddleware', () => {
   it('sets X-Request-Id header with nanoid', async () => {
     const middleware = createTracingMiddleware();
