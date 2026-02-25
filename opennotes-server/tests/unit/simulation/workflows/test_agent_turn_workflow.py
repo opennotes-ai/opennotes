@@ -775,8 +775,8 @@ class TestPersistStateStep:
         mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
 
-        mock_redis = AsyncMock()
-        mock_redis.delete = AsyncMock()
+        mock_redis_client = AsyncMock()
+        mock_redis_client.delete = AsyncMock()
 
         with (
             patch(
@@ -787,8 +787,8 @@ class TestPersistStateStep:
             ),
             patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
             patch(
-                "src.cache.redis_client.get_shared_redis_client",
-                return_value=mock_redis,
+                "src.cache.redis_client.redis_client",
+                mock_redis_client,
             ),
         ):
             persist_state_step.__wrapped__(
@@ -800,7 +800,7 @@ class TestPersistStateStep:
             )
 
         expected_key = f"sim:progress:{simulation_run_id}"
-        mock_redis.delete.assert_awaited_once_with(expected_key)
+        mock_redis_client.delete.assert_awaited_once_with(expected_key)
 
 
 class TestRunAgentTurnWorkflow:

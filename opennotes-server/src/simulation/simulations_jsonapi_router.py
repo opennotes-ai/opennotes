@@ -29,6 +29,7 @@ from src.database import get_db
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.notes.models import Note, Rating
+from src.simulation.constants import PROGRESS_CACHE_KEY_PREFIX, PROGRESS_CACHE_TTL_SECONDS
 from src.simulation.models import SimAgentInstance, SimulationOrchestrator, SimulationRun
 from src.simulation.workflows.orchestrator_workflow import dispatch_orchestrator
 from src.users.models import User
@@ -41,9 +42,6 @@ VALID_PAUSE_FROM = {"running"}
 VALID_RESUME_FROM = {"paused"}
 VALID_CANCEL_FROM = {"pending", "running", "paused"}
 TERMINAL_STATUSES = {"completed", "cancelled", "failed"}
-
-PROGRESS_CACHE_TTL_SECONDS = 30
-PROGRESS_CACHE_KEY_PREFIX = "sim:progress:"
 
 
 class SimulationCreateAttributes(StrictInputSchema):
