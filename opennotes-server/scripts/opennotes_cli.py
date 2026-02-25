@@ -145,7 +145,7 @@ def simulation_results(simulation_id: str, page: int, agent_id: str | None) -> N
     """Show simulation results (notes, ratings) with pagination."""
     params: dict[str, Any] = {"page[number]": page}
     if agent_id:
-        params["filter[agent_instance_id]"] = agent_id
+        params["agent_instance_id"] = agent_id
 
     resp = api_get(f"/simulations/{simulation_id}/results", params=params)
 
