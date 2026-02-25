@@ -462,25 +462,42 @@ class TestDetectStuckAgentsStep:
         run_id = str(uuid4())
         agent_id = uuid4()
 
-        mock_session = AsyncMock()
-
+        query_session = AsyncMock()
         agents_result = MagicMock()
         agents_result.all.return_value = [(agent_id, 0, 0)]
+        query_session.execute = AsyncMock(return_value=agents_result)
 
-        wf_status_result = MagicMock()
-        wf_status_result.scalar_one_or_none.return_value = "ERROR"
+        update_session = AsyncMock()
+        update_session.execute = AsyncMock()
+        update_session.commit = AsyncMock()
 
-        mock_session.execute = AsyncMock(side_effect=[agents_result, wf_status_result, None])
-        mock_session.commit = AsyncMock()
+        session_call_count = [0]
 
-        mock_session_ctx = _make_mock_session_ctx(mock_session)
+        def make_session():
+            ctx = AsyncMock()
+            if session_call_count[0] == 0:
+                ctx.__aenter__ = AsyncMock(return_value=query_session)
+            else:
+                ctx.__aenter__ = AsyncMock(return_value=update_session)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            session_call_count[0] += 1
+            return ctx
 
-        with _patch_run_sync(), _patch_session(mock_session_ctx):
+        mock_wf_status = MagicMock()
+        mock_wf_status.status = "ERROR"
+
+        with (
+            _patch_run_sync(),
+            patch("src.database.get_session_maker", return_value=make_session),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.return_value = mock_wf_status
             result = detect_stuck_agents_step.__wrapped__(run_id)
 
         assert result["retried"] == 1
-        assert mock_session.execute.await_count == 3
-        mock_session.commit.assert_awaited_once()
+        mock_dbos.get_workflow_status.assert_called_once_with(f"turn-{agent_id}-1-retry0")
+        update_session.execute.assert_awaited_once()
+        update_session.commit.assert_awaited_once()
 
     def test_detect_stuck_agents_skips_non_errored(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import detect_stuck_agents_step
@@ -489,19 +506,21 @@ class TestDetectStuckAgentsStep:
         agent_id = uuid4()
 
         mock_session = AsyncMock()
-
         agents_result = MagicMock()
         agents_result.all.return_value = [(agent_id, 2, 0)]
-
-        wf_status_result = MagicMock()
-        wf_status_result.scalar_one_or_none.return_value = "SUCCESS"
-
-        mock_session.execute = AsyncMock(side_effect=[agents_result, wf_status_result])
-        mock_session.commit = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=agents_result)
 
         mock_session_ctx = _make_mock_session_ctx(mock_session)
 
-        with _patch_run_sync(), _patch_session(mock_session_ctx):
+        mock_wf_status = MagicMock()
+        mock_wf_status.status = "SUCCESS"
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.return_value = mock_wf_status
             result = detect_stuck_agents_step.__wrapped__(run_id)
 
         assert result["retried"] == 0
@@ -513,19 +532,18 @@ class TestDetectStuckAgentsStep:
         agent_id = uuid4()
 
         mock_session = AsyncMock()
-
         agents_result = MagicMock()
         agents_result.all.return_value = [(agent_id, 0, 0)]
-
-        wf_status_result = MagicMock()
-        wf_status_result.scalar_one_or_none.return_value = None
-
-        mock_session.execute = AsyncMock(side_effect=[agents_result, wf_status_result])
-        mock_session.commit = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=agents_result)
 
         mock_session_ctx = _make_mock_session_ctx(mock_session)
 
-        with _patch_run_sync(), _patch_session(mock_session_ctx):
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.return_value = None
             result = detect_stuck_agents_step.__wrapped__(run_id)
 
         assert result["retried"] == 0
@@ -537,24 +555,21 @@ class TestDetectStuckAgentsStep:
         agent_id = uuid4()
 
         mock_session = AsyncMock()
-
         agents_result = MagicMock()
         agents_result.all.return_value = [(agent_id, 3, 1)]
-
-        wf_status_result = MagicMock()
-        wf_status_result.scalar_one_or_none.return_value = None
-
-        mock_session.execute = AsyncMock(side_effect=[agents_result, wf_status_result])
-        mock_session.commit = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=agents_result)
 
         mock_session_ctx = _make_mock_session_ctx(mock_session)
 
-        with _patch_run_sync(), _patch_session(mock_session_ctx):
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.return_value = None
             detect_stuck_agents_step.__wrapped__(run_id)
 
-        wf_query_call = mock_session.execute.call_args_list[1]
-        wf_id_param = wf_query_call.args[1]["wf_id"]
-        assert wf_id_param == f"turn-{agent_id}-4-retry1"
+        mock_dbos.get_workflow_status.assert_called_once_with(f"turn-{agent_id}-4-retry1")
 
 
 class TestScheduleTurnsStep:
@@ -670,6 +685,59 @@ class TestScheduleTurnsStep:
         assert result["dispatched_count"] == 0
         assert result["removed_for_retries"] == 1
         mock_dispatch.assert_not_awaited()
+        removal_session.execute.assert_awaited_once()
+        removal_session.commit.assert_awaited_once()
+
+    def test_schedule_turns_batches_multiple_retry_exhausted_removals(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import schedule_turns_step
+
+        config = _make_config(max_turns_per_agent=100)
+        id1 = uuid4()
+        id2 = uuid4()
+        id3 = uuid4()
+
+        query_session = AsyncMock()
+        query_result = MagicMock()
+        query_result.all.return_value = [
+            (id1, 0, 3),
+            (id2, 5, 4),
+            (id3, 2, 0),
+        ]
+        query_session.execute = AsyncMock(return_value=query_result)
+
+        removal_session = AsyncMock()
+        removal_session.execute = AsyncMock()
+        removal_session.commit = AsyncMock()
+
+        session_call_count = [0]
+
+        def make_session():
+            ctx = AsyncMock()
+            if session_call_count[0] == 0:
+                ctx.__aenter__ = AsyncMock(return_value=query_session)
+            else:
+                ctx.__aenter__ = AsyncMock(return_value=removal_session)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            session_call_count[0] += 1
+            return ctx
+
+        mock_dispatch = AsyncMock(return_value="wf-id")
+
+        with (
+            _patch_run_sync(),
+            patch(
+                "src.database.get_session_maker",
+                return_value=make_session,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.dispatch_agent_turn",
+                mock_dispatch,
+            ),
+        ):
+            result = schedule_turns_step.__wrapped__(str(uuid4()), config)
+
+        assert result["dispatched_count"] == 1
+        assert result["removed_for_retries"] == 2
         removal_session.execute.assert_awaited_once()
         removal_session.commit.assert_awaited_once()
 
@@ -1479,3 +1547,152 @@ class TestOrchestratorScoringIntegration:
             run_orchestrator.__wrapped__(simulation_run_id=run_id)
 
         mock_scoring.assert_not_called()
+
+
+class TestRetryExhaustedRemovalMetrics:
+    def test_removed_for_retries_added_to_agents_removed_metric(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
+
+        run_id = str(uuid4())
+        config = _make_config()
+        status_calls = iter(["running", "cancelled"])
+
+        with (
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
+                return_value=config,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
+                side_effect=lambda _: next(status_calls),
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
+                return_value={"has_content": True, "pending_requests": 1, "unrated_notes": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
+                return_value={"active_count": 3, "total_spawned": 5, "total_removed": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
+                return_value=["removed-1"],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
+                return_value={"retried": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
+                return_value={
+                    "dispatched_count": 1,
+                    "skipped_count": 0,
+                    "removed_for_retries": 2,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
+                return_value={},
+            ) as mock_update_metrics,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
+                return_value={"final_status": "cancelled", "instances_finalized": 0},
+            ),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            run_orchestrator.__wrapped__(simulation_run_id=run_id)
+
+        mock_update_metrics.assert_called_once_with(
+            run_id,
+            dispatched_count=1,
+            spawned_count=0,
+            removed_count=3,
+        )
+
+
+class TestConsecutiveEmptyResetOnException:
+    def test_consecutive_empty_resets_on_content_check_exception(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
+
+        run_id = str(uuid4())
+        config = _make_config()
+
+        content_call_count = [0]
+
+        def mock_content_check(_):
+            content_call_count[0] += 1
+            if content_call_count[0] <= 2:
+                return {"has_content": False, "pending_requests": 0, "unrated_notes": 0}
+            if content_call_count[0] == 3:
+                raise RuntimeError("DB connection lost")
+            if content_call_count[0] <= 12:
+                return {"has_content": False, "pending_requests": 0, "unrated_notes": 0}
+            return {"has_content": True, "pending_requests": 1, "unrated_notes": 0}
+
+        status_call_count = [0]
+
+        def mock_status(_):
+            status_call_count[0] += 1
+            if status_call_count[0] > 14:
+                return "cancelled"
+            return "running"
+
+        with (
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
+                return_value=config,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
+                side_effect=mock_status,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
+                side_effect=mock_content_check,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
+                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
+                return_value={"retried": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
+                return_value={"dispatched_count": 0, "skipped_count": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
+                return_value={},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
+                return_value={"final_status": "cancelled", "instances_finalized": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.MAX_CONSECUTIVE_EMPTY",
+                10,
+            ),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
+
+        assert result["status"] == "cancelled"
+        assert content_call_count[0] > 10

@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pendulum
 from dbos import DBOS, Queue
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
@@ -311,7 +311,7 @@ def remove_agents_step(
 def detect_stuck_agents_step(simulation_run_id: str) -> dict[str, int]:
     from src.database import get_session_maker
 
-    async def _detect() -> dict[str, int]:
+    async def _get_active_agents() -> list[tuple]:
         run_uuid = UUID(simulation_run_id)
         async with get_session_maker()() as session:
             result = await session.execute(
@@ -324,29 +324,32 @@ def detect_stuck_agents_step(simulation_run_id: str) -> dict[str, int]:
                     SimAgentInstance.state == "active",
                 )
             )
-            agents = result.all()
+            return result.all()
 
-            retried = 0
-            for agent_id, turn_count, retry_count in agents:
-                wf_id = f"turn-{agent_id}-{turn_count + 1}-retry{retry_count}"
-                wf_result = await session.execute(
-                    text("SELECT status FROM dbos.workflow_status WHERE workflow_uuid = :wf_id"),
-                    {"wf_id": wf_id},
-                )
-                wf_status = wf_result.scalar_one_or_none()
+    agents = run_sync(_get_active_agents())
 
-                if wf_status == "ERROR":
+    agents_to_retry: list[tuple] = []
+    for agent_id, turn_count, retry_count in agents:
+        wf_id = f"turn-{agent_id}-{turn_count + 1}-retry{retry_count}"
+        wf_status = DBOS.get_workflow_status(wf_id)
+        if wf_status is not None and wf_status.status == "ERROR":
+            agents_to_retry.append((agent_id, retry_count))
+
+    if agents_to_retry:
+
+        async def _update_retries() -> None:
+            async with get_session_maker()() as session:
+                for agent_id, retry_count in agents_to_retry:
                     await session.execute(
                         update(SimAgentInstance)
                         .where(SimAgentInstance.id == agent_id)
                         .values(retry_count=retry_count + 1)
                     )
-                    retried += 1
+                await session.commit()
 
-            await session.commit()
-            return {"retried": retried}
+        run_sync(_update_retries())
 
-    return run_sync(_detect())
+    return {"retried": len(agents_to_retry)}
 
 
 @DBOS.step()
@@ -417,7 +420,7 @@ def schedule_turns_step(
 
         dispatched_count = 0
         skipped_count = 0
-        removed_for_retries = 0
+        retry_exhausted_ids: list = []
 
         for instance_id, turn_count, retry_count in instances:
             if turn_count >= max_turns:
@@ -425,30 +428,32 @@ def schedule_turns_step(
                 continue
 
             if retry_count >= MAX_TURN_RETRIES:
-                async with get_session_maker()() as session:
-                    await session.execute(
-                        update(SimAgentInstance)
-                        .where(
-                            SimAgentInstance.id == instance_id,
-                            SimAgentInstance.state == "active",
-                        )
-                        .values(
-                            state="removed",
-                            removal_reason="max_retries_exceeded",
-                            deleted_at=now,
-                        )
-                    )
-                    await session.commit()
-                removed_for_retries += 1
+                retry_exhausted_ids.append(instance_id)
                 continue
 
             await dispatch_agent_turn(instance_id, turn_count + 1, retry_count)
             dispatched_count += 1
 
+        if retry_exhausted_ids:
+            async with get_session_maker()() as session:
+                await session.execute(
+                    update(SimAgentInstance)
+                    .where(
+                        SimAgentInstance.id.in_(retry_exhausted_ids),
+                        SimAgentInstance.state == "active",
+                    )
+                    .values(
+                        state="removed",
+                        removal_reason="max_retries_exceeded",
+                        deleted_at=now,
+                    )
+                )
+                await session.commit()
+
         return {
             "dispatched_count": dispatched_count,
             "skipped_count": skipped_count,
-            "removed_for_retries": removed_for_retries,
+            "removed_for_retries": len(retry_exhausted_ids),
         }
 
     return run_sync(_schedule())
@@ -673,6 +678,7 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 consecutive_empty = 0
             except Exception:
                 logger.exception("Failed to check content availability")
+                consecutive_empty = 0
 
             try:
                 snapshot = get_population_snapshot_step(simulation_run_id)
@@ -707,10 +713,12 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 logger.exception("Failed to detect stuck agents")
 
             dispatched_count = 0
+            removed_for_retries = 0
             try:
                 circuit_breaker.check()
                 turn_result = schedule_turns_step(simulation_run_id, config)
                 dispatched_count = turn_result["dispatched_count"]
+                removed_for_retries = turn_result.get("removed_for_retries", 0)
                 circuit_breaker.record_success()
             except CircuitOpenError:
                 logger.warning(
@@ -729,7 +737,7 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                     simulation_run_id,
                     dispatched_count=dispatched_count,
                     spawned_count=len(spawned_ids),
-                    removed_count=len(removed_ids),
+                    removed_count=len(removed_ids) + removed_for_retries,
                 )
             except Exception:
                 logger.exception("Failed to update metrics")
