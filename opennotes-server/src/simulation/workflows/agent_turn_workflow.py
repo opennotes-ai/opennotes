@@ -160,7 +160,11 @@ def build_deps_step(
         cs_id = UUID(community_server_id)
 
         async with get_session_maker()() as session:
-            from src.simulation.agent import MAX_CONTEXT_NOTES, MAX_CONTEXT_REQUESTS
+            from src.simulation.agent import (
+                MAX_CONTEXT_NOTES,
+                MAX_CONTEXT_REQUESTS,
+                MAX_LINKED_NOTES_PER_REQUEST,
+            )
 
             req_query = (
                 select(Request)
@@ -179,9 +183,13 @@ def build_deps_step(
 
             notes_by_request: dict[str, list[dict[str, Any]]] = {}
             if request_ids:
-                linked_note_query = select(Note).where(
-                    Note.request_id.in_(request_ids),
-                    Note.deleted_at.is_(None),
+                linked_note_query = (
+                    select(Note)
+                    .where(
+                        Note.request_id.in_(request_ids),
+                        Note.deleted_at.is_(None),
+                    )
+                    .limit(MAX_LINKED_NOTES_PER_REQUEST * len(request_ids))
                 )
                 linked_note_result = await session.execute(linked_note_query)
                 for n in linked_note_result.scalars().all():

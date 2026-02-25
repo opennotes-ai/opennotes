@@ -386,6 +386,63 @@ class TestBuildDepsStep:
         assert req["notes"][0]["summary"] == "Vaccines do not cause autism"
         assert req["notes"][0]["classification"] == "NOT_MISLEADING"
 
+    def test_build_deps_linked_notes_query_has_limit(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+
+        mock_request_1 = MagicMock()
+        mock_request_1.request_id = "req-limit-1"
+        mock_request_1.content = "test content"
+        mock_request_1.status = "PENDING"
+
+        mock_req_result = MagicMock()
+        mock_req_result.scalars.return_value.all.return_value = [mock_request_1]
+
+        mock_linked_note_result = MagicMock()
+        mock_linked_note_result.scalars.return_value.all.return_value = []
+
+        mock_standalone_note_result = MagicMock()
+        mock_standalone_note_result.scalars.return_value.all.return_value = []
+
+        captured_queries: list = []
+        call_count = 0
+        side_effects = [mock_req_result, mock_linked_note_result, mock_standalone_note_result]
+
+        async def capture_execute(query, *args, **kwargs):
+            nonlocal call_count
+            captured_queries.append(query)
+            result = side_effects[call_count]
+            call_count += 1
+            return result
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=capture_execute)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            build_deps_step.__wrapped__(community_server_id=cs_id)
+
+        assert len(captured_queries) == 3
+        linked_notes_query = captured_queries[1]
+        compiled = str(linked_notes_query.compile(compile_kwargs={"literal_binds": True}))
+        assert "LIMIT" in compiled.upper()
+
+        from src.simulation.agent import MAX_LINKED_NOTES_PER_REQUEST
+
+        assert f"LIMIT {MAX_LINKED_NOTES_PER_REQUEST}" in compiled
+
 
 class TestExecuteAgentTurnStep:
     def test_execute_agent_turn_returns_action_and_messages(self) -> None:
@@ -663,6 +720,87 @@ class TestPersistStateStep:
         assert result["persisted"] is True
         assert mock_session.execute.await_count == 2
         mock_session.commit.assert_awaited_once()
+
+    def test_persist_state_resets_retry_count_to_zero(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import persist_state_step
+
+        agent_instance_id = str(uuid4())
+        memory_id = str(uuid4())
+        new_messages = [{"kind": "response", "parts": []}]
+        action = {"action_type": "write_note", "reasoning": "tested"}
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            persist_state_step.__wrapped__(
+                agent_instance_id=agent_instance_id,
+                memory_id=memory_id,
+                new_messages=new_messages,
+                action=action,
+            )
+
+        instance_update_stmt = mock_session.execute.call_args_list[1].args[0]
+        compiled = instance_update_stmt.compile()
+        assert "retry_count" in str(compiled)
+        assert compiled.params["retry_count"] == 0
+
+    def test_persist_state_invalidates_redis_progress_cache(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import persist_state_step
+
+        agent_instance_id = str(uuid4())
+        memory_id = str(uuid4())
+        simulation_run_id = str(uuid4())
+        new_messages = [{"kind": "response", "parts": []}]
+        action = {"action_type": "rate_note", "reasoning": "tested"}
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_redis = AsyncMock()
+        mock_redis.delete = AsyncMock()
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                return_value=mock_redis,
+            ),
+        ):
+            persist_state_step.__wrapped__(
+                agent_instance_id=agent_instance_id,
+                memory_id=memory_id,
+                new_messages=new_messages,
+                action=action,
+                simulation_run_id=simulation_run_id,
+            )
+
+        expected_key = f"sim:progress:{simulation_run_id}"
+        mock_redis.delete.assert_awaited_once_with(expected_key)
 
 
 class TestRunAgentTurnWorkflow:

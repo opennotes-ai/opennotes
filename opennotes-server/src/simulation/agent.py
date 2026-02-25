@@ -16,6 +16,7 @@ from src.simulation.schemas import SimAgentAction
 MAX_PERSONALITY_CHARS: int = 500
 MAX_CONTEXT_REQUESTS: int = 5
 MAX_CONTEXT_NOTES: int = 5
+MAX_LINKED_NOTES_PER_REQUEST: int = 10
 TOKEN_BUDGET: int = 4000
 
 
@@ -250,6 +251,7 @@ class OpenNotesSimAgent:
 __all__ = [
     "MAX_CONTEXT_NOTES",
     "MAX_CONTEXT_REQUESTS",
+    "MAX_LINKED_NOTES_PER_REQUEST",
     "MAX_PERSONALITY_CHARS",
     "TOKEN_BUDGET",
     "OpenNotesSimAgent",
