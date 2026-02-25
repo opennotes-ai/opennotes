@@ -5,14 +5,18 @@ on large payloads. Non-JSON data is returned as a raw string.
 
 NOTE: This module intentionally uses stdlib json instead of orjson.
 The _json_default callback enforces strict type checking (rejecting UUID,
-datetime, bytes) to catch workflow argument mistakes early. orjson natively
-serializes these types, which would silently change the serialization format
-and break existing DBOS checkpoint data.
+bytes) to catch workflow argument mistakes early. orjson natively serializes
+these types, which would silently change the serialization format and break
+existing DBOS checkpoint data.
+
+datetime objects ARE supported because DBOS's @DBOS.scheduled() decorator
+passes datetime arguments (scheduled_time, actual_time) to workflows.
 """
 
 import importlib
 import json
 import logging
+from datetime import datetime
 from typing import Any
 
 from dbos._serialization import Serializer
@@ -67,6 +71,11 @@ class SafeJsonSerializer(Serializer):
                 "module": type(obj).__module__,
                 "args": [str(a) for a in obj.args],
             }
+        if isinstance(obj, datetime):
+            return {
+                "__dbos_datetime__": True,
+                "isoformat": obj.isoformat(),
+            }
         if isinstance(obj, dict):
             return {k: self._to_json_safe(v) for k, v in obj.items()}
         if isinstance(obj, (list, tuple)):
@@ -74,26 +83,31 @@ class SafeJsonSerializer(Serializer):
         return obj
 
     def _from_json_safe(self, data: Any) -> Any:
-        if isinstance(data, dict) and data.get("__dbos_exception__"):
-            exc_type_name = data["type"]
-            exc_module = data.get("module", "builtins")
-            exc_args = data.get("args", [])
-            if exc_module not in _SAFE_EXCEPTION_MODULES:
-                logger.warning(
-                    "Blocked import of module %s during exception deserialization",
-                    exc_module,
-                )
-                return RuntimeError(f"{exc_type_name}: {', '.join(exc_args)}")
-            try:
-                mod = importlib.import_module(exc_module)
-                exc_class = getattr(mod, exc_type_name)
-                if issubclass(exc_class, BaseException):
-                    return exc_class(*exc_args)
-            except (ImportError, AttributeError, TypeError):
-                pass
-            return RuntimeError(f"{exc_type_name}: {', '.join(exc_args)}")
         if isinstance(data, dict):
+            if data.get("__dbos_exception__"):
+                return self._reconstruct_exception(data)
+            if data.get("__dbos_datetime__"):
+                return datetime.fromisoformat(data["isoformat"])
             return {k: self._from_json_safe(v) for k, v in data.items()}
         if isinstance(data, list):
             return [self._from_json_safe(item) for item in data]
         return data
+
+    def _reconstruct_exception(self, data: dict[str, Any]) -> BaseException:
+        exc_type_name = data["type"]
+        exc_module = data.get("module", "builtins")
+        exc_args = data.get("args", [])
+        if exc_module not in _SAFE_EXCEPTION_MODULES:
+            logger.warning(
+                "Blocked import of module %s during exception deserialization",
+                exc_module,
+            )
+            return RuntimeError(f"{exc_type_name}: {', '.join(exc_args)}")
+        try:
+            mod = importlib.import_module(exc_module)
+            exc_class = getattr(mod, exc_type_name)
+            if issubclass(exc_class, BaseException):
+                return exc_class(*exc_args)
+        except (ImportError, AttributeError, TypeError):
+            pass
+        return RuntimeError(f"{exc_type_name}: {', '.join(exc_args)}")

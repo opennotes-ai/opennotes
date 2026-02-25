@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pendulum
@@ -135,13 +136,67 @@ class TestStrictTypeSerialization:
         with pytest.raises(TypeError, match="UUID is not JSON serializable"):
             serializer.serialize(uuid.uuid4())
 
-    def test_datetime_raises_type_error(self, serializer: SafeJsonSerializer) -> None:
-        with pytest.raises(TypeError, match=r"[Dd]ate[Tt]ime is not JSON serializable"):
-            serializer.serialize(pendulum.now("UTC"))
-
     def test_bytes_raises_type_error(self, serializer: SafeJsonSerializer) -> None:
         with pytest.raises(TypeError, match="bytes is not JSON serializable"):
             serializer.serialize(b"raw bytes")
+
+
+class TestDatetimeSerialization:
+    def test_utc_datetime_roundtrip(self, serializer: SafeJsonSerializer) -> None:
+        dt = datetime(2026, 2, 25, 3, 0, 0, tzinfo=UTC)
+        result = serializer.deserialize(serializer.serialize(dt))
+        assert result == dt
+        assert result.tzinfo is not None
+
+    def test_datetime_with_microseconds(self, serializer: SafeJsonSerializer) -> None:
+        dt = datetime(2026, 6, 15, 8, 30, 45, 123456, tzinfo=UTC)
+        result = serializer.deserialize(serializer.serialize(dt))
+        assert result == dt
+
+    def test_pendulum_datetime_roundtrip(self, serializer: SafeJsonSerializer) -> None:
+        dt = pendulum.now("UTC")
+        result = serializer.deserialize(serializer.serialize(dt))
+        assert result.year == dt.year
+        assert result.month == dt.month
+        assert result.day == dt.day
+        assert result.hour == dt.hour
+        assert result.minute == dt.minute
+        assert result.second == dt.second
+
+    def test_datetime_in_dict(self, serializer: SafeJsonSerializer) -> None:
+        dt = datetime(2026, 2, 25, 3, 0, 0, tzinfo=UTC)
+        data = {"scheduled_time": dt, "actual_time": dt, "count": 5}
+        result = serializer.deserialize(serializer.serialize(data))
+        assert result["scheduled_time"] == dt
+        assert result["actual_time"] == dt
+        assert result["count"] == 5
+
+    def test_datetime_in_list(self, serializer: SafeJsonSerializer) -> None:
+        dt1 = datetime(2026, 1, 1, tzinfo=UTC)
+        dt2 = datetime(2026, 2, 1, tzinfo=UTC)
+        result = serializer.deserialize(serializer.serialize([dt1, dt2]))
+        assert result == [dt1, dt2]
+
+    def test_scheduled_workflow_args_pattern(self, serializer: SafeJsonSerializer) -> None:
+        scheduled_time = datetime(2026, 2, 25, 0, 0, 0, tzinfo=UTC)
+        actual_time = datetime(2026, 2, 25, 0, 0, 1, 500000, tzinfo=UTC)
+        data = {"args": (scheduled_time, actual_time), "kwargs": {}}
+        result = serializer.deserialize(serializer.serialize(data))
+        assert result["args"][0] == scheduled_time
+        assert result["args"][1] == actual_time
+
+    def test_datetime_serialized_format(self, serializer: SafeJsonSerializer) -> None:
+        dt = datetime(2026, 2, 25, 3, 0, 0, tzinfo=UTC)
+        serialized = serializer.serialize(dt)
+        json_part = json.loads(serialized[len("json:") :])
+        assert json_part["__dbos_datetime__"] is True
+        assert json_part["isoformat"] == "2026-02-25T03:00:00+00:00"
+
+    def test_datetime_with_fixed_offset(self, serializer: SafeJsonSerializer) -> None:
+        tz = UTC
+        dt = datetime(2026, 3, 15, 10, 0, 0, tzinfo=tz)
+        result = serializer.deserialize(serializer.serialize(dt))
+        assert result == dt
 
 
 class TestNonJsonFallback:
