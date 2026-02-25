@@ -54,6 +54,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "LiteLLMProvider": ("src.llm_config.providers", "LiteLLMProvider"),
     "LiteLLMProviderSettings": ("src.llm_config.providers", "LiteLLMProviderSettings"),
     "SecureString": ("src.llm_config.secure_string", "SecureString"),
+    "router": ("src.llm_config.router", "router"),
     "secure_api_key_context": ("src.llm_config.secure_string", "secure_api_key_context"),
 }
 
@@ -62,7 +63,9 @@ def __getattr__(name: str) -> object:
     if name in _LAZY_IMPORTS:
         module_path, attr = _LAZY_IMPORTS[name]
         mod = importlib.import_module(module_path)
-        return getattr(mod, attr)
+        val = getattr(mod, attr)
+        globals()[name] = val
+        return val
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
