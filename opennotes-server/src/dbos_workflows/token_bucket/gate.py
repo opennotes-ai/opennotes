@@ -39,17 +39,20 @@ class TokenGate:
 
     def acquire(self) -> None:
         """Block until tokens are acquired. Must be called inside a DBOS workflow."""
-        self._workflow_id = DBOS.workflow_id
+        wf_id = DBOS.workflow_id
+        if wf_id is None:
+            raise RuntimeError("TokenGate.acquire() must be called inside a DBOS workflow")
+        self._workflow_id = wf_id
         elapsed = 0.0
         while True:
-            acquired = try_acquire_tokens(self.pool, self.weight, self._workflow_id)
+            acquired = try_acquire_tokens(self.pool, self.weight, wf_id)
             if acquired:
                 logger.info(
                     "Tokens acquired",
                     extra={
                         "pool": self.pool,
                         "weight": self.weight,
-                        "workflow_id": self._workflow_id,
+                        "workflow_id": wf_id,
                         "wait_seconds": elapsed,
                     },
                 )
