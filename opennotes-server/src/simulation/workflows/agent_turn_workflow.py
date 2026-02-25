@@ -23,7 +23,7 @@ _message_list_ta: TypeAdapter[list[ModelMessage]] = TypeAdapter(list[ModelMessag
 
 COMPACTION_INTERVAL: int = 5
 DEFAULT_REQUEST_LIMIT: int = 20
-DEFAULT_TOKEN_LIMIT: int = 4000
+DEFAULT_TOKEN_LIMIT: int = 50_000
 
 simulation_turn_queue = Queue(
     name="simulation_turn",
