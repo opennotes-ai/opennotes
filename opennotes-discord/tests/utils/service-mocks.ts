@@ -181,6 +181,7 @@ export function createMockNoteListJSONAPIResponse(notes: Array<{
         force_published_at: null,
         created_at: new Date().toISOString(),
         updated_at: null,
+        ai_generated: false,
       },
     })),
     jsonapi: { version: '1.1' as const },

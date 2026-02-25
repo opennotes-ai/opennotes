@@ -49,7 +49,7 @@ describe('ApiClient Clear Methods', () => {
   });
 
   describe('getClearPreview', () => {
-    it('should return preview with correct field mapping', async () => {
+    it('should return preview with correct field mapping for requests', async () => {
       const mockResponse = {
         would_delete_count: 15,
         message: 'Would delete 15 requests',
@@ -62,15 +62,15 @@ describe('ApiClient Clear Methods', () => {
         })
       );
 
-      const result = await client.getClearPreview(
-        '/api/v2/community-servers/uuid-123/clear-requests/preview?mode=all'
-      );
+      const result = await client.getClearPreview('uuid-123', 'requests', 'all');
 
       expect(result.wouldDeleteCount).toBe(15);
       expect(result.message).toBe('Would delete 15 requests');
 
       const req = getLastFetchRequest();
-      expect(req.url).toBe('http://localhost:8000/api/v2/community-servers/uuid-123/clear-requests/preview?mode=all');
+      expect(req.url).toContain('/api/v2/community-servers/uuid-123/clear-requests/preview');
+      expect(req.url).toContain('mode=all');
+      expect(req.method).toBe('GET');
     });
 
     it('should return zero count when no items to delete', async () => {
@@ -86,12 +86,29 @@ describe('ApiClient Clear Methods', () => {
         })
       );
 
-      const result = await client.getClearPreview(
-        '/api/v2/community-servers/uuid-123/clear-notes/preview?mode=30'
-      );
+      const result = await client.getClearPreview('uuid-123', 'notes', '30');
 
       expect(result.wouldDeleteCount).toBe(0);
       expect(result.message).toBe('Would delete 0 unpublished notes');
+
+      const req = getLastFetchRequest();
+      expect(req.url).toContain('/api/v2/community-servers/uuid-123/clear-notes/preview');
+      expect(req.url).toContain('mode=30');
+    });
+
+    it('should call the correct endpoint for notes type', async () => {
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify({ would_delete_count: 3, message: 'ok' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+      await client.getClearPreview('server-id', 'notes', 'all');
+
+      const req = getLastFetchRequest();
+      expect(req.url).toContain('/clear-notes/preview');
+      expect(req.url).not.toContain('/clear-requests/');
     });
   });
 
@@ -109,15 +126,15 @@ describe('ApiClient Clear Methods', () => {
         })
       );
 
-      const result = await client.executeClear(
-        '/api/v2/community-servers/uuid-123/clear-requests?mode=all'
-      );
+      const result = await client.executeClear('uuid-123', 'requests', 'all');
 
       expect(result.deletedCount).toBe(10);
       expect(result.message).toBe('Deleted 10 requests');
 
       const req = getLastFetchRequest();
-      expect(req.url).toBe('http://localhost:8000/api/v2/community-servers/uuid-123/clear-requests?mode=all');
+      expect(req.url).toContain('/api/v2/community-servers/uuid-123/clear-requests');
+      expect(req.url).toContain('mode=all');
+      expect(req.url).not.toContain('/preview');
       expect(req.method).toBe('DELETE');
     });
 
@@ -134,15 +151,17 @@ describe('ApiClient Clear Methods', () => {
         })
       );
 
-      const result = await client.executeClear(
-        '/api/v2/community-servers/uuid-123/clear-notes?mode=30'
-      );
+      const result = await client.executeClear('uuid-123', 'notes', '30');
 
       expect(result.deletedCount).toBe(5);
       expect(result.message).toBe('Deleted 5 unpublished notes older than 30 days');
+
+      const req = getLastFetchRequest();
+      expect(req.url).toContain('/clear-notes');
+      expect(req.url).toContain('mode=30');
     });
 
-    it('should use DELETE method', async () => {
+    it('should use DELETE method for requests', async () => {
       mockFetch.mockResolvedValueOnce(
         new Response(JSON.stringify({ deleted_count: 0, message: 'Deleted 0 requests' }), {
           status: 200,
@@ -150,10 +169,25 @@ describe('ApiClient Clear Methods', () => {
         })
       );
 
-      await client.executeClear('/api/v2/community-servers/uuid-123/clear-requests?mode=all');
+      await client.executeClear('uuid-123', 'requests', 'all');
 
       const req = getLastFetchRequest();
       expect(req.method).toBe('DELETE');
+    });
+
+    it('should use DELETE method for notes', async () => {
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify({ deleted_count: 0, message: 'Deleted 0 notes' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+      await client.executeClear('uuid-123', 'notes', 'all');
+
+      const req = getLastFetchRequest();
+      expect(req.method).toBe('DELETE');
+      expect(req.url).toContain('/clear-notes');
     });
   });
 });

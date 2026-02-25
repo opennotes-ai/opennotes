@@ -187,57 +187,9 @@ export type NoteCreateAttributes = components['schemas']['NoteCreateAttributes']
 export type RatingCreateRequest = components['schemas']['RatingCreateRequest'];
 export type RatingCreateAttributes = components['schemas']['RatingCreateAttributes'];
 
-export interface JSONAPIResource<T> {
-  type: string;
-  id: string;
-  attributes: T;
-}
-
-export interface JSONAPILinks {
-  self?: string;
-  first?: string;
-  prev?: string;
-  next?: string;
-  last?: string;
-}
-
-export interface JSONAPIMeta {
-  count?: number;
-}
-
-export interface JSONAPIListResponse<T> {
-  data: JSONAPIResource<T>[];
-  jsonapi: { version: string };
-  links?: JSONAPILinks;
-  meta?: JSONAPIMeta;
-}
-
-export interface JSONAPISingleResponse<T> {
-  data: JSONAPIResource<T>;
-  jsonapi: { version: string };
-  links?: JSONAPILinks;
-}
-
-export interface NoteAttributes {
-  summary: string;
-  classification: string;
-  status: NoteStatus;
-  helpfulness_score: number;
-  author_id: string;
-  community_server_id: string;
-  channel_id?: string | null;
-  request_id?: string | null;
-  ratings_count: number;
-  force_published: boolean;
-  force_published_at?: string | null;
-  ai_generated?: boolean;
-  ai_provider?: string | null;
-  created_at: string;
-  updated_at?: string | null;
-}
-
-export type NoteJSONAPIResponse = JSONAPISingleResponse<NoteAttributes>;
-export type NoteListJSONAPIResponse = JSONAPIListResponse<NoteAttributes>;
+export type NoteAttributes = components['schemas']['NoteJSONAPIAttributes'];
+export type NoteJSONAPIResponse = components['schemas']['NoteSingleResponse'];
+export type NoteListJSONAPIResponse = components['schemas']['NoteListResponse'];
 
 export interface NoteListJSONAPIResponseWithPagination extends NoteListJSONAPIResponse {
   total: number;
@@ -245,227 +197,79 @@ export interface NoteListJSONAPIResponseWithPagination extends NoteListJSONAPIRe
   size: number;
 }
 
-export interface CommunityServerAttributes {
-  platform: string;
-  platform_community_server_id: string;
-  name: string;
-  description?: string | null;
-  is_active: boolean;
-  is_public: boolean;
-  welcome_message_id?: string | null;
-  flashpoint_detection_enabled: boolean;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
+export type CommunityServerAttributes = components['schemas']['CommunityServerAttributes'];
+export type WelcomeMessageUpdateResponse = components['schemas']['WelcomeMessageUpdateResponse'];
+export type CommunityServerJSONAPIResponse = components['schemas']['CommunityServerSingleResponse'];
 
-export interface WelcomeMessageUpdateResponse {
-  id: string;
-  platform_community_server_id: string;
-  welcome_message_id: string | null;
-}
+export type UserProfileLookupResponse = components['schemas']['UserProfileLookupResponse'];
 
-export type CommunityServerJSONAPIResponse = JSONAPISingleResponse<CommunityServerAttributes>;
+export type RatingAttributes = components['schemas']['RatingAttributes'];
+export type RatingJSONAPIResponse = components['schemas']['RatingSingleResponse'];
+export type RatingListJSONAPIResponse = components['schemas']['RatingListResponse'];
 
-export interface UserProfileLookupAttributes {
-  platform: string;
-  platform_user_id: string;
-  display_name: string | null;
-}
+export type PreviouslySeenCheckJSONAPIResponse = components['schemas']['PreviouslySeenCheckResultResponse'];
 
-export type UserProfileLookupResponse = JSONAPISingleResponse<UserProfileLookupAttributes>;
+export type RequestAttributes = components['schemas']['RequestAttributes'];
 
-export interface RatingAttributes {
-  note_id: string;
-  rater_id: string;
-  helpfulness_level: string;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
+export type NoteScoreAttributes = components['schemas']['NoteScoreAttributes'];
+export type ScoringStatusAttributes = components['schemas']['ScoringStatusAttributes'];
+export type NoteScoreJSONAPIResponse = components['schemas']['NoteScoreSingleResponse'];
+export type ScoringResultJSONAPIResponse = components['schemas']['ScoringResultResponse'];
+export type ScoringStatusJSONAPIResponse = components['schemas']['ScoringStatusJSONAPIResponse'];
 
-export type RatingJSONAPIResponse = JSONAPISingleResponse<RatingAttributes>;
-export type RatingListJSONAPIResponse = JSONAPIListResponse<RatingAttributes>;
-
-export type PreviouslySeenCheckJSONAPIResponse = JSONAPISingleResponse<PreviouslySeenCheckResultAttributes>;
-
-export interface RequestAttributes {
-  request_id: string;
-  requested_by: string;
-  status: string;
-  note_id?: string | null;
-  community_server_id?: string | null;
-  requested_at?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  content?: string | null;
-  platform_message_id?: string | null;
-  metadata?: Record<string, unknown> | null;
-}
-
-export interface NoteScoreAttributes {
-  score: number;
-  confidence: string;
-  algorithm: string;
-  rating_count: number;
-  tier: number;
-  tier_name: string;
-  calculated_at?: string | null;
-  content?: string | null;
-}
-
-export interface ScoringStatusAttributes {
-  current_note_count: number;
-  active_tier: {
-    level: number;
-    name: string;
-    scorer_components: string[];
-  };
-  data_confidence: string;
-  tier_thresholds: Record<string, {
-    min: number;
-    max: number | null;
-    current: boolean;
-  }>;
-  next_tier_upgrade?: {
-    tier: string;
-    notes_needed: number;
-    notes_to_upgrade: number;
+export type BatchScoreJSONAPIResponse = Omit<components['schemas']['NoteScoreListResponse'], 'meta'> & {
+  meta?: {
+    [key: string]: unknown;
+    count?: number;
+    total_requested?: number;
+    total_found?: number;
+    not_found?: string[];
   } | null;
-  performance_metrics: {
-    avg_scoring_time_ms: number;
-    last_scoring_time_ms?: number | null;
-    scorer_success_rate: number;
-    total_scoring_operations: number;
-    failed_scoring_operations: number;
-  };
-  warnings: string[];
-  configuration: Record<string, unknown>;
-}
+};
 
-export interface BatchScoreMeta {
-  total_requested?: number;
-  total_found?: number;
-  not_found?: string[];
-}
+export type TopNotesJSONAPIResponse = Omit<components['schemas']['NoteScoreListResponse'], 'meta'> & {
+  meta?: {
+    [key: string]: unknown;
+    count?: number;
+    total_count?: number;
+    current_tier?: number;
+    filters_applied?: Record<string, unknown>;
+  } | null;
+};
 
-export interface TopNotesMeta {
-  total_count?: number;
-  current_tier?: number;
-  filters_applied?: Record<string, unknown>;
-}
+export type MonitoredChannelJSONAPIAttributes = components['schemas']['MonitoredChannelAttributes'];
+export type MonitoredChannelJSONAPIResponse = components['schemas']['MonitoredChannelSingleResponse'];
+export type MonitoredChannelListJSONAPIResponse = components['schemas']['MonitoredChannelListJSONAPIResponse'];
 
-export type NoteScoreJSONAPIResponse = JSONAPISingleResponse<NoteScoreAttributes>;
-export type ScoringResultJSONAPIResponse = JSONAPISingleResponse<ScoringResultAttributes>;
+export type NotePublisherConfigJSONAPIAttributes = components['schemas']['NotePublisherConfigAttributes'];
+export type NotePublisherPostJSONAPIAttributes = components['schemas']['NotePublisherPostAttributes'];
 
-export interface BatchScoreJSONAPIResponse extends Omit<JSONAPIListResponse<NoteScoreAttributes>, 'meta'> {
-  meta?: JSONAPIMeta & BatchScoreMeta;
-}
+export type PreviouslySeenCheckResultAttributes = components['schemas']['PreviouslySeenCheckResultAttributes'];
+export type SimilaritySearchResultAttributes = components['schemas']['SimilaritySearchResultAttributes'];
+export type ScoringResultAttributes = components['schemas']['ScoringResultAttributes'];
 
-export interface TopNotesJSONAPIResponse extends Omit<JSONAPIListResponse<NoteScoreAttributes>, 'meta'> {
-  meta?: JSONAPIMeta & TopNotesMeta;
-}
+export type JSONAPILinks = components['schemas']['JSONAPILinks'];
 
-export type ScoringStatusJSONAPIResponse = JSONAPISingleResponse<ScoringStatusAttributes>;
+export type JSONAPIMeta = components['schemas']['JSONAPIMeta'];
 
-export interface MonitoredChannelJSONAPIAttributes {
-  community_server_id: string;
-  channel_id: string;
-  name?: string | null;
-  enabled: boolean;
-  similarity_threshold: number;
-  dataset_tags: string[];
-  previously_seen_autopublish_threshold?: number | null;
-  previously_seen_autorequest_threshold?: number | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  updated_by?: string | null;
-}
-
-export interface NotePublisherConfigJSONAPIAttributes {
-  community_server_id: string;
-  channel_id?: string | null;
-  enabled: boolean;
-  threshold?: number | null;
-  updated_at?: string | null;
-  updated_by?: string | null;
-}
-
-export interface NotePublisherPostJSONAPIAttributes {
-  note_id: string;
-  original_message_id: string;
-  auto_post_message_id?: string | null;
-  channel_id: string;
-  community_server_id: string;
-  score_at_post: number;
-  confidence_at_post: string;
-  posted_at?: string | null;
-  success: boolean;
-  error_message?: string | null;
-}
-
-export interface PreviouslySeenMessageJSONAPIAttributes {
-  community_server_id: string;
-  original_message_id: string;
-  published_note_id: string;
-  embedding_provider?: string | null;
-  embedding_model?: string | null;
-  extra_metadata?: Record<string, unknown> | null;
-  created_at?: string | null;
-}
-
-export interface PreviouslySeenMatchResource {
+export interface JSONAPIResource<T> {
+  type: string;
   id: string;
-  community_server_id: string;
-  original_message_id: string;
-  published_note_id: string;
-  embedding_provider?: string | null;
-  embedding_model?: string | null;
-  extra_metadata?: Record<string, unknown> | null;
-  created_at?: string | null;
-  similarity_score: number;
+  attributes: T;
 }
 
-export interface PreviouslySeenCheckResultAttributes {
-  should_auto_publish: boolean;
-  should_auto_request: boolean;
-  autopublish_threshold: number;
-  autorequest_threshold: number;
-  matches: PreviouslySeenMatchResource[];
-  top_match?: PreviouslySeenMatchResource | null;
+export interface JSONAPIListResponse<T> {
+  data: JSONAPIResource<T>[];
+  jsonapi: { [key: string]: string };
+  links?: JSONAPILinks | null;
+  meta?: JSONAPIMeta | null;
 }
 
-export interface FactCheckMatchResource {
-  id: string;
-  dataset_name: string;
-  dataset_tags: string[];
-  title: string;
-  content: string;
-  summary?: string | null;
-  rating?: string | null;
-  source_url?: string | null;
-  published_date?: string | null;
-  author?: string | null;
-  embedding_provider?: string | null;
-  embedding_model?: string | null;
-  similarity_score: number;
+export interface JSONAPISingleResponse<T> {
+  data: JSONAPIResource<T>;
+  jsonapi: { [key: string]: string };
+  links?: JSONAPILinks | null;
 }
-
-export interface SimilaritySearchResultAttributes {
-  matches: FactCheckMatchResource[];
-  query_text: string;
-  dataset_tags: string[];
-  similarity_threshold: number;
-  score_threshold: number;
-  total_matches: number;
-}
-
-export interface ScoringResultAttributes {
-  scored_notes: { [key: string]: unknown }[];
-  helpful_scores: { [key: string]: unknown }[];
-  auxiliary_info: { [key: string]: unknown }[];
-}
-
-export type MonitoredChannelJSONAPIResponse = JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>;
-export type MonitoredChannelListJSONAPIResponse = JSONAPIListResponse<MonitoredChannelJSONAPIAttributes>;
 
 export interface ApiClientConfig {
   serverUrl: string;
@@ -506,13 +310,11 @@ function handleVoidResponse(result: { error?: unknown; response: Response }, end
 export class ApiClient {
   private client: TypedClient;
   private retryFetch: (input: Request) => Promise<Response>;
-  private baseUrl: string;
   private middleware: Middleware[];
 
   constructor(config: ApiClientConfig) {
     const environment = config.environment ?? 'production';
     validateHttps(config.serverUrl, environment);
-    this.baseUrl = config.serverUrl;
 
     initGCPDetection();
 
@@ -549,9 +351,9 @@ export class ApiClient {
     return buildProfileHeaders(context);
   }
 
-  async healthCheck(): Promise<{ status: string; version: string }> {
+  async healthCheck(): Promise<components['schemas']['HealthCheckResponse']> {
     const result = await this.client.GET('/health');
-    return handleError(result, '/health') as { status: string; version: string };
+    return handleError(result, '/health');
   }
 
   async scoreNotes(request: ScoringRequest): Promise<ScoringResultJSONAPIResponse> {
@@ -559,11 +361,11 @@ export class ApiClient {
       body: {
         data: {
           type: 'scoring-requests',
-          attributes: request as never,
+          attributes: request,
         },
-      } as never,
+      },
     });
-    return handleError(result, '/api/v2/scoring/score') as unknown as ScoringResultJSONAPIResponse;
+    return handleError(result, '/api/v2/scoring/score')
   }
 
   async getNotes(messageId: string): Promise<NoteListJSONAPIResponse> {
@@ -574,14 +376,14 @@ export class ApiClient {
         },
       },
     });
-    return handleError(result, '/api/v2/notes') as unknown as NoteListJSONAPIResponse;
+    return handleError(result, '/api/v2/notes')
   }
 
   async getNote(noteId: string): Promise<NoteJSONAPIResponse> {
     const result = await this.client.GET('/api/v2/notes/{note_id}', {
       params: { path: { note_id: noteId } },
     });
-    return handleError(result, `/api/v2/notes/${noteId}`) as unknown as NoteJSONAPIResponse;
+    return handleError(result, `/api/v2/notes/${noteId}`)
   }
 
   async createNote(request: CreateNoteRequest, context?: UserContext): Promise<NoteJSONAPIResponse> {
@@ -618,7 +420,15 @@ export class ApiClient {
       );
     }
 
-    const noteAttributes = {
+    if (!community_server_id) {
+      throw new ApiError(
+        'Community server ID is required. Please provide a guild context.',
+        '/api/v2/notes',
+        400
+      );
+    }
+
+    const noteAttributes: components['schemas']['NoteCreateAttributes'] = {
       author_id,
       channel_id: request.channelId || null,
       community_server_id,
@@ -633,10 +443,10 @@ export class ApiClient {
           type: 'notes',
           attributes: noteAttributes,
         },
-      } as never,
+      },
       headers: this.profileHeaders(context),
     });
-    return handleError(result, '/api/v2/notes') as unknown as NoteJSONAPIResponse;
+    return handleError(result, '/api/v2/notes')
   }
 
   async rateNote(request: CreateRatingRequest, context?: UserContext): Promise<RatingJSONAPIResponse> {
@@ -655,7 +465,7 @@ export class ApiClient {
       );
     }
 
-    const ratingAttributes = {
+    const ratingAttributes: components['schemas']['RatingCreateAttributes'] = {
       note_id: request.noteId,
       rater_id,
       helpfulness_level: request.helpful ? 'HELPFUL' : 'NOT_HELPFUL',
@@ -667,16 +477,16 @@ export class ApiClient {
           type: 'ratings',
           attributes: ratingAttributes,
         },
-      } as never,
+      },
       headers: this.profileHeaders(context),
     });
-    return handleError(result, '/api/v2/ratings') as unknown as RatingJSONAPIResponse;
+    return handleError(result, '/api/v2/ratings')
   }
 
   async requestNote(request: NoteRequest, context?: UserContext): Promise<void> {
     const requestId = `discord-${request.messageId}-${Date.now()}`;
 
-    const requestAttributes: Record<string, unknown> = {
+    const requestAttributes: components['schemas']['RequestCreateAttributes'] = {
       request_id: requestId,
       community_server_id: request.community_server_id,
       original_message_content: request.originalMessageContent ?? null,
@@ -685,14 +495,13 @@ export class ApiClient {
       platform_channel_id: request.discord_channel_id ?? null,
       platform_author_id: request.discord_author_id ?? null,
       platform_timestamp: request.discord_timestamp?.toISOString() ?? null,
+      ...(request.fact_check_metadata && {
+        metadata: request.fact_check_metadata,
+        similarity_score: request.fact_check_metadata.similarity_score,
+        dataset_name: request.fact_check_metadata.dataset_name,
+        dataset_item_id: request.fact_check_metadata.dataset_item_id,
+      }),
     };
-
-    if (request.fact_check_metadata) {
-      requestAttributes.metadata = request.fact_check_metadata;
-      requestAttributes.similarity_score = request.fact_check_metadata.similarity_score;
-      requestAttributes.dataset_name = request.fact_check_metadata.dataset_name;
-      requestAttributes.dataset_item_id = request.fact_check_metadata.dataset_item_id;
-    }
 
     const result = await this.client.POST('/api/v2/requests', {
       body: {
@@ -700,7 +509,7 @@ export class ApiClient {
           type: 'requests',
           attributes: requestAttributes,
         },
-      } as never,
+      },
       headers: this.profileHeaders(context),
     });
     handleVoidResponse(result, '/api/v2/requests');
@@ -715,10 +524,10 @@ export class ApiClient {
     if (filters?.communityServerId) { query['filter[community_server_id]'] = filters.communityServerId; }
 
     const result = await this.client.GET('/api/v2/requests', {
-      params: { query: query as never },
+      params: { query: query },
       headers: this.profileHeaders(context),
     });
-    return handleError(result, '/api/v2/requests') as unknown as JSONAPIListResponse<RequestAttributes>;
+    return handleError(result, '/api/v2/requests')
   }
 
   async getRequest(requestId: string, context?: UserContext): Promise<JSONAPISingleResponse<RequestAttributes>> {
@@ -726,7 +535,7 @@ export class ApiClient {
       params: { path: { request_id: requestId } },
       headers: this.profileHeaders(context),
     });
-    return handleError(result, `/api/v2/requests/${requestId}`) as unknown as JSONAPISingleResponse<RequestAttributes>;
+    return handleError(result, `/api/v2/requests/${requestId}`)
   }
 
   async generateAiNote(requestId: string, context?: UserContext): Promise<NoteJSONAPIResponse> {
@@ -734,7 +543,7 @@ export class ApiClient {
       params: { path: { request_id: requestId } },
       headers: this.profileHeaders(context),
     });
-    return handleError(result, `/api/v2/requests/${requestId}/ai-notes`) as unknown as NoteJSONAPIResponse;
+    return handleError(result, `/api/v2/requests/${requestId}/ai-notes`)
   }
 
   async getCommunityServerByPlatformId(
@@ -749,7 +558,7 @@ export class ApiClient {
         },
       },
     });
-    return handleError(result, '/api/v2/community-servers/lookup') as unknown as CommunityServerJSONAPIResponse;
+    return handleError(result, '/api/v2/community-servers/lookup')
   }
 
   async updateCommunityServerName(
@@ -757,13 +566,13 @@ export class ApiClient {
     name: string,
     serverStats?: Record<string, unknown>
   ): Promise<void> {
-    const body: Record<string, unknown> = { name };
-    if (serverStats) {
-      body.server_stats = serverStats;
-    }
+    const body: components['schemas']['CommunityServerNameUpdateRequest'] = {
+      name,
+      server_stats: serverStats ?? null,
+    };
     const result = await this.client.PATCH('/api/v1/community-servers/{platform_community_server_id}/name', {
       params: { path: { platform_community_server_id: platformId } },
-      body: body as never,
+      body,
     });
     handleVoidResponse(result, `/api/v1/community-servers/${platformId}/name`);
   }
@@ -780,7 +589,7 @@ export class ApiClient {
         },
       },
     });
-    return handleError(result, '/api/v2/user-profiles/lookup') as unknown as UserProfileLookupResponse;
+    return handleError(result, '/api/v2/user-profiles/lookup')
   }
 
   async updateWelcomeMessageId(
@@ -789,14 +598,14 @@ export class ApiClient {
   ): Promise<WelcomeMessageUpdateResponse> {
     const result = await this.client.PATCH('/api/v1/community-servers/{platform_community_server_id}/welcome-message', {
       params: { path: { platform_community_server_id: platformId } },
-      body: { welcome_message_id: welcomeMessageId } as never,
+      body: { welcome_message_id: welcomeMessageId },
     });
-    return handleError(result, `/api/v1/community-servers/${platformId}/welcome-message`) as unknown as WelcomeMessageUpdateResponse;
+    return handleError(result, `/api/v1/community-servers/${platformId}/welcome-message`)
   }
 
   async getRatingThresholds(): Promise<RatingThresholdsResponse> {
     const result = await this.client.GET('/api/v1/config/rating-thresholds');
-    return handleError(result, '/api/v1/config/rating-thresholds') as unknown as RatingThresholdsResponse;
+    return handleError(result, '/api/v1/config/rating-thresholds')
   }
 
   async listNotesWithStatus(
@@ -820,10 +629,10 @@ export class ApiClient {
     }
 
     const result = await this.client.GET('/api/v2/notes', {
-      params: { query: query as never },
+      params: { query: query },
       headers: this.profileHeaders(context),
     });
-    const jsonApiResponse = handleError(result, '/api/v2/notes') as unknown as NoteListJSONAPIResponse;
+    const jsonApiResponse = handleError(result, '/api/v2/notes')
 
     return {
       ...jsonApiResponse,
@@ -837,7 +646,7 @@ export class ApiClient {
     const result = await this.client.GET('/api/v2/notes/{note_id}/ratings', {
       params: { path: { note_id: noteId } },
     });
-    return handleError(result, `/api/v2/notes/${noteId}/ratings`) as unknown as RatingListJSONAPIResponse;
+    return handleError(result, `/api/v2/notes/${noteId}/ratings`)
   }
 
   async updateRating(ratingId: string, helpful: boolean, context?: UserContext): Promise<RatingJSONAPIResponse> {
@@ -851,24 +660,24 @@ export class ApiClient {
             helpfulness_level: helpful ? 'HELPFUL' : 'NOT_HELPFUL',
           },
         },
-      } as never,
+      },
       headers: this.profileHeaders(context),
     });
-    return handleError(result, `/api/v2/ratings/${ratingId}`) as unknown as RatingJSONAPIResponse;
+    return handleError(result, `/api/v2/ratings/${ratingId}`)
   }
 
   async getGuildConfig(guildId: string): Promise<Record<string, unknown>> {
     const result = await this.client.GET('/api/v1/community-config/{community_server_id}', {
       params: { path: { community_server_id: guildId } },
     });
-    const response = handleError(result, `/api/v1/community-config/${guildId}`) as unknown as { community_id: string; config: Record<string, unknown> };
-    return response.config;
+    const response = handleError(result, `/api/v1/community-config/${guildId}`);
+    return (response as { config: Record<string, unknown> }).config;
   }
 
   async setGuildConfig(guildId: string, key: string, value: string | boolean | number, updatedBy: string, context?: UserContext): Promise<void> {
     const result = await this.client.PUT('/api/v1/community-config/{community_server_id}', {
       params: { path: { community_server_id: guildId } },
-      body: { key, value: String(value), updated_by: updatedBy } as never,
+      body: { key, value: String(value), updated_by: updatedBy },
       headers: this.profileHeaders(context),
     });
     handleVoidResponse(result, `/api/v1/community-config/${guildId}`);
@@ -886,7 +695,7 @@ export class ApiClient {
     const result = await this.client.GET('/api/v2/scoring/notes/{note_id}/score', {
       params: { path: { note_id: noteId } },
     });
-    return handleError(result, `/api/v2/scoring/notes/${noteId}/score`) as unknown as NoteScoreJSONAPIResponse;
+    return handleError(result, `/api/v2/scoring/notes/${noteId}/score`)
   }
 
   async getBatchNoteScores(noteIds: string[]): Promise<BatchScoreJSONAPIResponse> {
@@ -896,9 +705,9 @@ export class ApiClient {
           type: 'batch-score-requests',
           attributes: { note_ids: noteIds },
         },
-      } as never,
+      },
     });
-    return handleError(result, '/api/v2/scoring/notes/batch-scores') as unknown as BatchScoreJSONAPIResponse;
+    return handleError(result, '/api/v2/scoring/notes/batch-scores')
   }
 
   async getTopNotes(
@@ -912,14 +721,14 @@ export class ApiClient {
     if (tier !== undefined) { query.tier = tier; }
 
     const result = await this.client.GET('/api/v2/scoring/notes/top', {
-      params: { query: query as never },
+      params: { query: query },
     });
-    return handleError(result, '/api/v2/scoring/notes/top') as unknown as TopNotesJSONAPIResponse;
+    return handleError(result, '/api/v2/scoring/notes/top')
   }
 
   async getScoringStatus(): Promise<ScoringStatusJSONAPIResponse> {
     const result = await this.client.GET('/api/v2/scoring/status');
-    return handleError(result, '/api/v2/scoring/status') as unknown as ScoringStatusJSONAPIResponse;
+    return handleError(result, '/api/v2/scoring/status')
   }
 
   async listMonitoredChannels(
@@ -937,9 +746,9 @@ export class ApiClient {
     }
 
     const result = await this.client.GET('/api/v2/monitored-channels', {
-      params: { query: query as never },
+      params: { query: query },
     });
-    return handleError(result, '/api/v2/monitored-channels') as unknown as JSONAPIListResponse<MonitoredChannelJSONAPIAttributes>;
+    return handleError(result, '/api/v2/monitored-channels')
   }
 
   async similaritySearch(
@@ -958,12 +767,13 @@ export class ApiClient {
             community_server_id: communityServerId,
             dataset_tags: datasetTags,
             similarity_threshold: similarityThreshold,
+            score_threshold: 0.1,
             limit,
           },
         },
-      } as never,
+      },
     });
-    return handleError(result, '/api/v2/similarity-searches') as unknown as JSONAPISingleResponse<SimilaritySearchResultAttributes>;
+    return handleError(result, '/api/v2/similarity-searches')
   }
 
   async createMonitoredChannel(
@@ -985,10 +795,10 @@ export class ApiClient {
               updated_by: request.updated_by,
             },
           },
-        } as never,
+        },
         headers: this.profileHeaders(context),
       });
-      return handleError(result, '/api/v2/monitored-channels') as unknown as JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>;
+      return handleError(result, '/api/v2/monitored-channels')
     } catch (error) {
       if (error instanceof ApiError && error.statusCode === 409) {
         logger.debug('Channel already monitored', {
@@ -1005,23 +815,23 @@ export class ApiClient {
     const result = await this.client.GET('/api/v1/community-servers/{community_server_id}/llm-config', {
       params: { path: { community_server_id: communityServerId } },
     });
-    return handleError(result, `/api/v1/community-servers/${communityServerId}/llm-config`) as unknown as LLMConfigResponse[];
+    return handleError(result, `/api/v1/community-servers/${communityServerId}/llm-config`)
   }
 
   async createLLMConfig(communityServerId: string, config: LLMConfigCreate, context?: UserContext): Promise<LLMConfigResponse> {
     const result = await this.client.POST('/api/v1/community-servers/{community_server_id}/llm-config', {
       params: { path: { community_server_id: communityServerId } },
-      body: config as never,
+      body: config,
       headers: this.profileHeaders(context),
     });
-    return handleError(result, `/api/v1/community-servers/${communityServerId}/llm-config`) as unknown as LLMConfigResponse;
+    return handleError(result, `/api/v1/community-servers/${communityServerId}/llm-config`)
   }
 
   async getMonitoredChannelByUuid(uuid: string): Promise<JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>> {
     const result = await this.client.GET('/api/v2/monitored-channels/{channel_uuid}', {
       params: { path: { channel_uuid: uuid } },
     });
-    return handleError(result, `/api/v2/monitored-channels/${uuid}`) as unknown as JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>;
+    return handleError(result, `/api/v2/monitored-channels/${uuid}`)
   }
 
   async getMonitoredChannel(channelId: string, communityServerId?: string): Promise<JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes> | null> {
@@ -1064,10 +874,10 @@ export class ApiClient {
             updated_by: update.updated_by,
           },
         },
-      } as never,
+      },
       headers: this.profileHeaders(context),
     });
-    return handleError(result, `/api/v2/monitored-channels/${existing.data.id}`) as unknown as JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>;
+    return handleError(result, `/api/v2/monitored-channels/${existing.data.id}`)
   }
 
   async deleteMonitoredChannel(
@@ -1093,7 +903,7 @@ export class ApiClient {
       params: { path: { note_id: noteId } },
       headers: this.profileHeaders(context),
     });
-    return handleError(result, `/api/v2/notes/${noteId}/force-publish`) as unknown as NoteJSONAPIResponse;
+    return handleError(result, `/api/v2/notes/${noteId}/force-publish`)
   }
 
   async addCommunityAdmin(
@@ -1115,10 +925,10 @@ export class ApiClient {
 
     const result = await this.client.POST('/api/v1/community-servers/{community_server_id}/admins', {
       params: { path: { community_server_id: communityServerId } },
-      body: body as never,
+      body: body,
       headers: this.profileHeaders(context),
     });
-    return handleError(result, `/api/v1/community-servers/${communityServerId}/admins`) as unknown as CommunityAdminResponse;
+    return handleError(result, `/api/v1/community-servers/${communityServerId}/admins`)
   }
 
   async removeCommunityAdmin(
@@ -1130,14 +940,14 @@ export class ApiClient {
       params: { path: { community_server_id: communityServerId, user_discord_id: userDiscordId } },
       headers: this.profileHeaders(context),
     });
-    return handleError(result, `/api/v1/community-servers/${communityServerId}/admins/${userDiscordId}`) as unknown as RemoveCommunityAdminResponse;
+    return handleError(result, `/api/v1/community-servers/${communityServerId}/admins/${userDiscordId}`)
   }
 
   async listCommunityAdmins(communityServerId: string): Promise<CommunityAdminResponse[]> {
     const result = await this.client.GET('/api/v1/community-servers/{community_server_id}/admins', {
       params: { path: { community_server_id: communityServerId } },
     });
-    return handleError(result, `/api/v1/community-servers/${communityServerId}/admins`) as unknown as CommunityAdminResponse[];
+    return handleError(result, `/api/v1/community-servers/${communityServerId}/admins`)
   }
 
   async checkPreviouslySeen(
@@ -1155,9 +965,9 @@ export class ApiClient {
             channel_id: channelId,
           },
         },
-      } as never,
+      },
     });
-    return handleError(result, '/api/v2/previously-seen-messages/check') as unknown as PreviouslySeenCheckJSONAPIResponse;
+    return handleError(result, '/api/v2/previously-seen-messages/check')
   }
 
   async recordNotePublisher(
@@ -1178,7 +988,7 @@ export class ApiClient {
             error_message: request.errorMessage ?? null,
           },
         },
-      } as never,
+      },
     });
     handleVoidResponse(result, '/api/v2/note-publisher-posts');
   }
@@ -1194,9 +1004,9 @@ export class ApiClient {
     };
 
     const result = await this.client.GET('/api/v2/note-publisher-posts', {
-      params: { query: query as never },
+      params: { query: query },
     });
-    return handleError(result, '/api/v2/note-publisher-posts') as unknown as JSONAPIListResponse<NotePublisherPostJSONAPIAttributes>;
+    return handleError(result, '/api/v2/note-publisher-posts')
   }
 
   async getLastNotePost(
@@ -1212,9 +1022,9 @@ export class ApiClient {
     };
 
     const result = await this.client.GET('/api/v2/note-publisher-posts', {
-      params: { query: query as never },
+      params: { query: query },
     });
-    return handleError(result, '/api/v2/note-publisher-posts') as unknown as JSONAPIListResponse<NotePublisherPostJSONAPIAttributes>;
+    return handleError(result, '/api/v2/note-publisher-posts')
   }
 
   async getNotePublisherConfig(
@@ -1227,9 +1037,9 @@ export class ApiClient {
     };
 
     const result = await this.client.GET('/api/v2/note-publisher-configs', {
-      params: { query: query as never },
+      params: { query: query },
     });
-    return handleError(result, '/api/v2/note-publisher-configs') as unknown as JSONAPIListResponse<NotePublisherConfigJSONAPIAttributes>;
+    return handleError(result, '/api/v2/note-publisher-configs')
   }
 
   async setNotePublisherConfig(
@@ -1261,10 +1071,10 @@ export class ApiClient {
               updated_by: updatedBy ?? null,
             },
           },
-        } as never,
+        },
         headers: this.profileHeaders(context),
       });
-      return handleError(result, `/api/v2/note-publisher-configs/${existingConfig.id}`) as unknown as JSONAPISingleResponse<NotePublisherConfigJSONAPIAttributes>;
+      return handleError(result, `/api/v2/note-publisher-configs/${existingConfig.id}`)
     } else {
       const result = await this.client.POST('/api/v2/note-publisher-configs', {
         body: {
@@ -1278,10 +1088,10 @@ export class ApiClient {
               updated_by: updatedBy ?? null,
             },
           },
-        } as never,
+        },
         headers: this.profileHeaders(context),
       });
-      return handleError(result, '/api/v2/note-publisher-configs') as unknown as JSONAPISingleResponse<NotePublisherConfigJSONAPIAttributes>;
+      return handleError(result, '/api/v2/note-publisher-configs')
     }
   }
 
@@ -1304,10 +1114,10 @@ export class ApiClient {
     }
 
     const result = await this.client.GET('/api/v2/notes', {
-      params: { query: query as never },
+      params: { query: query },
       headers: this.profileHeaders(context),
     });
-    const jsonApiResponse = handleError(result, '/api/v2/notes') as unknown as NoteListJSONAPIResponse;
+    const jsonApiResponse = handleError(result, '/api/v2/notes')
 
     return {
       ...jsonApiResponse,
@@ -1330,16 +1140,16 @@ export class ApiClient {
             scan_window_days: scanWindowDays,
           },
         },
-      } as never,
+      },
     });
-    return handleError(result, '/api/v2/bulk-scans') as unknown as BulkScanSingleResponse;
+    return handleError(result, '/api/v2/bulk-scans')
   }
 
   async getBulkScanResults(scanId: string): Promise<BulkScanResultsResponse> {
     const result = await this.client.GET('/api/v2/bulk-scans/{scan_id}', {
       params: { path: { scan_id: scanId } },
     });
-    return handleError(result, `/api/v2/bulk-scans/${scanId}`) as unknown as BulkScanResultsResponse;
+    return handleError(result, `/api/v2/bulk-scans/${scanId}`)
   }
 
   async createNoteRequestsFromScan(
@@ -1357,23 +1167,23 @@ export class ApiClient {
             generate_ai_notes: generateAiNotes,
           },
         },
-      } as never,
+      },
     });
-    return handleError(result, `/api/v2/bulk-scans/${scanId}/note-requests`) as unknown as NoteRequestsResultResponse;
+    return handleError(result, `/api/v2/bulk-scans/${scanId}/note-requests`)
   }
 
   async checkRecentScan(communityServerId: string): Promise<RecentScanResponse> {
     const result = await this.client.GET('/api/v2/bulk-scans/communities/{community_server_id}/recent', {
       params: { path: { community_server_id: communityServerId } },
     });
-    return handleError(result, `/api/v2/bulk-scans/communities/${communityServerId}/recent`) as unknown as RecentScanResponse;
+    return handleError(result, `/api/v2/bulk-scans/communities/${communityServerId}/recent`)
   }
 
   async getLatestScan(communityServerId: string): Promise<LatestScanResponse> {
     const result = await this.client.GET('/api/v2/bulk-scans/communities/{community_server_id}/latest', {
       params: { path: { community_server_id: communityServerId } },
     });
-    return handleError(result, `/api/v2/bulk-scans/communities/${communityServerId}/latest`) as unknown as LatestScanResponse;
+    return handleError(result, `/api/v2/bulk-scans/communities/${communityServerId}/latest`)
   }
 
   async generateScanExplanation(
@@ -1391,89 +1201,61 @@ export class ApiClient {
             community_server_id: communityServerId,
           },
         },
-      } as never,
+      },
     });
-    return handleError(result, '/api/v2/bulk-scans/explanations') as unknown as ExplanationResultResponse;
+    return handleError(result, '/api/v2/bulk-scans/explanations')
   }
 
   async getClearPreview(
-    endpoint: string,
+    communityServerId: string,
+    type: 'requests' | 'notes',
+    mode: string,
     context?: UserContext
   ): Promise<ClearPreviewResult> {
-    const url = `${this.baseUrl}${endpoint}`;
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...this.profileHeaders(context),
-    };
-    const request = new Request(url, { method: 'GET', headers });
+    const headers = this.profileHeaders(context);
+    const params = { path: { community_server_id: communityServerId }, query: { mode } };
 
-    for (const mw of this.middleware) {
-      if (mw.onRequest) {
-        await mw.onRequest({
-          request,
-          schemaPath: endpoint,
-          params: {},
-          id: 'clear-preview',
-          options: {} as never,
-        });
-      }
-    }
-
-    const response = await this.retryFetch(request);
-
-    if (!response.ok) {
-      throw new ApiError(
-        `API request failed: ${response.status} ${response.statusText}`,
-        endpoint,
-        response.status,
+    if (type === 'requests') {
+      const result = await this.client.GET(
+        '/api/v2/community-servers/{community_server_id}/clear-requests/preview',
+        { params, headers }
       );
+      const data = handleError(result, `/api/v2/community-servers/${communityServerId}/clear-requests/preview`);
+      return { wouldDeleteCount: data.would_delete_count, message: data.message };
     }
 
-    const data = await response.json() as { would_delete_count: number; message: string };
-    return {
-      wouldDeleteCount: data.would_delete_count,
-      message: data.message,
-    };
+    const result = await this.client.GET(
+      '/api/v2/community-servers/{community_server_id}/clear-notes/preview',
+      { params, headers }
+    );
+    const data = handleError(result, `/api/v2/community-servers/${communityServerId}/clear-notes/preview`);
+    return { wouldDeleteCount: data.would_delete_count, message: data.message };
   }
 
   async executeClear(
-    endpoint: string,
+    communityServerId: string,
+    type: 'requests' | 'notes',
+    mode: string,
     context?: UserContext
   ): Promise<ClearResult> {
-    const url = `${this.baseUrl}${endpoint}`;
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...this.profileHeaders(context),
-    };
-    const request = new Request(url, { method: 'DELETE', headers });
+    const headers = this.profileHeaders(context);
+    const params = { path: { community_server_id: communityServerId }, query: { mode } };
 
-    for (const mw of this.middleware) {
-      if (mw.onRequest) {
-        await mw.onRequest({
-          request,
-          schemaPath: endpoint,
-          params: {},
-          id: 'clear-execute',
-          options: {} as never,
-        });
-      }
-    }
-
-    const response = await this.retryFetch(request);
-
-    if (!response.ok) {
-      throw new ApiError(
-        `API request failed: ${response.status} ${response.statusText}`,
-        endpoint,
-        response.status,
+    if (type === 'requests') {
+      const result = await this.client.DELETE(
+        '/api/v2/community-servers/{community_server_id}/clear-requests',
+        { params, headers }
       );
+      const data = handleError(result, `/api/v2/community-servers/${communityServerId}/clear-requests`);
+      return { deletedCount: data.deleted_count, message: data.message };
     }
 
-    const data = await response.json() as { deleted_count: number; message: string };
-    return {
-      deletedCount: data.deleted_count,
-      message: data.message,
-    };
+    const result = await this.client.DELETE(
+      '/api/v2/community-servers/{community_server_id}/clear-notes',
+      { params, headers }
+    );
+    const data = handleError(result, `/api/v2/community-servers/${communityServerId}/clear-notes`);
+    return { deletedCount: data.deleted_count, message: data.message };
   }
 
   async updateFlashpointDetection(
@@ -1483,10 +1265,10 @@ export class ApiClient {
   ): Promise<FlashpointDetectionUpdateResponse> {
     const result = await this.client.PATCH('/api/v1/community-servers/{platform_community_server_id}/flashpoint-detection', {
       params: { path: { platform_community_server_id: platformCommunityServerId } },
-      body: { enabled } as never,
+      body: { enabled },
       headers: this.profileHeaders(context),
     });
-    return handleError(result, `/api/v1/community-servers/${platformCommunityServerId}/flashpoint-detection`) as unknown as FlashpointDetectionUpdateResponse;
+    return handleError(result, `/api/v1/community-servers/${platformCommunityServerId}/flashpoint-detection`)
   }
 
   async getFlashpointDetectionStatus(
@@ -1519,9 +1301,9 @@ export class ApiClient {
               similarity_score: params.similarityScore,
             },
           },
-        } as never,
+        },
       });
-      const response = handleError(result, '/api/v2/claim-relevance-checks') as unknown as ClaimRelevanceCheckResponse;
+      const response = handleError(result, '/api/v2/claim-relevance-checks')
 
       return {
         outcome: response.data.attributes.outcome,

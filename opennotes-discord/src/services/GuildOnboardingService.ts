@@ -163,7 +163,8 @@ export class GuildOnboardingService {
     // Try to log if there was a stale DB record, but don't fail if API is down
     try {
       const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-      const storedMessageId = communityServer.data.attributes.welcome_message_id;
+      const attrs = communityServer.data.attributes as typeof communityServer.data.attributes & { welcome_message_id?: string | null };
+      const storedMessageId = attrs.welcome_message_id;
 
       if (storedMessageId) {
         logger.info('Stored welcome message not found in pins, posting new one', {
@@ -222,7 +223,8 @@ export class GuildOnboardingService {
   private async syncWelcomeMessageIdIfNeeded(guildId: string, foundMessageId: string): Promise<void> {
     try {
       const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-      const storedMessageId = communityServer.data.attributes.welcome_message_id;
+      const attrs = communityServer.data.attributes as typeof communityServer.data.attributes & { welcome_message_id?: string | null };
+      const storedMessageId = attrs.welcome_message_id;
 
       if (storedMessageId !== foundMessageId) {
         await this.updateWelcomeMessageIdInDb(guildId, foundMessageId);

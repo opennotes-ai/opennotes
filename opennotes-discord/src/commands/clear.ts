@@ -171,11 +171,7 @@ async function getClearPreview(
   type: 'requests' | 'notes',
   mode: string
 ): Promise<ClearPreviewResult> {
-  const endpoint = type === 'requests'
-    ? `/api/v2/community-servers/${communityServerId}/clear-requests/preview?mode=${encodeURIComponent(mode)}`
-    : `/api/v2/community-servers/${communityServerId}/clear-notes/preview?mode=${encodeURIComponent(mode)}`;
-
-  return await apiClient.getClearPreview(endpoint);
+  return await apiClient.getClearPreview(communityServerId, type, mode);
 }
 
 async function executeClear(
@@ -183,11 +179,7 @@ async function executeClear(
   type: 'requests' | 'notes',
   mode: string
 ): Promise<{ deletedCount: number; message: string }> {
-  const endpoint = type === 'requests'
-    ? `/api/v2/community-servers/${communityServerId}/clear-requests?mode=${encodeURIComponent(mode)}`
-    : `/api/v2/community-servers/${communityServerId}/clear-notes?mode=${encodeURIComponent(mode)}`;
-
-  return await apiClient.executeClear(endpoint);
+  return await apiClient.executeClear(communityServerId, type, mode);
 }
 
 async function showConfirmationPrompt(

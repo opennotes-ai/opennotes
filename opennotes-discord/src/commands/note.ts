@@ -965,7 +965,7 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
                `⚠️ This note was manually published by an admin and will be marked as "Admin Published" when displayed.\n\n` +
                `**Note Summary:** ${attrs.summary.substring(0, 200)}${attrs.summary.length > 200 ? '...' : ''}\n` +
                `**Status:** ${attrs.status}\n` +
-               `**Published At:** <t:${Math.floor(new Date(attrs.force_published_at || attrs.updated_at || attrs.created_at).getTime() / 1000)}:F>`,
+               `**Published At:** <t:${Math.floor(new Date(attrs.force_published_at ?? attrs.updated_at ?? attrs.created_at ?? new Date().toISOString()).getTime() / 1000)}:F>`,
     });
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
