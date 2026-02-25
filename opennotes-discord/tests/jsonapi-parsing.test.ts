@@ -561,14 +561,14 @@ describe('JSON:API Response Parsing', () => {
         );
 
         expect(mockFetch).toHaveBeenCalledTimes(1);
-        const fetchUrl = mockFetch.mock.calls[0]![0] as string;
+        const fetchUrl = (mockFetch.mock.calls[0]![0] as Request).url;
 
         expect(fetchUrl).toContain('/api/v2/notes');
-        expect(fetchUrl).toContain('filter%5Brated_by_participant_id%5D=rater-participant-123');
-        expect(fetchUrl).toContain('page%5Bnumber%5D=2');
-        expect(fetchUrl).toContain('page%5Bsize%5D=10');
-        expect(fetchUrl).toContain('filter%5Bcommunity_server_id%5D=server-456');
-        expect(fetchUrl).toContain('filter%5Bstatus%5D=NEEDS_MORE_RATINGS');
+        expect(fetchUrl).toContain('filter[rater_id]=rater-participant-123');
+        expect(fetchUrl).toContain('page[number]=2');
+        expect(fetchUrl).toContain('page[size]=10');
+        expect(fetchUrl).toContain('filter[community_server_id]=server-456');
+        expect(fetchUrl).toContain('filter[status]=NEEDS_MORE_RATINGS');
 
         expect(result.data).toHaveLength(1);
         expect(result.data[0]!.id).toBe('note-rated-1');
@@ -600,12 +600,12 @@ describe('JSON:API Response Parsing', () => {
         );
 
         expect(mockFetch).toHaveBeenCalledTimes(1);
-        const fetchUrl = mockFetch.mock.calls[0]![0] as string;
+        const fetchUrl = (mockFetch.mock.calls[0]![0] as Request).url;
 
         expect(fetchUrl).toContain('/api/v2/notes');
-        expect(fetchUrl).toContain('filter%5Brated_by_participant_id%5D=rater-123');
-        expect(fetchUrl).toContain('filter%5Bcommunity_server_id%5D=server-789');
-        expect(fetchUrl).not.toContain('filter%5Bstatus%5D');
+        expect(fetchUrl).toContain('filter[rater_id]=rater-123');
+        expect(fetchUrl).toContain('filter[community_server_id]=server-789');
+        expect(fetchUrl).not.toContain('filter[status]');
       });
 
       it('transforms JSON:API response to NoteListResponse format', async () => {

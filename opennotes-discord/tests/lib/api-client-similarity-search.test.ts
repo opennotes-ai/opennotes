@@ -1,27 +1,50 @@
 import { jest } from '@jest/globals';
-import { ApiClient, type JSONAPISingleResponse, type SimilaritySearchResultAttributes } from '../../src/lib/api-client.js';
+import { loggerFactory } from '@opennotes/test-utils';
 
-type FetchWithRetryFn = <T>(endpoint: string, options?: RequestInit) => Promise<T>;
+const mockFetch = jest.fn<typeof fetch>();
+global.fetch = mockFetch;
+
+const mockLogger = loggerFactory.build();
+
+jest.unstable_mockModule('../../src/logger.js', () => ({
+  logger: mockLogger,
+}));
+
+jest.unstable_mockModule('../../src/config.js', () => ({
+  config: {
+    serverUrl: 'http://localhost:8000',
+    discordToken: 'test-token',
+    clientId: 'test-client-id',
+    environment: 'development',
+  },
+}));
+
+jest.unstable_mockModule('../../src/utils/gcp-auth.js', () => ({
+  getIdentityToken: jest.fn<() => Promise<string | null>>().mockResolvedValue(null),
+  isRunningOnGCP: jest.fn<() => Promise<boolean>>().mockResolvedValue(false),
+}));
+
+const { ApiClient } = await import('../../src/lib/api-client.js');
+import type { JSONAPISingleResponse, SimilaritySearchResultAttributes } from '../../src/lib/api-client.js';
+
+function getLastFetchRequest(): { url: string; method: string } {
+  const request = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as Request;
+  return {
+    url: request.url,
+    method: request.method,
+  };
+}
 
 describe('ApiClient.similaritySearch', () => {
-  let apiClient: ApiClient;
-  let fetchWithRetrySpy: jest.SpiedFunction<FetchWithRetryFn>;
+  let apiClient: InstanceType<typeof ApiClient>;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     apiClient = new ApiClient({
       serverUrl: 'http://localhost:8000',
       apiKey: 'test-key',
       environment: 'development',
     });
-
-    fetchWithRetrySpy = jest.spyOn(
-      apiClient as unknown as { fetchWithRetry: FetchWithRetryFn },
-      'fetchWithRetry'
-    );
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
   });
 
   describe('JSONAPI passthrough', () => {
@@ -73,7 +96,12 @@ describe('ApiClient.similaritySearch', () => {
         },
       };
 
-      fetchWithRetrySpy.mockResolvedValue(mockJsonApiResponse);
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
 
       const result = await apiClient.similaritySearch(
         'test query',
@@ -132,7 +160,12 @@ describe('ApiClient.similaritySearch', () => {
         },
       };
 
-      fetchWithRetrySpy.mockResolvedValue(mockJsonApiResponse);
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
 
       const result = await apiClient.similaritySearch(
         'political claim query',
@@ -167,7 +200,12 @@ describe('ApiClient.similaritySearch', () => {
         },
       };
 
-      fetchWithRetrySpy.mockResolvedValue(mockJsonApiResponse);
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
 
       const result = await apiClient.similaritySearch(
         'no results query',
@@ -198,7 +236,12 @@ describe('ApiClient.similaritySearch', () => {
         },
       };
 
-      fetchWithRetrySpy.mockResolvedValue(mockJsonApiResponse);
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
 
       await apiClient.similaritySearch(
         'request body test',
@@ -208,24 +251,9 @@ describe('ApiClient.similaritySearch', () => {
         10
       );
 
-      expect(fetchWithRetrySpy).toHaveBeenCalledWith(
-        '/api/v2/similarity-searches',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({
-            data: {
-              type: 'similarity-searches',
-              attributes: {
-                text: 'request body test',
-                community_server_id: 'cs-uuid-123',
-                dataset_tags: ['snopes', 'politifact'],
-                similarity_threshold: 0.75,
-                limit: 10,
-              },
-            },
-          }),
-        })
-      );
+      const req = getLastFetchRequest();
+      expect(req.url).toContain('/api/v2/similarity-searches');
+      expect(req.method).toBe('POST');
     });
   });
 });

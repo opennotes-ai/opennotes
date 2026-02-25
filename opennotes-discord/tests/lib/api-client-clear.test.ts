@@ -26,6 +26,17 @@ jest.unstable_mockModule('../../src/utils/gcp-auth.js', () => ({
 
 const { ApiClient } = await import('../../src/lib/api-client.js');
 
+function getLastFetchRequest(): { url: string; method: string; headers: Record<string, string> } {
+  const request = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as Request;
+  const headers: Record<string, string> = {};
+  request.headers.forEach((value, key) => { headers[key] = value; });
+  return {
+    url: request.url,
+    method: request.method,
+    headers,
+  };
+}
+
 describe('ApiClient Clear Methods', () => {
   let client: InstanceType<typeof ApiClient>;
 
@@ -57,12 +68,9 @@ describe('ApiClient Clear Methods', () => {
 
       expect(result.wouldDeleteCount).toBe(15);
       expect(result.message).toBe('Would delete 15 requests');
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/community-servers/uuid-123/clear-requests/preview?mode=all',
-        expect.objectContaining({
-          headers: expect.any(Object),
-        })
-      );
+
+      const req = getLastFetchRequest();
+      expect(req.url).toBe('http://localhost:8000/api/v2/community-servers/uuid-123/clear-requests/preview?mode=all');
     });
 
     it('should return zero count when no items to delete', async () => {
@@ -107,13 +115,10 @@ describe('ApiClient Clear Methods', () => {
 
       expect(result.deletedCount).toBe(10);
       expect(result.message).toBe('Deleted 10 requests');
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/community-servers/uuid-123/clear-requests?mode=all',
-        expect.objectContaining({
-          method: 'DELETE',
-          headers: expect.any(Object),
-        })
-      );
+
+      const req = getLastFetchRequest();
+      expect(req.url).toBe('http://localhost:8000/api/v2/community-servers/uuid-123/clear-requests?mode=all');
+      expect(req.method).toBe('DELETE');
     });
 
     it('should handle notes deletion with days filter', async () => {
@@ -147,12 +152,8 @@ describe('ApiClient Clear Methods', () => {
 
       await client.executeClear('/api/v2/community-servers/uuid-123/clear-requests?mode=all');
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          method: 'DELETE',
-        })
-      );
+      const req = getLastFetchRequest();
+      expect(req.method).toBe('DELETE');
     });
   });
 });
