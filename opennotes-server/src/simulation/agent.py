@@ -99,6 +99,7 @@ async def write_note(
         community_server_id=ctx.deps.community_server_id,
         ai_generated=True,
         ai_provider=ctx.deps.model_name.provider,
+        ai_model=ctx.deps.model_name.model,
     )
     ctx.deps.db.add(note)
     try:

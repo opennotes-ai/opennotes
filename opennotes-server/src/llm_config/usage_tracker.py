@@ -5,6 +5,7 @@ Provides rate limiting and budget tracking per community server,
 with automatic counter resets for daily and monthly limits.
 """
 
+import logging
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -18,10 +19,21 @@ from src.llm_config.cost_calculator import LLMCostCalculator
 from src.llm_config.model_id import ModelId
 from src.llm_config.models import CommunityServerLLMConfig, LLMUsageLog
 
+logger = logging.getLogger(__name__)
+
 
 def _make_model_id(provider: str, model: str) -> ModelId:
     """Construct a ModelId from separate provider and model strings."""
     if "/" in model:
+        model_prefix, _, _ = model.partition("/")
+        if model_prefix != provider:
+            logger.warning(
+                "provider argument %r disagrees with model prefix %r in model string %r; "
+                "using model string prefix",
+                provider,
+                model_prefix,
+                model,
+            )
         return ModelId.from_litellm(model)
     return ModelId.from_litellm(f"{provider}/{model}")
 

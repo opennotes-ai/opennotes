@@ -29,7 +29,7 @@ class LiteLLMProviderSettings(ProviderSettings):
 class LiteLLMCompletionParams(BaseModel):
     """Completion parameters for LiteLLM provider."""
 
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="forbid")
 
     model: ModelId | None = None
     max_tokens: int | None = None

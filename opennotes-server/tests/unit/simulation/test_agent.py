@@ -136,6 +136,7 @@ class TestWriteNoteTool:
         assert note.classification == "NOT_MISLEADING"
         assert note.ai_generated is True
         assert note.ai_provider == "openai"
+        assert note.ai_model == "gpt-4o-mini"
         assert note.author_id == sample_deps.user_profile_id
         assert note.community_server_id == sample_deps.community_server_id
         assert "Note created" in result
