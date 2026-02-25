@@ -1,30 +1,17 @@
 import { jest } from '@jest/globals';
 
-interface MockResponse {
-  ok: boolean;
-  status?: number;
-  statusText?: string;
-  json?: () => Promise<unknown>;
-  text?: () => Promise<string>;
-  headers?: {
-    get: (name: string) => string | null;
-  };
+function createRealResponse(body: unknown, options: { status?: number; statusText?: string; headers?: Record<string, string> } = {}): Response {
+  const { status = 200, statusText = 'OK', headers = {} } = options;
+  const responseHeaders = new Headers({ 'Content-Type': 'application/json', ...headers });
+  return new Response(JSON.stringify(body), { status, statusText, headers: responseHeaders });
 }
 
-const createMockResponse = (overrides: Partial<MockResponse> = {}): MockResponse => ({
-  ok: true,
-  status: 200,
-  statusText: 'OK',
-  json: async () => ({}),
-  text: async () => '',
-  headers: {
-    get: (name: string) => (name === 'content-type' ? 'application/json' : null),
-  },
-  ...overrides,
-});
+function createErrorResponse(status: number, statusText: string, body?: string): Response {
+  return new Response(body ?? statusText, { status, statusText, headers: new Headers({ 'Content-Type': 'text/plain' }) });
+}
 
-const mockFetch = jest.fn<() => Promise<MockResponse>>();
-global.fetch = mockFetch as unknown as typeof fetch;
+const mockFetch = jest.fn<typeof fetch>();
+global.fetch = mockFetch;
 
 const mockLogger = {
   error: jest.fn<(...args: unknown[]) => void>(),
@@ -135,7 +122,6 @@ describe('End-to-End Integration Tests', () => {
       const messageId = '234567890123';
       const communityServerId = '550e8400-e29b-41d4-a716-446655440000';
 
-      // Mock user profile lookup response for author resolution
       const authorProfileId = '00000000-0000-0001-aaaa-000000000456';
       const createUserProfileJSONAPIResponse = (id: string, platformUserId: string) => ({
         jsonapi: { version: '1.1' },
@@ -152,48 +138,36 @@ describe('End-to-End Integration Tests', () => {
 
       mockFetch
         .mockResolvedValueOnce(
-          createMockResponse({
-            json: async () => ({ status: 'healthy', version: '1.0.0' }),
-          })
+          createRealResponse({ status: 'healthy', version: '1.0.0' })
         )
         .mockResolvedValueOnce(
-          createMockResponse({
-            status: 200,
-            json: async () => createCommunityServerJSONAPIResponse(communityServerId, '550e8400e29b41d4a716446655440000'),
-          })
+          createRealResponse(createCommunityServerJSONAPIResponse(communityServerId, '550e8400e29b41d4a716446655440000'))
         )
         .mockResolvedValueOnce(
-          createMockResponse({
-            status: 200,
-            json: async () => createUserProfileJSONAPIResponse(authorProfileId, 'user456'),
-          })
+          createRealResponse(createUserProfileJSONAPIResponse(authorProfileId, 'user456'))
         )
         .mockResolvedValueOnce(
-          createMockResponse({
-            status: 201,
-            json: async () => createNoteJSONAPIResponse('550e8400-e29b-41d4-a716-446655440001', {
+          createRealResponse(
+            createNoteJSONAPIResponse('550e8400-e29b-41d4-a716-446655440001', {
               author_id: authorProfileId,
               summary: 'This is a test community note',
               community_server_id: communityServerId,
             }),
-          })
-        )
-        // Mock user profile lookup for rater
-        .mockResolvedValueOnce(
-          createMockResponse({
-            status: 200,
-            json: async () => createUserProfileJSONAPIResponse('00000000-0000-0001-bbbb-000000000789', 'rater789'),
-          })
+            { status: 201 }
+          )
         )
         .mockResolvedValueOnce(
-          createMockResponse({
-            status: 201,
-            json: async () => createRatingJSONAPIResponse('550e8400-e29b-41d4-a716-446655440002', {
+          createRealResponse(createUserProfileJSONAPIResponse('00000000-0000-0001-bbbb-000000000789', 'rater789'))
+        )
+        .mockResolvedValueOnce(
+          createRealResponse(
+            createRatingJSONAPIResponse('550e8400-e29b-41d4-a716-446655440002', {
               note_id: '550e8400-e29b-41d4-a716-446655440001',
               rater_id: '00000000-0000-0001-bbbb-000000000789',
               helpfulness_level: 'HELPFUL',
             }),
-          })
+            { status: 201 }
+          )
         );
 
       const healthResult = await apiClient.healthCheck();
@@ -221,7 +195,6 @@ describe('End-to-End Integration Tests', () => {
         helpful: true,
       });
 
-      // Rating now returns JSONAPI format
       expect(rating).toHaveProperty('data');
       expect(rating).toHaveProperty('jsonapi');
       expect(rating.data.type).toBe('ratings');
@@ -260,9 +233,7 @@ describe('End-to-End Integration Tests', () => {
       };
 
       mockFetch.mockResolvedValueOnce(
-        createMockResponse({
-          json: async () => jsonApiNotesResponse,
-        })
+        createRealResponse(jsonApiNotesResponse)
       );
 
       const notes = await apiClient.getNotes(messageId);
@@ -294,56 +265,46 @@ describe('End-to-End Integration Tests', () => {
 
       mockFetch
         .mockResolvedValueOnce(
-          createMockResponse({
-            status: 200,
-            json: async () => createCommunityServerJSONAPIResponse(communityServerId, 'guild123'),
-          })
+          createRealResponse(createCommunityServerJSONAPIResponse(communityServerId, 'guild123'))
         )
         .mockResolvedValueOnce(
-          createMockResponse({
-            status: 201,
-            json: async () => createNoteJSONAPIResponse('550e8400-e29b-41d4-a716-446655440003', {
+          createRealResponse(
+            createNoteJSONAPIResponse('550e8400-e29b-41d4-a716-446655440003', {
               author_id: '00000000-0000-0001-aaaa-000000000001',
               summary: 'Test note for scoring',
               community_server_id: communityServerId,
             }),
-          })
+            { status: 201 }
+          )
         )
-        // User profile lookup for rater
         .mockResolvedValueOnce(
-          createMockResponse({
-            status: 200,
-            json: async () => ({
-              jsonapi: { version: '1.1' },
-              data: {
-                type: 'user-profiles',
-                id: raterProfileId,
-                attributes: {
-                  platform: 'discord',
-                  platform_user_id: 'rater-001',
-                  display_name: 'Rater User',
-                },
+          createRealResponse({
+            jsonapi: { version: '1.1' },
+            data: {
+              type: 'user-profiles',
+              id: raterProfileId,
+              attributes: {
+                platform: 'discord',
+                platform_user_id: 'rater-001',
+                display_name: 'Rater User',
               },
-            }),
+            },
           })
         )
         .mockResolvedValueOnce(
-          createMockResponse({
-            status: 201,
-            json: async () => createRatingJSONAPIResponse('550e8400-e29b-41d4-a716-446655440004', {
+          createRealResponse(
+            createRatingJSONAPIResponse('550e8400-e29b-41d4-a716-446655440004', {
               note_id: '550e8400-e29b-41d4-a716-446655440003',
               rater_id: raterProfileId,
               helpfulness_level: 'HELPFUL',
             }),
-          })
+            { status: 201 }
+          )
         )
         .mockResolvedValueOnce(
-          createMockResponse({
-            json: async () => mockScoringResponse,
-          })
+          createRealResponse(mockScoringResponse)
         );
 
-      // Note: authorId is already a UUID, so no profile lookup needed
       const note = await apiClient.createNote({
         messageId: '234567890123456790',
         authorId: '00000000-0000-0001-aaaa-000000000001',
@@ -354,7 +315,6 @@ describe('End-to-End Integration Tests', () => {
         channelId: 'channel456',
       });
 
-      // rater-001 is not a UUID, so profile lookup will be called
       const rating = await apiClient.rateNote({
         noteId: note.data.id,
         userId: 'rater-001',
@@ -409,21 +369,14 @@ describe('End-to-End Integration Tests', () => {
   describe('Error recovery', () => {
     it('should handle API failures gracefully', async () => {
       mockFetch.mockImplementation(async () =>
-        createMockResponse({
-          ok: false,
-          status: 500,
-          statusText: 'Internal Server Error',
-          text: async () => 'Internal Server Error',
-        })
+        createErrorResponse(500, 'Internal Server Error')
       );
 
       await expect(apiClient.healthCheck()).rejects.toThrow();
 
       mockFetch.mockClear();
       mockFetch.mockResolvedValueOnce(
-        createMockResponse({
-          json: async () => ({ status: 'healthy', version: '1.0.0' }),
-        })
+        createRealResponse({ status: 'healthy', version: '1.0.0' })
       );
 
       const result = await apiClient.healthCheck();
@@ -448,33 +401,29 @@ describe('End-to-End Integration Tests', () => {
       const communityServerId = '550e8400-e29b-41d4-a716-446655440000';
       let noteIndex = 0;
 
-      (mockFetch as jest.Mock).mockImplementation(async (url: unknown) => {
-        const urlStr = String(url);
+      mockFetch.mockImplementation(async (input) => {
+        const request = input as Request;
+        const urlStr = request.url;
         if (urlStr.includes('/api/v2/community-servers')) {
-          return createMockResponse({
-            status: 200,
-            json: async () => createCommunityServerJSONAPIResponse(communityServerId, 'guild-concurrent'),
-          });
+          return createRealResponse(
+            createCommunityServerJSONAPIResponse(communityServerId, 'guild-concurrent')
+          );
         }
 
-        // Handle user profile lookup for author resolution
         if (urlStr.includes('/api/v2/user-profiles/lookup')) {
           const urlParams = new URL(urlStr).searchParams;
           const platformUserId = urlParams.get('platform_user_id') || 'unknown';
-          return createMockResponse({
-            status: 200,
-            json: async () => ({
-              jsonapi: { version: '1.1' },
-              data: {
-                type: 'user-profiles',
-                id: `00000000-0000-0001-aaaa-${platformUserId.padStart(12, '0').slice(0, 12)}`,
-                attributes: {
-                  platform: 'discord',
-                  platform_user_id: platformUserId,
-                  display_name: `Test User ${platformUserId}`,
-                },
+          return createRealResponse({
+            jsonapi: { version: '1.1' },
+            data: {
+              type: 'user-profiles',
+              id: `00000000-0000-0001-aaaa-${platformUserId.padStart(12, '0').slice(0, 12)}`,
+              attributes: {
+                platform: 'discord',
+                platform_user_id: platformUserId,
+                display_name: `Test User ${platformUserId}`,
               },
-            }),
+            },
           });
         }
 
@@ -487,17 +436,10 @@ describe('End-to-End Integration Tests', () => {
             community_server_id: communityServerId,
           });
 
-          return createMockResponse({
-            status: 201,
-            json: async () => response,
-          });
+          return createRealResponse(response, { status: 201 });
         }
 
-        return createMockResponse({
-          status: 404,
-          ok: false,
-          text: async () => 'Not Found',
-        });
+        return createErrorResponse(404, 'Not Found');
       });
 
       const promises = Array.from({ length: 5 }, (_, i) =>
@@ -525,9 +467,7 @@ describe('End-to-End Integration Tests', () => {
 
     it('should handle concurrent health checks', async () => {
       mockFetch.mockImplementation(async () =>
-        createMockResponse({
-          json: async () => ({ status: 'healthy', version: '1.0.0' }),
-        })
+        createRealResponse({ status: 'healthy', version: '1.0.0' })
       );
 
       const promises = Array.from({ length: 10 }, () =>

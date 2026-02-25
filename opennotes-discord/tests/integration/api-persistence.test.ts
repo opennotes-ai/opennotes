@@ -1,31 +1,34 @@
 import { jest } from '@jest/globals';
 import { loggerFactory, cacheFactory } from '../factories/index.js';
 
-interface MockResponse {
-  ok: boolean;
-  status?: number;
-  statusText?: string;
-  json?: () => Promise<unknown>;
-  text?: () => Promise<string>;
-  headers?: {
-    get: (name: string) => string | null;
-  };
+function createRealResponse(body: unknown, options: { status?: number; statusText?: string; headers?: Record<string, string> } = {}): Response {
+  const { status = 200, statusText = 'OK', headers = {} } = options;
+  const responseHeaders = new Headers({ 'Content-Type': 'application/json', ...headers });
+  return new Response(JSON.stringify(body), { status, statusText, headers: responseHeaders });
 }
 
-const createMockResponse = (overrides: Partial<MockResponse> = {}): MockResponse => ({
-  ok: true,
-  status: 200,
-  statusText: 'OK',
-  json: async () => ({}),
-  text: async () => '',
-  headers: {
-    get: (name: string) => (name === 'content-type' ? 'application/json' : null),
-  },
-  ...overrides,
-});
+function createErrorResponse(status: number, statusText: string, body?: string): Response {
+  return new Response(body ?? statusText, { status, statusText, headers: new Headers({ 'Content-Type': 'text/plain' }) });
+}
 
-const mockFetch = jest.fn<() => Promise<MockResponse>>();
-global.fetch = mockFetch as unknown as typeof fetch;
+function getFetchRequest(callIndex = 0): Request {
+  return mockFetch.mock.calls[callIndex]![0] as Request;
+}
+
+function getFetchRequestDetails(callIndex = 0): { url: string; method: string; headers: Record<string, string> } {
+  const request = getFetchRequest(callIndex);
+  const headers: Record<string, string> = {};
+  request.headers.forEach((value, key) => { headers[key] = value; });
+  return { url: request.url, method: request.method, headers };
+}
+
+async function getFetchRequestBody(callIndex = 0): Promise<Record<string, unknown>> {
+  const request = getFetchRequest(callIndex);
+  return JSON.parse(await request.clone().text()) as Record<string, unknown>;
+}
+
+const mockFetch = jest.fn<typeof fetch>();
+global.fetch = mockFetch;
 
 const mockLogger = loggerFactory.build();
 const mockCache = cacheFactory.build();
@@ -174,38 +177,25 @@ describe('API Persistence Integration Tests', () => {
       const now = new Date().toISOString();
 
       mockFetch.mockResolvedValueOnce(
-        createMockResponse({
-          ok: true,
-          json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440001', 'guild-123'),
-        })
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440001', 'guild-123'))
       );
 
       mockFetch.mockResolvedValueOnce(
-        createMockResponse({
-          json: async () => createNoteJSONAPIResponse('note-789', {
-            author_id: createRequest.authorId,
-            summary: createRequest.content,
-            created_at: now,
-          }),
-        })
+        createRealResponse(createNoteJSONAPIResponse('note-789', {
+          author_id: createRequest.authorId,
+          summary: createRequest.content,
+          created_at: now,
+        }))
       );
 
       const result = await client1.createNote(createRequest, { userId: '00000000-0000-0001-aaaa-000000000456', guildId: 'guild-123' });
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/notes',
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-          }),
-        })
-      );
+      const noteCreateReq = getFetchRequestDetails(1);
+      expect(noteCreateReq.url).toBe('http://localhost:8000/api/v2/notes');
+      expect(noteCreateReq.method).toBe('POST');
+      expect(noteCreateReq.headers['content-type']).toBe('application/json');
 
-      const fetchCalls = mockFetch.mock.calls as unknown as [string, RequestInit][];
-      expect(fetchCalls[1]).toBeDefined();
-      const [_, fetchInit] = fetchCalls[1];
-      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
+      const sentBody = await getFetchRequestBody(1) as { data: { attributes: Record<string, unknown> } };
       expect(sentBody.data.attributes).toHaveProperty('author_id', createRequest.authorId);
       expect(sentBody.data.attributes).toHaveProperty('summary', createRequest.content);
       expect(sentBody.data.attributes).toHaveProperty('classification', 'NOT_MISLEADING');
@@ -219,33 +209,25 @@ describe('API Persistence Integration Tests', () => {
       mockFetch.mockClear();
 
       mockFetch.mockResolvedValueOnce(
-        createMockResponse({
-          json: async () => createJSONAPIListResponse('notes', [{
-            id: 'note-789',
-            attributes: {
-              author_id: createRequest.authorId,
-              summary: createRequest.content,
-              classification: 'NOT_MISLEADING',
-              status: 'NEEDS_MORE_RATINGS',
-              helpfulness_score: 0,
-              ratings_count: 0,
-              created_at: new Date().toISOString(),
-              community_server_id: '550e8400-e29b-41d4-a716-446655440001',
-            },
-          }]),
-        })
+        createRealResponse(createJSONAPIListResponse('notes', [{
+          id: 'note-789',
+          attributes: {
+            author_id: createRequest.authorId,
+            summary: createRequest.content,
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            ratings_count: 0,
+            created_at: new Date().toISOString(),
+            community_server_id: '550e8400-e29b-41d4-a716-446655440001',
+          },
+        }]))
       );
 
       const retrievedNotes = await client2.getNotes(createRequest.messageId);
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/v2/notes'),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-          }),
-        })
-      );
+      const getReq = getFetchRequestDetails(0);
+      expect(getReq.url).toContain('/api/v2/notes');
 
       expect(retrievedNotes.data).toHaveLength(1);
       expect(retrievedNotes.data[0].id).toBe('note-789');
@@ -260,18 +242,16 @@ describe('API Persistence Integration Tests', () => {
         content: 'Cross-client persistence test',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440002', 'guild-123'),
-      }));
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440002', 'guild-123'))
+      );
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createNoteJSONAPIResponse('note-cross-client-001', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createNoteJSONAPIResponse('note-cross-client-001', {
           author_id: createRequest.authorId,
           summary: createRequest.content,
-        }),
-      }));
+        }))
+      );
 
       const created = await client1.createNote(createRequest, { userId: '00000000-0000-0001-aaaa-000000000111', guildId: 'guild-123' });
       expect(created.data.id).toBe('note-cross-client-001');
@@ -280,9 +260,8 @@ describe('API Persistence Integration Tests', () => {
 
       mockFetch.mockClear();
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createJSONAPIListResponse('notes', [{
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createJSONAPIListResponse('notes', [{
           id: 'note-cross-client-001',
           attributes: {
             author_id: createRequest.authorId,
@@ -294,8 +273,8 @@ describe('API Persistence Integration Tests', () => {
             created_at: new Date().toISOString(),
             community_server_id: '550e8400-e29b-41d4-a716-446655440002',
           },
-        }]),
-      }));
+        }]))
+      );
 
       const retrieved = await client2.getNotes(createRequest.messageId);
 
@@ -313,35 +292,25 @@ describe('API Persistence Integration Tests', () => {
         content: 'Verify HTTP structure',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440003', 'guild-123'),
-      }));
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440003', 'guild-123'))
+      );
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createNoteJSONAPIResponse('note-999', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createNoteJSONAPIResponse('note-999', {
           author_id: authorUuid,
           summary: request.content,
-        }),
-      }));
+        }))
+      );
 
       await client1.createNote(request, { userId: authorUuid, guildId: 'guild-123' });
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/notes',
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-          }),
-        })
-      );
+      const noteReq = getFetchRequestDetails(1);
+      expect(noteReq.url).toBe('http://localhost:8000/api/v2/notes');
+      expect(noteReq.method).toBe('POST');
+      expect(noteReq.headers['content-type']).toBe('application/json');
 
-      const fetchCalls = mockFetch.mock.calls as unknown as [string, RequestInit][];
-      expect(fetchCalls[1]).toBeDefined();
-      const [_, fetchInit] = fetchCalls[1];
-      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
+      const sentBody = await getFetchRequestBody(1) as { data: { attributes: Record<string, unknown> } };
       expect(sentBody.data.attributes).toHaveProperty('author_id', request.authorId);
       expect(sentBody.data.attributes).toHaveProperty('summary', request.content);
       expect(sentBody.data.attributes).toHaveProperty('classification', 'NOT_MISLEADING');
@@ -357,27 +326,23 @@ describe('API Persistence Integration Tests', () => {
         helpful: true,
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createRatingJSONAPIResponse('rating-001', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createRatingJSONAPIResponse('rating-001', {
           note_id: ratingRequest.noteId,
           rater_id: raterUuid,
           helpfulness_level: 'HELPFUL',
-        }),
-      }));
+        }))
+      );
 
       const result = await client1.rateNote(ratingRequest);
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/ratings',
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-          }),
-          body: expect.stringContaining('note_id'),
-        })
-      );
+      const rateReq = getFetchRequestDetails(0);
+      expect(rateReq.url).toBe('http://localhost:8000/api/v2/ratings');
+      expect(rateReq.method).toBe('POST');
+      expect(rateReq.headers['content-type']).toBe('application/json');
+
+      const sentBody = await getFetchRequestBody(0) as { data: { attributes: Record<string, unknown> } };
+      expect(sentBody.data.attributes).toHaveProperty('note_id');
 
       expect(result.data.attributes.note_id).toBe(ratingRequest.noteId);
       expect(result.data.attributes.rater_id).toBe(raterUuid);
@@ -392,25 +357,24 @@ describe('API Persistence Integration Tests', () => {
         helpful: false,
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createRatingJSONAPIResponse('rating-002', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createRatingJSONAPIResponse('rating-002', {
           note_id: ratingRequest.noteId,
           rater_id: ratingRequest.userId,
           helpfulness_level: 'NOT_HELPFUL',
-        }),
-      }));
+        }))
+      );
 
       const result = await client1.rateNote(ratingRequest);
 
       expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/ratings',
-        expect.objectContaining({
-          method: 'POST',
-          body: expect.stringContaining('helpfulness_level'),
-        })
-      );
+
+      const rateReq = getFetchRequestDetails(0);
+      expect(rateReq.url).toBe('http://localhost:8000/api/v2/ratings');
+      expect(rateReq.method).toBe('POST');
+
+      const sentBody = await getFetchRequestBody(0) as { data: { attributes: Record<string, unknown> } };
+      expect(sentBody.data.attributes).toHaveProperty('helpfulness_level');
     });
 
     it('should verify rating data is sent with correct structure', async () => {
@@ -420,29 +384,21 @@ describe('API Persistence Integration Tests', () => {
         helpful: true,
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createRatingJSONAPIResponse('rating-003', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createRatingJSONAPIResponse('rating-003', {
           note_id: request.noteId,
           rater_id: request.userId,
           helpfulness_level: 'HELPFUL',
-        }),
-      }));
+        }))
+      );
 
       await client1.rateNote(request);
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/ratings',
-        expect.objectContaining({
-          method: 'POST',
-          body: expect.stringContaining('note_id'),
-        })
-      );
+      const rateReq = getFetchRequestDetails(0);
+      expect(rateReq.url).toBe('http://localhost:8000/api/v2/ratings');
+      expect(rateReq.method).toBe('POST');
 
-      const fetchCalls = mockFetch.mock.calls as unknown as [string, RequestInit][];
-      expect(fetchCalls[0]).toBeDefined();
-      const [_, fetchInit] = fetchCalls[0];
-      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
+      const sentBody = await getFetchRequestBody(0) as { data: { attributes: Record<string, unknown> } };
       expect(sentBody.data.attributes).toHaveProperty('note_id');
       expect(sentBody.data.attributes).toHaveProperty('rater_id', request.userId);
       expect(sentBody.data.attributes).toHaveProperty('helpfulness_level', 'HELPFUL');
@@ -458,33 +414,23 @@ describe('API Persistence Integration Tests', () => {
         reason: 'This message needs context',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createRequestJSONAPIResponse('request-001', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createRequestJSONAPIResponse('request-001', {
           request_id: `discord-${noteRequest.messageId}-12345`,
           requested_by: noteRequest.userId,
-        }),
-      }));
+        }))
+      );
 
       await client1.requestNote(noteRequest);
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/requests',
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-          }),
-          body: expect.stringContaining('request_id'),
-        })
-      );
+      const reqDetails = getFetchRequestDetails(0);
+      expect(reqDetails.url).toBe('http://localhost:8000/api/v2/requests');
+      expect(reqDetails.method).toBe('POST');
+      expect(reqDetails.headers['content-type']).toBe('application/json');
 
-      const fetchCalls = mockFetch.mock.calls as unknown as [string, RequestInit][];
-      expect(fetchCalls[0]).toBeDefined();
-      const [_, fetchInit] = fetchCalls[0];
-      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
+      const sentBody = await getFetchRequestBody(0) as { data: { attributes: Record<string, unknown> } };
       expect(sentBody.data.attributes).toHaveProperty('request_id');
-      expect(sentBody.data.attributes.request_id).toContain(`discord-${noteRequest.messageId}`);
+      expect(String(sentBody.data.attributes.request_id)).toContain(`discord-${noteRequest.messageId}`);
       expect(sentBody.data.attributes).toHaveProperty('platform_message_id', noteRequest.messageId);
       expect(sentBody.data.attributes).toHaveProperty('requested_by', noteRequest.userId);
     });
@@ -496,30 +442,22 @@ describe('API Persistence Integration Tests', () => {
         community_server_id: 'guild-123',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createRequestJSONAPIResponse('request-002', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createRequestJSONAPIResponse('request-002', {
           request_id: `discord-${noteRequest.messageId}-12345`,
           requested_by: noteRequest.userId,
-        }),
-      }));
+        }))
+      );
 
       await client1.requestNote(noteRequest);
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/requests',
-        expect.objectContaining({
-          method: 'POST',
-          body: expect.stringContaining('request_id'),
-        })
-      );
+      const reqDetails = getFetchRequestDetails(0);
+      expect(reqDetails.url).toBe('http://localhost:8000/api/v2/requests');
+      expect(reqDetails.method).toBe('POST');
 
-      const fetchCalls = mockFetch.mock.calls as unknown as [string, RequestInit][];
-      expect(fetchCalls[0]).toBeDefined();
-      const [_, fetchInit] = fetchCalls[0];
-      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
+      const sentBody = await getFetchRequestBody(0) as { data: { attributes: Record<string, unknown> } };
       expect(sentBody.data.attributes).toHaveProperty('request_id');
-      expect(sentBody.data.attributes.request_id).toContain(`discord-${noteRequest.messageId}`);
+      expect(String(sentBody.data.attributes.request_id)).toContain(`discord-${noteRequest.messageId}`);
       expect(sentBody.data.attributes).toHaveProperty('platform_message_id', noteRequest.messageId);
       expect(sentBody.data.attributes).toHaveProperty('requested_by', noteRequest.userId);
     });
@@ -532,21 +470,18 @@ describe('API Persistence Integration Tests', () => {
         reason: 'Verification test',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createRequestJSONAPIResponse('request-003', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createRequestJSONAPIResponse('request-003', {
           request_id: `discord-${request.messageId}-12345`,
           requested_by: request.userId,
-        }),
-      }));
+        }))
+      );
 
       await expect(client1.requestNote(request)).resolves.not.toThrow();
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/requests',
-        expect.any(Object)
-      );
+      const reqDetails = getFetchRequestDetails(0);
+      expect(reqDetails.url).toBe('http://localhost:8000/api/v2/requests');
     });
 
     it('should include platform_message_id and platform metadata in request', async () => {
@@ -566,32 +501,21 @@ describe('API Persistence Integration Tests', () => {
         },
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createRequestJSONAPIResponse('request-004', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createRequestJSONAPIResponse('request-004', {
           request_id: `discord-${noteRequest.messageId}-12345`,
           requested_by: noteRequest.userId,
-        }),
-      }));
+        }))
+      );
 
       await client1.requestNote(noteRequest);
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/requests',
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-          }),
-          body: expect.stringContaining('platform_message_id'),
-        })
-      );
+      const reqDetails = getFetchRequestDetails(0);
+      expect(reqDetails.url).toBe('http://localhost:8000/api/v2/requests');
+      expect(reqDetails.method).toBe('POST');
+      expect(reqDetails.headers['content-type']).toBe('application/json');
 
-      const fetchCalls = mockFetch.mock.calls as unknown as [string, RequestInit][];
-      expect(fetchCalls[0]).toBeDefined();
-      const [_, fetchInit] = fetchCalls[0];
-      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
-
+      const sentBody = await getFetchRequestBody(0) as { data: { attributes: Record<string, unknown> } };
       expect(sentBody.data.attributes).toHaveProperty('platform_message_id', noteRequest.messageId);
       expect(sentBody.data.attributes).toHaveProperty('platform_channel_id', noteRequest.discord_channel_id);
       expect(sentBody.data.attributes).toHaveProperty('platform_author_id', noteRequest.discord_author_id);
@@ -607,21 +531,16 @@ describe('API Persistence Integration Tests', () => {
         community_server_id: 'guild-456',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createRequestJSONAPIResponse('request-005', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createRequestJSONAPIResponse('request-005', {
           request_id: `discord-${noteRequest.messageId}-12345`,
           requested_by: noteRequest.userId,
-        }),
-      }));
+        }))
+      );
 
       await client1.requestNote(noteRequest);
 
-      const fetchCalls = mockFetch.mock.calls as unknown as [string, RequestInit][];
-      expect(fetchCalls[0]).toBeDefined();
-      const [_, fetchInit] = fetchCalls[0];
-      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
-
+      const sentBody = await getFetchRequestBody(0) as { data: { attributes: Record<string, unknown> } };
       expect(sentBody.data.attributes).toHaveProperty('platform_message_id', noteRequest.messageId);
       expect(sentBody.data.attributes).toHaveProperty('platform_channel_id', null);
       expect(sentBody.data.attributes).toHaveProperty('platform_author_id', null);
@@ -643,10 +562,9 @@ describe('API Persistence Integration Tests', () => {
         content: 'This will fail',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440007', 'guild-123'),
-      }));
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440007', 'guild-123'))
+      );
 
       mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
@@ -670,17 +588,13 @@ describe('API Persistence Integration Tests', () => {
         content: 'Server error test',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440008', 'guild-123'),
-      }));
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440008', 'guild-123'))
+      );
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-        text: async () => 'Internal Server Error',
-      }));
+      mockFetch.mockResolvedValueOnce(
+        createErrorResponse(500, 'Internal Server Error')
+      );
 
       await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000500', guildId: 'guild-123' })).rejects.toThrow(
         'API request failed: 500 Internal Server Error'
@@ -700,17 +614,13 @@ describe('API Persistence Integration Tests', () => {
         content: 'Invalid request',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440009', 'guild-123'),
-      }));
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440009', 'guild-123'))
+      );
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: false,
-        status: 400,
-        statusText: 'Bad Request',
-        text: async () => 'Bad Request: messageId is required',
-      }));
+      mockFetch.mockResolvedValueOnce(
+        createErrorResponse(400, 'Bad Request', 'Bad Request: messageId is required')
+      );
 
       await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000400', guildId: 'guild-123' })).rejects.toThrow(
         'API request failed: 400 Bad Request'
@@ -724,12 +634,9 @@ describe('API Persistence Integration Tests', () => {
         retryDelayMs: 10,
       });
 
-      mockFetch.mockResolvedValue(createMockResponse({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
-        text: async () => 'Not Found',
-      }));
+      mockFetch.mockResolvedValue(
+        createErrorResponse(404, 'Not Found')
+      );
 
       await expect(client.getNotes('non-existent-msg')).rejects.toThrow(
         'API request failed: 404 Not Found'
@@ -744,18 +651,15 @@ describe('API Persistence Integration Tests', () => {
       };
 
       mockFetch
-        .mockResolvedValueOnce(createMockResponse({
-          ok: true,
-          json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440010', 'guild-123'),
-        }))
+        .mockResolvedValueOnce(
+          createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440010', 'guild-123'))
+        )
         .mockRejectedValueOnce(new Error('Temporary network error'))
         .mockResolvedValueOnce(
-          createMockResponse({
-            json: async () => createNoteJSONAPIResponse('note-retry-success', {
-              author_id: request.authorId,
-              summary: request.content,
-            }),
-          })
+          createRealResponse(createNoteJSONAPIResponse('note-retry-success', {
+            author_id: request.authorId,
+            summary: request.content,
+          }))
         );
 
       const result = await client1.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000792', guildId: 'guild-123' });
@@ -782,10 +686,9 @@ describe('API Persistence Integration Tests', () => {
       };
 
       mockFetch
-        .mockResolvedValueOnce(createMockResponse({
-          ok: true,
-          json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440011', 'guild-123'),
-        }))
+        .mockResolvedValueOnce(
+          createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440011', 'guild-123'))
+        )
         .mockRejectedValueOnce(new Error('Error 1'))
         .mockRejectedValueOnce(new Error('Error 2'))
         .mockRejectedValueOnce(new Error('Error 3'));
@@ -808,21 +711,15 @@ describe('API Persistence Integration Tests', () => {
         content: 'Malformed test',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440012', 'guild-123'),
-      }));
-
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => {
-          throw new Error('Invalid JSON');
-        },
-      }));
-
-      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000794', guildId: 'guild-123' })).rejects.toThrow(
-        'Invalid JSON'
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440012', 'guild-123'))
       );
+
+      mockFetch.mockResolvedValueOnce(
+        new Response('not valid json', { status: 200, headers: new Headers({ 'Content-Type': 'application/json' }) })
+      );
+
+      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000794', guildId: 'guild-123' })).rejects.toThrow();
     });
 
     it('should handle timeout errors', async () => {
@@ -838,10 +735,9 @@ describe('API Persistence Integration Tests', () => {
         content: 'Timeout test',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440013', 'guild-123'),
-      }));
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440013', 'guild-123'))
+      );
 
       mockFetch.mockImplementation(
         () =>
@@ -864,33 +760,22 @@ describe('API Persistence Integration Tests', () => {
         content: 'Consistency test note',
       };
 
-      const persistedNote = {
-        id: 'note-consistency-001',
-        ...noteRequest,
-        createdAt: 1234567890,
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      };
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440014', 'guild-123'))
+      );
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440014', 'guild-123'),
-      }));
-
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createNoteJSONAPIResponse('note-consistency-001', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createNoteJSONAPIResponse('note-consistency-001', {
           author_id: noteRequest.authorId,
           summary: noteRequest.content,
-        }),
-      }));
+        }))
+      );
 
       await client1.createNote(noteRequest, { userId: '00000000-0000-0001-aaaa-000000000112', guildId: 'guild-123' });
 
       mockFetch.mockClear();
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createJSONAPIListResponse('notes', [{
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createJSONAPIListResponse('notes', [{
           id: 'note-consistency-001',
           attributes: {
             author_id: noteRequest.authorId,
@@ -902,8 +787,8 @@ describe('API Persistence Integration Tests', () => {
             created_at: new Date().toISOString(),
             community_server_id: '550e8400-e29b-41d4-a716-446655440014',
           },
-        }]),
-      }));
+        }]))
+      );
 
       const notesFromClient2 = await client2.getNotes(noteRequest.messageId);
 
@@ -913,9 +798,8 @@ describe('API Persistence Integration Tests', () => {
       expect(notesFromClient2.data[0].attributes.summary).toBe(noteRequest.content);
 
       mockFetch.mockClear();
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createJSONAPIListResponse('notes', [{
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createJSONAPIListResponse('notes', [{
           id: 'note-consistency-001',
           attributes: {
             author_id: noteRequest.authorId,
@@ -927,8 +811,8 @@ describe('API Persistence Integration Tests', () => {
             created_at: new Date().toISOString(),
             community_server_id: '550e8400-e29b-41d4-a716-446655440014',
           },
-        }]),
-      }));
+        }]))
+      );
 
       const notesFromClient1Again = await client1.getNotes(
         noteRequest.messageId
@@ -953,29 +837,23 @@ describe('API Persistence Integration Tests', () => {
       };
 
       mockFetch
-        .mockResolvedValueOnce(createMockResponse({
-          ok: true,
-          json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440015', 'guild-123'),
-        }))
         .mockResolvedValueOnce(
-          createMockResponse({
-            json: async () => createNoteJSONAPIResponse('note-concurrent-001', {
-              author_id: note1Request.authorId,
-              summary: note1Request.content,
-            }),
-          })
+          createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440015', 'guild-123'))
         )
-        .mockResolvedValueOnce(createMockResponse({
-          ok: true,
-          json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440015', 'guild-123'),
-        }))
         .mockResolvedValueOnce(
-          createMockResponse({
-            json: async () => createNoteJSONAPIResponse('note-concurrent-002', {
-              author_id: note2Request.authorId,
-              summary: note2Request.content,
-            }),
-          })
+          createRealResponse(createNoteJSONAPIResponse('note-concurrent-001', {
+            author_id: note1Request.authorId,
+            summary: note1Request.content,
+          }))
+        )
+        .mockResolvedValueOnce(
+          createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440015', 'guild-123'))
+        )
+        .mockResolvedValueOnce(
+          createRealResponse(createNoteJSONAPIResponse('note-concurrent-002', {
+            author_id: note2Request.authorId,
+            summary: note2Request.content,
+          }))
         );
 
       const result1 = await client1.createNote(note1Request, { userId: '00000000-0000-0001-aaaa-000000000113', guildId: 'guild-123' });
@@ -1012,17 +890,15 @@ describe('API Persistence Integration Tests', () => {
       ];
 
       for (let i = 0; i < notes.length; i++) {
-        mockFetch.mockResolvedValueOnce(createMockResponse({
-          ok: true,
-          json: async () => createCommunityServerJSONAPIResponse(communityServerUUIDs[i], 'guild-123'),
-        }));
-        mockFetch.mockResolvedValueOnce(createMockResponse({
-          ok: true,
-          json: async () => createNoteJSONAPIResponse(`note-multi-${i}`, {
+        mockFetch.mockResolvedValueOnce(
+          createRealResponse(createCommunityServerJSONAPIResponse(communityServerUUIDs[i], 'guild-123'))
+        );
+        mockFetch.mockResolvedValueOnce(
+          createRealResponse(createNoteJSONAPIResponse(`note-multi-${i}`, {
             author_id: notes[i].authorId,
             summary: notes[i].content,
-          }),
-        }));
+          }))
+        );
       }
 
       for (const note of notes) {
@@ -1031,9 +907,8 @@ describe('API Persistence Integration Tests', () => {
 
       mockFetch.mockClear();
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createJSONAPIListResponse('notes', notes.map((note, i) => ({
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createJSONAPIListResponse('notes', notes.map((note, i) => ({
           id: `note-multi-${i}`,
           attributes: {
             author_id: note.authorId,
@@ -1045,8 +920,8 @@ describe('API Persistence Integration Tests', () => {
             created_at: new Date().toISOString(),
             community_server_id: communityServerUUIDs[i],
           },
-        }))),
-      }));
+        }))))
+      );
 
       const retrievedNotes = await client2.getNotes('msg-multi-note-001');
 
@@ -1069,18 +944,16 @@ describe('API Persistence Integration Tests', () => {
       };
 
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440020', 'guild-123'),
-      }));
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440020', 'guild-123'))
+      );
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createNoteJSONAPIResponse('note-validation-001', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createNoteJSONAPIResponse('note-validation-001', {
           author_id: request.authorId,
           summary: request.content,
-        }),
-      }));
+        }))
+      );
 
       const result = await client1.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000115', guildId: 'guild-123' });
 
@@ -1097,14 +970,13 @@ describe('API Persistence Integration Tests', () => {
         helpful: true,
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createRatingJSONAPIResponse('rating-validation-001', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createRatingJSONAPIResponse('rating-validation-001', {
           note_id: request.noteId,
           rater_id: request.userId,
           helpfulness_level: 'HELPFUL',
-        }),
-      }));
+        }))
+      );
 
       const result = await client1.rateNote(request);
 
@@ -1121,32 +993,24 @@ describe('API Persistence Integration Tests', () => {
         content: 'Content with special chars: hello world',
       };
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440021', 'guild-123'),
-      }));
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createCommunityServerJSONAPIResponse('550e8400-e29b-41d4-a716-446655440021', 'guild-123'))
+      );
 
-      mockFetch.mockResolvedValueOnce(createMockResponse({
-        ok: true,
-        json: async () => createNoteJSONAPIResponse('note-special-chars', {
+      mockFetch.mockResolvedValueOnce(
+        createRealResponse(createNoteJSONAPIResponse('note-special-chars', {
           author_id: request.authorId,
           summary: request.content,
-        }),
-      }));
+        }))
+      );
 
       await client1.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000797', guildId: 'guild-123' });
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v2/notes',
-        expect.objectContaining({
-          method: 'POST',
-        })
-      );
+      const noteReq = getFetchRequestDetails(1);
+      expect(noteReq.url).toBe('http://localhost:8000/api/v2/notes');
+      expect(noteReq.method).toBe('POST');
 
-      const fetchCalls = mockFetch.mock.calls as unknown as [string, RequestInit][];
-      expect(fetchCalls[1]).toBeDefined();
-      const [_, fetchInit] = fetchCalls[1];
-      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
+      const sentBody = await getFetchRequestBody(1) as { data: { attributes: Record<string, unknown> } };
       expect(sentBody.data.attributes).toHaveProperty('author_id', request.authorId);
       expect(sentBody.data.attributes).toHaveProperty('summary', request.content);
       expect(sentBody.data.attributes).toHaveProperty('classification', 'NOT_MISLEADING');
