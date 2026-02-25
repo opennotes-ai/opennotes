@@ -8,7 +8,7 @@ from dbos import DBOS, Queue
 from pydantic import TypeAdapter
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import UsageLimits
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
@@ -160,6 +160,8 @@ def build_deps_step(
         cs_id = UUID(community_server_id)
 
         async with get_session_maker()() as session:
+            from src.simulation.agent import MAX_CONTEXT_NOTES, MAX_CONTEXT_REQUESTS
+
             req_query = (
                 select(Request)
                 .where(
@@ -167,7 +169,8 @@ def build_deps_step(
                     Request.status == "PENDING",
                     Request.deleted_at.is_(None),
                 )
-                .limit(50)
+                .order_by(func.random())
+                .limit(MAX_CONTEXT_REQUESTS)
             )
             req_result = await session.execute(req_query)
             for req in req_result.scalars().all():
@@ -186,7 +189,8 @@ def build_deps_step(
                     Note.status == "NEEDS_MORE_RATINGS",
                     Note.deleted_at.is_(None),
                 )
-                .limit(50)
+                .order_by(func.random())
+                .limit(MAX_CONTEXT_NOTES)
             )
             note_result = await session.execute(note_query)
             for note in note_result.scalars().all():
