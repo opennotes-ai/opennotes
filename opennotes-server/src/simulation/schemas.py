@@ -3,9 +3,7 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
-from pydantic_ai.exceptions import UserError
-from pydantic_ai.models import infer_model
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema, TimestampSchema
 
@@ -19,20 +17,6 @@ class SimAgentBase(StrictInputSchema):
     memory_compaction_strategy: str = Field(default="sliding_window", max_length=50)
     memory_compaction_config: dict[str, Any] | None = None
     community_server_id: UUID | None = None
-
-    @field_validator("model_name")
-    @classmethod
-    def validate_model_name(cls, v: str) -> str:
-        try:
-            infer_model(v)
-        except UserError:
-            raise ValueError(
-                f"Invalid model name '{v}'. Use 'provider:model' format "
-                f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
-            )
-        except Exception:
-            pass
-        return v
 
 
 class SimAgentCreate(SimAgentBase):
@@ -48,22 +32,6 @@ class SimAgentUpdate(StrictInputSchema):
     memory_compaction_strategy: str | None = Field(default=None, max_length=50)
     memory_compaction_config: dict[str, Any] | None = None
     community_server_id: UUID | None = None
-
-    @field_validator("model_name")
-    @classmethod
-    def validate_model_name(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        try:
-            infer_model(v)
-        except UserError:
-            raise ValueError(
-                f"Invalid model name '{v}'. Use 'provider:model' format "
-                f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
-            )
-        except Exception:
-            pass
-        return v
 
 
 class SimActionType(str, Enum):
