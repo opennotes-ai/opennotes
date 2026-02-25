@@ -193,6 +193,8 @@ def build_deps_step(
                 )
                 linked_note_result = await session.execute(linked_note_query)
                 for n in linked_note_result.scalars().all():
+                    if n.request_id is None:
+                        continue
                     notes_by_request.setdefault(n.request_id, []).append(
                         {
                             "note_id": str(n.id),

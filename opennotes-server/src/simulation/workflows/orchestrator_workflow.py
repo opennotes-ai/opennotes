@@ -324,7 +324,7 @@ def detect_stuck_agents_step(simulation_run_id: str) -> dict[str, int]:
                     SimAgentInstance.state == "active",
                 )
             )
-            return result.all()
+            return list(result.all())
 
     agents = run_sync(_get_active_agents())
 
