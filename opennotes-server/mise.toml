@@ -9,9 +9,9 @@ python = "3.11"
 uv = "latest"
 
 [env]
-ENVIRONMENT = "local"
+ENVIRONMENT = "development"
 PYTHONPATH = "."
-_.file = ".env.yaml"
+_.file = "../.env.yaml"
 
 [vars]
 src_dir = "src"
