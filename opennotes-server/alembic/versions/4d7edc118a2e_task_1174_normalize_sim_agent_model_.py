@@ -4,6 +4,21 @@ Convert model_name values from LiteLLM slash format (provider/model)
 to pydantic-ai colon format (provider:model), translating provider
 names where they differ between the two ecosystems.
 
+Downgrade limitation (task-1174.21):
+    The upgrade skips values already in colon format (via `NOT LIKE '%:%'`),
+    but the downgrade converts ALL colon-format values back to slash format
+    unconditionally. If the table contained pre-existing colon-format entries
+    before the upgrade, those rows would be left untouched by the upgrade but
+    incorrectly converted to slash format on downgrade, making the rollback
+    non-idempotent for mixed-format data.
+
+    This is acceptable because:
+    - Before this migration, no code path wrote colon-format model names, so
+      pre-existing colon-format data is not expected in practice.
+    - Migrations run inside a transaction and are only applied once.
+    - Downgrades are rare in production and would only occur during an
+      immediate rollback of this specific revision.
+
 Revision ID: 4d7edc118a2e
 Revises: 96eb91160c67
 Create Date: 2026-02-25 12:29:02.429623
@@ -52,6 +67,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # WARNING: This downgrade assumes all colon-format entries were created by
+    # the upgrade above. Any pre-existing colon-format values (which the upgrade
+    # left untouched) will be incorrectly converted to slash format.
+    # See the module docstring for full details on this limitation.
     conn = op.get_bind()
 
     for pydantic_provider, litellm_provider in PYDANTIC_TO_LITELLM_PROVIDERS.items():
