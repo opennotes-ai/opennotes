@@ -173,12 +173,34 @@ def build_deps_step(
                 .limit(MAX_CONTEXT_REQUESTS)
             )
             req_result = await session.execute(req_query)
-            for req in req_result.scalars().all():
+            requests = req_result.scalars().all()
+
+            request_ids = [req.request_id for req in requests]
+
+            notes_by_request: dict[str, list[dict[str, Any]]] = {}
+            if request_ids:
+                linked_note_query = select(Note).where(
+                    Note.request_id.in_(request_ids),
+                    Note.deleted_at.is_(None),
+                )
+                linked_note_result = await session.execute(linked_note_query)
+                for n in linked_note_result.scalars().all():
+                    notes_by_request.setdefault(n.request_id, []).append(
+                        {
+                            "note_id": str(n.id),
+                            "summary": n.summary,
+                            "classification": n.classification,
+                            "status": n.status,
+                        }
+                    )
+
+            for req in requests:
                 available_requests.append(
                     {
                         "request_id": req.request_id,
                         "content": req.content,
                         "status": req.status,
+                        "notes": notes_by_request.get(req.request_id, []),
                     }
                 )
 

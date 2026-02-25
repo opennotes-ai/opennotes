@@ -285,11 +285,16 @@ class TestBuildDepsStep:
         mock_req_result = MagicMock()
         mock_req_result.scalars.return_value.all.return_value = [mock_request]
 
+        mock_linked_note_result = MagicMock()
+        mock_linked_note_result.scalars.return_value.all.return_value = []
+
         mock_note_result = MagicMock()
         mock_note_result.scalars.return_value.all.return_value = [mock_note]
 
         mock_session = AsyncMock()
-        mock_session.execute = AsyncMock(side_effect=[mock_req_result, mock_note_result])
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_req_result, mock_linked_note_result, mock_note_result]
+        )
 
         mock_session_ctx = AsyncMock()
         mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
@@ -308,6 +313,7 @@ class TestBuildDepsStep:
 
         assert len(result["available_requests"]) == 1
         assert result["available_requests"][0]["request_id"] == "req-001"
+        assert result["available_requests"][0]["notes"] == []
         assert len(result["available_notes"]) == 1
         assert result["available_notes"][0]["note_id"] == str(note_id)
 
@@ -324,6 +330,61 @@ class TestBuildDepsStep:
 
         assert result["available_requests"] == []
         assert result["available_notes"] == []
+
+    def test_build_deps_includes_linked_notes_on_requests(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+        linked_note_id = uuid4()
+
+        mock_request = MagicMock()
+        mock_request.request_id = "req-002"
+        mock_request.content = "Vaccines cause autism"
+        mock_request.status = "PENDING"
+
+        mock_linked_note = MagicMock()
+        mock_linked_note.id = linked_note_id
+        mock_linked_note.request_id = "req-002"
+        mock_linked_note.summary = "Vaccines do not cause autism"
+        mock_linked_note.classification = "NOT_MISLEADING"
+        mock_linked_note.status = "NEEDS_MORE_RATINGS"
+
+        mock_req_result = MagicMock()
+        mock_req_result.scalars.return_value.all.return_value = [mock_request]
+
+        mock_linked_note_result = MagicMock()
+        mock_linked_note_result.scalars.return_value.all.return_value = [mock_linked_note]
+
+        mock_standalone_note_result = MagicMock()
+        mock_standalone_note_result.scalars.return_value.all.return_value = []
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_req_result, mock_linked_note_result, mock_standalone_note_result]
+        )
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = build_deps_step.__wrapped__(community_server_id=cs_id)
+
+        assert len(result["available_requests"]) == 1
+        req = result["available_requests"][0]
+        assert req["request_id"] == "req-002"
+        assert len(req["notes"]) == 1
+        assert req["notes"][0]["note_id"] == str(linked_note_id)
+        assert req["notes"][0]["summary"] == "Vaccines do not cause autism"
+        assert req["notes"][0]["classification"] == "NOT_MISLEADING"
 
 
 class TestExecuteAgentTurnStep:
