@@ -9,6 +9,11 @@ from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema, Timesta
 from src.llm_config.model_id import ModelId
 
 
+class ModelNameResponse(SQLAlchemySchema):
+    provider: str
+    model: str
+
+
 class SimAgentBase(StrictInputSchema):
     name: str = Field(..., max_length=255)
     personality: str
@@ -83,7 +88,7 @@ class SimAgentResponse(TimestampSchema):
     id: UUID
     name: str
     personality: str
-    model_name: dict[str, str]
+    model_name: ModelNameResponse
     model_params: dict[str, Any] | None = None
     tool_config: dict[str, Any] | None = None
     memory_compaction_strategy: str
@@ -93,14 +98,16 @@ class SimAgentResponse(TimestampSchema):
 
     @field_validator("model_name", mode="before")
     @classmethod
-    def parse_model_name(cls, v: Any) -> dict[str, str]:
+    def parse_model_name(cls, v: Any) -> ModelNameResponse | dict[str, str]:
+        if isinstance(v, ModelNameResponse):
+            return v
         if isinstance(v, str):
             if ":" in v:
                 mid = ModelId.from_pydantic_ai(v)
-                return {"provider": mid.provider, "model": mid.model}
-            return {"provider": "unknown", "model": v}
+                return ModelNameResponse(provider=mid.provider, model=mid.model)
+            return ModelNameResponse(provider="unknown", model=v)
         if isinstance(v, dict):
-            return v
+            return ModelNameResponse(**v)
         msg = f"Expected str or dict for model_name, got {type(v)}"
         raise ValueError(msg)
 

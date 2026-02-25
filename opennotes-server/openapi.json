@@ -15868,6 +15868,24 @@
         "title": "LatestScanResource",
         "description": "JSON:API resource object for the latest scan."
       },
+      "ModelNameResponse": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "ModelNameResponse"
+      },
       "MonitoredChannelAttributes": {
         "properties": {
           "community_server_id": {
@@ -21254,11 +21272,7 @@
             "title": "Personality"
           },
           "model_name": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Model Name"
+            "$ref": "#/components/schemas/ModelNameResponse"
           },
           "model_params": {
             "anyOf": [

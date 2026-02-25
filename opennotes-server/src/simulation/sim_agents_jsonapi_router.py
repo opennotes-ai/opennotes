@@ -25,6 +25,7 @@ from src.database import get_db
 from src.llm_config.model_id import ModelId
 from src.monitoring import get_logger
 from src.simulation.models import SimAgent
+from src.simulation.schemas import ModelNameResponse
 from src.users.models import User
 
 logger = get_logger(__name__)
@@ -110,7 +111,7 @@ class SimAgentUpdateRequest(BaseModel):
 class SimAgentAttributes(SQLAlchemySchema):
     name: str
     personality: str
-    model_name: dict[str, str]
+    model_name: ModelNameResponse
     model_params: dict[str, Any] | None = None
     tool_config: dict[str, Any] | None = None
     memory_compaction_strategy: str
@@ -121,14 +122,16 @@ class SimAgentAttributes(SQLAlchemySchema):
 
     @field_validator("model_name", mode="before")
     @classmethod
-    def parse_model_name(cls, v: Any) -> dict[str, str]:
+    def parse_model_name(cls, v: Any) -> ModelNameResponse | dict[str, str]:
+        if isinstance(v, ModelNameResponse):
+            return v
         if isinstance(v, str):
             if ":" in v:
                 mid = ModelId.from_pydantic_ai(v)
-                return {"provider": mid.provider, "model": mid.model}
-            return {"provider": "unknown", "model": v}
+                return ModelNameResponse(provider=mid.provider, model=mid.model)
+            return ModelNameResponse(provider="unknown", model=v)
         if isinstance(v, dict):
-            return v
+            return ModelNameResponse(**v)
         msg = f"Expected str or dict for model_name, got {type(v)}"
         raise ValueError(msg)
 

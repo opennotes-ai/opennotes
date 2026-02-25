@@ -5,6 +5,8 @@ from datetime import UTC
 import pytest
 from pydantic import ValidationError
 
+from src.simulation.schemas import ModelNameResponse
+
 
 class TestSimAgentCreateModelNameValidation:
     def test_rejects_slash_separated_model_name(self) -> None:
@@ -96,7 +98,9 @@ class TestSimAgentAttributesModelSerialization:
             model_name="openai:gpt-4o-mini",
             memory_compaction_strategy="sliding_window",
         )
-        assert attrs.model_name == {"provider": "openai", "model": "gpt-4o-mini"}
+        assert isinstance(attrs.model_name, ModelNameResponse)
+        assert attrs.model_name.provider == "openai"
+        assert attrs.model_name.model == "gpt-4o-mini"
 
     def test_model_name_accepts_dict_input(self) -> None:
         from src.simulation.sim_agents_jsonapi_router import SimAgentAttributes
@@ -107,7 +111,9 @@ class TestSimAgentAttributesModelSerialization:
             model_name={"provider": "anthropic", "model": "claude-3-haiku"},
             memory_compaction_strategy="sliding_window",
         )
-        assert attrs.model_name == {"provider": "anthropic", "model": "claude-3-haiku"}
+        assert isinstance(attrs.model_name, ModelNameResponse)
+        assert attrs.model_name.provider == "anthropic"
+        assert attrs.model_name.model == "claude-3-haiku"
 
     def test_bare_model_name_uses_unknown_provider(self) -> None:
         from src.simulation.sim_agents_jsonapi_router import SimAgentAttributes
@@ -118,7 +124,9 @@ class TestSimAgentAttributesModelSerialization:
             model_name="gpt-4o-mini",
             memory_compaction_strategy="sliding_window",
         )
-        assert attrs.model_name == {"provider": "unknown", "model": "gpt-4o-mini"}
+        assert isinstance(attrs.model_name, ModelNameResponse)
+        assert attrs.model_name.provider == "unknown"
+        assert attrs.model_name.model == "gpt-4o-mini"
 
     def test_bare_model_name_without_dashes(self) -> None:
         from src.simulation.sim_agents_jsonapi_router import SimAgentAttributes
@@ -129,7 +137,20 @@ class TestSimAgentAttributesModelSerialization:
             model_name="gpt4o",
             memory_compaction_strategy="sliding_window",
         )
-        assert attrs.model_name == {"provider": "unknown", "model": "gpt4o"}
+        assert isinstance(attrs.model_name, ModelNameResponse)
+        assert attrs.model_name.provider == "unknown"
+        assert attrs.model_name.model == "gpt4o"
+
+    def test_model_name_rejects_dict_missing_keys(self) -> None:
+        from src.simulation.sim_agents_jsonapi_router import SimAgentAttributes
+
+        with pytest.raises(ValidationError):
+            SimAgentAttributes(
+                name="TestAgent",
+                personality="A test agent",
+                model_name={"provider": "openai"},
+                memory_compaction_strategy="sliding_window",
+            )
 
 
 class TestSimAgentResponseModelSerialization:
@@ -151,12 +172,18 @@ class TestSimAgentResponseModelSerialization:
 
     def test_colon_separated_model_name(self) -> None:
         resp = self._make_response(model_name="openai:gpt-4o-mini")
-        assert resp.model_name == {"provider": "openai", "model": "gpt-4o-mini"}
+        assert isinstance(resp.model_name, ModelNameResponse)
+        assert resp.model_name.provider == "openai"
+        assert resp.model_name.model == "gpt-4o-mini"
 
     def test_bare_model_name_uses_unknown_provider(self) -> None:
         resp = self._make_response(model_name="gpt-4o-mini")
-        assert resp.model_name == {"provider": "unknown", "model": "gpt-4o-mini"}
+        assert isinstance(resp.model_name, ModelNameResponse)
+        assert resp.model_name.provider == "unknown"
+        assert resp.model_name.model == "gpt-4o-mini"
 
     def test_dict_model_name_passthrough(self) -> None:
         resp = self._make_response(model_name={"provider": "anthropic", "model": "claude-3-haiku"})
-        assert resp.model_name == {"provider": "anthropic", "model": "claude-3-haiku"}
+        assert isinstance(resp.model_name, ModelNameResponse)
+        assert resp.model_name.provider == "anthropic"
+        assert resp.model_name.model == "claude-3-haiku"

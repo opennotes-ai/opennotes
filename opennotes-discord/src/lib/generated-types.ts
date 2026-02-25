@@ -6046,6 +6046,13 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** ModelNameResponse */
+        ModelNameResponse: {
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+        };
         /**
          * MonitoredChannelAttributes
          * @description Monitored channel attributes for JSON:API resource.
@@ -8673,10 +8680,7 @@ export interface components {
             name: string;
             /** Personality */
             personality: string;
-            /** Model Name */
-            model_name: {
-                [key: string]: string;
-            };
+            model_name: components["schemas"]["ModelNameResponse"];
             /** Model Params */
             model_params?: {
                 [key: string]: unknown;
