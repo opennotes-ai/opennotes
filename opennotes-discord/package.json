@@ -48,6 +48,7 @@
     "lru-cache": "^11.2.2",
     "nanoid": "^5.1.6",
     "nats": "^2.29.3",
+    "openapi-fetch": "^0.17.0",
     "p-limit": "^7.2.0"
   },
   "devDependencies": {
