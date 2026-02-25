@@ -10746,7 +10746,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressResponse"
+                }
               }
             }
           },
@@ -10848,7 +10850,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsListResponse"
+                }
               }
             }
           },
@@ -19401,6 +19405,81 @@
         "title": "ProfileUpdateRequest",
         "description": "JSON:API request for updating a profile."
       },
+      "ProgressAttributes": {
+        "properties": {
+          "turns_completed": {
+            "type": "integer",
+            "title": "Turns Completed",
+            "default": 0
+          },
+          "turns_errored": {
+            "type": "integer",
+            "title": "Turns Errored",
+            "default": 0
+          },
+          "notes_written": {
+            "type": "integer",
+            "title": "Notes Written",
+            "default": 0
+          },
+          "ratings_given": {
+            "type": "integer",
+            "title": "Ratings Given",
+            "default": 0
+          },
+          "active_agents": {
+            "type": "integer",
+            "title": "Active Agents",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ProgressAttributes"
+      },
+      "ProgressResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "simulation-progress"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ProgressAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "ProgressResource"
+      },
+      "ProgressResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProgressResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ProgressResponse"
+      },
       "RatingAttributes": {
         "properties": {
           "note_id": {
@@ -20445,6 +20524,124 @@
         ],
         "title": "RequestUpdateRequest",
         "description": "JSON:API request body for updating a request."
+      },
+      "ResultNoteAttributes": {
+        "properties": {
+          "note_id": {
+            "type": "string",
+            "title": "Note Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "classification": {
+            "type": "string",
+            "title": "Classification"
+          },
+          "note_status": {
+            "type": "string",
+            "title": "Note Status"
+          },
+          "author_profile_id": {
+            "type": "string",
+            "title": "Author Profile Id"
+          },
+          "agent_instance_id": {
+            "type": "string",
+            "title": "Agent Instance Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note_id",
+          "summary",
+          "classification",
+          "note_status",
+          "author_profile_id",
+          "agent_instance_id"
+        ],
+        "title": "ResultNoteAttributes"
+      },
+      "ResultNoteResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "simulation-result-notes"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ResultNoteAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "ResultNoteResource"
+      },
+      "ResultsListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ResultNoteResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ResultsListResponse"
       },
       "RiskLevel": {
         "type": "string",

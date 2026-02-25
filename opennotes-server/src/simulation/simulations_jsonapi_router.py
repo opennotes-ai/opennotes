@@ -593,6 +593,7 @@ async def cancel_simulation(
 @router.get(
     "/simulations/{simulation_id}/progress",
     response_class=JSONResponse,
+    response_model=ProgressResponse,
 )
 async def get_simulation_progress(
     simulation_id: UUID,
@@ -705,6 +706,7 @@ async def get_simulation_progress(
 @router.get(
     "/simulations/{simulation_id}/results",
     response_class=JSONResponse,
+    response_model=ResultsListResponse,
 )
 async def get_simulation_results(
     simulation_id: UUID,
