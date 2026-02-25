@@ -30,6 +30,7 @@ DBOS_PICKLE_FALLBACK_TOTAL = dbos_pickle_fallback_total
 _SAFE_EXCEPTION_MODULES = frozenset(
     {
         "builtins",
+        "pydantic_ai.exceptions",
     }
 )
 
