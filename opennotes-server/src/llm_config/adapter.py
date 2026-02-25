@@ -10,6 +10,7 @@ class ModelFlavor(StrEnum):
 
 LITELLM_TO_PYDANTIC_AI: dict[str, str] = {
     "vertex_ai": "google-vertex",
+    "gemini": "google-gla",
 }
 
 PYDANTIC_AI_TO_LITELLM: dict[str, str] = {v: k for k, v in LITELLM_TO_PYDANTIC_AI.items()}

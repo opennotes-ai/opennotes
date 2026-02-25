@@ -23,6 +23,7 @@ depends_on: str | Sequence[str] | None = None
 
 LITELLM_TO_PYDANTIC_PROVIDERS = {
     "vertex_ai": "google-vertex",
+    "gemini": "google-gla",
 }
 PYDANTIC_TO_LITELLM_PROVIDERS = {v: k for k, v in LITELLM_TO_PYDANTIC_PROVIDERS.items()}
 

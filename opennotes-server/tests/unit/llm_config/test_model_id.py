@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from src.llm_config.constants import DEFAULT_MODELS_BY_PROVIDER, get_default_model_for_provider
 from src.llm_config.model_id import ModelFlavor, ModelId
 
 
@@ -127,6 +128,14 @@ class TestCrossFlavorTranslation:
         )
         assert m.to_litellm() == "vertex_ai/gemini-2.5-pro"
 
+    def test_gemini_to_pydantic_ai(self):
+        m = ModelId(provider="gemini", model="gemini-2.5-flash", flavor=ModelFlavor.LITELLM)
+        assert m.to_pydantic_ai() == "google-gla:gemini-2.5-flash"
+
+    def test_google_gla_to_litellm(self):
+        m = ModelId(provider="google-gla", model="gemini-2.5-flash", flavor=ModelFlavor.PYDANTIC_AI)
+        assert m.to_litellm() == "gemini/gemini-2.5-flash"
+
     def test_no_mapping_passthrough(self):
         m = ModelId(provider="openai", model="gpt-5.1", flavor=ModelFlavor.LITELLM)
         assert m.to_pydantic_ai() == "openai:gpt-5.1"
@@ -159,6 +168,14 @@ class TestRoundTrip:
         m = ModelId.from_litellm(litellm_str)
         pydantic_ai_str = m.to_pydantic_ai()
         assert pydantic_ai_str == "google-vertex:global/gemini-2.5-pro"
+        m2 = ModelId.from_pydantic_ai(pydantic_ai_str)
+        assert m2.to_litellm() == litellm_str
+
+    def test_gemini_google_gla_cross_flavor_round_trip(self):
+        litellm_str = "gemini/gemini-2.5-flash"
+        m = ModelId.from_litellm(litellm_str)
+        pydantic_ai_str = m.to_pydantic_ai()
+        assert pydantic_ai_str == "google-gla:gemini-2.5-flash"
         m2 = ModelId.from_pydantic_ai(pydantic_ai_str)
         assert m2.to_litellm() == litellm_str
 
@@ -220,3 +237,22 @@ class TestEquality:
         m1 = ModelId(provider="openai", model="gpt-5.1", flavor=ModelFlavor.LITELLM)
         m2 = ModelId(provider="openai", model="gpt-5.1", flavor=ModelFlavor.PYDANTIC_AI)
         assert m1 != m2
+
+
+class TestGetDefaultModelForProvider:
+    def test_openai_returns_str(self):
+        result = get_default_model_for_provider("openai")
+        assert isinstance(result, str)
+        assert not isinstance(result, ModelId)
+        assert "/" in result
+
+    def test_all_providers_return_str(self):
+        for provider in [*DEFAULT_MODELS_BY_PROVIDER, "openai"]:
+            result = get_default_model_for_provider(provider)
+            assert isinstance(result, str), f"{provider} returned {type(result)}"
+            assert not isinstance(result, ModelId), f"{provider} returned ModelId"
+
+    def test_unknown_provider_returns_str(self):
+        result = get_default_model_for_provider("nonexistent")
+        assert result == "unknown"
+        assert isinstance(result, str)
