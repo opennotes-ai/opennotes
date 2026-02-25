@@ -1,3 +1,4 @@
+import random
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -11,6 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.notes.models import Note, Rating
 from src.simulation.schemas import SimAgentAction
+
+MAX_PERSONALITY_CHARS: int = 500
+MAX_CONTEXT_REQUESTS: int = 5
+MAX_CONTEXT_NOTES: int = 5
+TOKEN_BUDGET: int = 4000
 
 
 @dataclass
@@ -31,13 +37,24 @@ sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
 )
 
 
+def estimate_tokens(text: str) -> int:
+    return len(text) // 4 + 1
+
+
+def _truncate_personality(personality: str, max_chars: int = MAX_PERSONALITY_CHARS) -> str:
+    if len(personality) <= max_chars:
+        return personality
+    return personality[:max_chars].rsplit(" ", 1)[0] + "..."
+
+
 @sim_agent.system_prompt
 def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
+    personality = _truncate_personality(ctx.deps.agent_personality)
     return (
         "You are a Community Notes participant in a simulation. "
         "Your goal is to evaluate content and contribute helpful, "
         "accurate community notes.\n\n"
-        f"Your personality and approach:\n{ctx.deps.agent_personality}\n\n"
+        f"Your personality and approach:\n{personality}\n\n"
         "Available actions:\n"
         "- write_note: Write a new community note for a request\n"
         "- rate_note: Rate an existing community note\n"
@@ -173,12 +190,24 @@ class OpenNotesSimAgent:
         )
         return result.data, result.all_messages()
 
-    def _build_turn_prompt(self, deps: SimAgentDeps) -> str:
+    def _build_turn_prompt(
+        self,
+        deps: SimAgentDeps,
+        token_budget: int = TOKEN_BUDGET,
+    ) -> str:
+        requests = deps.available_requests[:MAX_CONTEXT_REQUESTS]
+        if len(deps.available_requests) > MAX_CONTEXT_REQUESTS:
+            requests = random.sample(deps.available_requests, MAX_CONTEXT_REQUESTS)
+
+        notes = deps.available_notes[:MAX_CONTEXT_NOTES]
+        if len(deps.available_notes) > MAX_CONTEXT_NOTES:
+            notes = random.sample(deps.available_notes, MAX_CONTEXT_NOTES)
+
         sections = ["Here is the current state of the community:\n"]
 
-        if deps.available_requests:
+        if requests:
             sections.append("== Available Requests ==")
-            for req in deps.available_requests:
+            for req in requests:
                 sections.append(
                     f"- Request ID: {req['request_id']}\n"
                     f"  Content: {req.get('content', 'N/A')}\n"
@@ -189,9 +218,9 @@ class OpenNotesSimAgent:
 
         sections.append("")
 
-        if deps.available_notes:
+        if notes:
             sections.append("== Existing Notes ==")
-            for note in deps.available_notes:
+            for note in notes:
                 sections.append(
                     f"- Note ID: {note['note_id']}\n"
                     f"  Summary: {note.get('summary', 'N/A')}\n"
@@ -203,11 +232,53 @@ class OpenNotesSimAgent:
 
         sections.append("\nChoose an action: write a note, rate a note, or pass.")
 
+        prompt = "\n".join(sections)
+
+        while estimate_tokens(prompt) > token_budget and (requests or notes):
+            if notes:
+                notes.pop()
+            elif requests:
+                requests.pop()
+            prompt = self._format_sections(requests, notes)
+
+        return prompt
+
+    @staticmethod
+    def _format_sections(requests: list[dict], notes: list[dict]) -> str:
+        sections = ["Here is the current state of the community:\n"]
+        if requests:
+            sections.append("== Available Requests ==")
+            for req in requests:
+                sections.append(
+                    f"- Request ID: {req['request_id']}\n"
+                    f"  Content: {req.get('content', 'N/A')}\n"
+                    f"  Status: {req.get('status', 'N/A')}"
+                )
+        else:
+            sections.append("== No requests available ==")
+        sections.append("")
+        if notes:
+            sections.append("== Existing Notes ==")
+            for note in notes:
+                sections.append(
+                    f"- Note ID: {note['note_id']}\n"
+                    f"  Summary: {note.get('summary', 'N/A')}\n"
+                    f"  Classification: {note.get('classification', 'N/A')}\n"
+                    f"  Status: {note.get('status', 'N/A')}"
+                )
+        else:
+            sections.append("== No notes available ==")
+        sections.append("\nChoose an action: write a note, rate a note, or pass.")
         return "\n".join(sections)
 
 
 __all__ = [
+    "MAX_CONTEXT_NOTES",
+    "MAX_CONTEXT_REQUESTS",
+    "MAX_PERSONALITY_CHARS",
+    "TOKEN_BUDGET",
     "OpenNotesSimAgent",
     "SimAgentDeps",
+    "estimate_tokens",
     "sim_agent",
 ]

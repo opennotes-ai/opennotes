@@ -9,9 +9,14 @@ from pydantic_ai.models.test import TestModel
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from src.simulation.agent import (
+    MAX_CONTEXT_NOTES,
+    MAX_CONTEXT_REQUESTS,
+    MAX_PERSONALITY_CHARS,
     OpenNotesSimAgent,
     SimAgentDeps,
+    _truncate_personality,
     build_instructions,
+    estimate_tokens,
     pass_turn,
     rate_note,
     sim_agent,
@@ -563,3 +568,190 @@ class TestRunTurnWithTestModel:
             action, _messages = await agent.run_turn(sample_deps)
 
         assert isinstance(action, SimAgentAction)
+
+
+class TestEstimateTokens:
+    def test_short_text(self):
+        assert estimate_tokens("hello") == 2
+
+    def test_empty_text(self):
+        assert estimate_tokens("") == 1
+
+    def test_longer_text(self):
+        text = "a" * 400
+        assert estimate_tokens(text) == 101
+
+
+class TestTruncatePersonality:
+    def test_short_personality_unchanged(self):
+        short = "You are a fact-checker."
+        assert _truncate_personality(short) == short
+
+    def test_long_personality_truncated(self):
+        long_text = "word " * 200
+        result = _truncate_personality(long_text)
+        assert len(result) <= MAX_PERSONALITY_CHARS + 3
+        assert result.endswith("...")
+
+    def test_truncates_at_word_boundary(self):
+        text = "a" * 498 + " longword"
+        result = _truncate_personality(text)
+        assert result.endswith("...")
+        assert "longword" not in result
+
+    def test_exact_limit_unchanged(self):
+        text = "x" * MAX_PERSONALITY_CHARS
+        assert _truncate_personality(text) == text
+
+
+class TestBuildInstructionsPersonalityCap:
+    def test_long_personality_is_truncated_in_instructions(self, mock_db):
+        long_personality = "word " * 200
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality=long_personality,
+            model_name="openai:gpt-4o-mini",
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        instructions = build_instructions(ctx)
+
+        assert long_personality not in instructions
+        assert "..." in instructions
+
+
+class TestBuildTurnPromptTokenBudget:
+    def test_limits_requests_to_max(self, mock_db):
+        many_requests = [
+            {"request_id": str(uuid4()), "content": f"Content {i}", "status": "PENDING"}
+            for i in range(20)
+        ]
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=many_requests,
+            available_notes=[],
+            agent_personality="test",
+            model_name="test",
+        )
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_turn_prompt(deps)
+
+        request_count = prompt.count("Request ID:")
+        assert request_count <= MAX_CONTEXT_REQUESTS
+
+    def test_limits_notes_to_max(self, mock_db):
+        many_notes = [
+            {
+                "note_id": str(uuid4()),
+                "summary": f"Summary {i}",
+                "classification": "NOT_MISLEADING",
+                "status": "NEEDS_MORE_RATINGS",
+            }
+            for i in range(20)
+        ]
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=many_notes,
+            agent_personality="test",
+            model_name="test",
+        )
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_turn_prompt(deps)
+
+        note_count = prompt.count("Note ID:")
+        assert note_count <= MAX_CONTEXT_NOTES
+
+    def test_trims_when_over_token_budget(self, mock_db):
+        huge_requests = [
+            {"request_id": str(uuid4()), "content": "x" * 5000, "status": "PENDING"}
+            for _ in range(5)
+        ]
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=huge_requests,
+            available_notes=[],
+            agent_personality="test",
+            model_name="test",
+        )
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_turn_prompt(deps, token_budget=1000)
+
+        assert estimate_tokens(prompt) <= 1000
+
+    def test_fresh_turn_under_5000_tokens(self, mock_db):
+        requests = [
+            {
+                "request_id": str(uuid4()),
+                "content": f"Some content about topic {i}",
+                "status": "PENDING",
+            }
+            for i in range(5)
+        ]
+        notes = [
+            {
+                "note_id": str(uuid4()),
+                "summary": f"A note summary about topic {i}",
+                "classification": "NOT_MISLEADING",
+                "status": "NEEDS_MORE_RATINGS",
+            }
+            for i in range(5)
+        ]
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=requests,
+            available_notes=notes,
+            agent_personality="You are a skeptical fact-checker who values evidence.",
+            model_name="openai:gpt-4o-mini",
+        )
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_turn_prompt(deps)
+
+        ctx = MagicMock()
+        ctx.deps = deps
+        system_prompt = build_instructions(ctx)
+
+        total_tokens = estimate_tokens(prompt) + estimate_tokens(system_prompt)
+        assert total_tokens < 5000
+
+    def test_samples_different_items_when_many_available(self, mock_db):
+        many_requests = [
+            {"request_id": str(uuid4()), "content": f"Content {i}", "status": "PENDING"}
+            for i in range(50)
+        ]
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=many_requests,
+            available_notes=[],
+            agent_personality="test",
+            model_name="test",
+        )
+        agent = OpenNotesSimAgent()
+
+        prompts = set()
+        for _ in range(10):
+            prompt = agent._build_turn_prompt(deps)
+            prompts.add(prompt)
+
+        assert len(prompts) > 1
