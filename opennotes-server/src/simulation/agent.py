@@ -78,11 +78,6 @@ async def write_note(
     if request_id not in valid_ids:
         return f"Error: request_id '{request_id}' not found in available requests."
 
-    try:
-        UUID(request_id)
-    except ValueError:
-        return f"Error: request_id '{request_id}' is not a valid UUID."
-
     valid_classifications = {"NOT_MISLEADING", "MISINFORMED_OR_POTENTIALLY_MISLEADING"}
     if classification not in valid_classifications:
         return (
