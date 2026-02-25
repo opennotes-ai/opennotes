@@ -6046,6 +6046,13 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** ModelNameResponse */
+        ModelNameResponse: {
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+        };
         /**
          * MonitoredChannelAttributes
          * @description Monitored channel attributes for JSON:API resource.
@@ -6385,6 +6392,8 @@ export interface components {
             ai_generated: boolean;
             /** Ai Provider */
             ai_provider?: string | null;
+            /** Ai Model */
+            ai_model?: string | null;
             /**
              * Force Published
              * @default false
@@ -8671,8 +8680,7 @@ export interface components {
             name: string;
             /** Personality */
             personality: string;
-            /** Model Name */
-            model_name: string;
+            model_name: components["schemas"]["ModelNameResponse"];
             /** Model Params */
             model_params?: {
                 [key: string]: unknown;

@@ -56,7 +56,8 @@ class FlashpointDetectionService:
                 Defaults to data/flashpoints/optimized_detector.json relative
                 to the opennotes-server root.
         """
-        self.model = model or settings.DEFAULT_MINI_MODEL
+        _raw = model if model is not None else settings.DEFAULT_MINI_MODEL
+        self.model: str = _raw if isinstance(_raw, str) else str(_raw)
         self._lm: dspy.LM | None = None
         self._detector: RubricDetector | None = None
         self._optimized_path = optimized_model_path
@@ -225,7 +226,8 @@ def get_flashpoint_service(
     global _flashpoint_service
 
     if _flashpoint_service is not None:
-        requested_model = model or settings.DEFAULT_MINI_MODEL
+        _raw_req = model if model is not None else settings.DEFAULT_MINI_MODEL
+        requested_model = _raw_req if isinstance(_raw_req, str) else str(_raw_req)
         if model is not None and requested_model != _flashpoint_service.model:
             warnings.warn(
                 f"get_flashpoint_service() singleton already created with "

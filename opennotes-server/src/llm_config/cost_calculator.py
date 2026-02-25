@@ -5,11 +5,15 @@ Provides cost calculation for different LLM providers and models
 using litellm's built-in pricing data.
 """
 
+from __future__ import annotations
+
 import logging
 from decimal import Decimal
 from typing import Any
 
 from litellm import completion_cost, cost_per_token, model_cost
+
+from src.llm_config.model_id import ModelId
 
 logger = logging.getLogger(__name__)
 
@@ -143,8 +147,7 @@ class LLMCostCalculator:
     @classmethod
     async def calculate_cost_async(
         cls,
-        provider: str,
-        model: str,
+        model_id: ModelId,
         input_tokens: int,
         output_tokens: int,
     ) -> Decimal:
@@ -152,25 +155,23 @@ class LLMCostCalculator:
         Async wrapper for calculate_cost (litellm's cost functions are synchronous).
 
         Args:
-            provider: Provider name (e.g., 'openai', 'anthropic') - used for model lookup
-            model: Model identifier
+            model_id: ModelId identifying the provider and model
             input_tokens: Number of input (prompt) tokens
             output_tokens: Number of output (completion) tokens
 
         Returns:
             Cost in USD as a Decimal (precise to 6 decimal places)
         """
-        litellm_model = f"{provider}/{model}" if "/" not in model else model
+        litellm_model = model_id.to_litellm()
         try:
             return cls.calculate_cost(litellm_model, input_tokens, output_tokens)
         except ValueError:
-            return cls.calculate_cost(model, input_tokens, output_tokens)
+            return cls.calculate_cost(model_id.model, input_tokens, output_tokens)
 
     @classmethod
     async def calculate_cost_from_total_tokens_async(
         cls,
-        provider: str,
-        model: str,
+        model_id: ModelId,
         total_tokens: int,
     ) -> Decimal:
         """
@@ -180,8 +181,7 @@ class LLMCostCalculator:
         This is an approximation - prefer calculate_cost_async when token breakdown is available.
 
         Args:
-            provider: Provider name (e.g., 'openai', 'anthropic')
-            model: Model identifier
+            model_id: ModelId identifying the provider and model
             total_tokens: Total token count (input + output)
 
         Returns:
@@ -189,4 +189,4 @@ class LLMCostCalculator:
         """
         input_tokens = total_tokens // 2
         output_tokens = total_tokens - input_tokens
-        return await cls.calculate_cost_async(provider, model, input_tokens, output_tokens)
+        return await cls.calculate_cost_async(model_id, input_tokens, output_tokens)

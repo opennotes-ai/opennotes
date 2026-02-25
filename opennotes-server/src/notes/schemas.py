@@ -153,6 +153,7 @@ class NoteJSONAPIAttributes(SQLAlchemySchema):
     status: str = "NEEDS_MORE_RATINGS"
     ai_generated: bool = False
     ai_provider: str | None = None
+    ai_model: str | None = None
     force_published: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None

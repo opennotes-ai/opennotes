@@ -8,6 +8,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from src.llm_config.model_id import ModelId
 from src.simulation.agent import (
     MAX_CONTEXT_NOTES,
     MAX_CONTEXT_REQUESTS,
@@ -23,6 +24,9 @@ from src.simulation.agent import (
     write_note,
 )
 from src.simulation.schemas import SimActionType, SimAgentAction
+
+_TEST_MODEL_ID = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
+_GENERIC_MODEL_ID = ModelId.from_pydantic_ai("test:model")
 
 
 @pytest.fixture
@@ -62,7 +66,7 @@ def sample_deps(mock_db):
             },
         ],
         agent_personality="You are a skeptical fact-checker who values evidence.",
-        model_name="openai:gpt-4o-mini",
+        model_name=_TEST_MODEL_ID,
     )
 
 
@@ -81,12 +85,13 @@ class TestAgentClassExists:
         assert isinstance(agent._agent, Agent)
 
     def test_agent_accepts_custom_model(self):
-        agent = OpenNotesSimAgent(model="anthropic:claude-3-haiku-20240307")
-        assert agent._model == "anthropic:claude-3-haiku-20240307"
+        model = ModelId.from_pydantic_ai("anthropic:claude-3-haiku-20240307")
+        agent = OpenNotesSimAgent(model=model)
+        assert agent._model == model
 
     def test_agent_default_model(self):
         agent = OpenNotesSimAgent()
-        assert agent._model == "openai:gpt-4o-mini"
+        assert agent._model == _TEST_MODEL_ID
 
 
 class TestToolsRegistered:
@@ -130,7 +135,8 @@ class TestWriteNoteTool:
         assert note.summary == "The earth is actually round"
         assert note.classification == "NOT_MISLEADING"
         assert note.ai_generated is True
-        assert note.ai_provider == "openai:gpt-4o-mini"
+        assert note.ai_provider == "openai"
+        assert note.ai_model == "gpt-4o-mini"
         assert note.author_id == sample_deps.user_profile_id
         assert note.community_server_id == sample_deps.community_server_id
         assert "Note created" in result
@@ -181,7 +187,7 @@ class TestWriteNoteTool:
             ],
             available_notes=[],
             agent_personality="test",
-            model_name="test",
+            model_name=_GENERIC_MODEL_ID,
         )
         ctx = MagicMock()
         ctx.deps = deps
@@ -321,7 +327,7 @@ class TestRateNoteTool:
                 },
             ],
             agent_personality="test",
-            model_name="test",
+            model_name=_GENERIC_MODEL_ID,
         )
         ctx = MagicMock()
         ctx.deps = deps
@@ -403,7 +409,7 @@ class TestInstructions:
             available_requests=[],
             available_notes=[],
             agent_personality="You are an optimistic contributor who sees the best in people.",
-            model_name="openai:gpt-4o-mini",
+            model_name=_TEST_MODEL_ID,
         )
         deps_b = SimAgentDeps(
             db=mock_db,
@@ -413,7 +419,7 @@ class TestInstructions:
             available_requests=[],
             available_notes=[],
             agent_personality="You are a harsh critic who demands rigorous evidence.",
-            model_name="openai:gpt-4o-mini",
+            model_name=_TEST_MODEL_ID,
         )
 
         ctx_a = MagicMock()
@@ -440,6 +446,9 @@ class TestDeps:
         assert "available_notes" in field_names
         assert "agent_personality" in field_names
         assert "model_name" in field_names
+
+    def test_deps_model_name_is_model_id(self, sample_deps):
+        assert isinstance(sample_deps.model_name, ModelId)
 
     def test_deps_available_requests_accessible(self, sample_deps):
         assert len(sample_deps.available_requests) == 2
@@ -520,7 +529,7 @@ class TestBuildTurnPrompt:
             available_requests=[],
             available_notes=[],
             agent_personality="test",
-            model_name="test",
+            model_name=_GENERIC_MODEL_ID,
         )
         agent = OpenNotesSimAgent()
         prompt = agent._build_turn_prompt(deps)
@@ -663,7 +672,7 @@ class TestRunTurnWithTestModel:
 
     @pytest.mark.asyncio
     async def test_run_turn_respects_model_override(self, sample_deps):
-        agent = OpenNotesSimAgent(model="test")
+        agent = OpenNotesSimAgent(model=_GENERIC_MODEL_ID)
         m = TestModel()
         with sim_agent.override(model=m):
             action, _messages = await agent.run_turn(sample_deps)
@@ -716,7 +725,7 @@ class TestBuildInstructionsPersonalityCap:
             available_requests=[],
             available_notes=[],
             agent_personality=long_personality,
-            model_name="openai:gpt-4o-mini",
+            model_name=_TEST_MODEL_ID,
         )
         ctx = MagicMock()
         ctx.deps = deps
@@ -741,7 +750,7 @@ class TestBuildTurnPromptTokenBudget:
             available_requests=many_requests,
             available_notes=[],
             agent_personality="test",
-            model_name="test",
+            model_name=_GENERIC_MODEL_ID,
         )
         agent = OpenNotesSimAgent()
         prompt = agent._build_turn_prompt(deps)
@@ -767,7 +776,7 @@ class TestBuildTurnPromptTokenBudget:
             available_requests=[],
             available_notes=many_notes,
             agent_personality="test",
-            model_name="test",
+            model_name=_GENERIC_MODEL_ID,
         )
         agent = OpenNotesSimAgent()
         prompt = agent._build_turn_prompt(deps)
@@ -788,7 +797,7 @@ class TestBuildTurnPromptTokenBudget:
             available_requests=huge_requests,
             available_notes=[],
             agent_personality="test",
-            model_name="test",
+            model_name=_GENERIC_MODEL_ID,
         )
         agent = OpenNotesSimAgent()
         prompt = agent._build_turn_prompt(deps, token_budget=1000)
@@ -821,7 +830,7 @@ class TestBuildTurnPromptTokenBudget:
             available_requests=requests,
             available_notes=notes,
             agent_personality="You are a skeptical fact-checker who values evidence.",
-            model_name="openai:gpt-4o-mini",
+            model_name=_TEST_MODEL_ID,
         )
         agent = OpenNotesSimAgent()
         prompt = agent._build_turn_prompt(deps)
@@ -846,7 +855,7 @@ class TestBuildTurnPromptTokenBudget:
             available_requests=many_requests,
             available_notes=[],
             agent_personality="test",
-            model_name="test",
+            model_name=_GENERIC_MODEL_ID,
         )
         agent = OpenNotesSimAgent()
 

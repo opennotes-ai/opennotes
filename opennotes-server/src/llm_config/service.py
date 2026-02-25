@@ -25,8 +25,9 @@ from tenacity import (
     wait_exponential,
 )
 
-from src.config import parse_provider_model, settings
+from src.config import settings
 from src.llm_config.manager import LLMClientManager
+from src.llm_config.model_id import ModelId
 from src.llm_config.providers import LiteLLMCompletionParams
 from src.llm_config.providers.base import LLMMessage, LLMResponse
 from src.monitoring import get_logger
@@ -70,7 +71,7 @@ class LLMService:
         messages: list[LLMMessage],
         community_server_id: UUID | None = None,
         provider: str = "openai",
-        model: str | None = None,
+        model: ModelId | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
         **kwargs: Any,
@@ -95,19 +96,19 @@ class LLMService:
             ValueError: If no LLM configuration found for provider
             Exception: If API call fails
         """
-        if model and "/" in model:
-            inferred_provider = parse_provider_model(model)[0]
-            if provider not in ("openai", inferred_provider):
+        if model:
+            litellm_provider = model.litellm_provider
+            if provider not in ("openai", model.provider, litellm_provider):
                 logger.warning(
                     "Model prefix provider differs from explicit provider param, "
                     "using model prefix",
                     extra={
                         "explicit_provider": provider,
-                        "model_prefix_provider": inferred_provider,
-                        "model": model,
+                        "model_prefix_provider": model.provider,
+                        "model": model.to_litellm(),
                     },
                 )
-            provider = inferred_provider
+            provider = litellm_provider
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
@@ -124,7 +125,7 @@ class LLMService:
             extra={
                 "community_server_id": str(community_server_id) if community_server_id else None,
                 "provider": provider,
-                "model": model or "default",
+                "model": model.to_litellm() if model else "default",
                 "message_count": len(messages),
             },
         )
@@ -137,7 +138,7 @@ class LLMService:
         messages: list[LLMMessage],
         community_server_id: UUID | None = None,
         provider: str = "openai",
-        model: str | None = None,
+        model: ModelId | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
         **kwargs: Any,
@@ -162,19 +163,19 @@ class LLMService:
             ValueError: If no LLM configuration found for provider
             Exception: If API call fails
         """
-        if model and "/" in model:
-            inferred_provider = parse_provider_model(model)[0]
-            if provider not in ("openai", inferred_provider):
+        if model:
+            litellm_provider = model.litellm_provider
+            if provider not in ("openai", model.provider, litellm_provider):
                 logger.warning(
                     "Model prefix provider differs from explicit provider param, "
                     "using model prefix",
                     extra={
                         "explicit_provider": provider,
-                        "model_prefix_provider": inferred_provider,
-                        "model": model,
+                        "model_prefix_provider": model.provider,
+                        "model": model.to_litellm(),
                     },
                 )
-            provider = inferred_provider
+            provider = litellm_provider
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
@@ -191,7 +192,7 @@ class LLMService:
             extra={
                 "community_server_id": str(community_server_id) if community_server_id else None,
                 "provider": provider,
-                "model": model or "default",
+                "model": model.to_litellm() if model else "default",
                 "message_count": len(messages),
             },
         )
@@ -210,7 +211,7 @@ class LLMService:
         db: AsyncSession,
         text: str,
         community_server_id: UUID | None = None,
-        model: str | None = None,
+        model: ModelId | None = None,
     ) -> tuple[list[float], str, str]:
         """
         Generate embedding for text using LiteLLM.
@@ -239,18 +240,19 @@ class LLMService:
             raise ValueError(f"No OpenAI configuration found for {context}")
 
         embedding_model = model or settings.EMBEDDING_MODEL
+        embedding_model_str = embedding_model.to_litellm()
 
         logger.debug(
             "Generating embedding",
             extra={
                 "text_length": len(text),
                 "community_server_id": str(community_server_id) if community_server_id else None,
-                "model": embedding_model,
+                "model": embedding_model_str,
             },
         )
 
         response = await litellm.aembedding(
-            model=embedding_model,
+            model=embedding_model_str,
             input=[text],
             api_key=llm_provider.api_key,
             encoding_format="float",
@@ -268,7 +270,7 @@ class LLMService:
             },
         )
 
-        return embedding, "litellm", embedding_model
+        return embedding, "litellm", embedding_model_str
 
     @retry(
         retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
@@ -281,7 +283,7 @@ class LLMService:
         db: AsyncSession,
         texts: list[str],
         community_server_id: UUID | None = None,
-        model: str | None = None,
+        model: ModelId | None = None,
     ) -> list[tuple[list[float], str, str]]:
         """
         Generate embeddings for multiple texts in a single API call.
@@ -317,6 +319,7 @@ class LLMService:
             raise ValueError(f"No OpenAI configuration found for {context}")
 
         embedding_model = model or settings.EMBEDDING_MODEL
+        embedding_model_str = embedding_model.to_litellm()
 
         logger.debug(
             "Generating batch embeddings",
@@ -324,12 +327,12 @@ class LLMService:
                 "text_count": len(texts),
                 "total_text_length": sum(len(t) for t in texts),
                 "community_server_id": str(community_server_id) if community_server_id else None,
-                "model": embedding_model,
+                "model": embedding_model_str,
             },
         )
 
         response = await litellm.aembedding(
-            model=embedding_model,
+            model=embedding_model_str,
             input=texts,
             api_key=llm_provider.api_key,
             encoding_format="float",
@@ -341,7 +344,9 @@ class LLMService:
             )
 
         embeddings_by_index = {item["index"]: item["embedding"] for item in response.data}
-        results = [(embeddings_by_index[i], "litellm", embedding_model) for i in range(len(texts))]
+        results = [
+            (embeddings_by_index[i], "litellm", embedding_model_str) for i in range(len(texts))
+        ]
 
         logger.info(
             "Batch embeddings generated successfully",
@@ -368,7 +373,7 @@ class LLMService:
         community_server_id: UUID | None = None,
         detail: Literal["low", "high", "auto"] = "auto",
         max_tokens: int = 300,
-        model: str | None = None,
+        model: ModelId | None = None,
     ) -> str:
         """
         Generate image description using LiteLLM vision capabilities.
@@ -393,7 +398,7 @@ class LLMService:
             Exception: If API call fails after retries
         """
         vision_model = model or settings.VISION_MODEL
-        provider = parse_provider_model(vision_model)[0]
+        provider = vision_model.litellm_provider
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
@@ -406,7 +411,7 @@ class LLMService:
             extra={
                 "image_url": image_url[:100],
                 "community_server_id": str(community_server_id) if community_server_id else None,
-                "model": vision_model,
+                "model": vision_model.to_litellm(),
                 "detail": detail,
                 "provider": provider,
             },

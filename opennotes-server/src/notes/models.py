@@ -90,6 +90,7 @@ class Note(Base, TimestampMixin):
     # AI generation metadata
     ai_generated: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
     ai_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    ai_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Force-publish metadata (admin override)
     force_published: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)

@@ -353,16 +353,16 @@ class TestLLMCostCalculatorCalculateCostAsync:
     """Tests for LLMCostCalculator.calculate_cost_async()."""
 
     @pytest.mark.asyncio
-    async def test_calculates_cost_with_provider_prefix(self) -> None:
-        """calculate_cost_async adds provider prefix when model has no slash."""
+    async def test_calculates_cost_with_model_id(self) -> None:
+        """calculate_cost_async uses ModelId.to_litellm() for cost lookup."""
         from src.llm_config.cost_calculator import LLMCostCalculator
+        from src.llm_config.model_id import ModelId
 
         with patch("src.llm_config.cost_calculator.cost_per_token") as mock_cost:
             mock_cost.return_value = (0.00003, 0.00006)
 
             result = await LLMCostCalculator.calculate_cost_async(
-                provider="openai",
-                model="gpt-4",
+                model_id=ModelId.from_litellm("openai/gpt-4"),
                 input_tokens=1000,
                 output_tokens=500,
             )
@@ -375,16 +375,16 @@ class TestLLMCostCalculatorCalculateCostAsync:
             assert result == Decimal("0.000090")
 
     @pytest.mark.asyncio
-    async def test_does_not_add_prefix_when_model_has_slash(self) -> None:
-        """calculate_cost_async preserves model when it already has a provider prefix."""
+    async def test_passes_litellm_format_to_cost_per_token(self) -> None:
+        """calculate_cost_async passes the full litellm model string."""
         from src.llm_config.cost_calculator import LLMCostCalculator
+        from src.llm_config.model_id import ModelId
 
         with patch("src.llm_config.cost_calculator.cost_per_token") as mock_cost:
             mock_cost.return_value = (0.001, 0.002)
 
             result = await LLMCostCalculator.calculate_cost_async(
-                provider="anthropic",
-                model="anthropic/claude-3-opus",
+                model_id=ModelId.from_litellm("anthropic/claude-3-opus"),
                 input_tokens=100,
                 output_tokens=100,
             )
@@ -397,9 +397,10 @@ class TestLLMCostCalculatorCalculateCostAsync:
             assert result == Decimal("0.003000")
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_unprefixed_model(self) -> None:
-        """calculate_cost_async falls back to model without prefix on ValueError."""
+    async def test_falls_back_to_bare_model_name(self) -> None:
+        """calculate_cost_async falls back to bare model name on ValueError."""
         from src.llm_config.cost_calculator import LLMCostCalculator
+        from src.llm_config.model_id import ModelId
 
         with patch("src.llm_config.cost_calculator.cost_per_token") as mock_cost:
             mock_cost.side_effect = [
@@ -408,8 +409,7 @@ class TestLLMCostCalculatorCalculateCostAsync:
             ]
 
             result = await LLMCostCalculator.calculate_cost_async(
-                provider="openai",
-                model="gpt-4",
+                model_id=ModelId.from_litellm("openai/gpt-4"),
                 input_tokens=100,
                 output_tokens=100,
             )
@@ -425,13 +425,13 @@ class TestLLMCostCalculatorCalculateCostFromTotalTokensAsync:
     async def test_splits_tokens_evenly(self) -> None:
         """calculate_cost_from_total_tokens_async splits tokens 50/50."""
         from src.llm_config.cost_calculator import LLMCostCalculator
+        from src.llm_config.model_id import ModelId
 
         with patch("src.llm_config.cost_calculator.cost_per_token") as mock_cost:
             mock_cost.return_value = (0.00001, 0.00002)
 
             result = await LLMCostCalculator.calculate_cost_from_total_tokens_async(
-                provider="openai",
-                model="gpt-4",
+                model_id=ModelId.from_litellm("openai/gpt-4"),
                 total_tokens=100,
             )
 
@@ -446,13 +446,13 @@ class TestLLMCostCalculatorCalculateCostFromTotalTokensAsync:
     async def test_handles_odd_total_tokens(self) -> None:
         """calculate_cost_from_total_tokens_async handles odd token counts."""
         from src.llm_config.cost_calculator import LLMCostCalculator
+        from src.llm_config.model_id import ModelId
 
         with patch("src.llm_config.cost_calculator.cost_per_token") as mock_cost:
             mock_cost.return_value = (0.00001, 0.00002)
 
             result = await LLMCostCalculator.calculate_cost_from_total_tokens_async(
-                provider="openai",
-                model="gpt-4",
+                model_id=ModelId.from_litellm("openai/gpt-4"),
                 total_tokens=101,
             )
 

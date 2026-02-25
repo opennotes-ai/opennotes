@@ -188,8 +188,9 @@ export type RatingCreateRequest = components['schemas']['RatingCreateRequest'];
 export type RatingCreateAttributes = components['schemas']['RatingCreateAttributes'];
 
 export type NoteAttributes = components['schemas']['NoteJSONAPIAttributes'];
-export type NoteJSONAPIResponse = components['schemas']['NoteSingleResponse'];
-export type NoteListJSONAPIResponse = components['schemas']['NoteListResponse'];
+
+export type NoteJSONAPIResponse = JSONAPISingleResponse<NoteAttributes>;
+export type NoteListJSONAPIResponse = JSONAPIListResponse<NoteAttributes>;
 
 export interface NoteListJSONAPIResponseWithPagination extends NoteListJSONAPIResponse {
   total: number;

@@ -1,5 +1,7 @@
 """LiteLLM unified provider - supports all LLM backends via single interface."""
 
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -7,6 +9,7 @@ import litellm
 from litellm.exceptions import JSONSchemaValidationError
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.llm_config.model_id import ModelId
 from src.llm_config.providers.base import LLMMessage, LLMProvider, LLMResponse, ProviderSettings
 from src.monitoring import get_logger
 
@@ -28,7 +31,7 @@ class LiteLLMCompletionParams(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    model: str | None = None
+    model: ModelId | None = None
     max_tokens: int | None = None
     temperature: float | None = None
     top_p: float | None = None
@@ -102,9 +105,9 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             Exception: If API call fails
         """
         params = params or LiteLLMCompletionParams()
-        model = params.model or self.default_model
+        model_str = params.model.to_litellm() if params.model else self.default_model
 
-        if not model:
+        if not model_str:
             raise ValueError(
                 "Model name cannot be empty. Check that RELEVANCE_CHECK_MODEL, "
                 "DEFAULT_FULL_MODEL, or other model configuration is set correctly."
@@ -112,7 +115,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
 
         request_kwargs = self._filter_none_params(
             {
-                "model": model,
+                "model": model_str,
                 "messages": [{"role": m.role, "content": m.content} for m in messages],
                 "max_tokens": params.max_tokens or self.settings.max_tokens,
                 "temperature": params.temperature
@@ -131,7 +134,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         logger.debug(
             "LiteLLM completion request",
             extra={
-                "model": model,
+                "model": model_str,
                 "has_response_format": params.response_format is not None,
                 "max_tokens": request_kwargs.get("max_tokens"),
                 "message_count": len(messages),
@@ -144,7 +147,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             logger.exception(
                 "LiteLLM JSON schema validation failed",
                 extra={
-                    "model": model,
+                    "model": model_str,
                     "response_format": str(params.response_format)
                     if params.response_format
                     else None,
@@ -162,7 +165,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         logger.info(
             "LLM completion finished",
             extra={
-                "model": model,
+                "model": model_str,
                 "finish_reason": finish_reason,
                 "content_length": content_length,
                 "tokens_used": tokens_used,
@@ -172,12 +175,12 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         if not content:
             logger.warning(
                 "LLM returned empty content",
-                extra={"finish_reason": finish_reason, "model": model},
+                extra={"finish_reason": finish_reason, "model": model_str},
             )
 
         return LLMResponse(
             content=content,
-            model=response.model or model,  # type: ignore
+            model=response.model or model_str,  # type: ignore
             tokens_used=tokens_used,
             finish_reason=finish_reason,
             provider=self._provider_name,
@@ -200,16 +203,16 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             ValueError: If model name is empty after fallback resolution
         """
         params = params or LiteLLMCompletionParams()
-        model = params.model or self.default_model
+        model_str = params.model.to_litellm() if params.model else self.default_model
 
-        if not model:
+        if not model_str:
             raise ValueError(
                 "Model name cannot be empty. Check that model configuration is set correctly."
             )
 
         request_kwargs = self._filter_none_params(
             {
-                "model": model,
+                "model": model_str,
                 "messages": [{"role": m.role, "content": m.content} for m in messages],
                 "max_tokens": params.max_tokens or self.settings.max_tokens,
                 "temperature": params.temperature
@@ -231,7 +234,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             logger.exception(
                 "LiteLLM JSON schema validation failed in stream_complete",
                 extra={
-                    "model": model,
+                    "model": model_str,
                     "raw_response": getattr(e, "raw_response", None),
                     "error": str(e),
                 },

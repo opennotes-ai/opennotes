@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.llm_config.manager import LLMClientManager
+from src.llm_config.model_id import ModelId
 from src.llm_config.providers.base import LLMMessage, LLMResponse
 from src.llm_config.service import LLMService
 
@@ -37,7 +38,7 @@ def mock_llm_response() -> LLMResponse:
 
 
 class TestCompleteProviderInference:
-    """Tests that complete() infers provider from model string containing '/'."""
+    """Tests that complete() infers provider from ModelId."""
 
     @pytest.mark.asyncio
     async def test_complete_infers_vertex_ai_from_model(
@@ -47,7 +48,7 @@ class TestCompleteProviderInference:
         mock_db: AsyncMock,
         mock_llm_response: LLMResponse,
     ) -> None:
-        """complete() with model='vertex_ai/gemini-2.5-flash' should use vertex_ai provider."""
+        """complete() with vertex_ai ModelId should use vertex_ai provider."""
         mock_provider = MagicMock()
         mock_provider.complete = AsyncMock(return_value=mock_llm_response)
         mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
@@ -57,7 +58,7 @@ class TestCompleteProviderInference:
         await llm_service.complete(
             db=mock_db,
             messages=messages,
-            model="vertex_ai/gemini-2.5-flash",
+            model=ModelId.from_litellm("vertex_ai/gemini-2.5-flash"),
         )
 
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
@@ -70,7 +71,7 @@ class TestCompleteProviderInference:
         mock_db: AsyncMock,
         mock_llm_response: LLMResponse,
     ) -> None:
-        """complete() with model='openai/gpt-5.1' should use openai provider."""
+        """complete() with openai ModelId should use openai provider."""
         mock_provider = MagicMock()
         mock_provider.complete = AsyncMock(return_value=mock_llm_response)
         mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
@@ -80,45 +81,46 @@ class TestCompleteProviderInference:
         await llm_service.complete(
             db=mock_db,
             messages=messages,
-            model="openai/gpt-5.1",
+            model=ModelId.from_litellm("openai/gpt-5.1"),
         )
 
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "openai")
 
     @pytest.mark.asyncio
-    async def test_complete_preserves_full_prefixed_model_in_params(
+    async def test_complete_preserves_model_id_in_params(
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
         mock_db: AsyncMock,
         mock_llm_response: LLMResponse,
     ) -> None:
-        """complete() should preserve the full provider-prefixed model string for LiteLLM routing."""
+        """complete() should preserve the ModelId in LiteLLMCompletionParams."""
         mock_provider = MagicMock()
         mock_provider.complete = AsyncMock(return_value=mock_llm_response)
         mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
 
         messages = [LLMMessage(role="user", content="Hi")]
+        model_id = ModelId.from_litellm("vertex_ai/gemini-2.5-flash")
 
         await llm_service.complete(
             db=mock_db,
             messages=messages,
-            model="vertex_ai/gemini-2.5-flash",
+            model=model_id,
         )
 
         call_args = mock_provider.complete.call_args
         params = call_args[0][1]
-        assert params.model == "vertex_ai/gemini-2.5-flash"
+        assert params.model == model_id
 
     @pytest.mark.asyncio
-    async def test_complete_without_slash_uses_explicit_provider(
+    async def test_complete_without_model_uses_explicit_provider(
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
         mock_db: AsyncMock,
         mock_llm_response: LLMResponse,
     ) -> None:
-        """complete() with bare model name uses the explicit provider parameter."""
+        """complete() with no model uses the explicit provider parameter."""
         mock_provider = MagicMock()
         mock_provider.complete = AsyncMock(return_value=mock_llm_response)
         mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
@@ -129,14 +131,13 @@ class TestCompleteProviderInference:
             db=mock_db,
             messages=messages,
             provider="anthropic",
-            model="claude-3-opus",
         )
 
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "anthropic")
 
 
 class TestStreamCompleteProviderInference:
-    """Tests that stream_complete() infers provider from model string."""
+    """Tests that stream_complete() infers provider from ModelId."""
 
     @pytest.mark.asyncio
     async def test_stream_complete_infers_vertex_ai(
@@ -145,7 +146,7 @@ class TestStreamCompleteProviderInference:
         mock_client_manager: MagicMock,
         mock_db: AsyncMock,
     ) -> None:
-        """stream_complete() with model='vertex_ai/gemini-2.5-flash' should use vertex_ai."""
+        """stream_complete() with vertex_ai ModelId should use vertex_ai."""
         mock_provider = MagicMock()
 
         async def mock_stream(*args, **kwargs):
@@ -160,7 +161,7 @@ class TestStreamCompleteProviderInference:
         async for chunk in llm_service.stream_complete(
             db=mock_db,
             messages=messages,
-            model="vertex_ai/gemini-2.5-flash",
+            model=ModelId.from_litellm("vertex_ai/gemini-2.5-flash"),
         ):
             chunks.append(chunk)
 
@@ -211,7 +212,7 @@ class TestDescribeImageProviderRouting:
         mock_client_manager: MagicMock,
         mock_db: AsyncMock,
     ) -> None:
-        """describe_image() with vertex_ai model should use vertex_ai provider."""
+        """describe_image() with vertex_ai ModelId should use vertex_ai provider."""
         response = LLMResponse(
             content="An image of mountains",
             model="gemini-2.5-flash",
@@ -226,17 +227,17 @@ class TestDescribeImageProviderRouting:
         await llm_service.describe_image(
             db=mock_db,
             image_url="https://example.com/mountain.jpg",
-            model="vertex_ai/gemini-2.5-flash",
+            model=ModelId.from_litellm("vertex_ai/gemini-2.5-flash"),
         )
 
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
 
 
 class TestProviderConflictWarning:
-    """Tests that a warning is logged when explicit provider conflicts with model prefix."""
+    """Tests that a warning is logged when explicit provider conflicts with ModelId provider."""
 
     @pytest.mark.asyncio
-    async def test_complete_warns_when_provider_conflicts_with_model_prefix(
+    async def test_complete_warns_when_provider_conflicts_with_model_provider(
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
@@ -244,7 +245,7 @@ class TestProviderConflictWarning:
         mock_llm_response: LLMResponse,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Model prefix takes precedence over explicit provider; warning is logged."""
+        """ModelId provider takes precedence over explicit provider; warning is logged."""
         mock_provider = MagicMock()
         mock_provider.complete = AsyncMock(return_value=mock_llm_response)
         mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
@@ -256,7 +257,7 @@ class TestProviderConflictWarning:
                 db=mock_db,
                 messages=messages,
                 provider="anthropic",
-                model="openai/gpt-5.1",
+                model=ModelId.from_litellm("openai/gpt-5.1"),
             )
 
         assert any(
@@ -266,14 +267,14 @@ class TestProviderConflictWarning:
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "openai")
 
     @pytest.mark.asyncio
-    async def test_stream_complete_warns_when_provider_conflicts_with_model_prefix(
+    async def test_stream_complete_warns_when_provider_conflicts_with_model_provider(
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
         mock_db: AsyncMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """stream_complete() also logs warning on provider/model prefix conflict."""
+        """stream_complete() also logs warning on provider/model provider conflict."""
         mock_provider = MagicMock()
 
         async def mock_stream(*args, **kwargs):
@@ -289,7 +290,7 @@ class TestProviderConflictWarning:
                 db=mock_db,
                 messages=messages,
                 provider="anthropic",
-                model="vertex_ai/gemini-2.5-flash",
+                model=ModelId.from_litellm("vertex_ai/gemini-2.5-flash"),
             ):
                 pass
 
@@ -319,7 +320,7 @@ class TestProviderConflictWarning:
             await llm_service.complete(
                 db=mock_db,
                 messages=messages,
-                model="vertex_ai/gemini-2.5-flash",
+                model=ModelId.from_litellm("vertex_ai/gemini-2.5-flash"),
             )
 
         assert not any(
@@ -329,14 +330,14 @@ class TestProviderConflictWarning:
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
 
     @pytest.mark.asyncio
-    async def test_complete_model_prefix_overrides_explicit_provider(
+    async def test_complete_model_provider_overrides_explicit_provider(
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
         mock_db: AsyncMock,
         mock_llm_response: LLMResponse,
     ) -> None:
-        """When model='openai/gpt-5.1' and provider='anthropic', openai wins."""
+        """When ModelId has openai and provider='anthropic', openai wins."""
         mock_provider = MagicMock()
         mock_provider.complete = AsyncMock(return_value=mock_llm_response)
         mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
@@ -347,13 +348,13 @@ class TestProviderConflictWarning:
             db=mock_db,
             messages=messages,
             provider="anthropic",
-            model="openai/gpt-5.1",
+            model=ModelId.from_litellm("openai/gpt-5.1"),
         )
 
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "openai")
 
     @pytest.mark.asyncio
-    async def test_no_warning_when_provider_matches_model_prefix(
+    async def test_no_warning_when_provider_matches_model_provider(
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
@@ -361,7 +362,7 @@ class TestProviderConflictWarning:
         mock_llm_response: LLMResponse,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """No warning when explicit provider matches the model prefix."""
+        """No warning when explicit provider matches the ModelId provider."""
         mock_provider = MagicMock()
         mock_provider.complete = AsyncMock(return_value=mock_llm_response)
         mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
@@ -373,7 +374,7 @@ class TestProviderConflictWarning:
                 db=mock_db,
                 messages=messages,
                 provider="vertex_ai",
-                model="vertex_ai/gemini-2.5-flash",
+                model=ModelId.from_litellm("vertex_ai/gemini-2.5-flash"),
             )
 
         assert not any(
@@ -383,8 +384,188 @@ class TestProviderConflictWarning:
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
 
 
+class TestPydanticAIFlavorProviderNormalization:
+    """Tests that pydantic-ai flavored ModelId normalizes to litellm provider for client lookup."""
+
+    @pytest.mark.asyncio
+    async def test_complete_normalizes_google_vertex_to_vertex_ai(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_response: LLMResponse,
+    ) -> None:
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=mock_llm_response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        await llm_service.complete(
+            db=mock_db,
+            messages=messages,
+            model=ModelId.from_pydantic_ai("google-vertex:gemini-2.5-flash"),
+        )
+
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
+
+    @pytest.mark.asyncio
+    async def test_complete_normalizes_google_gla_to_gemini(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_response: LLMResponse,
+    ) -> None:
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=mock_llm_response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        await llm_service.complete(
+            db=mock_db,
+            messages=messages,
+            model=ModelId.from_pydantic_ai("google-gla:gemini-2.5-flash"),
+        )
+
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "gemini")
+
+    @pytest.mark.asyncio
+    async def test_stream_complete_normalizes_pydantic_ai_provider(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+    ) -> None:
+        mock_provider = MagicMock()
+
+        async def mock_stream(*args, **kwargs):
+            yield "chunk"
+
+        mock_provider.stream_complete = mock_stream
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        chunks = []
+        async for chunk in llm_service.stream_complete(
+            db=mock_db,
+            messages=messages,
+            model=ModelId.from_pydantic_ai("google-vertex:gemini-2.5-flash"),
+        ):
+            chunks.append(chunk)
+
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
+        assert chunks == ["chunk"]
+
+    @pytest.mark.asyncio
+    async def test_describe_image_normalizes_pydantic_ai_provider(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+    ) -> None:
+        response = LLMResponse(
+            content="A mountain landscape",
+            model="gemini-2.5-flash",
+            tokens_used=25,
+            finish_reason="stop",
+            provider="vertex_ai",
+        )
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        await llm_service.describe_image(
+            db=mock_db,
+            image_url="https://example.com/mountain.jpg",
+            model=ModelId.from_pydantic_ai("google-vertex:gemini-2.5-flash"),
+        )
+
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "vertex_ai")
+
+    @pytest.mark.asyncio
+    async def test_no_warning_when_explicit_provider_matches_pydantic_ai_raw(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_response: LLMResponse,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=mock_llm_response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        with caplog.at_level(logging.WARNING, logger="src.llm_config.service"):
+            await llm_service.complete(
+                db=mock_db,
+                messages=messages,
+                provider="google-vertex",
+                model=ModelId.from_pydantic_ai("google-vertex:gemini-2.5-flash"),
+            )
+
+        assert not any(
+            "Model prefix provider differs from explicit provider param" in record.message
+            for record in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_warning_when_explicit_provider_matches_litellm_normalized(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_response: LLMResponse,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=mock_llm_response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        with caplog.at_level(logging.WARNING, logger="src.llm_config.service"):
+            await llm_service.complete(
+                db=mock_db,
+                messages=messages,
+                provider="vertex_ai",
+                model=ModelId.from_pydantic_ai("google-vertex:gemini-2.5-flash"),
+            )
+
+        assert not any(
+            "Model prefix provider differs from explicit provider param" in record.message
+            for record in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_pydantic_ai_openai_passes_through_unchanged(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_response: LLMResponse,
+    ) -> None:
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=mock_llm_response)
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        messages = [LLMMessage(role="user", content="Hi")]
+
+        await llm_service.complete(
+            db=mock_db,
+            messages=messages,
+            model=ModelId.from_pydantic_ai("openai:gpt-5.1"),
+        )
+
+        mock_client_manager.get_client.assert_called_once_with(mock_db, None, "openai")
+
+
 class TestDescribeImageSettingsProviderRouting:
-    """Tests that describe_image uses provider parsed from settings.VISION_MODEL (task-1137.07)."""
+    """Tests that describe_image uses provider from settings.VISION_MODEL (task-1137.07)."""
 
     @pytest.fixture
     def mock_client_manager(self) -> MagicMock:
@@ -418,7 +599,7 @@ class TestDescribeImageSettingsProviderRouting:
         mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
 
         with patch("src.llm_config.service.settings") as mock_settings:
-            mock_settings.VISION_MODEL = "vertex_ai/gemini-2.5-flash"
+            mock_settings.VISION_MODEL = ModelId.from_litellm("vertex_ai/gemini-2.5-flash")
             mock_settings.VISION_PROMPT = "Describe this image."
 
             result = await llm_service.describe_image(
@@ -449,7 +630,7 @@ class TestDescribeImageSettingsProviderRouting:
         mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
 
         with patch("src.llm_config.service.settings") as mock_settings:
-            mock_settings.VISION_MODEL = "openai/gpt-5.1"
+            mock_settings.VISION_MODEL = ModelId.from_litellm("openai/gpt-5.1")
             mock_settings.VISION_PROMPT = "Describe this image."
 
             result = await llm_service.describe_image(

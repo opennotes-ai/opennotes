@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.config import Settings, get_settings
+from src.llm_config.model_id import ModelId
 
 TEST_CREDENTIALS_ENCRYPTION_KEY = "WSaz4Oan5Rx-0zD-6wC7yOfasrJmzZDVViu6WzwSi0Q="
 TEST_ENCRYPTION_MASTER_KEY = "F5UG5HjhMjOgapb3ADail98bpydyrnrFfgkH1YB_zuE="
@@ -748,9 +749,9 @@ class TestLLMModelNameValidation:
             errors = exc_info.value.errors()
             assert any(
                 error["loc"] == ("RELEVANCE_CHECK_MODEL",)
-                and "string_too_short" in str(error["type"]).lower()
+                and "value_error" in str(error["type"]).lower()
                 for error in errors
-            ), f"Expected min_length validation error, got: {errors}"
+            ), f"Expected ModelId validation error, got: {errors}"
 
     def test_default_full_model_rejects_empty_string(self):
         """DEFAULT_FULL_MODEL cannot be empty string."""
@@ -771,9 +772,9 @@ class TestLLMModelNameValidation:
             errors = exc_info.value.errors()
             assert any(
                 error["loc"] == ("DEFAULT_FULL_MODEL",)
-                and "string_too_short" in str(error["type"]).lower()
+                and "value_error" in str(error["type"]).lower()
                 for error in errors
-            ), f"Expected min_length validation error, got: {errors}"
+            ), f"Expected ModelId validation error, got: {errors}"
 
     def test_default_mini_model_rejects_empty_string(self):
         """DEFAULT_MINI_MODEL cannot be empty string."""
@@ -794,9 +795,9 @@ class TestLLMModelNameValidation:
             errors = exc_info.value.errors()
             assert any(
                 error["loc"] == ("DEFAULT_MINI_MODEL",)
-                and "string_too_short" in str(error["type"]).lower()
+                and "value_error" in str(error["type"]).lower()
                 for error in errors
-            ), f"Expected min_length validation error, got: {errors}"
+            ), f"Expected ModelId validation error, got: {errors}"
 
     def test_embedding_model_rejects_empty_string(self):
         """EMBEDDING_MODEL cannot be empty string."""
@@ -816,10 +817,9 @@ class TestLLMModelNameValidation:
 
             errors = exc_info.value.errors()
             assert any(
-                error["loc"] == ("EMBEDDING_MODEL",)
-                and "string_too_short" in str(error["type"]).lower()
+                error["loc"] == ("EMBEDDING_MODEL",) and "value_error" in str(error["type"]).lower()
                 for error in errors
-            ), f"Expected min_length validation error, got: {errors}"
+            ), f"Expected ModelId validation error, got: {errors}"
 
     def test_vision_model_rejects_empty_string(self):
         """VISION_MODEL cannot be empty string."""
@@ -839,10 +839,9 @@ class TestLLMModelNameValidation:
 
             errors = exc_info.value.errors()
             assert any(
-                error["loc"] == ("VISION_MODEL",)
-                and "string_too_short" in str(error["type"]).lower()
+                error["loc"] == ("VISION_MODEL",) and "value_error" in str(error["type"]).lower()
                 for error in errors
-            ), f"Expected min_length validation error, got: {errors}"
+            ), f"Expected ModelId validation error, got: {errors}"
 
     def test_ai_note_writer_model_rejects_empty_string(self):
         """AI_NOTE_WRITER_MODEL cannot be empty string."""
@@ -863,12 +862,12 @@ class TestLLMModelNameValidation:
             errors = exc_info.value.errors()
             assert any(
                 error["loc"] == ("AI_NOTE_WRITER_MODEL",)
-                and "string_too_short" in str(error["type"]).lower()
+                and "value_error" in str(error["type"]).lower()
                 for error in errors
-            ), f"Expected min_length validation error, got: {errors}"
+            ), f"Expected ModelId validation error, got: {errors}"
 
     def test_model_names_have_valid_defaults(self):
-        """All model name fields should have valid non-empty defaults."""
+        """All model name fields should have valid non-empty ModelId defaults."""
         valid_key = "a" * 32
         with patch.dict(
             os.environ,
@@ -880,12 +879,71 @@ class TestLLMModelNameValidation:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.RELEVANCE_CHECK_MODEL == "openai/gpt-5-mini"
-            assert settings.DEFAULT_FULL_MODEL == "openai/gpt-5.1"
-            assert settings.DEFAULT_MINI_MODEL == "openai/gpt-5-mini"
-            assert settings.EMBEDDING_MODEL == "text-embedding-3-small"
-            assert settings.VISION_MODEL == "openai/gpt-5.1"
-            assert settings.AI_NOTE_WRITER_MODEL == "openai/gpt-5.1"
+            assert ModelId.from_litellm("openai/gpt-5-mini") == settings.RELEVANCE_CHECK_MODEL
+            assert ModelId.from_litellm("openai/gpt-5.1") == settings.DEFAULT_FULL_MODEL
+            assert ModelId.from_litellm("openai/gpt-5-mini") == settings.DEFAULT_MINI_MODEL
+            assert ModelId.from_litellm("openai/text-embedding-3-small") == settings.EMBEDDING_MODEL
+            assert ModelId.from_litellm("openai/gpt-5.1") == settings.VISION_MODEL
+            assert ModelId.from_litellm("openai/gpt-5.1") == settings.AI_NOTE_WRITER_MODEL
+
+    def test_model_fields_reject_bare_names(self):
+        """Model fields without provider prefix (no slash) must be rejected."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "DEFAULT_MINI_MODEL": "gpt-5-mini",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(error["loc"] == ("DEFAULT_MINI_MODEL",) for error in errors), (
+                f"Expected validation error for bare model name, got: {errors}"
+            )
+
+    def test_model_fields_are_model_id_instances(self):
+        """Settings model fields should be ModelId instances after parsing."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert isinstance(settings.DEFAULT_MINI_MODEL, ModelId)
+            assert isinstance(settings.DEFAULT_FULL_MODEL, ModelId)
+            assert isinstance(settings.EMBEDDING_MODEL, ModelId)
+            assert isinstance(settings.VISION_MODEL, ModelId)
+            assert isinstance(settings.RELEVANCE_CHECK_MODEL, ModelId)
+            assert isinstance(settings.AI_NOTE_WRITER_MODEL, ModelId)
+
+    def test_model_id_provider_and_model_accessible(self):
+        """ModelId fields expose .provider and .model attributes."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "VISION_MODEL": "vertex_ai/gemini-2.5-pro",
+                "VERTEXAI_PROJECT": "test-project",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.VISION_MODEL.provider == "vertex_ai"
+            assert settings.VISION_MODEL.model == "gemini-2.5-pro"
 
 
 class TestNATSServersConfiguration:
@@ -1099,7 +1157,7 @@ class TestVertexAIProjectValidation:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.DEFAULT_MINI_MODEL == "vertex_ai/gemini-2.5-flash"
+            assert ModelId.from_litellm("vertex_ai/gemini-2.5-flash") == settings.DEFAULT_MINI_MODEL
             assert settings.VERTEXAI_PROJECT == "my-gcp-project"
 
     def test_openai_models_accepted_without_vertexai_project(self):
@@ -1114,7 +1172,7 @@ class TestVertexAIProjectValidation:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.DEFAULT_MINI_MODEL == "openai/gpt-5-mini"
+            assert ModelId.from_litellm("openai/gpt-5-mini") == settings.DEFAULT_MINI_MODEL
             assert settings.VERTEXAI_PROJECT is None
 
     def test_vertex_ai_validation_skipped_in_testing_mode(self):
@@ -1131,7 +1189,7 @@ class TestVertexAIProjectValidation:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.DEFAULT_MINI_MODEL == "vertex_ai/gemini-2.5-flash"
+            assert ModelId.from_litellm("vertex_ai/gemini-2.5-flash") == settings.DEFAULT_MINI_MODEL
             assert settings.VERTEXAI_PROJECT is None
 
 
@@ -1165,42 +1223,3 @@ class TestVertexAIDefaults:
         ):
             settings = create_settings_no_env_file()
             assert settings.VERTEXAI_LOCATION == "us-central1"
-
-
-class TestParseProviderModel:
-    """Test parse_provider_model edge cases (task-1137.07)."""
-
-    def test_parse_provider_model_leading_slash(self):
-        from src.config import parse_provider_model
-
-        provider, model = parse_provider_model("/model")
-        assert provider == ""
-        assert model == "model"
-
-    def test_parse_provider_model_trailing_slash(self):
-        from src.config import parse_provider_model
-
-        provider, model = parse_provider_model("provider/")
-        assert provider == "provider"
-        assert model == ""
-
-    def test_parse_provider_model_just_slash(self):
-        from src.config import parse_provider_model
-
-        provider, model = parse_provider_model("/")
-        assert provider == ""
-        assert model == ""
-
-    def test_parse_provider_model_no_slash(self):
-        from src.config import parse_provider_model
-
-        provider, model = parse_provider_model("model-name")
-        assert provider == "openai"
-        assert model == "model-name"
-
-    def test_parse_provider_model_multiple_slashes(self):
-        from src.config import parse_provider_model
-
-        provider, model = parse_provider_model("vertex_ai/gemini/latest")
-        assert provider == "vertex_ai"
-        assert model == "gemini/latest"
