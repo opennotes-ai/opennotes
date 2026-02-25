@@ -213,6 +213,8 @@ def execute_agent_turn_step(
     deps_data: dict[str, Any],
     messages: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    from pydantic_ai.exceptions import UserError
+
     from src.database import get_session_maker
     from src.simulation.agent import OpenNotesSimAgent, SimAgentDeps
 
@@ -244,11 +246,20 @@ def execute_agent_turn_step(
                 model_name=context["model_name"],
             )
 
-            action, new_messages = await agent.run_turn(
-                deps=deps,
-                message_history=message_history,
-                usage_limits=usage_limits,
-            )
+            try:
+                action, new_messages = await agent.run_turn(
+                    deps=deps,
+                    message_history=message_history,
+                    usage_limits=usage_limits,
+                )
+            except UserError as exc:
+                model_name = context["model_name"]
+                raise ValueError(
+                    f"Invalid model name '{model_name}' for SimAgent "
+                    f"instance '{context['agent_instance_id']}'. "
+                    f"Update the SimAgent profile to use a valid "
+                    f"'provider:model' format. Original error: {exc}"
+                ) from exc
 
             await session.commit()
 
