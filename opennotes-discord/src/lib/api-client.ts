@@ -284,25 +284,29 @@ export interface ApiClientConfig {
 
 type TypedClient = ReturnType<typeof createClient<paths>>;
 
-function handleError<T>(result: { data?: T; error?: unknown; response: Response }, endpoint: string): T {
+function handleError<T>(result: { data?: T; error?: unknown; response: Response }, endpoint: string, method?: string): T {
   if (result.error !== undefined) {
     throw new ApiError(
       `API request failed: ${result.response.status} ${result.response.statusText}`,
       endpoint,
       result.response.status,
       sanitizeObject(result.error),
+      undefined,
+      method ? { method } : {},
     );
   }
   return result.data as T;
 }
 
-function handleVoidResponse(result: { error?: unknown; response: Response }, endpoint: string): void {
+function handleVoidResponse(result: { error?: unknown; response: Response }, endpoint: string, method?: string): void {
   if (result.error !== undefined) {
     throw new ApiError(
       `API request failed: ${result.response.status} ${result.response.statusText}`,
       endpoint,
       result.response.status,
       sanitizeObject(result.error),
+      undefined,
+      method ? { method } : {},
     );
   }
 }

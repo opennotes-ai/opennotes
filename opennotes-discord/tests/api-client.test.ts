@@ -1,5 +1,9 @@
 import { jest } from '@jest/globals';
 import { loggerFactory, cacheFactory } from '@opennotes/test-utils';
+import {
+  getFetchRequestDetails as _getFetchRequestDetails,
+  getFetchRequestBody as _getFetchRequestBody,
+} from './utils/fetch-request-helpers.js';
 
 const mockFetch = jest.fn<typeof fetch>();
 global.fetch = mockFetch;
@@ -32,20 +36,12 @@ jest.unstable_mockModule('../src/utils/gcp-auth.js', () => ({
 
 const { apiClient, ApiClient } = await import('../src/api-client.js');
 
-function getFetchRequest(callIndex = 0): Request {
-  return mockFetch.mock.calls[callIndex]![0] as Request;
+function getFetchRequestDetails(callIndex = 0) {
+  return _getFetchRequestDetails(mockFetch, callIndex);
 }
 
-function getFetchRequestDetails(callIndex = 0): { url: string; method: string; headers: Record<string, string> } {
-  const request = getFetchRequest(callIndex);
-  const headers: Record<string, string> = {};
-  request.headers.forEach((value, key) => { headers[key] = value; });
-  return { url: request.url, method: request.method, headers };
-}
-
-async function getFetchRequestBody(callIndex = 0): Promise<unknown> {
-  const request = getFetchRequest(callIndex);
-  return JSON.parse(await request.clone().text());
+async function getFetchRequestBody(callIndex = 0) {
+  return _getFetchRequestBody(mockFetch, callIndex);
 }
 
 describe('ApiClient Wrapper', () => {
@@ -242,23 +238,45 @@ describe('ApiClient Wrapper', () => {
       );
     });
 
-    it('should use default size limit of 10MB', () => {
+    it('should use default size limit of 10MB', async () => {
       const client = new ApiClient({
         serverUrl: 'http://localhost:8000',
         environment: 'development',
       });
 
-      expect(client).toBeDefined();
+      const largeBody = JSON.stringify({ data: 'x'.repeat(11 * 1024 * 1024) });
+      mockFetch.mockResolvedValueOnce(
+        new Response(largeBody, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': String(largeBody.length),
+          },
+        })
+      );
+
+      await expect(client.healthCheck()).rejects.toThrow(/exceeds maximum allowed size/);
     });
 
-    it('should respect custom size limit', () => {
+    it('should respect custom size limit', async () => {
       const client = new ApiClient({
         serverUrl: 'http://localhost:8000',
         environment: 'development',
-        maxResponseSize: 5000000,
+        maxResponseSize: 100,
       });
 
-      expect(client).toBeDefined();
+      const body = JSON.stringify({ data: 'x'.repeat(200) });
+      mockFetch.mockResolvedValueOnce(
+        new Response(body, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': String(body.length),
+          },
+        })
+      );
+
+      await expect(client.healthCheck()).rejects.toThrow(/exceeds maximum allowed size/);
     });
 
     it('should handle responses without Content-Length header', async () => {
@@ -507,23 +525,58 @@ describe('ApiClient Wrapper', () => {
       expect(result).toEqual(mockResponse);
     });
 
-    it('should use default timeout of 30 seconds', () => {
+    it('should use default timeout of 30 seconds', async () => {
       const client = new ApiClient({
         serverUrl: 'http://localhost:8000',
         environment: 'development',
+        retryAttempts: 1,
       });
 
-      expect(client).toBeDefined();
+      let capturedSignal: AbortSignal | undefined;
+      mockFetch.mockImplementationOnce(async (input) => {
+        const request = input as Request;
+        capturedSignal = request.signal;
+        return new Response(JSON.stringify({ status: 'healthy' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      });
+
+      await client.healthCheck();
+      expect(capturedSignal).toBeDefined();
+      expect(capturedSignal!.aborted).toBe(false);
     });
 
-    it('should respect custom timeout configuration', () => {
+    it('should respect custom timeout configuration', async () => {
       const client = new ApiClient({
         serverUrl: 'http://localhost:8000',
         environment: 'development',
-        requestTimeout: 5000,
+        requestTimeout: 50,
+        retryAttempts: 1,
       });
 
-      expect(client).toBeDefined();
+      mockFetch.mockImplementationOnce(async (input) => {
+        const request = input as Request;
+        return new Promise<Response>((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            resolve(new Response(JSON.stringify({ status: 'ok' }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }));
+          }, 500);
+
+          if (request.signal) {
+            request.signal.addEventListener('abort', () => {
+              clearTimeout(timeoutId);
+              const abortError = new Error('The operation was aborted.');
+              abortError.name = 'AbortError';
+              reject(abortError);
+            });
+          }
+        });
+      });
+
+      await expect(client.healthCheck()).rejects.toThrow('API request timeout after 50ms');
     });
   });
 
@@ -900,6 +953,14 @@ describe('ApiClient Wrapper', () => {
       const req = getFetchRequestDetails(1);
       expect(req.url).toContain('/api/v2/notes');
       expect(req.method).toBe('POST');
+
+      const body = await getFetchRequestBody(1) as {
+        data: { type: string; attributes: Record<string, unknown> };
+      };
+      expect(body.data.type).toBe('notes');
+      expect(body.data.attributes.summary).toBe('Test note content');
+      expect(body.data.attributes.classification).toBe('NOT_MISLEADING');
+      expect(body.data.attributes.community_server_id).toBe('123e4567-e89b-12d3-a456-426614174000');
     });
   });
 
@@ -944,6 +1005,13 @@ describe('ApiClient Wrapper', () => {
       const req = getFetchRequestDetails();
       expect(req.url).toContain('/api/v2/ratings');
       expect(req.method).toBe('POST');
+
+      const body = await getFetchRequestBody() as {
+        data: { type: string; attributes: Record<string, unknown> };
+      };
+      expect(body.data.type).toBe('ratings');
+      expect(body.data.attributes.note_id).toBe('550e8400-e29b-41d4-a716-446655440000');
+      expect(body.data.attributes.helpfulness_level).toBe('HELPFUL');
     });
 
     it('should successfully rate a note as not helpful', async () => {
@@ -1027,6 +1095,13 @@ describe('ApiClient Wrapper', () => {
       const req = getFetchRequestDetails();
       expect(req.url).toContain('/api/v2/ratings/1');
       expect(req.method).toBe('PUT');
+
+      const body = await getFetchRequestBody() as {
+        data: { type: string; id: string; attributes: Record<string, unknown> };
+      };
+      expect(body.data.type).toBe('ratings');
+      expect(body.data.id).toBe('1');
+      expect(body.data.attributes.helpfulness_level).toBe('HELPFUL');
     });
 
     it('should successfully update a rating to not helpful', async () => {
@@ -1675,6 +1750,14 @@ describe('ApiClient Wrapper', () => {
       const req = getFetchRequestDetails();
       expect(req.url).toContain('/api/v2/previously-seen-messages/check');
       expect(req.method).toBe('POST');
+
+      const body = await getFetchRequestBody() as {
+        data: { type: string; attributes: Record<string, unknown> };
+      };
+      expect(body.data.type).toBe('previously-seen-check');
+      expect(body.data.attributes.message_text).toBe('test message');
+      expect(body.data.attributes.platform_community_server_id).toBe('guild-123');
+      expect(body.data.attributes.channel_id).toBe('channel-456');
     });
 
     it('should return empty matches when no similar messages found', async () => {

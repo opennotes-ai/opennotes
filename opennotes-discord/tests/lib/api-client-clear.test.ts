@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { loggerFactory } from '@opennotes/test-utils';
+import { getFetchRequestDetails } from '../utils/fetch-request-helpers.js';
 
 const mockFetch = jest.fn<typeof fetch>();
 global.fetch = mockFetch;
@@ -25,17 +26,6 @@ jest.unstable_mockModule('../../src/utils/gcp-auth.js', () => ({
 }));
 
 const { ApiClient } = await import('../../src/lib/api-client.js');
-
-function getLastFetchRequest(): { url: string; method: string; headers: Record<string, string> } {
-  const request = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as Request;
-  const headers: Record<string, string> = {};
-  request.headers.forEach((value, key) => { headers[key] = value; });
-  return {
-    url: request.url,
-    method: request.method,
-    headers,
-  };
-}
 
 describe('ApiClient Clear Methods', () => {
   let client: InstanceType<typeof ApiClient>;
@@ -67,7 +57,7 @@ describe('ApiClient Clear Methods', () => {
       expect(result.wouldDeleteCount).toBe(15);
       expect(result.message).toBe('Would delete 15 requests');
 
-      const req = getLastFetchRequest();
+      const req = getFetchRequestDetails(mockFetch);
       expect(req.url).toContain('/api/v2/community-servers/uuid-123/clear-requests/preview');
       expect(req.url).toContain('mode=all');
       expect(req.method).toBe('GET');
@@ -91,7 +81,7 @@ describe('ApiClient Clear Methods', () => {
       expect(result.wouldDeleteCount).toBe(0);
       expect(result.message).toBe('Would delete 0 unpublished notes');
 
-      const req = getLastFetchRequest();
+      const req = getFetchRequestDetails(mockFetch);
       expect(req.url).toContain('/api/v2/community-servers/uuid-123/clear-notes/preview');
       expect(req.url).toContain('mode=30');
     });
@@ -106,7 +96,7 @@ describe('ApiClient Clear Methods', () => {
 
       await client.getClearPreview('server-id', 'notes', 'all');
 
-      const req = getLastFetchRequest();
+      const req = getFetchRequestDetails(mockFetch);
       expect(req.url).toContain('/clear-notes/preview');
       expect(req.url).not.toContain('/clear-requests/');
     });
@@ -131,7 +121,7 @@ describe('ApiClient Clear Methods', () => {
       expect(result.deletedCount).toBe(10);
       expect(result.message).toBe('Deleted 10 requests');
 
-      const req = getLastFetchRequest();
+      const req = getFetchRequestDetails(mockFetch);
       expect(req.url).toContain('/api/v2/community-servers/uuid-123/clear-requests');
       expect(req.url).toContain('mode=all');
       expect(req.url).not.toContain('/preview');
@@ -156,7 +146,7 @@ describe('ApiClient Clear Methods', () => {
       expect(result.deletedCount).toBe(5);
       expect(result.message).toBe('Deleted 5 unpublished notes older than 30 days');
 
-      const req = getLastFetchRequest();
+      const req = getFetchRequestDetails(mockFetch);
       expect(req.url).toContain('/clear-notes');
       expect(req.url).toContain('mode=30');
     });
@@ -171,7 +161,7 @@ describe('ApiClient Clear Methods', () => {
 
       await client.executeClear('uuid-123', 'requests', 'all');
 
-      const req = getLastFetchRequest();
+      const req = getFetchRequestDetails(mockFetch);
       expect(req.method).toBe('DELETE');
     });
 
@@ -185,7 +175,7 @@ describe('ApiClient Clear Methods', () => {
 
       await client.executeClear('uuid-123', 'notes', 'all');
 
-      const req = getLastFetchRequest();
+      const req = getFetchRequestDetails(mockFetch);
       expect(req.method).toBe('DELETE');
       expect(req.url).toContain('/clear-notes');
     });

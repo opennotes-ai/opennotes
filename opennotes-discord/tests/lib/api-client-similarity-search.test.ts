@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { loggerFactory } from '@opennotes/test-utils';
+import { getFetchRequestDetails, getFetchRequestBody } from '../utils/fetch-request-helpers.js';
 
 const mockFetch = jest.fn<typeof fetch>();
 global.fetch = mockFetch;
@@ -26,14 +27,6 @@ jest.unstable_mockModule('../../src/utils/gcp-auth.js', () => ({
 
 const { ApiClient } = await import('../../src/lib/api-client.js');
 import type { JSONAPISingleResponse, SimilaritySearchResultAttributes } from '../../src/lib/api-client.js';
-
-function getLastFetchRequest(): { url: string; method: string } {
-  const request = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as Request;
-  return {
-    url: request.url,
-    method: request.method,
-  };
-}
 
 describe('ApiClient.similaritySearch', () => {
   let apiClient: InstanceType<typeof ApiClient>;
@@ -251,9 +244,19 @@ describe('ApiClient.similaritySearch', () => {
         10
       );
 
-      const req = getLastFetchRequest();
+      const req = getFetchRequestDetails(mockFetch);
       expect(req.url).toContain('/api/v2/similarity-searches');
       expect(req.method).toBe('POST');
+
+      const body = await getFetchRequestBody(mockFetch) as {
+        data: { type: string; attributes: Record<string, unknown> };
+      };
+      expect(body.data.type).toBe('similarity-searches');
+      expect(body.data.attributes.text).toBe('request body test');
+      expect(body.data.attributes.community_server_id).toBe('cs-uuid-123');
+      expect(body.data.attributes.dataset_tags).toEqual(['snopes', 'politifact']);
+      expect(body.data.attributes.similarity_threshold).toBe(0.75);
+      expect(body.data.attributes.limit).toBe(10);
     });
   });
 });
