@@ -38,6 +38,9 @@ let onGCP: boolean | null = null;
 let gcpDetectionPromise: Promise<void> | null = null;
 
 export function initGCPDetection(): void {
+  if (gcpDetectionPromise !== null || onGCP !== null) {
+    return;
+  }
   gcpDetectionPromise = detectGCPEnvironment();
 }
 
