@@ -97,7 +97,8 @@ class LLMService:
             Exception: If API call fails
         """
         if model:
-            if provider not in ("openai", model.provider):
+            litellm_provider = model.litellm_provider
+            if provider not in ("openai", model.provider, litellm_provider):
                 logger.warning(
                     "Model prefix provider differs from explicit provider param, "
                     "using model prefix",
@@ -107,7 +108,7 @@ class LLMService:
                         "model": model.to_litellm(),
                     },
                 )
-            provider = model.provider
+            provider = litellm_provider
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
@@ -163,7 +164,8 @@ class LLMService:
             Exception: If API call fails
         """
         if model:
-            if provider not in ("openai", model.provider):
+            litellm_provider = model.litellm_provider
+            if provider not in ("openai", model.provider, litellm_provider):
                 logger.warning(
                     "Model prefix provider differs from explicit provider param, "
                     "using model prefix",
@@ -173,7 +175,7 @@ class LLMService:
                         "model": model.to_litellm(),
                     },
                 )
-            provider = model.provider
+            provider = litellm_provider
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
@@ -396,7 +398,7 @@ class LLMService:
             Exception: If API call fails after retries
         """
         vision_model = model or settings.VISION_MODEL
-        provider = vision_model.provider
+        provider = vision_model.litellm_provider
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 

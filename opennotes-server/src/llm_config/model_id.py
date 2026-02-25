@@ -32,9 +32,12 @@ class ModelId(BaseModel, frozen=True):
             raise ValueError(msg)
         return cls(provider=provider, model=model, flavor=ModelFlavor.PYDANTIC_AI)
 
+    @property
+    def litellm_provider(self) -> str:
+        return adapt_provider(self.provider, self.flavor, ModelFlavor.LITELLM)
+
     def to_litellm(self) -> str:
-        provider = adapt_provider(self.provider, self.flavor, ModelFlavor.LITELLM)
-        return f"{provider}/{self.model}"
+        return f"{self.litellm_provider}/{self.model}"
 
     def to_pydantic_ai(self) -> str:
         provider = adapt_provider(self.provider, self.flavor, ModelFlavor.PYDANTIC_AI)
