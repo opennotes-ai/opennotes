@@ -241,6 +241,9 @@ class SimAgentInstance(Base, TimestampMixin):
     )
     state: Mapped[str] = mapped_column(String(20), nullable=False, server_default="active")
     turn_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    retry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     last_turn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     removal_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pendulum
 from dbos import DBOS, Queue
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import selectinload
 
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
@@ -19,6 +19,7 @@ from src.utils.async_compat import run_sync
 logger = get_logger(__name__)
 
 MAX_ITERATIONS: int = 10_000
+MAX_TURN_RETRIES: int = 3
 SPAWN_BATCH_SIZE: int = 5
 CIRCUIT_BREAKER_THRESHOLD: int = 5
 CIRCUIT_BREAKER_RESET_TIMEOUT: float = 300.0
@@ -305,6 +306,48 @@ def remove_agents_step(
 
 
 @DBOS.step()
+def detect_stuck_agents_step(simulation_run_id: str) -> dict[str, int]:
+    from src.database import get_session_maker
+
+    async def _detect() -> dict[str, int]:
+        run_uuid = UUID(simulation_run_id)
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(
+                    SimAgentInstance.id,
+                    SimAgentInstance.turn_count,
+                    SimAgentInstance.retry_count,
+                ).where(
+                    SimAgentInstance.simulation_run_id == run_uuid,
+                    SimAgentInstance.state == "active",
+                )
+            )
+            agents = result.all()
+
+            retried = 0
+            for agent_id, turn_count, retry_count in agents:
+                wf_id = f"turn-{agent_id}-{turn_count + 1}-retry{retry_count}"
+                wf_result = await session.execute(
+                    text("SELECT status FROM dbos.workflow_status WHERE workflow_uuid = :wf_id"),
+                    {"wf_id": wf_id},
+                )
+                wf_status = wf_result.scalar_one_or_none()
+
+                if wf_status == "ERROR":
+                    await session.execute(
+                        update(SimAgentInstance)
+                        .where(SimAgentInstance.id == agent_id)
+                        .values(retry_count=retry_count + 1)
+                    )
+                    retried += 1
+
+            await session.commit()
+            return {"retried": retried}
+
+    return run_sync(_detect())
+
+
+@DBOS.step()
 def schedule_turns_step(
     simulation_run_id: str,
     config: dict[str, Any],
@@ -317,9 +360,14 @@ def schedule_turns_step(
         from src.simulation.workflows.agent_turn_workflow import dispatch_agent_turn
 
         run_uuid = UUID(simulation_run_id)
+        now = pendulum.now("UTC")
 
         async with get_session_maker()() as session:
-            active_query = select(SimAgentInstance.id, SimAgentInstance.turn_count).where(
+            active_query = select(
+                SimAgentInstance.id,
+                SimAgentInstance.turn_count,
+                SimAgentInstance.retry_count,
+            ).where(
                 SimAgentInstance.simulation_run_id == run_uuid,
                 SimAgentInstance.state == "active",
             )
@@ -328,18 +376,38 @@ def schedule_turns_step(
 
         dispatched_count = 0
         skipped_count = 0
+        removed_for_retries = 0
 
-        for instance_id, turn_count in instances:
+        for instance_id, turn_count, retry_count in instances:
             if turn_count >= max_turns:
                 skipped_count += 1
                 continue
 
-            await dispatch_agent_turn(instance_id, turn_count + 1)
+            if retry_count >= MAX_TURN_RETRIES:
+                async with get_session_maker()() as session:
+                    await session.execute(
+                        update(SimAgentInstance)
+                        .where(
+                            SimAgentInstance.id == instance_id,
+                            SimAgentInstance.state == "active",
+                        )
+                        .values(
+                            state="removed",
+                            removal_reason="max_retries_exceeded",
+                            deleted_at=now,
+                        )
+                    )
+                    await session.commit()
+                removed_for_retries += 1
+                continue
+
+            await dispatch_agent_turn(instance_id, turn_count + 1, retry_count)
             dispatched_count += 1
 
         return {
             "dispatched_count": dispatched_count,
             "skipped_count": skipped_count,
+            "removed_for_retries": removed_for_retries,
         }
 
     return run_sync(_schedule())
@@ -541,6 +609,11 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 )
             except Exception:
                 logger.exception("Failed to remove agents")
+
+            try:
+                detect_stuck_agents_step(simulation_run_id)
+            except Exception:
+                logger.exception("Failed to detect stuck agents")
 
             dispatched_count = 0
             try:
