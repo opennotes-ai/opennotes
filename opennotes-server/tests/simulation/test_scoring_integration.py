@@ -58,8 +58,11 @@ def _mock_db_for_trigger(run, note_count, notes):
     batch_result.scalars.return_value = batch_scalars
 
     update_result = MagicMock()
+    request_update_result = MagicMock()
 
-    db.execute = AsyncMock(side_effect=[count_result, batch_result, update_result])
+    db.execute = AsyncMock(
+        side_effect=[count_result, batch_result, update_result, request_update_result]
+    )
     db.commit = AsyncMock()
     return db
 
@@ -218,7 +221,7 @@ async def test_trigger_scoring_status_helpful():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 3
+    assert db.execute.call_count == 4
 
 
 @pytest.mark.unit
@@ -584,7 +587,7 @@ async def test_trigger_scoring_batch_update_uses_case():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 2
-    assert db.execute.call_count == 3
+    assert db.execute.call_count == 4
 
 
 @pytest.mark.unit
@@ -632,3 +635,171 @@ def test_scoring_metrics_dataclass():
     )
     assert result.total_scores_computed == 100
     assert result.notes_by_status["CURRENTLY_RATED_HELPFUL"] == 50
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_trigger_scoring_transitions_requests_for_helpful_notes():
+    cs_id = uuid4()
+    run = _make_run(community_server_id=cs_id)
+    ratings = [_make_rating("HELPFUL") for _ in range(6)]
+    note = _make_note(community_server_id=cs_id, ratings=ratings)
+
+    score_response = NoteScoreResponse(
+        note_id=note.id,
+        score=0.9,
+        confidence=ScoreConfidence.STANDARD,
+        algorithm="bayesian_average_tier0",
+        rating_count=6,
+        tier=0,
+        tier_name="Minimal",
+        calculated_at=None,
+        content=None,
+    )
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=run)
+
+    count_result = MagicMock()
+    count_result.scalar.return_value = 5
+
+    batch_result = MagicMock()
+    batch_scalars = MagicMock()
+    batch_scalars.all.return_value = [note]
+    batch_result.scalars.return_value = batch_scalars
+
+    note_update_result = MagicMock()
+    request_update_result = MagicMock()
+
+    db.execute = AsyncMock(
+        side_effect=[count_result, batch_result, note_update_result, request_update_result]
+    )
+    db.commit = AsyncMock()
+
+    with (
+        patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
+        patch(
+            "src.simulation.scoring_integration.calculate_note_score",
+            new_callable=AsyncMock,
+            return_value=score_response,
+        ),
+    ):
+        mock_factory = MagicMock()
+        mock_factory.get_scorer.return_value = MagicMock()
+        mock_factory_cls.return_value = mock_factory
+
+        await trigger_scoring_for_simulation(run.id, db)
+
+    assert db.execute.call_count == 4
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_trigger_scoring_no_request_transition_when_not_helpful():
+    cs_id = uuid4()
+    run = _make_run(community_server_id=cs_id)
+    note = _make_note(community_server_id=cs_id, ratings=[_make_rating("NOT_HELPFUL")] * 6)
+
+    score_response = NoteScoreResponse(
+        note_id=note.id,
+        score=0.2,
+        confidence=ScoreConfidence.STANDARD,
+        algorithm="bayesian_average_tier0",
+        rating_count=6,
+        tier=0,
+        tier_name="Minimal",
+        calculated_at=None,
+        content=None,
+    )
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=run)
+
+    count_result = MagicMock()
+    count_result.scalar.return_value = 3
+
+    batch_result = MagicMock()
+    batch_scalars = MagicMock()
+    batch_scalars.all.return_value = [note]
+    batch_result.scalars.return_value = batch_scalars
+
+    note_update_result = MagicMock()
+    request_update_result = MagicMock()
+
+    db.execute = AsyncMock(
+        side_effect=[count_result, batch_result, note_update_result, request_update_result]
+    )
+    db.commit = AsyncMock()
+
+    with (
+        patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
+        patch(
+            "src.simulation.scoring_integration.calculate_note_score",
+            new_callable=AsyncMock,
+            return_value=score_response,
+        ),
+    ):
+        mock_factory = MagicMock()
+        mock_factory.get_scorer.return_value = MagicMock()
+        mock_factory_cls.return_value = mock_factory
+
+        result = await trigger_scoring_for_simulation(run.id, db)
+
+    assert result.scores_computed == 1
+    assert db.execute.call_count == 4
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
+    cs_id = uuid4()
+    run = _make_run(community_server_id=cs_id)
+    note = _make_note(community_server_id=cs_id, ratings=[_make_rating("HELPFUL")])
+
+    score_response = NoteScoreResponse(
+        note_id=note.id,
+        score=0.8,
+        confidence=ScoreConfidence.PROVISIONAL,
+        algorithm="bayesian_average_tier0",
+        rating_count=1,
+        tier=0,
+        tier_name="Minimal",
+        calculated_at=None,
+        content=None,
+    )
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=run)
+
+    count_result = MagicMock()
+    count_result.scalar.return_value = 2
+
+    batch_result = MagicMock()
+    batch_scalars = MagicMock()
+    batch_scalars.all.return_value = [note]
+    batch_result.scalars.return_value = batch_scalars
+
+    note_update_result = MagicMock()
+    request_update_result = MagicMock()
+
+    db.execute = AsyncMock(
+        side_effect=[count_result, batch_result, note_update_result, request_update_result]
+    )
+    db.commit = AsyncMock()
+
+    with (
+        patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
+        patch(
+            "src.simulation.scoring_integration.calculate_note_score",
+            new_callable=AsyncMock,
+            return_value=score_response,
+        ),
+    ):
+        mock_factory = MagicMock()
+        mock_factory.get_scorer.return_value = MagicMock()
+        mock_factory_cls.return_value = mock_factory
+
+        result = await trigger_scoring_for_simulation(run.id, db)
+
+    assert result.scores_computed == 1
+    assert db.execute.call_count == 4

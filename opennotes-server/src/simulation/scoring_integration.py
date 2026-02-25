@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.config import settings
-from src.notes.models import Note
+from src.notes.models import Note, Request
 from src.notes.scoring.scorer_factory import ScorerFactory
 from src.notes.scoring.tier_config import (
     ScoringTier,
@@ -147,6 +147,25 @@ async def trigger_scoring_for_simulation(
             break
 
         offset += SCORING_BATCH_SIZE
+
+    helpful_note_ids = (
+        select(Note.id)
+        .where(
+            Note.community_server_id == community_server_id,
+            Note.status == "CURRENTLY_RATED_HELPFUL",
+            Note.deleted_at.is_(None),
+        )
+        .distinct()
+    )
+    await db.execute(
+        update(Request)
+        .where(
+            Request.community_server_id == community_server_id,
+            Request.status == "PENDING",
+            Request.note_id.in_(helpful_note_ids),
+        )
+        .values(status="COMPLETED")
+    )
 
     result = ScoringRunResult(
         scores_computed=scores_computed,
