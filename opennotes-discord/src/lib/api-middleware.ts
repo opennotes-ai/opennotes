@@ -232,6 +232,7 @@ export function createRetryFetch(config: RetryConfig & TimeoutConfig): (input: R
             statusCode: response.status,
           });
           await delay(delayMs);
+          void response.body?.cancel();
           continue;
         }
 

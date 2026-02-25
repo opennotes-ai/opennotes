@@ -1,5 +1,9 @@
 import { jest } from '@jest/globals';
 import { loggerFactory, cacheFactory } from '../factories/index.js';
+import {
+  getFetchRequestDetails as _getFetchRequestDetails,
+  getFetchRequestBody as _getFetchRequestBody,
+} from '../utils/fetch-request-helpers.js';
 
 function createRealResponse(body: unknown, options: { status?: number; statusText?: string; headers?: Record<string, string> } = {}): Response {
   const { status = 200, statusText = 'OK', headers = {} } = options;
@@ -11,23 +15,15 @@ function createErrorResponse(status: number, statusText: string, body?: string):
   return new Response(body ?? statusText, { status, statusText, headers: new Headers({ 'Content-Type': 'text/plain' }) });
 }
 
-function getFetchRequest(callIndex = 0): Request {
-  return mockFetch.mock.calls[callIndex]![0] as Request;
-}
-
-function getFetchRequestDetails(callIndex = 0): { url: string; method: string; headers: Record<string, string> } {
-  const request = getFetchRequest(callIndex);
-  const headers: Record<string, string> = {};
-  request.headers.forEach((value, key) => { headers[key] = value; });
-  return { url: request.url, method: request.method, headers };
-}
-
-async function getFetchRequestBody(callIndex = 0): Promise<Record<string, unknown>> {
-  const request = getFetchRequest(callIndex);
-  return JSON.parse(await request.clone().text()) as Record<string, unknown>;
-}
-
 const mockFetch = jest.fn<typeof fetch>();
+
+function getFetchRequestDetails(callIndex = 0) {
+  return _getFetchRequestDetails(mockFetch, callIndex);
+}
+
+async function getFetchRequestBody(callIndex = 0) {
+  return _getFetchRequestBody(mockFetch, callIndex);
+}
 global.fetch = mockFetch;
 
 const mockLogger = loggerFactory.build();

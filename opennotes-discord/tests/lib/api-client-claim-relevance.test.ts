@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { loggerFactory } from '@opennotes/test-utils';
+import { getFetchRequestDetails, getFetchRequestBody } from '../utils/fetch-request-helpers.js';
 
 const mockFetch = jest.fn<typeof fetch>();
 global.fetch = mockFetch;
@@ -26,18 +27,6 @@ jest.unstable_mockModule('../../src/utils/gcp-auth.js', () => ({
 
 const { ApiClient } = await import('../../src/lib/api-client.js');
 import type { ClaimRelevanceCheckResponse } from '../../src/lib/api-client.js';
-
-function getLastFetchRequest(): { url: string; method: string; headers: Record<string, string>; body: string } {
-  const request = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as Request;
-  const headers: Record<string, string> = {};
-  request.headers.forEach((value, key) => { headers[key] = value; });
-  return {
-    url: request.url,
-    method: request.method,
-    headers,
-    body: '',
-  };
-}
 
 describe('ApiClient.checkClaimRelevance', () => {
   let apiClient: InstanceType<typeof ApiClient>;
@@ -79,9 +68,18 @@ describe('ApiClient.checkClaimRelevance', () => {
       similarityScore: 0.85,
     });
 
-    const req = getLastFetchRequest();
+    const req = getFetchRequestDetails(mockFetch);
     expect(req.url).toContain('/api/v2/claim-relevance-checks');
     expect(req.method).toBe('POST');
+
+    const body = await getFetchRequestBody(mockFetch) as {
+      data: { type: string; attributes: Record<string, unknown> };
+    };
+    expect(body.data.type).toBe('claim-relevance-checks');
+    expect(body.data.attributes.original_message).toBe('Vaccines cause autism');
+    expect(body.data.attributes.matched_content).toBe('This claim has been debunked');
+    expect(body.data.attributes.matched_source).toBe('https://snopes.com/vaccines');
+    expect(body.data.attributes.similarity_score).toBe(0.85);
   });
 
   it('should return mapped result with shouldFlag=true when relevant', async () => {
@@ -155,7 +153,7 @@ describe('ApiClient.checkClaimRelevance', () => {
   });
 
   it('should return null on API error (fail-open)', async () => {
-    mockFetch.mockResolvedValueOnce(
+    mockFetch.mockResolvedValue(
       new Response('Internal Server Error', {
         status: 500,
         statusText: 'Internal Server Error',
@@ -173,7 +171,7 @@ describe('ApiClient.checkClaimRelevance', () => {
   });
 
   it('should return null on network error (fail-open)', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('fetch failed'));
+    mockFetch.mockRejectedValue(new Error('fetch failed'));
 
     const result = await apiClient.checkClaimRelevance({
       originalMessage: 'Some message',
