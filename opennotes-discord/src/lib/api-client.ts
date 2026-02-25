@@ -1,26 +1,29 @@
-import type { components } from './generated-types.js';
+import type { components, paths } from './generated-types.js';
+import type { Middleware } from 'openapi-fetch';
+import createClient from 'openapi-fetch';
 import {
   NoteRequest,
   CreateNoteRequest,
   CreateRatingRequest,
   ListRequestsFilters,
 } from './types.js';
-import {
-  validateNoteCreate,
-  validateRatingCreate,
-  validateRequestCreate,
-  validateScoringRequest,
-  validateRatingThresholdsResponse,
-  validateHealthCheckResponse,
-} from './schema-validator.js';
 import { ApiError } from './errors.js';
 import { logger } from '../logger.js';
-import { getIdentityToken, isRunningOnGCP } from '../utils/gcp-auth.js';
-import { createDiscordClaimsToken } from '../utils/discord-claims.js';
-import { nanoid } from 'nanoid';
 import { resolveUserProfileId } from './user-profile-resolver.js';
+import {
+  createAuthMiddleware,
+  createTracingMiddleware,
+  createLoggingMiddleware,
+  createResponseSizeMiddleware,
+  createRetryFetch,
+  validateHttps,
+  buildProfileHeaders,
+  initGCPDetection,
+  type UserContext,
+} from './api-middleware.js';
 
-// Types from generated OpenAPI schema
+export type { UserContext } from './api-middleware.js';
+
 export type NoteStatus = components['schemas']['NoteStatus'];
 export type NoteClassification = components['schemas']['NoteClassification'];
 export type HelpfulnessLevel = components['schemas']['HelpfulnessLevel'];
@@ -55,16 +58,13 @@ export interface ClearResult {
   message: string;
 }
 
-// Local type definitions for API responses (flattened from JSON:API)
-// These are used by services that expect flattened structures
-
 export interface NoteResponse {
   id: string;
   summary: string;
   classification: NoteClassification;
   status: NoteStatus;
   helpfulness_score: number;
-  author_id: string;  // User profile UUID
+  author_id: string;
   community_server_id: string;
   channel_id: string | null;
   request_id: string | null;
@@ -81,7 +81,7 @@ export interface NoteResponse {
 export interface RatingResponse {
   id: string;
   note_id: string;
-  rater_id: string;  // User profile UUID
+  rater_id: string;
   helpfulness_level: HelpfulnessLevel;
   created_at: string;
   updated_at?: string;
@@ -164,7 +164,6 @@ export interface NotePublisherRecordRequest {
   embeddingModel?: string | null;
 }
 
-// Bulk scan types from generated OpenAPI schema (JSONAPI structures)
 export type LatestScanResponse = components['schemas']['LatestScanJSONAPIResponse'];
 export type LatestScanResource = components['schemas']['LatestScanResource'];
 export type LatestScanAttributes = components['schemas']['LatestScanAttributes'];
@@ -182,13 +181,11 @@ export type ScanErrorInfoSchema = components['schemas']['ScanErrorInfoSchema'];
 export type ScanErrorSummarySchema = components['schemas']['ScanErrorSummarySchema'];
 export type ExplanationResultResponse = components['schemas']['ExplanationResultResponse'];
 
-// JSON:API v2 types from generated OpenAPI schema
 export type NoteCreateRequest = components['schemas']['NoteCreateRequest'];
 export type NoteCreateAttributes = components['schemas']['NoteCreateAttributes'];
 export type RatingCreateRequest = components['schemas']['RatingCreateRequest'];
 export type RatingCreateAttributes = components['schemas']['RatingCreateAttributes'];
 
-// JSON:API generic types for parsing v2 responses
 export interface JSONAPIResource<T> {
   type: string;
   id: string;
@@ -220,14 +217,12 @@ export interface JSONAPISingleResponse<T> {
   links?: JSONAPILinks;
 }
 
-// Type for note attributes in JSON:API response (matches server NoteAttributes)
-// Note: tweet_id has been removed - platform message ID now comes from the linked request
 export interface NoteAttributes {
   summary: string;
   classification: string;
   status: NoteStatus;
   helpfulness_score: number;
-  author_id: string;  // User profile UUID
+  author_id: string;
   community_server_id: string;
   channel_id?: string | null;
   request_id?: string | null;
@@ -240,18 +235,15 @@ export interface NoteAttributes {
   updated_at?: string | null;
 }
 
-// JSONAPI response types for notes - these are the raw structures from the server
 export type NoteJSONAPIResponse = JSONAPISingleResponse<NoteAttributes>;
 export type NoteListJSONAPIResponse = JSONAPIListResponse<NoteAttributes>;
 
-// Extended list response with pagination info preserved from API
 export interface NoteListJSONAPIResponseWithPagination extends NoteListJSONAPIResponse {
   total: number;
   page: number;
   size: number;
 }
 
-// Type for community server attributes in JSON:API response
 export interface CommunityServerAttributes {
   platform: string;
   platform_community_server_id: string;
@@ -271,10 +263,8 @@ export interface WelcomeMessageUpdateResponse {
   welcome_message_id: string | null;
 }
 
-// JSONAPI response type for community servers - raw structure from the server
 export type CommunityServerJSONAPIResponse = JSONAPISingleResponse<CommunityServerAttributes>;
 
-// User profile lookup attributes for resolving Discord user IDs to UUIDs
 export interface UserProfileLookupAttributes {
   platform: string;
   platform_user_id: string;
@@ -283,23 +273,19 @@ export interface UserProfileLookupAttributes {
 
 export type UserProfileLookupResponse = JSONAPISingleResponse<UserProfileLookupAttributes>;
 
-// Type for rating attributes in JSON:API response
 export interface RatingAttributes {
   note_id: string;
-  rater_id: string;  // User profile UUID
+  rater_id: string;
   helpfulness_level: string;
   created_at?: string | null;
   updated_at?: string | null;
 }
 
-// JSONAPI response types for ratings - these are the raw structures from the server
 export type RatingJSONAPIResponse = JSONAPISingleResponse<RatingAttributes>;
 export type RatingListJSONAPIResponse = JSONAPIListResponse<RatingAttributes>;
 
-// JSONAPI response type for previously-seen check - raw structure from the server
 export type PreviouslySeenCheckJSONAPIResponse = JSONAPISingleResponse<PreviouslySeenCheckResultAttributes>;
 
-// Type for request attributes in JSON:API response
 export interface RequestAttributes {
   request_id: string;
   requested_by: string;
@@ -314,7 +300,6 @@ export interface RequestAttributes {
   metadata?: Record<string, unknown> | null;
 }
 
-// Type for note score attributes in JSON:API response
 export interface NoteScoreAttributes {
   score: number;
   confidence: string;
@@ -326,7 +311,6 @@ export interface NoteScoreAttributes {
   content?: string | null;
 }
 
-// Type for scoring status attributes in JSON:API response
 export interface ScoringStatusAttributes {
   current_note_count: number;
   active_tier: {
@@ -356,7 +340,6 @@ export interface ScoringStatusAttributes {
   configuration: Record<string, unknown>;
 }
 
-// Meta types for batch and top notes responses
 export interface BatchScoreMeta {
   total_requested?: number;
   total_found?: number;
@@ -369,11 +352,9 @@ export interface TopNotesMeta {
   filters_applied?: Record<string, unknown>;
 }
 
-// JSONAPI response types for scoring - raw structures from the server
 export type NoteScoreJSONAPIResponse = JSONAPISingleResponse<NoteScoreAttributes>;
 export type ScoringResultJSONAPIResponse = JSONAPISingleResponse<ScoringResultAttributes>;
 
-// Extended list response types with specific meta
 export interface BatchScoreJSONAPIResponse extends Omit<JSONAPIListResponse<NoteScoreAttributes>, 'meta'> {
   meta?: JSONAPIMeta & BatchScoreMeta;
 }
@@ -384,7 +365,6 @@ export interface TopNotesJSONAPIResponse extends Omit<JSONAPIListResponse<NoteSc
 
 export type ScoringStatusJSONAPIResponse = JSONAPISingleResponse<ScoringStatusAttributes>;
 
-// Type for monitored channel attributes in JSON:API response
 export interface MonitoredChannelJSONAPIAttributes {
   community_server_id: string;
   channel_id: string;
@@ -399,7 +379,6 @@ export interface MonitoredChannelJSONAPIAttributes {
   updated_by?: string | null;
 }
 
-// Type for note publisher config attributes in JSON:API response
 export interface NotePublisherConfigJSONAPIAttributes {
   community_server_id: string;
   channel_id?: string | null;
@@ -409,7 +388,6 @@ export interface NotePublisherConfigJSONAPIAttributes {
   updated_by?: string | null;
 }
 
-// Type for note publisher post attributes in JSON:API response
 export interface NotePublisherPostJSONAPIAttributes {
   note_id: string;
   original_message_id: string;
@@ -423,7 +401,6 @@ export interface NotePublisherPostJSONAPIAttributes {
   error_message?: string | null;
 }
 
-// Type for previously seen message attributes in JSON:API response
 export interface PreviouslySeenMessageJSONAPIAttributes {
   community_server_id: string;
   original_message_id: string;
@@ -434,7 +411,6 @@ export interface PreviouslySeenMessageJSONAPIAttributes {
   created_at?: string | null;
 }
 
-// Type for previously seen match in check results
 export interface PreviouslySeenMatchResource {
   id: string;
   community_server_id: string;
@@ -447,7 +423,6 @@ export interface PreviouslySeenMatchResource {
   similarity_score: number;
 }
 
-// Type for previously seen check result attributes
 export interface PreviouslySeenCheckResultAttributes {
   should_auto_publish: boolean;
   should_auto_request: boolean;
@@ -457,7 +432,6 @@ export interface PreviouslySeenCheckResultAttributes {
   top_match?: PreviouslySeenMatchResource | null;
 }
 
-// Type for fact-check match in similarity search results
 export interface FactCheckMatchResource {
   id: string;
   dataset_name: string;
@@ -474,7 +448,6 @@ export interface FactCheckMatchResource {
   similarity_score: number;
 }
 
-// Type for similarity search result attributes
 export interface SimilaritySearchResultAttributes {
   matches: FactCheckMatchResource[];
   query_text: string;
@@ -484,14 +457,12 @@ export interface SimilaritySearchResultAttributes {
   total_matches: number;
 }
 
-// Type for scoring result attributes in JSON:API v2 response
 export interface ScoringResultAttributes {
   scored_notes: { [key: string]: unknown }[];
   helpful_scores: { [key: string]: unknown }[];
   auxiliary_info: { [key: string]: unknown }[];
 }
 
-// JSONAPI response type aliases for MonitoredChannel
 export type MonitoredChannelJSONAPIResponse = JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>;
 export type MonitoredChannelListJSONAPIResponse = JSONAPIListResponse<MonitoredChannelJSONAPIAttributes>;
 
@@ -506,512 +477,99 @@ export interface ApiClientConfig {
   maxResponseSize?: number;
 }
 
-export interface UserContext {
-  userId: string;
-  username?: string;
-  displayName?: string;
-  avatarUrl?: string;
-  guildId?: string;
-  channelId?: string;
-  hasManageServer?: boolean;
+type TypedClient = ReturnType<typeof createClient<paths>>;
+
+function handleError<T>(result: { data?: T; error?: unknown; response: Response }, endpoint: string): T {
+  if (result.error !== undefined) {
+    throw new ApiError(
+      `API request failed: ${result.response.status} ${result.response.statusText}`,
+      endpoint,
+      result.response.status,
+      result.error,
+    );
+  }
+  return result.data as T;
 }
 
 export class ApiClient {
+  private client: TypedClient;
+  private retryFetch: (input: Request) => Promise<Response>;
   private baseUrl: string;
-  private apiKey?: string;
-  private internalServiceSecret?: string;
-  private retryAttempts: number;
-  private retryDelayMs: number;
-  private environment: 'development' | 'production';
-  private requestTimeout: number;
-  private maxResponseSize: number;
-  private onGCP: boolean | null = null;
-  private gcpDetectionPromise: Promise<void> | null = null;
+  private middleware: Middleware[];
 
   constructor(config: ApiClientConfig) {
-    this.environment = config.environment ?? 'production';
-    this.validateHttps(config.serverUrl);
+    const environment = config.environment ?? 'production';
+    validateHttps(config.serverUrl, environment);
     this.baseUrl = config.serverUrl;
-    this.apiKey = config.apiKey;
-    this.internalServiceSecret = config.internalServiceSecret;
-    this.retryAttempts = config.retryAttempts ?? 3;
-    this.retryDelayMs = config.retryDelayMs ?? 1000;
-    this.requestTimeout = config.requestTimeout ?? 30000;
-    this.maxResponseSize = config.maxResponseSize ?? 10 * 1024 * 1024;
 
-    this.gcpDetectionPromise = this.detectGCPEnvironment();
-  }
+    initGCPDetection();
 
-  private async detectGCPEnvironment(): Promise<void> {
-    try {
-      const result = await isRunningOnGCP();
-      this.onGCP = result;
-      if (result) {
-        logger.info('Running on GCP - will use IAM authentication for server calls');
-      } else {
-        logger.info('Not running on GCP - using API key authentication only');
-      }
-    } catch {
-      this.onGCP = false;
-      logger.info('GCP detection failed - using API key authentication only');
-    }
-  }
+    this.retryFetch = createRetryFetch({
+      retryAttempts: config.retryAttempts ?? 3,
+      retryDelayMs: config.retryDelayMs ?? 1000,
+      requestTimeout: config.requestTimeout ?? 30000,
+    });
 
-  private async ensureGCPDetectionComplete(): Promise<void> {
-    if (this.gcpDetectionPromise) {
-      await this.gcpDetectionPromise;
-      this.gcpDetectionPromise = null;
-    }
-  }
-
-  private sanitizeForLogging(data: unknown): unknown {
-    if (!data || typeof data !== 'object') {
-      return data;
-    }
-
-    if (Array.isArray(data)) {
-      return (data as unknown[]).map((item: unknown) => this.sanitizeForLogging(item));
-    }
-
-    const sensitiveFields = [
-      'password',
-      'token',
-      'api_key',
-      'apikey',
-      'secret',
-      'authorization',
-      'cookie',
-      'auth',
-      'bearer',
-      'session',
-      'credential',
+    this.middleware = [
+      createAuthMiddleware({
+        baseUrl: config.serverUrl,
+        apiKey: config.apiKey,
+        internalServiceSecret: config.internalServiceSecret,
+      }),
+      createTracingMiddleware(),
+      createResponseSizeMiddleware({
+        maxResponseSize: config.maxResponseSize ?? 10 * 1024 * 1024,
+      }),
+      createLoggingMiddleware(),
     ];
 
-    const sanitized: Record<string, unknown> = {};
-    for (const key of Object.keys(data as Record<string, unknown>)) {
-      const lowerKey = String(key).toLowerCase();
-      const isSensitive = sensitiveFields.some(field => lowerKey.includes(field));
+    this.client = createClient<paths>({
+      baseUrl: config.serverUrl,
+      fetch: this.retryFetch,
+    });
 
-      if (isSensitive) {
-        sanitized[key] = '[REDACTED]';
-      } else {
-        const value = (data as Record<string, unknown>)[key];
-        if (typeof value === 'object' && value !== null) {
-          sanitized[key] = this.sanitizeForLogging(value);
-        } else {
-          sanitized[key] = (data as Record<string, unknown>)[key];
-        }
-      }
-    }
-
-    return sanitized;
-  }
-
-  private validateResponseSize(response: Response): void {
-    const contentLength = response.headers.get('content-length');
-
-    if (contentLength) {
-      const size = parseInt(contentLength, 10);
-
-      if (!isNaN(size) && size > this.maxResponseSize) {
-        logger.error('Response size exceeds limit', {
-          contentLength: size,
-          maxResponseSize: this.maxResponseSize,
-          url: response.url,
-        });
-
-        throw new ApiError(
-          `Response size ${size} bytes exceeds maximum allowed size of ${this.maxResponseSize} bytes`,
-          response.url,
-          response.status,
-          undefined,
-          undefined,
-          {
-            contentLength: size,
-            maxResponseSize: this.maxResponseSize,
-          }
-        );
-      }
-
-      if (!isNaN(size) && size > this.maxResponseSize * 0.8) {
-        logger.warn('Response size approaching limit', {
-          contentLength: size,
-          maxResponseSize: this.maxResponseSize,
-          url: response.url,
-        });
-      }
+    for (const mw of this.middleware) {
+      this.client.use(mw);
     }
   }
 
-  private validateHttps(serverUrl: string): void {
-    const url = new URL(serverUrl);
-
-    if (url.protocol !== 'https:') {
-      const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
-
-      if (this.environment === 'production' && !isLocalhost) {
-        throw new Error(
-          `HTTPS is required for production API connections. Current URL: ${serverUrl}`
-        );
-      }
-
-      if (!isLocalhost && this.environment === 'development') {
-        logger.warn('Non-HTTPS API connection detected in development', {
-          serverUrl,
-          protocol: url.protocol,
-          environment: this.environment,
-        });
-      }
-    }
-  }
-
-  private async fetchWithRetry<T>(
-    endpoint: string,
-    options: RequestInit = {},
-    attempt = 1,
-    context?: UserContext
-  ): Promise<T> {
-    await this.ensureGCPDetectionComplete();
-
-    const url = `${this.baseUrl}${endpoint}`;
-    const requestId = nanoid();
-
-    let headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-Request-Id': requestId,
-      ...options.headers as Record<string, string>,
-    };
-
-    if (this.apiKey) {
-      headers['X-API-Key'] = this.apiKey;
-    }
-
-    if (this.internalServiceSecret) {
-      headers['X-Internal-Auth'] = this.internalServiceSecret;
-    }
-
-    if (this.onGCP) {
-      const identityToken = await getIdentityToken(this.baseUrl);
-      if (identityToken) {
-        headers['Authorization'] = `Bearer ${identityToken}`;
-        logger.debug('Added IAM identity token to request', { endpoint, requestId });
-      } else {
-        logger.warn('Failed to get IAM identity token', { endpoint, requestId });
-      }
-    }
-
-    headers = this.addProfileHeaders(headers, context);
-
-    const requestBody = options.body ? (JSON.parse(options.body as string) as unknown) : undefined;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.requestTimeout);
-
-    try {
-      logger.debug('API request', {
-        endpoint,
-        method: options.method || 'GET',
-        attempt,
-        url,
-        timeout: this.requestTimeout,
-        requestId,
-      });
-
-      const response = await fetch(url, {
-        ...options,
-        headers,
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-
-      this.validateResponseSize(response);
-
-      if (!response.ok) {
-        let responseBody: unknown;
-        const contentType = response.headers.get('content-type');
-
-        try {
-          if (contentType?.includes('application/json')) {
-            responseBody = await response.json();
-          } else {
-            responseBody = await response.text();
-          }
-        } catch (parseError) {
-          responseBody = 'Unable to parse response body';
-        }
-
-        logger.error('API request failed', {
-          endpoint,
-          method: options.method || 'GET',
-          statusCode: response.status,
-          statusText: response.statusText,
-          responseBody: this.sanitizeForLogging(responseBody),
-          requestBody: this.sanitizeForLogging(requestBody),
-          attempt,
-          maxAttempts: this.retryAttempts,
-          requestId,
-        });
-
-        const apiError = new ApiError(
-          `API request failed: ${response.status} ${response.statusText}`,
-          endpoint,
-          response.status,
-          responseBody,
-          requestBody,
-          {
-            method: options.method || 'GET',
-            attempt,
-            maxAttempts: this.retryAttempts,
-          }
-        );
-
-        if (attempt < this.retryAttempts && this.shouldRetry(response.status)) {
-          const delayMs = this.getRetryDelay(response, attempt);
-          logger.info('Retrying API request', {
-            endpoint,
-            attempt: attempt + 1,
-            maxAttempts: this.retryAttempts,
-            delayMs,
-            statusCode: response.status,
-            requestId,
-          });
-          await this.delay(delayMs);
-          return this.fetchWithRetry<T>(endpoint, options, attempt + 1, context);
-        }
-
-        throw apiError;
-      }
-
-      // Handle empty responses (204 No Content)
-      if (response.status === 204) {
-        logger.debug('API request successful (no content)', {
-          endpoint,
-          method: options.method || 'GET',
-          statusCode: response.status,
-          requestId,
-        });
-        return null as T;
-      }
-
-      const contentType = response.headers.get('content-type');
-      const isJsonResponse = contentType?.includes('application/json') ||
-        contentType?.includes('application/vnd.api+json');
-      const responseData = isJsonResponse
-        ? await response.json()
-        : null;
-
-      logger.debug('API request successful', {
-        endpoint,
-        method: options.method || 'GET',
-        statusCode: response.status,
-        requestId,
-      });
-
-      return responseData as T;
-    } catch (error) {
-      clearTimeout(timeout);
-
-      if (error instanceof ApiError) {
-        throw error;
-      }
-
-      const isAbortError = error instanceof Error && error.name === 'AbortError';
-
-      if (isAbortError) {
-        logger.error('API request timeout', {
-          endpoint,
-          method: options.method || 'GET',
-          timeout: this.requestTimeout,
-          attempt,
-          requestId,
-        });
-
-        throw new ApiError(
-          `API request timeout after ${this.requestTimeout}ms`,
-          endpoint,
-          0,
-          undefined,
-          requestBody,
-          {
-            method: options.method || 'GET',
-            attempt,
-            timeout: this.requestTimeout,
-          }
-        );
-      }
-
-      logger.error('API request exception', {
-        endpoint,
-        method: options.method || 'GET',
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        attempt,
-        requestId,
-      });
-
-      if (attempt < this.retryAttempts) {
-        logger.info('Retrying after exception', {
-          endpoint,
-          attempt: attempt + 1,
-          maxAttempts: this.retryAttempts,
-          requestId,
-        });
-        await this.delay(this.retryDelayMs * attempt);
-        return this.fetchWithRetry<T>(endpoint, options, attempt + 1, context);
-      }
-
-      throw new ApiError(
-        `API request failed: ${error instanceof Error ? error.message : String(error)}`,
-        endpoint,
-        0,
-        undefined,
-        requestBody,
-        {
-          method: options.method || 'GET',
-          attempt,
-          originalError: error instanceof Error ? error.message : String(error),
-        }
-      );
-    }
-  }
-
-  private getRetryDelay(response: Response, attempt: number): number {
-    const retryAfter = response.headers.get('retry-after');
-
-    if (retryAfter) {
-      const seconds = parseInt(retryAfter, 10);
-      if (!isNaN(seconds)) {
-        const delayMs = seconds * 1000;
-        logger.debug('Using Retry-After header (seconds)', {
-          retryAfter,
-          delayMs,
-        });
-        return Math.min(delayMs, 60000);
-      }
-
-      const retryDate = new Date(retryAfter);
-      if (!isNaN(retryDate.getTime())) {
-        const delayMs = Math.max(0, retryDate.getTime() - Date.now());
-        logger.debug('Using Retry-After header (date)', {
-          retryAfter,
-          delayMs,
-        });
-        return Math.min(delayMs, 60000);
-      }
-    }
-
-    const exponentialDelay = this.retryDelayMs * Math.pow(2, attempt - 1);
-    return Math.min(exponentialDelay, 60000);
-  }
-
-  private shouldRetry(statusCode: number): boolean {
-    return statusCode >= 500 || statusCode === 429 || statusCode === 408;
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  private addProfileHeaders(headers: Record<string, string>, context?: UserContext): Record<string, string> {
-    if (!context) {
-      return headers;
-    }
-
-    if (context.userId) {
-      headers['X-Discord-User-Id'] = context.userId;
-    }
-
-    if (context.username) {
-      headers['X-Discord-Username'] = context.username;
-    }
-
-    if (context.displayName) {
-      headers['X-Discord-Display-Name'] = context.displayName;
-    }
-
-    if (context.avatarUrl) {
-      headers['X-Discord-Avatar-Url'] = context.avatarUrl;
-    }
-
-    if (context.guildId) {
-      headers['X-Guild-Id'] = context.guildId;
-    }
-
-    if (context.channelId) {
-      headers['X-Channel-Id'] = context.channelId;
-    }
-
-    if (context.hasManageServer !== undefined) {
-      headers['X-Discord-Has-Manage-Server'] = context.hasManageServer.toString();
-    }
-
-    const claimsToken = createDiscordClaimsToken(
-      context.userId,
-      context.guildId || '',
-      context.hasManageServer ?? false
-    );
-    if (claimsToken) {
-      headers['X-Discord-Claims'] = claimsToken;
-    }
-
-    return headers;
-  }
-
-  private buildJSONAPIRequestBody<T>(type: string, attributes: T): { data: { type: string; attributes: T } } {
-    return {
-      data: {
-        type,
-        attributes,
-      },
-    };
-  }
-
-  private buildJSONAPIUpdateBody<T>(
-    type: string,
-    id: string,
-    attributes: T
-  ): { data: { type: string; id: string; attributes: T } } {
-    return {
-      data: {
-        type,
-        id,
-        attributes,
-      },
-    };
+  private profileHeaders(context?: UserContext): Record<string, string> {
+    return buildProfileHeaders(context);
   }
 
   async healthCheck(): Promise<{ status: string; version: string }> {
-    const response = await this.fetchWithRetry<{ status: string; version: string }>('/health');
-    validateHealthCheckResponse(response);
-    return response;
+    const result = await this.client.GET('/health');
+    return handleError(result, '/health') as { status: string; version: string };
   }
 
   async scoreNotes(request: ScoringRequest): Promise<ScoringResultJSONAPIResponse> {
-    validateScoringRequest(request);
-
-    const jsonApiRequest = this.buildJSONAPIRequestBody('scoring-requests', request);
-
-    return this.fetchWithRetry<ScoringResultJSONAPIResponse>(
-      '/api/v2/scoring/score',
-      {
-        method: 'POST',
-        body: JSON.stringify(jsonApiRequest),
-      }
-    );
+    const result = await this.client.POST('/api/v2/scoring/score', {
+      body: {
+        data: {
+          type: 'scoring-requests',
+          attributes: request as never,
+        },
+      } as never,
+    });
+    return handleError(result, '/api/v2/scoring/score') as unknown as ScoringResultJSONAPIResponse;
   }
 
   async getNotes(messageId: string): Promise<NoteListJSONAPIResponse> {
-    const params = new URLSearchParams();
-    params.append('filter[platform_message_id]', messageId);
-
-    return this.fetchWithRetry<NoteListJSONAPIResponse>(
-      `/api/v2/notes?${params.toString()}`
-    );
+    const result = await this.client.GET('/api/v2/notes', {
+      params: {
+        query: {
+          'filter[platform_message_id]': messageId,
+        },
+      },
+    });
+    return handleError(result, '/api/v2/notes') as unknown as NoteListJSONAPIResponse;
   }
 
   async getNote(noteId: string): Promise<NoteJSONAPIResponse> {
-    return this.fetchWithRetry<NoteJSONAPIResponse>(`/api/v2/notes/${noteId}`);
+    const result = await this.client.GET('/api/v2/notes/{note_id}', {
+      params: { path: { note_id: noteId } },
+    });
+    return handleError(result, `/api/v2/notes/${noteId}`) as unknown as NoteJSONAPIResponse;
   }
 
   async createNote(request: CreateNoteRequest, context?: UserContext): Promise<NoteJSONAPIResponse> {
@@ -1033,7 +591,6 @@ export class ApiClient {
       }
     }
 
-    // Resolve Discord user ID to user profile UUID
     let author_id: string;
     try {
       author_id = await resolveUserProfileId(request.authorId, this);
@@ -1058,23 +615,19 @@ export class ApiClient {
       classification: request.classification || 'NOT_MISLEADING',
     };
 
-    validateNoteCreate(noteAttributes);
-
-    const jsonApiRequest = this.buildJSONAPIRequestBody('notes', noteAttributes);
-
-    return this.fetchWithRetry<NoteJSONAPIResponse>(
-      '/api/v2/notes',
-      {
-        method: 'POST',
-        body: JSON.stringify(jsonApiRequest),
-      },
-      1,
-      context
-    );
+    const result = await this.client.POST('/api/v2/notes', {
+      body: {
+        data: {
+          type: 'notes',
+          attributes: noteAttributes,
+        },
+      } as never,
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, '/api/v2/notes') as unknown as NoteJSONAPIResponse;
   }
 
   async rateNote(request: CreateRatingRequest, context?: UserContext): Promise<RatingJSONAPIResponse> {
-    // Resolve Discord user ID to user profile UUID
     let rater_id: string;
     try {
       rater_id = await resolveUserProfileId(request.userId, this);
@@ -1096,19 +649,16 @@ export class ApiClient {
       helpfulness_level: request.helpful ? 'HELPFUL' : 'NOT_HELPFUL',
     };
 
-    validateRatingCreate(ratingAttributes);
-
-    const jsonApiRequest = this.buildJSONAPIRequestBody('ratings', ratingAttributes);
-
-    return await this.fetchWithRetry<RatingJSONAPIResponse>(
-      '/api/v2/ratings',
-      {
-        method: 'POST',
-        body: JSON.stringify(jsonApiRequest),
-      },
-      1,
-      context
-    );
+    const result = await this.client.POST('/api/v2/ratings', {
+      body: {
+        data: {
+          type: 'ratings',
+          attributes: ratingAttributes,
+        },
+      } as never,
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, '/api/v2/ratings') as unknown as RatingJSONAPIResponse;
   }
 
   async requestNote(request: NoteRequest, context?: UserContext): Promise<void> {
@@ -1132,74 +682,62 @@ export class ApiClient {
       requestAttributes.dataset_item_id = request.fact_check_metadata.dataset_item_id;
     }
 
-    validateRequestCreate(requestAttributes);
-
-    const jsonApiRequest = this.buildJSONAPIRequestBody('requests', requestAttributes);
-
-    await this.fetchWithRetry<JSONAPISingleResponse<RequestAttributes>>(
-      '/api/v2/requests',
-      {
-        method: 'POST',
-        body: JSON.stringify(jsonApiRequest),
-      },
-      1,
-      context
-    );
+    const result = await this.client.POST('/api/v2/requests', {
+      body: {
+        data: {
+          type: 'requests',
+          attributes: requestAttributes,
+        },
+      } as never,
+      headers: this.profileHeaders(context),
+    });
+    handleError(result, '/api/v2/requests');
   }
 
   async listRequests(filters?: ListRequestsFilters, context?: UserContext): Promise<JSONAPIListResponse<RequestAttributes>> {
-    const params = new URLSearchParams();
+    const query: Record<string, unknown> = {};
+    if (filters?.page) { query['page[number]'] = filters.page; }
+    if (filters?.size) { query['page[size]'] = filters.size; }
+    if (filters?.status) { query['filter[status]'] = filters.status; }
+    if (filters?.requestedBy) { query['filter[requested_by]'] = filters.requestedBy; }
+    if (filters?.communityServerId) { query['filter[community_server_id]'] = filters.communityServerId; }
 
-    if (filters?.page) { params.append('page[number]', filters.page.toString()); }
-    if (filters?.size) { params.append('page[size]', filters.size.toString()); }
-    if (filters?.status) { params.append('filter[status]', filters.status); }
-    if (filters?.requestedBy) { params.append('filter[requested_by]', filters.requestedBy); }
-    if (filters?.communityServerId) { params.append('filter[community_server_id]', filters.communityServerId); }
-
-    const queryString = params.toString();
-    const endpoint = queryString ? `/api/v2/requests?${queryString}` : '/api/v2/requests';
-
-    return this.fetchWithRetry<JSONAPIListResponse<RequestAttributes>>(
-      endpoint,
-      {},
-      1,
-      context
-    );
+    const result = await this.client.GET('/api/v2/requests', {
+      params: { query: query as never },
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, '/api/v2/requests') as unknown as JSONAPIListResponse<RequestAttributes>;
   }
 
   async getRequest(requestId: string, context?: UserContext): Promise<JSONAPISingleResponse<RequestAttributes>> {
-    const endpoint = `/api/v2/requests/${encodeURIComponent(requestId)}`;
-    return this.fetchWithRetry<JSONAPISingleResponse<RequestAttributes>>(
-      endpoint,
-      {},
-      1,
-      context
-    );
+    const result = await this.client.GET('/api/v2/requests/{request_id}', {
+      params: { path: { request_id: requestId } },
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, `/api/v2/requests/${requestId}`) as unknown as JSONAPISingleResponse<RequestAttributes>;
   }
 
   async generateAiNote(requestId: string, context?: UserContext): Promise<NoteJSONAPIResponse> {
-    const endpoint = `/api/v2/requests/${encodeURIComponent(requestId)}/ai-notes`;
-
-    return this.fetchWithRetry<NoteJSONAPIResponse>(
-      endpoint,
-      {
-        method: 'POST',
-      },
-      1,
-      context
-    );
+    const result = await this.client.POST('/api/v2/requests/{request_id}/ai-notes', {
+      params: { path: { request_id: requestId } },
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, `/api/v2/requests/${requestId}/ai-notes`) as unknown as NoteJSONAPIResponse;
   }
 
   async getCommunityServerByPlatformId(
     platformId: string,
     platform: string = 'discord'
   ): Promise<CommunityServerJSONAPIResponse> {
-    const params = new URLSearchParams();
-    params.append('platform', platform);
-    params.append('platform_community_server_id', platformId);
-
-    const endpoint = `/api/v2/community-servers/lookup?${params.toString()}`;
-    return this.fetchWithRetry<CommunityServerJSONAPIResponse>(endpoint);
+    const result = await this.client.GET('/api/v2/community-servers/lookup', {
+      params: {
+        query: {
+          platform,
+          platform_community_server_id: platformId,
+        },
+      },
+    });
+    return handleError(result, '/api/v2/community-servers/lookup') as unknown as CommunityServerJSONAPIResponse;
   }
 
   async updateCommunityServerName(
@@ -1211,42 +749,42 @@ export class ApiClient {
     if (serverStats) {
       body.server_stats = serverStats;
     }
-    await this.fetchWithRetry<void>(
-      `/api/v1/community-servers/${encodeURIComponent(platformId)}/name`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify(body),
-      }
-    );
+    const result = await this.client.PATCH('/api/v1/community-servers/{platform_community_server_id}/name', {
+      params: { path: { platform_community_server_id: platformId } },
+      body: body as never,
+    });
+    handleError(result, `/api/v1/community-servers/${platformId}/name`);
   }
 
   async getUserProfileByPlatformId(
     platformUserId: string,
     platform: string = 'discord'
   ): Promise<UserProfileLookupResponse> {
-    const params = new URLSearchParams();
-    params.append('platform', platform);
-    params.append('platform_user_id', platformUserId);
-
-    const endpoint = `/api/v2/user-profiles/lookup?${params.toString()}`;
-    return this.fetchWithRetry<UserProfileLookupResponse>(endpoint);
+    const result = await this.client.GET('/api/v2/user-profiles/lookup', {
+      params: {
+        query: {
+          platform,
+          platform_user_id: platformUserId,
+        },
+      },
+    });
+    return handleError(result, '/api/v2/user-profiles/lookup') as unknown as UserProfileLookupResponse;
   }
 
   async updateWelcomeMessageId(
     platformId: string,
     welcomeMessageId: string | null
   ): Promise<WelcomeMessageUpdateResponse> {
-    const endpoint = `/api/v1/community-servers/${platformId}/welcome-message`;
-    return this.fetchWithRetry<WelcomeMessageUpdateResponse>(endpoint, {
-      method: 'PATCH',
-      body: JSON.stringify({ welcome_message_id: welcomeMessageId }),
+    const result = await this.client.PATCH('/api/v1/community-servers/{platform_community_server_id}/welcome-message', {
+      params: { path: { platform_community_server_id: platformId } },
+      body: { welcome_message_id: welcomeMessageId } as never,
     });
+    return handleError(result, `/api/v1/community-servers/${platformId}/welcome-message`) as unknown as WelcomeMessageUpdateResponse;
   }
 
   async getRatingThresholds(): Promise<RatingThresholdsResponse> {
-    const response = await this.fetchWithRetry<RatingThresholdsResponse>('/api/v1/config/rating-thresholds');
-    validateRatingThresholdsResponse(response);
-    return response;
+    const result = await this.client.GET('/api/v1/config/rating-thresholds');
+    return handleError(result, '/api/v1/config/rating-thresholds') as unknown as RatingThresholdsResponse;
   }
 
   async listNotesWithStatus(
@@ -1257,23 +795,23 @@ export class ApiClient {
     excludeRatedByParticipantId?: string,
     context?: UserContext
   ): Promise<NoteListJSONAPIResponseWithPagination> {
-    const params = new URLSearchParams();
-    params.append('page[number]', page.toString());
-    params.append('page[size]', size.toString());
-    params.append('filter[status]', status);
+    const query: Record<string, unknown> = {
+      'page[number]': page,
+      'page[size]': size,
+      'filter[status]': status,
+    };
     if (communityServerId) {
-      params.append('filter[community_server_id]', communityServerId);
+      query['filter[community_server_id]'] = communityServerId;
     }
     if (excludeRatedByParticipantId) {
-      params.append('filter[rated_by_participant_id__not_in]', excludeRatedByParticipantId);
+      query['filter[rater_id__not_in]'] = excludeRatedByParticipantId;
     }
 
-    const jsonApiResponse = await this.fetchWithRetry<NoteListJSONAPIResponse>(
-      `/api/v2/notes?${params.toString()}`,
-      {},
-      1,
-      context
-    );
+    const result = await this.client.GET('/api/v2/notes', {
+      params: { query: query as never },
+      headers: this.profileHeaders(context),
+    });
+    const jsonApiResponse = handleError(result, '/api/v2/notes') as unknown as NoteListJSONAPIResponse;
 
     return {
       ...jsonApiResponse,
@@ -1284,69 +822,71 @@ export class ApiClient {
   }
 
   async getRatingsForNote(noteId: string): Promise<RatingListJSONAPIResponse> {
-    return await this.fetchWithRetry<RatingListJSONAPIResponse>(
-      `/api/v2/notes/${noteId}/ratings`
-    );
+    const result = await this.client.GET('/api/v2/notes/{note_id}/ratings', {
+      params: { path: { note_id: noteId } },
+    });
+    return handleError(result, `/api/v2/notes/${noteId}/ratings`) as unknown as RatingListJSONAPIResponse;
   }
 
   async updateRating(ratingId: string, helpful: boolean, context?: UserContext): Promise<RatingJSONAPIResponse> {
-    const updateAttributes = {
-      helpfulness_level: helpful ? 'HELPFUL' : 'NOT_HELPFUL',
-    };
-
-    const jsonApiRequest = this.buildJSONAPIUpdateBody('ratings', ratingId, updateAttributes);
-
-    return await this.fetchWithRetry<RatingJSONAPIResponse>(
-      `/api/v2/ratings/${ratingId}`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(jsonApiRequest),
-      },
-      1,
-      context
-    );
+    const result = await this.client.PUT('/api/v2/ratings/{rating_id}', {
+      params: { path: { rating_id: ratingId } },
+      body: {
+        data: {
+          type: 'ratings',
+          id: ratingId,
+          attributes: {
+            helpfulness_level: helpful ? 'HELPFUL' : 'NOT_HELPFUL',
+          },
+        },
+      } as never,
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, `/api/v2/ratings/${ratingId}`) as unknown as RatingJSONAPIResponse;
   }
 
   async getGuildConfig(guildId: string): Promise<Record<string, unknown>> {
-    const response = await this.fetchWithRetry<{ community_id: string; config: Record<string, unknown> }>(
-      `/api/v1/community-config/${guildId}`
-    );
+    const result = await this.client.GET('/api/v1/community-config/{community_server_id}', {
+      params: { path: { community_server_id: guildId } },
+    });
+    const response = handleError(result, `/api/v1/community-config/${guildId}`) as unknown as { community_id: string; config: Record<string, unknown> };
     return response.config;
   }
 
   async setGuildConfig(guildId: string, key: string, value: string | boolean | number, updatedBy: string, context?: UserContext): Promise<void> {
-    await this.fetchWithRetry(`/api/v1/community-config/${guildId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ key, value: String(value), updated_by: updatedBy }),
-    }, 1, context);
+    const result = await this.client.PUT('/api/v1/community-config/{community_server_id}', {
+      params: { path: { community_server_id: guildId } },
+      body: { key, value: String(value), updated_by: updatedBy } as never,
+      headers: this.profileHeaders(context),
+    });
+    handleError(result, `/api/v1/community-config/${guildId}`);
   }
 
   async resetGuildConfig(guildId: string, context?: UserContext): Promise<void> {
-    await this.fetchWithRetry(`/api/v1/community-config/${guildId}`, {
-      method: 'DELETE',
-    }, 1, context);
+    const result = await this.client.DELETE('/api/v1/community-config/{community_server_id}', {
+      params: { path: { community_server_id: guildId } },
+      headers: this.profileHeaders(context),
+    });
+    handleError(result, `/api/v1/community-config/${guildId}`);
   }
 
   async getNoteScore(noteId: string): Promise<NoteScoreJSONAPIResponse> {
-    return this.fetchWithRetry<NoteScoreJSONAPIResponse>(
-      `/api/v2/scoring/notes/${noteId}/score`
-    );
+    const result = await this.client.GET('/api/v2/scoring/notes/{note_id}/score', {
+      params: { path: { note_id: noteId } },
+    });
+    return handleError(result, `/api/v2/scoring/notes/${noteId}/score`) as unknown as NoteScoreJSONAPIResponse;
   }
 
   async getBatchNoteScores(noteIds: string[]): Promise<BatchScoreJSONAPIResponse> {
-    const batchAttributes = {
-      note_ids: noteIds,
-    };
-
-    const jsonApiRequest = this.buildJSONAPIRequestBody('batch-score-requests', batchAttributes);
-
-    return this.fetchWithRetry<BatchScoreJSONAPIResponse>(
-      '/api/v2/scoring/notes/batch-scores',
-      {
-        method: 'POST',
-        body: JSON.stringify(jsonApiRequest),
-      }
-    );
+    const result = await this.client.POST('/api/v2/scoring/notes/batch-scores', {
+      body: {
+        data: {
+          type: 'batch-score-requests',
+          attributes: { note_ids: noteIds },
+        },
+      } as never,
+    });
+    return handleError(result, '/api/v2/scoring/notes/batch-scores') as unknown as BatchScoreJSONAPIResponse;
   }
 
   async getTopNotes(
@@ -1354,40 +894,40 @@ export class ApiClient {
     minConfidence?: ScoreConfidence,
     tier?: number
   ): Promise<TopNotesJSONAPIResponse> {
-    const params = new URLSearchParams();
-    if (limit) { params.append('limit', limit.toString()); }
-    if (minConfidence) { params.append('min_confidence', minConfidence); }
-    if (tier !== undefined) { params.append('tier', tier.toString()); }
+    const query: Record<string, unknown> = {};
+    if (limit) { query.limit = limit; }
+    if (minConfidence) { query.min_confidence = minConfidence; }
+    if (tier !== undefined) { query.tier = tier; }
 
-    const queryString = params.toString();
-    const endpoint = queryString ? `/api/v2/scoring/notes/top?${queryString}` : '/api/v2/scoring/notes/top';
-
-    return this.fetchWithRetry<TopNotesJSONAPIResponse>(endpoint);
+    const result = await this.client.GET('/api/v2/scoring/notes/top', {
+      params: { query: query as never },
+    });
+    return handleError(result, '/api/v2/scoring/notes/top') as unknown as TopNotesJSONAPIResponse;
   }
 
   async getScoringStatus(): Promise<ScoringStatusJSONAPIResponse> {
-    return this.fetchWithRetry<ScoringStatusJSONAPIResponse>(
-      '/api/v2/scoring/status'
-    );
+    const result = await this.client.GET('/api/v2/scoring/status');
+    return handleError(result, '/api/v2/scoring/status') as unknown as ScoringStatusJSONAPIResponse;
   }
 
   async listMonitoredChannels(
     communityServerId?: string,
     enabledOnly: boolean = true
   ): Promise<JSONAPIListResponse<MonitoredChannelJSONAPIAttributes>> {
-    const params = new URLSearchParams();
+    const query: Record<string, unknown> = {
+      'page[size]': 100,
+    };
     if (communityServerId) {
-      params.append('filter[community_server_id]', communityServerId);
+      query['filter[community_server_id]'] = communityServerId;
     }
     if (enabledOnly) {
-      params.append('filter[enabled]', 'true');
+      query['filter[enabled]'] = true;
     }
-    params.append('page[size]', '100');
 
-    const queryString = params.toString();
-    const endpoint = `/api/v2/monitored-channels?${queryString}`;
-
-    return this.fetchWithRetry<JSONAPIListResponse<MonitoredChannelJSONAPIAttributes>>(endpoint);
+    const result = await this.client.GET('/api/v2/monitored-channels', {
+      params: { query: query as never },
+    });
+    return handleError(result, '/api/v2/monitored-channels') as unknown as JSONAPIListResponse<MonitoredChannelJSONAPIAttributes>;
   }
 
   async similaritySearch(
@@ -1397,21 +937,21 @@ export class ApiClient {
     similarityThreshold?: number,
     limit: number = 5
   ): Promise<JSONAPISingleResponse<SimilaritySearchResultAttributes>> {
-    const jsonApiRequest = this.buildJSONAPIRequestBody('similarity-searches', {
-      text,
-      community_server_id: communityServerId,
-      dataset_tags: datasetTags,
-      similarity_threshold: similarityThreshold,
-      limit,
+    const result = await this.client.POST('/api/v2/similarity-searches', {
+      body: {
+        data: {
+          type: 'similarity-searches',
+          attributes: {
+            text,
+            community_server_id: communityServerId,
+            dataset_tags: datasetTags,
+            similarity_threshold: similarityThreshold,
+            limit,
+          },
+        },
+      } as never,
     });
-
-    return this.fetchWithRetry<JSONAPISingleResponse<SimilaritySearchResultAttributes>>(
-      '/api/v2/similarity-searches',
-      {
-        method: 'POST',
-        body: JSON.stringify(jsonApiRequest),
-      }
-    );
+    return handleError(result, '/api/v2/similarity-searches') as unknown as JSONAPISingleResponse<SimilaritySearchResultAttributes>;
   }
 
   async createMonitoredChannel(
@@ -1419,25 +959,24 @@ export class ApiClient {
     context?: UserContext
   ): Promise<JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes> | null> {
     try {
-      const jsonApiRequest = this.buildJSONAPIRequestBody('monitored-channels', {
-        community_server_id: request.community_server_id,
-        channel_id: request.channel_id,
-        name: request.name ?? null,
-        enabled: request.enabled ?? true,
-        similarity_threshold: request.similarity_threshold,
-        dataset_tags: request.dataset_tags,
-        updated_by: request.updated_by,
+      const result = await this.client.POST('/api/v2/monitored-channels', {
+        body: {
+          data: {
+            type: 'monitored-channels',
+            attributes: {
+              community_server_id: request.community_server_id,
+              channel_id: request.channel_id,
+              name: request.name ?? null,
+              enabled: request.enabled ?? true,
+              similarity_threshold: request.similarity_threshold,
+              dataset_tags: request.dataset_tags,
+              updated_by: request.updated_by,
+            },
+          },
+        } as never,
+        headers: this.profileHeaders(context),
       });
-
-      return await this.fetchWithRetry<JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>>(
-        '/api/v2/monitored-channels',
-        {
-          method: 'POST',
-          body: JSON.stringify(jsonApiRequest),
-        },
-        1,
-        context
-      );
+      return handleError(result, '/api/v2/monitored-channels') as unknown as JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>;
     } catch (error) {
       if (error instanceof ApiError && error.statusCode === 409) {
         logger.debug('Channel already monitored', {
@@ -1451,25 +990,26 @@ export class ApiClient {
   }
 
   async listLLMConfigs(communityServerId: string): Promise<LLMConfigResponse[]> {
-    return this.fetchWithRetry<LLMConfigResponse[]>(`/api/v1/community-servers/${communityServerId}/llm-config`);
+    const result = await this.client.GET('/api/v1/community-servers/{community_server_id}/llm-config', {
+      params: { path: { community_server_id: communityServerId } },
+    });
+    return handleError(result, `/api/v1/community-servers/${communityServerId}/llm-config`) as unknown as LLMConfigResponse[];
   }
 
   async createLLMConfig(communityServerId: string, config: LLMConfigCreate, context?: UserContext): Promise<LLMConfigResponse> {
-    return this.fetchWithRetry<LLMConfigResponse>(
-      `/api/v1/community-servers/${communityServerId}/llm-config`,
-      {
-        method: 'POST',
-        body: JSON.stringify(config),
-      },
-      1,
-      context
-    );
+    const result = await this.client.POST('/api/v1/community-servers/{community_server_id}/llm-config', {
+      params: { path: { community_server_id: communityServerId } },
+      body: config as never,
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, `/api/v1/community-servers/${communityServerId}/llm-config`) as unknown as LLMConfigResponse;
   }
 
   async getMonitoredChannelByUuid(uuid: string): Promise<JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>> {
-    return this.fetchWithRetry<JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>>(
-      `/api/v2/monitored-channels/${uuid}`
-    );
+    const result = await this.client.GET('/api/v2/monitored-channels/{channel_uuid}', {
+      params: { path: { channel_uuid: uuid } },
+    });
+    return handleError(result, `/api/v2/monitored-channels/${uuid}`) as unknown as JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>;
   }
 
   async getMonitoredChannel(channelId: string, communityServerId?: string): Promise<JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes> | null> {
@@ -1496,31 +1036,26 @@ export class ApiClient {
       return null;
     }
 
-    const jsonApiRequest = {
-      data: {
-        type: 'monitored-channels',
-        id: existing.data.id,
-        attributes: {
-          name: update.name,
-          enabled: update.enabled,
-          similarity_threshold: update.similarity_threshold,
-          dataset_tags: update.dataset_tags,
-          previously_seen_autopublish_threshold: update.previously_seen_autopublish_threshold,
-          previously_seen_autorequest_threshold: update.previously_seen_autorequest_threshold,
-          updated_by: update.updated_by,
+    const result = await this.client.PATCH('/api/v2/monitored-channels/{channel_uuid}', {
+      params: { path: { channel_uuid: existing.data.id } },
+      body: {
+        data: {
+          type: 'monitored-channels',
+          id: existing.data.id,
+          attributes: {
+            name: update.name,
+            enabled: update.enabled,
+            similarity_threshold: update.similarity_threshold,
+            dataset_tags: update.dataset_tags,
+            previously_seen_autopublish_threshold: update.previously_seen_autopublish_threshold,
+            previously_seen_autorequest_threshold: update.previously_seen_autorequest_threshold,
+            updated_by: update.updated_by,
+          },
         },
-      },
-    };
-
-    return this.fetchWithRetry<JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>>(
-      `/api/v2/monitored-channels/${existing.data.id}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify(jsonApiRequest),
-      },
-      1,
-      context
-    );
+      } as never,
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, `/api/v2/monitored-channels/${existing.data.id}`) as unknown as JSONAPISingleResponse<MonitoredChannelJSONAPIAttributes>;
   }
 
   async deleteMonitoredChannel(
@@ -1533,27 +1068,20 @@ export class ApiClient {
       return false;
     }
 
-    await this.fetchWithRetry<void>(
-      `/api/v2/monitored-channels/${existing.data.id}`,
-      {
-        method: 'DELETE',
-      },
-      1,
-      context
-    );
-
+    const result = await this.client.DELETE('/api/v2/monitored-channels/{channel_uuid}', {
+      params: { path: { channel_uuid: existing.data.id } },
+      headers: this.profileHeaders(context),
+    });
+    handleError(result, `/api/v2/monitored-channels/${existing.data.id}`);
     return true;
   }
 
   async forcePublishNote(noteId: string, context?: UserContext): Promise<NoteJSONAPIResponse> {
-    return this.fetchWithRetry<NoteJSONAPIResponse>(
-      `/api/v2/notes/${noteId}/force-publish`,
-      {
-        method: 'POST',
-      },
-      1,
-      context
-    );
+    const result = await this.client.POST('/api/v2/notes/{note_id}/force-publish', {
+      params: { path: { note_id: noteId } },
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, `/api/v2/notes/${noteId}/force-publish`) as unknown as NoteJSONAPIResponse;
   }
 
   async addCommunityAdmin(
@@ -1566,22 +1094,19 @@ export class ApiClient {
     },
     context?: UserContext
   ): Promise<CommunityAdminResponse> {
-    const request: AddCommunityAdminRequest = {
+    const body: AddCommunityAdminRequest = {
       user_discord_id: userDiscordId,
       ...(userMetadata?.username && { username: userMetadata.username }),
       ...(userMetadata?.display_name && { display_name: userMetadata.display_name }),
       ...(userMetadata?.avatar_url && { avatar_url: userMetadata.avatar_url }),
     };
 
-    return this.fetchWithRetry<CommunityAdminResponse>(
-      `/api/v1/community-servers/${communityServerId}/admins`,
-      {
-        method: 'POST',
-        body: JSON.stringify(request),
-      },
-      1,
-      context
-    );
+    const result = await this.client.POST('/api/v1/community-servers/{community_server_id}/admins', {
+      params: { path: { community_server_id: communityServerId } },
+      body: body as never,
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, `/api/v1/community-servers/${communityServerId}/admins`) as unknown as CommunityAdminResponse;
   }
 
   async removeCommunityAdmin(
@@ -1589,20 +1114,18 @@ export class ApiClient {
     userDiscordId: string,
     context?: UserContext
   ): Promise<RemoveCommunityAdminResponse> {
-    return this.fetchWithRetry<RemoveCommunityAdminResponse>(
-      `/api/v1/community-servers/${communityServerId}/admins/${userDiscordId}`,
-      {
-        method: 'DELETE',
-      },
-      1,
-      context
-    );
+    const result = await this.client.DELETE('/api/v1/community-servers/{community_server_id}/admins/{user_discord_id}', {
+      params: { path: { community_server_id: communityServerId, user_discord_id: userDiscordId } },
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, `/api/v1/community-servers/${communityServerId}/admins/${userDiscordId}`) as unknown as RemoveCommunityAdminResponse;
   }
 
   async listCommunityAdmins(communityServerId: string): Promise<CommunityAdminResponse[]> {
-    return this.fetchWithRetry<CommunityAdminResponse[]>(
-      `/api/v1/community-servers/${communityServerId}/admins`
-    );
+    const result = await this.client.GET('/api/v1/community-servers/{community_server_id}/admins', {
+      params: { path: { community_server_id: communityServerId } },
+    });
+    return handleError(result, `/api/v1/community-servers/${communityServerId}/admins`) as unknown as CommunityAdminResponse[];
   }
 
   async checkPreviouslySeen(
@@ -1610,89 +1133,91 @@ export class ApiClient {
     guildId: string,
     channelId: string
   ): Promise<PreviouslySeenCheckJSONAPIResponse> {
-    const jsonApiRequest = this.buildJSONAPIRequestBody('previously-seen-check', {
-      message_text: messageText,
-      platform_community_server_id: guildId,
-      channel_id: channelId,
+    const result = await this.client.POST('/api/v2/previously-seen-messages/check', {
+      body: {
+        data: {
+          type: 'previously-seen-check',
+          attributes: {
+            message_text: messageText,
+            platform_community_server_id: guildId,
+            channel_id: channelId,
+          },
+        },
+      } as never,
     });
-
-    return this.fetchWithRetry<PreviouslySeenCheckJSONAPIResponse>(
-      '/api/v2/previously-seen-messages/check',
-      {
-        method: 'POST',
-        body: JSON.stringify(jsonApiRequest),
-      }
-    );
+    return handleError(result, '/api/v2/previously-seen-messages/check') as unknown as PreviouslySeenCheckJSONAPIResponse;
   }
 
   async recordNotePublisher(
     request: NotePublisherRecordRequest
   ): Promise<void> {
-    const jsonApiRequest = this.buildJSONAPIRequestBody('note-publisher-posts', {
-      note_id: request.noteId,
-      original_message_id: request.originalMessageId,
-      channel_id: request.channelId,
-      community_server_id: request.guildId,
-      score_at_post: request.scoreAtPost,
-      confidence_at_post: request.confidenceAtPost,
-      success: request.success,
-      error_message: request.errorMessage ?? null,
+    const result = await this.client.POST('/api/v2/note-publisher-posts', {
+      body: {
+        data: {
+          type: 'note-publisher-posts',
+          attributes: {
+            note_id: request.noteId,
+            original_message_id: request.originalMessageId,
+            channel_id: request.channelId,
+            community_server_id: request.guildId,
+            score_at_post: request.scoreAtPost,
+            confidence_at_post: request.confidenceAtPost,
+            success: request.success,
+            error_message: request.errorMessage ?? null,
+          },
+        },
+      } as never,
     });
-
-    await this.fetchWithRetry<JSONAPISingleResponse<NotePublisherPostJSONAPIAttributes>>(
-      '/api/v2/note-publisher-posts',
-      {
-        method: 'POST',
-        body: JSON.stringify(jsonApiRequest),
-      }
-    );
+    handleError(result, '/api/v2/note-publisher-posts');
   }
 
   async checkNoteDuplicate(
     originalMessageId: string,
     communityServerId: string
   ): Promise<JSONAPIListResponse<NotePublisherPostJSONAPIAttributes>> {
-    const params = new URLSearchParams();
-    params.append('filter[community_server_id]', communityServerId);
-    params.append('filter[original_message_id]', originalMessageId);
-    params.append('page[size]', '1');
+    const query: Record<string, unknown> = {
+      'filter[community_server_id]': communityServerId,
+      'filter[original_message_id]': originalMessageId,
+      'page[size]': 1,
+    };
 
-    return this.fetchWithRetry<JSONAPIListResponse<NotePublisherPostJSONAPIAttributes>>(
-      `/api/v2/note-publisher-posts?${params.toString()}`
-    );
+    const result = await this.client.GET('/api/v2/note-publisher-posts', {
+      params: { query: query as never },
+    });
+    return handleError(result, '/api/v2/note-publisher-posts') as unknown as JSONAPIListResponse<NotePublisherPostJSONAPIAttributes>;
   }
 
   async getLastNotePost(
     channelId: string,
     communityServerId: string
   ): Promise<JSONAPIListResponse<NotePublisherPostJSONAPIAttributes>> {
-    const params = new URLSearchParams();
-    params.append('filter[community_server_id]', communityServerId);
-    params.append('filter[channel_id]', channelId);
-    params.append('filter[success]', 'true');
-    params.append('page[size]', '1');
-    params.append('sort', '-posted_at');
+    const query: Record<string, unknown> = {
+      'filter[community_server_id]': communityServerId,
+      'filter[channel_id]': channelId,
+      'filter[success]': true,
+      'page[size]': 1,
+      sort: '-posted_at',
+    };
 
-    return this.fetchWithRetry<JSONAPIListResponse<NotePublisherPostJSONAPIAttributes>>(
-      `/api/v2/note-publisher-posts?${params.toString()}`
-    );
+    const result = await this.client.GET('/api/v2/note-publisher-posts', {
+      params: { query: query as never },
+    });
+    return handleError(result, '/api/v2/note-publisher-posts') as unknown as JSONAPIListResponse<NotePublisherPostJSONAPIAttributes>;
   }
 
   async getNotePublisherConfig(
     guildId: string,
     channelId?: string
   ): Promise<JSONAPIListResponse<NotePublisherConfigJSONAPIAttributes>> {
-    const params = new URLSearchParams();
-    params.append('filter[community_server_id]', guildId);
-    if (channelId) {
-      params.append('page[size]', '100');
-    } else {
-      params.append('page[size]', '1');
-    }
+    const query: Record<string, unknown> = {
+      'filter[community_server_id]': guildId,
+      'page[size]': channelId ? 100 : 1,
+    };
 
-    return this.fetchWithRetry<JSONAPIListResponse<NotePublisherConfigJSONAPIAttributes>>(
-      `/api/v2/note-publisher-configs?${params.toString()}`
-    );
+    const result = await this.client.GET('/api/v2/note-publisher-configs', {
+      params: { query: query as never },
+    });
+    return handleError(result, '/api/v2/note-publisher-configs') as unknown as JSONAPIListResponse<NotePublisherConfigJSONAPIAttributes>;
   }
 
   async setNotePublisherConfig(
@@ -1712,45 +1237,39 @@ export class ApiClient {
         ?? existingConfigResponse.data[0];
 
     if (existingConfig) {
-      const jsonApiRequest = {
-        data: {
-          type: 'note-publisher-configs',
-          id: existingConfig.id,
-          attributes: {
-            enabled,
-            threshold: threshold ?? null,
-            updated_by: updatedBy ?? null,
+      const result = await this.client.PATCH('/api/v2/note-publisher-configs/{config_uuid}', {
+        params: { path: { config_uuid: existingConfig.id } },
+        body: {
+          data: {
+            type: 'note-publisher-configs',
+            id: existingConfig.id,
+            attributes: {
+              enabled,
+              threshold: threshold ?? null,
+              updated_by: updatedBy ?? null,
+            },
           },
-        },
-      };
-
-      return this.fetchWithRetry<JSONAPISingleResponse<NotePublisherConfigJSONAPIAttributes>>(
-        `/api/v2/note-publisher-configs/${existingConfig.id}`,
-        {
-          method: 'PATCH',
-          body: JSON.stringify(jsonApiRequest),
-        },
-        1,
-        context
-      );
-    } else {
-      const jsonApiRequest = this.buildJSONAPIRequestBody('note-publisher-configs', {
-        community_server_id: guildId,
-        channel_id: channelId ?? null,
-        enabled,
-        threshold: threshold ?? null,
-        updated_by: updatedBy ?? null,
+        } as never,
+        headers: this.profileHeaders(context),
       });
-
-      return this.fetchWithRetry<JSONAPISingleResponse<NotePublisherConfigJSONAPIAttributes>>(
-        '/api/v2/note-publisher-configs',
-        {
-          method: 'POST',
-          body: JSON.stringify(jsonApiRequest),
-        },
-        1,
-        context
-      );
+      return handleError(result, `/api/v2/note-publisher-configs/${existingConfig.id}`) as unknown as JSONAPISingleResponse<NotePublisherConfigJSONAPIAttributes>;
+    } else {
+      const result = await this.client.POST('/api/v2/note-publisher-configs', {
+        body: {
+          data: {
+            type: 'note-publisher-configs',
+            attributes: {
+              community_server_id: guildId,
+              channel_id: channelId ?? null,
+              enabled,
+              threshold: threshold ?? null,
+              updated_by: updatedBy ?? null,
+            },
+          },
+        } as never,
+        headers: this.profileHeaders(context),
+      });
+      return handleError(result, '/api/v2/note-publisher-configs') as unknown as JSONAPISingleResponse<NotePublisherConfigJSONAPIAttributes>;
     }
   }
 
@@ -1762,22 +1281,21 @@ export class ApiClient {
     statusFilter?: NoteStatus,
     context?: UserContext
   ): Promise<NoteListJSONAPIResponseWithPagination> {
-    const params = new URLSearchParams();
-    params.append('page[number]', page.toString());
-    params.append('page[size]', size.toString());
-    params.append('filter[rated_by_participant_id]', raterParticipantId);
-    params.append('filter[community_server_id]', communityServerId);
-
+    const query: Record<string, unknown> = {
+      'page[number]': page,
+      'page[size]': size,
+      'filter[rater_id]': raterParticipantId,
+      'filter[community_server_id]': communityServerId,
+    };
     if (statusFilter) {
-      params.append('filter[status]', statusFilter);
+      query['filter[status]'] = statusFilter;
     }
 
-    const jsonApiResponse = await this.fetchWithRetry<NoteListJSONAPIResponse>(
-      `/api/v2/notes?${params.toString()}`,
-      {},
-      1,
-      context
-    );
+    const result = await this.client.GET('/api/v2/notes', {
+      params: { query: query as never },
+      headers: this.profileHeaders(context),
+    });
+    const jsonApiResponse = handleError(result, '/api/v2/notes') as unknown as NoteListJSONAPIResponse;
 
     return {
       ...jsonApiResponse,
@@ -1791,9 +1309,8 @@ export class ApiClient {
     communityServerId: string,
     scanWindowDays: number
   ): Promise<BulkScanSingleResponse> {
-    return this.fetchWithRetry<BulkScanSingleResponse>('/api/v2/bulk-scans', {
-      method: 'POST',
-      body: JSON.stringify({
+    const result = await this.client.POST('/api/v2/bulk-scans', {
+      body: {
         data: {
           type: 'bulk-scans',
           attributes: {
@@ -1801,12 +1318,16 @@ export class ApiClient {
             scan_window_days: scanWindowDays,
           },
         },
-      }),
+      } as never,
     });
+    return handleError(result, '/api/v2/bulk-scans') as unknown as BulkScanSingleResponse;
   }
 
   async getBulkScanResults(scanId: string): Promise<BulkScanResultsResponse> {
-    return this.fetchWithRetry<BulkScanResultsResponse>(`/api/v2/bulk-scans/${scanId}`);
+    const result = await this.client.GET('/api/v2/bulk-scans/{scan_id}', {
+      params: { path: { scan_id: scanId } },
+    });
+    return handleError(result, `/api/v2/bulk-scans/${scanId}`) as unknown as BulkScanResultsResponse;
   }
 
   async createNoteRequestsFromScan(
@@ -1814,9 +1335,9 @@ export class ApiClient {
     messageIds: string[],
     generateAiNotes: boolean
   ): Promise<NoteRequestsResultResponse> {
-    return this.fetchWithRetry<NoteRequestsResultResponse>(`/api/v2/bulk-scans/${scanId}/note-requests`, {
-      method: 'POST',
-      body: JSON.stringify({
+    const result = await this.client.POST('/api/v2/bulk-scans/{scan_id}/note-requests', {
+      params: { path: { scan_id: scanId } },
+      body: {
         data: {
           type: 'note-requests',
           attributes: {
@@ -1824,18 +1345,23 @@ export class ApiClient {
             generate_ai_notes: generateAiNotes,
           },
         },
-      }),
+      } as never,
     });
+    return handleError(result, `/api/v2/bulk-scans/${scanId}/note-requests`) as unknown as NoteRequestsResultResponse;
   }
 
   async checkRecentScan(communityServerId: string): Promise<RecentScanResponse> {
-    return this.fetchWithRetry<RecentScanResponse>(`/api/v2/bulk-scans/communities/${communityServerId}/recent`);
+    const result = await this.client.GET('/api/v2/bulk-scans/communities/{community_server_id}/recent', {
+      params: { path: { community_server_id: communityServerId } },
+    });
+    return handleError(result, `/api/v2/bulk-scans/communities/${communityServerId}/recent`) as unknown as RecentScanResponse;
   }
 
   async getLatestScan(communityServerId: string): Promise<LatestScanResponse> {
-    return this.fetchWithRetry<LatestScanResponse>(
-      `/api/v2/bulk-scans/communities/${communityServerId}/latest`
-    );
+    const result = await this.client.GET('/api/v2/bulk-scans/communities/{community_server_id}/latest', {
+      params: { path: { community_server_id: communityServerId } },
+    });
+    return handleError(result, `/api/v2/bulk-scans/communities/${communityServerId}/latest`) as unknown as LatestScanResponse;
   }
 
   async generateScanExplanation(
@@ -1843,9 +1369,8 @@ export class ApiClient {
     factCheckItemId: string,
     communityServerId: string
   ): Promise<ExplanationResultResponse> {
-    return this.fetchWithRetry<ExplanationResultResponse>('/api/v2/bulk-scans/explanations', {
-      method: 'POST',
-      body: JSON.stringify({
+    const result = await this.client.POST('/api/v2/bulk-scans/explanations', {
+      body: {
         data: {
           type: 'scan-explanations',
           attributes: {
@@ -1854,24 +1379,48 @@ export class ApiClient {
             community_server_id: communityServerId,
           },
         },
-      }),
+      } as never,
     });
+    return handleError(result, '/api/v2/bulk-scans/explanations') as unknown as ExplanationResultResponse;
   }
 
   async getClearPreview(
     endpoint: string,
     context?: UserContext
   ): Promise<ClearPreviewResult> {
-    const response = await this.fetchWithRetry<{ would_delete_count: number; message: string }>(
-      endpoint,
-      {},
-      1,
-      context
-    );
+    const url = `${this.baseUrl}${endpoint}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...this.profileHeaders(context),
+    };
+    const request = new Request(url, { method: 'GET', headers });
 
+    for (const mw of this.middleware) {
+      if (mw.onRequest) {
+        await mw.onRequest({
+          request,
+          schemaPath: endpoint,
+          params: {},
+          id: 'clear-preview',
+          options: {} as never,
+        });
+      }
+    }
+
+    const response = await this.retryFetch(request);
+
+    if (!response.ok) {
+      throw new ApiError(
+        `API request failed: ${response.status} ${response.statusText}`,
+        endpoint,
+        response.status,
+      );
+    }
+
+    const data = await response.json() as { would_delete_count: number; message: string };
     return {
-      wouldDeleteCount: response.would_delete_count,
-      message: response.message,
+      wouldDeleteCount: data.would_delete_count,
+      message: data.message,
     };
   }
 
@@ -1879,18 +1428,39 @@ export class ApiClient {
     endpoint: string,
     context?: UserContext
   ): Promise<ClearResult> {
-    const response = await this.fetchWithRetry<{ deleted_count: number; message: string }>(
-      endpoint,
-      {
-        method: 'DELETE',
-      },
-      1,
-      context
-    );
+    const url = `${this.baseUrl}${endpoint}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...this.profileHeaders(context),
+    };
+    const request = new Request(url, { method: 'DELETE', headers });
 
+    for (const mw of this.middleware) {
+      if (mw.onRequest) {
+        await mw.onRequest({
+          request,
+          schemaPath: endpoint,
+          params: {},
+          id: 'clear-execute',
+          options: {} as never,
+        });
+      }
+    }
+
+    const response = await this.retryFetch(request);
+
+    if (!response.ok) {
+      throw new ApiError(
+        `API request failed: ${response.status} ${response.statusText}`,
+        endpoint,
+        response.status,
+      );
+    }
+
+    const data = await response.json() as { deleted_count: number; message: string };
     return {
-      deletedCount: response.deleted_count,
-      message: response.message,
+      deletedCount: data.deleted_count,
+      message: data.message,
     };
   }
 
@@ -1899,15 +1469,12 @@ export class ApiClient {
     enabled: boolean,
     context?: UserContext
   ): Promise<FlashpointDetectionUpdateResponse> {
-    return this.fetchWithRetry<FlashpointDetectionUpdateResponse>(
-      `/api/v1/community-servers/${platformCommunityServerId}/flashpoint-detection`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ enabled }),
-      },
-      1,
-      context
-    );
+    const result = await this.client.PATCH('/api/v1/community-servers/{platform_community_server_id}/flashpoint-detection', {
+      params: { path: { platform_community_server_id: platformCommunityServerId } },
+      body: { enabled } as never,
+      headers: this.profileHeaders(context),
+    });
+    return handleError(result, `/api/v1/community-servers/${platformCommunityServerId}/flashpoint-detection`) as unknown as FlashpointDetectionUpdateResponse;
   }
 
   async getFlashpointDetectionStatus(
@@ -1929,20 +1496,20 @@ export class ApiClient {
     similarityScore: number;
   }): Promise<ClaimRelevanceResult | null> {
     try {
-      const jsonApiRequest = this.buildJSONAPIRequestBody('claim-relevance-checks', {
-        original_message: params.originalMessage,
-        matched_content: params.matchedContent,
-        matched_source: params.matchedSource,
-        similarity_score: params.similarityScore,
+      const result = await this.client.POST('/api/v2/claim-relevance-checks', {
+        body: {
+          data: {
+            type: 'claim-relevance-checks',
+            attributes: {
+              original_message: params.originalMessage,
+              matched_content: params.matchedContent,
+              matched_source: params.matchedSource,
+              similarity_score: params.similarityScore,
+            },
+          },
+        } as never,
       });
-
-      const response = await this.fetchWithRetry<ClaimRelevanceCheckResponse>(
-        '/api/v2/claim-relevance-checks',
-        {
-          method: 'POST',
-          body: JSON.stringify(jsonApiRequest),
-        }
-      );
+      const response = handleError(result, '/api/v2/claim-relevance-checks') as unknown as ClaimRelevanceCheckResponse;
 
       return {
         outcome: response.data.attributes.outcome,

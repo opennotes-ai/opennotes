@@ -61,6 +61,13 @@ jest.unstable_mockModule('../src/utils/gcp-auth.js', () => ({
 
 const { ApiClient } = await import('../src/lib/api-client.js');
 
+function getRequestHeaders(call: unknown[]): Record<string, string> {
+  const request = call[0] as Request;
+  const headers: Record<string, string> = {};
+  request.headers.forEach((value, key) => { headers[key] = value; });
+  return headers;
+}
+
 describe('ApiClient X-Discord-Claims JWT Header', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -81,7 +88,7 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify(mockJsonApiResponse), {
         status: 200,
-        headers: { 'Content-Type': 'application/vnd.api+json' }
+        headers: { 'Content-Type': 'application/json' }
       })
     );
 
@@ -93,13 +100,11 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
 
     await client.listRequests({}, userContext);
 
-    const fetchCall = mockFetch.mock.calls[0];
-    const fetchInit = fetchCall?.[1] as RequestInit | undefined;
-    const headers = fetchInit?.headers as Record<string, string> | undefined;
+    const headers = getRequestHeaders(mockFetch.mock.calls[0]);
 
-    expect(headers?.['X-Discord-Claims']).toBeDefined();
+    expect(headers['x-discord-claims']).toBeDefined();
 
-    const claimsToken = headers?.['X-Discord-Claims'];
+    const claimsToken = headers['x-discord-claims'];
     const decoded = jwtLib.decode(claimsToken!) as jwtLib.JwtPayload;
 
     expect(decoded).not.toBeNull();
@@ -124,7 +129,7 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify(mockJsonApiResponse), {
         status: 200,
-        headers: { 'Content-Type': 'application/vnd.api+json' }
+        headers: { 'Content-Type': 'application/json' }
       })
     );
 
@@ -138,11 +143,9 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
 
     await client.listRequests({}, userContext);
 
-    const fetchCall = mockFetch.mock.calls[0];
-    const fetchInit = fetchCall?.[1] as RequestInit | undefined;
-    const headers = fetchInit?.headers as Record<string, string> | undefined;
+    const headers = getRequestHeaders(mockFetch.mock.calls[0]);
 
-    const claimsToken = headers?.['X-Discord-Claims'];
+    const claimsToken = headers['x-discord-claims'];
     expect(claimsToken).toBeDefined();
 
     const decoded = jwtLib.decode(claimsToken!) as jwtLib.JwtPayload;
@@ -173,7 +176,7 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify(mockJsonApiResponse), {
         status: 200,
-        headers: { 'Content-Type': 'application/vnd.api+json' }
+        headers: { 'Content-Type': 'application/json' }
       })
     );
 
@@ -187,16 +190,14 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
 
     await client.listRequests({}, userContext);
 
-    const fetchCall = mockFetch.mock.calls[0];
-    const fetchInit = fetchCall?.[1] as RequestInit | undefined;
-    const headers = fetchInit?.headers as Record<string, string> | undefined;
+    const headers = getRequestHeaders(mockFetch.mock.calls[0]);
 
-    expect(headers?.['X-Discord-User-Id']).toBe(TEST_USER_ID);
-    expect(headers?.['X-Discord-Username']).toBe('testuser');
-    expect(headers?.['X-Discord-Display-Name']).toBe('Test User');
-    expect(headers?.['X-Guild-Id']).toBe(TEST_GUILD_ID);
-    expect(headers?.['X-Discord-Has-Manage-Server']).toBe('true');
-    expect(headers?.['X-Discord-Claims']).toBeDefined();
+    expect(headers['x-discord-user-id']).toBe(TEST_USER_ID);
+    expect(headers['x-discord-username']).toBe('testuser');
+    expect(headers['x-discord-display-name']).toBe('Test User');
+    expect(headers['x-guild-id']).toBe(TEST_GUILD_ID);
+    expect(headers['x-discord-has-manage-server']).toBe('true');
+    expect(headers['x-discord-claims']).toBeDefined();
   });
 
   it('should create JWT that can be verified with the secret key', async () => {
@@ -213,7 +214,7 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify(mockJsonApiResponse), {
         status: 200,
-        headers: { 'Content-Type': 'application/vnd.api+json' }
+        headers: { 'Content-Type': 'application/json' }
       })
     );
 
@@ -225,10 +226,8 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
 
     await client.listRequests({}, userContext);
 
-    const fetchCall = mockFetch.mock.calls[0];
-    const fetchInit = fetchCall?.[1] as RequestInit | undefined;
-    const headers = fetchInit?.headers as Record<string, string> | undefined;
-    const claimsToken = headers?.['X-Discord-Claims'];
+    const headers = getRequestHeaders(mockFetch.mock.calls[0]);
+    const claimsToken = headers['x-discord-claims'];
 
     expect(claimsToken).toBeDefined();
 
@@ -257,7 +256,7 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify(mockJsonApiResponse), {
         status: 200,
-        headers: { 'Content-Type': 'application/vnd.api+json' }
+        headers: { 'Content-Type': 'application/json' }
       })
     );
 
@@ -269,10 +268,8 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
 
     await client.listRequests({}, userContext);
 
-    const fetchCall = mockFetch.mock.calls[0];
-    const fetchInit = fetchCall?.[1] as RequestInit | undefined;
-    const headers = fetchInit?.headers as Record<string, string> | undefined;
-    const claimsToken = headers?.['X-Discord-Claims'];
+    const headers = getRequestHeaders(mockFetch.mock.calls[0]);
+    const claimsToken = headers['x-discord-claims'];
 
     const header = jwtLib.decode(claimsToken!, { complete: true })?.header;
     expect(header?.alg).toBe('HS256');
