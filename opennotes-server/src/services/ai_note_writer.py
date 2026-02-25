@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config import parse_provider_model, settings
+from src.config import settings
 from src.fact_checking.models import FactCheckItem
 from src.llm_config.models import CommunityServer
 from src.llm_config.providers.base import LLMMessage
@@ -159,7 +159,7 @@ class AINoteWriter:
                 status="NEEDS_MORE_RATINGS",
                 community_server_id=request.community_server_id,
                 ai_generated=True,
-                ai_provider=parse_provider_model(settings.AI_NOTE_WRITER_MODEL)[0],
+                ai_provider=settings.AI_NOTE_WRITER_MODEL.provider,
             )
 
             db.add(note)
@@ -585,7 +585,7 @@ Community Note:"""
             status="NEEDS_MORE_RATINGS",
             community_server_id=community_server_uuid,
             ai_generated=True,
-            ai_provider=parse_provider_model(settings.AI_NOTE_WRITER_MODEL)[0],
+            ai_provider=settings.AI_NOTE_WRITER_MODEL.provider,
         )
 
         db.add(note)
