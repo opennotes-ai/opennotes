@@ -376,6 +376,11 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
             dbos = get_dbos()
             dbos.launch()
             await asyncio.to_thread(validate_dbos_connection)
+
+            from src.dbos_workflows.token_bucket.config import ensure_pool_exists_async
+
+            await ensure_pool_exists_async()
+
             logger.info(
                 "DBOS worker mode - queue polling enabled and validated",
                 extra={"schema": "dbos", "registered_workflows": registered_workflows},

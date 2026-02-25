@@ -3155,6 +3155,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/token-pools/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Token Pools */
+        get: operations["list_token_pools_admin_token_pools__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/token-pools/{pool_name}/holds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pool Holds */
+        get: operations["get_pool_holds_admin_token_pools__pool_name__holds_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/simulations": {
         parameters: {
             query?: never;
@@ -8952,6 +8986,31 @@ export interface components {
             refresh_token?: string | null;
             /** Expires In */
             expires_in: number;
+        };
+        /** TokenHoldDetail */
+        TokenHoldDetail: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Weight */
+            weight: number;
+            /**
+             * Acquired At
+             * Format: date-time
+             */
+            acquired_at: string;
+        };
+        /** TokenPoolStatus */
+        TokenPoolStatus: {
+            /** Pool Name */
+            pool_name: string;
+            /** Capacity */
+            capacity: number;
+            /** Available */
+            available: number;
+            /** Active Hold Count */
+            active_hold_count: number;
+            /** Utilization Pct */
+            utilization_pct: number;
         };
         /** UserCreate */
         UserCreate: {
@@ -15272,6 +15331,57 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_token_pools_admin_token_pools__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPoolStatus"][];
+                };
+            };
+        };
+    };
+    get_pool_holds_admin_token_pools__pool_name__holds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pool_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenHoldDetail"][];
+                };
             };
             /** @description Validation Error */
             422: {
