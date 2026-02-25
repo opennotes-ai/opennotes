@@ -39,15 +39,6 @@ _settings_instance: Settings | None = None
 _settings_initialized: bool = False
 
 
-def parse_provider_model(model_str: str | ModelId) -> tuple[str, str]:
-    if isinstance(model_str, ModelId):
-        return (model_str.provider, model_str.model)
-    if "/" in model_str:
-        provider, _, model = model_str.partition("/")
-        return (provider, model)
-    return ("openai", model_str)
-
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
