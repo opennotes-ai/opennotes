@@ -5,7 +5,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_ai.exceptions import UserError
+from pydantic_ai.models import infer_model
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +43,20 @@ class SimAgentCreateAttributes(StrictInputSchema):
     memory_compaction_config: dict[str, Any] | None = None
     community_server_id: UUID | None = None
 
+    @field_validator("model_name")
+    @classmethod
+    def validate_model_name(cls, v: str) -> str:
+        try:
+            infer_model(v)
+        except UserError:
+            raise ValueError(
+                f"Invalid model name '{v}'. Use 'provider:model' format "
+                f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
+            )
+        except Exception:
+            pass
+        return v
+
 
 class SimAgentCreateData(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -64,6 +80,22 @@ class SimAgentUpdateAttributes(StrictInputSchema):
     memory_compaction_strategy: str | None = None
     memory_compaction_config: dict[str, Any] | None = None
     community_server_id: UUID | None = None
+
+    @field_validator("model_name")
+    @classmethod
+    def validate_model_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        try:
+            infer_model(v)
+        except UserError:
+            raise ValueError(
+                f"Invalid model name '{v}'. Use 'provider:model' format "
+                f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
+            )
+        except Exception:
+            pass
+        return v
 
 
 class SimAgentUpdateData(BaseModel):

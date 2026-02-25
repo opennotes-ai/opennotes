@@ -77,7 +77,7 @@ def release_stale_hold(hold: dict[str, Any]) -> bool:
     return released
 
 
-@DBOS.scheduled("*/5 * * * *")
+@DBOS.scheduled("*/5 * * * *")  # pyright: ignore[reportArgumentType]
 @DBOS.workflow()
 def cleanup_stale_token_holds(
     scheduled_time: datetime,

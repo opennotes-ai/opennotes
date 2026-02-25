@@ -44,7 +44,7 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
                 TokenHold.released_at.is_(None),
             )
         )
-        total_held = held_result.scalar()
+        total_held: int = held_result.scalar() or 0
 
         if pool_row.capacity - total_held < weight:
             return False
@@ -104,7 +104,7 @@ async def get_pool_status_async(pool_name: str) -> dict[str, Any] | None:
                 TokenHold.released_at.is_(None),
             )
         )
-        total_held = held_result.scalar()
+        total_held: int = held_result.scalar() or 0
 
         holds_result = await session.execute(
             select(TokenHold).where(

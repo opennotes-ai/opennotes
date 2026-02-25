@@ -130,6 +130,14 @@ class TestModuleAllowlist:
         assert isinstance(result, ValueError)
         assert str(result) == "allowed"
 
+    def test_pydantic_ai_user_error_roundtrip(self, serializer: SafeJsonSerializer) -> None:
+        from pydantic_ai.exceptions import UserError
+
+        exc = UserError("Unknown model: openai/gpt-5-mini")
+        result = serializer.deserialize(serializer.serialize(exc))
+        assert isinstance(result, UserError)
+        assert str(result) == "Unknown model: openai/gpt-5-mini"
+
 
 class TestStrictTypeSerialization:
     def test_uuid_raises_type_error(self, serializer: SafeJsonSerializer) -> None:

@@ -386,6 +386,94 @@ class TestExecuteAgentTurnStep:
         assert "new_messages" in result
         mock_agent_instance.run_turn.assert_awaited_once()
 
+    def test_execute_agent_turn_catches_unknown_model_error(self) -> None:
+        from pydantic_ai.exceptions import UserError
+
+        from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
+
+        context = _make_context()
+        context["model_name"] = "openai/gpt-5-mini"
+        deps_data = {"available_requests": [], "available_notes": []}
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.run_turn = AsyncMock(
+            side_effect=UserError("Unknown model: openai/gpt-5-mini"),
+        )
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent_instance,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._deserialize_messages",
+                return_value=[],
+            ),
+            pytest.raises(ValueError, match="openai/gpt-5-mini"),
+        ):
+            execute_agent_turn_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=[],
+            )
+
+    def test_execute_agent_turn_error_message_mentions_sim_agent(self) -> None:
+        from pydantic_ai.exceptions import UserError
+
+        from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
+
+        context = _make_context()
+        context["model_name"] = "vertex_ai/gemini-2.5-flash"
+        deps_data = {"available_requests": [], "available_notes": []}
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.run_turn = AsyncMock(
+            side_effect=UserError("Unknown model: vertex_ai/gemini-2.5-flash"),
+        )
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent_instance,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._deserialize_messages",
+                return_value=[],
+            ),
+            pytest.raises(ValueError, match="Invalid model name"),
+        ):
+            execute_agent_turn_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=[],
+            )
+
     def test_execute_agent_turn_respects_usage_limits(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
 

@@ -21,6 +21,14 @@ class TestWorkerWorkflowRegistration:
             patch("src.main.validate_dbos_connection"),
             patch("src.main.logger") as mock_logger,
             patch("src.main.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread,
+            patch(
+                "src.dbos_workflows.token_bucket.config.ensure_pool_exists_async",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
+                return_value=MagicMock(),
+            ),
         ):
             mock_settings.TESTING = False
             mock_settings.DBOS_CONDUCTOR_KEY = None
@@ -105,6 +113,14 @@ class TestWorkerWorkflowRegistration:
             patch("src.main.validate_dbos_connection"),
             patch("src.main.logger") as mock_logger,
             patch("src.main.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread,
+            patch(
+                "src.dbos_workflows.token_bucket.config.ensure_pool_exists_async",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
+                return_value=MagicMock(),
+            ),
         ):
             mock_settings.TESTING = False
             mock_settings.DBOS_CONDUCTOR_KEY = None
