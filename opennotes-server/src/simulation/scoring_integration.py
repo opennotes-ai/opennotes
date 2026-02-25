@@ -148,23 +148,26 @@ async def trigger_scoring_for_simulation(
 
         offset += SCORING_BATCH_SIZE
 
-    helpful_note_ids = (
+    helpful_note_for_request = (
         select(Note.id)
         .where(
+            Note.request_id == Request.request_id,
             Note.community_server_id == community_server_id,
             Note.status == "CURRENTLY_RATED_HELPFUL",
             Note.deleted_at.is_(None),
         )
-        .distinct()
+        .correlate(Request)
+        .limit(1)
+        .scalar_subquery()
     )
     await db.execute(
         update(Request)
         .where(
             Request.community_server_id == community_server_id,
             Request.status == "PENDING",
-            Request.note_id.in_(helpful_note_ids),
+            helpful_note_for_request.isnot(None),
         )
-        .values(status="COMPLETED")
+        .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
 
     result = ScoringRunResult(
