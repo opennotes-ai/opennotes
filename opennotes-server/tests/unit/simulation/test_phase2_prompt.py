@@ -78,12 +78,12 @@ class TestPhase2PromptFiltering:
     def test_write_note_prompt_has_action_specific_instruction(self, sample_requests, sample_notes):
         agent = OpenNotesSimAgent()
         prompt = agent._build_phase2_prompt(SimActionType.WRITE_NOTE, sample_requests, sample_notes)
-        assert "write" in prompt.lower()
+        assert "Write a community note for one of the requests above" in prompt
 
     def test_rate_note_prompt_has_action_specific_instruction(self, sample_requests, sample_notes):
         agent = OpenNotesSimAgent()
         prompt = agent._build_phase2_prompt(SimActionType.RATE_NOTE, sample_requests, sample_notes)
-        assert "rate" in prompt.lower()
+        assert "Rate one of the notes above" in prompt
 
 
 class TestPhase2PromptTokenBudget:

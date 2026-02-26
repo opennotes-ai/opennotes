@@ -1162,6 +1162,59 @@ class TestRunAgentTurnWorkflow:
 
         assert captured_select_args["messages"] == compacted
 
+    def test_run_agent_turn_skips_phase2_on_pass_turn(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+        phase1_msgs = [{"kind": "response", "parts": [{"part_kind": "text", "content": "pass"}]}]
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={"available_requests": [], "available_notes": []},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "pass_turn",
+                    "reasoning": "Nothing to do",
+                    "phase1_messages": phase1_msgs,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+            ) as mock_execute,
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                return_value={
+                    "agent_instance_id": agent_instance_id,
+                    "action_type": "pass_turn",
+                    "persisted": True,
+                },
+            ) as mock_persist,
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        mock_execute.assert_not_called()
+        assert result["action"]["action_type"] == "pass_turn"
+        assert result["action"]["reasoning"] == "Nothing to do"
+        assert result["persisted"] is True
+        persist_kwargs = mock_persist.call_args.kwargs
+        assert persist_kwargs["new_messages"] == phase1_msgs
+        assert persist_kwargs["action"]["action_type"] == "pass_turn"
+
 
 class TestDispatchAgentTurn:
     @pytest.mark.asyncio

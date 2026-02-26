@@ -218,14 +218,14 @@ def build_queue_summary(
     lines.append(_pluralize(len(requests), "request"))
     shown_requests = requests if max_titles is None else requests[:max_titles]
     for req in shown_requests:
-        lines.append(f"  - {_truncate(req.get('content', ''), trunc)}")
+        lines.append(f"  - {_truncate(req.get('content') or '', trunc)}")
     if max_titles is not None and len(requests) > max_titles:
         lines.append(f"  ...and {len(requests) - max_titles} more")
 
     lines.append(_pluralize(len(notes), "note"))
     shown_notes = notes if max_titles is None else notes[:max_titles]
     for note in shown_notes:
-        lines.append(f"  - {_truncate(note.get('summary', ''), trunc)}")
+        lines.append(f"  - {_truncate(note.get('summary') or '', trunc)}")
     if max_titles is not None and len(notes) > max_titles:
         lines.append(f"  ...and {len(notes) - max_titles} more")
 
@@ -395,7 +395,7 @@ class OpenNotesSimAgent:
                 if req_notes:
                     block += f"\n  Existing notes ({len(req_notes)}):"
                     for rn in req_notes:
-                        summary = rn.get("summary", "")
+                        summary = rn.get("summary") or ""
                         if len(summary) > 100:
                             summary = summary[:100].rsplit(" ", 1)[0] + "..."
                         block += f"\n    - [{rn.get('classification', 'N/A')}] {summary}"
