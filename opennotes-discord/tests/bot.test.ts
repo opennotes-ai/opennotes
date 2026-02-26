@@ -8,6 +8,14 @@ const mockCache = cacheFactory.build();
 const mockCloseRedisClient = jest.fn<() => void>();
 const mockGetRedisClient = jest.fn(() => null);
 
+const mockApiClient = {
+  getCommunityServerByPlatformId: jest.fn<(...args: any[]) => Promise<any>>(),
+  updateCommunityServerName: jest.fn<(...args: any[]) => Promise<any>>(),
+  listMonitoredChannels: jest.fn<(...args: any[]) => Promise<any>>(),
+  updateMonitoredChannel: jest.fn<(...args: any[]) => Promise<any>>(),
+  healthCheck: jest.fn<() => Promise<any>>(),
+};
+
 jest.unstable_mockModule('../src/redis-client.js', () => ({
   getRedisClient: mockGetRedisClient,
   closeRedisClient: mockCloseRedisClient,
@@ -39,6 +47,10 @@ jest.unstable_mockModule('../src/config.js', () => ({
     discordToken: 'test-token',
     clientId: 'test-client-id',
   },
+}));
+
+jest.unstable_mockModule('../src/api-client.js', () => ({
+  apiClient: mockApiClient,
 }));
 
 const { Bot } = await import('../src/bot.js');
@@ -133,6 +145,110 @@ describe('Bot', () => {
 
       expect(mockCloseRedisClient).toHaveBeenCalled();
       expect(mockLogger.info).toHaveBeenCalledWith('Redis client closed');
+    });
+  });
+
+  describe('syncCommunityNames', () => {
+    const GUILD_SNOWFLAKE = '123456789012345678';
+    const COMMUNITY_SERVER_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+    const CHANNEL_ID = '987654321098765432';
+
+    beforeEach(() => {
+      mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+        data: {
+          type: 'community-servers',
+          id: COMMUNITY_SERVER_UUID,
+          attributes: {
+            platform: 'discord',
+            platform_community_server_id: GUILD_SNOWFLAKE,
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+            flashpoint_detection_enabled: false,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      });
+      mockApiClient.updateCommunityServerName.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      const client = bot.getClient();
+      client.guilds.cache.clear();
+    });
+
+    it('should pass guild snowflake to listMonitoredChannels', async () => {
+      const client = bot.getClient();
+      client.guilds.cache.set(GUILD_SNOWFLAKE, {
+        id: GUILD_SNOWFLAKE,
+        name: 'Test Guild',
+        memberCount: 50,
+      } as any);
+
+      mockApiClient.listMonitoredChannels.mockResolvedValue({
+        data: [],
+        jsonapi: { version: '1.1' },
+      });
+
+      await (bot as any).syncCommunityNames();
+
+      expect(mockApiClient.listMonitoredChannels).toHaveBeenCalledWith(
+        GUILD_SNOWFLAKE,
+        false
+      );
+      expect(mockApiClient.listMonitoredChannels).not.toHaveBeenCalledWith(
+        COMMUNITY_SERVER_UUID,
+        expect.anything()
+      );
+    });
+
+    it('should pass guild snowflake to updateMonitoredChannel', async () => {
+      const client = bot.getClient();
+      client.guilds.cache.set(GUILD_SNOWFLAKE, {
+        id: GUILD_SNOWFLAKE,
+        name: 'Test Guild',
+        memberCount: 50,
+      } as any);
+
+      mockApiClient.listMonitoredChannels.mockResolvedValue({
+        data: [
+          {
+            type: 'monitored-channels',
+            id: 'mc-uuid-1',
+            attributes: {
+              community_server_id: COMMUNITY_SERVER_UUID,
+              channel_id: CHANNEL_ID,
+              name: 'old-channel-name',
+              enabled: true,
+              similarity_threshold: 0.8,
+              dataset_tags: [],
+            },
+          },
+        ],
+        jsonapi: { version: '1.1' },
+      });
+
+      jest.spyOn(client.channels, 'fetch').mockResolvedValue({
+        id: CHANNEL_ID,
+        name: 'new-channel-name',
+      } as any);
+
+      mockApiClient.updateMonitoredChannel.mockResolvedValue(null);
+
+      await (bot as any).syncCommunityNames();
+
+      expect(mockApiClient.updateMonitoredChannel).toHaveBeenCalledWith(
+        CHANNEL_ID,
+        { name: 'new-channel-name' },
+        undefined,
+        GUILD_SNOWFLAKE
+      );
+      expect(mockApiClient.updateMonitoredChannel).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        COMMUNITY_SERVER_UUID
+      );
     });
   });
 });

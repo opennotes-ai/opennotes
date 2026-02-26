@@ -470,7 +470,7 @@ export class Bot {
         }
 
         const monitoredChannels = await apiClient.listMonitoredChannels(
-          communityServer.data.id,
+          guild.id,
           false
         );
 
@@ -491,7 +491,7 @@ export class Bot {
                 channelId,
                 { name: currentName },
                 undefined,
-                communityServer.data.id
+                guild.id
               );
               logger.info('Synced monitored channel name', {
                 guildId: guild.id,

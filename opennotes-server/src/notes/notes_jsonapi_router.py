@@ -56,6 +56,7 @@ from src.common.jsonapi import (
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.events.publisher import event_publisher
+from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.notes import loaders
 from src.notes.message_archive_models import MessageArchive
@@ -744,6 +745,15 @@ async def force_publish_note_jsonapi(
         if not channel_id:
             channel_id = note.channel_id
 
+        platform_community_server_id: str | None = None
+        if note.community_server_id:
+            platform_id_result = await db.execute(
+                select(CommunityServer.platform_community_server_id).where(
+                    CommunityServer.id == note.community_server_id
+                )
+            )
+            platform_community_server_id = platform_id_result.scalar_one_or_none()
+
         force_publish_metadata: dict[str, str | bool | None] = {
             "force_published": True,
             "force_published_by": str(admin_profile_id),
@@ -764,9 +774,7 @@ async def force_publish_note_jsonapi(
                 tier_name="admin_published",
                 original_message_id=original_message_id,
                 channel_id=channel_id,
-                community_server_id=str(note.community_server_id)
-                if note.community_server_id
-                else None,
+                community_server_id=platform_community_server_id,
                 metadata=force_publish_metadata,
             )
             logger.info(f"Published score update event for force-published note {note_id}")
