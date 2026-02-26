@@ -73,6 +73,27 @@ class SimActionType(str, Enum):
     PASS_TURN = "pass_turn"
 
 
+PHASE1_ALLOWED_ACTIONS = {
+    SimActionType.WRITE_NOTE,
+    SimActionType.RATE_NOTE,
+    SimActionType.PASS_TURN,
+}
+
+
+class ActionSelectionResult(BaseModel):
+    action_type: SimActionType
+    reasoning: str = Field(..., description="Why this action was chosen")
+
+    @field_validator("action_type")
+    @classmethod
+    def validate_allowed_actions(cls, v: SimActionType) -> SimActionType:
+        if v not in PHASE1_ALLOWED_ACTIONS:
+            raise ValueError(
+                f"Phase 1 only allows: {', '.join(a.value for a in PHASE1_ALLOWED_ACTIONS)}"
+            )
+        return v
+
+
 class SimAgentAction(BaseModel):
     action_type: SimActionType
     request_id: str | None = Field(None, description="Request ID the note was written for")

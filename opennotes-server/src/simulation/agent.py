@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.llm_config.model_id import ModelId
 from src.notes.models import Note, Rating
-from src.simulation.schemas import SimAgentAction
+from src.simulation.schemas import ActionSelectionResult, SimActionType, SimAgentAction
 
 MAX_PERSONALITY_CHARS: int = 500
 MAX_CONTEXT_REQUESTS: int = 5
@@ -40,6 +40,26 @@ sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
     deps_type=SimAgentDeps,
     result_type=SimAgentAction,
 )
+
+
+action_selector: Agent[SimAgentDeps, ActionSelectionResult] = Agent(
+    deps_type=SimAgentDeps,
+    result_type=ActionSelectionResult,
+)
+
+
+@action_selector.system_prompt
+def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
+    personality = _truncate_personality(ctx.deps.agent_personality)
+    return (
+        "You are deciding what action to take this turn in a Community Notes simulation.\n\n"
+        f"Your personality: {personality}\n\n"
+        "Choose exactly one action:\n"
+        "- write_note: Write a new community note for a content request\n"
+        "- rate_note: Rate an existing community note\n"
+        "- pass_turn: Skip this turn\n\n"
+        "Respond with your chosen action_type and a brief reasoning."
+    )
 
 
 def estimate_tokens(text: str) -> int:
@@ -170,18 +190,102 @@ def pass_turn() -> str:
     return "Turn passed. No action taken."
 
 
+BRIEF_MAX_TITLES = 3
+BRIEF_TRUNCATE = 50
+VERBOSE_TRUNCATE = 100
+
+
+def _pluralize(count: int, singular: str) -> str:
+    return f"{count} {singular}" if count == 1 else f"{count} {singular}s"
+
+
+def _truncate(text: str, max_len: int) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rsplit(" ", 1)[0] + "..."
+
+
+def build_queue_summary(
+    requests: list[dict],
+    notes: list[dict],
+    verbose: bool = False,
+) -> str:
+    max_titles = None if verbose else BRIEF_MAX_TITLES
+    trunc = VERBOSE_TRUNCATE if verbose else BRIEF_TRUNCATE
+
+    lines: list[str] = []
+
+    lines.append(_pluralize(len(requests), "request"))
+    shown_requests = requests if max_titles is None else requests[:max_titles]
+    for req in shown_requests:
+        lines.append(f"  - {_truncate(req.get('content') or '', trunc)}")
+    if max_titles is not None and len(requests) > max_titles:
+        lines.append(f"  ...and {len(requests) - max_titles} more")
+
+    lines.append(_pluralize(len(notes), "note"))
+    shown_notes = notes if max_titles is None else notes[:max_titles]
+    for note in shown_notes:
+        lines.append(f"  - {_truncate(note.get('summary') or '', trunc)}")
+    if max_titles is not None and len(notes) > max_titles:
+        lines.append(f"  ...and {len(notes) - max_titles} more")
+
+    return "\n".join(lines)
+
+
+PHASE1_DIVERSITY_THRESHOLD = 3
+
+
 class OpenNotesSimAgent:
     def __init__(self, model: ModelId = _DEFAULT_MODEL):
         self._agent = sim_agent
+        self._action_selector = action_selector
         self._model = model
+
+    async def select_action(
+        self,
+        deps: SimAgentDeps,
+        recent_actions: list[str],
+        requests: list[dict],
+        notes: list[dict],
+        message_history: list[ModelMessage] | None = None,
+    ) -> tuple[ActionSelectionResult, list[ModelMessage]]:
+        brief_summary = build_queue_summary(requests, notes, verbose=False)
+        prompt = self._build_phase1_prompt(recent_actions, brief_summary)
+
+        result = await self._action_selector.run(
+            prompt,
+            deps=deps,
+            message_history=message_history,
+            model=self._model.to_pydantic_ai(),
+        )
+
+        if result.data.action_type == SimActionType.PASS_TURN:
+            verbose_summary = build_queue_summary(requests, notes, verbose=True)
+            retry_prompt = self._build_phase1_prompt(recent_actions, verbose_summary)
+            result = await self._action_selector.run(
+                retry_prompt,
+                deps=deps,
+                message_history=result.all_messages(),
+                model=self._model.to_pydantic_ai(),
+            )
+
+        return result.data, result.all_messages()
 
     async def run_turn(
         self,
         deps: SimAgentDeps,
         message_history: list[ModelMessage] | None = None,
         usage_limits: UsageLimits | None = None,
+        chosen_action_type: SimActionType | None = None,
     ) -> tuple[SimAgentAction, list[ModelMessage]]:
-        prompt = self._build_turn_prompt(deps)
+        if chosen_action_type is not None:
+            prompt = self._build_phase2_prompt(
+                chosen_action_type,
+                deps.available_requests,
+                deps.available_notes,
+            )
+        else:
+            prompt = self._build_turn_prompt(deps)
         result = await self._agent.run(
             prompt,
             deps=deps,
@@ -215,6 +319,67 @@ class OpenNotesSimAgent:
 
         return prompt
 
+    def _build_phase2_prompt(
+        self,
+        action_type: SimActionType,
+        requests: list[dict],
+        notes: list[dict],
+        token_budget: int = TOKEN_BUDGET,
+    ) -> str:
+        if action_type == SimActionType.PASS_TURN:
+            return "You chose to pass this turn. No action needed."
+
+        if action_type == SimActionType.WRITE_NOTE:
+            items = list(requests[:MAX_CONTEXT_REQUESTS])
+            if len(requests) > MAX_CONTEXT_REQUESTS:
+                items = random.sample(requests, MAX_CONTEXT_REQUESTS)
+            prompt = self._format_sections(items, [])
+            while estimate_tokens(prompt) > token_budget and items:
+                items.pop()
+                prompt = self._format_sections(items, [])
+            return prompt.replace(
+                "Choose an action: write a note, rate a note, or pass.",
+                "Write a community note for one of the requests above.",
+            )
+
+        if action_type == SimActionType.RATE_NOTE:
+            items = list(notes[:MAX_CONTEXT_NOTES])
+            if len(notes) > MAX_CONTEXT_NOTES:
+                items = random.sample(notes, MAX_CONTEXT_NOTES)
+            prompt = self._format_sections([], items)
+            while estimate_tokens(prompt) > token_budget and items:
+                items.pop()
+                prompt = self._format_sections([], items)
+            return prompt.replace(
+                "Choose an action: write a note, rate a note, or pass.",
+                "Rate one of the notes above.",
+            )
+
+        return "You chose to pass this turn. No action needed."
+
+    def _build_phase1_prompt(self, recent_actions: list[str], queue_summary: str) -> str:
+        parts: list[str] = []
+        if recent_actions:
+            parts.append(
+                f"Your recent actions (last {len(recent_actions)} turns): "
+                f"{', '.join(recent_actions)}"
+            )
+            recent_tail = recent_actions[-PHASE1_DIVERSITY_THRESHOLD:]
+            if (
+                len(recent_tail) >= PHASE1_DIVERSITY_THRESHOLD
+                and len(set(recent_tail)) == 1
+                and recent_tail[-1] != "pass_turn"
+            ):
+                parts.append(
+                    "You've been doing the same action repeatedly. "
+                    "Consider trying a different action to diversify your contributions."
+                )
+        parts.append(f"\nAvailable work:\n{queue_summary}")
+        parts.append(
+            "\nWhat would you like to do this turn? Choose: write_note, rate_note, or pass_turn."
+        )
+        return "\n".join(parts)
+
     @staticmethod
     def _format_sections(requests: list[dict], notes: list[dict]) -> str:
         sections = ["Here is the current state of the community:\n"]
@@ -230,7 +395,7 @@ class OpenNotesSimAgent:
                 if req_notes:
                     block += f"\n  Existing notes ({len(req_notes)}):"
                     for rn in req_notes:
-                        summary = rn.get("summary", "")
+                        summary = rn.get("summary") or ""
                         if len(summary) > 100:
                             summary = summary[:100].rsplit(" ", 1)[0] + "..."
                         block += f"\n    - [{rn.get('classification', 'N/A')}] {summary}"
@@ -258,9 +423,12 @@ __all__ = [
     "MAX_CONTEXT_REQUESTS",
     "MAX_LINKED_NOTES_PER_REQUEST",
     "MAX_PERSONALITY_CHARS",
+    "PHASE1_DIVERSITY_THRESHOLD",
     "TOKEN_BUDGET",
     "OpenNotesSimAgent",
     "SimAgentDeps",
+    "action_selector",
+    "build_queue_summary",
     "estimate_tokens",
     "sim_agent",
 ]

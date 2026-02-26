@@ -325,6 +325,7 @@ class TestSimulationTurnTokenGated:
                     "user_profile_id": str(uuid4()),
                     "agent_profile_id": str(uuid4()),
                     "simulation_run_id": str(uuid4()),
+                    "recent_actions": [],
                 },
             ),
             patch(
@@ -334,6 +335,14 @@ class TestSimulationTurnTokenGated:
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
                 return_value={"available_requests": [], "available_notes": []},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "write_note",
+                    "reasoning": "test",
+                    "phase1_messages": [],
+                },
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",

@@ -37,6 +37,7 @@ def _make_context(
     instance_turn_count: int = 0,
     memory_turn_count: int = 0,
     message_history: list | None = None,
+    recent_actions: list[str] | None = None,
 ) -> dict:
     return {
         "agent_instance_id": agent_instance_id or str(uuid4()),
@@ -53,6 +54,7 @@ def _make_context(
         "memory_id": memory_id or str(uuid4()),
         "memory_turn_count": memory_turn_count,
         "instance_turn_count": instance_turn_count,
+        "recent_actions": recent_actions or [],
     }
 
 
@@ -832,6 +834,147 @@ class TestPersistStateStep:
         mock_redis_client.delete.assert_awaited_once_with(expected_key)
 
 
+class TestSelectActionStep:
+    def test_calls_agent_select_action(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import select_action_step
+
+        context = _make_context()
+        deps_data = {
+            "available_requests": [
+                {"request_id": "req-001", "content": "test", "status": "PENDING"}
+            ],
+            "available_notes": [],
+        }
+
+        mock_selection = MagicMock()
+        mock_selection.action_type.value = "write_note"
+        mock_selection.reasoning = "There is a request to address"
+
+        mock_phase1_messages = [MagicMock()]
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.select_action = AsyncMock(
+            return_value=(mock_selection, mock_phase1_messages)
+        )
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent_instance,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._serialize_messages",
+                return_value=[{"kind": "response"}],
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._deserialize_messages",
+                return_value=[],
+            ),
+        ):
+            result = select_action_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=[],
+            )
+
+        assert result["action_type"] == "write_note"
+        assert result["reasoning"] == "There is a request to address"
+        assert result["phase1_messages"] == [{"kind": "response"}]
+        mock_agent_instance.select_action.assert_awaited_once()
+
+    def test_returns_pass_after_retry(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import select_action_step
+
+        context = _make_context()
+        deps_data = {
+            "available_requests": [],
+            "available_notes": [],
+        }
+
+        mock_selection = MagicMock()
+        mock_selection.action_type.value = "pass_turn"
+        mock_selection.reasoning = "Nothing available"
+
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.select_action = AsyncMock(return_value=(mock_selection, []))
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent_instance,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._serialize_messages",
+                return_value=[],
+            ),
+        ):
+            result = select_action_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=[],
+            )
+
+        assert result["action_type"] == "pass_turn"
+        assert result["reasoning"] == "Nothing available"
+
+    def test_passes_recent_actions_to_agent(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import select_action_step
+
+        context = _make_context(recent_actions=["write_note", "rate_note"])
+        deps_data = {
+            "available_requests": [],
+            "available_notes": [],
+        }
+
+        mock_selection = MagicMock()
+        mock_selection.action_type.value = "rate_note"
+        mock_selection.reasoning = "Diversifying"
+
+        captured_kwargs: dict = {}
+
+        async def capture_select(**kwargs):
+            captured_kwargs.update(kwargs)
+            return (mock_selection, [])
+
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.select_action = AsyncMock(side_effect=capture_select)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent_instance,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._serialize_messages",
+                return_value=[],
+            ),
+        ):
+            select_action_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=[],
+            )
+
+        assert captured_kwargs["recent_actions"] == ["write_note", "rate_note"]
+
+
 class TestRunAgentTurnWorkflow:
     def test_run_agent_turn_happy_path(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import run_agent_turn
@@ -853,9 +996,17 @@ class TestRunAgentTurnWorkflow:
                 return_value={"available_requests": [], "available_notes": []},
             ),
             patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "write_note",
+                    "reasoning": "Found a request",
+                    "phase1_messages": [{"kind": "response"}],
+                },
+            ),
+            patch(
                 "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
                 return_value={
-                    "action": {"action_type": "pass_turn", "reasoning": "Nothing to do"},
+                    "action": {"action_type": "write_note", "reasoning": "Wrote note"},
                     "new_messages": [{"kind": "response"}],
                 },
             ),
@@ -863,7 +1014,7 @@ class TestRunAgentTurnWorkflow:
                 "src.simulation.workflows.agent_turn_workflow.persist_state_step",
                 return_value={
                     "agent_instance_id": agent_instance_id,
-                    "action_type": "pass_turn",
+                    "action_type": "write_note",
                     "persisted": True,
                 },
             ),
@@ -875,7 +1026,7 @@ class TestRunAgentTurnWorkflow:
             result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
 
         assert result["agent_instance_id"] == agent_instance_id
-        assert result["action"]["action_type"] == "pass_turn"
+        assert result["action"]["action_type"] == "write_note"
         assert result["persisted"] is True
         assert result["workflow_id"] == "wf-test-123"
 
@@ -898,10 +1049,18 @@ class TestRunAgentTurnWorkflow:
             call_order.append("build")
             return {"available_requests": [], "available_notes": []}
 
+        def track_select(*args, **kwargs):
+            call_order.append("select")
+            return {
+                "action_type": "write_note",
+                "reasoning": "Found work",
+                "phase1_messages": [],
+            }
+
         def track_execute(*args, **kwargs):
             call_order.append("execute")
             return {
-                "action": {"action_type": "pass_turn", "reasoning": "idle"},
+                "action": {"action_type": "write_note", "reasoning": "wrote note"},
                 "new_messages": [],
             }
 
@@ -909,7 +1068,7 @@ class TestRunAgentTurnWorkflow:
             call_order.append("persist")
             return {
                 "agent_instance_id": agent_instance_id,
-                "action_type": "pass_turn",
+                "action_type": "write_note",
                 "persisted": True,
             }
 
@@ -927,6 +1086,10 @@ class TestRunAgentTurnWorkflow:
                 side_effect=track_build,
             ),
             patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                side_effect=track_select,
+            ),
+            patch(
                 "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
                 side_effect=track_execute,
             ),
@@ -940,22 +1103,23 @@ class TestRunAgentTurnWorkflow:
             mock_dbos.workflow_id = "wf-test"
             run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
 
-        assert call_order == ["load", "compact", "build", "execute", "persist"]
+        assert call_order == ["load", "compact", "build", "select", "execute", "persist"]
 
-    def test_run_agent_turn_passes_compacted_messages_to_execute(self) -> None:
+    def test_run_agent_turn_passes_compacted_messages_to_select(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import run_agent_turn
 
         agent_instance_id = str(uuid4())
         context = _make_context(agent_instance_id=agent_instance_id)
         compacted = [{"kind": "request", "parts": [{"part_kind": "text", "content": "compacted"}]}]
 
-        captured_execute_args: dict = {}
+        captured_select_args: dict = {}
 
-        def capture_execute(**kwargs):
-            captured_execute_args.update(kwargs)
+        def capture_select(**kwargs):
+            captured_select_args.update(kwargs)
             return {
-                "action": {"action_type": "pass_turn", "reasoning": "idle"},
-                "new_messages": [],
+                "action_type": "write_note",
+                "reasoning": "test",
+                "phase1_messages": [],
             }
 
         with (
@@ -972,14 +1136,21 @@ class TestRunAgentTurnWorkflow:
                 return_value={"available_requests": [], "available_notes": []},
             ),
             patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                side_effect=capture_select,
+            ),
+            patch(
                 "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
-                side_effect=capture_execute,
+                return_value={
+                    "action": {"action_type": "write_note", "reasoning": "wrote"},
+                    "new_messages": [],
+                },
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.persist_state_step",
                 return_value={
                     "agent_instance_id": agent_instance_id,
-                    "action_type": "pass_turn",
+                    "action_type": "write_note",
                     "persisted": True,
                 },
             ),
@@ -989,7 +1160,60 @@ class TestRunAgentTurnWorkflow:
             mock_dbos.workflow_id = "wf-test"
             run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
 
-        assert captured_execute_args["messages"] == compacted
+        assert captured_select_args["messages"] == compacted
+
+    def test_run_agent_turn_skips_phase2_on_pass_turn(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+        phase1_msgs = [{"kind": "response", "parts": [{"part_kind": "text", "content": "pass"}]}]
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={"available_requests": [], "available_notes": []},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "pass_turn",
+                    "reasoning": "Nothing to do",
+                    "phase1_messages": phase1_msgs,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+            ) as mock_execute,
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                return_value={
+                    "agent_instance_id": agent_instance_id,
+                    "action_type": "pass_turn",
+                    "persisted": True,
+                },
+            ) as mock_persist,
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        mock_execute.assert_not_called()
+        assert result["action"]["action_type"] == "pass_turn"
+        assert result["action"]["reasoning"] == "Nothing to do"
+        assert result["persisted"] is True
+        persist_kwargs = mock_persist.call_args.kwargs
+        assert persist_kwargs["new_messages"] == phase1_msgs
+        assert persist_kwargs["action"]["action_type"] == "pass_turn"
 
 
 class TestDispatchAgentTurn:
@@ -1078,3 +1302,711 @@ class TestDispatchAgentTurn:
         assert call1_options["workflow_id"] == f"turn-{agent_id}-1-retry0"
         assert call2_options["workflow_id"] == f"turn-{agent_id}-1-retry2"
         assert call1_options["deduplication_id"] != call2_options["deduplication_id"]
+
+
+class TestRecentActions:
+    def test_load_agent_context_returns_recent_actions_from_memory(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import load_agent_context_step
+
+        instance_id = uuid4()
+        memory_id = uuid4()
+
+        mock_profile = MagicMock()
+        mock_profile.community_server_id = uuid4()
+        mock_profile.personality = "Test"
+        mock_profile.model_name = "openai:gpt-4o-mini"
+        mock_profile.model_params = None
+        mock_profile.memory_compaction_strategy = "sliding_window"
+        mock_profile.memory_compaction_config = None
+
+        mock_instance = MagicMock()
+        mock_instance.id = instance_id
+        mock_instance.agent_profile_id = uuid4()
+        mock_instance.simulation_run_id = uuid4()
+        mock_instance.user_profile_id = uuid4()
+        mock_instance.turn_count = 3
+        mock_instance.agent_profile = mock_profile
+
+        mock_memory = MagicMock()
+        mock_memory.id = memory_id
+        mock_memory.message_history = []
+        mock_memory.turn_count = 3
+        mock_memory.recent_actions = ["write_note", "rate_note", "pass_turn"]
+
+        mock_session = AsyncMock()
+        instance_result = MagicMock()
+        instance_result.scalar_one_or_none.return_value = mock_instance
+        memory_result = MagicMock()
+        memory_result.scalar_one_or_none.return_value = mock_memory
+        mock_session.execute = AsyncMock(side_effect=[instance_result, memory_result])
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = load_agent_context_step.__wrapped__(str(instance_id))
+
+        assert result["recent_actions"] == ["write_note", "rate_note", "pass_turn"]
+
+    def test_load_agent_context_returns_empty_recent_actions_when_no_memory(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import load_agent_context_step
+
+        instance_id = uuid4()
+
+        mock_profile = MagicMock()
+        mock_profile.community_server_id = uuid4()
+        mock_profile.personality = "Test"
+        mock_profile.model_name = "openai:gpt-4o-mini"
+        mock_profile.model_params = None
+        mock_profile.memory_compaction_strategy = "sliding_window"
+        mock_profile.memory_compaction_config = None
+
+        mock_instance = MagicMock()
+        mock_instance.id = instance_id
+        mock_instance.agent_profile_id = uuid4()
+        mock_instance.simulation_run_id = uuid4()
+        mock_instance.user_profile_id = uuid4()
+        mock_instance.turn_count = 0
+        mock_instance.agent_profile = mock_profile
+
+        mock_session = AsyncMock()
+        instance_result = MagicMock()
+        instance_result.scalar_one_or_none.return_value = mock_instance
+        memory_result = MagicMock()
+        memory_result.scalar_one_or_none.return_value = None
+        mock_session.execute = AsyncMock(side_effect=[instance_result, memory_result])
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = load_agent_context_step.__wrapped__(str(instance_id))
+
+        assert result["recent_actions"] == []
+
+    def test_persist_state_appends_action_type_to_recent_actions(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import persist_state_step
+
+        agent_instance_id = str(uuid4())
+        memory_id = str(uuid4())
+        new_messages = [{"kind": "response", "parts": []}]
+        action = {"action_type": "write_note", "reasoning": "test"}
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            persist_state_step.__wrapped__(
+                agent_instance_id=agent_instance_id,
+                memory_id=memory_id,
+                new_messages=new_messages,
+                action=action,
+                recent_actions=["pass_turn", "rate_note"],
+            )
+
+        memory_update_stmt = mock_session.execute.call_args_list[0].args[0]
+        compiled = memory_update_stmt.compile()
+        assert "recent_actions" in str(compiled)
+        assert compiled.params["recent_actions"] == ["pass_turn", "rate_note", "write_note"]
+
+    def test_persist_state_trims_recent_actions_to_last_5(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import persist_state_step
+
+        agent_instance_id = str(uuid4())
+        memory_id = str(uuid4())
+        new_messages = [{"kind": "response", "parts": []}]
+        action = {"action_type": "write_note", "reasoning": "test"}
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            persist_state_step.__wrapped__(
+                agent_instance_id=agent_instance_id,
+                memory_id=memory_id,
+                new_messages=new_messages,
+                action=action,
+                recent_actions=["a1", "a2", "a3", "a4", "a5"],
+            )
+
+        memory_update_stmt = mock_session.execute.call_args_list[0].args[0]
+        compiled = memory_update_stmt.compile()
+        assert compiled.params["recent_actions"] == ["a2", "a3", "a4", "a5", "write_note"]
+
+    def test_persist_state_upsert_includes_recent_actions(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import persist_state_step
+
+        agent_instance_id = str(uuid4())
+        new_messages = [{"kind": "response", "parts": []}]
+        action = {"action_type": "rate_note", "reasoning": "first turn"}
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            persist_state_step.__wrapped__(
+                agent_instance_id=agent_instance_id,
+                memory_id=None,
+                new_messages=new_messages,
+                action=action,
+                recent_actions=[],
+            )
+
+        upsert_stmt = mock_session.execute.call_args_list[0].args[0]
+        compiled = upsert_stmt.compile()
+        assert "recent_actions" in str(compiled)
+        assert compiled.params["recent_actions"] == ["rate_note"]
+
+    def test_persist_state_defaults_recent_actions_to_empty(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import persist_state_step
+
+        agent_instance_id = str(uuid4())
+        memory_id = str(uuid4())
+        new_messages = [{"kind": "response", "parts": []}]
+        action = {"action_type": "pass_turn", "reasoning": "idle"}
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            persist_state_step.__wrapped__(
+                agent_instance_id=agent_instance_id,
+                memory_id=memory_id,
+                new_messages=new_messages,
+                action=action,
+            )
+
+        memory_update_stmt = mock_session.execute.call_args_list[0].args[0]
+        compiled = memory_update_stmt.compile()
+        assert compiled.params["recent_actions"] == ["pass_turn"]
+
+    def test_run_agent_turn_passes_recent_actions_to_persist(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(
+            agent_instance_id=agent_instance_id,
+            recent_actions=["write_note", "rate_note"],
+        )
+
+        captured_persist_kwargs: dict = {}
+
+        def capture_persist(**kwargs):
+            captured_persist_kwargs.update(kwargs)
+            return {
+                "agent_instance_id": agent_instance_id,
+                "action_type": "write_note",
+                "persisted": True,
+            }
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={"available_requests": [], "available_notes": []},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "write_note",
+                    "reasoning": "Found work",
+                    "phase1_messages": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+                return_value={
+                    "action": {"action_type": "write_note", "reasoning": "wrote note"},
+                    "new_messages": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                side_effect=capture_persist,
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert captured_persist_kwargs["recent_actions"] == ["write_note", "rate_note"]
+
+
+class TestTwoPhaseFlow:
+    def test_run_agent_turn_with_phase1_write_note(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+        phase1_msgs = [{"kind": "response", "parts": [{"part_kind": "text", "content": "phase1"}]}]
+
+        captured_execute_kwargs: dict = {}
+
+        def capture_execute(**kwargs):
+            captured_execute_kwargs.update(kwargs)
+            return {
+                "action": {"action_type": "write_note", "reasoning": "wrote note"},
+                "new_messages": [{"kind": "response"}],
+            }
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={"available_requests": [], "available_notes": []},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "write_note",
+                    "reasoning": "There is a request",
+                    "phase1_messages": phase1_msgs,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+                side_effect=capture_execute,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                return_value={
+                    "agent_instance_id": agent_instance_id,
+                    "action_type": "write_note",
+                    "persisted": True,
+                },
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert result["action"]["action_type"] == "write_note"
+        assert captured_execute_kwargs["action_type"] == "write_note"
+        assert captured_execute_kwargs["phase1_messages"] == phase1_msgs
+
+    def test_run_agent_turn_skips_phase2_on_pass(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+        phase1_msgs = [{"kind": "response", "parts": [{"part_kind": "text", "content": "pass"}]}]
+
+        execute_called = False
+
+        def track_execute(**kwargs):
+            nonlocal execute_called
+            execute_called = True
+            return {
+                "action": {"action_type": "write_note", "reasoning": "should not happen"},
+                "new_messages": [],
+            }
+
+        captured_persist_kwargs: dict = {}
+
+        def capture_persist(**kwargs):
+            captured_persist_kwargs.update(kwargs)
+            return {
+                "agent_instance_id": agent_instance_id,
+                "action_type": "pass_turn",
+                "persisted": True,
+            }
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={"available_requests": [], "available_notes": []},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "pass_turn",
+                    "reasoning": "Nothing to do",
+                    "phase1_messages": phase1_msgs,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+                side_effect=track_execute,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                side_effect=capture_persist,
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert execute_called is False
+        assert result["action"]["action_type"] == "pass_turn"
+        assert result["action"]["reasoning"] == "Nothing to do"
+        assert result["persisted"] is True
+        assert captured_persist_kwargs["new_messages"] == phase1_msgs
+        assert captured_persist_kwargs["action"]["action_type"] == "pass_turn"
+
+    def test_run_agent_turn_pass_turn_step_order(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+        call_order: list[str] = []
+
+        def track(name, return_val):
+            def fn(*args, **kwargs):
+                call_order.append(name)
+                return return_val
+
+            return fn
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                side_effect=track("load", context),
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                side_effect=track("compact", {"messages": [], "was_compacted": False}),
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                side_effect=track("build", {"available_requests": [], "available_notes": []}),
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                side_effect=track(
+                    "select",
+                    {
+                        "action_type": "pass_turn",
+                        "reasoning": "idle",
+                        "phase1_messages": [],
+                    },
+                ),
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+                side_effect=track(
+                    "execute",
+                    {
+                        "action": {"action_type": "write_note", "reasoning": "x"},
+                        "new_messages": [],
+                    },
+                ),
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                side_effect=track(
+                    "persist",
+                    {
+                        "agent_instance_id": agent_instance_id,
+                        "action_type": "pass_turn",
+                        "persisted": True,
+                    },
+                ),
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert call_order == ["load", "compact", "build", "select", "persist"]
+        assert "execute" not in call_order
+
+    def test_execute_agent_turn_step_with_action_type(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
+
+        context = _make_context()
+        deps_data = {
+            "available_requests": [
+                {"request_id": "req-001", "content": "test", "status": "PENDING"}
+            ],
+            "available_notes": [],
+        }
+
+        mock_action = MagicMock()
+        mock_action.model_dump.return_value = {
+            "action_type": "write_note",
+            "reasoning": "Wrote a note",
+        }
+
+        captured_run_turn_kwargs: dict = {}
+
+        async def capture_run_turn(**kwargs):
+            captured_run_turn_kwargs.update(kwargs)
+            return (mock_action, [])
+
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.run_turn = AsyncMock(side_effect=capture_run_turn)
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        phase1_msgs = [{"kind": "response", "parts": []}]
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent_instance,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._serialize_messages",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._deserialize_messages",
+                return_value=[],
+            ),
+        ):
+            result = execute_agent_turn_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=[],
+                action_type="write_note",
+                phase1_messages=phase1_msgs,
+            )
+
+        assert result["action"]["action_type"] == "write_note"
+        from src.simulation.schemas import SimActionType
+
+        call_kwargs = mock_agent_instance.run_turn.call_args.kwargs
+        assert call_kwargs["chosen_action_type"] == SimActionType.WRITE_NOTE
+
+    def test_execute_agent_turn_step_without_action_type_preserves_original_behavior(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
+
+        context = _make_context()
+        deps_data = {
+            "available_requests": [],
+            "available_notes": [],
+        }
+
+        mock_action = MagicMock()
+        mock_action.model_dump.return_value = {
+            "action_type": "pass_turn",
+            "reasoning": "Nothing to do",
+        }
+
+        captured_run_turn_kwargs: dict = {}
+
+        async def capture_run_turn(**kwargs):
+            captured_run_turn_kwargs.update(kwargs)
+            return (mock_action, [])
+
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.run_turn = AsyncMock(side_effect=capture_run_turn)
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent_instance,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._serialize_messages",
+                return_value=[],
+            ),
+        ):
+            execute_agent_turn_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=[],
+            )
+
+        call_kwargs = mock_agent_instance.run_turn.call_args.kwargs
+        assert call_kwargs["chosen_action_type"] is None
+
+    def test_execute_agent_turn_step_uses_phase1_messages_as_history(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
+
+        context = _make_context()
+        deps_data = {"available_requests": [], "available_notes": []}
+
+        mock_action = MagicMock()
+        mock_action.model_dump.return_value = {
+            "action_type": "write_note",
+            "reasoning": "test",
+        }
+
+        captured_history: list = []
+
+        async def capture_run_turn(**kwargs):
+            captured_history.append(kwargs.get("message_history"))
+            return (mock_action, [])
+
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.run_turn = AsyncMock(side_effect=capture_run_turn)
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        phase1_sentinel = [
+            {"kind": "response", "parts": [{"part_kind": "text", "content": "phase1"}]}
+        ]
+        memory_sentinel = [
+            {"kind": "request", "parts": [{"part_kind": "text", "content": "memory"}]}
+        ]
+
+        deserialized_phase1 = object()
+        deserialized_memory = object()
+
+        call_count = 0
+
+        def mock_deserialize(data):
+            nonlocal call_count
+            if data == phase1_sentinel:
+                return deserialized_phase1
+            if data == memory_sentinel:
+                return deserialized_memory
+            call_count += 1
+            return []
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent_instance,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._serialize_messages",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._deserialize_messages",
+                side_effect=mock_deserialize,
+            ),
+        ):
+            execute_agent_turn_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=memory_sentinel,
+                action_type="write_note",
+                phase1_messages=phase1_sentinel,
+            )
+
+        assert captured_history[0] is deserialized_phase1

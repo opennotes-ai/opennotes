@@ -92,6 +92,9 @@ class SimAgentMemory(Base, TimestampMixin):
     )
     compaction_strategy: Mapped[str | None] = mapped_column(String(50), nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    recent_actions: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
 
     agent_instance: Mapped[SimAgentInstance] = relationship(
         "SimAgentInstance", back_populates="memory", lazy="raise"
