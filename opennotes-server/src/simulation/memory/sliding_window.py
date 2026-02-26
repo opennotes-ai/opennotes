@@ -5,7 +5,7 @@ from typing import Any
 from src.simulation.memory.compactor_protocol import CompactionResult, ModelMessage
 from src.simulation.memory.message_utils import is_system_message
 
-DEFAULT_WINDOW_SIZE = 50
+DEFAULT_WINDOW_SIZE = 20
 
 
 class SlidingWindowCompactor:

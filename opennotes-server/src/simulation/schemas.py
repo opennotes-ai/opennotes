@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
@@ -7,6 +8,25 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema, TimestampSchema
 from src.llm_config.model_id import ModelId
+
+REASONING_MODEL_PATTERN = re.compile(r"^o[1-9]\d*(-mini|-preview|-pro)?(-\d{4}-\d{2}-\d{2})?$")
+
+
+def validate_model_name_value(v: str) -> str:
+    try:
+        model_id = ModelId.from_pydantic_ai(v)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid model name '{v}'. Use 'provider:model' format "
+            f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
+        ) from exc
+    if REASONING_MODEL_PATTERN.match(model_id.model):
+        raise ValueError(
+            f"Reasoning model '{v}' is not supported for simulation agents. "
+            f"Reasoning models (o1, o3, o4-mini, etc.) reject tool result messages "
+            f"not preceded by tool_calls. Use a non-reasoning model like 'openai:gpt-4o-mini'."
+        )
+    return v
 
 
 class ModelNameResponse(SQLAlchemySchema):
@@ -27,14 +47,7 @@ class SimAgentBase(StrictInputSchema):
     @field_validator("model_name")
     @classmethod
     def validate_model_name(cls, v: str) -> str:
-        try:
-            ModelId.from_pydantic_ai(v)
-        except ValueError:
-            raise ValueError(
-                f"Invalid model name '{v}'. Use 'provider:model' format "
-                f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
-            )
-        return v
+        return validate_model_name_value(v)
 
 
 class SimAgentCreate(SimAgentBase):
@@ -56,14 +69,7 @@ class SimAgentUpdate(StrictInputSchema):
     def validate_model_name(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        try:
-            ModelId.from_pydantic_ai(v)
-        except ValueError:
-            raise ValueError(
-                f"Invalid model name '{v}'. Use 'provider:model' format "
-                f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
-            )
-        return v
+        return validate_model_name_value(v)
 
 
 class SimActionType(str, Enum):

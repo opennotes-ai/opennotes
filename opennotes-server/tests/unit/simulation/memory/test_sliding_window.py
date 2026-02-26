@@ -60,8 +60,8 @@ class TestSlidingWindowKeepsLastN:
 
         result = await compactor.compact(messages, {})
 
-        assert result.compacted_count == 30
-        assert result.metadata["window_size"] == 50
+        assert result.compacted_count == 20
+        assert result.metadata["window_size"] == 20
 
     @pytest.mark.asyncio
     async def test_returns_compaction_result_metadata(self):

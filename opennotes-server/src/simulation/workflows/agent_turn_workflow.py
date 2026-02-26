@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 
 _message_list_ta: TypeAdapter[list[ModelMessage]] = TypeAdapter(list[ModelMessage])
 
-COMPACTION_INTERVAL: int = 5
+COMPACTION_INTERVAL: int = 2
 DEFAULT_REQUEST_LIMIT: int = 3
 DEFAULT_TOKEN_LIMIT: int = 4000
 
