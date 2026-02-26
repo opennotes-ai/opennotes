@@ -69,9 +69,13 @@ class TestSimAgentReasoningModelValidation:
             "openai:o1",
             "openai:o1-mini",
             "openai:o1-preview",
+            "openai:o1-pro",
             "openai:o3",
             "openai:o3-mini",
+            "openai:o3-pro",
             "openai:o4-mini",
+            "openai:o3-mini-2025-01-31",
+            "openai:o4-mini-2025-04-16",
         ],
     )
     def test_rejects_reasoning_models(self, model_name: str) -> None:

@@ -643,18 +643,32 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
         final_status = "completed"
         iteration = 0
         consecutive_empty = 0
+        consecutive_status_failures = 0
+        max_consecutive_status_failures = 10
 
         while iteration < MAX_ITERATIONS:
             iteration += 1
 
             try:
                 status = check_run_status_step(simulation_run_id)
+                consecutive_status_failures = 0
             except Exception:
+                consecutive_status_failures += 1
                 logger.warning(
-                    "Failed to check run status, treating as running",
+                    "Failed to check run status (%d/%d), treating as running",
+                    consecutive_status_failures,
+                    max_consecutive_status_failures,
                     exc_info=True,
                     extra={"simulation_run_id": simulation_run_id, "iteration": iteration},
                 )
+                if consecutive_status_failures >= max_consecutive_status_failures:
+                    logger.error(
+                        "Status check failed %d consecutive times, failing orchestrator",
+                        consecutive_status_failures,
+                        extra={"simulation_run_id": simulation_run_id},
+                    )
+                    final_status = "failed"
+                    break
                 status = "running"
 
             if status == "cancelled":
@@ -692,6 +706,7 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 snapshot = get_population_snapshot_step(simulation_run_id)
             except Exception:
                 logger.exception("Failed to get population snapshot")
+                DBOS.sleep(config["turn_cadence_seconds"])
                 continue
 
             spawned_ids: list[str] = []
