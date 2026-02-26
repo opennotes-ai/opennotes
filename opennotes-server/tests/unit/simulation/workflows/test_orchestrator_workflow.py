@@ -1225,6 +1225,98 @@ class TestRunOrchestratorWorkflow:
         assert finalize_calls[0] == 2
 
 
+class TestSetRunStatusStep:
+    def test_set_run_status_step_updates_status(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_run_status_step
+
+        run_id = str(uuid4())
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = uuid4()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+        ):
+            result = set_run_status_step.__wrapped__(run_id, "paused")
+
+        assert result is True
+        mock_session.execute.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
+
+    def test_set_run_status_step_with_expected_status_match(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_run_status_step
+
+        run_id = str(uuid4())
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = uuid4()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+        ):
+            result = set_run_status_step.__wrapped__(run_id, "paused", expected_status="running")
+
+        assert result is True
+        mock_session.execute.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
+
+    def test_set_run_status_step_with_expected_status_mismatch(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_run_status_step
+
+        run_id = str(uuid4())
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+        ):
+            result = set_run_status_step.__wrapped__(run_id, "paused", expected_status="running")
+
+        assert result is False
+        mock_session.execute.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
+
+    def test_set_run_status_step_sets_paused_at_for_paused(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_run_status_step
+
+        run_id = str(uuid4())
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = uuid4()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+            patch("src.simulation.workflows.orchestrator_workflow.pendulum") as mock_pendulum,
+        ):
+            mock_now = MagicMock()
+            mock_pendulum.now.return_value = mock_now
+            result = set_run_status_step.__wrapped__(run_id, "paused")
+
+        assert result is True
+        call_args = mock_session.execute.call_args
+        stmt = call_args[0][0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": True})
+        compiled_str = str(compiled)
+        assert "paused_at" in compiled_str
+
+
 class TestDispatchOrchestrator:
     @pytest.mark.asyncio
     async def test_dispatch_orchestrator_enqueues_via_dbos_client(self) -> None:
@@ -1274,8 +1366,35 @@ class TestDispatchOrchestrator:
         call2_options = mock_client.enqueue.call_args_list[1].args[0]
         assert call1_options["workflow_id"] == call2_options["workflow_id"]
         assert call1_options["deduplication_id"] == call2_options["deduplication_id"]
-        assert call1_options["workflow_id"] == f"orchestrator-{run_id}"
+        assert call1_options["workflow_id"] == f"orchestrator-{run_id}-gen1"
         assert call1_options["queue_name"] == "simulation_orchestrator"
+
+    @pytest.mark.asyncio
+    async def test_dispatch_orchestrator_different_generation_different_workflow_id(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import dispatch_orchestrator
+
+        mock_client = MagicMock()
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "test-wf"
+        mock_client.enqueue.return_value = mock_handle
+
+        run_id = uuid4()
+
+        with (
+            patch(
+                "src.dbos_workflows.config.get_dbos_client",
+                return_value=mock_client,
+            ),
+            patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
+        ):
+            await dispatch_orchestrator(run_id, generation=1)
+            await dispatch_orchestrator(run_id, generation=2)
+
+        call1_options = mock_client.enqueue.call_args_list[0].args[0]
+        call2_options = mock_client.enqueue.call_args_list[1].args[0]
+        assert call1_options["workflow_id"] == f"orchestrator-{run_id}-gen1"
+        assert call2_options["workflow_id"] == f"orchestrator-{run_id}-gen2"
+        assert call1_options["workflow_id"] != call2_options["workflow_id"]
 
 
 class TestRunScoringStep:
@@ -1308,11 +1427,13 @@ class TestRunScoringStep:
 
 
 class TestOrchestratorEmptyContentPause:
-    def test_orchestrator_pauses_after_consecutive_empty(self) -> None:
+    def test_orchestrator_auto_pauses_and_stays_alive(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import run_orchestrator
 
         run_id = str(uuid4())
         config = _make_config()
+
+        status_calls = iter(["running", "running", "running", "paused", "cancelled"])
 
         with (
             patch(
@@ -1321,12 +1442,15 @@ class TestOrchestratorEmptyContentPause:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
-                return_value="running",
+                side_effect=lambda _: next(status_calls),
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
                 return_value={"has_content": False, "pending_requests": 0, "unrated_notes": 0},
             ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
+            ) as mock_set_status,
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
             ) as mock_snapshot,
@@ -1335,7 +1459,7 @@ class TestOrchestratorEmptyContentPause:
             ) as mock_schedule,
             patch(
                 "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
-                return_value={"final_status": "paused", "instances_finalized": 0},
+                return_value={"final_status": "cancelled", "instances_finalized": 0},
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.MAX_CONSECUTIVE_EMPTY",
@@ -1348,9 +1472,10 @@ class TestOrchestratorEmptyContentPause:
 
             result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
 
+        mock_set_status.assert_called_once_with(run_id, "paused", expected_status="running")
         mock_snapshot.assert_not_called()
         mock_schedule.assert_not_called()
-        assert result["status"] == "paused"
+        assert result["status"] == "cancelled"
 
     def test_orchestrator_resets_empty_counter_on_content(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import run_orchestrator
@@ -1655,6 +1780,9 @@ class TestConsecutiveEmptyResetOnException:
             patch(
                 "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
                 side_effect=mock_content_check,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",

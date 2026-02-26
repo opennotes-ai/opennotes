@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from typing import Annotated, Any, Literal
@@ -26,6 +27,7 @@ from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
 from src.database import get_db
+from src.dbos_workflows.config import get_dbos_client
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.notes.models import Note, Rating
@@ -39,7 +41,7 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 VALID_PAUSE_FROM = {"running"}
-VALID_RESUME_FROM = {"paused"}
+VALID_RESUME_FROM = {"paused", "failed"}
 VALID_CANCEL_FROM = {"pending", "running", "paused"}
 TERMINAL_STATUSES = {"completed", "cancelled", "failed"}
 
@@ -496,18 +498,88 @@ async def resume_simulation(
             return create_error_response(
                 status.HTTP_409_CONFLICT,
                 "Conflict",
-                f"Cannot resume simulation in '{run.status}' status (must be 'paused')",
+                f"Cannot resume simulation in '{run.status}' status "
+                f"(must be one of: {', '.join(sorted(VALID_RESUME_FROM))})",
+            )
+
+        needs_redispatch = False
+        dbos_check_failed = False
+        try:
+            client = get_dbos_client()
+            wf_prefix = f"orchestrator-{simulation_id}"
+            active_workflows = await asyncio.to_thread(
+                client.list_workflows,
+                workflow_id_prefix=wf_prefix,
+                status=["ENQUEUED", "PENDING"],
+                load_input=False,
+                load_output=False,
+            )
+            needs_redispatch = len(active_workflows) == 0
+        except Exception:
+            logger.error(
+                "Failed to check DBOS workflow status, cannot safely resume",
+                exc_info=True,
+                extra={"simulation_run_id": str(simulation_id)},
+            )
+            dbos_check_failed = True
+
+        if dbos_check_failed:
+            return create_error_response(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Service Unavailable",
+                "Unable to verify orchestrator workflow status. Please retry.",
             )
 
         now = pendulum.now("UTC")
+        update_values: dict[str, Any] = {
+            "status": "running",
+            "paused_at": None,
+            "updated_at": now,
+        }
+
+        if run.status == "failed":
+            update_values["error_message"] = None
+            update_values["completed_at"] = None
+
+        new_generation = run.generation
+        if needs_redispatch:
+            new_generation = run.generation + 1
+            update_values["generation"] = new_generation
+
         await db.execute(
-            update(SimulationRun)
-            .where(SimulationRun.id == simulation_id)
-            .values(status="running", paused_at=None, updated_at=now)
+            update(SimulationRun).where(SimulationRun.id == simulation_id).values(**update_values)
         )
         await db.commit()
-
         await db.refresh(run)
+
+        if needs_redispatch:
+            try:
+                await dispatch_orchestrator(simulation_id, generation=new_generation)
+            except Exception:
+                logger.exception(
+                    "Failed to re-dispatch orchestrator workflow on resume",
+                    extra={"simulation_run_id": str(simulation_id)},
+                )
+                failure_now = pendulum.now("UTC")
+                await db.execute(
+                    update(SimulationRun)
+                    .where(SimulationRun.id == simulation_id)
+                    .where(SimulationRun.status == "running")
+                    .values(
+                        status="failed",
+                        error_message="Failed to re-dispatch orchestrator workflow",
+                        completed_at=failure_now,
+                        updated_at=failure_now,
+                    )
+                )
+                await db.commit()
+                return create_error_response(
+                    status.HTTP_502_BAD_GATEWAY,
+                    "Bad Gateway",
+                    "Failed to dispatch orchestrator workflow. "
+                    "The simulation has been marked as failed.",
+                )
+
         resource = simulation_run_to_resource(run)
         response = SimulationSingleResponse(
             data=resource,
