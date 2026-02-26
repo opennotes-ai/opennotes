@@ -371,6 +371,7 @@ def detect_stuck_agents_step(simulation_run_id: str) -> dict[str, int]:
         wf_status = DBOS.get_workflow_status(wf_id)
         if wf_status is not None and wf_status.status in (
             "ERROR",
+            "CANCELLED",
             "MAX_RECOVERY_ATTEMPTS_EXCEEDED",
         ):
             agents_to_retry.append((agent_id, retry_count))
