@@ -62,6 +62,53 @@ class TestSimAgentCreateModelNameValidation:
         assert "openai/gpt-5-mini" in error_str
 
 
+class TestSimAgentReasoningModelValidation:
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "openai:o1",
+            "openai:o1-mini",
+            "openai:o1-preview",
+            "openai:o3",
+            "openai:o3-mini",
+            "openai:o4-mini",
+        ],
+    )
+    def test_rejects_reasoning_models(self, model_name: str) -> None:
+        from src.simulation.sim_agents_jsonapi_router import SimAgentCreateAttributes
+
+        with pytest.raises(ValidationError, match="Reasoning model"):
+            SimAgentCreateAttributes(
+                name="TestAgent",
+                personality="A test agent",
+                model_name=model_name,
+            )
+
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "openai:gpt-4o",
+            "openai:gpt-4o-mini",
+            "google-gla:gemini-2.0-flash",
+        ],
+    )
+    def test_accepts_non_reasoning_models(self, model_name: str) -> None:
+        from src.simulation.sim_agents_jsonapi_router import SimAgentCreateAttributes
+
+        agent = SimAgentCreateAttributes(
+            name="TestAgent",
+            personality="A test agent",
+            model_name=model_name,
+        )
+        assert agent.model_name == model_name
+
+    def test_rejects_reasoning_model_in_update(self) -> None:
+        from src.simulation.sim_agents_jsonapi_router import SimAgentUpdateAttributes
+
+        with pytest.raises(ValidationError, match="Reasoning model"):
+            SimAgentUpdateAttributes(model_name="openai:o4-mini")
+
+
 class TestSimAgentUpdateModelNameValidation:
     def test_rejects_invalid_model_name(self) -> None:
         from src.simulation.sim_agents_jsonapi_router import SimAgentUpdateAttributes

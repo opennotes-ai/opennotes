@@ -25,7 +25,7 @@ from src.database import get_db
 from src.llm_config.model_id import ModelId
 from src.monitoring import get_logger
 from src.simulation.models import SimAgent
-from src.simulation.schemas import ModelNameResponse
+from src.simulation.schemas import ModelNameResponse, _validate_model_name_value
 from src.users.models import User
 
 logger = get_logger(__name__)
@@ -46,14 +46,7 @@ class SimAgentCreateAttributes(StrictInputSchema):
     @field_validator("model_name")
     @classmethod
     def validate_model_name(cls, v: str) -> str:
-        try:
-            ModelId.from_pydantic_ai(v)
-        except ValueError:
-            raise ValueError(
-                f"Invalid model name '{v}'. Use 'provider:model' format "
-                f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
-            )
-        return v
+        return _validate_model_name_value(v)
 
 
 class SimAgentCreateData(BaseModel):
@@ -84,14 +77,7 @@ class SimAgentUpdateAttributes(StrictInputSchema):
     def validate_model_name(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        try:
-            ModelId.from_pydantic_ai(v)
-        except ValueError:
-            raise ValueError(
-                f"Invalid model name '{v}'. Use 'provider:model' format "
-                f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
-            )
-        return v
+        return _validate_model_name_value(v)
 
 
 class SimAgentUpdateData(BaseModel):
