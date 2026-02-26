@@ -15,6 +15,7 @@ from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
 from src.simulation.models import SimAgent, SimAgentInstance, SimAgentMemory
+from src.simulation.schemas import SimActionType
 from src.utils.async_compat import run_sync
 
 logger = get_logger(__name__)
@@ -73,10 +74,12 @@ def load_agent_context_step(agent_instance_id: str) -> dict[str, Any]:
             message_history: list[dict[str, Any]] = []
             memory_id: str | None = None
             memory_turn_count: int = 0
+            recent_actions: list[str] = []
             if memory is not None:
                 message_history = memory.message_history or []
                 memory_id = str(memory.id)
                 memory_turn_count = memory.turn_count
+                recent_actions = memory.recent_actions or []
 
             return {
                 "agent_instance_id": str(instance.id),
@@ -95,6 +98,7 @@ def load_agent_context_step(agent_instance_id: str) -> dict[str, Any]:
                 "memory_id": memory_id,
                 "memory_turn_count": memory_turn_count,
                 "instance_turn_count": instance.turn_count,
+                "recent_actions": recent_actions,
             }
 
     return run_sync(_load())
@@ -244,10 +248,58 @@ def build_deps_step(
 
 
 @DBOS.step(retries_allowed=False)
+def select_action_step(
+    context: dict[str, Any],
+    deps_data: dict[str, Any],
+    messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    from src.llm_config.model_id import ModelId
+    from src.simulation.agent import OpenNotesSimAgent, SimAgentDeps
+
+    async def _select() -> dict[str, Any]:
+        model_name_str = context["model_name"]
+        model_id = ModelId.from_pydantic_ai(model_name_str)
+        agent = OpenNotesSimAgent(model=model_id)
+
+        message_history = _deserialize_messages(messages) if messages else None
+
+        deps = SimAgentDeps(
+            db=None,  # type: ignore[arg-type]
+            community_server_id=UUID(context["community_server_id"])
+            if context.get("community_server_id")
+            else None,
+            agent_instance_id=UUID(context["agent_instance_id"]),
+            user_profile_id=UUID(context["user_profile_id"]),
+            available_requests=deps_data["available_requests"],
+            available_notes=deps_data["available_notes"],
+            agent_personality=context["personality"],
+            model_name=model_id,
+        )
+
+        selection, phase1_messages = await agent.select_action(
+            deps=deps,
+            recent_actions=context.get("recent_actions", []),
+            requests=deps_data["available_requests"],
+            notes=deps_data["available_notes"],
+            message_history=message_history,
+        )
+
+        return {
+            "action_type": selection.action_type.value,
+            "reasoning": selection.reasoning,
+            "phase1_messages": _serialize_messages(phase1_messages),
+        }
+
+    return run_sync(_select())
+
+
+@DBOS.step(retries_allowed=False)
 def execute_agent_turn_step(
     context: dict[str, Any],
     deps_data: dict[str, Any],
     messages: list[dict[str, Any]],
+    action_type: str | None = None,
+    phase1_messages: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     from pydantic_ai.exceptions import UserError
 
@@ -265,7 +317,16 @@ def execute_agent_turn_step(
             total_tokens_limit=token_limit,
         )
 
-        message_history = _deserialize_messages(messages) if messages else None
+        if phase1_messages is not None:
+            message_history = _deserialize_messages(phase1_messages)
+        elif messages:
+            message_history = _deserialize_messages(messages)
+        else:
+            message_history = None
+
+        chosen_action: SimActionType | None = None
+        if action_type is not None:
+            chosen_action = SimActionType(action_type)
 
         model_name_str = context["model_name"]
         try:
@@ -298,6 +359,7 @@ def execute_agent_turn_step(
                     deps=deps,
                     message_history=message_history,
                     usage_limits=usage_limits,
+                    chosen_action_type=chosen_action,
                 )
             except UserError as exc:
                 model_name = context["model_name"]
@@ -330,6 +392,7 @@ def persist_state_step(
     new_messages: list[dict[str, Any]],
     action: dict[str, Any],
     simulation_run_id: str | None = None,
+    recent_actions: list[str] | None = None,
 ) -> dict[str, Any]:
     from src.database import get_session_maker
 
@@ -339,6 +402,10 @@ def persist_state_step(
         now = pendulum.now("UTC")
         instance_uuid = UUID(agent_instance_id)
 
+        updated_recent_actions = list(recent_actions or [])
+        updated_recent_actions.append(action.get("action_type", "unknown"))
+        updated_recent_actions = updated_recent_actions[-5:]
+
         async with get_session_maker()() as session:
             if memory_id is not None:
                 await session.execute(
@@ -347,6 +414,7 @@ def persist_state_step(
                     .values(
                         message_history=new_messages,
                         turn_count=SimAgentMemory.turn_count + 1,
+                        recent_actions=updated_recent_actions,
                     )
                 )
             else:
@@ -356,12 +424,14 @@ def persist_state_step(
                         agent_instance_id=instance_uuid,
                         message_history=new_messages,
                         turn_count=1,
+                        recent_actions=updated_recent_actions,
                     )
                     .on_conflict_do_update(
                         index_elements=["agent_instance_id"],
                         set_={
                             "message_history": new_messages,
                             "turn_count": SimAgentMemory.turn_count + 1,
+                            "recent_actions": updated_recent_actions,
                         },
                     )
                 )
@@ -432,10 +502,49 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             community_server_id=context.get("community_server_id"),
         )
 
+        selection = select_action_step(
+            context=context,
+            deps_data=deps_data,
+            messages=memory_result["messages"],
+        )
+        action_type = selection["action_type"]
+
+        if action_type == SimActionType.PASS_TURN.value:
+            pass_action = {
+                "action_type": "pass_turn",
+                "reasoning": selection["reasoning"],
+            }
+            persist_result = persist_state_step(
+                agent_instance_id=agent_instance_id,
+                memory_id=context.get("memory_id"),
+                new_messages=selection["phase1_messages"],
+                action=pass_action,
+                simulation_run_id=context.get("simulation_run_id"),
+                recent_actions=context.get("recent_actions", []),
+            )
+
+            logger.info(
+                "Agent turn workflow completed (pass_turn)",
+                extra={
+                    "workflow_id": workflow_id,
+                    "agent_instance_id": agent_instance_id,
+                    "action_type": "pass_turn",
+                },
+            )
+
+            return {
+                "agent_instance_id": agent_instance_id,
+                "action": pass_action,
+                "persisted": persist_result["persisted"],
+                "workflow_id": workflow_id,
+            }
+
         turn_result = execute_agent_turn_step(
             context=context,
             deps_data=deps_data,
             messages=memory_result["messages"],
+            action_type=action_type,
+            phase1_messages=selection["phase1_messages"],
         )
 
         persist_result = persist_state_step(
@@ -444,6 +553,7 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             new_messages=turn_result["new_messages"],
             action=turn_result["action"],
             simulation_run_id=context.get("simulation_run_id"),
+            recent_actions=context.get("recent_actions", []),
         )
 
         logger.info(
