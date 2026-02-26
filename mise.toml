@@ -155,11 +155,17 @@ fi
 # Development Tasks
 # ========================================
 
+[tasks.cli]
+description = "Run opennotes CLI (pass commands via --)"
+dir = "opennotes-cli"
+run = 'uv run opennotes "$@"'
+
 [tasks.install]
 description = "Install project dependencies"
 run = [
     "cd {{vars.server_dir}} && uv venv && uv pip install -e '.[dev]'",
-    "cd {{vars.discord_dir}} && pnpm install"
+    "cd {{vars.discord_dir}} && pnpm install",
+    "cd opennotes-cli && uv sync"
 ]
 
 [tasks.dev]
@@ -606,6 +612,23 @@ echo "Regenerating TypeScript types for Discord bot..."
 cd ../{{vars.discord_dir}} && pnpm types:generate
 
 echo "OpenAPI spec and TypeScript types updated!"
+'''
+
+[tasks."generate:cli-client"]
+description = "Regenerate opennotes-cli API client from opennotes-server OpenAPI spec"
+run = '''
+echo "Generating OpenAPI spec..."
+(cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --output openapi.json)
+
+echo "Regenerating CLI API client..."
+rm -rf opennotes-cli/src/opennotes_cli/api_client
+uvx openapi-python-client generate \
+    --path {{vars.server_dir}}/openapi.json \
+    --meta none \
+    --output-path opennotes-cli/src/opennotes_cli/api_client \
+    --config opennotes-cli/openapi-client-config.yaml
+
+echo "CLI API client regenerated!"
 '''
 
 # ========================================
