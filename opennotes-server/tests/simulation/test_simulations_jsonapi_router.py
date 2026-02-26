@@ -556,6 +556,46 @@ class TestResumeSimulation:
         call_kwargs = mock_dispatch.call_args
         assert call_kwargs.kwargs.get("generation") == 2
 
+    @pytest.mark.asyncio
+    async def test_resume_returns_503_when_dbos_client_fails(
+        self, admin_auth_client, simulation_run_factory
+    ):
+        run = await simulation_run_factory("paused")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            side_effect=RuntimeError("DBOS unavailable"),
+        ):
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 503
+        data = response.json()
+        assert "errors" in data
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("dispatch exploded"),
+    )
+    async def test_resume_returns_502_when_dispatch_fails(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("paused")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 502
+        data = response.json()
+        assert "errors" in data
+
 
 class TestCancelSimulation:
     @pytest.mark.asyncio

@@ -125,21 +125,32 @@ def check_run_status_step(simulation_run_id: str) -> str:
     interval_seconds=2.0,
     backoff_rate=2.0,
 )
-def set_run_status_step(simulation_run_id: str, new_status: str) -> None:
+def set_run_status_step(
+    simulation_run_id: str,
+    new_status: str,
+    expected_status: str | None = None,
+) -> bool:
     from src.database import get_session_maker
 
-    async def _set_status() -> None:
+    async def _set_status() -> bool:
         run_uuid = UUID(simulation_run_id)
         now = pendulum.now("UTC")
-        async with get_session_maker()() as session:
-            await session.execute(
-                update(SimulationRun)
-                .where(SimulationRun.id == run_uuid)
-                .values(status=new_status, updated_at=now)
-            )
-            await session.commit()
+        values: dict[str, Any] = {"status": new_status, "updated_at": now}
+        if new_status == "paused":
+            values["paused_at"] = now
 
-    run_sync(_set_status())
+        async with get_session_maker()() as session:
+            stmt = update(SimulationRun).where(SimulationRun.id == run_uuid)
+            if expected_status is not None:
+                stmt = stmt.where(SimulationRun.status == expected_status)
+            stmt = stmt.values(**values).returning(SimulationRun.id)
+
+            result = await session.execute(stmt)
+            updated_id = result.scalar_one_or_none()
+            await session.commit()
+            return updated_id is not None
+
+    return run_sync(_set_status())
 
 
 @DBOS.step()
@@ -720,7 +731,14 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                             extra={"simulation_run_id": simulation_run_id},
                         )
                         try:
-                            set_run_status_step(simulation_run_id, "paused")
+                            updated = set_run_status_step(
+                                simulation_run_id, "paused", expected_status="running"
+                            )
+                            if not updated:
+                                logger.warning(
+                                    "Auto-pause skipped: status was no longer 'running'",
+                                    extra={"simulation_run_id": simulation_run_id},
+                                )
                         except Exception:
                             logger.exception("Failed to set paused status")
                         consecutive_empty = 0

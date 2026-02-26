@@ -1233,14 +1233,88 @@ class TestSetRunStatusStep:
         mock_session = AsyncMock()
         mock_session_ctx = _make_mock_session_ctx(mock_session)
 
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = uuid4()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
         with (
             _patch_run_sync(),
             _patch_session(mock_session_ctx),
         ):
-            set_run_status_step.__wrapped__(run_id, "paused")
+            result = set_run_status_step.__wrapped__(run_id, "paused")
 
+        assert result is True
         mock_session.execute.assert_awaited_once()
         mock_session.commit.assert_awaited_once()
+
+    def test_set_run_status_step_with_expected_status_match(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_run_status_step
+
+        run_id = str(uuid4())
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = uuid4()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+        ):
+            result = set_run_status_step.__wrapped__(run_id, "paused", expected_status="running")
+
+        assert result is True
+        mock_session.execute.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
+
+    def test_set_run_status_step_with_expected_status_mismatch(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_run_status_step
+
+        run_id = str(uuid4())
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+        ):
+            result = set_run_status_step.__wrapped__(run_id, "paused", expected_status="running")
+
+        assert result is False
+        mock_session.execute.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
+
+    def test_set_run_status_step_sets_paused_at_for_paused(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_run_status_step
+
+        run_id = str(uuid4())
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = uuid4()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+            patch("src.simulation.workflows.orchestrator_workflow.pendulum") as mock_pendulum,
+        ):
+            mock_now = MagicMock()
+            mock_pendulum.now.return_value = mock_now
+            result = set_run_status_step.__wrapped__(run_id, "paused")
+
+        assert result is True
+        call_args = mock_session.execute.call_args
+        stmt = call_args[0][0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": True})
+        compiled_str = str(compiled)
+        assert "paused_at" in compiled_str
 
 
 class TestDispatchOrchestrator:
@@ -1398,7 +1472,7 @@ class TestOrchestratorEmptyContentPause:
 
             result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
 
-        mock_set_status.assert_called_once_with(run_id, "paused")
+        mock_set_status.assert_called_once_with(run_id, "paused", expected_status="running")
         mock_snapshot.assert_not_called()
         mock_schedule.assert_not_called()
         assert result["status"] == "cancelled"
