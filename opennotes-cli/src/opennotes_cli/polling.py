@@ -26,6 +26,7 @@ def poll_task_until_complete(
     headers: dict[str, str],
     task_id: str,
     interval: float = 5.0,
+    max_retries: int = 120,
 ) -> dict[str, Any]:
     job_url = f"{base_url}/api/v1/chunks/jobs/{task_id}"
     progress_url = f"{base_url}/api/v1/batch-jobs/{task_id}/progress"
@@ -40,8 +41,10 @@ def poll_task_until_complete(
         transient=True,
     ) as progress:
         task = progress.add_task("Rechunking...", total=100, status="pending")
+        retries = 0
 
-        while True:
+        while retries < max_retries:
+            retries += 1
             response = client.get(job_url, headers=headers)
 
             if response.status_code == 404:
@@ -91,6 +94,11 @@ def poll_task_until_complete(
 
             time.sleep(interval)
 
+    error_console.print(
+        f"[red]Error:[/red] Timed out after {max_retries} polls waiting for task {task_id}"
+    )
+    sys.exit(1)
+
 
 def poll_batch_job_until_complete(
     client: httpx.Client,
@@ -98,6 +106,7 @@ def poll_batch_job_until_complete(
     headers: dict[str, str],
     job_id: str,
     interval: float = 2.0,
+    max_retries: int = 300,
 ) -> dict[str, Any]:
     job_url = f"{base_url}/api/v1/batch-jobs/{job_id}"
     progress_url = f"{base_url}/api/v1/batch-jobs/{job_id}/progress"
@@ -112,8 +121,10 @@ def poll_batch_job_until_complete(
         transient=True,
     ) as progress:
         task = progress.add_task("Processing...", total=100, status="pending")
+        retries = 0
 
-        while True:
+        while retries < max_retries:
+            retries += 1
             response = client.get(job_url, headers=headers)
 
             if response.status_code == 404:
@@ -163,6 +174,11 @@ def poll_batch_job_until_complete(
 
             time.sleep(interval)
 
+    error_console.print(
+        f"[red]Error:[/red] Timed out after {max_retries} polls waiting for job {job_id}"
+    )
+    sys.exit(1)
+
 
 def poll_simulation_until_complete(
     client: httpx.Client,
@@ -170,6 +186,7 @@ def poll_simulation_until_complete(
     headers: dict[str, str],
     simulation_id: str,
     interval: float = 5.0,
+    max_retries: int = 720,
 ) -> dict[str, Any]:
     url = f"{base_url}/api/v2/simulations/{simulation_id}"
 
@@ -181,8 +198,10 @@ def poll_simulation_until_complete(
         transient=True,
     ) as progress:
         task = progress.add_task("Simulation running...", status="pending")
+        retries = 0
 
-        while True:
+        while retries < max_retries:
+            retries += 1
             response = client.get(url, headers=headers)
             handle_jsonapi_error(response)
 
@@ -197,3 +216,8 @@ def poll_simulation_until_complete(
                 return data
 
             time.sleep(interval)
+
+    error_console.print(
+        f"[red]Error:[/red] Timed out after {max_retries} polls waiting for simulation {simulation_id}"
+    )
+    sys.exit(1)

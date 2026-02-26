@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from opennotes_cli.display import _get_cli_prefix, handle_jsonapi_error
+from opennotes_cli.display import get_cli_prefix, handle_jsonapi_error
 from opennotes_cli.http import add_csrf, get_csrf_token
 
 if TYPE_CHECKING:
@@ -76,7 +76,7 @@ def playground_create(
         )
     )
     console.print(f"\n[bold]Community Server ID:[/bold] {cs_id}")
-    cli_prefix = _get_cli_prefix(cli_ctx.env_name)
+    cli_prefix = get_cli_prefix(cli_ctx.env_name)
     console.print(
         f"[dim]Use with:[/dim] {cli_prefix} simulation create --community-server-id {cs_id} --orchestrator-id <id>"
     )

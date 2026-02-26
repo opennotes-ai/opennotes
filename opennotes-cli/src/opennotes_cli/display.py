@@ -116,7 +116,7 @@ def display_task_start(
     total = response.get("total_items", 0)
     batch_size = response.get("batch_size", 100)
     message = response.get("message", "Task started")
-    cli_prefix = _get_cli_prefix(env_name)
+    cli_prefix = get_cli_prefix(env_name)
 
     console.print(
         Panel(
@@ -172,7 +172,7 @@ def display_task_list(
 
     console.print(table)
 
-    cli_prefix = _get_cli_prefix(env_name)
+    cli_prefix = get_cli_prefix(env_name)
     console.print(f"\n[dim]View task details:[/dim] {cli_prefix} rechunk status <task_id>")
     console.print(f"[dim]Cancel a task:[/dim]    {cli_prefix} rechunk delete <task_id>")
 
@@ -252,7 +252,7 @@ def display_batch_job_list(
 
     console.print(table)
 
-    cli_prefix = _get_cli_prefix(env_name)
+    cli_prefix = get_cli_prefix(env_name)
     console.print(f"\n[dim]View job details:[/dim] {cli_prefix} batch status <job_id>")
     console.print(f"[dim]Cancel a job:[/dim]    {cli_prefix} batch cancel <job_id>")
 
@@ -270,7 +270,7 @@ def display_batch_job_start(
     job_type = job.get("job_type", "unknown")
     status = job.get("status", "pending")
     color, symbol = get_status_style(status)
-    cli_prefix = _get_cli_prefix(env_name)
+    cli_prefix = get_cli_prefix(env_name)
 
     console.print(
         Panel(
@@ -373,24 +373,24 @@ def handle_jsonapi_error(response: Any) -> None:
         sys.exit(1)
     if response.status_code == 404:
         try:
-            errors = response.json().get("errors", [{}])
-            detail = errors[0].get("detail", "Resource not found")
+            errors = response.json().get("errors", [])
+            detail = (errors[0] if errors else {}).get("detail", "Resource not found")
         except Exception:
             detail = "Resource not found"
         error_console.print(f"[red]Error:[/red] {detail}")
         sys.exit(1)
     if response.status_code == 409:
         try:
-            errors = response.json().get("errors", [{}])
-            detail = errors[0].get("detail", "Conflict")
+            errors = response.json().get("errors", [])
+            detail = (errors[0] if errors else {}).get("detail", "Conflict")
         except Exception:
             detail = "Conflict"
         error_console.print(f"[red]Error:[/red] {detail}")
         sys.exit(1)
     if response.status_code == 422:
         try:
-            errors = response.json().get("errors", [{}])
-            detail = errors[0].get("detail", "Validation error")
+            errors = response.json().get("errors", [])
+            detail = (errors[0] if errors else {}).get("detail", "Validation error")
         except Exception:
             detail = response.text[:300]
         error_console.print(f"[red]Error:[/red] {detail}")
@@ -403,7 +403,7 @@ def handle_jsonapi_error(response: Any) -> None:
         sys.exit(1)
 
 
-def _get_cli_prefix(env_name: str) -> str:
+def get_cli_prefix(env_name: str) -> str:
     prefix = "opennotes"
     if env_name == "local":
         prefix += " --local"

@@ -45,6 +45,8 @@ def _handle_job_response(
             "[red]Error:[/red] Access denied. Check your API key permissions."
         )
         sys.exit(1)
+    # The server returns 429 (not 409) when a conflicting batch job already exists
+    # for this endpoint, reusing the rate-limit status to signal "one at a time".
     if response.status_code == 429:
         error_console.print(f"[red]Error:[/red] {conflict_msg}")
         error_console.print(

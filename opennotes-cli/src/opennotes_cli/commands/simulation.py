@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from opennotes_cli.display import _get_cli_prefix, get_status_style, handle_jsonapi_error
+from opennotes_cli.display import get_cli_prefix, get_status_style, handle_jsonapi_error
 from opennotes_cli.http import add_csrf, get_csrf_token
 from opennotes_cli.polling import poll_simulation_until_complete
 
@@ -193,7 +193,7 @@ def simulation_create(
     )
 
     if not wait:
-        cli_prefix = _get_cli_prefix(cli_ctx.env_name)
+        cli_prefix = get_cli_prefix(cli_ctx.env_name)
         console.print(f"\n[dim]Check status:[/dim] {cli_prefix} simulation status {sim_id}")
 
 

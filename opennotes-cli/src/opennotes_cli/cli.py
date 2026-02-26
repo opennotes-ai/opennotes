@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,7 +40,7 @@ def _read_api_key_from_env_file(env_file: Path, verbose: bool = False) -> str | 
         return None
     for line in env_file.read_text().splitlines():
         if line.startswith("OPENNOTES_API_KEY="):
-            return line.split("=", 1)[1]
+            return line.split("=", 1)[1].strip('"').strip("'")
     return None
 
 
@@ -80,10 +79,14 @@ def cli(
 
     api_key: str | None = None
     if env == "local":
-        project_root = Path(__file__).resolve().parent.parent.parent.parent
-        env_file = (
-            project_root / "infrastructure" / "environments" / "local" / ".env.generated"
-        )
+        env_file_override = os.environ.get("OPENNOTES_ENV_FILE")
+        if env_file_override:
+            env_file = Path(env_file_override)
+        else:
+            project_root = Path(__file__).resolve().parent.parent.parent.parent
+            env_file = (
+                project_root / "infrastructure" / "environments" / "local" / ".env.generated"
+            )
         api_key = _read_api_key_from_env_file(env_file, verbose=verbose)
 
     auth = JwtAuthProvider(server_url=server_url, api_key=api_key or "")

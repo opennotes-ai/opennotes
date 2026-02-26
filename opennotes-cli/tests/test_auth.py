@@ -5,6 +5,7 @@ import pytest
 from opennotes_cli.auth import (
     AuthProvider,
     JwtAuthProvider,
+    _providers,
     get_auth_provider,
     register_auth_provider,
 )
@@ -82,7 +83,7 @@ class TestGetAuthProvider:
 
 
 class TestRegisterAuthProvider:
-    def test_register_and_use_custom_provider(self) -> None:
+    def test_register_and_use_custom_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class CustomAuth:
             def __init__(self, **kwargs):
                 self.kwargs = kwargs
@@ -96,7 +97,7 @@ class TestRegisterAuthProvider:
             def get_server_url(self) -> str:
                 return "http://custom:9000"
 
-        register_auth_provider("custom", CustomAuth)
+        monkeypatch.setitem(_providers, "custom", CustomAuth)
         provider = get_auth_provider(auth_type="custom")
         assert provider.get_server_url() == "http://custom:9000"
         assert provider.get_headers()["X-Custom"] == "yes"
