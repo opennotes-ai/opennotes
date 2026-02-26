@@ -170,6 +170,48 @@ def pass_turn() -> str:
     return "Turn passed. No action taken."
 
 
+BRIEF_MAX_TITLES = 3
+BRIEF_TRUNCATE = 50
+VERBOSE_TRUNCATE = 100
+
+
+def _pluralize(count: int, singular: str) -> str:
+    return f"{count} {singular}" if count == 1 else f"{count} {singular}s"
+
+
+def _truncate(text: str, max_len: int) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rsplit(" ", 1)[0] + "..."
+
+
+def build_queue_summary(
+    requests: list[dict],
+    notes: list[dict],
+    verbose: bool = False,
+) -> str:
+    max_titles = None if verbose else BRIEF_MAX_TITLES
+    trunc = VERBOSE_TRUNCATE if verbose else BRIEF_TRUNCATE
+
+    lines: list[str] = []
+
+    lines.append(_pluralize(len(requests), "request"))
+    shown_requests = requests if max_titles is None else requests[:max_titles]
+    for req in shown_requests:
+        lines.append(f"  - {_truncate(req.get('content', ''), trunc)}")
+    if max_titles is not None and len(requests) > max_titles:
+        lines.append(f"  ...and {len(requests) - max_titles} more")
+
+    lines.append(_pluralize(len(notes), "note"))
+    shown_notes = notes if max_titles is None else notes[:max_titles]
+    for note in shown_notes:
+        lines.append(f"  - {_truncate(note.get('summary', ''), trunc)}")
+    if max_titles is not None and len(notes) > max_titles:
+        lines.append(f"  ...and {len(notes) - max_titles} more")
+
+    return "\n".join(lines)
+
+
 class OpenNotesSimAgent:
     def __init__(self, model: ModelId = _DEFAULT_MODEL):
         self._agent = sim_agent
@@ -261,6 +303,7 @@ __all__ = [
     "TOKEN_BUDGET",
     "OpenNotesSimAgent",
     "SimAgentDeps",
+    "build_queue_summary",
     "estimate_tokens",
     "sim_agent",
 ]
