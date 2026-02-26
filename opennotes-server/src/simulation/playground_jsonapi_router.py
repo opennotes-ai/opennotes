@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import ipaddress
 import socket
 from typing import Annotated
 from urllib.parse import urlparse
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -22,14 +21,14 @@ from src.common.jsonapi import (
 from src.database import get_db
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
-from src.notes.message_archive_service import MessageArchiveService
-from src.notes.models import Request
-from src.shared.content_extraction import ContentExtractionError, extract_content_from_url
 from src.simulation.schemas import (
     PlaygroundNoteRequestBody,
-    PlaygroundNoteRequestListResponse,
-    PlaygroundNoteRequestResultAttributes,
-    PlaygroundNoteRequestResultResource,
+    PlaygroundNoteRequestJobAttributes,
+    PlaygroundNoteRequestJobResource,
+    PlaygroundNoteRequestJobResponse,
+)
+from src.simulation.workflows.playground_url_workflow import (
+    dispatch_playground_url_extraction,
 )
 from src.users.models import User
 
@@ -38,8 +37,6 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 SSRF_ALLOWED_SCHEMES = {"http", "https"}
-URL_FETCH_TIMEOUT = 30
-URL_CONCURRENCY_LIMIT = 5
 
 _PRIVATE_NETWORKS = [
     ipaddress.ip_network("10.0.0.0/8"),
@@ -96,7 +93,7 @@ def _create_error_response(
 @router.post(
     "/playgrounds/{community_server_id}/note-requests",
     response_class=JSONResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def create_playground_note_requests(
     community_server_id: UUID,
@@ -130,160 +127,26 @@ async def create_playground_note_requests(
             )
 
         attrs = body.data.attributes
-        results: list[PlaygroundNoteRequestResultResource] = []
-        succeeded = 0
-        failed = 0
-        semaphore = asyncio.Semaphore(URL_CONCURRENCY_LIMIT)
+        urls = [str(u) for u in attrs.urls]
 
-        async def _process_url(url_str: str) -> tuple[PlaygroundNoteRequestResultResource, bool]:
-            request_id = f"playground-{uuid4().hex}"
+        workflow_id = await dispatch_playground_url_extraction(
+            urls=urls,
+            community_server_id=community_server.id,
+            requested_by=attrs.requested_by,
+        )
 
-            try:
-                _validate_url_security(url_str)
-            except ValueError as exc:
-                logger.warning(
-                    "URL failed SSRF validation",
-                    extra={"url": url_str, "error": str(exc)},
-                )
-                return (
-                    PlaygroundNoteRequestResultResource(
-                        type="requests",
-                        id=request_id,
-                        attributes=PlaygroundNoteRequestResultAttributes(
-                            request_id=request_id,
-                            requested_by=attrs.requested_by,
-                            status="FAILED",
-                            community_server_id=str(community_server.id),
-                            url=url_str,
-                            error="URL validation failed",
-                        ),
-                    ),
-                    False,
-                )
-
-            try:
-                async with semaphore:
-                    extracted = await asyncio.wait_for(
-                        extract_content_from_url(url_str),
-                        timeout=URL_FETCH_TIMEOUT,
-                    )
-
-                message_archive = await MessageArchiveService.create_from_text(
-                    db=db,
-                    content=extracted.text,
-                )
-                message_archive.message_metadata = {
-                    "source_url": url_str,
-                    "domain": extracted.domain,
-                    "title": extracted.title,
-                    "extracted_at": extracted.extracted_at.isoformat(),
-                }
-
-                note_request = Request(
-                    request_id=request_id,
-                    requested_by=attrs.requested_by,
-                    community_server_id=community_server.id,
-                    message_archive_id=message_archive.id,
-                )
-                db.add(note_request)
-                await db.flush()
-
-                return (
-                    PlaygroundNoteRequestResultResource(
-                        type="requests",
-                        id=str(note_request.id),
-                        attributes=PlaygroundNoteRequestResultAttributes(
-                            request_id=request_id,
-                            requested_by=attrs.requested_by,
-                            status="PENDING",
-                            community_server_id=str(community_server.id),
-                            content=extracted.text[:500] if extracted.text else None,
-                            url=url_str,
-                        ),
-                    ),
-                    True,
-                )
-
-            except ContentExtractionError as e:
-                logger.warning(
-                    "Content extraction failed for URL",
-                    extra={"url": url_str, "error": str(e)},
-                )
-                return (
-                    PlaygroundNoteRequestResultResource(
-                        type="requests",
-                        id=request_id,
-                        attributes=PlaygroundNoteRequestResultAttributes(
-                            request_id=request_id,
-                            requested_by=attrs.requested_by,
-                            status="FAILED",
-                            community_server_id=str(community_server.id),
-                            url=url_str,
-                            error=str(e),
-                        ),
-                    ),
-                    False,
-                )
-
-            except TimeoutError:
-                logger.warning(
-                    "URL fetch timed out",
-                    extra={"url": url_str, "timeout": URL_FETCH_TIMEOUT},
-                )
-                return (
-                    PlaygroundNoteRequestResultResource(
-                        type="requests",
-                        id=request_id,
-                        attributes=PlaygroundNoteRequestResultAttributes(
-                            request_id=request_id,
-                            requested_by=attrs.requested_by,
-                            status="FAILED",
-                            community_server_id=str(community_server.id),
-                            url=url_str,
-                            error="Content extraction timed out",
-                        ),
-                    ),
-                    False,
-                )
-
-            except Exception:
-                logger.exception(
-                    "Unexpected error processing URL",
-                    extra={"url": url_str},
-                )
-                return (
-                    PlaygroundNoteRequestResultResource(
-                        type="requests",
-                        id=request_id,
-                        attributes=PlaygroundNoteRequestResultAttributes(
-                            request_id=request_id,
-                            requested_by=attrs.requested_by,
-                            status="FAILED",
-                            community_server_id=str(community_server.id),
-                            url=url_str,
-                            error="Failed to process URL",
-                        ),
-                    ),
-                    False,
-                )
-
-        for url in attrs.urls:
-            resource, ok = await _process_url(str(url))
-            results.append(resource)
-            if ok:
-                succeeded += 1
-            else:
-                failed += 1
-
-        await db.commit()
-
-        response = PlaygroundNoteRequestListResponse(
-            data=results,
-            meta={"count": len(results), "succeeded": succeeded, "failed": failed},
+        response = PlaygroundNoteRequestJobResponse(
+            data=PlaygroundNoteRequestJobResource(
+                id=workflow_id,
+                attributes=PlaygroundNoteRequestJobAttributes(
+                    workflow_id=workflow_id,
+                    url_count=len(urls),
+                ),
+            ),
         )
 
         return JSONResponse(
-            status_code=status.HTTP_201_CREATED,
+            status_code=status.HTTP_202_ACCEPTED,
             content=response.model_dump(by_alias=True, mode="json"),
             media_type=JSONAPI_CONTENT_TYPE,
         )
