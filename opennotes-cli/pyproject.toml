@@ -13,6 +13,9 @@ dependencies = [
     "trogon>=0.5",
 ]
 
+[project.optional-dependencies]
+gcp = ["pyyaml>=6.0"]
+
 [project.scripts]
 opennotes = "opennotes_cli.cli:cli"
 
