@@ -647,7 +647,15 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
         while iteration < MAX_ITERATIONS:
             iteration += 1
 
-            status = check_run_status_step(simulation_run_id)
+            try:
+                status = check_run_status_step(simulation_run_id)
+            except Exception:
+                logger.warning(
+                    "Failed to check run status, treating as running",
+                    exc_info=True,
+                    extra={"simulation_run_id": simulation_run_id, "iteration": iteration},
+                )
+                status = "running"
 
             if status == "cancelled":
                 final_status = "cancelled"
