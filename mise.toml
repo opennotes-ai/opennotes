@@ -602,23 +602,13 @@ fi
 '''
 
 [tasks."build:types:openapi"]
-description = "Generate OpenAPI specification and TypeScript types"
-dir = "{{vars.server_dir}}"
+description = "Generate OpenAPI spec, TypeScript types, and CLI API client"
 run = '''
 echo "Generating OpenAPI specification..."
-uv run python scripts/generate_openapi.py --output openapi.json
+(cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --output openapi.json)
 
 echo "Regenerating TypeScript types for Discord bot..."
-cd ../{{vars.discord_dir}} && pnpm types:generate
-
-echo "OpenAPI spec and TypeScript types updated!"
-'''
-
-[tasks."generate:cli-client"]
-description = "Regenerate opennotes-cli API client from opennotes-server OpenAPI spec"
-run = '''
-echo "Generating OpenAPI spec..."
-(cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --output openapi.json)
+(cd {{vars.discord_dir}} && pnpm types:generate)
 
 echo "Regenerating CLI API client..."
 rm -rf opennotes-cli/src/opennotes_cli/api_client
@@ -628,8 +618,12 @@ uvx openapi-python-client generate \
     --output-path opennotes-cli/src/opennotes_cli/api_client \
     --config opennotes-cli/openapi-client-config.yaml
 
-echo "CLI API client regenerated!"
+echo "OpenAPI spec, TypeScript types, and CLI client updated!"
 '''
+
+[tasks."generate:cli-client"]
+description = "Alias: regenerate CLI client (runs full build:types:openapi)"
+depends = ["build:types:openapi"]
 
 # ========================================
 # Optimization Tasks

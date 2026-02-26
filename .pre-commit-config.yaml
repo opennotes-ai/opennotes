@@ -149,7 +149,7 @@ repos:
     hooks:
       - id: regenerate-openapi
         name: Regenerate OpenAPI and TypeScript types
-        entry: bash -c 'mise run build:types:openapi && git add opennotes-server/openapi.json opennotes-discord/src/lib/generated-types.ts 2>/dev/null || true'
+        entry: bash -c 'mise run build:types:openapi && git add opennotes-server/openapi.json opennotes-discord/src/lib/generated-types.ts opennotes-cli/src/opennotes_cli/api_client/ 2>/dev/null || true'
         language: system
         files: ^opennotes-server/src/.*\.(py)$
         pass_filenames: false
