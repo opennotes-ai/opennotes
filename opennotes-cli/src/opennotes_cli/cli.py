@@ -8,7 +8,7 @@ import click
 import httpx
 from trogon import tui
 
-from opennotes_cli.auth import AuthProvider, JwtAuthProvider
+from opennotes_cli.auth import AuthProvider, JwtAuthProvider, get_auth_provider
 from opennotes_cli.http import ENV_URLS
 
 from opennotes_cli.commands.batch import batch
@@ -75,21 +75,25 @@ def cli(
     if use_local:
         env = "local"
 
-    server_url = ENV_URLS.get(env, ENV_URLS["production"])
+    auth_type = os.environ.get("OPENNOTES_AUTH_TYPE", "jwt")
 
-    api_key: str | None = None
-    if env == "local":
-        env_file_override = os.environ.get("OPENNOTES_ENV_FILE")
-        if env_file_override:
-            env_file = Path(env_file_override)
-        else:
-            project_root = Path(__file__).resolve().parent.parent.parent.parent
-            env_file = (
-                project_root / "infrastructure" / "environments" / "local" / ".env.generated"
-            )
-        api_key = _read_api_key_from_env_file(env_file, verbose=verbose)
+    if auth_type != "jwt":
+        auth = get_auth_provider(auth_type=auth_type, env=env, verbose=verbose)
+    else:
+        server_url = ENV_URLS.get(env, ENV_URLS["production"])
+        api_key: str | None = None
+        if env == "local":
+            env_file_override = os.environ.get("OPENNOTES_ENV_FILE")
+            if env_file_override:
+                env_file = Path(env_file_override)
+            else:
+                project_root = Path(__file__).resolve().parent.parent.parent.parent
+                env_file = (
+                    project_root / "infrastructure" / "environments" / "local" / ".env.generated"
+                )
+            api_key = _read_api_key_from_env_file(env_file, verbose=verbose)
+        auth = JwtAuthProvider(server_url=server_url, api_key=api_key or "")
 
-    auth = JwtAuthProvider(server_url=server_url, api_key=api_key or "")
     client = httpx.Client(timeout=60.0)
 
     ctx.obj = CliContext(

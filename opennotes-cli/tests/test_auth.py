@@ -82,6 +82,32 @@ class TestGetAuthProvider:
             get_auth_provider(auth_type="nonexistent")
 
 
+class TestFileBasedProviderLoading:
+    def test_load_provider_from_file_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        provider_code = tmp_path / "opennotes_auth_test.py"
+        provider_code.write_text(
+            "from opennotes_cli.auth import register_auth_provider\n"
+            "\n"
+            "class TestFileAuth:\n"
+            "    def __init__(self, **kwargs): pass\n"
+            "    def get_headers(self): return {'X-File': 'loaded'}\n"
+            "    def get_jsonapi_headers(self): return {'X-File': 'loaded'}\n"
+            "    def get_server_url(self): return 'http://file-auth:9000'\n"
+            "\n"
+            "register_auth_provider('file_test', TestFileAuth)\n"
+        )
+        monkeypatch.setenv("OPENNOTES_AUTH_MODULE", str(provider_code))
+        _providers.pop("file_test", None)
+        try:
+            provider = get_auth_provider(auth_type="file_test")
+            assert provider.get_server_url() == "http://file-auth:9000"
+            assert provider.get_headers()["X-File"] == "loaded"
+        finally:
+            _providers.pop("file_test", None)
+
+
 class TestRegisterAuthProvider:
     def test_register_and_use_custom_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class CustomAuth:
