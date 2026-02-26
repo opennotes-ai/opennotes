@@ -241,6 +241,36 @@ class OpenNotesSimAgent:
         self._action_selector = action_selector
         self._model = model
 
+    async def select_action(
+        self,
+        deps: SimAgentDeps,
+        recent_actions: list[str],
+        requests: list[dict],
+        notes: list[dict],
+        message_history: list[ModelMessage] | None = None,
+    ) -> tuple[ActionSelectionResult, list[ModelMessage]]:
+        brief_summary = build_queue_summary(requests, notes, verbose=False)
+        prompt = self._build_phase1_prompt(recent_actions, brief_summary)
+
+        result = await self._action_selector.run(
+            prompt,
+            deps=deps,
+            message_history=message_history,
+            model=self._model.to_pydantic_ai(),
+        )
+
+        if result.data.action_type == SimActionType.PASS_TURN:
+            verbose_summary = build_queue_summary(requests, notes, verbose=True)
+            retry_prompt = self._build_phase1_prompt(recent_actions, verbose_summary)
+            result = await self._action_selector.run(
+                retry_prompt,
+                deps=deps,
+                message_history=result.all_messages(),
+                model=self._model.to_pydantic_ai(),
+            )
+
+        return result.data, result.all_messages()
+
     async def run_turn(
         self,
         deps: SimAgentDeps,
