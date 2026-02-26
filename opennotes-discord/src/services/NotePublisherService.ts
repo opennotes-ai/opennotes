@@ -22,8 +22,6 @@ import { apiClient } from '../api-client.js';
 import { NoteContextService } from './NoteContextService.js';
 import { NotePublisherConfigService } from './NotePublisherConfigService.js';
 import { DistributedLock } from '../utils/distributed-lock.js';
-import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
-import { isValidUUID } from '../lib/validation.js';
 import type { ScoreUpdateEvent } from '../events/types.js';
 import type { NoteContext } from './NoteContextService.js';
 
@@ -574,19 +572,11 @@ export class NotePublisherService {
         }
       }
 
-      let communityServerId = context.guildId;
-      if (!isValidUUID(context.guildId)) {
-        logger.debug('Resolving Discord snowflake to community server UUID', {
-          guildId: context.guildId,
-        });
-        communityServerId = await resolveCommunityServerId(context.guildId);
-      }
-
       await apiClient.recordNotePublisher({
         noteId: String(event.note_id),
         originalMessageId: context.originalMessageId,
         channelId: context.channelId,
-        guildId: communityServerId,
+        guildId: context.guildId,
         scoreAtPost: event.score,
         confidenceAtPost: event.confidence,
         success,

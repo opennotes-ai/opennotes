@@ -22,12 +22,6 @@ const mockConfigService = {
 
 const mockApiClient = apiClientFactory.build();
 
-const mockResolveCommunityServerId = jest.fn<(guildId: string) => Promise<string>>();
-
-jest.unstable_mockModule('../../src/lib/community-server-resolver.js', () => ({
-  resolveCommunityServerId: mockResolveCommunityServerId,
-}));
-
 jest.unstable_mockModule('../../src/services/NoteContextService.js', () => ({
   NoteContextService: jest.fn(() => mockNoteContextService),
 }));
@@ -976,7 +970,7 @@ describe('NotePublisherService', () => {
     });
   });
 
-  describe('recordNotePublisher UUID resolution (task-851 AC #4)', () => {
+  describe('recordNotePublisher sends platform ID directly (task-1178)', () => {
     beforeEach(() => {
       mockConfigService.getDefaultThreshold.mockReturnValue(TEST_SCORE_THRESHOLD);
       mockConfigService.getConfig.mockResolvedValue({
@@ -984,12 +978,10 @@ describe('NotePublisherService', () => {
         enabled: true,
         threshold: TEST_SCORE_THRESHOLD,
       });
-      mockResolveCommunityServerId.mockClear();
     });
 
-    it('should resolve Discord snowflake to UUID before calling recordNotePublisher', async () => {
+    it('should pass Discord snowflake directly without UUID resolution', async () => {
       const discordSnowflake = '1234567890123456789';
-      const resolvedUUID = '550e8400-e29b-41d4-a716-446655440000';
 
       const event: ScoreUpdateEvent = {
         note_id: 1,
@@ -1007,7 +999,6 @@ describe('NotePublisherService', () => {
 
       mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
       mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
-      mockResolveCommunityServerId.mockResolvedValueOnce(resolvedUUID);
 
       mockClient.channels.cache.set('channel-456', mockChannel as any);
       mockChannel.permissionsFor.mockReturnValue(
@@ -1022,16 +1013,15 @@ describe('NotePublisherService', () => {
 
       await notePublisherService.handleScoreUpdate(event);
 
-      expect(mockResolveCommunityServerId).toHaveBeenCalledWith(discordSnowflake);
       expect(mockApiClient.recordNotePublisher).toHaveBeenCalledWith(
         expect.objectContaining({
-          guildId: resolvedUUID,
+          guildId: discordSnowflake,
         })
       );
     });
 
-    it('should use guildId directly when it is already a UUID', async () => {
-      const existingUUID = '550e8400-e29b-41d4-a716-446655440000';
+    it('should pass UUID-format guildId directly without resolution', async () => {
+      const uuidGuildId = '550e8400-e29b-41d4-a716-446655440000';
 
       const event: ScoreUpdateEvent = {
         note_id: 1,
@@ -1044,7 +1034,7 @@ describe('NotePublisherService', () => {
         timestamp: new Date().toISOString(),
         original_message_id: 'msg-123',
         channel_id: 'channel-456',
-        community_server_id: existingUUID,
+        community_server_id: uuidGuildId,
       };
 
       mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
@@ -1063,10 +1053,9 @@ describe('NotePublisherService', () => {
 
       await notePublisherService.handleScoreUpdate(event);
 
-      expect(mockResolveCommunityServerId).not.toHaveBeenCalled();
       expect(mockApiClient.recordNotePublisher).toHaveBeenCalledWith(
         expect.objectContaining({
-          guildId: existingUUID,
+          guildId: uuidGuildId,
         })
       );
     });
