@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.llm_config.model_id import ModelId
 from src.notes.models import Note, Rating
-from src.simulation.schemas import ActionSelectionResult, SimAgentAction
+from src.simulation.schemas import ActionSelectionResult, SimActionType, SimAgentAction
 
 MAX_PERSONALITY_CHARS: int = 500
 MAX_CONTEXT_REQUESTS: int = 5
@@ -246,8 +246,16 @@ class OpenNotesSimAgent:
         deps: SimAgentDeps,
         message_history: list[ModelMessage] | None = None,
         usage_limits: UsageLimits | None = None,
+        chosen_action_type: SimActionType | None = None,
     ) -> tuple[SimAgentAction, list[ModelMessage]]:
-        prompt = self._build_turn_prompt(deps)
+        if chosen_action_type is not None:
+            prompt = self._build_phase2_prompt(
+                chosen_action_type,
+                deps.available_requests,
+                deps.available_notes,
+            )
+        else:
+            prompt = self._build_turn_prompt(deps)
         result = await self._agent.run(
             prompt,
             deps=deps,
@@ -280,6 +288,44 @@ class OpenNotesSimAgent:
             prompt = self._format_sections(requests, notes)
 
         return prompt
+
+    def _build_phase2_prompt(
+        self,
+        action_type: SimActionType,
+        requests: list[dict],
+        notes: list[dict],
+        token_budget: int = TOKEN_BUDGET,
+    ) -> str:
+        if action_type == SimActionType.PASS_TURN:
+            return "You chose to pass this turn. No action needed."
+
+        if action_type == SimActionType.WRITE_NOTE:
+            items = list(requests[:MAX_CONTEXT_REQUESTS])
+            if len(requests) > MAX_CONTEXT_REQUESTS:
+                items = random.sample(requests, MAX_CONTEXT_REQUESTS)
+            prompt = self._format_sections(items, [])
+            while estimate_tokens(prompt) > token_budget and items:
+                items.pop()
+                prompt = self._format_sections(items, [])
+            return prompt.replace(
+                "Choose an action: write a note, rate a note, or pass.",
+                "Write a community note for one of the requests above.",
+            )
+
+        if action_type == SimActionType.RATE_NOTE:
+            items = list(notes[:MAX_CONTEXT_NOTES])
+            if len(notes) > MAX_CONTEXT_NOTES:
+                items = random.sample(notes, MAX_CONTEXT_NOTES)
+            prompt = self._format_sections([], items)
+            while estimate_tokens(prompt) > token_budget and items:
+                items.pop()
+                prompt = self._format_sections([], items)
+            return prompt.replace(
+                "Choose an action: write a note, rate a note, or pass.",
+                "Rate one of the notes above.",
+            )
+
+        return "You chose to pass this turn. No action needed."
 
     def _build_phase1_prompt(self, recent_actions: list[str], queue_summary: str) -> str:
         parts: list[str] = []
