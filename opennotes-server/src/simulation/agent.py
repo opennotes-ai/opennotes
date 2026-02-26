@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.llm_config.model_id import ModelId
 from src.notes.models import Note, Rating
-from src.simulation.schemas import SimAgentAction
+from src.simulation.schemas import ActionSelectionResult, SimAgentAction
 
 MAX_PERSONALITY_CHARS: int = 500
 MAX_CONTEXT_REQUESTS: int = 5
@@ -40,6 +40,26 @@ sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
     deps_type=SimAgentDeps,
     result_type=SimAgentAction,
 )
+
+
+action_selector: Agent[SimAgentDeps, ActionSelectionResult] = Agent(
+    deps_type=SimAgentDeps,
+    result_type=ActionSelectionResult,
+)
+
+
+@action_selector.system_prompt
+def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
+    personality = _truncate_personality(ctx.deps.agent_personality)
+    return (
+        "You are deciding what action to take this turn in a Community Notes simulation.\n\n"
+        f"Your personality: {personality}\n\n"
+        "Choose exactly one action:\n"
+        "- write_note: Write a new community note for a content request\n"
+        "- rate_note: Rate an existing community note\n"
+        "- pass_turn: Skip this turn\n\n"
+        "Respond with your chosen action_type and a brief reasoning."
+    )
 
 
 def estimate_tokens(text: str) -> int:
@@ -212,9 +232,13 @@ def build_queue_summary(
     return "\n".join(lines)
 
 
+PHASE1_DIVERSITY_THRESHOLD = 3
+
+
 class OpenNotesSimAgent:
     def __init__(self, model: ModelId = _DEFAULT_MODEL):
         self._agent = sim_agent
+        self._action_selector = action_selector
         self._model = model
 
     async def run_turn(
@@ -256,6 +280,29 @@ class OpenNotesSimAgent:
             prompt = self._format_sections(requests, notes)
 
         return prompt
+
+    def _build_phase1_prompt(self, recent_actions: list[str], queue_summary: str) -> str:
+        parts: list[str] = []
+        if recent_actions:
+            parts.append(
+                f"Your recent actions (last {len(recent_actions)} turns): "
+                f"{', '.join(recent_actions)}"
+            )
+            recent_tail = recent_actions[-PHASE1_DIVERSITY_THRESHOLD:]
+            if (
+                len(recent_tail) >= PHASE1_DIVERSITY_THRESHOLD
+                and len(set(recent_tail)) == 1
+                and recent_tail[-1] != "pass_turn"
+            ):
+                parts.append(
+                    "You've been doing the same action repeatedly. "
+                    "Consider trying a different action to diversify your contributions."
+                )
+        parts.append(f"\nAvailable work:\n{queue_summary}")
+        parts.append(
+            "\nWhat would you like to do this turn? Choose: write_note, rate_note, or pass_turn."
+        )
+        return "\n".join(parts)
 
     @staticmethod
     def _format_sections(requests: list[dict], notes: list[dict]) -> str:
@@ -300,9 +347,11 @@ __all__ = [
     "MAX_CONTEXT_REQUESTS",
     "MAX_LINKED_NOTES_PER_REQUEST",
     "MAX_PERSONALITY_CHARS",
+    "PHASE1_DIVERSITY_THRESHOLD",
     "TOKEN_BUDGET",
     "OpenNotesSimAgent",
     "SimAgentDeps",
+    "action_selector",
     "build_queue_summary",
     "estimate_tokens",
     "sim_agent",
