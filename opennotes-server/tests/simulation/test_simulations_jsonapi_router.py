@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -422,10 +422,24 @@ class TestPauseSimulation:
 
 class TestResumeSimulation:
     @pytest.mark.asyncio
-    async def test_resume_paused_simulation(self, admin_auth_client, simulation_run_factory):
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_resume_paused_simulation(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-resume"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
         run = await simulation_run_factory("paused")
 
-        response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
@@ -433,6 +447,72 @@ class TestResumeSimulation:
 
         data = response.json()
         assert data["data"]["attributes"]["status"] == "running"
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_resume_from_failed_status(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-resume-failed"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("failed")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "running"
+        assert data["data"]["attributes"]["error_message"] is None
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_resume_skips_dispatch_when_workflow_active(
+        self, admin_auth_client, simulation_run_factory
+    ):
+        mock_client = MagicMock()
+        mock_active_wf = MagicMock()
+        mock_client.list_workflows.return_value = [mock_active_wf]
+
+        run = await simulation_run_factory("paused")
+
+        with (
+            patch(
+                "src.simulation.simulations_jsonapi_router.get_dbos_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+                new_callable=AsyncMock,
+            ) as mock_dispatch,
+        ):
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "running"
+        mock_dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_resume_from_completed_returns_409(
+        self, admin_auth_client, simulation_run_factory
+    ):
+        run = await simulation_run_factory("completed")
+
+        response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 409
+        data = response.json()
+        assert "errors" in data
 
     @pytest.mark.asyncio
     async def test_resume_non_paused_returns_409(self, admin_auth_client, simulation_run_factory):
@@ -451,6 +531,30 @@ class TestResumeSimulation:
         response = await admin_auth_client.post(f"/api/v2/simulations/{fake_id}/resume")
 
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_resume_increments_generation(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-gen2"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("paused")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 200
+        call_kwargs = mock_dispatch.call_args
+        assert call_kwargs.kwargs.get("generation") == 2
 
 
 class TestCancelSimulation:

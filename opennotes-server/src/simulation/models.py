@@ -187,6 +187,7 @@ class SimulationRun(Base, TimestampMixin):
         JSONB, nullable=True, server_default=text("'{}'::jsonb")
     )
     config_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     orchestrator: Mapped[SimulationOrchestrator] = relationship(

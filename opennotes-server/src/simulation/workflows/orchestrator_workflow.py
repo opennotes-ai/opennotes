@@ -53,7 +53,10 @@ def initialize_run_step(simulation_run_id: str) -> dict[str, Any]:
                     SimulationRun.id == run_uuid,
                     SimulationRun.status.in_(["pending", "running"]),
                 )
-                .values(status="running", started_at=now)
+                .values(
+                    status="running",
+                    started_at=func.coalesce(SimulationRun.started_at, now),
+                )
                 .returning(SimulationRun.id)
             )
             update_result = await session.execute(atomic_update)
@@ -114,6 +117,29 @@ def check_run_status_step(simulation_run_id: str) -> str:
             return status
 
     return run_sync(_check())
+
+
+@DBOS.step(
+    retries_allowed=True,
+    max_attempts=3,
+    interval_seconds=2.0,
+    backoff_rate=2.0,
+)
+def set_run_status_step(simulation_run_id: str, new_status: str) -> None:
+    from src.database import get_session_maker
+
+    async def _set_status() -> None:
+        run_uuid = UUID(simulation_run_id)
+        now = pendulum.now("UTC")
+        async with get_session_maker()() as session:
+            await session.execute(
+                update(SimulationRun)
+                .where(SimulationRun.id == run_uuid)
+                .values(status=new_status, updated_at=now)
+            )
+            await session.commit()
+
+    run_sync(_set_status())
 
 
 @DBOS.step()
@@ -689,12 +715,17 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                     consecutive_empty += 1
                     if consecutive_empty >= MAX_CONSECUTIVE_EMPTY:
                         logger.warning(
-                            "No content available for %d consecutive iterations, pausing",
+                            "No content available for %d consecutive iterations, auto-pausing",
                             consecutive_empty,
                             extra={"simulation_run_id": simulation_run_id},
                         )
-                        final_status = "paused"
-                        break
+                        try:
+                            set_run_status_step(simulation_run_id, "paused")
+                        except Exception:
+                            logger.exception("Failed to set paused status")
+                        consecutive_empty = 0
+                        DBOS.sleep(config["turn_cadence_seconds"])
+                        continue
                     DBOS.sleep(config["turn_cadence_seconds"])
                     continue
                 consecutive_empty = 0
@@ -815,7 +846,7 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
 RUN_ORCHESTRATOR_WORKFLOW_NAME: str = run_orchestrator.__qualname__
 
 
-async def dispatch_orchestrator(simulation_run_id: UUID) -> str:
+async def dispatch_orchestrator(simulation_run_id: UUID, generation: int = 1) -> str:
     import asyncio
 
     from dbos import EnqueueOptions
@@ -823,7 +854,7 @@ async def dispatch_orchestrator(simulation_run_id: UUID) -> str:
     from src.dbos_workflows.config import get_dbos_client
 
     client = get_dbos_client()
-    wf_id = f"orchestrator-{simulation_run_id}"
+    wf_id = f"orchestrator-{simulation_run_id}-gen{generation}"
     options: EnqueueOptions = {
         "queue_name": "simulation_orchestrator",
         "workflow_name": RUN_ORCHESTRATOR_WORKFLOW_NAME,
