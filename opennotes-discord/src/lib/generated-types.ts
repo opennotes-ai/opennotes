@@ -2731,6 +2731,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/community-servers/{community_server_id}/score": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Score Community Server
+         * @description Trigger manual scoring for all eligible notes in a community server.
+         *
+         *     Admin-only. Dispatches a DBOS workflow and returns the workflow ID.
+         *     Returns 409 if scoring is already in progress.
+         */
+        post: operations["score_community_server_api_v2_community_servers__community_server_id__score_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/community-servers/{community_server_id}/llm-config": {
         parameters: {
             query?: never;
@@ -8421,6 +8444,13 @@ export interface components {
              * @description Sample of error messages (up to 5)
              */
             sample_errors?: components["schemas"]["ScanErrorInfoSchema"][];
+        };
+        /** ScoreCommunityResponse */
+        ScoreCommunityResponse: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Message */
+            message: string;
         };
         /**
          * ScoreConfidence
@@ -14369,6 +14399,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClearPreviewResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    score_community_server_api_v2_community_servers__community_server_id__score_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoreCommunityResponse"];
                 };
             };
             /** @description Not authenticated */

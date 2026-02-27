@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
 from src.notes import loaders as note_loaders
-from src.notes.models import Note, Request
+from src.notes.models import Note, Rating, Request
 from src.notes.scoring.scorer_factory import ScorerFactory
 from src.notes.scoring.tier_config import (
     ScoringTier,
@@ -49,6 +49,204 @@ class ScoringMetrics:
     tier_distribution: dict[str, int]
     scorer_breakdown: dict[str, int]
     notes_by_status: dict[str, int]
+
+
+@dataclass
+class CommunityServerScoringResult:
+    community_server_id: UUID
+    unscored_notes_processed: int
+    rescored_notes_processed: int
+    total_scores_computed: int
+    tier_name: str
+    scorer_type: str
+
+
+async def score_community_server_notes(
+    community_server_id: UUID,
+    db: AsyncSession,
+) -> CommunityServerScoringResult:
+    """Score all eligible notes in a community server.
+
+    Two-pass approach:
+    1. Score unscored notes: status=NEEDS_MORE_RATINGS with >= MIN_RATINGS_NEEDED ratings
+    2. Rescore already-scored notes: status in (CRH, CRNH)
+
+    Both passes ordered by stalest-last-rating first (note whose most recent
+    rating.created_at is the oldest goes first).
+    """
+    count_result = await db.execute(
+        select(func.count(Note.id)).where(
+            Note.community_server_id == community_server_id,
+            Note.deleted_at.is_(None),
+        )
+    )
+    note_count = count_result.scalar() or 0
+
+    if note_count == 0:
+        return CommunityServerScoringResult(
+            community_server_id=community_server_id,
+            unscored_notes_processed=0,
+            rescored_notes_processed=0,
+            total_scores_computed=0,
+            tier_name="Minimal",
+            scorer_type="none",
+        )
+
+    tier = get_tier_for_note_count(note_count)
+    factory = ScorerFactory()
+    scorer = factory.get_scorer(str(community_server_id), note_count)
+    scorer_type = type(scorer).__name__
+
+    latest_rating_subq = (
+        select(func.max(Rating.created_at))
+        .where(Rating.note_id == Note.id)
+        .correlate(Note)
+        .scalar_subquery()
+    )
+
+    rating_count_subq = (
+        select(func.count(Rating.id))
+        .where(Rating.note_id == Note.id)
+        .correlate(Note)
+        .scalar_subquery()
+    )
+
+    unscored_notes_processed = 0
+    rescored_notes_processed = 0
+    total_scores_computed = 0
+
+    for pass_label, status_filter in [
+        (
+            "unscored",
+            [
+                Note.status == "NEEDS_MORE_RATINGS",
+                rating_count_subq >= settings.MIN_RATINGS_NEEDED,
+            ],
+        ),
+        (
+            "rescore",
+            [
+                Note.status.in_(["CURRENTLY_RATED_HELPFUL", "CURRENTLY_RATED_NOT_HELPFUL"]),
+            ],
+        ),
+    ]:
+        offset = 0
+        pass_count = 0
+
+        while True:
+            batch_result = await db.execute(
+                select(Note)
+                .where(
+                    Note.community_server_id == community_server_id,
+                    Note.deleted_at.is_(None),
+                    *status_filter,
+                )
+                .options(*note_loaders.full())
+                .order_by(latest_rating_subq.asc(), Note.id)
+                .limit(SCORING_BATCH_SIZE)
+                .offset(offset)
+            )
+            batch = batch_result.scalars().all()
+
+            if not batch:
+                break
+
+            score_mapping: dict[UUID, int] = {}
+            status_mapping: dict[UUID, str] = {}
+
+            for note in batch:
+                try:
+                    score_response = await calculate_note_score(note, note_count, scorer)
+
+                    status_update = "NEEDS_MORE_RATINGS"
+                    if score_response.rating_count >= settings.MIN_RATINGS_NEEDED:
+                        status_update = (
+                            "CURRENTLY_RATED_HELPFUL"
+                            if score_response.score >= 0.5
+                            else "CURRENTLY_RATED_NOT_HELPFUL"
+                        )
+
+                    score_mapping[note.id] = int(score_response.score * 100)
+                    status_mapping[note.id] = status_update
+                    pass_count += 1
+                    total_scores_computed += 1
+                except Exception:
+                    logger.exception(
+                        "Failed to score note",
+                        extra={
+                            "note_id": str(note.id),
+                            "community_server_id": str(community_server_id),
+                            "pass": pass_label,
+                        },
+                    )
+
+            if score_mapping:
+                note_ids = list(score_mapping.keys())
+                await db.execute(
+                    update(Note)
+                    .where(Note.id.in_(note_ids))
+                    .values(
+                        helpfulness_score=case(score_mapping, value=Note.id),
+                        status=cast(case(status_mapping, value=Note.id), Note.status.type),
+                    )
+                )
+
+            if len(batch) < SCORING_BATCH_SIZE:
+                break
+
+            if pass_label == "rescore":
+                offset += SCORING_BATCH_SIZE
+
+        if pass_label == "unscored":
+            unscored_notes_processed = pass_count
+        else:
+            rescored_notes_processed = pass_count
+
+    helpful_note_for_request = (
+        select(Note.id)
+        .where(
+            Note.request_id == Request.request_id,
+            Note.community_server_id == community_server_id,
+            Note.status == "CURRENTLY_RATED_HELPFUL",
+            Note.deleted_at.is_(None),
+        )
+        .correlate(Request)
+        .order_by(Note.helpfulness_score.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    await db.execute(
+        update(Request)
+        .where(
+            Request.community_server_id == community_server_id,
+            Request.status == "PENDING",
+            helpful_note_for_request.isnot(None),
+        )
+        .values(status="COMPLETED", note_id=helpful_note_for_request)
+    )
+
+    await db.commit()
+
+    logger.info(
+        "Community server scoring completed",
+        extra={
+            "community_server_id": str(community_server_id),
+            "unscored_notes_processed": unscored_notes_processed,
+            "rescored_notes_processed": rescored_notes_processed,
+            "total_scores_computed": total_scores_computed,
+            "tier": tier.value,
+            "scorer_type": scorer_type,
+        },
+    )
+
+    return CommunityServerScoringResult(
+        community_server_id=community_server_id,
+        unscored_notes_processed=unscored_notes_processed,
+        rescored_notes_processed=rescored_notes_processed,
+        total_scores_computed=total_scores_computed,
+        tier_name=tier.value.capitalize(),
+        scorer_type=scorer_type,
+    )
 
 
 async def trigger_scoring_for_simulation(
