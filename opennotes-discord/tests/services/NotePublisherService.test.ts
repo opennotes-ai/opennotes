@@ -123,6 +123,9 @@ describe('NotePublisherService', () => {
   beforeEach(() => {
     mockClient = {
       user: { id: 'bot-123' },
+      guilds: {
+        cache: new Map([['guild-123', { id: 'guild-123' }]]),
+      },
       channels: {
         cache: new Map(),
         fetch: jest.fn<(...args: any[]) => Promise<any>>(),
@@ -983,6 +986,8 @@ describe('NotePublisherService', () => {
     it('should pass Discord snowflake directly without UUID resolution', async () => {
       const discordSnowflake = '1234567890123456789';
 
+      (mockClient as any).guilds.cache.set(discordSnowflake, { id: discordSnowflake });
+
       const event: ScoreUpdateEvent = {
         note_id: 1,
         score: TEST_SCORE_ABOVE_THRESHOLD,
@@ -1023,6 +1028,8 @@ describe('NotePublisherService', () => {
     it('should pass UUID-format guildId directly without resolution', async () => {
       const uuidGuildId = '550e8400-e29b-41d4-a716-446655440000';
 
+      (mockClient as any).guilds.cache.set(uuidGuildId, { id: uuidGuildId });
+
       const event: ScoreUpdateEvent = {
         note_id: 1,
         score: TEST_SCORE_ABOVE_THRESHOLD,
@@ -1058,6 +1065,85 @@ describe('NotePublisherService', () => {
           guildId: uuidGuildId,
         })
       );
+    });
+  });
+
+  describe('playground community server early-return (task-1134)', () => {
+    it('should skip events from community servers not in guild cache', async () => {
+      const event: ScoreUpdateEvent = {
+        note_id: 1,
+        score: TEST_SCORE_ABOVE_THRESHOLD,
+        confidence: 'standard',
+        algorithm: 'BayesianAverage',
+        rating_count: 10,
+        tier: 1,
+        tier_name: 'Minimal',
+        timestamp: new Date().toISOString(),
+        original_message_id: 'msg-123',
+        channel_id: 'channel-456',
+        community_server_id: 'playground-guild-999',
+      };
+
+      await notePublisherService.handleScoreUpdate(event);
+
+      expect(mockNoteContextService.getNoteContext).not.toHaveBeenCalled();
+      expect(mockApiClient.checkNoteDuplicate).not.toHaveBeenCalled();
+      expect(mockChannel.send).not.toHaveBeenCalled();
+    });
+
+    it('should process events from community servers in guild cache', async () => {
+      const event: ScoreUpdateEvent = {
+        note_id: 1,
+        score: TEST_SCORE_ABOVE_THRESHOLD,
+        confidence: 'standard',
+        algorithm: 'BayesianAverage',
+        rating_count: 10,
+        tier: 1,
+        tier_name: 'Minimal',
+        timestamp: new Date().toISOString(),
+        original_message_id: 'msg-123',
+        channel_id: 'channel-456',
+        community_server_id: 'guild-123',
+      };
+
+      (mockClient as any).guilds = {
+        cache: new Map([['guild-123', { id: 'guild-123' }]]),
+      };
+
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
+        new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+      );
+
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
+      (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+      mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note' }));
+      mockChannel.send.mockResolvedValue({ id: 'reply-789' });
+      mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+      await notePublisherService.handleScoreUpdate(event);
+
+      expect(mockChannel.send).toHaveBeenCalled();
+    });
+
+    it('should process events without community_server_id (fallback to cache lookup)', async () => {
+      const event: ScoreUpdateEvent = {
+        note_id: 1,
+        score: TEST_SCORE_ABOVE_THRESHOLD,
+        confidence: 'standard',
+        algorithm: 'BayesianAverage',
+        rating_count: 10,
+        tier: 1,
+        tier_name: 'Minimal',
+        timestamp: new Date().toISOString(),
+      };
+
+      mockNoteContextService.getNoteContext.mockResolvedValue(null);
+
+      await notePublisherService.handleScoreUpdate(event);
+
+      expect(mockNoteContextService.getNoteContext).toHaveBeenCalled();
     });
   });
 });

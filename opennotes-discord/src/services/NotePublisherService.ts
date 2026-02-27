@@ -54,6 +54,14 @@ export class NotePublisherService {
   async handleScoreUpdate(event: ScoreUpdateEvent): Promise<void> {
     const startTime = Date.now();
 
+    if (event.community_server_id && !this.client.guilds.cache.has(event.community_server_id)) {
+      logger.debug('Skipping score update - community server not in guild cache (likely playground)', {
+        noteId: event.note_id,
+        communityServerId: event.community_server_id,
+      });
+      return;
+    }
+
     logger.info('Processing score update event', {
       noteId: event.note_id,
       score: event.score,

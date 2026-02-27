@@ -31,6 +31,9 @@ export class MockDiscordClient {
   private createMockClient(): jest.Mocked<Client> {
     return {
       user: { id: 'bot-123' },
+      guilds: {
+        cache: new Map([['guild-123', { id: 'guild-123' }]]),
+      },
       channels: {
         cache: this.mockChannels,
         fetch: jest.fn((id: string) => {
