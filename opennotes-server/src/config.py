@@ -890,6 +890,22 @@ class Settings(BaseSettings):
         description="Default token pool capacity for DBOS workflow concurrency control",
     )
 
+    SIMULATION_COMPACTION_INTERVAL: int = Field(
+        default=2,
+        ge=1,
+        description="Memory compaction interval for simulation agent turns (env: SIMULATION_COMPACTION_INTERVAL)",
+    )
+    SIMULATION_DEFAULT_REQUEST_LIMIT: int = Field(
+        default=3,
+        ge=1,
+        description="Default LLM request limit per simulation agent turn (env: SIMULATION_DEFAULT_REQUEST_LIMIT)",
+    )
+    SIMULATION_DEFAULT_TOKEN_LIMIT: int = Field(
+        default=4000,
+        ge=1,
+        description="Default token budget per simulation agent turn (env: SIMULATION_DEFAULT_TOKEN_LIMIT)",
+    )
+
     @model_validator(mode="after")
     def validate_encryption_key_entropy(self) -> Settings:
         if self.TESTING or not self.ENCRYPTION_MASTER_KEY:

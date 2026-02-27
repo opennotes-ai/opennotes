@@ -2137,3 +2137,200 @@ class TestUsageLimitExceeded:
 
         assert result["persisted"] is True
         assert result["action_type"] == "pass_turn"
+
+
+class TestConfigurableDefaults:
+    def test_settings_has_simulation_default_request_limit(self) -> None:
+        from src.config import get_settings
+
+        settings = get_settings()
+        assert settings.SIMULATION_DEFAULT_REQUEST_LIMIT == 3
+
+    def test_settings_has_simulation_default_token_limit(self) -> None:
+        from src.config import get_settings
+
+        settings = get_settings()
+        assert settings.SIMULATION_DEFAULT_TOKEN_LIMIT == 4000
+
+    def test_settings_has_simulation_compaction_interval(self) -> None:
+        from src.config import get_settings
+
+        settings = get_settings()
+        assert settings.SIMULATION_COMPACTION_INTERVAL == 2
+
+    def test_execute_agent_turn_uses_settings_defaults_when_no_model_params(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
+
+        context = _make_context()
+        context["model_params"] = {}
+        deps_data = {"available_requests": [], "available_notes": []}
+
+        mock_action = MagicMock()
+        mock_action.model_dump.return_value = {"action_type": "pass_turn", "reasoning": "idle"}
+
+        captured_kwargs: dict = {}
+
+        async def capture_run_turn(**kwargs):
+            captured_kwargs.update(kwargs)
+            return (mock_action, [])
+
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.run_turn = AsyncMock(side_effect=capture_run_turn)
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_settings = MagicMock()
+        mock_settings.SIMULATION_DEFAULT_REQUEST_LIMIT = 10
+        mock_settings.SIMULATION_DEFAULT_TOKEN_LIMIT = 9000
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent_instance,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._serialize_messages",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.get_settings",
+                return_value=mock_settings,
+            ),
+        ):
+            execute_agent_turn_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=[],
+            )
+
+        call_kwargs = mock_agent_instance.run_turn.call_args.kwargs
+        limits = call_kwargs["usage_limits"]
+        assert limits.request_limit == 10
+        assert limits.total_tokens_limit == 9000
+
+    def test_per_agent_model_params_override_settings_defaults(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
+
+        context = _make_context()
+        context["model_params"] = {"request_limit": 7, "total_tokens_limit": 5000}
+        deps_data = {"available_requests": [], "available_notes": []}
+
+        mock_action = MagicMock()
+        mock_action.model_dump.return_value = {"action_type": "pass_turn", "reasoning": "idle"}
+
+        captured_kwargs: dict = {}
+
+        async def capture_run_turn(**kwargs):
+            captured_kwargs.update(kwargs)
+            return (mock_action, [])
+
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.run_turn = AsyncMock(side_effect=capture_run_turn)
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_settings = MagicMock()
+        mock_settings.SIMULATION_DEFAULT_REQUEST_LIMIT = 10
+        mock_settings.SIMULATION_DEFAULT_TOKEN_LIMIT = 9000
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent_instance,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._serialize_messages",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.get_settings",
+                return_value=mock_settings,
+            ),
+        ):
+            execute_agent_turn_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=[],
+            )
+
+        call_kwargs = mock_agent_instance.run_turn.call_args.kwargs
+        limits = call_kwargs["usage_limits"]
+        assert limits.request_limit == 7
+        assert limits.total_tokens_limit == 5000
+
+    def test_run_agent_turn_uses_settings_compaction_interval(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+
+        mock_settings = MagicMock()
+        mock_settings.SIMULATION_COMPACTION_INTERVAL = 5
+
+        mock_gate = MagicMock()
+
+        mock_selection = {
+            "action_type": "pass_turn",
+            "reasoning": "test",
+            "phase1_messages": [],
+        }
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.TokenGate",
+                return_value=mock_gate,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ) as mock_compact,
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={"available_requests": [], "available_notes": []},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value=mock_selection,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                return_value={"persisted": True, "action_type": "pass_turn"},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.get_settings",
+                return_value=mock_settings,
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            run_agent_turn.__wrapped__(agent_instance_id)
+
+        mock_compact.assert_called_once()
+        call_kwargs = mock_compact.call_args.kwargs
+        assert call_kwargs["compaction_interval"] == 5
