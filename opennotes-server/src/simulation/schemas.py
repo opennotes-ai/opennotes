@@ -215,3 +215,72 @@ class PlaygroundNoteRequestJobResponse(BaseModel):
 
     data: PlaygroundNoteRequestJobResource
     jsonapi: dict[str, str] = {"version": "1.1"}
+
+
+class PerAgentRatingData(SQLAlchemySchema):
+    agent_instance_id: str
+    agent_name: str
+    distribution: dict[str, int]
+    total: int
+
+
+class RatingDistributionData(SQLAlchemySchema):
+    overall: dict[str, int]
+    per_agent: list[PerAgentRatingData]
+    total_ratings: int
+
+
+class ConsensusMetricsData(SQLAlchemySchema):
+    mean_agreement: float
+    polarization_index: float
+    notes_with_consensus: int
+    notes_with_disagreement: int
+    total_notes_rated: int
+
+
+class ScoringCoverageData(SQLAlchemySchema):
+    current_tier: str
+    total_scores_computed: int
+    tier_distribution: dict[str, int]
+    scorer_breakdown: dict[str, int]
+    notes_by_status: dict[str, int]
+    tiers_reached: list[str]
+    scorers_exercised: list[str]
+
+
+class AgentBehaviorData(SQLAlchemySchema):
+    agent_instance_id: str
+    agent_name: str
+    notes_written: int
+    ratings_given: int
+    turn_count: int
+    state: str
+    helpfulness_trend: list[str]
+    action_distribution: dict[str, int]
+
+
+class NoteQualityData(SQLAlchemySchema):
+    avg_helpfulness_score: float | None
+    notes_by_status: dict[str, int]
+    notes_by_classification: dict[str, int]
+
+
+class AnalysisAttributes(SQLAlchemySchema):
+    rating_distribution: RatingDistributionData
+    consensus_metrics: ConsensusMetricsData
+    scoring_coverage: ScoringCoverageData
+    agent_behaviors: list[AgentBehaviorData]
+    note_quality: NoteQualityData
+
+
+class AnalysisResource(BaseModel):
+    type: str = "simulation-analysis"
+    id: str
+    attributes: AnalysisAttributes
+
+
+class AnalysisResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    data: AnalysisResource
+    jsonapi: dict[str, str] = {"version": "1.1"}

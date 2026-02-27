@@ -31,8 +31,10 @@ from src.dbos_workflows.config import get_dbos_client
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.notes.models import Note, Rating
+from src.simulation.analysis import compute_full_analysis
 from src.simulation.constants import PROGRESS_CACHE_KEY_PREFIX, PROGRESS_CACHE_TTL_SECONDS
 from src.simulation.models import SimAgentInstance, SimulationOrchestrator, SimulationRun
+from src.simulation.schemas import AnalysisResource, AnalysisResponse
 from src.simulation.workflows.orchestrator_workflow import dispatch_orchestrator
 from src.users.models import User
 
@@ -902,4 +904,57 @@ async def get_simulation_results(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             "Failed to get simulation results",
+        )
+
+
+@router.get(
+    "/simulations/{simulation_id}/analysis",
+    response_class=JSONResponse,
+    response_model=AnalysisResponse,
+)
+async def get_simulation_analysis(
+    simulation_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    require_admin(current_user)
+
+    try:
+        run_result = await db.execute(
+            select(SimulationRun).where(
+                SimulationRun.id == simulation_id,
+                SimulationRun.deleted_at.is_(None),
+            )
+        )
+        run = run_result.scalar_one_or_none()
+
+        if not run:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"SimulationRun {simulation_id} not found",
+            )
+
+        analysis = await compute_full_analysis(simulation_id, db)
+
+        response = AnalysisResponse(
+            data=AnalysisResource(
+                id=str(simulation_id),
+                attributes=analysis,
+            ),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to get simulation analysis")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to get simulation analysis",
         )
