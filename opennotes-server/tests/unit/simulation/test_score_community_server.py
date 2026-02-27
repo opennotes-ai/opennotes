@@ -371,3 +371,187 @@ class TestScoreCommunityServerNotes:
         assert result.unscored_notes_processed == total_unscored
         assert result.total_scores_computed >= total_unscored
         assert mock_calc.call_count >= total_unscored
+
+    @pytest.mark.asyncio
+    async def test_request_completion_update_executed(self) -> None:
+        cs_id = uuid4()
+        note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note.ratings = [_make_rating() for _ in range(5)]
+
+        db = _mock_db_for_community_scoring(
+            note_count=10,
+            unscored_notes=[note],
+            rescore_notes=[],
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+        ):
+            mock_calc.return_value = _make_score_response(note.id, score=0.8, rating_count=5)
+            await score_community_server_notes(cs_id, db)
+
+        all_calls = db.execute.call_args_list
+        request_update_call = all_calls[-1]
+        stmt = request_update_call.args[0]
+
+        compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+        sql_str = str(compiled)
+
+        assert "requests" in sql_str.lower()
+        assert "COMPLETED" in str(compiled.params.values()) or "COMPLETED" in sql_str
+
+    @pytest.mark.asyncio
+    async def test_request_completion_targets_pending_requests(self) -> None:
+        cs_id = uuid4()
+        note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note.ratings = [_make_rating() for _ in range(5)]
+
+        db = _mock_db_for_community_scoring(
+            note_count=10,
+            unscored_notes=[note],
+            rescore_notes=[],
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+        ):
+            mock_calc.return_value = _make_score_response(note.id, score=0.8, rating_count=5)
+            await score_community_server_notes(cs_id, db)
+
+        all_calls = db.execute.call_args_list
+        request_update_call = all_calls[-1]
+        stmt = request_update_call.args[0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+        sql_str = str(compiled)
+
+        assert "PENDING" in sql_str or "PENDING" in str(compiled.params.values())
+
+    @pytest.mark.asyncio
+    async def test_status_mapping_crh_for_high_score(self) -> None:
+        cs_id = uuid4()
+        note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note.ratings = [_make_rating() for _ in range(5)]
+
+        db = _mock_db_for_community_scoring(
+            note_count=10,
+            unscored_notes=[note],
+            rescore_notes=[],
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+        ):
+            mock_calc.return_value = _make_score_response(note.id, score=0.7, rating_count=5)
+            await score_community_server_notes(cs_id, db)
+
+        note_update_call = db.execute.call_args_list[2]
+        stmt = note_update_call.args[0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+        param_values = list(compiled.params.values())
+
+        assert "CURRENTLY_RATED_HELPFUL" in param_values
+
+    @pytest.mark.asyncio
+    async def test_status_mapping_crnh_for_low_score(self) -> None:
+        cs_id = uuid4()
+        note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note.ratings = [_make_rating() for _ in range(5)]
+
+        db = _mock_db_for_community_scoring(
+            note_count=10,
+            unscored_notes=[note],
+            rescore_notes=[],
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+        ):
+            mock_calc.return_value = _make_score_response(note.id, score=0.3, rating_count=5)
+            await score_community_server_notes(cs_id, db)
+
+        note_update_call = db.execute.call_args_list[2]
+        stmt = note_update_call.args[0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+        param_values = list(compiled.params.values())
+
+        assert "CURRENTLY_RATED_NOT_HELPFUL" in param_values
+
+    @pytest.mark.asyncio
+    async def test_status_boundary_score_exactly_0_5_is_crh(self) -> None:
+        cs_id = uuid4()
+        note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note.ratings = [_make_rating() for _ in range(5)]
+
+        db = _mock_db_for_community_scoring(
+            note_count=10,
+            unscored_notes=[note],
+            rescore_notes=[],
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+        ):
+            mock_calc.return_value = _make_score_response(note.id, score=0.5, rating_count=5)
+            await score_community_server_notes(cs_id, db)
+
+        note_update_call = db.execute.call_args_list[2]
+        stmt = note_update_call.args[0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+        param_values = list(compiled.params.values())
+
+        assert "CURRENTLY_RATED_HELPFUL" in param_values
+
+    @pytest.mark.asyncio
+    async def test_both_crh_and_crnh_in_same_batch(self) -> None:
+        cs_id = uuid4()
+        note_high = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note_high.ratings = [_make_rating() for _ in range(5)]
+        note_low = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note_low.ratings = [_make_rating() for _ in range(5)]
+
+        db = _mock_db_for_community_scoring(
+            note_count=10,
+            unscored_notes=[note_high, note_low],
+            rescore_notes=[],
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+        ):
+            mock_calc.side_effect = [
+                _make_score_response(note_high.id, score=0.9, rating_count=5),
+                _make_score_response(note_low.id, score=0.2, rating_count=5),
+            ]
+            await score_community_server_notes(cs_id, db)
+
+        note_update_call = db.execute.call_args_list[2]
+        stmt = note_update_call.args[0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+        param_values = list(compiled.params.values())
+
+        assert "CURRENTLY_RATED_HELPFUL" in param_values
+        assert "CURRENTLY_RATED_NOT_HELPFUL" in param_values

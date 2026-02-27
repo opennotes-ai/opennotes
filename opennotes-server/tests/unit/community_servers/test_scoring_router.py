@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
 
 
@@ -199,3 +199,34 @@ class TestScoreCommunityServerEndpoint:
 
         assert response.status_code == 202
         assert community_server_id in response.json()["message"]
+
+    def test_returns_403_when_admin_check_fails(self, client):
+        with patch(
+            "src.community_servers.scoring_router.verify_community_admin",
+            new=AsyncMock(
+                side_effect=HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions. User role 'member' cannot perform this action. Required: admin, moderator, Discord Manage Server permission, or Open Notes admin.",
+                )
+            ),
+        ):
+            response = client.post("/api/v2/community-servers/guild-123/score")
+
+        assert response.status_code == 403
+        assert "insufficient permissions" in response.json()["detail"].lower()
+
+    def test_returns_403_detail_includes_required_roles(self, client):
+        with patch(
+            "src.community_servers.scoring_router.verify_community_admin",
+            new=AsyncMock(
+                side_effect=HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions. User role 'member' cannot perform this action. Required: admin, moderator, Discord Manage Server permission, or Open Notes admin.",
+                )
+            ),
+        ):
+            response = client.post("/api/v2/community-servers/guild-123/score")
+
+        detail = response.json()["detail"]
+        assert "admin" in detail.lower()
+        assert "moderator" in detail.lower()

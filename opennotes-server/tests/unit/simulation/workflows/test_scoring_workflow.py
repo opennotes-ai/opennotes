@@ -132,6 +132,50 @@ class TestRunCommunityScoringStep:
         assert set(result.keys()) == expected_keys
 
 
+class TestRunCommunityScoringStepErrorPropagation:
+    def test_exception_propagates_through_step(self) -> None:
+        from src.simulation.workflows.scoring_workflow import (
+            run_community_scoring_step,
+        )
+
+        cs_id = uuid4()
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+            patch(
+                "src.simulation.scoring_integration.score_community_server_notes",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Database connection lost"),
+            ),
+            pytest.raises(RuntimeError, match="Database connection lost"),
+        ):
+            run_community_scoring_step.__wrapped__(str(cs_id))
+
+    def test_value_error_propagates_through_step(self) -> None:
+        from src.simulation.workflows.scoring_workflow import (
+            run_community_scoring_step,
+        )
+
+        cs_id = uuid4()
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+            patch(
+                "src.simulation.scoring_integration.score_community_server_notes",
+                new_callable=AsyncMock,
+                side_effect=ValueError("Invalid community server"),
+            ),
+            pytest.raises(ValueError, match="Invalid community server"),
+        ):
+            run_community_scoring_step.__wrapped__(str(cs_id))
+
+
 class TestScoreCommunityServerWorkflow:
     def test_workflow_calls_step_and_returns_result(self) -> None:
         from src.simulation.workflows.scoring_workflow import (
