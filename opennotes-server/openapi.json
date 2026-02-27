@@ -6752,12 +6752,15 @@
           }
         },
         "responses": {
-          "201": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
-              }
+                "schema": {
+                  "$ref": "#/components/schemas/PlaygroundNoteRequestJobResponse"
+                }
+              },
+              "application/vnd.api+json": {}
             }
           },
           "422": {
@@ -18652,6 +18655,73 @@
           "attributes"
         ],
         "title": "PlaygroundNoteRequestData"
+      },
+      "PlaygroundNoteRequestJobAttributes": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id"
+          },
+          "url_count": {
+            "type": "integer",
+            "title": "Url Count"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ACCEPTED"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "url_count"
+        ],
+        "title": "PlaygroundNoteRequestJobAttributes"
+      },
+      "PlaygroundNoteRequestJobResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "playground-note-request-jobs"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/PlaygroundNoteRequestJobAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "PlaygroundNoteRequestJobResource"
+      },
+      "PlaygroundNoteRequestJobResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PlaygroundNoteRequestJobResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PlaygroundNoteRequestJobResponse"
       },
       "PreviouslySeenCheckAttributes": {
         "properties": {

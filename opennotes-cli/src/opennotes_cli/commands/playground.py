@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 import click
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 
 from opennotes_cli.display import get_cli_prefix, handle_jsonapi_error
 from opennotes_cli.http import add_csrf, get_csrf_token
@@ -95,7 +94,7 @@ def playground_create(
 def playground_add_request(
     ctx: click.Context, community_server_id: str, urls: tuple[str, ...]
 ) -> None:
-    """Add note requests to a playground by fetching URLs."""
+    """Add note requests to a playground by fetching URLs (async via DBOS workflow)."""
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -134,31 +133,17 @@ def playground_add_request(
         console.print(json.dumps(result, indent=2, default=str))
         return
 
-    items = result.get("data", [])
-    meta = result.get("meta", {})
+    data = result.get("data", {})
+    attrs = data.get("attributes", {})
+    workflow_id = attrs.get("workflow_id", "unknown")
+    url_count = attrs.get("url_count", len(urls))
+    job_status = attrs.get("status", "ACCEPTED")
 
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", no_wrap=True, width=20)
-    table.add_column("URL", no_wrap=False)
-    table.add_column("Status", width=10)
-    table.add_column("Error", no_wrap=False)
-
-    for item in items:
-        attrs = item.get("attributes", {})
-        status = attrs.get("status", "unknown")
-        status_color = "green" if status == "PENDING" else "red"
-        error = attrs.get("error") or ""
-
-        table.add_row(
-            item.get("id", "N/A")[:20],
-            attrs.get("url", "N/A"),
-            f"[{status_color}]{status}[/{status_color}]",
-            error[:60] if error else "-",
-        )
-
-    console.print(table)
+    status_color = "green" if job_status == "ACCEPTED" else "yellow"
+    console.print(f"[{status_color}]Job accepted[/{status_color}]")
+    console.print(f"  Workflow ID: [bold]{workflow_id}[/bold]")
+    console.print(f"  URLs queued: {url_count}")
     console.print(
-        f"\n[dim]Total: {meta.get('count', len(items))}, "
-        f"Succeeded: {meta.get('succeeded', 0)}, "
-        f"Failed: {meta.get('failed', 0)}[/dim]"
+        "\n[dim]URL extraction is running asynchronously via DBOS workflow.[/dim]"
     )
+    console.print("[dim]Check playground requests later to see results.[/dim]")

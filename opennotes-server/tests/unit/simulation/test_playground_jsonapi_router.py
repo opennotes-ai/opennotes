@@ -7,6 +7,9 @@ from src.simulation.schemas import (
     PlaygroundNoteRequestAttributes,
     PlaygroundNoteRequestBody,
     PlaygroundNoteRequestData,
+    PlaygroundNoteRequestJobAttributes,
+    PlaygroundNoteRequestJobResource,
+    PlaygroundNoteRequestJobResponse,
     PlaygroundNoteRequestListResponse,
     PlaygroundNoteRequestResultAttributes,
     PlaygroundNoteRequestResultResource,
@@ -202,3 +205,43 @@ class TestPlaygroundNoteRequestListResponse:
         assert dumped["jsonapi"]["version"] == "1.1"
         assert dumped["data"][0]["type"] == "requests"
         assert dumped["data"][0]["id"] == req_id
+
+
+@pytest.mark.unit
+class TestPlaygroundNoteRequestJobResponse:
+    def test_valid_job_response(self):
+        wf_id = "playground-urls-abc123"
+        response = PlaygroundNoteRequestJobResponse(
+            data=PlaygroundNoteRequestJobResource(
+                id=wf_id,
+                attributes=PlaygroundNoteRequestJobAttributes(
+                    workflow_id=wf_id,
+                    url_count=5,
+                ),
+            ),
+        )
+        assert response.data.id == wf_id
+        assert response.data.type == "playground-note-request-jobs"
+        assert response.data.attributes.workflow_id == wf_id
+        assert response.data.attributes.url_count == 5
+        assert response.data.attributes.status == "ACCEPTED"
+        assert response.jsonapi == {"version": "1.1"}
+
+    def test_job_response_serialization(self):
+        wf_id = "playground-urls-def456"
+        response = PlaygroundNoteRequestJobResponse(
+            data=PlaygroundNoteRequestJobResource(
+                id=wf_id,
+                attributes=PlaygroundNoteRequestJobAttributes(
+                    workflow_id=wf_id,
+                    url_count=3,
+                ),
+            ),
+        )
+        dumped = response.model_dump(by_alias=True, mode="json")
+        assert dumped["jsonapi"]["version"] == "1.1"
+        assert dumped["data"]["type"] == "playground-note-request-jobs"
+        assert dumped["data"]["id"] == wf_id
+        assert dumped["data"]["attributes"]["workflow_id"] == wf_id
+        assert dumped["data"]["attributes"]["url_count"] == 3
+        assert dumped["data"]["attributes"]["status"] == "ACCEPTED"

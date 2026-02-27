@@ -7338,6 +7338,42 @@ export interface components {
             type: "playground-note-requests";
             attributes: components["schemas"]["PlaygroundNoteRequestAttributes"];
         };
+        /** PlaygroundNoteRequestJobAttributes */
+        PlaygroundNoteRequestJobAttributes: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Url Count */
+            url_count: number;
+            /**
+             * Status
+             * @default ACCEPTED
+             */
+            status: string;
+        };
+        /** PlaygroundNoteRequestJobResource */
+        PlaygroundNoteRequestJobResource: {
+            /**
+             * Type
+             * @default playground-note-request-jobs
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["PlaygroundNoteRequestJobAttributes"];
+        };
+        /** PlaygroundNoteRequestJobResponse */
+        PlaygroundNoteRequestJobResponse: {
+            data: components["schemas"]["PlaygroundNoteRequestJobResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+        };
         /**
          * PreviouslySeenCheckAttributes
          * @description Attributes for checking previously seen messages via JSON:API.
@@ -13429,12 +13465,13 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            201: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PlaygroundNoteRequestJobResponse"];
+                    "application/vnd.api+json": unknown;
                 };
             };
             /** @description Validation Error */

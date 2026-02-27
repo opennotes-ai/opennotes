@@ -1,28 +1,55 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-import pendulum
 import pytest
 
-from src.shared.content_extraction import ExtractedContent
+from src.auth.auth import create_access_token
+from src.users.models import User
 
 
 @pytest.fixture
-def mock_extract_content():
-    with patch("src.simulation.playground_jsonapi_router.extract_content_from_url") as mock:
-        mock.return_value = ExtractedContent(
-            text="This is extracted article content for testing.",
-            url="https://example.com/article",
-            domain="example.com",
-            extracted_at=pendulum.now("UTC"),
-            title="Test Article",
-        )
+def mock_dispatch_workflow():
+    with patch(
+        "src.simulation.playground_jsonapi_router.dispatch_playground_url_extraction",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = "playground-urls-test123"
         yield mock
 
 
+@pytest.fixture
+async def non_admin_user(db):
+    user = User(
+        id=uuid4(),
+        username="sim_regular_user",
+        email="sim_regular@opennotes.local",
+        hashed_password="hashed_password_placeholder",
+        role="user",
+        is_active=True,
+        is_superuser=False,
+        is_service_account=False,
+        discord_id=f"discord_sim_regular_{uuid4().hex[:8]}",
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@pytest.fixture
+async def non_admin_auth_headers(non_admin_user):
+    token_data = {
+        "sub": str(non_admin_user.id),
+        "username": non_admin_user.username,
+        "role": non_admin_user.role,
+    }
+    access_token = create_access_token(token_data)
+    return {"Authorization": f"Bearer {access_token}"}
+
+
 @pytest.mark.asyncio
-async def test_create_note_requests_full_flow(
-    async_client, admin_auth_headers, playground_community_server, mock_extract_content
+async def test_create_note_requests_returns_202_with_workflow_id(
+    async_client, admin_auth_headers, playground_community_server, mock_dispatch_workflow
 ):
     response = await async_client.post(
         f"/api/v2/playgrounds/{playground_community_server}/note-requests",
@@ -37,26 +64,25 @@ async def test_create_note_requests_full_flow(
         headers=admin_auth_headers,
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 202
     data = response.json()
     assert data["jsonapi"]["version"] == "1.1"
-    assert len(data["data"]) == 2
-    assert data["meta"]["count"] == 2
-    assert data["meta"]["succeeded"] == 2
-    assert data["meta"]["failed"] == 0
+    assert data["data"]["type"] == "playground-note-request-jobs"
+    assert data["data"]["id"] == "playground-urls-test123"
+    assert data["data"]["attributes"]["workflow_id"] == "playground-urls-test123"
+    assert data["data"]["attributes"]["url_count"] == 2
+    assert data["data"]["attributes"]["status"] == "ACCEPTED"
 
-    for item in data["data"]:
-        assert item["type"] == "requests"
-        assert item["attributes"]["status"] == "PENDING"
-        assert item["attributes"]["community_server_id"] == str(playground_community_server)
-        assert item["attributes"]["requested_by"] == "system-playground"
-        assert item["attributes"]["request_id"].startswith("playground-")
-        assert item["attributes"]["content"] is not None
+    mock_dispatch_workflow.assert_called_once()
+    call_kwargs = mock_dispatch_workflow.call_args
+    assert len(call_kwargs.kwargs["urls"]) == 2
+    assert call_kwargs.kwargs["community_server_id"] == playground_community_server
+    assert call_kwargs.kwargs["requested_by"] == "system-playground"
 
 
 @pytest.mark.asyncio
 async def test_create_note_requests_custom_requested_by(
-    async_client, admin_auth_headers, playground_community_server, mock_extract_content
+    async_client, admin_auth_headers, playground_community_server, mock_dispatch_workflow
 ):
     response = await async_client.post(
         f"/api/v2/playgrounds/{playground_community_server}/note-requests",
@@ -72,9 +98,9 @@ async def test_create_note_requests_custom_requested_by(
         headers=admin_auth_headers,
     )
 
-    assert response.status_code == 201
-    data = response.json()
-    assert data["data"][0]["attributes"]["requested_by"] == "custom-user"
+    assert response.status_code == 202
+    mock_dispatch_workflow.assert_called_once()
+    assert mock_dispatch_workflow.call_args.kwargs["requested_by"] == "custom-user"
 
 
 @pytest.mark.asyncio
@@ -92,6 +118,26 @@ async def test_auth_required(async_client, playground_community_server):
     )
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_non_admin_returns_403(
+    async_client, non_admin_auth_headers, playground_community_server
+):
+    response = await async_client.post(
+        f"/api/v2/playgrounds/{playground_community_server}/note-requests",
+        json={
+            "data": {
+                "type": "playground-note-requests",
+                "attributes": {
+                    "urls": ["https://example.com/article"],
+                },
+            }
+        },
+        headers=non_admin_auth_headers,
+    )
+
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -116,6 +162,28 @@ async def test_non_playground_rejected(async_client, admin_auth_headers, communi
 
 
 @pytest.mark.asyncio
+async def test_non_playground_error_does_not_leak_platform(
+    async_client, admin_auth_headers, community_server
+):
+    response = await async_client.post(
+        f"/api/v2/playgrounds/{community_server}/note-requests",
+        json={
+            "data": {
+                "type": "playground-note-requests",
+                "attributes": {
+                    "urls": ["https://example.com/article"],
+                },
+            }
+        },
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["errors"][0]["detail"]
+    assert "platform=" not in detail
+
+
+@pytest.mark.asyncio
 async def test_nonexistent_community_server(async_client, admin_auth_headers):
     fake_id = uuid4()
     response = await async_client.post(
@@ -137,25 +205,13 @@ async def test_nonexistent_community_server(async_client, admin_auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_handles_extraction_failure_per_url(
+async def test_dispatch_failure_returns_500(
     async_client, admin_auth_headers, playground_community_server
 ):
-    from src.shared.content_extraction import ContentExtractionError
-
-    async def side_effect(url, config=None):
-        if "good-article" in str(url):
-            return ExtractedContent(
-                text="Good content",
-                url=url,
-                domain="example.com",
-                extracted_at=pendulum.now("UTC"),
-                title="Good Article",
-            )
-        raise ContentExtractionError(f"Failed to extract from {url}")
-
     with patch(
-        "src.simulation.playground_jsonapi_router.extract_content_from_url",
-        side_effect=side_effect,
+        "src.simulation.playground_jsonapi_router.dispatch_playground_url_extraction",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("DBOS connection failed"),
     ):
         response = await async_client.post(
             f"/api/v2/playgrounds/{playground_community_server}/note-requests",
@@ -163,24 +219,38 @@ async def test_handles_extraction_failure_per_url(
                 "data": {
                     "type": "playground-note-requests",
                     "attributes": {
-                        "urls": [
-                            "https://example.com/good-article",
-                            "https://example.com/bad-article",
-                        ],
+                        "urls": ["https://example.com/article"],
                     },
                 }
             },
             headers=admin_auth_headers,
         )
 
-    assert response.status_code == 201
+    assert response.status_code == 500
     data = response.json()
-    assert data["meta"]["succeeded"] == 1
-    assert data["meta"]["failed"] == 1
+    assert data["errors"][0]["title"] == "Internal Server Error"
 
-    statuses = [item["attributes"]["status"] for item in data["data"]]
-    assert "PENDING" in statuses
-    assert "FAILED" in statuses
 
-    failed_item = next(item for item in data["data"] if item["attributes"]["status"] == "FAILED")
-    assert failed_item["attributes"]["error"] is not None
+@pytest.mark.asyncio
+async def test_ssrf_url_returns_422(async_client, admin_auth_headers, playground_community_server):
+    with patch(
+        "src.simulation.playground_jsonapi_router.validate_url_security",
+        side_effect=ValueError("URLs pointing to private or reserved IP ranges are not allowed"),
+    ):
+        response = await async_client.post(
+            f"/api/v2/playgrounds/{playground_community_server}/note-requests",
+            json={
+                "data": {
+                    "type": "playground-note-requests",
+                    "attributes": {
+                        "urls": ["http://192.168.1.1/internal"],
+                    },
+                }
+            },
+            headers=admin_auth_headers,
+        )
+
+    assert response.status_code == 422
+    data = response.json()
+    assert data["errors"][0]["title"] == "URL Validation Failed"
+    assert "private or reserved" in data["errors"][0]["detail"]
