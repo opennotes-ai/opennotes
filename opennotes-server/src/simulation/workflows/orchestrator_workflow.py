@@ -103,6 +103,39 @@ def initialize_run_step(simulation_run_id: str) -> dict[str, Any]:
     interval_seconds=2.0,
     backoff_rate=2.0,
 )
+def refresh_config_step(simulation_run_id: str) -> dict[str, Any]:
+    from src.database import get_session_maker
+
+    async def _refresh() -> dict[str, Any]:
+        run_uuid = UUID(simulation_run_id)
+        async with get_session_maker()() as session:
+            run_query = (
+                select(SimulationRun)
+                .options(selectinload(SimulationRun.orchestrator))
+                .where(SimulationRun.id == run_uuid)
+            )
+            run_result = await session.execute(run_query)
+            run = run_result.scalar_one()
+            orchestrator: SimulationOrchestrator = run.orchestrator
+
+            return {
+                "turn_cadence_seconds": orchestrator.turn_cadence_seconds,
+                "max_agents": orchestrator.max_agents,
+                "removal_rate": orchestrator.removal_rate,
+                "max_turns_per_agent": orchestrator.max_turns_per_agent,
+                "agent_profile_ids": orchestrator.agent_profile_ids or [],
+                "community_server_id": str(run.community_server_id),
+            }
+
+    return run_sync(_refresh())
+
+
+@DBOS.step(
+    retries_allowed=True,
+    max_attempts=3,
+    interval_seconds=2.0,
+    backoff_rate=2.0,
+)
 def check_run_status_step(simulation_run_id: str) -> str:
     from src.database import get_session_maker
 
@@ -686,6 +719,7 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
         consecutive_empty = 0
         consecutive_status_failures = 0
         max_consecutive_status_failures = 10
+        prev_status = "running"
 
         while iteration < MAX_ITERATIONS:
             iteration += 1
@@ -721,8 +755,20 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 break
 
             if status == "paused":
+                prev_status = "paused"
                 DBOS.sleep(config["turn_cadence_seconds"])
                 continue
+
+            if prev_status == "paused":
+                try:
+                    config = refresh_config_step(simulation_run_id)
+                    logger.info(
+                        "Config refreshed after resume",
+                        extra={"simulation_run_id": simulation_run_id},
+                    )
+                except Exception:
+                    logger.exception("Failed to refresh config after resume")
+                prev_status = "running"
 
             try:
                 content_check = check_content_availability_step(config["community_server_id"])
