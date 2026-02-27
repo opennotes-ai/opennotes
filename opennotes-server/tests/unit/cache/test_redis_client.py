@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,11 +18,11 @@ def _reset_shared_redis():
 
         mod = importlib.import_module(MODULE_PATH)
 
-    mod._shared_redis = None
-    mod._shared_redis_loop = None
+    mod._thread_local.redis = None
+    mod._thread_local.loop = None
     yield
-    mod._shared_redis = None
-    mod._shared_redis_loop = None
+    mod._thread_local.redis = None
+    mod._thread_local.loop = None
 
 
 def _get_module():
@@ -50,8 +51,8 @@ async def test_creates_new_connection_on_first_call():
     mod = _get_module()
     assert result is mock_client
     mock_create.assert_awaited_once()
-    assert mod._shared_redis is mock_client
-    assert mod._shared_redis_loop is asyncio.get_running_loop()
+    assert mod._thread_local.redis is mock_client
+    assert mod._thread_local.loop is asyncio.get_running_loop()
 
 
 @pytest.mark.asyncio
@@ -75,8 +76,8 @@ async def test_reconnects_when_ping_fails():
     stale_client = _make_mock_redis(ping_ok=False)
     fresh_client = _make_mock_redis()
 
-    mod._shared_redis = stale_client
-    mod._shared_redis_loop = asyncio.get_running_loop()
+    mod._thread_local.redis = stale_client
+    mod._thread_local.loop = asyncio.get_running_loop()
 
     with patch(f"{MODULE_PATH}.create_redis_connection", return_value=fresh_client) as mock_create:
         from src.cache.redis_client import get_shared_redis_client
@@ -95,8 +96,8 @@ async def test_detects_event_loop_change_and_creates_new_connection():
     old_client = _make_mock_redis()
     new_client = _make_mock_redis()
 
-    mod._shared_redis = old_client
-    mod._shared_redis_loop = old_loop
+    mod._thread_local.redis = old_client
+    mod._thread_local.loop = old_loop
 
     with patch(f"{MODULE_PATH}.create_redis_connection", return_value=new_client) as mock_create:
         from src.cache.redis_client import get_shared_redis_client
@@ -106,8 +107,8 @@ async def test_detects_event_loop_change_and_creates_new_connection():
     assert result is new_client
     mock_create.assert_awaited_once()
     old_client.close.assert_awaited_once()
-    assert mod._shared_redis is new_client
-    assert mod._shared_redis_loop is asyncio.get_running_loop()
+    assert mod._thread_local.redis is new_client
+    assert mod._thread_local.loop is asyncio.get_running_loop()
 
 
 @pytest.mark.asyncio
@@ -118,8 +119,8 @@ async def test_loop_change_tolerates_close_failure():
     old_client.close.side_effect = RuntimeError("close failed")
     new_client = _make_mock_redis()
 
-    mod._shared_redis = old_client
-    mod._shared_redis_loop = old_loop
+    mod._thread_local.redis = old_client
+    mod._thread_local.loop = old_loop
 
     with patch(f"{MODULE_PATH}.create_redis_connection", return_value=new_client):
         from src.cache.redis_client import get_shared_redis_client
@@ -140,4 +141,41 @@ async def test_tracks_loop_after_creation():
 
         await get_shared_redis_client("redis://localhost")
 
-    assert mod._shared_redis_loop is asyncio.get_running_loop()
+    assert mod._thread_local.loop is asyncio.get_running_loop()
+
+
+@pytest.mark.asyncio
+async def test_thread_local_isolation():
+    mod = _get_module()
+    main_client = _make_mock_redis()
+    thread_client = _make_mock_redis()
+
+    with patch(f"{MODULE_PATH}.create_redis_connection", return_value=main_client):
+        from src.cache.redis_client import get_shared_redis_client
+
+        main_result = await get_shared_redis_client("redis://localhost")
+
+    assert main_result is main_client
+    assert mod._thread_local.redis is main_client
+
+    thread_saw_main: list[bool] = []
+    thread_created_own: list[bool] = []
+
+    def _worker():
+        pre_existing = getattr(mod._thread_local, "redis", None)
+        thread_saw_main.append(pre_existing is main_client)
+        loop = asyncio.new_event_loop()
+        try:
+            with patch(f"{MODULE_PATH}.create_redis_connection", return_value=thread_client):
+                result = loop.run_until_complete(get_shared_redis_client("redis://localhost"))
+                thread_created_own.append(result is thread_client)
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=_worker)
+    t.start()
+    t.join()
+
+    assert thread_saw_main == [False]
+    assert thread_created_own == [True]
+    assert mod._thread_local.redis is main_client

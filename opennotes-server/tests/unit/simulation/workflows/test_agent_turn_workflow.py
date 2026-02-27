@@ -809,8 +809,9 @@ class TestPersistStateStep:
         mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
 
-        mock_redis_client = AsyncMock()
-        mock_redis_client.delete = AsyncMock()
+        mock_raw_redis = AsyncMock()
+        mock_raw_redis.delete = AsyncMock()
+        mock_get_shared = AsyncMock(return_value=mock_raw_redis)
 
         with (
             patch(
@@ -821,8 +822,8 @@ class TestPersistStateStep:
             ),
             patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
             patch(
-                "src.cache.redis_client.redis_client",
-                mock_redis_client,
+                "src.cache.redis_client.get_shared_redis_client",
+                mock_get_shared,
             ),
         ):
             persist_state_step.__wrapped__(
@@ -834,7 +835,8 @@ class TestPersistStateStep:
             )
 
         expected_key = f"sim:progress:{simulation_run_id}"
-        mock_redis_client.delete.assert_awaited_once_with(expected_key)
+        mock_get_shared.assert_awaited_once()
+        mock_raw_redis.delete.assert_awaited_once_with(expected_key)
 
 
 class TestSelectActionStep:
