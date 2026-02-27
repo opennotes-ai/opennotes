@@ -1693,7 +1693,7 @@ class TestOrchestratorScoringIntegration:
 
             result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
 
-        assert mock_scoring.call_count == 1
+        assert mock_scoring.call_count == 2
         assert result["status"] == "cancelled"
 
     def test_orchestrator_skips_scoring_on_non_interval(self) -> None:
