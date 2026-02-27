@@ -70,12 +70,14 @@ class TestLoadAgentContextStep:
         cs_id = uuid4()
 
         mock_profile = MagicMock()
-        mock_profile.community_server_id = cs_id
         mock_profile.personality = "Test personality"
         mock_profile.model_name = "openai:gpt-4o-mini"
         mock_profile.model_params = {"request_limit": 5}
         mock_profile.memory_compaction_strategy = "sliding_window"
         mock_profile.memory_compaction_config = None
+
+        mock_simulation_run = MagicMock()
+        mock_simulation_run.community_server_id = cs_id
 
         mock_instance = MagicMock()
         mock_instance.id = instance_id
@@ -84,6 +86,7 @@ class TestLoadAgentContextStep:
         mock_instance.user_profile_id = user_id
         mock_instance.turn_count = 3
         mock_instance.agent_profile = mock_profile
+        mock_instance.simulation_run = mock_simulation_run
 
         mock_memory = MagicMock()
         mock_memory.id = memory_id
@@ -1312,12 +1315,14 @@ class TestRecentActions:
         memory_id = uuid4()
 
         mock_profile = MagicMock()
-        mock_profile.community_server_id = uuid4()
         mock_profile.personality = "Test"
         mock_profile.model_name = "openai:gpt-4o-mini"
         mock_profile.model_params = None
         mock_profile.memory_compaction_strategy = "sliding_window"
         mock_profile.memory_compaction_config = None
+
+        mock_simulation_run = MagicMock()
+        mock_simulation_run.community_server_id = uuid4()
 
         mock_instance = MagicMock()
         mock_instance.id = instance_id
@@ -1326,6 +1331,7 @@ class TestRecentActions:
         mock_instance.user_profile_id = uuid4()
         mock_instance.turn_count = 3
         mock_instance.agent_profile = mock_profile
+        mock_instance.simulation_run = mock_simulation_run
 
         mock_memory = MagicMock()
         mock_memory.id = memory_id
@@ -1363,12 +1369,14 @@ class TestRecentActions:
         instance_id = uuid4()
 
         mock_profile = MagicMock()
-        mock_profile.community_server_id = uuid4()
         mock_profile.personality = "Test"
         mock_profile.model_name = "openai:gpt-4o-mini"
         mock_profile.model_params = None
         mock_profile.memory_compaction_strategy = "sliding_window"
         mock_profile.memory_compaction_config = None
+
+        mock_simulation_run = MagicMock()
+        mock_simulation_run.community_server_id = uuid4()
 
         mock_instance = MagicMock()
         mock_instance.id = instance_id
@@ -1377,6 +1385,7 @@ class TestRecentActions:
         mock_instance.user_profile_id = uuid4()
         mock_instance.turn_count = 0
         mock_instance.agent_profile = mock_profile
+        mock_instance.simulation_run = mock_simulation_run
 
         mock_session = AsyncMock()
         instance_result = MagicMock()

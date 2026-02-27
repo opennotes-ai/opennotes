@@ -37,7 +37,6 @@ class SimAgentAttributes:
         model_params (None | SimAgentAttributesModelParamsType0 | Unset):
         tool_config (None | SimAgentAttributesToolConfigType0 | Unset):
         memory_compaction_config (None | SimAgentAttributesMemoryCompactionConfigType0 | Unset):
-        community_server_id (None | str | Unset):
         created_at (datetime.datetime | None | Unset):
         updated_at (datetime.datetime | None | Unset):
     """
@@ -51,7 +50,6 @@ class SimAgentAttributes:
     memory_compaction_config: (
         None | SimAgentAttributesMemoryCompactionConfigType0 | Unset
     ) = UNSET
-    community_server_id: None | str | Unset = UNSET
     created_at: datetime.datetime | None | Unset = UNSET
     updated_at: datetime.datetime | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -101,12 +99,6 @@ class SimAgentAttributes:
         else:
             memory_compaction_config = self.memory_compaction_config
 
-        community_server_id: None | str | Unset
-        if isinstance(self.community_server_id, Unset):
-            community_server_id = UNSET
-        else:
-            community_server_id = self.community_server_id
-
         created_at: None | str | Unset
         if isinstance(self.created_at, Unset):
             created_at = UNSET
@@ -139,8 +131,6 @@ class SimAgentAttributes:
             field_dict["tool_config"] = tool_config
         if memory_compaction_config is not UNSET:
             field_dict["memory_compaction_config"] = memory_compaction_config
-        if community_server_id is not UNSET:
-            field_dict["community_server_id"] = community_server_id
         if created_at is not UNSET:
             field_dict["created_at"] = created_at
         if updated_at is not UNSET:
@@ -233,17 +223,6 @@ class SimAgentAttributes:
             d.pop("memory_compaction_config", UNSET)
         )
 
-        def _parse_community_server_id(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        community_server_id = _parse_community_server_id(
-            d.pop("community_server_id", UNSET)
-        )
-
         def _parse_created_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
                 return data
@@ -286,7 +265,6 @@ class SimAgentAttributes:
             model_params=model_params,
             tool_config=tool_config,
             memory_compaction_config=memory_compaction_config,
-            community_server_id=community_server_id,
             created_at=created_at,
             updated_at=updated_at,
         )

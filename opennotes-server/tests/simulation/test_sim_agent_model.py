@@ -65,35 +65,3 @@ async def test_sim_agent_soft_delete(db):
     await db.commit()
     assert agent.is_deleted is True
     assert agent.deleted_at is not None
-
-
-@pytest.mark.asyncio
-async def test_sim_agent_community_server_fk_optional(db):
-    from src.simulation.models import SimAgent
-
-    agent = SimAgent(
-        name=f"no-cs-{uuid4().hex[:8]}",
-        personality="standalone",
-        model_name="gpt-4o",
-        community_server_id=None,
-    )
-    db.add(agent)
-    await db.commit()
-    await db.refresh(agent)
-    assert agent.community_server_id is None
-
-
-@pytest.mark.asyncio
-async def test_sim_agent_with_community_server_fk(db, playground_community_server):
-    from src.simulation.models import SimAgent
-
-    agent = SimAgent(
-        name=f"linked-{uuid4().hex[:8]}",
-        personality="linked agent",
-        model_name="gpt-4o",
-        community_server_id=playground_community_server,
-    )
-    db.add(agent)
-    await db.commit()
-    await db.refresh(agent)
-    assert agent.community_server_id == playground_community_server
