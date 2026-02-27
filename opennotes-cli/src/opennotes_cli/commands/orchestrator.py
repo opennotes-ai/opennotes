@@ -213,3 +213,83 @@ def orchestrator_create(
     console.print(
         f"[green]\u2713[/green] Created orchestrator [bold]{orch_name}[/bold]: {orch_id}"
     )
+
+
+@orchestrator.command("update")
+@click.argument("orchestrator_id")
+@click.option("--name", default=None, help="Orchestrator name.")
+@click.option("--description", default=None, help="Description.")
+@click.option("--max-agents", default=None, type=int, help="Maximum concurrent agents.")
+@click.option("--turn-cadence", default=None, type=int, help="Turn cadence in seconds.")
+@click.option("--removal-rate", default=None, type=float, help="Agent removal rate (0.0-1.0).")
+@click.option("--max-turns", default=None, type=int, help="Maximum turns per agent.")
+@click.option("--agent-ids", default=None, help="Comma-separated agent profile UUIDs.")
+@click.option("--scoring-config", default=None, help="Scoring config as JSON string.")
+@click.pass_context
+def orchestrator_update(
+    ctx: click.Context,
+    orchestrator_id: str,
+    name: str | None,
+    description: str | None,
+    max_agents: int | None,
+    turn_cadence: int | None,
+    removal_rate: float | None,
+    max_turns: int | None,
+    agent_ids: str | None,
+    scoring_config: str | None,
+) -> None:
+    """Update an orchestrator's configuration."""
+    cli_ctx: CliContext = ctx.obj
+    base_url = cli_ctx.base_url
+    client = cli_ctx.client
+
+    attributes: dict[str, Any] = {}
+    if name is not None:
+        attributes["name"] = name
+    if description is not None:
+        attributes["description"] = description
+    if max_agents is not None:
+        attributes["max_agents"] = max_agents
+    if turn_cadence is not None:
+        attributes["turn_cadence_seconds"] = turn_cadence
+    if removal_rate is not None:
+        attributes["removal_rate"] = removal_rate
+    if max_turns is not None:
+        attributes["max_turns_per_agent"] = max_turns
+    if agent_ids is not None:
+        attributes["agent_profile_ids"] = [a.strip() for a in agent_ids.split(",") if a.strip()]
+    if scoring_config is not None:
+        attributes["scoring_config"] = json.loads(scoring_config)
+
+    if not attributes:
+        error_console.print("[red]No update fields specified.[/red]")
+        sys.exit(1)
+
+    csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+    headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    payload = {
+        "data": {
+            "type": "simulation-orchestrators",
+            "id": orchestrator_id,
+            "attributes": attributes,
+        }
+    }
+
+    response = client.patch(
+        f"{base_url}/api/v2/simulation-orchestrators/{orchestrator_id}",
+        headers=headers,
+        json=payload,
+    )
+    handle_jsonapi_error(response)
+
+    result = response.json()
+
+    if cli_ctx.json_output:
+        console.print(json.dumps(result, indent=2, default=str))
+        return
+
+    attrs_resp = result.get("data", {}).get("attributes", {})
+    console.print(f"[green]\u2713[/green] Updated orchestrator [bold]{orchestrator_id}[/bold]")
+    for key, value in sorted(attributes.items()):
+        console.print(f"  {key}: {attrs_resp.get(key, value)}")
