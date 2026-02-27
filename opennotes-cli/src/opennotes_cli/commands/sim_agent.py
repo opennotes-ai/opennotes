@@ -65,12 +65,15 @@ def sim_agent_list(ctx: click.Context, page: int, page_size: int) -> None:
     for item in items:
         attrs = item.get("attributes", {})
         created = (attrs.get("created_at") or "")[:19]
+        model_name = attrs.get("model_name", "N/A")
+        if isinstance(model_name, dict):
+            model_name = f"{model_name.get('provider', '?')}:{model_name.get('model', '?')}"
         table.add_row(
-            item.get("id", "N/A"),
-            attrs.get("name", "N/A"),
-            attrs.get("model_name", "N/A"),
-            attrs.get("memory_compaction_strategy", "N/A"),
-            created,
+            str(item.get("id", "N/A")),
+            str(attrs.get("name", "N/A")),
+            str(model_name),
+            str(attrs.get("memory_compaction_strategy", "N/A")),
+            str(created),
         )
 
     console.print(table)
@@ -100,10 +103,14 @@ def sim_agent_get(ctx: click.Context, agent_id: str) -> None:
 
     attrs = result.get("data", {}).get("attributes", {})
 
+    model_name_val = attrs.get("model_name", "N/A")
+    if isinstance(model_name_val, dict):
+        model_name_val = f"{model_name_val.get('provider', '?')}:{model_name_val.get('model', '?')}"
+
     panel_content = (
         f"[bold]ID:[/bold] {result.get('data', {}).get('id', 'N/A')}\n"
         f"[bold]Name:[/bold] {attrs.get('name', 'N/A')}\n"
-        f"[bold]Model:[/bold] {attrs.get('model_name', 'N/A')}\n"
+        f"[bold]Model:[/bold] {model_name_val}\n"
         f"[bold]Memory Strategy:[/bold] {attrs.get('memory_compaction_strategy', 'N/A')}"
     )
 

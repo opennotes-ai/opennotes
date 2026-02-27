@@ -21408,17 +21408,6 @@
             ],
             "title": "Memory Compaction Config"
           },
-          "community_server_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Community Server Id"
-          },
           "created_at": {
             "anyOf": [
               {
@@ -21518,18 +21507,6 @@
               }
             ],
             "title": "Memory Compaction Config"
-          },
-          "community_server_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Community Server Id"
           }
         },
         "additionalProperties": false,
@@ -21760,18 +21737,6 @@
               }
             ],
             "title": "Memory Compaction Config"
-          },
-          "community_server_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Community Server Id"
           }
         },
         "additionalProperties": false,

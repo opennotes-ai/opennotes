@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
-from src.simulation.models import SimAgent, SimAgentInstance, SimAgentMemory
+from src.simulation.models import SimAgent, SimAgentInstance, SimAgentMemory, SimulationRun
 from src.simulation.schemas import SimActionType
 from src.utils.async_compat import run_sync
 
@@ -54,7 +54,10 @@ def load_agent_context_step(agent_instance_id: str) -> dict[str, Any]:
         async with get_session_maker()() as session:
             instance_query = (
                 select(SimAgentInstance)
-                .options(selectinload(SimAgentInstance.agent_profile))
+                .options(
+                    selectinload(SimAgentInstance.agent_profile),
+                    selectinload(SimAgentInstance.simulation_run),
+                )
                 .where(SimAgentInstance.id == UUID(agent_instance_id))
             )
             result = await session.execute(instance_query)
@@ -64,6 +67,7 @@ def load_agent_context_step(agent_instance_id: str) -> dict[str, Any]:
                 raise ValueError(f"SimAgentInstance not found: {agent_instance_id}")
 
             profile: SimAgent = instance.agent_profile
+            run: SimulationRun = instance.simulation_run
 
             memory_query = select(SimAgentMemory).where(
                 SimAgentMemory.agent_instance_id == UUID(agent_instance_id)
@@ -85,9 +89,7 @@ def load_agent_context_step(agent_instance_id: str) -> dict[str, Any]:
                 "agent_instance_id": str(instance.id),
                 "agent_profile_id": str(instance.agent_profile_id),
                 "simulation_run_id": str(instance.simulation_run_id),
-                "community_server_id": str(profile.community_server_id)
-                if profile.community_server_id
-                else None,
+                "community_server_id": str(run.community_server_id),
                 "user_profile_id": str(instance.user_profile_id),
                 "personality": profile.personality,
                 "model_name": profile.model_name,

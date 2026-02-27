@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeVar, cast
-from uuid import UUID
 
 from attrs import define as _attrs_define
 
@@ -34,7 +33,6 @@ class SimAgentUpdateAttributes:
         tool_config (None | SimAgentUpdateAttributesToolConfigType0 | Unset):
         memory_compaction_strategy (None | str | Unset):
         memory_compaction_config (None | SimAgentUpdateAttributesMemoryCompactionConfigType0 | Unset):
-        community_server_id (None | Unset | UUID):
     """
 
     name: None | str | Unset = UNSET
@@ -46,7 +44,6 @@ class SimAgentUpdateAttributes:
     memory_compaction_config: (
         None | SimAgentUpdateAttributesMemoryCompactionConfigType0 | Unset
     ) = UNSET
-    community_server_id: None | Unset | UUID = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.sim_agent_update_attributes_memory_compaction_config_type_0 import (
@@ -110,14 +107,6 @@ class SimAgentUpdateAttributes:
         else:
             memory_compaction_config = self.memory_compaction_config
 
-        community_server_id: None | str | Unset
-        if isinstance(self.community_server_id, Unset):
-            community_server_id = UNSET
-        elif isinstance(self.community_server_id, UUID):
-            community_server_id = str(self.community_server_id)
-        else:
-            community_server_id = self.community_server_id
-
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
@@ -135,8 +124,6 @@ class SimAgentUpdateAttributes:
             field_dict["memory_compaction_strategy"] = memory_compaction_strategy
         if memory_compaction_config is not UNSET:
             field_dict["memory_compaction_config"] = memory_compaction_config
-        if community_server_id is not UNSET:
-            field_dict["community_server_id"] = community_server_id
 
         return field_dict
 
@@ -259,25 +246,6 @@ class SimAgentUpdateAttributes:
             d.pop("memory_compaction_config", UNSET)
         )
 
-        def _parse_community_server_id(data: object) -> None | Unset | UUID:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            try:
-                if not isinstance(data, str):
-                    raise TypeError()
-                community_server_id_type_0 = UUID(data)
-
-                return community_server_id_type_0
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(None | Unset | UUID, data)
-
-        community_server_id = _parse_community_server_id(
-            d.pop("community_server_id", UNSET)
-        )
-
         sim_agent_update_attributes = cls(
             name=name,
             personality=personality,
@@ -286,7 +254,6 @@ class SimAgentUpdateAttributes:
             tool_config=tool_config,
             memory_compaction_strategy=memory_compaction_strategy,
             memory_compaction_config=memory_compaction_config,
-            community_server_id=community_server_id,
         )
 
         return sim_agent_update_attributes

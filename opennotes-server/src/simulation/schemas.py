@@ -42,7 +42,6 @@ class SimAgentBase(StrictInputSchema):
     tool_config: dict[str, Any] | None = None
     memory_compaction_strategy: str = Field(default="sliding_window", max_length=50)
     memory_compaction_config: dict[str, Any] | None = None
-    community_server_id: UUID | None = None
 
     @field_validator("model_name")
     @classmethod
@@ -62,7 +61,6 @@ class SimAgentUpdate(StrictInputSchema):
     tool_config: dict[str, Any] | None = None
     memory_compaction_strategy: str | None = Field(default=None, max_length=50)
     memory_compaction_config: dict[str, Any] | None = None
-    community_server_id: UUID | None = None
 
     @field_validator("model_name")
     @classmethod
@@ -120,7 +118,6 @@ class SimAgentResponse(TimestampSchema):
     tool_config: dict[str, Any] | None = None
     memory_compaction_strategy: str
     memory_compaction_config: dict[str, Any] | None = None
-    community_server_id: UUID | None = None
     deleted_at: datetime | None = None
 
     @field_validator("model_name", mode="before")

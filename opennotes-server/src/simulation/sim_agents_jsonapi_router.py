@@ -41,7 +41,6 @@ class SimAgentCreateAttributes(StrictInputSchema):
     tool_config: dict[str, Any] | None = None
     memory_compaction_strategy: str | None = None
     memory_compaction_config: dict[str, Any] | None = None
-    community_server_id: UUID | None = None
 
     @field_validator("model_name")
     @classmethod
@@ -70,7 +69,6 @@ class SimAgentUpdateAttributes(StrictInputSchema):
     tool_config: dict[str, Any] | None = None
     memory_compaction_strategy: str | None = None
     memory_compaction_config: dict[str, Any] | None = None
-    community_server_id: UUID | None = None
 
     @field_validator("model_name")
     @classmethod
@@ -102,7 +100,6 @@ class SimAgentAttributes(SQLAlchemySchema):
     tool_config: dict[str, Any] | None = None
     memory_compaction_strategy: str
     memory_compaction_config: dict[str, Any] | None = None
-    community_server_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -160,9 +157,6 @@ def sim_agent_to_resource(agent: SimAgent) -> SimAgentResource:
             tool_config=agent.tool_config,
             memory_compaction_strategy=agent.memory_compaction_strategy,
             memory_compaction_config=agent.memory_compaction_config,
-            community_server_id=str(agent.community_server_id)
-            if agent.community_server_id
-            else None,
             created_at=agent.created_at,
             updated_at=agent.updated_at,
         ),
@@ -209,7 +203,6 @@ async def create_sim_agent_jsonapi(
             model_params=attrs.model_params,
             tool_config=attrs.tool_config,
             memory_compaction_config=attrs.memory_compaction_config,
-            community_server_id=attrs.community_server_id,
         )
         if attrs.memory_compaction_strategy is not None:
             agent.memory_compaction_strategy = attrs.memory_compaction_strategy

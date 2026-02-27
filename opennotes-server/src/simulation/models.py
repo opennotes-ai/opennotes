@@ -46,12 +46,6 @@ class SimAgent(Base, TimestampMixin):
         String(50), nullable=False, server_default="sliding_window"
     )
     memory_compaction_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    community_server_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("community_servers.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (

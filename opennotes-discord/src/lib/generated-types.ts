@@ -8741,8 +8741,6 @@ export interface components {
             memory_compaction_config?: {
                 [key: string]: unknown;
             } | null;
-            /** Community Server Id */
-            community_server_id?: string | null;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -8770,8 +8768,6 @@ export interface components {
             memory_compaction_config?: {
                 [key: string]: unknown;
             } | null;
-            /** Community Server Id */
-            community_server_id?: string | null;
         };
         /** SimAgentCreateData */
         SimAgentCreateData: {
@@ -8850,8 +8846,6 @@ export interface components {
             memory_compaction_config?: {
                 [key: string]: unknown;
             } | null;
-            /** Community Server Id */
-            community_server_id?: string | null;
         };
         /** SimAgentUpdateData */
         SimAgentUpdateData: {
