@@ -137,7 +137,10 @@ async def _check_circular_reference(db: AsyncSession, community_server_id: str) 
 
 
 async def get_community_server_by_platform_id(
-    db: AsyncSession, community_server_id: str, platform: str = "discord", auto_create: bool = True
+    db: AsyncSession,
+    community_server_id: str,
+    platform: str | None = "discord",
+    auto_create: bool = True,
 ) -> CommunityServer | None:
     """
     Look up CommunityServer by platform_community_server_id (e.g., Discord guild ID).
@@ -145,8 +148,9 @@ async def get_community_server_by_platform_id(
     Args:
         db: Database session
         community_server_id: Platform-specific community ID (must be platform-native format)
-        platform: Platform type (default: "discord")
-        auto_create: If True, automatically create the community server if it doesn't exist
+        platform: Platform type (default: "discord"). Pass None to search across all platforms.
+        auto_create: If True, automatically create the community server if it doesn't exist.
+            Requires platform to be set (non-None) for auto-creation.
 
     Returns:
         CommunityServer instance, or None if not found and auto_create=False
@@ -156,16 +160,14 @@ async def get_community_server_by_platform_id(
     """
     await _check_circular_reference(db, community_server_id)
 
-    result = await db.execute(
-        select(CommunityServer).where(
-            CommunityServer.platform_community_server_id == community_server_id,
-            CommunityServer.platform == platform,
-        )
-    )
+    filters = [CommunityServer.platform_community_server_id == community_server_id]
+    if platform is not None:
+        filters.append(CommunityServer.platform == platform)
+
+    result = await db.execute(select(CommunityServer).where(*filters))
     server = result.scalar_one_or_none()
 
-    if not server and auto_create:
-        # Auto-create community server with default values
+    if not server and auto_create and platform is not None:
         server = CommunityServer(
             platform=platform,
             platform_community_server_id=community_server_id,
@@ -174,7 +176,7 @@ async def get_community_server_by_platform_id(
             is_public=True,
         )
         db.add(server)
-        await db.flush()  # Flush to get the ID but don't commit yet
+        await db.flush()
         await db.refresh(server)
 
     return server

@@ -4,6 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from dbos._error import (
+    DBOSConflictingWorkflowError,
+    DBOSQueueDeduplicatedError,
+    DBOSWorkflowConflictIDError,
+)
 from fastapi import FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
 
@@ -107,7 +112,7 @@ class TestScoreCommunityServerEndpoint:
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
 
-    def test_returns_409_when_scoring_already_in_progress(self, client, mock_community_member):
+    def test_returns_409_on_workflow_conflict_id(self, client, mock_community_member):
         mock_community = MagicMock()
         mock_community.id = uuid4()
 
@@ -122,7 +127,9 @@ class TestScoreCommunityServerEndpoint:
             ),
             patch(
                 "src.community_servers.scoring_router.dispatch_community_scoring",
-                new=AsyncMock(side_effect=Exception("Workflow already exists for this ID")),
+                new=AsyncMock(
+                    side_effect=DBOSWorkflowConflictIDError("score-community-123-1709000000")
+                ),
             ),
         ):
             response = client.post("/api/v2/community-servers/guild-123/score")
@@ -130,7 +137,7 @@ class TestScoreCommunityServerEndpoint:
         assert response.status_code == 409
         assert "already in progress" in response.json()["detail"].lower()
 
-    def test_returns_409_on_duplicate_error(self, client, mock_community_member):
+    def test_returns_409_on_conflicting_workflow(self, client, mock_community_member):
         mock_community = MagicMock()
         mock_community.id = uuid4()
 
@@ -145,7 +152,35 @@ class TestScoreCommunityServerEndpoint:
             ),
             patch(
                 "src.community_servers.scoring_router.dispatch_community_scoring",
-                new=AsyncMock(side_effect=Exception("Duplicate workflow entry detected")),
+                new=AsyncMock(
+                    side_effect=DBOSConflictingWorkflowError("score-community-123-1709000000")
+                ),
+            ),
+        ):
+            response = client.post("/api/v2/community-servers/guild-123/score")
+
+        assert response.status_code == 409
+
+    def test_returns_409_on_queue_deduplicated(self, client, mock_community_member):
+        mock_community = MagicMock()
+        mock_community.id = uuid4()
+
+        with (
+            patch(
+                "src.community_servers.scoring_router.verify_community_admin",
+                new=AsyncMock(return_value=mock_community_member),
+            ),
+            patch(
+                "src.community_servers.scoring_router.get_community_server_by_platform_id",
+                new=AsyncMock(return_value=mock_community),
+            ),
+            patch(
+                "src.community_servers.scoring_router.dispatch_community_scoring",
+                new=AsyncMock(
+                    side_effect=DBOSQueueDeduplicatedError(
+                        "score-community-123", "community_scoring", "dedup-key"
+                    )
+                ),
             ),
         ):
             response = client.post("/api/v2/community-servers/guild-123/score")

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import sys
 from typing import TYPE_CHECKING
 
 import click
+import httpx
 from rich.console import Console
 
 from opennotes_cli.http import add_csrf, get_csrf_token, handle_error_response
@@ -24,13 +26,36 @@ def score(ctx: click.Context, community_server_id: str) -> None:
     base_url = cli_ctx.base_url
     client = cli_ctx.client
 
-    csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+    try:
+        csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+    except httpx.ConnectError:
+        error_console.print(
+            f"[red]Error:[/red] Could not connect to server at {base_url}"
+        )
+        sys.exit(1)
+    except httpx.TimeoutException:
+        error_console.print(
+            f"[red]Error:[/red] Connection to {base_url} timed out"
+        )
+        sys.exit(1)
+
     headers = add_csrf(cli_ctx.auth.get_headers(), csrf_token)
 
-    response = client.post(
-        f"{base_url}/api/v2/community-servers/{community_server_id}/score",
-        headers=headers,
-    )
+    try:
+        response = client.post(
+            f"{base_url}/api/v2/community-servers/{community_server_id}/score",
+            headers=headers,
+        )
+    except httpx.ConnectError:
+        error_console.print(
+            f"[red]Error:[/red] Could not connect to server at {base_url}"
+        )
+        sys.exit(1)
+    except httpx.TimeoutException:
+        error_console.print(
+            f"[red]Error:[/red] Request to {base_url} timed out"
+        )
+        sys.exit(1)
 
     if response.status_code == 409:
         error_console.print(

@@ -3,6 +3,11 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
+from dbos._error import (
+    DBOSConflictingWorkflowError,
+    DBOSQueueDeduplicatedError,
+    DBOSWorkflowConflictIDError,
+)
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +28,12 @@ router = APIRouter(
     responses=AUTHENTICATED_RESPONSES,
 )
 logger = logging.getLogger(__name__)
+
+_DBOS_CONFLICT_ERRORS = (
+    DBOSWorkflowConflictIDError,
+    DBOSConflictingWorkflowError,
+    DBOSQueueDeduplicatedError,
+)
 
 
 class ScoreCommunityResponse(BaseModel):
@@ -51,7 +62,7 @@ async def score_community_server(
     await verify_community_admin(community_server_id, current_user, db, http_request)
 
     community = await get_community_server_by_platform_id(
-        db, community_server_id, platform="discord", auto_create=False
+        db, community_server_id, platform=None, auto_create=False
     )
     if not community:
         raise HTTPException(
@@ -61,13 +72,11 @@ async def score_community_server(
 
     try:
         workflow_id = await dispatch_community_scoring(community.id)
-    except Exception as e:
-        if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Scoring is already in progress for this community server",
-            ) from e
-        raise
+    except _DBOS_CONFLICT_ERRORS as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Scoring is already in progress for this community server",
+        ) from e
 
     return ScoreCommunityResponse(
         workflow_id=workflow_id,
