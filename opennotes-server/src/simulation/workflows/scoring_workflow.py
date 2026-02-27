@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 from uuid import UUID
 
@@ -65,12 +66,11 @@ async def dispatch_community_scoring(community_server_id: UUID) -> str:
     from src.dbos_workflows.config import get_dbos_client
 
     client = get_dbos_client()
-    wf_id = f"score-community-{community_server_id}"
+    wf_id = f"score-community-{community_server_id}-{int(time.time())}"
     options: EnqueueOptions = {
         "queue_name": "community_scoring",
         "workflow_name": SCORE_COMMUNITY_SERVER_WORKFLOW_NAME,
         "workflow_id": wf_id,
-        "deduplication_id": wf_id,
     }
     handle = await asyncio.to_thread(
         client.enqueue,
