@@ -334,6 +334,12 @@ from .performance_metrics import PerformanceMetrics
 from .playground_note_request_attributes import PlaygroundNoteRequestAttributes
 from .playground_note_request_body import PlaygroundNoteRequestBody
 from .playground_note_request_data import PlaygroundNoteRequestData
+from .playground_note_request_job_attributes import PlaygroundNoteRequestJobAttributes
+from .playground_note_request_job_resource import PlaygroundNoteRequestJobResource
+from .playground_note_request_job_response import PlaygroundNoteRequestJobResponse
+from .playground_note_request_job_response_jsonapi import (
+    PlaygroundNoteRequestJobResponseJsonapi,
+)
 from .previously_seen_check_attributes import PreviouslySeenCheckAttributes
 from .previously_seen_check_data import PreviouslySeenCheckData
 from .previously_seen_check_request import PreviouslySeenCheckRequest
@@ -812,6 +818,10 @@ __all__ = (
     "PlaygroundNoteRequestAttributes",
     "PlaygroundNoteRequestBody",
     "PlaygroundNoteRequestData",
+    "PlaygroundNoteRequestJobAttributes",
+    "PlaygroundNoteRequestJobResource",
+    "PlaygroundNoteRequestJobResponse",
+    "PlaygroundNoteRequestJobResponseJsonapi",
     "PreviouslySeenCheckAttributes",
     "PreviouslySeenCheckData",
     "PreviouslySeenCheckRequest",

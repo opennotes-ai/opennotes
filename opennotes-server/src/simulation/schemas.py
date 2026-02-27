@@ -192,5 +192,7 @@ class PlaygroundNoteRequestJobResource(BaseModel):
 
 
 class PlaygroundNoteRequestJobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     data: PlaygroundNoteRequestJobResource
     jsonapi: dict[str, str] = {"version": "1.1"}
