@@ -440,6 +440,7 @@ from .risk_level import RiskLevel
 from .scan_error_info_schema import ScanErrorInfoSchema
 from .scan_error_summary_schema import ScanErrorSummarySchema
 from .scan_error_summary_schema_error_types import ScanErrorSummarySchemaErrorTypes
+from .score_community_response import ScoreCommunityResponse
 from .score_confidence import ScoreConfidence
 from .scoring_health_jsonapi_api_v2_scoring_health_get_response_scoring_health_jsonapi_api_v2_scoring_health_get import (
     ScoringHealthJsonapiApiV2ScoringHealthGetResponseScoringHealthJsonapiApiV2ScoringHealthGet,
@@ -902,6 +903,7 @@ __all__ = (
     "ScanErrorInfoSchema",
     "ScanErrorSummarySchema",
     "ScanErrorSummarySchemaErrorTypes",
+    "ScoreCommunityResponse",
     "ScoreConfidence",
     "ScoringHealthJsonapiApiV2ScoringHealthGetResponseScoringHealthJsonapiApiV2ScoringHealthGet",
     "ScoringResultAttributes",

@@ -8278,6 +8278,73 @@
         }
       }
     },
+    "/api/v2/community-servers/{community_server_id}/score": {
+      "post": {
+        "tags": [
+          "community-scoring"
+        ],
+        "summary": "Score Community Server",
+        "description": "Trigger manual scoring for all eligible notes in a community server.\n\nAdmin-only. Dispatches a DBOS workflow and returns the workflow ID.\nReturns 409 if scoring is already in progress.",
+        "operationId": "score_community_server_api_v2_community_servers__community_server_id__score_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoreCommunityResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/community-servers/{community_server_id}/llm-config": {
       "post": {
         "tags": [
@@ -20852,6 +20919,24 @@
         "type": "object",
         "title": "ScanErrorSummarySchema",
         "description": "Summary of errors encountered during scan."
+      },
+      "ScoreCommunityResponse": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "message"
+        ],
+        "title": "ScoreCommunityResponse"
       },
       "ScoreConfidence": {
         "type": "string",
