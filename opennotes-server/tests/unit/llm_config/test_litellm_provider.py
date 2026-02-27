@@ -632,3 +632,78 @@ class TestLiteLLMProviderVertexAI:
 
             call_kwargs = mock_litellm.acompletion.call_args.kwargs
             assert "api_key" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_vertex_ai_passes_location_and_project(
+        self, vertex_provider: LiteLLMProvider, mock_response: MagicMock
+    ) -> None:
+        with (
+            patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm,
+            patch("src.llm_config.providers.litellm_provider.settings") as mock_settings,
+        ):
+            mock_litellm.acompletion = AsyncMock(return_value=mock_response)
+            mock_settings.VERTEXAI_LOCATION = "global"
+            mock_settings.VERTEXAI_PROJECT = "my-gcp-project"
+
+            await vertex_provider.complete([LLMMessage(role="user", content="Hi")])
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert call_kwargs["vertex_location"] == "global"
+            assert call_kwargs["vertex_project"] == "my-gcp-project"
+
+    @pytest.mark.asyncio
+    async def test_openai_does_not_pass_vertex_params(
+        self, openai_provider: LiteLLMProvider, mock_response: MagicMock
+    ) -> None:
+        mock_response.model = "gpt-5.1"
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_response)
+
+            await openai_provider.complete([LLMMessage(role="user", content="Hi")])
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert "vertex_location" not in call_kwargs
+            assert "vertex_project" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_vertex_ai_stream_passes_location_and_project(
+        self, vertex_provider: LiteLLMProvider
+    ) -> None:
+        async def mock_stream():
+            chunk = MagicMock()
+            chunk.choices = [MagicMock(delta=MagicMock(content="Hi"))]
+            yield chunk
+
+        with (
+            patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm,
+            patch("src.llm_config.providers.litellm_provider.settings") as mock_settings,
+        ):
+            mock_litellm.acompletion = AsyncMock(return_value=mock_stream())
+            mock_settings.VERTEXAI_LOCATION = "global"
+            mock_settings.VERTEXAI_PROJECT = "my-gcp-project"
+
+            async for _ in vertex_provider.stream_complete([LLMMessage(role="user", content="Hi")]):
+                pass
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert call_kwargs["vertex_location"] == "global"
+            assert call_kwargs["vertex_project"] == "my-gcp-project"
+
+    @pytest.mark.asyncio
+    async def test_openai_stream_does_not_pass_vertex_params(
+        self, openai_provider: LiteLLMProvider
+    ) -> None:
+        async def mock_stream():
+            chunk = MagicMock()
+            chunk.choices = [MagicMock(delta=MagicMock(content="Hi"))]
+            yield chunk
+
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_stream())
+
+            async for _ in openai_provider.stream_complete([LLMMessage(role="user", content="Hi")]):
+                pass
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert "vertex_location" not in call_kwargs
+            assert "vertex_project" not in call_kwargs

@@ -9,6 +9,7 @@ import litellm
 from litellm.exceptions import JSONSchemaValidationError
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.config import settings
 from src.llm_config.model_id import ModelId
 from src.llm_config.providers.base import LLMMessage, LLMProvider, LLMResponse, ProviderSettings
 from src.monitoring import get_logger
@@ -131,6 +132,10 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         if self.api_key and self._provider_name not in ("vertex_ai", "gemini"):
             request_kwargs["api_key"] = self.api_key
 
+        if self._provider_name == "vertex_ai":
+            request_kwargs["vertex_location"] = settings.VERTEXAI_LOCATION
+            request_kwargs["vertex_project"] = settings.VERTEXAI_PROJECT
+
         logger.debug(
             "LiteLLM completion request",
             extra={
@@ -227,6 +232,10 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         )
         if self.api_key and self._provider_name not in ("vertex_ai", "gemini"):
             request_kwargs["api_key"] = self.api_key
+
+        if self._provider_name == "vertex_ai":
+            request_kwargs["vertex_location"] = settings.VERTEXAI_LOCATION
+            request_kwargs["vertex_project"] = settings.VERTEXAI_PROJECT
 
         try:
             response = await litellm.acompletion(**request_kwargs)
