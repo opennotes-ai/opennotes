@@ -131,10 +131,6 @@ def sim_agent_get(ctx: click.Context, agent_id: str) -> None:
     if memory_config:
         panel_content += f"\n[bold]Memory Config:[/bold] {json.dumps(memory_config)}"
 
-    cs_id = attrs.get("community_server_id")
-    if cs_id:
-        panel_content += f"\n[bold]Community Server:[/bold] {cs_id}"
-
     for ts_field in ("created_at", "updated_at"):
         val = attrs.get(ts_field)
         if val:

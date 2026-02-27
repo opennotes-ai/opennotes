@@ -325,20 +325,6 @@ class TestBuildDepsStep:
         assert len(result["available_notes"]) == 1
         assert result["available_notes"][0]["note_id"] == str(note_id)
 
-    def test_build_deps_returns_empty_when_no_community(self) -> None:
-        from src.simulation.workflows.agent_turn_workflow import build_deps_step
-
-        with patch(
-            "src.simulation.workflows.agent_turn_workflow.run_sync",
-            side_effect=lambda coro: __import__("asyncio")
-            .get_event_loop()
-            .run_until_complete(coro),
-        ):
-            result = build_deps_step.__wrapped__(community_server_id=None)
-
-        assert result["available_requests"] == []
-        assert result["available_notes"] == []
-
     def test_build_deps_includes_linked_notes_on_requests(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import build_deps_step
 
@@ -2023,3 +2009,82 @@ class TestTwoPhaseFlow:
             )
 
         assert captured_history[0] is deserialized_phase1
+
+
+class TestUsageLimitExceeded:
+    def test_usage_limit_exceeded_returns_pass_turn(self) -> None:
+        from pydantic_ai.exceptions import UsageLimitExceeded
+
+        from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
+
+        context = _make_context()
+        deps_data = {"available_requests": [], "available_notes": []}
+        messages: list = []
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_agent = MagicMock()
+        mock_agent.run_turn = AsyncMock(
+            side_effect=UsageLimitExceeded("Exceeded total_tokens_limit of 4000")
+        )
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent,
+            ),
+        ):
+            result = execute_agent_turn_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=messages,
+            )
+
+        assert result["action"]["action_type"] == "pass_turn"
+        assert "usage limit exceeded" in result["action"]["reasoning"].lower()
+        assert result["new_messages"] == messages
+
+    def test_usage_limit_partial_result_is_persisted(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import persist_state_step
+
+        agent_instance_id = str(uuid4())
+        memory_id = str(uuid4())
+        action = {"action_type": "pass_turn", "reasoning": "Turn ended early: usage limit exceeded"}
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = persist_state_step.__wrapped__(
+                agent_instance_id=agent_instance_id,
+                memory_id=memory_id,
+                new_messages=[],
+                action=action,
+                recent_actions=["write_note"],
+            )
+
+        assert result["persisted"] is True
+        assert result["action_type"] == "pass_turn"
