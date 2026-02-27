@@ -70,7 +70,7 @@ async def _create_text_note_requests(
             "source": "text_input",
         }
 
-        request_id = f"playground-text-{job_id}-{idx}"
+        request_id = f"text-{job_id}-{idx}"
         note_request = Request(
             request_id=request_id,
             requested_by=requested_by,
@@ -79,7 +79,7 @@ async def _create_text_note_requests(
         )
         db.add(note_request)
 
-    await db.commit()
+    await db.flush()
 
 
 @router.post(
@@ -139,15 +139,7 @@ async def create_playground_note_requests(
                     "; ".join(detail_parts),
                 )
 
-        workflow_id: str | None = None
-        if urls:
-            workflow_id = await dispatch_playground_url_extraction(
-                urls=urls,
-                community_server_id=community_server.id,
-                requested_by=attrs.requested_by,
-            )
-
-        job_id = workflow_id or f"playground-text-{uuid4().hex}"
+        job_id = f"playground-{uuid4().hex}"
 
         if texts:
             await _create_text_note_requests(
@@ -157,6 +149,16 @@ async def create_playground_note_requests(
                 job_id=job_id,
                 db=db,
             )
+            await db.commit()
+
+        workflow_id: str | None = None
+        if urls:
+            workflow_id = await dispatch_playground_url_extraction(
+                urls=urls,
+                community_server_id=community_server.id,
+                requested_by=attrs.requested_by,
+            )
+            job_id = workflow_id
 
         return PlaygroundNoteRequestJobResponse(
             data=PlaygroundNoteRequestJobResource(

@@ -75,7 +75,7 @@ def orchestrator_list(ctx: click.Context, page: int, page_size: int) -> None:
             attrs.get("name", "N/A"),
             str(attrs.get("max_agents", "N/A")),
             str(attrs.get("turn_cadence_seconds", "N/A")),
-            f"{attrs.get('removal_rate', 0):.2f}",
+            f"{attrs.get('removal_rate') or 0:.2f}",
             str(attrs.get("max_turns_per_agent", "N/A")),
             active,
             created,
@@ -241,7 +241,11 @@ def _build_update_attributes(
     if agent_ids is not None:
         attributes["agent_profile_ids"] = [a.strip() for a in agent_ids.split(",") if a.strip()]
     if scoring_config is not None:
-        attributes["scoring_config"] = json.loads(scoring_config)
+        try:
+            attributes["scoring_config"] = json.loads(scoring_config)
+        except json.JSONDecodeError:
+            error_console.print("[red]Error:[/red] --scoring-config must be valid JSON.")
+            sys.exit(1)
     return attributes
 
 

@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -141,7 +141,7 @@ class SimAgentResponse(TimestampSchema):
 
 class PlaygroundNoteRequestAttributes(StrictInputSchema):
     urls: list[AnyHttpUrl] | None = Field(default=None, max_length=20)
-    texts: list[str] | None = Field(default=None, max_length=20)
+    texts: list[Annotated[str, Field(max_length=50000)]] | None = Field(default=None, max_length=20)
     requested_by: str = Field(default="system-playground")
 
     @field_validator("texts", mode="before")
@@ -182,7 +182,7 @@ class PlaygroundNoteRequestResultAttributes(SQLAlchemySchema):
     status: str
     community_server_id: str
     content: str | None = None
-    url: str
+    url: str | None = None
     error: str | None = None
 
 

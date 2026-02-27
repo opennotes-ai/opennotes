@@ -297,7 +297,6 @@ def _submit_urls_batch(
 @click.option("--turn-cadence", default=15, type=int, help="Turn cadence in seconds (default: 15).")
 @click.option("--removal-rate", default=0.0, type=float, help="Agent removal rate (default: 0.0).")
 @click.option("--max-turns", default=50, type=int, help="Max turns per agent (default: 50).")
-@click.option("--scoring-interval", default=None, type=int, help="Override SCORING_INTERVAL in orchestrator scoring_config.")
 @click.option("--wait", is_flag=True, help="Poll until simulation completes.")
 @click.pass_context
 def simulation_launch(
@@ -311,7 +310,6 @@ def simulation_launch(
     turn_cadence: int,
     removal_rate: float,
     max_turns: int,
-    scoring_interval: int | None,
     wait: bool,
 ) -> None:
     """Launch a full simulation: create orchestrator, playground, submit content, start sim."""
@@ -358,9 +356,6 @@ def simulation_launch(
         "max_turns_per_agent": max_turns,
         "agent_profile_ids": agent_id_list,
     }
-    if scoring_interval is not None:
-        orch_attributes["scoring_config"] = {"scoring_interval": scoring_interval}
-
     orch_payload = {"data": {"type": "simulation-orchestrators", "attributes": orch_attributes}}
     response = client.post(
         f"{base_url}/api/v2/simulation-orchestrators", headers=headers, json=orch_payload
@@ -396,18 +391,21 @@ def simulation_launch(
             console.print(f"[green]\u2713[/green] Submitted {len(all_urls)} URL(s) for processing")
 
     if texts:
-        text_payload = {
-            "data": {
-                "type": "playground-note-requests",
-                "attributes": {"texts": list(texts)},
+        all_texts = list(texts)
+        for i in range(0, len(all_texts), 20):
+            batch = all_texts[i : i + 20]
+            text_payload = {
+                "data": {
+                    "type": "playground-note-requests",
+                    "attributes": {"texts": batch},
+                }
             }
-        }
-        response = client.post(
-            f"{base_url}/api/v2/playgrounds/{cs_id}/note-requests",
-            headers=jsonapi_headers,
-            json=text_payload,
-        )
-        handle_jsonapi_error(response)
+            response = client.post(
+                f"{base_url}/api/v2/playgrounds/{cs_id}/note-requests",
+                headers=jsonapi_headers,
+                json=text_payload,
+            )
+            handle_jsonapi_error(response)
         if not cli_ctx.json_output:
             console.print(f"[green]\u2713[/green] Submitted {len(texts)} text(s) for processing")
 
