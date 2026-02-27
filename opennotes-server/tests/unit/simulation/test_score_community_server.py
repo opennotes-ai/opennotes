@@ -102,6 +102,11 @@ def _mock_db_for_community_scoring(
 
     side_effects.append(request_update_result)
 
+    if unscored_notes or rescore_notes:
+        platform_result = MagicMock()
+        platform_result.scalar_one_or_none.return_value = "discord"
+        side_effects.append(platform_result)
+
     db.execute = AsyncMock(side_effect=side_effects)
     db.commit = AsyncMock()
 
@@ -395,7 +400,7 @@ class TestScoreCommunityServerNotes:
             await score_community_server_notes(cs_id, db)
 
         all_calls = db.execute.call_args_list
-        request_update_call = all_calls[-1]
+        request_update_call = all_calls[-2]
         stmt = request_update_call.args[0]
 
         compiled = stmt.compile(compile_kwargs={"literal_binds": False})
@@ -427,7 +432,7 @@ class TestScoreCommunityServerNotes:
             await score_community_server_notes(cs_id, db)
 
         all_calls = db.execute.call_args_list
-        request_update_call = all_calls[-1]
+        request_update_call = all_calls[-2]
         stmt = request_update_call.args[0]
         compiled = stmt.compile(compile_kwargs={"literal_binds": False})
         sql_str = str(compiled)

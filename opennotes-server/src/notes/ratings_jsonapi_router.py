@@ -38,6 +38,7 @@ from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.database import get_db
 from src.events.scoring_events import ScoringEventPublisher
+from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.monitoring.metrics import nats_events_failed_total
 from src.notes import loaders
@@ -301,10 +302,23 @@ async def create_rating_jsonapi(
         )
 
         try:
-            # Get original_message_id from message archive
             original_message_id = None
+            channel_id = None
             if note.request and note.request.message_archive:
                 original_message_id = note.request.message_archive.platform_message_id
+                channel_id = note.request.message_archive.platform_channel_id
+
+            if not channel_id:
+                channel_id = note.channel_id
+
+            platform_community_server_id: str | None = None
+            if note.community_server_id:
+                platform_id_result = await db.execute(
+                    select(CommunityServer.platform_community_server_id).where(
+                        CommunityServer.id == note.community_server_id
+                    )
+                )
+                platform_community_server_id = platform_id_result.scalar_one_or_none()
 
             await ScoringEventPublisher.publish_note_score_updated(
                 note_id=note.id,
@@ -315,6 +329,8 @@ async def create_rating_jsonapi(
                 tier=score_response.tier if score_response.tier and score_response.tier > 0 else 1,
                 tier_name=score_response.tier_name or "unknown",
                 original_message_id=original_message_id,
+                channel_id=channel_id,
+                community_server_id=platform_community_server_id,
             )
         except Exception as e:
             error_type = type(e).__name__
