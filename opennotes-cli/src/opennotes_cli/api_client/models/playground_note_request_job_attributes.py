@@ -16,12 +16,14 @@ class PlaygroundNoteRequestJobAttributes:
     """
     Attributes:
         workflow_id (str):
-        url_count (int):
+        url_count (int | Unset):  Default: 0.
+        text_count (int | Unset):  Default: 0.
         status (str | Unset):  Default: 'ACCEPTED'.
     """
 
     workflow_id: str
-    url_count: int
+    url_count: int | Unset = 0
+    text_count: int | Unset = 0
     status: str | Unset = "ACCEPTED"
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -30,6 +32,8 @@ class PlaygroundNoteRequestJobAttributes:
 
         url_count = self.url_count
 
+        text_count = self.text_count
+
         status = self.status
 
         field_dict: dict[str, Any] = {}
@@ -37,9 +41,12 @@ class PlaygroundNoteRequestJobAttributes:
         field_dict.update(
             {
                 "workflow_id": workflow_id,
-                "url_count": url_count,
             }
         )
+        if url_count is not UNSET:
+            field_dict["url_count"] = url_count
+        if text_count is not UNSET:
+            field_dict["text_count"] = text_count
         if status is not UNSET:
             field_dict["status"] = status
 
@@ -50,13 +57,16 @@ class PlaygroundNoteRequestJobAttributes:
         d = dict(src_dict)
         workflow_id = d.pop("workflow_id")
 
-        url_count = d.pop("url_count")
+        url_count = d.pop("url_count", UNSET)
+
+        text_count = d.pop("text_count", UNSET)
 
         status = d.pop("status", UNSET)
 
         playground_note_request_job_attributes = cls(
             workflow_id=workflow_id,
             url_count=url_count,
+            text_count=text_count,
             status=status,
         )
 

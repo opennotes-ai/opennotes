@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -18,6 +18,8 @@ from src.common.jsonapi import (
 from src.database import get_db
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
+from src.notes.message_archive_service import MessageArchiveService
+from src.notes.models import Request
 from src.shared.url_validation import validate_url_security
 from src.simulation.schemas import (
     PlaygroundNoteRequestBody,
@@ -50,6 +52,34 @@ def _create_error_response(
         content=error_response.model_dump(by_alias=True),
         media_type=JSONAPI_CONTENT_TYPE,
     )
+
+
+async def _create_text_note_requests(
+    texts: list[str],
+    community_server_id: UUID,
+    requested_by: str,
+    job_id: str,
+    db: AsyncSession,
+) -> None:
+    for idx, text in enumerate(texts):
+        message_archive = await MessageArchiveService.create_from_text(
+            db=db,
+            content=text,
+        )
+        message_archive.message_metadata = {
+            "source": "text_input",
+        }
+
+        request_id = f"playground-text-{job_id}-{idx}"
+        note_request = Request(
+            request_id=request_id,
+            requested_by=requested_by,
+            community_server_id=community_server_id,
+            message_archive_id=message_archive.id,
+        )
+        db.add(note_request)
+
+    await db.commit()
 
 
 @router.post(
@@ -90,35 +120,51 @@ async def create_playground_note_requests(
             )
 
         attrs = body.data.attributes
-        urls = [str(u) for u in attrs.urls]
+        urls = [str(u) for u in attrs.urls] if attrs.urls else []
+        texts = list(attrs.texts) if attrs.texts else []
 
-        url_errors: list[dict[str, str]] = []
-        for url in urls:
-            try:
-                validate_url_security(url)
-            except ValueError as exc:
-                url_errors.append({"url": url, "error": str(exc)})
+        if urls:
+            url_errors: list[dict[str, str]] = []
+            for url in urls:
+                try:
+                    validate_url_security(url)
+                except ValueError as exc:
+                    url_errors.append({"url": url, "error": str(exc)})
 
-        if url_errors:
-            detail_parts = [f"{e['url']}: {e['error']}" for e in url_errors]
-            return _create_error_response(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                "URL Validation Failed",
-                "; ".join(detail_parts),
+            if url_errors:
+                detail_parts = [f"{e['url']}: {e['error']}" for e in url_errors]
+                return _create_error_response(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "URL Validation Failed",
+                    "; ".join(detail_parts),
+                )
+
+        workflow_id: str | None = None
+        if urls:
+            workflow_id = await dispatch_playground_url_extraction(
+                urls=urls,
+                community_server_id=community_server.id,
+                requested_by=attrs.requested_by,
             )
 
-        workflow_id = await dispatch_playground_url_extraction(
-            urls=urls,
-            community_server_id=community_server.id,
-            requested_by=attrs.requested_by,
-        )
+        job_id = workflow_id or f"playground-text-{uuid4().hex}"
+
+        if texts:
+            await _create_text_note_requests(
+                texts=texts,
+                community_server_id=community_server.id,
+                requested_by=attrs.requested_by,
+                job_id=job_id,
+                db=db,
+            )
 
         return PlaygroundNoteRequestJobResponse(
             data=PlaygroundNoteRequestJobResource(
-                id=workflow_id,
+                id=job_id,
                 attributes=PlaygroundNoteRequestJobAttributes(
-                    workflow_id=workflow_id,
+                    workflow_id=job_id,
                     url_count=len(urls),
+                    text_count=len(texts),
                 ),
             ),
         )

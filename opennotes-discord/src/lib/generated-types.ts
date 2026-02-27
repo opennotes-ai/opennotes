@@ -7318,7 +7318,9 @@ export interface components {
         /** PlaygroundNoteRequestAttributes */
         PlaygroundNoteRequestAttributes: {
             /** Urls */
-            urls: string[];
+            urls?: string[] | null;
+            /** Texts */
+            texts?: string[] | null;
             /**
              * Requested By
              * @default system-playground
@@ -7342,8 +7344,16 @@ export interface components {
         PlaygroundNoteRequestJobAttributes: {
             /** Workflow Id */
             workflow_id: string;
-            /** Url Count */
+            /**
+             * Url Count
+             * @default 0
+             */
             url_count: number;
+            /**
+             * Text Count
+             * @default 0
+             */
+            text_count: number;
             /**
              * Status
              * @default ACCEPTED

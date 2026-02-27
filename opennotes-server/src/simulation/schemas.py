@@ -1,10 +1,10 @@
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema, TimestampSchema
 from src.llm_config.model_id import ModelId
@@ -140,8 +140,27 @@ class SimAgentResponse(TimestampSchema):
 
 
 class PlaygroundNoteRequestAttributes(StrictInputSchema):
-    urls: list[AnyHttpUrl] = Field(..., min_length=1, max_length=20)
+    urls: list[AnyHttpUrl] | None = Field(default=None, max_length=20)
+    texts: list[str] | None = Field(default=None, max_length=20)
     requested_by: str = Field(default="system-playground")
+
+    @field_validator("texts", mode="before")
+    @classmethod
+    def validate_texts_not_empty(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        for i, text in enumerate(v):
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError(f"texts[{i}] must be a non-empty string")
+        return v
+
+    @model_validator(mode="after")
+    def validate_at_least_one_input(self) -> Self:
+        has_urls = self.urls is not None and len(self.urls) > 0
+        has_texts = self.texts is not None and len(self.texts) > 0
+        if not has_urls and not has_texts:
+            raise ValueError("At least one of 'urls' or 'texts' must be provided")
+        return self
 
 
 class PlaygroundNoteRequestData(BaseModel):
@@ -181,7 +200,8 @@ class PlaygroundNoteRequestListResponse(SQLAlchemySchema):
 
 class PlaygroundNoteRequestJobAttributes(BaseModel):
     workflow_id: str
-    url_count: int
+    url_count: int = 0
+    text_count: int = 0
     status: str = "ACCEPTED"
 
 
