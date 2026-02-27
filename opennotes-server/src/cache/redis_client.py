@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import threading
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -508,44 +509,43 @@ class RedisClient:
 
 redis_client = RedisClient()
 
-_shared_redis: redis.Redis | None = None
-_shared_redis_loop: asyncio.AbstractEventLoop | None = None
+_thread_local = threading.local()
 
 
 async def get_shared_redis_client(redis_url: str | None = None) -> redis.Redis:
-    """Return a long-lived Redis connection for use across DBOS steps.
+    """Return a long-lived, per-thread Redis connection for DBOS steps.
 
-    Unlike RedisClient (which creates a new connection per step),
-    this function reuses a module-level connection and only reconnects
-    when the existing one is stale or the event loop has changed.
+    Each thread gets its own Redis connection bound to its own event loop.
+    This prevents 'Task got Future attached to a different loop' errors
+    when DBOS worker threads (which create thread-local event loops via
+    ``run_sync()``) try to use a connection created on the main uvicorn loop.
 
-    DBOS workflow steps run in sync threads via ``run_sync()`` which create
-    thread-local event loops. A Redis connection created on the main uvicorn
-    loop will fail with "Task got Future attached to a different loop" when
-    used from a worker thread's loop. This function detects that situation
-    and creates a fresh connection bound to the current loop.
+    Within a single thread, the connection is reused across calls and only
+    reconnected when the event loop changes or a health-check ping fails.
     """
-    global _shared_redis, _shared_redis_loop  # noqa: PLW0603
-
     current_loop = asyncio.get_running_loop()
 
-    if _shared_redis is not None and current_loop is _shared_redis_loop:
-        try:
-            await _shared_redis.ping()
-            return _shared_redis
-        except Exception:
-            _shared_redis = None
-            _shared_redis_loop = None
+    existing: redis.Redis | None = getattr(_thread_local, "redis", None)
+    existing_loop: asyncio.AbstractEventLoop | None = getattr(_thread_local, "loop", None)
 
-    if _shared_redis is not None and current_loop is not _shared_redis_loop:
+    if existing is not None and current_loop is existing_loop:
         try:
-            await asyncio.wait_for(_shared_redis.close(), timeout=5.0)
+            await existing.ping()
+            return existing
+        except Exception:
+            _thread_local.redis = None
+            _thread_local.loop = None
+
+    if existing is not None and current_loop is not existing_loop:
+        try:
+            await asyncio.wait_for(existing.close(), timeout=5.0)
         except Exception:
             pass
-        _shared_redis = None
-        _shared_redis_loop = None
+        _thread_local.redis = None
+        _thread_local.loop = None
 
     url = redis_url or settings.REDIS_URL
-    _shared_redis = await create_redis_connection(url, decode_responses=False)
-    _shared_redis_loop = current_loop
-    return _shared_redis
+    client = await create_redis_connection(url, decode_responses=False)
+    _thread_local.redis = client
+    _thread_local.loop = current_loop
+    return client
