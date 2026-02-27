@@ -375,7 +375,7 @@ def execute_agent_turn_step(
                 )
                 return {
                     "action": action.model_dump(mode="json"),
-                    "new_messages": messages,
+                    "new_messages": phase1_messages if phase1_messages is not None else messages,
                 }
 
             await session.commit()

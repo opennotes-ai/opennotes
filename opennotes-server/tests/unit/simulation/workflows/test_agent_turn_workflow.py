@@ -2055,6 +2055,55 @@ class TestUsageLimitExceeded:
         assert "usage limit exceeded" in result["action"]["reasoning"].lower()
         assert result["new_messages"] == messages
 
+    def test_usage_limit_preserves_phase1_messages(self) -> None:
+        from pydantic_ai.exceptions import UsageLimitExceeded
+
+        from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
+
+        context = _make_context()
+        deps_data = {"available_requests": [], "available_notes": []}
+        old_messages: list = [
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "old"}]}
+        ]
+        phase1_msgs: list = [
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "phase1"}]}
+        ]
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_agent = MagicMock()
+        mock_agent.run_turn = AsyncMock(
+            side_effect=UsageLimitExceeded("Exceeded total_tokens_limit of 4000")
+        )
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+            patch(
+                "src.simulation.agent.OpenNotesSimAgent",
+                return_value=mock_agent,
+            ),
+        ):
+            result = execute_agent_turn_step.__wrapped__(
+                context=context,
+                deps_data=deps_data,
+                messages=old_messages,
+                phase1_messages=phase1_msgs,
+            )
+
+        assert result["action"]["action_type"] == "pass_turn"
+        assert result["new_messages"] == phase1_msgs
+        assert result["new_messages"] != old_messages
+
     def test_usage_limit_partial_result_is_persisted(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import persist_state_step
 
