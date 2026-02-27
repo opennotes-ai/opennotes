@@ -4,10 +4,10 @@ from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.config import settings
 from src.monitoring import get_logger
+from src.notes import loaders as note_loaders
 from src.notes.message_archive_models import ContentType, MessageArchive
 from src.notes.message_archive_schemas import MessageArchiveCreate
 from src.notes.models import Note, Request
@@ -290,7 +290,7 @@ class MessageArchiveService:
 
         note = (
             await db.execute(
-                select(Note).where(Note.id == request.note_id).options(selectinload(Note.ratings))
+                select(Note).where(Note.id == request.note_id).options(*note_loaders.ratings())
             )
         ).scalar_one_or_none()
 

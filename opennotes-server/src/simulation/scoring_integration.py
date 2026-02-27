@@ -5,11 +5,11 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import case, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.config import settings
+from src.notes import loaders as note_loaders
 from src.notes.models import Note, Request
 from src.notes.scoring.scorer_factory import ScorerFactory
 from src.notes.scoring.tier_config import (
@@ -96,7 +96,8 @@ async def trigger_scoring_for_simulation(
                 Note.community_server_id == community_server_id,
                 Note.deleted_at.is_(None),
             )
-            .options(selectinload(Note.ratings))
+            .options(*note_loaders.full())
+            .order_by(Note.id)
             .limit(SCORING_BATCH_SIZE)
             .offset(offset)
         )
@@ -139,7 +140,7 @@ async def trigger_scoring_for_simulation(
                 .where(Note.id.in_(note_ids))
                 .values(
                     helpfulness_score=case(score_mapping, value=Note.id),
-                    status=case(status_mapping, value=Note.id),
+                    status=cast(case(status_mapping, value=Note.id), Note.status.type),
                 )
             )
 
@@ -157,6 +158,7 @@ async def trigger_scoring_for_simulation(
             Note.deleted_at.is_(None),
         )
         .correlate(Request)
+        .order_by(Note.helpfulness_score.desc())
         .limit(1)
         .scalar_subquery()
     )
