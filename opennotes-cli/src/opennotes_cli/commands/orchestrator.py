@@ -215,6 +215,36 @@ def orchestrator_create(
     )
 
 
+def _build_update_attributes(
+    name: str | None,
+    description: str | None,
+    max_agents: int | None,
+    turn_cadence: int | None,
+    removal_rate: float | None,
+    max_turns: int | None,
+    agent_ids: str | None,
+    scoring_config: str | None,
+) -> dict[str, Any]:
+    attributes: dict[str, Any] = {}
+    if name is not None:
+        attributes["name"] = name
+    if description is not None:
+        attributes["description"] = description
+    if max_agents is not None:
+        attributes["max_agents"] = max_agents
+    if turn_cadence is not None:
+        attributes["turn_cadence_seconds"] = turn_cadence
+    if removal_rate is not None:
+        attributes["removal_rate"] = removal_rate
+    if max_turns is not None:
+        attributes["max_turns_per_agent"] = max_turns
+    if agent_ids is not None:
+        attributes["agent_profile_ids"] = [a.strip() for a in agent_ids.split(",") if a.strip()]
+    if scoring_config is not None:
+        attributes["scoring_config"] = json.loads(scoring_config)
+    return attributes
+
+
 @orchestrator.command("update")
 @click.argument("orchestrator_id")
 @click.option("--name", default=None, help="Orchestrator name.")
@@ -243,23 +273,10 @@ def orchestrator_update(
     base_url = cli_ctx.base_url
     client = cli_ctx.client
 
-    attributes: dict[str, Any] = {}
-    if name is not None:
-        attributes["name"] = name
-    if description is not None:
-        attributes["description"] = description
-    if max_agents is not None:
-        attributes["max_agents"] = max_agents
-    if turn_cadence is not None:
-        attributes["turn_cadence_seconds"] = turn_cadence
-    if removal_rate is not None:
-        attributes["removal_rate"] = removal_rate
-    if max_turns is not None:
-        attributes["max_turns_per_agent"] = max_turns
-    if agent_ids is not None:
-        attributes["agent_profile_ids"] = [a.strip() for a in agent_ids.split(",") if a.strip()]
-    if scoring_config is not None:
-        attributes["scoring_config"] = json.loads(scoring_config)
+    attributes = _build_update_attributes(
+        name, description, max_agents, turn_cadence,
+        removal_rate, max_turns, agent_ids, scoring_config,
+    )
 
     if not attributes:
         error_console.print("[red]No update fields specified.[/red]")
@@ -293,3 +310,94 @@ def orchestrator_update(
     console.print(f"[green]\u2713[/green] Updated orchestrator [bold]{orchestrator_id}[/bold]")
     for key, value in sorted(attributes.items()):
         console.print(f"  {key}: {attrs_resp.get(key, value)}")
+
+
+@orchestrator.command("apply")
+@click.argument("orchestrator_id")
+@click.option("--simulation", "simulation_id", required=True, help="Simulation run UUID to restart.")
+@click.option("--name", default=None, help="Orchestrator name.")
+@click.option("--description", default=None, help="Description.")
+@click.option("--max-agents", default=None, type=int, help="Maximum concurrent agents.")
+@click.option("--turn-cadence", default=None, type=int, help="Turn cadence in seconds.")
+@click.option("--removal-rate", default=None, type=float, help="Agent removal rate (0.0-1.0).")
+@click.option("--max-turns", default=None, type=int, help="Maximum turns per agent.")
+@click.option("--agent-ids", default=None, help="Comma-separated agent profile UUIDs.")
+@click.option("--scoring-config", default=None, help="Scoring config as JSON string.")
+@click.pass_context
+def orchestrator_apply(
+    ctx: click.Context,
+    orchestrator_id: str,
+    simulation_id: str,
+    name: str | None,
+    description: str | None,
+    max_agents: int | None,
+    turn_cadence: int | None,
+    removal_rate: float | None,
+    max_turns: int | None,
+    agent_ids: str | None,
+    scoring_config: str | None,
+) -> None:
+    """Update orchestrator config and restart simulation to pick up changes."""
+    cli_ctx: CliContext = ctx.obj
+    base_url = cli_ctx.base_url
+    client = cli_ctx.client
+
+    attributes = _build_update_attributes(
+        name, description, max_agents, turn_cadence,
+        removal_rate, max_turns, agent_ids, scoring_config,
+    )
+
+    csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+    headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    if attributes:
+        payload = {
+            "data": {
+                "type": "simulation-orchestrators",
+                "id": orchestrator_id,
+                "attributes": attributes,
+            }
+        }
+        response = client.patch(
+            f"{base_url}/api/v2/simulation-orchestrators/{orchestrator_id}",
+            headers=headers,
+            json=payload,
+        )
+        handle_jsonapi_error(response)
+
+        if cli_ctx.json_output:
+            result = response.json()
+            console.print(json.dumps(result, indent=2, default=str))
+        else:
+            console.print("[green]\u2713[/green] Updated orchestrator config")
+
+    sim_response = client.get(
+        f"{base_url}/api/v2/simulations/{simulation_id}", headers=headers
+    )
+    handle_jsonapi_error(sim_response)
+    sim_status = sim_response.json().get("data", {}).get("attributes", {}).get("status")
+
+    if sim_status == "running":
+        pause_response = client.post(
+            f"{base_url}/api/v2/simulations/{simulation_id}/pause", headers=headers
+        )
+        handle_jsonapi_error(pause_response)
+        if not cli_ctx.json_output:
+            console.print("[yellow]\u23f8[/yellow]  Paused simulation {simulation_id}".format(simulation_id=simulation_id))
+    elif sim_status == "paused":
+        if not cli_ctx.json_output:
+            console.print("[dim]Simulation already paused[/dim]")
+    else:
+        error_console.print(f"[red]Simulation is '{sim_status}', cannot apply config[/red]")
+        sys.exit(1)
+
+    resume_response = client.post(
+        f"{base_url}/api/v2/simulations/{simulation_id}/resume", headers=headers
+    )
+    handle_jsonapi_error(resume_response)
+
+    if cli_ctx.json_output:
+        console.print(json.dumps(resume_response.json(), indent=2, default=str))
+    else:
+        console.print("[green]\u25b6[/green]  Resumed simulation {simulation_id}".format(simulation_id=simulation_id))
+        console.print("[green]\u2713[/green] Config applied \u2014 orchestrator will use new settings")
