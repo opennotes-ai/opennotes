@@ -15,7 +15,7 @@ from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
 from src.simulation.models import SimAgent, SimAgentInstance, SimAgentMemory, SimulationRun
-from src.simulation.schemas import SimActionType
+from src.simulation.schemas import SimActionType, SimAgentAction
 from src.utils.async_compat import run_sync
 
 logger = get_logger(__name__)
@@ -148,7 +148,7 @@ def compact_memory_step(
     backoff_rate=2.0,
 )
 def build_deps_step(
-    community_server_id: str | None,
+    community_server_id: str,
 ) -> dict[str, Any]:
     from src.database import get_session_maker
     from src.notes.models import Note, Request
@@ -156,12 +156,6 @@ def build_deps_step(
     async def _build() -> dict[str, Any]:
         available_requests: list[dict[str, Any]] = []
         available_notes: list[dict[str, Any]] = []
-
-        if community_server_id is None:
-            return {
-                "available_requests": available_requests,
-                "available_notes": available_notes,
-            }
 
         cs_id = UUID(community_server_id)
 
@@ -267,9 +261,7 @@ def select_action_step(
 
         deps = SimAgentDeps(
             db=None,  # type: ignore[arg-type]
-            community_server_id=UUID(context["community_server_id"])
-            if context.get("community_server_id")
-            else None,
+            community_server_id=UUID(context["community_server_id"]),
             agent_instance_id=UUID(context["agent_instance_id"]),
             user_profile_id=UUID(context["user_profile_id"]),
             available_requests=deps_data["available_requests"],
@@ -303,7 +295,7 @@ def execute_agent_turn_step(
     action_type: str | None = None,
     phase1_messages: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    from pydantic_ai.exceptions import UserError
+    from pydantic_ai.exceptions import UsageLimitExceeded, UserError
 
     from src.database import get_session_maker
     from src.llm_config.model_id import ModelId
@@ -345,9 +337,7 @@ def execute_agent_turn_step(
         async with get_session_maker()() as session:
             deps = SimAgentDeps(
                 db=session,
-                community_server_id=UUID(context["community_server_id"])
-                if context.get("community_server_id")
-                else None,
+                community_server_id=UUID(context["community_server_id"]),
                 agent_instance_id=UUID(context["agent_instance_id"]),
                 user_profile_id=UUID(context["user_profile_id"]),
                 available_requests=deps_data["available_requests"],
@@ -371,6 +361,22 @@ def execute_agent_turn_step(
                     f"Update the SimAgent profile to use a valid "
                     f"'provider:model' format. Original error: {exc}"
                 ) from exc
+            except UsageLimitExceeded as exc:
+                logger.warning(
+                    "Agent turn hit usage limit, treating as partial completion",
+                    extra={
+                        "agent_instance_id": context["agent_instance_id"],
+                        "error": str(exc),
+                    },
+                )
+                action = SimAgentAction(
+                    action_type=SimActionType.PASS_TURN,
+                    reasoning=f"Turn ended early: usage limit exceeded ({exc})",
+                )
+                return {
+                    "action": action.model_dump(mode="json"),
+                    "new_messages": phase1_messages if phase1_messages is not None else messages,
+                }
 
             await session.commit()
 
@@ -502,7 +508,7 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
         )
 
         deps_data = build_deps_step(
-            community_server_id=context.get("community_server_id"),
+            community_server_id=context["community_server_id"],
         )
 
         selection = select_action_step(

@@ -150,6 +150,10 @@ class TestSimAgentsJSONAPIList:
         data = response.json()
         names = [r["attributes"]["name"] for r in data["data"]]
         assert f"ListTestAgent_{unique}" in names
+        agent_data = next(
+            r for r in data["data"] if r["attributes"]["name"] == f"ListTestAgent_{unique}"
+        )
+        assert agent_data["attributes"]["model_name"] == {"provider": "openai", "model": "gpt-4o"}
 
 
 class TestSimAgentsJSONAPIGet:
@@ -182,6 +186,7 @@ class TestSimAgentsJSONAPIGet:
         assert data["data"]["id"] == created_id
         assert "attributes" in data["data"]
         assert data["data"]["attributes"]["name"] == f"GetTestAgent_{unique}"
+        assert data["data"]["attributes"]["model_name"] == {"provider": "openai", "model": "gpt-4o"}
 
         content_type = response.headers.get("content-type", "")
         assert "application/vnd.api+json" in content_type

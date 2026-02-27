@@ -100,12 +100,14 @@ class ActionSelectionResult(BaseModel):
 
 class SimAgentAction(BaseModel):
     action_type: SimActionType
-    request_id: str | None = Field(None, description="Request ID the note was written for")
-    note_id: str | None = Field(None, description="Note ID that was rated or reacted to")
-    summary: str | None = Field(None, description="Note summary text if wrote a note")
-    classification: str | None = Field(None, description="Note classification if wrote a note")
-    helpfulness_level: str | None = Field(None, description="Rating level if rated a note")
-    reaction_text: str | None = Field(None, description="Reaction text if reacted")
+    request_id: str | None = Field(default=None, description="Request ID the note was written for")
+    note_id: str | None = Field(default=None, description="Note ID that was rated or reacted to")
+    summary: str | None = Field(default=None, description="Note summary text if wrote a note")
+    classification: str | None = Field(
+        default=None, description="Note classification if wrote a note"
+    )
+    helpfulness_level: str | None = Field(default=None, description="Rating level if rated a note")
+    reaction_text: str | None = Field(default=None, description="Reaction text if reacted")
     reasoning: str = Field(..., description="Brief explanation of why this action was chosen")
 
 

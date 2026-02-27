@@ -27,7 +27,7 @@ _DEFAULT_MODEL = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
 @dataclass
 class SimAgentDeps:
     db: AsyncSession
-    community_server_id: UUID | None
+    community_server_id: UUID
     agent_instance_id: UUID
     user_profile_id: UUID
     available_requests: list[dict]
