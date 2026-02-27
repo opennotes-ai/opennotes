@@ -97,6 +97,7 @@ async def trigger_scoring_for_simulation(
                 Note.deleted_at.is_(None),
             )
             .options(*note_loaders.full())
+            .order_by(Note.id)
             .limit(SCORING_BATCH_SIZE)
             .offset(offset)
         )
@@ -157,6 +158,7 @@ async def trigger_scoring_for_simulation(
             Note.deleted_at.is_(None),
         )
         .correlate(Request)
+        .order_by(Note.helpfulness_score.desc())
         .limit(1)
         .scalar_subquery()
     )

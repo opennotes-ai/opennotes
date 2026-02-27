@@ -117,7 +117,6 @@ async def test_trigger_scoring_updates_status_and_score(
     assert refreshed.status in (
         "CURRENTLY_RATED_HELPFUL",
         "CURRENTLY_RATED_NOT_HELPFUL",
-        "NEEDS_MORE_RATINGS",
     )
 
 
@@ -148,5 +147,26 @@ async def test_trigger_scoring_transitions_request_for_helpful_note(
 
     refreshed_note = (await db.execute(select(Note).where(Note.id == note.id))).scalar_one()
 
-    if refreshed_note.status == "CURRENTLY_RATED_HELPFUL":
-        assert refreshed_req.status == "COMPLETED"
+    assert refreshed_note.status == "CURRENTLY_RATED_HELPFUL"
+    assert refreshed_req.status == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_trigger_scoring_handles_note_without_request(
+    db, scoring_sim_run, make_note_with_ratings
+):
+    note, request = await make_note_with_ratings(rating_count=6, with_request=False)
+    await db.commit()
+
+    assert request is None
+
+    result = await trigger_scoring_for_simulation(scoring_sim_run.id, db)
+
+    assert result.scores_computed >= 1
+
+    refreshed = (await db.execute(select(Note).where(Note.id == note.id))).scalar_one()
+    assert refreshed.helpfulness_score > 0
+    assert refreshed.status in (
+        "CURRENTLY_RATED_HELPFUL",
+        "CURRENTLY_RATED_NOT_HELPFUL",
+    )
