@@ -1248,7 +1248,7 @@ wheels = [
 
 [[package]]
 name = "dbos"
-version = "2.11.0"
+version = "2.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "psycopg", extra = ["binary"] },
@@ -1258,9 +1258,9 @@ dependencies = [
     { name = "typer-slim" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/26/b5/0514a4873eefdba74c32519eda44535fa2ef057671a862d29178b6ba8a5f/dbos-2.11.0.tar.gz", hash = "sha256:41b84b0e79973907e46cece29cdc8519f0a4792f55ce18ee24b520e7755e05f1", size = 236057, upload-time = "2026-02-04T17:29:50.991Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7f/35/cb30c941e79d09e4fbfc7bc948ddef008f6028a86839720a13ffd9fb372f/dbos-2.13.0.tar.gz", hash = "sha256:1f735149aee301f9056f0866bd2d3ca9c22f3288a2b21d00439a709e990bde78", size = 248701, upload-time = "2026-02-19T18:29:29.399Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/63/b1ad6c939ba97e6066efd7bc460fd196501832ec1ab3afa3b0345e8a55c9/dbos-2.11.0-py3-none-any.whl", hash = "sha256:c9c485f64122f1e3f04bec4efa60b12f93f6e397402b7a544829de35860c5538", size = 147001, upload-time = "2026-02-04T17:29:49.231Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/eb/4eb7d8a00d7319f82b909af824a300406781145d86a446860e47c68109a1/dbos-2.13.0-py3-none-any.whl", hash = "sha256:5b24772ef257f6107b14ea36fa80d65dbefea1a5fc102ed5bf23935f9ed56e6e", size = 156207, upload-time = "2026-02-19T18:29:27.451Z" },
 ]
 
 [package.optional-dependencies]
@@ -3960,7 +3960,7 @@ requires-dist = [
     { name = "chonkie", extras = ["neural"], specifier = ">=1.3.0,<2.0.0" },
     { name = "convokit", marker = "extra == 'flashpoints-dataset'", specifier = ">=3.5.0,<4.0.0" },
     { name = "cryptography", specifier = ">=41.0.0" },
-    { name = "dbos", extras = ["otel"], specifier = ">=2.11.0,<3.0.0" },
+    { name = "dbos", extras = ["otel"], specifier = ">=2.13.0,<3.0.0" },
     { name = "docker", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "dspy", specifier = ">=3.0.0" },
     { name = "fastapi", specifier = ">=0.104.1" },

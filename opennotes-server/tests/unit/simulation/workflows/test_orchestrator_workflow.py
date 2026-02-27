@@ -499,6 +499,89 @@ class TestDetectStuckAgentsStep:
         update_session.execute.assert_awaited_once()
         update_session.commit.assert_awaited_once()
 
+    def test_detect_stuck_agents_retries_on_max_recovery_exceeded(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import detect_stuck_agents_step
+
+        run_id = str(uuid4())
+        agent_id = uuid4()
+
+        query_session = AsyncMock()
+        agents_result = MagicMock()
+        agents_result.all.return_value = [(agent_id, 0, 0)]
+        query_session.execute = AsyncMock(return_value=agents_result)
+
+        update_session = AsyncMock()
+        update_session.execute = AsyncMock()
+        update_session.commit = AsyncMock()
+
+        session_call_count = [0]
+
+        def make_session():
+            ctx = AsyncMock()
+            if session_call_count[0] == 0:
+                ctx.__aenter__ = AsyncMock(return_value=query_session)
+            else:
+                ctx.__aenter__ = AsyncMock(return_value=update_session)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            session_call_count[0] += 1
+            return ctx
+
+        mock_wf_status = MagicMock()
+        mock_wf_status.status = "MAX_RECOVERY_ATTEMPTS_EXCEEDED"
+
+        with (
+            _patch_run_sync(),
+            patch("src.database.get_session_maker", return_value=make_session),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.return_value = mock_wf_status
+            result = detect_stuck_agents_step.__wrapped__(run_id)
+
+        assert result["retried"] == 1
+        mock_dbos.get_workflow_status.assert_called_once_with(f"turn-{agent_id}-1-retry0")
+        update_session.execute.assert_awaited_once()
+        update_session.commit.assert_awaited_once()
+
+    def test_detect_stuck_agents_retries_on_cancelled(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import detect_stuck_agents_step
+
+        run_id = str(uuid4())
+        agent_id = uuid4()
+
+        query_session = AsyncMock()
+        agents_result = MagicMock()
+        agents_result.all.return_value = [(agent_id, 0, 0)]
+        query_session.execute = AsyncMock(return_value=agents_result)
+
+        update_session = AsyncMock()
+        update_session.execute = AsyncMock()
+        update_session.commit = AsyncMock()
+
+        session_call_count = [0]
+
+        def make_session():
+            ctx = AsyncMock()
+            if session_call_count[0] == 0:
+                ctx.__aenter__ = AsyncMock(return_value=query_session)
+            else:
+                ctx.__aenter__ = AsyncMock(return_value=update_session)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            session_call_count[0] += 1
+            return ctx
+
+        mock_wf_status = MagicMock()
+        mock_wf_status.status = "CANCELLED"
+
+        with (
+            _patch_run_sync(),
+            patch("src.database.get_session_maker", return_value=make_session),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.return_value = mock_wf_status
+            result = detect_stuck_agents_step.__wrapped__(run_id)
+
+        assert result["retried"] == 1
+
     def test_detect_stuck_agents_skips_non_errored(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import detect_stuck_agents_step
 
