@@ -16,7 +16,7 @@ class TestSimAgentsJSONAPICreate:
                 "attributes": {
                     "name": f"TestAgent_{unique}",
                     "personality": "A helpful test agent",
-                    "model_name": "gpt-4o",
+                    "model_name": "openai:gpt-4o",
                 },
             }
         }
@@ -33,7 +33,7 @@ class TestSimAgentsJSONAPICreate:
         assert isinstance(data["data"]["id"], str)
         assert data["data"]["attributes"]["name"] == f"TestAgent_{unique}"
         assert data["data"]["attributes"]["personality"] == "A helpful test agent"
-        assert data["data"]["attributes"]["model_name"] == "gpt-4o"
+        assert data["data"]["attributes"]["model_name"] == {"provider": "openai", "model": "gpt-4o"}
         assert data["data"]["attributes"]["memory_compaction_strategy"] == "sliding_window"
 
         content_type = response.headers.get("content-type", "")
@@ -48,7 +48,7 @@ class TestSimAgentsJSONAPICreate:
                 "attributes": {
                     "name": f"FullAgent_{unique}",
                     "personality": "A detailed test agent",
-                    "model_name": "gpt-4o",
+                    "model_name": "openai:gpt-4o",
                     "model_params": {"temperature": 0.7, "max_tokens": 1000},
                     "tool_config": {"tools": ["search"]},
                     "memory_compaction_strategy": "summarize_and_prune",
@@ -72,7 +72,7 @@ class TestSimAgentsJSONAPICreate:
                 "type": "sim-agents",
                 "attributes": {
                     "personality": "Missing name field",
-                    "model_name": "gpt-4o",
+                    "model_name": "openai:gpt-4o",
                 },
             }
         }
@@ -91,7 +91,7 @@ class TestSimAgentsJSONAPICreate:
                     "attributes": {
                         "name": "Unauth Agent",
                         "personality": "Should fail",
-                        "model_name": "gpt-4o",
+                        "model_name": "openai:gpt-4o",
                     },
                 }
             }
@@ -137,7 +137,7 @@ class TestSimAgentsJSONAPIList:
                 "attributes": {
                     "name": f"ListTestAgent_{unique}",
                     "personality": "For list test",
-                    "model_name": "gpt-4o",
+                    "model_name": "openai:gpt-4o",
                 },
             }
         }
@@ -162,7 +162,7 @@ class TestSimAgentsJSONAPIGet:
                 "attributes": {
                     "name": f"GetTestAgent_{unique}",
                     "personality": "For get test",
-                    "model_name": "gpt-4o",
+                    "model_name": "openai:gpt-4o",
                 },
             }
         }
@@ -207,7 +207,7 @@ class TestSimAgentsJSONAPIUpdate:
                 "attributes": {
                     "name": f"UpdateTestAgent_{unique}",
                     "personality": "Original personality",
-                    "model_name": "gpt-4o",
+                    "model_name": "openai:gpt-4o",
                 },
             }
         }
@@ -239,7 +239,7 @@ class TestSimAgentsJSONAPIUpdate:
         assert data["data"]["id"] == created_id
         assert data["data"]["attributes"]["name"] == f"UpdatedAgent_{unique}"
         assert data["data"]["attributes"]["personality"] == "Updated personality"
-        assert data["data"]["attributes"]["model_name"] == "gpt-4o"
+        assert data["data"]["attributes"]["model_name"] == {"provider": "openai", "model": "gpt-4o"}
 
         content_type = response.headers.get("content-type", "")
         assert "application/vnd.api+json" in content_type
@@ -273,7 +273,7 @@ class TestSimAgentsJSONAPIUpdate:
                 "attributes": {
                     "name": f"MismatchAgent_{unique}",
                     "personality": "For mismatch test",
-                    "model_name": "gpt-4o",
+                    "model_name": "openai:gpt-4o",
                 },
             }
         }
@@ -308,7 +308,7 @@ class TestSimAgentsJSONAPIDelete:
                 "attributes": {
                     "name": f"DeleteTestAgent_{unique}",
                     "personality": "For delete test",
-                    "model_name": "gpt-4o",
+                    "model_name": "openai:gpt-4o",
                 },
             }
         }
@@ -341,7 +341,7 @@ class TestSimAgentsJSONAPIDelete:
                 "attributes": {
                     "name": f"SoftDeleteAgent_{unique}",
                     "personality": "For soft delete test",
-                    "model_name": "gpt-4o",
+                    "model_name": "openai:gpt-4o",
                 },
             }
         }
