@@ -124,6 +124,7 @@ class TestLoadAgentContextStep:
         assert result["memory_id"] == str(memory_id)
         assert result["message_history"] == [{"role": "user", "content": "hello"}]
         assert result["instance_turn_count"] == 3
+        assert result["community_server_id"] == str(cs_id)
 
     def test_load_agent_context_missing_instance_raises(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import load_agent_context_step
@@ -1364,6 +1365,7 @@ class TestRecentActions:
             result = load_agent_context_step.__wrapped__(str(instance_id))
 
         assert result["recent_actions"] == ["write_note", "rate_note", "pass_turn"]
+        assert result["community_server_id"] == str(mock_simulation_run.community_server_id)
 
     def test_load_agent_context_returns_empty_recent_actions_when_no_memory(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import load_agent_context_step
