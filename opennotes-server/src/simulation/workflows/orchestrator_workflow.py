@@ -581,7 +581,7 @@ def update_metrics_step(
 
 @DBOS.step(
     retries_allowed=True,
-    max_attempts=2,
+    max_attempts=10,
     interval_seconds=5.0,
     backoff_rate=2.0,
 )
