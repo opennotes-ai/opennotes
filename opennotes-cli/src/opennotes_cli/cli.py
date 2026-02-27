@@ -17,6 +17,7 @@ from opennotes_cli.commands.health import health
 from opennotes_cli.commands.orchestrator import orchestrator
 from opennotes_cli.commands.playground import playground
 from opennotes_cli.commands.rechunk import rechunk
+from opennotes_cli.commands.score import score
 from opennotes_cli.commands.search import hybrid_search
 from opennotes_cli.commands.sim_agent import sim_agent
 from opennotes_cli.commands.simulation import simulation
@@ -112,6 +113,7 @@ cli.add_command(hybrid_search)
 cli.add_command(rechunk)
 cli.add_command(fact_check)
 cli.add_command(batch)
+cli.add_command(score)
 cli.add_command(simulation)
 cli.add_command(sim_agent)
 cli.add_command(orchestrator)

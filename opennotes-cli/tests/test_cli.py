@@ -51,6 +51,7 @@ class TestAllCommandsRegistered:
             "rechunk",
             "fact-check",
             "batch",
+            "score",
             "simulation",
             "sim-agent",
             "orchestrator",

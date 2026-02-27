@@ -4,7 +4,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 
 class ScoreCommunityResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     workflow_id: str
     message: str
 
