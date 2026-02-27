@@ -4,7 +4,23 @@ Task-1184: Verify the migration SQL produces correct output for all known
 model_name patterns, including the three patterns reported as mis-translated.
 """
 
+import importlib.util
+import inspect
+from pathlib import Path
+
 import pytest
+
+MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / ".." / "alembic" / "versions"
+
+
+def _load_migration(filename: str):
+    """Load an alembic migration module by filename."""
+    path = MIGRATIONS_DIR / filename
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
 
 LITELLM_TO_PYDANTIC_PROVIDERS = {
     "vertex_ai": "google-vertex",
@@ -146,18 +162,17 @@ class TestModelNameStorageLocations:
 
     def test_opennotes_sim_agents_model_name_is_target(self):
         """The migration explicitly targets opennotes_sim_agents.model_name."""
-        migration_sql = (
-            "UPDATE opennotes_sim_agents "
-            "SET model_name = split_part(model_name, '/', 1) || ':' || "
-            "substring(model_name from position('/' in model_name) + 1) "
-            "WHERE model_name LIKE '%/%' AND model_name NOT LIKE '%:%'"
-        )
-        assert "opennotes_sim_agents" in migration_sql
+        migration = _load_migration("4d7edc118a2e_task_1174_normalize_sim_agent_model_.py")
+        source = inspect.getsource(migration.upgrade)
+        assert "opennotes_sim_agents" in source
 
-    def test_notes_ai_model_not_affected(self):
+    def test_notes_ai_model_added_after_normalization(self):
         """notes.ai_model was added by migration 0a36caa8cd3b AFTER 4d7edc118a2e.
 
         The column did not exist when the normalization migration ran, so it
-        was never subject to the format conversion. All values written to
-        notes.ai_model were written by application code in pydantic-ai format.
+        was never subject to the format conversion.
         """
+        ai_model_migration = _load_migration(
+            "0a36caa8cd3b_task_1174_add_ai_model_column_to_notes.py"
+        )
+        assert ai_model_migration.down_revision == "4d7edc118a2e"

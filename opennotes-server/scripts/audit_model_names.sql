@@ -9,17 +9,15 @@ GROUP BY model_name
 ORDER BY agent_count DESC;
 
 -- 2. Values that do NOT match canonical provider:model format
---    (no colon, or still have slash-based format, or other anomalies)
+--    (no colon, or still have slash-based format)
+--    NOTE: vertex_ai paths like google-vertex:global/gemini-2.5-pro are VALID
+--    post-migration — the migration intentionally preserves sub-path segments.
 SELECT id, name, model_name
 FROM opennotes_sim_agents
 WHERE deleted_at IS NULL
   AND (
     model_name NOT LIKE '%:%'               -- missing colon separator
     OR model_name LIKE '%/%:%'              -- slash before colon (old format residual)
-    OR model_name LIKE '%:global/%'         -- vertex_ai global/ prefix not stripped
-    OR model_name LIKE '%:us-%/%'           -- vertex_ai region prefix not stripped
-    OR model_name LIKE '%:europe-%/%'       -- vertex_ai region prefix not stripped
-    OR model_name LIKE '%:asia-%/%'         -- vertex_ai region prefix not stripped
   )
 ORDER BY model_name;
 
