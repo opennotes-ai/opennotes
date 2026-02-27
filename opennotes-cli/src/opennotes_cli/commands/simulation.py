@@ -260,6 +260,8 @@ def _read_urls_from_file(path: str) -> list[str]:
     urls: list[str] = []
     for line in filepath.read_text().splitlines():
         line = line.strip()
+        if line.startswith(("- ", "* ")):
+            line = line[2:].strip()
         if line and line.startswith("http"):
             urls.append(line)
     return urls
