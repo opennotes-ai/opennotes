@@ -18601,15 +18601,37 @@
       "PlaygroundNoteRequestAttributes": {
         "properties": {
           "urls": {
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "format": "uri"
-            },
-            "type": "array",
-            "maxItems": 20,
-            "minItems": 1,
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "format": "uri"
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Urls"
+          },
+          "texts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 50000
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texts"
           },
           "requested_by": {
             "type": "string",
@@ -18619,9 +18641,6 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "urls"
-        ],
         "title": "PlaygroundNoteRequestAttributes"
       },
       "PlaygroundNoteRequestBody": {
@@ -18664,7 +18683,13 @@
           },
           "url_count": {
             "type": "integer",
-            "title": "Url Count"
+            "title": "Url Count",
+            "default": 0
+          },
+          "text_count": {
+            "type": "integer",
+            "title": "Text Count",
+            "default": 0
           },
           "status": {
             "type": "string",
@@ -18674,8 +18699,7 @@
         },
         "type": "object",
         "required": [
-          "workflow_id",
-          "url_count"
+          "workflow_id"
         ],
         "title": "PlaygroundNoteRequestJobAttributes"
       },

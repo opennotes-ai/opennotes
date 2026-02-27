@@ -254,3 +254,113 @@ async def test_ssrf_url_returns_422(async_client, admin_auth_headers, playground
     data = response.json()
     assert data["errors"][0]["title"] == "URL Validation Failed"
     assert "private or reserved" in data["errors"][0]["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_note_requests_with_text_only(
+    async_client, admin_auth_headers, playground_community_server, db
+):
+    response = await async_client.post(
+        f"/api/v2/playgrounds/{playground_community_server}/note-requests",
+        json={
+            "data": {
+                "type": "playground-note-requests",
+                "attributes": {
+                    "texts": [
+                        "Climate change is accelerating faster than predicted.",
+                        "The stock market hit an all-time high today.",
+                    ],
+                },
+            }
+        },
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 202
+    data = response.json()
+    assert data["jsonapi"]["version"] == "1.1"
+    assert data["data"]["type"] == "playground-note-request-jobs"
+    assert data["data"]["attributes"]["text_count"] == 2
+    assert data["data"]["attributes"]["url_count"] == 0
+    assert data["data"]["attributes"]["status"] == "ACCEPTED"
+    assert data["data"]["id"] is not None
+
+    from sqlalchemy import select
+
+    from src.notes.models import Request
+
+    result = await db.execute(
+        select(Request).where(
+            Request.community_server_id == playground_community_server,
+        )
+    )
+    requests = result.scalars().all()
+    assert len(requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_create_note_requests_with_text_and_urls(
+    async_client,
+    admin_auth_headers,
+    playground_community_server,
+    mock_dispatch_workflow,
+):
+    response = await async_client.post(
+        f"/api/v2/playgrounds/{playground_community_server}/note-requests",
+        json={
+            "data": {
+                "type": "playground-note-requests",
+                "attributes": {
+                    "urls": ["https://example.com/article1"],
+                    "texts": ["Some claim to fact-check."],
+                },
+            }
+        },
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 202
+    data = response.json()
+    assert data["data"]["attributes"]["url_count"] == 1
+    assert data["data"]["attributes"]["text_count"] == 1
+
+    mock_dispatch_workflow.assert_called_once()
+    assert len(mock_dispatch_workflow.call_args.kwargs["urls"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_create_note_requests_text_validation_empty_string(
+    async_client, admin_auth_headers, playground_community_server
+):
+    response = await async_client.post(
+        f"/api/v2/playgrounds/{playground_community_server}/note-requests",
+        json={
+            "data": {
+                "type": "playground-note-requests",
+                "attributes": {
+                    "texts": ["   "],
+                },
+            }
+        },
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_note_requests_neither_urls_nor_texts(
+    async_client, admin_auth_headers, playground_community_server
+):
+    response = await async_client.post(
+        f"/api/v2/playgrounds/{playground_community_server}/note-requests",
+        json={
+            "data": {
+                "type": "playground-note-requests",
+                "attributes": {},
+            }
+        },
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 422

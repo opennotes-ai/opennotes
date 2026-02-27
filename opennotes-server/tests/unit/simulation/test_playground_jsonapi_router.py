@@ -39,7 +39,7 @@ class TestPlaygroundNoteRequestAttributes:
             PlaygroundNoteRequestAttributes(urls=urls)
 
     def test_rejects_empty_url_list(self):
-        with pytest.raises(ValidationError, match="at least 1"):
+        with pytest.raises(ValidationError, match="At least one of"):
             PlaygroundNoteRequestAttributes(urls=[])
 
     def test_rejects_invalid_url(self):

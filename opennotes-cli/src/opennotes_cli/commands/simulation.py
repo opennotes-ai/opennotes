@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import TYPE_CHECKING
+import uuid
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import click
 from rich.console import Console
@@ -248,3 +250,202 @@ def simulation_resume(ctx: click.Context, simulation_id: str) -> None:
 def simulation_cancel(ctx: click.Context, simulation_id: str) -> None:
     """Cancel a simulation."""
     _simulation_lifecycle_cmd(ctx, simulation_id, "cancel")
+
+
+def _read_urls_from_file(path: str) -> list[str]:
+    filepath = Path(path)
+    if not filepath.exists():
+        error_console.print(f"[red]Error:[/red] File not found: {filepath}")
+        sys.exit(1)
+    urls: list[str] = []
+    for line in filepath.read_text().splitlines():
+        line = line.strip()
+        if line and line.startswith("http"):
+            urls.append(line)
+    return urls
+
+
+def _submit_urls_batch(
+    client: Any,
+    base_url: str,
+    headers: dict[str, str],
+    community_server_id: str,
+    urls: list[str],
+) -> str | None:
+    payload = {
+        "data": {
+            "type": "playground-note-requests",
+            "attributes": {"urls": urls},
+        }
+    }
+    response = client.post(
+        f"{base_url}/api/v2/playgrounds/{community_server_id}/note-requests",
+        headers=headers,
+        json=payload,
+    )
+    handle_jsonapi_error(response)
+    return response.json().get("data", {}).get("attributes", {}).get("workflow_id")
+
+
+@simulation.command("launch")
+@click.option("--name", default=None, help="Simulation name (used for orchestrator and playground).")
+@click.option("--url", "urls", multiple=True, help="URL to add as note request (repeatable).")
+@click.option("--urls-from", "urls_file", default=None, help="File with URLs, one per line.")
+@click.option("--text", "texts", multiple=True, help="Text content to submit directly (repeatable).")
+@click.option("--agent-ids", default=None, help="Comma-separated agent profile UUIDs (default: all).")
+@click.option("--max-agents", default=15, type=int, help="Max concurrent agents (default: 15).")
+@click.option("--turn-cadence", default=15, type=int, help="Turn cadence in seconds (default: 15).")
+@click.option("--removal-rate", default=0.0, type=float, help="Agent removal rate (default: 0.0).")
+@click.option("--max-turns", default=50, type=int, help="Max turns per agent (default: 50).")
+@click.option("--wait", is_flag=True, help="Poll until simulation completes.")
+@click.pass_context
+def simulation_launch(
+    ctx: click.Context,
+    name: str | None,
+    urls: tuple[str, ...],
+    urls_file: str | None,
+    texts: tuple[str, ...],
+    agent_ids: str | None,
+    max_agents: int,
+    turn_cadence: int,
+    removal_rate: float,
+    max_turns: int,
+    wait: bool,
+) -> None:
+    """Launch a full simulation: create orchestrator, playground, submit content, start sim."""
+    cli_ctx: CliContext = ctx.obj
+    base_url = cli_ctx.base_url
+    client = cli_ctx.client
+
+    all_urls = list(urls)
+    if urls_file:
+        all_urls.extend(_read_urls_from_file(urls_file))
+
+    if not all_urls and not texts:
+        error_console.print("[red]Error:[/red] Provide at least one --url, --urls-from, or --text.")
+        sys.exit(1)
+
+    csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+    headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    if not name:
+        name = f"sim-{uuid.uuid4().hex[:8]}"
+
+    if agent_ids:
+        agent_id_list = [a.strip() for a in agent_ids.split(",") if a.strip()]
+    else:
+        response = client.get(
+            f"{base_url}/api/v2/sim-agents",
+            headers=headers,
+            params={"page[size]": 100},
+        )
+        handle_jsonapi_error(response)
+        items = response.json().get("data", [])
+        agent_id_list = [item["id"] for item in items]
+        if not agent_id_list:
+            error_console.print("[red]Error:[/red] No sim agents found. Create agents first.")
+            sys.exit(1)
+        if not cli_ctx.json_output:
+            console.print(f"[dim]Discovered {len(agent_id_list)} agent(s)[/dim]")
+
+    orch_attributes: dict[str, Any] = {
+        "name": name,
+        "turn_cadence_seconds": turn_cadence,
+        "max_agents": max_agents,
+        "removal_rate": removal_rate,
+        "max_turns_per_agent": max_turns,
+        "agent_profile_ids": agent_id_list,
+    }
+    orch_payload = {"data": {"type": "simulation-orchestrators", "attributes": orch_attributes}}
+    response = client.post(
+        f"{base_url}/api/v2/simulation-orchestrators", headers=headers, json=orch_payload
+    )
+    handle_jsonapi_error(response)
+    orch_id = response.json().get("data", {}).get("id")
+    if not cli_ctx.json_output:
+        console.print(f"[green]\u2713[/green] Created orchestrator: [bold]{orch_id}[/bold]")
+
+    pg_headers = add_csrf(cli_ctx.auth.get_headers(), csrf_token)
+    pg_payload: dict[str, Any] = {
+        "platform": "playground",
+        "platform_community_server_id": uuid.uuid4().hex[:16],
+        "name": name,
+        "is_active": True,
+        "is_public": True,
+    }
+    response = client.post(
+        f"{base_url}/api/v1/community-servers", headers=pg_headers, json=pg_payload
+    )
+    handle_jsonapi_error(response)
+    cs_id = response.json().get("id")
+    if not cli_ctx.json_output:
+        console.print(f"[green]\u2713[/green] Created playground: [bold]{cs_id}[/bold]")
+
+    jsonapi_headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    if all_urls:
+        for i in range(0, len(all_urls), 20):
+            batch = all_urls[i : i + 20]
+            _submit_urls_batch(client, base_url, jsonapi_headers, cs_id, batch)
+        if not cli_ctx.json_output:
+            console.print(f"[green]\u2713[/green] Submitted {len(all_urls)} URL(s) for processing")
+
+    if texts:
+        all_texts = list(texts)
+        for i in range(0, len(all_texts), 20):
+            batch = all_texts[i : i + 20]
+            text_payload = {
+                "data": {
+                    "type": "playground-note-requests",
+                    "attributes": {"texts": batch},
+                }
+            }
+            response = client.post(
+                f"{base_url}/api/v2/playgrounds/{cs_id}/note-requests",
+                headers=jsonapi_headers,
+                json=text_payload,
+            )
+            handle_jsonapi_error(response)
+        if not cli_ctx.json_output:
+            console.print(f"[green]\u2713[/green] Submitted {len(texts)} text(s) for processing")
+
+    sim_payload = {
+        "data": {
+            "type": "simulations",
+            "attributes": {
+                "orchestrator_id": orch_id,
+                "community_server_id": cs_id,
+            },
+        }
+    }
+    response = client.post(
+        f"{base_url}/api/v2/simulations", headers=jsonapi_headers, json=sim_payload
+    )
+    handle_jsonapi_error(response)
+    result = response.json()
+    sim_id = result.get("data", {}).get("id")
+
+    if not cli_ctx.json_output:
+        console.print(f"[green]\u2713[/green] Started simulation: [bold]{sim_id}[/bold]")
+
+    if wait:
+        if not cli_ctx.json_output:
+            console.print("[dim]Waiting for completion...[/dim]\n")
+        result = poll_simulation_until_complete(client, base_url, jsonapi_headers, sim_id)
+
+    if cli_ctx.json_output:
+        console.print(json.dumps({
+            "orchestrator_id": orch_id,
+            "community_server_id": cs_id,
+            "simulation_id": sim_id,
+            "result": result,
+        }, indent=2, default=str))
+        return
+
+    cli_prefix = get_cli_prefix(cli_ctx.env_name)
+    console.print(
+        f"\n[dim]Monitor:[/dim]  {cli_prefix} simulation status {sim_id}"
+    )
+    console.print(
+        f"[dim]Update:[/dim]   {cli_prefix} orchestrator apply {orch_id} --simulation {sim_id} --max-agents 20"
+    )

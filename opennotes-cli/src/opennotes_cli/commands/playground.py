@@ -87,31 +87,44 @@ def playground_create(
     help="Community server UUID (must be playground).",
 )
 @click.option(
-    "--url", "urls", required=True, multiple=True,
-    help="URL to fetch content from (max 20, can repeat).",
+    "--url", "urls", multiple=True,
+    help="URL to fetch content from (can repeat).",
+)
+@click.option(
+    "--text", "texts", multiple=True,
+    help="Text content to submit directly (can repeat).",
 )
 @click.pass_context
 def playground_add_request(
-    ctx: click.Context, community_server_id: str, urls: tuple[str, ...]
+    ctx: click.Context, community_server_id: str, urls: tuple[str, ...], texts: tuple[str, ...]
 ) -> None:
-    """Add note requests to a playground by fetching URLs (async via DBOS workflow)."""
+    """Add note requests to a playground by fetching URLs or submitting text."""
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
 
-    if len(urls) > 20:
-        error_console.print("[red]Error:[/red] Maximum 20 URLs per request.")
+    if not urls and not texts:
+        error_console.print("[red]Error:[/red] At least one --url or --text must be provided.")
+        sys.exit(1)
+
+    total_items = len(urls) + len(texts)
+    if total_items > 20:
+        error_console.print("[red]Error:[/red] Maximum 20 items (URLs + texts) per request.")
         sys.exit(1)
 
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
     headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
 
+    attributes: dict[str, Any] = {}
+    if urls:
+        attributes["urls"] = list(urls)
+    if texts:
+        attributes["texts"] = list(texts)
+
     payload = {
         "data": {
             "type": "playground-note-requests",
-            "attributes": {
-                "urls": list(urls),
-            },
+            "attributes": attributes,
         }
     }
 
@@ -137,13 +150,17 @@ def playground_add_request(
     attrs = data.get("attributes", {})
     workflow_id = attrs.get("workflow_id", "unknown")
     url_count = attrs.get("url_count", len(urls))
+    text_count = attrs.get("text_count", len(texts))
     job_status = attrs.get("status", "ACCEPTED")
 
     status_color = "green" if job_status == "ACCEPTED" else "yellow"
     console.print(f"[{status_color}]Job accepted[/{status_color}]")
     console.print(f"  Workflow ID: [bold]{workflow_id}[/bold]")
-    console.print(f"  URLs queued: {url_count}")
+    if url_count:
+        console.print(f"  URLs queued: {url_count}")
+    if text_count:
+        console.print(f"  Texts queued: {text_count}")
     console.print(
-        "\n[dim]URL extraction is running asynchronously via DBOS workflow.[/dim]"
+        "\n[dim]Requests are being processed asynchronously.[/dim]"
     )
     console.print("[dim]Check playground requests later to see results.[/dim]")
