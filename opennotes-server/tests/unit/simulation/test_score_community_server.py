@@ -8,6 +8,7 @@ import pytest
 
 from src.notes.scoring_schemas import NoteScoreResponse, ScoreConfidence
 from src.simulation.scoring_integration import (
+    SCORING_BATCH_SIZE,
     CommunityServerScoringResult,
     score_community_server_notes,
 )
@@ -294,3 +295,79 @@ class TestScoreCommunityServerNotes:
             await score_community_server_notes(cs_id, db)
 
         db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_unscored_multi_batch_scores_all_notes(self) -> None:
+        """All unscored notes must be scored even when count > SCORING_BATCH_SIZE.
+
+        After batch 1 is scored, those notes leave the NEEDS_MORE_RATINGS
+        result set (status changes to CRH/CRNH).  With offset=0 the next
+        query correctly returns the remaining unscored notes.  With the
+        old offset-increment logic the query would skip past them.
+        """
+        cs_id = uuid4()
+        total_unscored = SCORING_BATCH_SIZE + 50
+        all_notes = [
+            _make_note(
+                community_server_id=cs_id,
+                status="NEEDS_MORE_RATINGS",
+                ratings=[_make_rating() for _ in range(5)],
+            )
+            for _ in range(total_unscored)
+        ]
+
+        scored_ids: set[UUID] = set()
+
+        def _execute_side_effect(stmt: object, *_a: object, **_kw: object) -> MagicMock:
+            nonlocal scored_ids
+
+            is_update = hasattr(stmt, "is_dml") and stmt.is_dml
+            if is_update:
+                return MagicMock()
+
+            has_limit = hasattr(stmt, "_limit_clause") and stmt._limit_clause is not None
+            has_offset = hasattr(stmt, "_offset_clause") and stmt._offset_clause is not None
+
+            if has_limit and has_offset:
+                offset_val = 0
+                try:
+                    offset_val = int(stmt._offset_clause.value)
+                except Exception:
+                    pass
+
+                remaining = [n for n in all_notes if n.id not in scored_ids]
+                page = remaining[offset_val : offset_val + SCORING_BATCH_SIZE]
+
+                for note in page:
+                    scored_ids.add(note.id)
+
+                res = MagicMock()
+                res.scalars.return_value.all.return_value = page
+                return res
+
+            res = MagicMock()
+            res.scalar.return_value = total_unscored
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_execute_side_effect)
+        db.commit = AsyncMock()
+
+        score_responses = {
+            note.id: _make_score_response(note.id, score=0.7, rating_count=5) for note in all_notes
+        }
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+        ):
+            mock_calc.side_effect = lambda note, *_a, **_kw: score_responses[note.id]
+
+            result = await score_community_server_notes(cs_id, db)
+
+        assert result.unscored_notes_processed == total_unscored
+        assert result.total_scores_computed >= total_unscored
+        assert mock_calc.call_count >= total_unscored

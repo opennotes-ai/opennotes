@@ -194,7 +194,8 @@ async def score_community_server_notes(
             if len(batch) < SCORING_BATCH_SIZE:
                 break
 
-            offset += SCORING_BATCH_SIZE
+            if pass_label == "rescore":
+                offset += SCORING_BATCH_SIZE
 
         if pass_label == "unscored":
             unscored_notes_processed = pass_count
