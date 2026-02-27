@@ -179,7 +179,7 @@ class PlaygroundNoteRequestListResponse(SQLAlchemySchema):
     meta: dict[str, Any] | None = None
 
 
-class PlaygroundNoteRequestJobAttributes(SQLAlchemySchema):
+class PlaygroundNoteRequestJobAttributes(BaseModel):
     workflow_id: str
     url_count: int
     status: str = "ACCEPTED"
@@ -191,6 +191,6 @@ class PlaygroundNoteRequestJobResource(BaseModel):
     attributes: PlaygroundNoteRequestJobAttributes
 
 
-class PlaygroundNoteRequestJobResponse(SQLAlchemySchema):
+class PlaygroundNoteRequestJobResponse(BaseModel):
     data: PlaygroundNoteRequestJobResource
     jsonapi: dict[str, str] = {"version": "1.1"}

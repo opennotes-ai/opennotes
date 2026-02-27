@@ -3,6 +3,9 @@ from uuid import uuid4
 
 import pytest
 
+from src.auth.auth import create_access_token
+from src.users.models import User
+
 
 @pytest.fixture
 def mock_dispatch_workflow():
@@ -12,6 +15,36 @@ def mock_dispatch_workflow():
     ) as mock:
         mock.return_value = "playground-urls-test123"
         yield mock
+
+
+@pytest.fixture
+async def non_admin_user(db):
+    user = User(
+        id=uuid4(),
+        username="sim_regular_user",
+        email="sim_regular@opennotes.local",
+        hashed_password="hashed_password_placeholder",
+        role="user",
+        is_active=True,
+        is_superuser=False,
+        is_service_account=False,
+        discord_id=f"discord_sim_regular_{uuid4().hex[:8]}",
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@pytest.fixture
+async def non_admin_auth_headers(non_admin_user):
+    token_data = {
+        "sub": str(non_admin_user.id),
+        "username": non_admin_user.username,
+        "role": non_admin_user.role,
+    }
+    access_token = create_access_token(token_data)
+    return {"Authorization": f"Bearer {access_token}"}
 
 
 @pytest.mark.asyncio
@@ -88,6 +121,26 @@ async def test_auth_required(async_client, playground_community_server):
 
 
 @pytest.mark.asyncio
+async def test_non_admin_returns_403(
+    async_client, non_admin_auth_headers, playground_community_server
+):
+    response = await async_client.post(
+        f"/api/v2/playgrounds/{playground_community_server}/note-requests",
+        json={
+            "data": {
+                "type": "playground-note-requests",
+                "attributes": {
+                    "urls": ["https://example.com/article"],
+                },
+            }
+        },
+        headers=non_admin_auth_headers,
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_non_playground_rejected(async_client, admin_auth_headers, community_server):
     response = await async_client.post(
         f"/api/v2/playgrounds/{community_server}/note-requests",
@@ -106,6 +159,28 @@ async def test_non_playground_rejected(async_client, admin_auth_headers, communi
     data = response.json()
     assert data["errors"][0]["title"] == "Bad Request"
     assert "not a playground" in data["errors"][0]["detail"]
+
+
+@pytest.mark.asyncio
+async def test_non_playground_error_does_not_leak_platform(
+    async_client, admin_auth_headers, community_server
+):
+    response = await async_client.post(
+        f"/api/v2/playgrounds/{community_server}/note-requests",
+        json={
+            "data": {
+                "type": "playground-note-requests",
+                "attributes": {
+                    "urls": ["https://example.com/article"],
+                },
+            }
+        },
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["errors"][0]["detail"]
+    assert "platform=" not in detail
 
 
 @pytest.mark.asyncio
@@ -154,3 +229,28 @@ async def test_dispatch_failure_returns_500(
     assert response.status_code == 500
     data = response.json()
     assert data["errors"][0]["title"] == "Internal Server Error"
+
+
+@pytest.mark.asyncio
+async def test_ssrf_url_returns_422(async_client, admin_auth_headers, playground_community_server):
+    with patch(
+        "src.simulation.playground_jsonapi_router.validate_url_security",
+        side_effect=ValueError("URLs pointing to private or reserved IP ranges are not allowed"),
+    ):
+        response = await async_client.post(
+            f"/api/v2/playgrounds/{playground_community_server}/note-requests",
+            json={
+                "data": {
+                    "type": "playground-note-requests",
+                    "attributes": {
+                        "urls": ["http://192.168.1.1/internal"],
+                    },
+                }
+            },
+            headers=admin_auth_headers,
+        )
+
+    assert response.status_code == 422
+    data = response.json()
+    assert data["errors"][0]["title"] == "URL Validation Failed"
+    assert "private or reserved" in data["errors"][0]["detail"]

@@ -19,6 +19,7 @@ playground_url_queue = Queue(
 URL_STEP_MAX_ATTEMPTS = 3
 URL_STEP_INTERVAL_SECONDS = 5.0
 URL_STEP_BACKOFF_RATE = 2.0
+EXTRACTION_BACKSTOP_TIMEOUT = 180
 
 
 @DBOS.step(
@@ -31,18 +32,18 @@ def extract_and_create_request_step(
     url: str,
     community_server_id: str,
     requested_by: str,
+    request_id: str,
 ) -> dict[str, Any]:
     from src.database import get_session_maker
     from src.notes.message_archive_service import MessageArchiveService
     from src.notes.models import Request
     from src.shared.content_extraction import ContentExtractionError, extract_content_from_url
-    from src.simulation.playground_jsonapi_router import _validate_url_security
+    from src.shared.url_validation import validate_url_security
 
-    request_id = f"playground-{uuid4().hex}"
     cs_uuid = UUID(community_server_id)
 
     try:
-        _validate_url_security(url)
+        validate_url_security(url)
     except ValueError as exc:
         logger.warning(
             "URL failed SSRF validation in workflow step",
@@ -59,9 +60,9 @@ def extract_and_create_request_step(
         try:
             extracted = await asyncio.wait_for(
                 extract_content_from_url(url),
-                timeout=120,
+                timeout=EXTRACTION_BACKSTOP_TIMEOUT,
             )
-        except (ContentExtractionError, TimeoutError) as e:
+        except (ContentExtractionError, TimeoutError, asyncio.CancelledError) as e:
             logger.warning(
                 "Content extraction failed in workflow step",
                 extra={"url": url, "error": str(e)},
@@ -131,6 +132,7 @@ def run_playground_url_extraction(
     import json
 
     urls: list[str] = json.loads(urls_json)
+    urls = list(dict.fromkeys(urls))
     workflow_id = DBOS.workflow_id
 
     logger.info(
@@ -143,8 +145,9 @@ def run_playground_url_extraction(
     )
 
     results: list[dict[str, Any]] = []
-    for url in urls:
-        result = extract_and_create_request_step(url, community_server_id, requested_by)
+    for idx, url in enumerate(urls):
+        request_id = f"playground-{workflow_id}-{idx}"
+        result = extract_and_create_request_step(url, community_server_id, requested_by, request_id)
         results.append(result)
 
     summary = set_workflow_result_step(results, len(urls))
@@ -178,7 +181,7 @@ async def dispatch_playground_url_extraction(
     client = get_dbos_client()
     wf_id = f"playground-urls-{uuid4().hex}"
     options: EnqueueOptions = {
-        "queue_name": "playground_url_extraction",
+        "queue_name": playground_url_queue.name,
         "workflow_name": RUN_PLAYGROUND_URL_EXTRACTION_NAME,
         "workflow_id": wf_id,
         "deduplication_id": wf_id,
