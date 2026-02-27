@@ -96,7 +96,7 @@ async def trigger_scoring_for_simulation(
                 Note.community_server_id == community_server_id,
                 Note.deleted_at.is_(None),
             )
-            .options(selectinload(Note.ratings))
+            .options(selectinload(Note.ratings), selectinload(Note.request))
             .limit(SCORING_BATCH_SIZE)
             .offset(offset)
         )
