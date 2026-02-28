@@ -11,6 +11,7 @@ from pydantic_ai.usage import UsageLimits
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
+from src.config import get_settings
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
@@ -21,10 +22,6 @@ from src.utils.async_compat import run_sync
 logger = get_logger(__name__)
 
 _message_list_ta: TypeAdapter[list[ModelMessage]] = TypeAdapter(list[ModelMessage])
-
-COMPACTION_INTERVAL: int = 2
-DEFAULT_REQUEST_LIMIT: int = 3
-DEFAULT_TOKEN_LIMIT: int = 4000
 
 simulation_turn_queue = Queue(
     name="simulation_turn",
@@ -302,9 +299,12 @@ def execute_agent_turn_step(
     from src.simulation.agent import OpenNotesSimAgent, SimAgentDeps
 
     async def _execute() -> dict[str, Any]:
+        settings = get_settings()
         model_params = context.get("model_params") or {}
-        request_limit = model_params.get("request_limit", DEFAULT_REQUEST_LIMIT)
-        token_limit = model_params.get("total_tokens_limit", DEFAULT_TOKEN_LIMIT)
+        request_limit = model_params.get("request_limit", settings.SIMULATION_DEFAULT_REQUEST_LIMIT)
+        token_limit = model_params.get(
+            "total_tokens_limit", settings.SIMULATION_DEFAULT_TOKEN_LIMIT
+        )
 
         usage_limits = UsageLimits(
             request_limit=request_limit,
@@ -486,6 +486,7 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
     gate = TokenGate(pool="default", weight=WorkflowWeight.SIMULATION_TURN)
     gate.acquire()
     try:
+        settings = get_settings()
         workflow_id = DBOS.workflow_id
         assert workflow_id is not None
 
@@ -504,7 +505,7 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             turn_count=context["instance_turn_count"],
             strategy=context["memory_compaction_strategy"],
             config=context["memory_compaction_config"],
-            compaction_interval=COMPACTION_INTERVAL,
+            compaction_interval=settings.SIMULATION_COMPACTION_INTERVAL,
         )
 
         deps_data = build_deps_step(

@@ -10939,6 +10939,70 @@
         }
       }
     },
+    "/api/v2/simulations/{simulation_id}/analysis": {
+      "get": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Get Simulation Analysis",
+        "operationId": "get_simulation_analysis_api_v2_simulations__simulation_id__analysis_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/version": {
       "get": {
         "tags": [
@@ -11570,6 +11634,60 @@
         "title": "AdminStatusUpdateRequest",
         "description": "JSON:API request for updating admin status."
       },
+      "AgentBehaviorData": {
+        "properties": {
+          "agent_instance_id": {
+            "type": "string",
+            "title": "Agent Instance Id"
+          },
+          "agent_name": {
+            "type": "string",
+            "title": "Agent Name"
+          },
+          "notes_written": {
+            "type": "integer",
+            "title": "Notes Written"
+          },
+          "ratings_given": {
+            "type": "integer",
+            "title": "Ratings Given"
+          },
+          "turn_count": {
+            "type": "integer",
+            "title": "Turn Count"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "helpfulness_trend": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Helpfulness Trend"
+          },
+          "action_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Action Distribution"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_instance_id",
+          "agent_name",
+          "notes_written",
+          "ratings_given",
+          "turn_count",
+          "state",
+          "helpfulness_trend",
+          "action_distribution"
+        ],
+        "title": "AgentBehaviorData"
+      },
       "AllFusionWeightsResponse": {
         "properties": {
           "default": {
@@ -11592,6 +11710,82 @@
         ],
         "title": "AllFusionWeightsResponse",
         "description": "Response model for all fusion weights."
+      },
+      "AnalysisAttributes": {
+        "properties": {
+          "rating_distribution": {
+            "$ref": "#/components/schemas/RatingDistributionData"
+          },
+          "consensus_metrics": {
+            "$ref": "#/components/schemas/ConsensusMetricsData"
+          },
+          "scoring_coverage": {
+            "$ref": "#/components/schemas/ScoringCoverageData"
+          },
+          "agent_behaviors": {
+            "items": {
+              "$ref": "#/components/schemas/AgentBehaviorData"
+            },
+            "type": "array",
+            "title": "Agent Behaviors"
+          },
+          "note_quality": {
+            "$ref": "#/components/schemas/NoteQualityData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rating_distribution",
+          "consensus_metrics",
+          "scoring_coverage",
+          "agent_behaviors",
+          "note_quality"
+        ],
+        "title": "AnalysisAttributes"
+      },
+      "AnalysisResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "simulation-analysis"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/AnalysisAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "AnalysisResource"
+      },
+      "AnalysisResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AnalysisResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "AnalysisResponse"
       },
       "AuditLogResponse": {
         "properties": {
@@ -13864,6 +14058,39 @@
         ],
         "title": "CommunityServerSingleResponse",
         "description": "JSON:API response for a single community server resource."
+      },
+      "ConsensusMetricsData": {
+        "properties": {
+          "mean_agreement": {
+            "type": "number",
+            "title": "Mean Agreement"
+          },
+          "polarization_index": {
+            "type": "number",
+            "title": "Polarization Index"
+          },
+          "notes_with_consensus": {
+            "type": "integer",
+            "title": "Notes With Consensus"
+          },
+          "notes_with_disagreement": {
+            "type": "integer",
+            "title": "Notes With Disagreement"
+          },
+          "total_notes_rated": {
+            "type": "integer",
+            "title": "Total Notes Rated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mean_agreement",
+          "polarization_index",
+          "notes_with_consensus",
+          "notes_with_disagreement",
+          "total_notes_rated"
+        ],
+        "title": "ConsensusMetricsData"
       },
       "ConversationFlashpointMatch": {
         "properties": {
@@ -17455,6 +17682,42 @@
         "title": "NotePublisherPostSingleResponse",
         "description": "JSON:API response for a single post resource."
       },
+      "NoteQualityData": {
+        "properties": {
+          "avg_helpfulness_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Helpfulness Score"
+          },
+          "notes_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Notes By Status"
+          },
+          "notes_by_classification": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Notes By Classification"
+          }
+        },
+        "type": "object",
+        "required": [
+          "avg_helpfulness_score",
+          "notes_by_status",
+          "notes_by_classification"
+        ],
+        "title": "NoteQualityData"
+      },
       "NoteRequestsCreateAttributes": {
         "properties": {
           "message_ids": {
@@ -18620,6 +18883,37 @@
         ],
         "title": "ParticipantStatsSingleResponse",
         "description": "JSON:API response for participant statistics."
+      },
+      "PerAgentRatingData": {
+        "properties": {
+          "agent_instance_id": {
+            "type": "string",
+            "title": "Agent Instance Id"
+          },
+          "agent_name": {
+            "type": "string",
+            "title": "Agent Name"
+          },
+          "distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Distribution"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_instance_id",
+          "agent_name",
+          "distribution",
+          "total"
+        ],
+        "title": "PerAgentRatingData"
       },
       "PerformanceMetrics": {
         "properties": {
@@ -19810,6 +20104,35 @@
         ],
         "title": "RatingData"
       },
+      "RatingDistributionData": {
+        "properties": {
+          "overall": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Overall"
+          },
+          "per_agent": {
+            "items": {
+              "$ref": "#/components/schemas/PerAgentRatingData"
+            },
+            "type": "array",
+            "title": "Per Agent"
+          },
+          "total_ratings": {
+            "type": "integer",
+            "title": "Total Ratings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overall",
+          "per_agent",
+          "total_ratings"
+        ],
+        "title": "RatingDistributionData"
+      },
       "RatingListResponse": {
         "properties": {
           "data": {
@@ -20946,6 +21269,64 @@
           "standard"
         ],
         "title": "ScoreConfidence"
+      },
+      "ScoringCoverageData": {
+        "properties": {
+          "current_tier": {
+            "type": "string",
+            "title": "Current Tier"
+          },
+          "total_scores_computed": {
+            "type": "integer",
+            "title": "Total Scores Computed"
+          },
+          "tier_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Tier Distribution"
+          },
+          "scorer_breakdown": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Scorer Breakdown"
+          },
+          "notes_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Notes By Status"
+          },
+          "tiers_reached": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tiers Reached"
+          },
+          "scorers_exercised": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scorers Exercised"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_tier",
+          "total_scores_computed",
+          "tier_distribution",
+          "scorer_breakdown",
+          "notes_by_status",
+          "tiers_reached",
+          "scorers_exercised"
+        ],
+        "title": "ScoringCoverageData"
       },
       "ScoringResultAttributes": {
         "properties": {

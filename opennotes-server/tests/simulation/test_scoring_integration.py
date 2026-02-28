@@ -60,8 +60,17 @@ def _mock_db_for_trigger(run, note_count, notes):
     update_result = MagicMock()
     request_update_result = MagicMock()
 
+    platform_result = MagicMock()
+    platform_result.scalar_one_or_none.return_value = "playground"
+
     db.execute = AsyncMock(
-        side_effect=[count_result, batch_result, update_result, request_update_result]
+        side_effect=[
+            count_result,
+            batch_result,
+            update_result,
+            request_update_result,
+            platform_result,
+        ]
     )
     db.commit = AsyncMock()
     return db
@@ -221,7 +230,7 @@ async def test_trigger_scoring_status_helpful():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 4
+    assert db.execute.call_count == 5
 
 
 @pytest.mark.unit
@@ -587,7 +596,7 @@ async def test_trigger_scoring_batch_update_uses_case():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 2
-    assert db.execute.call_count == 4
+    assert db.execute.call_count == 5
 
 
 @pytest.mark.unit
@@ -670,9 +679,17 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    platform_result = MagicMock()
+    platform_result.scalar_one_or_none.return_value = "playground"
 
     db.execute = AsyncMock(
-        side_effect=[count_result, batch_result, note_update_result, request_update_result]
+        side_effect=[
+            count_result,
+            batch_result,
+            note_update_result,
+            request_update_result,
+            platform_result,
+        ]
     )
     db.commit = AsyncMock()
 
@@ -690,7 +707,7 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
 
         await trigger_scoring_for_simulation(run.id, db)
 
-    assert db.execute.call_count == 4
+    assert db.execute.call_count == 5
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
@@ -736,9 +753,17 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    platform_result = MagicMock()
+    platform_result.scalar_one_or_none.return_value = "playground"
 
     db.execute = AsyncMock(
-        side_effect=[count_result, batch_result, note_update_result, request_update_result]
+        side_effect=[
+            count_result,
+            batch_result,
+            note_update_result,
+            request_update_result,
+            platform_result,
+        ]
     )
     db.commit = AsyncMock()
 
@@ -757,7 +782,7 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 4
+    assert db.execute.call_count == 5
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
@@ -800,9 +825,17 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    platform_result = MagicMock()
+    platform_result.scalar_one_or_none.return_value = "playground"
 
     db.execute = AsyncMock(
-        side_effect=[count_result, batch_result, note_update_result, request_update_result]
+        side_effect=[
+            count_result,
+            batch_result,
+            note_update_result,
+            request_update_result,
+            platform_result,
+        ]
     )
     db.commit = AsyncMock()
 
@@ -821,7 +854,7 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 4
+    assert db.execute.call_count == 5
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})

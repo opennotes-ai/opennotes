@@ -9,6 +9,8 @@ from sqlalchemy import case, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
+from src.llm_config.models import CommunityServer
+from src.monitoring.metrics import notes_scored_total
 from src.notes import loaders as note_loaders
 from src.notes.models import Note, Rating, Request
 from src.notes.scoring.scorer_factory import ScorerFactory
@@ -59,6 +61,26 @@ class CommunityServerScoringResult:
     total_scores_computed: int
     tier_name: str
     scorer_type: str
+
+
+async def _record_scoring_metrics(
+    db: AsyncSession,
+    community_server_id: UUID,
+    total_scores_computed: int,
+    tier_value: str,
+) -> str:
+    """Record scoring metrics with platform label for Grafana filtering."""
+    platform = "unknown"
+    if total_scores_computed > 0:
+        platform_result = await db.execute(
+            select(CommunityServer.platform).where(CommunityServer.id == community_server_id)
+        )
+        platform = platform_result.scalar_one_or_none() or "unknown"
+        notes_scored_total.add(
+            total_scores_computed,
+            {"platform": platform, "tier": tier_value},
+        )
+    return platform
 
 
 async def score_community_server_notes(
@@ -227,6 +249,10 @@ async def score_community_server_notes(
 
     await db.commit()
 
+    platform = await _record_scoring_metrics(
+        db, community_server_id, total_scores_computed, tier.value
+    )
+
     logger.info(
         "Community server scoring completed",
         extra={
@@ -236,6 +262,7 @@ async def score_community_server_notes(
             "total_scores_computed": total_scores_computed,
             "tier": tier.value,
             "scorer_type": scorer_type,
+            "platform": platform,
         },
     )
 
@@ -380,6 +407,8 @@ async def trigger_scoring_for_simulation(
 
     _update_run_metrics(run, result)
     await db.commit()
+
+    await _record_scoring_metrics(db, community_server_id, scores_computed, tier.value)
 
     logger.info(
         "Scoring completed for simulation",

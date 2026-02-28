@@ -416,4 +416,23 @@ describe('VibecheckProgressService', () => {
       expect(embed.data.description).not.toContain('#off-topic');
     });
   });
+
+  describe('playground community server handling (task-1134)', () => {
+    it('should gracefully skip events from playground community servers', async () => {
+      const mockClient = createMockClient([]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({
+        platform_community_server_id: 'playground-server-id',
+        community_server_id: 'playground-cs-uuid' as any,
+      });
+
+      await service.handleProgressEvent(event);
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Guild not found for progress event',
+        expect.objectContaining({ platformId: 'playground-server-id' })
+      );
+      expect(mockGuildConfigService.get).not.toHaveBeenCalled();
+    });
+  });
 });

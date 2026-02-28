@@ -3332,6 +3332,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/simulations/{simulation_id}/analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Simulation Analysis */
+        get: operations["get_simulation_analysis_api_v2_simulations__simulation_id__analysis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/version": {
         parameters: {
             query?: never;
@@ -3766,6 +3783,27 @@ export interface components {
         AdminStatusUpdateRequest: {
             data: components["schemas"]["AdminStatusUpdateData"];
         };
+        /** AgentBehaviorData */
+        AgentBehaviorData: {
+            /** Agent Instance Id */
+            agent_instance_id: string;
+            /** Agent Name */
+            agent_name: string;
+            /** Notes Written */
+            notes_written: number;
+            /** Ratings Given */
+            ratings_given: number;
+            /** Turn Count */
+            turn_count: number;
+            /** State */
+            state: string;
+            /** Helpfulness Trend */
+            helpfulness_trend: string[];
+            /** Action Distribution */
+            action_distribution: {
+                [key: string]: number;
+            };
+        };
         /**
          * AllFusionWeightsResponse
          * @description Response model for all fusion weights.
@@ -3782,6 +3820,39 @@ export interface components {
              */
             datasets?: {
                 [key: string]: number;
+            };
+        };
+        /** AnalysisAttributes */
+        AnalysisAttributes: {
+            rating_distribution: components["schemas"]["RatingDistributionData"];
+            consensus_metrics: components["schemas"]["ConsensusMetricsData"];
+            scoring_coverage: components["schemas"]["ScoringCoverageData"];
+            /** Agent Behaviors */
+            agent_behaviors: components["schemas"]["AgentBehaviorData"][];
+            note_quality: components["schemas"]["NoteQualityData"];
+        };
+        /** AnalysisResource */
+        AnalysisResource: {
+            /**
+             * Type
+             * @default simulation-analysis
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["AnalysisAttributes"];
+        };
+        /** AnalysisResponse */
+        AnalysisResponse: {
+            data: components["schemas"]["AnalysisResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
             };
         };
         /** AuditLogResponse */
@@ -5025,6 +5096,19 @@ export interface components {
                 [key: string]: string;
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /** ConsensusMetricsData */
+        ConsensusMetricsData: {
+            /** Mean Agreement */
+            mean_agreement: number;
+            /** Polarization Index */
+            polarization_index: number;
+            /** Notes With Consensus */
+            notes_with_consensus: number;
+            /** Notes With Disagreement */
+            notes_with_disagreement: number;
+            /** Total Notes Rated */
+            total_notes_rated: number;
         };
         /**
          * ConversationFlashpointMatch
@@ -6772,6 +6856,19 @@ export interface components {
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
         };
+        /** NoteQualityData */
+        NoteQualityData: {
+            /** Avg Helpfulness Score */
+            avg_helpfulness_score: number | null;
+            /** Notes By Status */
+            notes_by_status: {
+                [key: string]: number;
+            };
+            /** Notes By Classification */
+            notes_by_classification: {
+                [key: string]: number;
+            };
+        };
         /**
          * NoteRequestsCreateAttributes
          * @description Attributes for creating note requests from flagged messages.
@@ -7307,6 +7404,19 @@ export interface components {
                 [key: string]: string;
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /** PerAgentRatingData */
+        PerAgentRatingData: {
+            /** Agent Instance Id */
+            agent_instance_id: string;
+            /** Agent Name */
+            agent_name: string;
+            /** Distribution */
+            distribution: {
+                [key: string]: number;
+            };
+            /** Total */
+            total: number;
         };
         /** PerformanceMetrics */
         PerformanceMetrics: {
@@ -7883,6 +7993,17 @@ export interface components {
             /** Helpfulnesslevel */
             helpfulnessLevel: string;
         };
+        /** RatingDistributionData */
+        RatingDistributionData: {
+            /** Overall */
+            overall: {
+                [key: string]: number;
+            };
+            /** Per Agent */
+            per_agent: components["schemas"]["PerAgentRatingData"][];
+            /** Total Ratings */
+            total_ratings: number;
+        };
         /**
          * RatingListResponse
          * @description JSON:API response for a list of rating resources.
@@ -8457,6 +8578,29 @@ export interface components {
          * @enum {string}
          */
         ScoreConfidence: "no_data" | "provisional" | "standard";
+        /** ScoringCoverageData */
+        ScoringCoverageData: {
+            /** Current Tier */
+            current_tier: string;
+            /** Total Scores Computed */
+            total_scores_computed: number;
+            /** Tier Distribution */
+            tier_distribution: {
+                [key: string]: number;
+            };
+            /** Scorer Breakdown */
+            scorer_breakdown: {
+                [key: string]: number;
+            };
+            /** Notes By Status */
+            notes_by_status: {
+                [key: string]: number;
+            };
+            /** Tiers Reached */
+            tiers_reached: string[];
+            /** Scorers Exercised */
+            scorers_exercised: string[];
+        };
         /**
          * ScoringResultAttributes
          * @description Attributes for scoring result resource.
@@ -15901,6 +16045,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResultsListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_simulation_analysis_api_v2_simulations__simulation_id__analysis_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisResponse"];
                 };
             };
             /** @description Validation Error */
