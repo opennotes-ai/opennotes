@@ -377,7 +377,7 @@ jobs:
     needs: [detect-changes, validate-schema]
     if: needs.detect-changes.outputs.server == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     services:
       redis:

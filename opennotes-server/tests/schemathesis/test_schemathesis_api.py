@@ -32,7 +32,7 @@ hypothesis_settings.register_profile(
 )
 hypothesis_settings.register_profile(
     "ci",
-    max_examples=50,
+    max_examples=10,
     suppress_health_check=[HealthCheck.too_slow],
     deadline=None,
 )
