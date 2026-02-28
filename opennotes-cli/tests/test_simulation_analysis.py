@@ -182,18 +182,20 @@ EMPTY_ANALYSIS_RESPONSE: dict = {
         "attributes": {
             "rating_distribution": {"overall": {}, "per_agent": [], "total_ratings": 0},
             "consensus_metrics": {
-                "mean_agreement": None,
-                "polarization_index": None,
+                "mean_agreement": 0.0,
+                "polarization_index": 0.0,
                 "notes_with_consensus": 0,
                 "notes_with_disagreement": 0,
                 "total_notes_rated": 0,
             },
             "scoring_coverage": {
-                "current_tier": None,
+                "current_tier": "minimal",
                 "total_scores_computed": 0,
                 "tier_distribution": {},
                 "scorer_breakdown": {},
                 "notes_by_status": {},
+                "tiers_reached": [],
+                "scorers_exercised": [],
             },
             "agent_behaviors": [],
             "note_quality": {
@@ -234,6 +236,74 @@ class TestAnalysisEmptyData:
 
         assert result.exit_code == 0
         assert "not available yet" in result.output
+
+
+ZERO_RATINGS_ANALYSIS_RESPONSE: dict = {
+    "data": {
+        "type": "simulation-analysis",
+        "id": "sim-zero-ratings",
+        "attributes": {
+            "rating_distribution": {"overall": {}, "per_agent": [], "total_ratings": 0},
+            "consensus_metrics": {
+                "mean_agreement": 0.0,
+                "polarization_index": 0.0,
+                "notes_with_consensus": 0,
+                "notes_with_disagreement": 0,
+                "total_notes_rated": 0,
+            },
+            "scoring_coverage": {
+                "current_tier": "minimal",
+                "total_scores_computed": 3,
+                "tier_distribution": {"minimal": 3},
+                "scorer_breakdown": {"BayesianAverage": 3},
+                "notes_by_status": {"scored": 3},
+                "tiers_reached": ["minimal"],
+                "scorers_exercised": ["BayesianAverage"],
+            },
+            "agent_behaviors": [],
+            "note_quality": {
+                "avg_helpfulness_score": None,
+                "notes_by_status": {"scored": 3},
+                "notes_by_classification": {},
+            },
+        },
+    }
+}
+
+
+class TestAnalysisZeroRatingsNAPath:
+    def test_terminal_shows_na_total_percentage(self, runner: CliRunner) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = ZERO_RATINGS_ANALYSIS_RESPONSE
+
+        mock_client = _make_mock_client(mock_resp)
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(cli, ["--local", "simulation", "analysis", "sim-zero-ratings"])
+
+        assert result.exit_code == 0
+        assert "N/A" in result.output
+        assert "Rating Distribution" in result.output
+        assert "Scoring" in result.output
+        assert "not available yet" not in result.output
+
+    def test_markdown_shows_na_total_percentage(self, runner: CliRunner) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = ZERO_RATINGS_ANALYSIS_RESPONSE
+
+        mock_client = _make_mock_client(mock_resp)
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "--format", "markdown", "sim-zero-ratings"]
+            )
+
+        assert result.exit_code == 0
+        assert "**N/A**" in result.output
+        assert "## Rating Distribution" in result.output
+        assert "not available yet" not in result.output
 
 
 class TestAnalysisNotFound:
