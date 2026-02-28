@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Annotated
+from uuid import UUID
 
 from dbos._error import (
     DBOSConflictingWorkflowError,
@@ -12,10 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.community_dependencies import (
-    get_community_server_by_platform_id,
-    verify_community_admin,
-)
+from src.auth.community_dependencies import verify_community_admin_by_uuid
 from src.auth.dependencies import get_current_user_or_api_key
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
@@ -49,7 +47,7 @@ class ScoreCommunityResponse(BaseModel):
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def score_community_server(
-    community_server_id: str,
+    community_server_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     http_request: Request,
@@ -59,19 +57,10 @@ async def score_community_server(
     Admin-only. Dispatches a DBOS workflow and returns the workflow ID.
     Returns 409 if scoring is already in progress.
     """
-    await verify_community_admin(community_server_id, current_user, db, http_request)
-
-    community = await get_community_server_by_platform_id(
-        db, community_server_id, platform=None, auto_create=False
-    )
-    if not community:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Community server {community_server_id} not found",
-        )
+    await verify_community_admin_by_uuid(community_server_id, current_user, db, http_request)
 
     try:
-        workflow_id = await dispatch_community_scoring(community.id)
+        workflow_id = await dispatch_community_scoring(community_server_id)
     except _DBOS_CONFLICT_ERRORS as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

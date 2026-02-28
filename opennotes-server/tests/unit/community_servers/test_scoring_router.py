@@ -70,22 +70,16 @@ def client(app_with_router):
 
 class TestScoreCommunityServerEndpoint:
     def test_returns_202_with_workflow_id_on_success(self, client, mock_community_member):
-        community_server_id = "guild-123"
-        mock_community = MagicMock()
-        mock_community.id = uuid4()
+        community_server_id = str(uuid4())
 
         with (
             patch(
-                "src.community_servers.scoring_router.verify_community_admin",
+                "src.community_servers.scoring_router.verify_community_admin_by_uuid",
                 new=AsyncMock(return_value=mock_community_member),
             ),
             patch(
-                "src.community_servers.scoring_router.get_community_server_by_platform_id",
-                new=AsyncMock(return_value=mock_community),
-            ),
-            patch(
                 "src.community_servers.scoring_router.dispatch_community_scoring",
-                new=AsyncMock(return_value=f"score-community-{mock_community.id}"),
+                new=AsyncMock(return_value=f"score-community-{community_server_id}"),
             ),
         ):
             response = client.post(f"/api/v2/community-servers/{community_server_id}/score")
@@ -93,37 +87,37 @@ class TestScoreCommunityServerEndpoint:
         assert response.status_code == 202
         data = response.json()
         assert "workflow_id" in data
-        assert data["workflow_id"] == f"score-community-{mock_community.id}"
+        assert data["workflow_id"] == f"score-community-{community_server_id}"
         assert "message" in data
 
-    def test_returns_404_for_unknown_community(self, client, mock_community_member):
-        with (
-            patch(
-                "src.community_servers.scoring_router.verify_community_admin",
-                new=AsyncMock(return_value=mock_community_member),
-            ),
-            patch(
-                "src.community_servers.scoring_router.get_community_server_by_platform_id",
-                new=AsyncMock(return_value=None),
+    def test_returns_404_when_verify_admin_raises_not_found(self, client):
+        community_server_id = str(uuid4())
+
+        with patch(
+            "src.community_servers.scoring_router.verify_community_admin_by_uuid",
+            new=AsyncMock(
+                side_effect=HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Community server {community_server_id} not found",
+                )
             ),
         ):
-            response = client.post("/api/v2/community-servers/nonexistent-guild/score")
+            response = client.post(f"/api/v2/community-servers/{community_server_id}/score")
 
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
 
+    def test_returns_422_for_invalid_uuid(self, client):
+        response = client.post("/api/v2/community-servers/not-a-uuid/score")
+        assert response.status_code == 422
+
     def test_returns_409_on_workflow_conflict_id(self, client, mock_community_member):
-        mock_community = MagicMock()
-        mock_community.id = uuid4()
+        community_server_id = str(uuid4())
 
         with (
             patch(
-                "src.community_servers.scoring_router.verify_community_admin",
+                "src.community_servers.scoring_router.verify_community_admin_by_uuid",
                 new=AsyncMock(return_value=mock_community_member),
-            ),
-            patch(
-                "src.community_servers.scoring_router.get_community_server_by_platform_id",
-                new=AsyncMock(return_value=mock_community),
             ),
             patch(
                 "src.community_servers.scoring_router.dispatch_community_scoring",
@@ -132,23 +126,18 @@ class TestScoreCommunityServerEndpoint:
                 ),
             ),
         ):
-            response = client.post("/api/v2/community-servers/guild-123/score")
+            response = client.post(f"/api/v2/community-servers/{community_server_id}/score")
 
         assert response.status_code == 409
         assert "already in progress" in response.json()["detail"].lower()
 
     def test_returns_409_on_conflicting_workflow(self, client, mock_community_member):
-        mock_community = MagicMock()
-        mock_community.id = uuid4()
+        community_server_id = str(uuid4())
 
         with (
             patch(
-                "src.community_servers.scoring_router.verify_community_admin",
+                "src.community_servers.scoring_router.verify_community_admin_by_uuid",
                 new=AsyncMock(return_value=mock_community_member),
-            ),
-            patch(
-                "src.community_servers.scoring_router.get_community_server_by_platform_id",
-                new=AsyncMock(return_value=mock_community),
             ),
             patch(
                 "src.community_servers.scoring_router.dispatch_community_scoring",
@@ -157,22 +146,17 @@ class TestScoreCommunityServerEndpoint:
                 ),
             ),
         ):
-            response = client.post("/api/v2/community-servers/guild-123/score")
+            response = client.post(f"/api/v2/community-servers/{community_server_id}/score")
 
         assert response.status_code == 409
 
     def test_returns_409_on_queue_deduplicated(self, client, mock_community_member):
-        mock_community = MagicMock()
-        mock_community.id = uuid4()
+        community_server_id = str(uuid4())
 
         with (
             patch(
-                "src.community_servers.scoring_router.verify_community_admin",
+                "src.community_servers.scoring_router.verify_community_admin_by_uuid",
                 new=AsyncMock(return_value=mock_community_member),
-            ),
-            patch(
-                "src.community_servers.scoring_router.get_community_server_by_platform_id",
-                new=AsyncMock(return_value=mock_community),
             ),
             patch(
                 "src.community_servers.scoring_router.dispatch_community_scoring",
@@ -183,47 +167,38 @@ class TestScoreCommunityServerEndpoint:
                 ),
             ),
         ):
-            response = client.post("/api/v2/community-servers/guild-123/score")
+            response = client.post(f"/api/v2/community-servers/{community_server_id}/score")
 
         assert response.status_code == 409
 
     def test_reraises_unexpected_errors(self, app_with_router, mock_community_member):
-        mock_community = MagicMock()
-        mock_community.id = uuid4()
+        community_server_id = str(uuid4())
 
         no_raise_client = TestClient(app_with_router, raise_server_exceptions=False)
 
         with (
             patch(
-                "src.community_servers.scoring_router.verify_community_admin",
+                "src.community_servers.scoring_router.verify_community_admin_by_uuid",
                 new=AsyncMock(return_value=mock_community_member),
-            ),
-            patch(
-                "src.community_servers.scoring_router.get_community_server_by_platform_id",
-                new=AsyncMock(return_value=mock_community),
             ),
             patch(
                 "src.community_servers.scoring_router.dispatch_community_scoring",
                 new=AsyncMock(side_effect=RuntimeError("Database connection failed")),
             ),
         ):
-            response = no_raise_client.post("/api/v2/community-servers/guild-123/score")
+            response = no_raise_client.post(
+                f"/api/v2/community-servers/{community_server_id}/score"
+            )
 
         assert response.status_code == 500
 
     def test_response_contains_message_with_community_id(self, client, mock_community_member):
-        community_server_id = "my-guild-456"
-        mock_community = MagicMock()
-        mock_community.id = uuid4()
+        community_server_id = str(uuid4())
 
         with (
             patch(
-                "src.community_servers.scoring_router.verify_community_admin",
+                "src.community_servers.scoring_router.verify_community_admin_by_uuid",
                 new=AsyncMock(return_value=mock_community_member),
-            ),
-            patch(
-                "src.community_servers.scoring_router.get_community_server_by_platform_id",
-                new=AsyncMock(return_value=mock_community),
             ),
             patch(
                 "src.community_servers.scoring_router.dispatch_community_scoring",
@@ -236,8 +211,10 @@ class TestScoreCommunityServerEndpoint:
         assert community_server_id in response.json()["message"]
 
     def test_returns_403_when_admin_check_fails(self, client):
+        community_server_id = str(uuid4())
+
         with patch(
-            "src.community_servers.scoring_router.verify_community_admin",
+            "src.community_servers.scoring_router.verify_community_admin_by_uuid",
             new=AsyncMock(
                 side_effect=HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -245,14 +222,16 @@ class TestScoreCommunityServerEndpoint:
                 )
             ),
         ):
-            response = client.post("/api/v2/community-servers/guild-123/score")
+            response = client.post(f"/api/v2/community-servers/{community_server_id}/score")
 
         assert response.status_code == 403
         assert "insufficient permissions" in response.json()["detail"].lower()
 
     def test_returns_403_detail_includes_required_roles(self, client):
+        community_server_id = str(uuid4())
+
         with patch(
-            "src.community_servers.scoring_router.verify_community_admin",
+            "src.community_servers.scoring_router.verify_community_admin_by_uuid",
             new=AsyncMock(
                 side_effect=HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -260,7 +239,7 @@ class TestScoreCommunityServerEndpoint:
                 )
             ),
         ):
-            response = client.post("/api/v2/community-servers/guild-123/score")
+            response = client.post(f"/api/v2/community-servers/{community_server_id}/score")
 
         detail = response.json()["detail"]
         assert "admin" in detail.lower()
