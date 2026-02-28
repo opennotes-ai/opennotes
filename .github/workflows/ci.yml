@@ -372,6 +372,114 @@ jobs:
           flags: server-integration
           name: opennotes-server-integration
 
+  schemathesis-tests:
+    name: Schemathesis API Tests
+    needs: [detect-changes, validate-schema]
+    if: needs.detect-changes.outputs.server == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install mise
+        uses: jdx/mise-action@v3
+        with:
+          install: true
+
+      - name: Load cached mise tools
+        id: cached-mise-tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/mise/installs
+          key: mise-${{ runner.os }}-${{ hashFiles('**/mise.toml', '**/.mise.toml') }}
+
+      - name: Setup CI environment
+        run: |
+          echo "Setting up CI environment from .env.ci.yaml..."
+          cp .env.ci.yaml .env.yaml
+
+      - name: Load cached venv
+        id: cached-uv-dependencies
+        uses: actions/cache@v4
+        with:
+          path: opennotes-server/.venv
+          key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock') }}
+
+      - name: Install dependencies
+        working-directory: opennotes-server
+        run: |
+          uv venv --allow-existing --relocatable
+          uv pip install -e ".[dev]"
+
+      - name: Build PostgreSQL with pgvector and pgroonga
+        run: |
+          docker build -t opennotes/postgres:18-pgvector-pgroonga docker/postgres
+          echo "PostgreSQL image built with pgvector and pgroonga extensions"
+
+      - name: Start PostgreSQL with pgvector and pgroonga
+        run: |
+          docker run -d --name postgres \
+            -e POSTGRES_USER=opennotes \
+            -e POSTGRES_PASSWORD=opennotes_password \
+            -e POSTGRES_DB=opennotes_test \
+            -p 5432:5432 \
+            opennotes/postgres:18-pgvector-pgroonga
+          timeout 60 bash -c 'until docker exec postgres pg_isready -U opennotes 2>/dev/null; do sleep 1; done'
+          echo "PostgreSQL with pgvector and pgroonga is ready"
+
+      - name: Start NATS with JetStream
+        run: |
+          docker run -d --name nats \
+            -p 4222:4222 -p 8222:8222 \
+            nats:2.10-alpine \
+            --jetstream --http_port=8222
+          timeout 30 bash -c 'until wget -q --spider http://localhost:8222/healthz 2>/dev/null; do sleep 1; done'
+          echo "NATS with JetStream is ready"
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://opennotes:opennotes_password@localhost:5432/opennotes_test
+          JWT_SECRET_KEY: dGVzdC1qd3Qtc2VjcmV0LWtleS1mb3ItY2ktdGVzdGluZy1vbmx5LWRvLW5vdC11c2UtaW4tcHJvZHVjdGlvbg==
+          CREDENTIALS_ENCRYPTION_KEY: cXRS8fmiHqGBVHwrX_9J7D4tHp_ZpFTMr3_XjP7kF1Y=
+          ENCRYPTION_MASTER_KEY: R3pKvHGkdPxBc6FZ4N8qYmV2sJwLxTnC9A7M5E1bUh0=
+        run: mise run db:migrate
+
+      - name: Run schemathesis tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://opennotes:opennotes_password@localhost:5432/opennotes_test
+          REDIS_URL: redis://localhost:6379/0
+          NATS_URL: nats://localhost:4222
+          HYPOTHESIS_PROFILE: ci
+          TESTING: "1"
+          ENVIRONMENT: test
+          RATE_LIMIT_ENABLED: "false"
+          JWT_SECRET_KEY: dGVzdC1qd3Qtc2VjcmV0LWtleS1mb3ItY2ktdGVzdGluZy1vbmx5LWRvLW5vdC11c2UtaW4tcHJvZHVjdGlvbg==
+          CREDENTIALS_ENCRYPTION_KEY: cXRS8fmiHqGBVHwrX_9J7D4tHp_ZpFTMr3_XjP7kF1Y=
+          ENCRYPTION_MASTER_KEY: R3pKvHGkdPxBc6FZ4N8qYmV2sJwLxTnC9A7M5E1bUh0=
+        run: mise run test:schemathesis
+
   validate-schema:
     name: Validate Database Schema
     needs: detect-changes
@@ -724,7 +832,7 @@ jobs:
 
   ci-success:
     name: CI Success
-    needs: [pre-commit, lint-python, lint-typescript, unit-tests-python, integration-tests-python, test-typescript, validate-schema, validate-schema-consistency, security-scan-python, security-scan-typescript, validate-api-endpoints]
+    needs: [pre-commit, lint-python, lint-typescript, unit-tests-python, integration-tests-python, schemathesis-tests, test-typescript, validate-schema, validate-schema-consistency, security-scan-python, security-scan-typescript, validate-api-endpoints]
     if: always()
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
