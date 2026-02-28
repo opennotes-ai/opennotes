@@ -1,6 +1,7 @@
 from http import HTTPStatus
 from typing import Any, cast
 from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 
@@ -12,7 +13,7 @@ from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
-    community_server_id: str,
+    community_server_id: UUID,
     *,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
@@ -66,7 +67,7 @@ def _build_response(
 
 
 def sync_detailed(
-    community_server_id: str,
+    community_server_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
@@ -79,7 +80,7 @@ def sync_detailed(
     Returns 409 if scoring is already in progress.
 
     Args:
-        community_server_id (str):
+        community_server_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -103,7 +104,7 @@ def sync_detailed(
 
 
 def sync(
-    community_server_id: str,
+    community_server_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
@@ -116,7 +117,7 @@ def sync(
     Returns 409 if scoring is already in progress.
 
     Args:
-        community_server_id (str):
+        community_server_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -135,7 +136,7 @@ def sync(
 
 
 async def asyncio_detailed(
-    community_server_id: str,
+    community_server_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
@@ -148,7 +149,7 @@ async def asyncio_detailed(
     Returns 409 if scoring is already in progress.
 
     Args:
-        community_server_id (str):
+        community_server_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -170,7 +171,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    community_server_id: str,
+    community_server_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
@@ -183,7 +184,7 @@ async def asyncio(
     Returns 409 if scoring is already in progress.
 
     Args:
-        community_server_id (str):
+        community_server_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 import click
 import httpx
@@ -22,6 +23,14 @@ error_console = Console(stderr=True)
 @click.pass_context
 def score(ctx: click.Context, community_server_id: str) -> None:
     """Trigger manual scoring for a community server."""
+    try:
+        UUID(community_server_id)
+    except ValueError:
+        error_console.print(
+            f"[red]Error:[/red] Invalid community server ID: '{community_server_id}'. Expected a UUID."
+        )
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
