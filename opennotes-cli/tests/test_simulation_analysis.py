@@ -19,18 +19,18 @@ SAMPLE_ANALYSIS_RESPONSE: dict = {
         "id": "sim-abc-123",
         "attributes": {
             "rating_distribution": {
-                "overall": {"helpful": 5, "not_helpful": 2, "somewhat_helpful": 3},
+                "overall": {"HELPFUL": 5, "NOT_HELPFUL": 2, "SOMEWHAT_HELPFUL": 3},
                 "per_agent": [
                     {
                         "agent_instance_id": "agent-1",
                         "agent_name": "Skeptic",
-                        "distribution": {"helpful": 3, "not_helpful": 1},
+                        "distribution": {"HELPFUL": 3, "NOT_HELPFUL": 1},
                         "total": 4,
                     },
                     {
                         "agent_instance_id": "agent-2",
                         "agent_name": "Optimist",
-                        "distribution": {"helpful": 2, "somewhat_helpful": 3, "not_helpful": 1},
+                        "distribution": {"HELPFUL": 2, "SOMEWHAT_HELPFUL": 3, "NOT_HELPFUL": 1},
                         "total": 6,
                     },
                 ],
@@ -60,7 +60,7 @@ SAMPLE_ANALYSIS_RESPONSE: dict = {
                     "ratings_given": 4,
                     "turn_count": 7,
                     "state": "completed",
-                    "helpfulness_trend": ["helpful", "not_helpful", "helpful"],
+                    "helpfulness_trend": ["HELPFUL", "NOT_HELPFUL", "HELPFUL"],
                     "action_distribution": {"write_note": 3, "rate_note": 4},
                 },
                 {
@@ -70,14 +70,14 @@ SAMPLE_ANALYSIS_RESPONSE: dict = {
                     "ratings_given": 6,
                     "turn_count": 11,
                     "state": "completed",
-                    "helpfulness_trend": ["helpful", "helpful", "somewhat_helpful"],
+                    "helpfulness_trend": ["HELPFUL", "HELPFUL", "SOMEWHAT_HELPFUL"],
                     "action_distribution": {"write_note": 5, "rate_note": 6},
                 },
             ],
             "note_quality": {
                 "avg_helpfulness_score": 0.72,
                 "notes_by_status": {"scored": 8, "pending": 2},
-                "notes_by_classification": {"helpful": 5, "not_helpful": 2, "needs_more_ratings": 1},
+                "notes_by_classification": {"HELPFUL": 5, "NOT_HELPFUL": 2, "NEEDS_MORE_RATINGS": 1},
             },
         },
     }
@@ -115,7 +115,7 @@ class TestAnalysisTerminalOutput:
 
         assert result.exit_code == 0
         assert "Rating Distribution" in result.output
-        assert "helpful" in result.output
+        assert "HELPFUL" in result.output
         assert "Consensus" in result.output
         assert "0.85" in result.output
         assert "0.12" in result.output
@@ -144,7 +144,7 @@ class TestAnalysisMarkdownOutput:
         assert "# Simulation Analysis: sim-abc-123" in result.output
         assert "## Rating Distribution" in result.output
         assert "| Rating | Count | % |" in result.output
-        assert "helpful" in result.output
+        assert "HELPFUL" in result.output
         assert "## Consensus Metrics" in result.output
         assert "Mean agreement: 0.85" in result.output
         assert "Polarization index: 0.12" in result.output
@@ -173,6 +173,67 @@ class TestAnalysisJsonOutput:
         assert "simulation-analysis" in result.output
         assert "sim-abc-123" in result.output
         assert "rating_distribution" in result.output
+
+
+EMPTY_ANALYSIS_RESPONSE: dict = {
+    "data": {
+        "type": "simulation-analysis",
+        "id": "sim-empty-001",
+        "attributes": {
+            "rating_distribution": {"overall": {}, "per_agent": [], "total_ratings": 0},
+            "consensus_metrics": {
+                "mean_agreement": None,
+                "polarization_index": None,
+                "notes_with_consensus": 0,
+                "notes_with_disagreement": 0,
+                "total_notes_rated": 0,
+            },
+            "scoring_coverage": {
+                "current_tier": None,
+                "total_scores_computed": 0,
+                "tier_distribution": {},
+                "scorer_breakdown": {},
+                "notes_by_status": {},
+            },
+            "agent_behaviors": [],
+            "note_quality": {
+                "avg_helpfulness_score": None,
+                "notes_by_status": {},
+                "notes_by_classification": {},
+            },
+        },
+    }
+}
+
+
+class TestAnalysisEmptyData:
+    def test_empty_analysis_terminal(self, runner: CliRunner) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = EMPTY_ANALYSIS_RESPONSE
+
+        mock_client = _make_mock_client(mock_resp)
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(cli, ["--local", "simulation", "analysis", "sim-empty-001"])
+
+        assert result.exit_code == 0
+        assert "not available yet" in result.output
+
+    def test_empty_analysis_markdown(self, runner: CliRunner) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = EMPTY_ANALYSIS_RESPONSE
+
+        mock_client = _make_mock_client(mock_resp)
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "--format", "markdown", "sim-empty-001"]
+            )
+
+        assert result.exit_code == 0
+        assert "not available yet" in result.output
 
 
 class TestAnalysisNotFound:

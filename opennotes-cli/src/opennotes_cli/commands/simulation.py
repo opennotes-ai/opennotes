@@ -487,10 +487,26 @@ def simulation_analysis(
 
     attrs = result.get("data", {}).get("attributes", {})
 
+    if _is_empty_analysis(attrs):
+        if output_format == "markdown":
+            click.echo(f"# Simulation Analysis: {simulation_id}\n\nAnalysis not available yet — simulation may still be running.")
+        else:
+            console.print("[yellow]Analysis not available yet — simulation may still be running.[/yellow]")
+        return
+
     if output_format == "markdown":
         _render_analysis_markdown(simulation_id, attrs)
     else:
         _render_analysis_terminal(attrs)
+
+
+def _is_empty_analysis(attrs: dict[str, Any]) -> bool:
+    if not attrs:
+        return True
+    total_ratings = attrs.get("rating_distribution", {}).get("total_ratings", 0)
+    total_notes = attrs.get("consensus_metrics", {}).get("total_notes_rated", 0)
+    total_scores = attrs.get("scoring_coverage", {}).get("total_scores_computed", 0)
+    return total_ratings == 0 and total_notes == 0 and total_scores == 0
 
 
 def _render_analysis_terminal(attrs: dict[str, Any]) -> None:
@@ -505,7 +521,8 @@ def _render_analysis_terminal(attrs: dict[str, Any]) -> None:
     for rating, count in sorted(overall.items()):
         pct = (count / total_ratings * 100) if total_ratings > 0 else 0
         table.add_row(rating, str(count), f"{pct:.1f}%")
-    table.add_row("[bold]Total[/bold]", f"[bold]{total_ratings}[/bold]", "[bold]100%[/bold]")
+    total_pct = "100.0%" if total_ratings > 0 else "N/A"
+    table.add_row("[bold]Total[/bold]", f"[bold]{total_ratings}[/bold]", f"[bold]{total_pct}[/bold]")
     console.print(table)
 
     per_agent = rating_dist.get("per_agent", [])
@@ -633,7 +650,8 @@ def _render_analysis_markdown(simulation_id: str, attrs: dict[str, Any]) -> None
     for rating, count in sorted(overall.items()):
         pct = (count / total_ratings * 100) if total_ratings > 0 else 0
         lines.append(f"| {rating} | {count} | {pct:.1f}% |")
-    lines.append(f"| **Total** | **{total_ratings}** | **100%** |")
+    total_pct = "100.0%" if total_ratings > 0 else "N/A"
+    lines.append(f"| **Total** | **{total_ratings}** | **{total_pct}** |")
     lines.append("")
 
     per_agent = rating_dist.get("per_agent", [])
