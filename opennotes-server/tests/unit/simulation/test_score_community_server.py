@@ -41,6 +41,20 @@ def _make_rating(*, created_at: datetime | None = None) -> MagicMock:
     return rating
 
 
+def _find_call_matching_sql(calls: list, pattern: str) -> MagicMock:
+    """Search all db.execute calls for one whose compiled SQL contains *pattern*."""
+    for call in calls:
+        stmt = call.args[0]
+        try:
+            compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+            sql_str = str(compiled)
+            if pattern.lower() in sql_str.lower():
+                return call
+        except Exception:
+            continue
+    raise AssertionError(f"No db.execute call matched SQL pattern {pattern!r}")
+
+
 def _make_score_response(
     note_id: UUID, score: float = 0.7, rating_count: int = 5
 ) -> NoteScoreResponse:
@@ -400,7 +414,7 @@ class TestScoreCommunityServerNotes:
             await score_community_server_notes(cs_id, db)
 
         all_calls = db.execute.call_args_list
-        request_update_call = all_calls[-2]
+        request_update_call = _find_call_matching_sql(all_calls, "requests")
         stmt = request_update_call.args[0]
 
         compiled = stmt.compile(compile_kwargs={"literal_binds": False})
@@ -432,7 +446,7 @@ class TestScoreCommunityServerNotes:
             await score_community_server_notes(cs_id, db)
 
         all_calls = db.execute.call_args_list
-        request_update_call = all_calls[-2]
+        request_update_call = _find_call_matching_sql(all_calls, "requests")
         stmt = request_update_call.args[0]
         compiled = stmt.compile(compile_kwargs={"literal_binds": False})
         sql_str = str(compiled)

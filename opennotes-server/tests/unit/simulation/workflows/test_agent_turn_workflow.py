@@ -571,10 +571,7 @@ class TestExecuteAgentTurnStep:
         mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
 
-        original_sim_agent_deps = None
-
         def capture_sim_agent_deps(*args, **kwargs):
-            nonlocal original_sim_agent_deps
             from src.simulation.agent import SimAgentDeps
 
             obj = SimAgentDeps(*args, **kwargs)
@@ -653,6 +650,10 @@ class TestExecuteAgentTurnStep:
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow._serialize_messages",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow._deserialize_messages",
                 return_value=[],
             ),
         ):

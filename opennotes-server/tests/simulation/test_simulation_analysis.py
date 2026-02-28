@@ -516,10 +516,45 @@ class TestAnalysisEdgeCases:
         assert "note_quality" in attrs
 
 
-class TestAnalysisUnauthenticated:
+class TestAnalysisAuth:
     @pytest.mark.asyncio
     async def test_analysis_unauthenticated(self):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(f"/api/v2/simulations/{uuid4()}/analysis")
             assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_analysis_non_admin_returns_403(self):
+        from src.auth.auth import create_access_token
+        from src.database import get_session_maker
+        from src.users.models import User
+
+        unique = uuid4().hex[:8]
+        user_data = {
+            "username": f"regular_{unique}",
+            "email": f"regular_{unique}@example.com",
+            "password": "TestPassword123!",
+            "full_name": "Regular User",
+        }
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post("/api/v1/auth/register", json=user_data)
+
+        async with get_session_maker()() as session:
+            from sqlalchemy import select
+
+            stmt = select(User).where(User.username == user_data["username"])
+            result = await session.execute(stmt)
+            user = result.scalar_one()
+
+        token = create_access_token(
+            {"sub": str(user.id), "username": user.username, "role": user.role}
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.headers.update({"Authorization": f"Bearer {token}"})
+            response = await client.get(f"/api/v2/simulations/{uuid4()}/analysis")
+            assert response.status_code == 403
