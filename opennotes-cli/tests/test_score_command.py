@@ -3,7 +3,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import httpx
 import pytest
 from click.testing import CliRunner
 
@@ -13,10 +12,6 @@ from opennotes_cli.cli import cli
 @pytest.fixture()
 def runner() -> CliRunner:
     return CliRunner()
-
-
-def _mock_csrf_response() -> httpx.Response:
-    return httpx.Response(200, text="OK", request=httpx.Request("GET", "http://test"))
 
 
 class TestScoreCommand:
