@@ -92,7 +92,7 @@ class TestBatchSubcommands:
 
 class TestSimulationSubcommands:
     @pytest.mark.parametrize(
-        "subcmd", ["list", "status", "create", "pause", "resume", "cancel"]
+        "subcmd", ["list", "status", "create", "pause", "resume", "cancel", "analysis"]
     )
     def test_subcommand_registered(self, runner: CliRunner, subcmd: str) -> None:
         result = runner.invoke(cli, ["simulation", subcmd, "--help"])
