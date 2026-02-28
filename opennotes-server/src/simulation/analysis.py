@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import load_only, selectinload
 
 from src.monitoring import get_logger
 from src.notes.models import Note, Rating
@@ -78,7 +78,7 @@ async def compute_rating_distribution(
             per_agent.append(
                 PerAgentRatingData(
                     agent_instance_id=str(inst.id),
-                    agent_name=inst.agent_profile.name,
+                    agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
                     distribution=dict(dist),
                     total=sum(dist.values()),
                 )
@@ -244,7 +244,9 @@ async def compute_agent_behavior_metrics(
 
     instance_ids = [inst.id for inst in instances]
     memories_result = await db.execute(
-        select(SimAgentMemory).where(SimAgentMemory.agent_instance_id.in_(instance_ids))
+        select(SimAgentMemory)
+        .where(SimAgentMemory.agent_instance_id.in_(instance_ids))
+        .options(load_only(SimAgentMemory.agent_instance_id, SimAgentMemory.recent_actions))
     )
     memories_by_instance: dict[UUID, SimAgentMemory] = {
         mem.agent_instance_id: mem for mem in memories_result.scalars().all()
@@ -266,7 +268,7 @@ async def compute_agent_behavior_metrics(
         behaviors.append(
             AgentBehaviorData(
                 agent_instance_id=str(inst.id),
-                agent_name=inst.agent_profile.name,
+                agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
                 notes_written=notes_by_author.get(inst.user_profile_id, 0),
                 ratings_given=ratings_by_rater.get(inst.user_profile_id, 0),
                 turn_count=inst.turn_count,
@@ -296,6 +298,7 @@ async def compute_note_quality(
         select(func.avg(Note.helpfulness_score)).where(
             Note.author_id.in_(user_profile_ids),
             Note.deleted_at.is_(None),
+            Note.status.in_(["CURRENTLY_RATED_HELPFUL", "CURRENTLY_RATED_NOT_HELPFUL"]),
         )
     )
     avg_score_raw = avg_result.scalar()

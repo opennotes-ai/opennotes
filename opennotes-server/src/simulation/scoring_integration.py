@@ -408,6 +408,8 @@ async def trigger_scoring_for_simulation(
     _update_run_metrics(run, result)
     await db.commit()
 
+    await _record_scoring_metrics(db, community_server_id, scores_computed, tier.value)
+
     logger.info(
         "Scoring completed for simulation",
         extra={
