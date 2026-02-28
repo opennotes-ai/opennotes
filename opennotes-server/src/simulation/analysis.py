@@ -194,7 +194,7 @@ async def compute_scoring_coverage(
     metrics = await get_scoring_metrics(simulation_run_id, db)
 
     run = await db.get(SimulationRun, simulation_run_id)
-    run_metrics = run.metrics or {} if run else {}
+    run_metrics = (run.metrics or {}) if run else {}
 
     return ScoringCoverageData(
         current_tier=metrics.current_tier,
