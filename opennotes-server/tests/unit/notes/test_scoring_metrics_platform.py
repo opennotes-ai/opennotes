@@ -22,24 +22,6 @@ class TestScoringMetricsPlatformLabel:
         mock_count_result = MagicMock()
         mock_count_result.scalar.return_value = 5
 
-        mock_platform_result = MagicMock()
-        mock_platform_result.scalar_one_or_none.return_value = "playground"
-
-        call_count = 0
-
-        async def mock_execute(stmt):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return mock_count_result
-            if "platform" in str(stmt) if hasattr(stmt, "__str__") else False:
-                return mock_platform_result
-            result = MagicMock()
-            result.scalars.return_value.all.return_value = []
-            result.scalar_one_or_none.return_value = "playground"
-            return result
-
-        mock_db.execute = AsyncMock(side_effect=mock_execute)
         mock_db.commit = AsyncMock()
 
         with (
@@ -91,6 +73,7 @@ class TestScoringMetricsPlatformLabel:
 
             await score_community_server_notes(community_server_id, mock_db)
 
-            if mock_metric.add.called:
-                call_args = mock_metric.add.call_args
-                assert "platform" in call_args[0][1]
+            mock_metric.add.assert_called_once()
+            call_args = mock_metric.add.call_args
+            assert call_args[0][0] == 1
+            assert call_args[0][1] == {"platform": "playground", "tier": "minimal"}
