@@ -451,3 +451,296 @@ def simulation_launch(
     console.print(
         f"[dim]Update:[/dim]   {cli_prefix} orchestrator apply {orch_id} --simulation {sim_id} --max-agents 20"
     )
+
+
+@simulation.command("analysis")
+@click.argument("simulation_id")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["terminal", "markdown"]),
+    default="terminal",
+    help="Output format.",
+)
+@click.pass_context
+def simulation_analysis(
+    ctx: click.Context, simulation_id: str, output_format: str
+) -> None:
+    """Show analysis results for a simulation run."""
+    cli_ctx: CliContext = ctx.obj
+    base_url = cli_ctx.base_url
+    client = cli_ctx.client
+
+    csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+    headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    response = client.get(
+        f"{base_url}/api/v2/simulations/{simulation_id}/analysis", headers=headers
+    )
+    handle_jsonapi_error(response)
+
+    result = response.json()
+
+    if cli_ctx.json_output:
+        console.print(json.dumps(result, indent=2, default=str))
+        return
+
+    attrs = result.get("data", {}).get("attributes", {})
+
+    if output_format == "markdown":
+        _render_analysis_markdown(simulation_id, attrs)
+    else:
+        _render_analysis_terminal(attrs)
+
+
+def _render_analysis_terminal(attrs: dict[str, Any]) -> None:
+    rating_dist = attrs.get("rating_distribution", {})
+    overall = rating_dist.get("overall", {})
+    total_ratings = rating_dist.get("total_ratings", 0)
+
+    table = Table(title="Rating Distribution", show_header=True, header_style="bold")
+    table.add_column("Rating")
+    table.add_column("Count", justify="right")
+    table.add_column("Percentage", justify="right")
+    for rating, count in sorted(overall.items()):
+        pct = (count / total_ratings * 100) if total_ratings > 0 else 0
+        table.add_row(rating, str(count), f"{pct:.1f}%")
+    table.add_row("[bold]Total[/bold]", f"[bold]{total_ratings}[/bold]", "[bold]100%[/bold]")
+    console.print(table)
+
+    per_agent = rating_dist.get("per_agent", [])
+    if per_agent:
+        agent_table = Table(
+            title="Per-Agent Rating Breakdown", show_header=True, header_style="bold"
+        )
+        agent_table.add_column("Agent")
+        agent_table.add_column("Ratings", justify="right")
+        agent_table.add_column("Distribution")
+        for agent in per_agent:
+            dist_parts = [f"{k}: {v}" for k, v in agent.get("distribution", {}).items()]
+            agent_table.add_row(
+                agent.get("agent_name", "N/A"),
+                str(agent.get("total", 0)),
+                ", ".join(dist_parts),
+            )
+        console.print(agent_table)
+
+    consensus = attrs.get("consensus_metrics", {})
+    consensus_content = (
+        f"[bold]Mean agreement:[/bold] {consensus.get('mean_agreement', 'N/A')}\n"
+        f"[bold]Polarization index:[/bold] {consensus.get('polarization_index', 'N/A')}\n"
+        f"[bold]Notes with consensus:[/bold] {consensus.get('notes_with_consensus', 'N/A')}\n"
+        f"[bold]Notes with disagreement:[/bold] {consensus.get('notes_with_disagreement', 'N/A')}\n"
+        f"[bold]Total notes rated:[/bold] {consensus.get('total_notes_rated', 'N/A')}"
+    )
+    console.print(Panel(consensus_content, title="[bold]Consensus Metrics[/bold]"))
+
+    scoring = attrs.get("scoring_coverage", {})
+    scoring_content = (
+        f"[bold]Current tier:[/bold] {scoring.get('current_tier', 'N/A')}\n"
+        f"[bold]Total scores computed:[/bold] {scoring.get('total_scores_computed', 'N/A')}"
+    )
+    console.print(Panel(scoring_content, title="[bold]Scoring Coverage[/bold]"))
+
+    tier_dist = scoring.get("tier_distribution", {})
+    if tier_dist:
+        tier_table = Table(show_header=True, header_style="bold")
+        tier_table.add_column("Tier")
+        tier_table.add_column("Count", justify="right")
+        for tier, count in sorted(tier_dist.items()):
+            tier_table.add_row(tier, str(count))
+        console.print(tier_table)
+
+    scorer_bd = scoring.get("scorer_breakdown", {})
+    if scorer_bd:
+        scorer_table = Table(show_header=True, header_style="bold")
+        scorer_table.add_column("Scorer")
+        scorer_table.add_column("Count", justify="right")
+        for scorer, count in sorted(scorer_bd.items()):
+            scorer_table.add_row(scorer, str(count))
+        console.print(scorer_table)
+
+    scoring_notes = scoring.get("notes_by_status", {})
+    if scoring_notes:
+        sn_table = Table(show_header=True, header_style="bold")
+        sn_table.add_column("Status")
+        sn_table.add_column("Count", justify="right")
+        for status, count in sorted(scoring_notes.items()):
+            sn_table.add_row(status, str(count))
+        console.print(sn_table)
+
+    behaviors = attrs.get("agent_behaviors", [])
+    if behaviors:
+        beh_table = Table(title="Agent Behaviors", show_header=True, header_style="bold")
+        beh_table.add_column("Agent")
+        beh_table.add_column("Notes", justify="right")
+        beh_table.add_column("Ratings", justify="right")
+        beh_table.add_column("Turns", justify="right")
+        beh_table.add_column("State")
+        beh_table.add_column("Top Actions")
+        for agent in behaviors:
+            actions = agent.get("action_distribution", {})
+            top = sorted(actions.items(), key=lambda x: x[1], reverse=True)[:3]
+            top_str = ", ".join(f"{k}: {v}" for k, v in top)
+            beh_table.add_row(
+                agent.get("agent_name", "N/A"),
+                str(agent.get("notes_written", 0)),
+                str(agent.get("ratings_given", 0)),
+                str(agent.get("turn_count", 0)),
+                agent.get("state", "N/A"),
+                top_str,
+            )
+        console.print(beh_table)
+
+    quality = attrs.get("note_quality", {})
+    avg_score = quality.get("avg_helpfulness_score")
+    avg_display = f"{avg_score}" if avg_score is not None else "N/A"
+    quality_content = f"[bold]Avg helpfulness score:[/bold] {avg_display}"
+    console.print(Panel(quality_content, title="[bold]Note Quality[/bold]"))
+
+    quality_status = quality.get("notes_by_status", {})
+    if quality_status:
+        qs_table = Table(show_header=True, header_style="bold")
+        qs_table.add_column("Status")
+        qs_table.add_column("Count", justify="right")
+        for status, count in sorted(quality_status.items()):
+            qs_table.add_row(status, str(count))
+        console.print(qs_table)
+
+    quality_class = quality.get("notes_by_classification", {})
+    if quality_class:
+        qc_table = Table(show_header=True, header_style="bold")
+        qc_table.add_column("Classification")
+        qc_table.add_column("Count", justify="right")
+        for cls, count in sorted(quality_class.items()):
+            qc_table.add_row(cls, str(count))
+        console.print(qc_table)
+
+
+def _render_analysis_markdown(simulation_id: str, attrs: dict[str, Any]) -> None:
+    lines: list[str] = []
+    lines.append(f"# Simulation Analysis: {simulation_id}")
+    lines.append("")
+
+    rating_dist = attrs.get("rating_distribution", {})
+    overall = rating_dist.get("overall", {})
+    total_ratings = rating_dist.get("total_ratings", 0)
+
+    lines.append("## Rating Distribution")
+    lines.append("")
+    lines.append("| Rating | Count | % |")
+    lines.append("|--------|-------|---|")
+    for rating, count in sorted(overall.items()):
+        pct = (count / total_ratings * 100) if total_ratings > 0 else 0
+        lines.append(f"| {rating} | {count} | {pct:.1f}% |")
+    lines.append(f"| **Total** | **{total_ratings}** | **100%** |")
+    lines.append("")
+
+    per_agent = rating_dist.get("per_agent", [])
+    if per_agent:
+        lines.append("### Per-Agent Breakdown")
+        lines.append("")
+        for agent in per_agent:
+            name = agent.get("agent_name", "N/A")
+            total = agent.get("total", 0)
+            lines.append(f"**{name}** ({total} ratings)")
+            dist = agent.get("distribution", {})
+            for r, c in sorted(dist.items()):
+                lines.append(f"- {r}: {c}")
+            lines.append("")
+
+    consensus = attrs.get("consensus_metrics", {})
+    lines.append("## Consensus Metrics")
+    lines.append("")
+    lines.append(f"- Mean agreement: {consensus.get('mean_agreement', 'N/A')}")
+    lines.append(f"- Polarization index: {consensus.get('polarization_index', 'N/A')}")
+    lines.append(f"- Notes with consensus: {consensus.get('notes_with_consensus', 'N/A')}")
+    lines.append(
+        f"- Notes with disagreement: {consensus.get('notes_with_disagreement', 'N/A')}"
+    )
+    lines.append(f"- Total notes rated: {consensus.get('total_notes_rated', 'N/A')}")
+    lines.append("")
+
+    scoring = attrs.get("scoring_coverage", {})
+    lines.append("## Scoring Coverage")
+    lines.append("")
+    lines.append(f"- Current tier: {scoring.get('current_tier', 'N/A')}")
+    lines.append(f"- Total scores computed: {scoring.get('total_scores_computed', 'N/A')}")
+    lines.append("")
+
+    tier_dist = scoring.get("tier_distribution", {})
+    if tier_dist:
+        lines.append("### Tier Distribution")
+        lines.append("")
+        lines.append("| Tier | Count |")
+        lines.append("|------|-------|")
+        for tier, count in sorted(tier_dist.items()):
+            lines.append(f"| {tier} | {count} |")
+        lines.append("")
+
+    scorer_bd = scoring.get("scorer_breakdown", {})
+    if scorer_bd:
+        lines.append("### Scorer Breakdown")
+        lines.append("")
+        lines.append("| Scorer | Count |")
+        lines.append("|--------|-------|")
+        for scorer, count in sorted(scorer_bd.items()):
+            lines.append(f"| {scorer} | {count} |")
+        lines.append("")
+
+    scoring_notes = scoring.get("notes_by_status", {})
+    if scoring_notes:
+        lines.append("### Notes by Status")
+        lines.append("")
+        lines.append("| Status | Count |")
+        lines.append("|--------|-------|")
+        for status, count in sorted(scoring_notes.items()):
+            lines.append(f"| {status} | {count} |")
+        lines.append("")
+
+    behaviors = attrs.get("agent_behaviors", [])
+    if behaviors:
+        lines.append("## Agent Behaviors")
+        lines.append("")
+        lines.append("| Agent | Notes Written | Ratings Given | Turns | State |")
+        lines.append("|-------|---------------|---------------|-------|-------|")
+        for agent in behaviors:
+            lines.append(
+                f"| {agent.get('agent_name', 'N/A')}"
+                f" | {agent.get('notes_written', 0)}"
+                f" | {agent.get('ratings_given', 0)}"
+                f" | {agent.get('turn_count', 0)}"
+                f" | {agent.get('state', 'N/A')} |"
+            )
+        lines.append("")
+
+    quality = attrs.get("note_quality", {})
+    avg_score = quality.get("avg_helpfulness_score")
+    avg_display = str(avg_score) if avg_score is not None else "N/A"
+
+    lines.append("## Note Quality")
+    lines.append("")
+    lines.append(f"- Avg helpfulness score: {avg_display}")
+    lines.append("")
+
+    quality_status = quality.get("notes_by_status", {})
+    if quality_status:
+        lines.append("### Notes by Status")
+        lines.append("")
+        lines.append("| Status | Count |")
+        lines.append("|--------|-------|")
+        for status, count in sorted(quality_status.items()):
+            lines.append(f"| {status} | {count} |")
+        lines.append("")
+
+    quality_class = quality.get("notes_by_classification", {})
+    if quality_class:
+        lines.append("### Notes by Classification")
+        lines.append("")
+        lines.append("| Classification | Count |")
+        lines.append("|----------------|-------|")
+        for cls, count in sorted(quality_class.items()):
+            lines.append(f"| {cls} | {count} |")
+        lines.append("")
+
+    click.echo("\n".join(lines))
