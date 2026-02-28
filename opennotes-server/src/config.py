@@ -65,36 +65,22 @@ class Settings(BaseSettings):
     ENVIRONMENT: Literal["development", "staging", "production", "test"] = "development"
     DEBUG: bool = Field(default=False)
     TESTING: bool = Field(default=False)
-    skip_startup_checks_raw: str = Field(
-        default="",
-        validation_alias="SKIP_STARTUP_CHECKS",
-        exclude=True,
-        description="Raw value for SKIP_STARTUP_CHECKS (use SKIP_STARTUP_CHECKS property for parsed list). "
-        "Accepts: comma-separated string, JSON array, or bracket notation with unquoted values.",
-    )
+    SKIP_STARTUP_CHECKS: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
-    @computed_field
-    @property
-    def SKIP_STARTUP_CHECKS(self) -> list[str]:  # noqa: N802 - uppercase for backward compatibility
-        """Parse SKIP_STARTUP_CHECKS into a list.
-
-        Supports multiple formats:
-        - Comma-separated: "database_schema,postgresql"
-        - JSON array: '["database_schema", "postgresql"]'
-        - Bracket notation (unquoted): "[all]" or "[a, b, c]"
-        """
-        v = self.skip_startup_checks_raw
-        if not v or not v.strip():
+    @field_validator("SKIP_STARTUP_CHECKS", mode="before")
+    @classmethod
+    def _parse_skip_startup_checks(cls, v: Any) -> list[str]:
+        if isinstance(v, list):
+            return v
+        if not isinstance(v, str) or not v.strip():
             return []
         v = v.strip()
-        if v.startswith("[") and v.endswith("]"):
-            try:
-                parsed = json.loads(v)
-                if isinstance(parsed, list):
-                    return [str(item).strip() for item in parsed]
-            except json.JSONDecodeError:
-                inner = v[1:-1]
-                return [item.strip() for item in inner.split(",") if item.strip()]
+        try:
+            parsed = json.loads(v)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed]
+        except (json.JSONDecodeError, TypeError):
+            pass
         return [check.strip() for check in v.split(",") if check.strip()]
 
     PROJECT_NAME: str = "Open Notes Server"
