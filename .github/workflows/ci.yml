@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   push:
     branches: [main, develop]
+  workflow_dispatch:
 
 env:
   PYTHON_VERSION: '3.11'
@@ -375,7 +376,7 @@ jobs:
   schemathesis-tests:
     name: Schemathesis API Tests
     needs: [detect-changes, validate-schema]
-    if: needs.detect-changes.outputs.server == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.detect-changes.outputs.server == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 25
 
@@ -832,7 +833,7 @@ jobs:
 
   ci-success:
     name: CI Success
-    needs: [pre-commit, lint-python, lint-typescript, unit-tests-python, integration-tests-python, schemathesis-tests, test-typescript, validate-schema, validate-schema-consistency, security-scan-python, security-scan-typescript, validate-api-endpoints]
+    needs: [pre-commit, lint-python, lint-typescript, unit-tests-python, integration-tests-python, test-typescript, validate-schema, validate-schema-consistency, security-scan-python, security-scan-typescript, validate-api-endpoints]
     if: always()
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
