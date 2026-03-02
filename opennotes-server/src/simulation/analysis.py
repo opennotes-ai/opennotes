@@ -8,12 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
 from src.monitoring import get_logger
+from src.notes import loaders
 from src.notes.models import Note, Rating
 from src.simulation.models import SimAgentInstance, SimAgentMemory, SimulationRun
 from src.simulation.schemas import (
     AgentBehaviorData,
     AnalysisAttributes,
     ConsensusMetricsData,
+    DetailedNoteData,
+    DetailedRatingData,
     NoteQualityData,
     PerAgentRatingData,
     RatingDistributionData,
@@ -350,3 +353,95 @@ async def compute_full_analysis(
         agent_behaviors=agent_behaviors,
         note_quality=note_quality,
     )
+
+
+async def compute_detailed_notes(
+    simulation_run_id: UUID,
+    db: AsyncSession,
+    *,
+    offset: int = 0,
+    limit: int = 20,
+) -> tuple[list[DetailedNoteData], int]:
+    instances = await _get_agent_instances(simulation_run_id, db)
+    user_profile_ids = [inst.user_profile_id for inst in instances]
+
+    if not user_profile_ids:
+        return [], 0
+
+    profile_to_instance: dict[UUID, SimAgentInstance] = {
+        inst.user_profile_id: inst for inst in instances
+    }
+
+    count_result = await db.execute(
+        select(func.count(Note.id)).where(
+            Note.author_id.in_(user_profile_ids),
+            Note.deleted_at.is_(None),
+        )
+    )
+    total = count_result.scalar() or 0
+
+    notes_result = await db.execute(
+        select(Note)
+        .where(
+            Note.author_id.in_(user_profile_ids),
+            Note.deleted_at.is_(None),
+        )
+        .options(*loaders.detailed())
+        .order_by(Note.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    notes = notes_result.scalars().all()
+
+    rater_profile_ids = set()
+    for note in notes:
+        for rating in note.ratings:
+            rater_profile_ids.add(rating.rater_id)
+
+    detailed_notes: list[DetailedNoteData] = []
+    for note in notes:
+        author_inst = profile_to_instance.get(note.author_id)
+        author_agent_name = "Unknown"
+        author_agent_instance_id = ""
+        if author_inst:
+            author_agent_name = (
+                author_inst.agent_profile.name if author_inst.agent_profile else "Unknown"
+            )
+            author_agent_instance_id = str(author_inst.id)
+
+        rating_data_list: list[DetailedRatingData] = []
+        for rating in note.ratings:
+            rater_inst = profile_to_instance.get(rating.rater_id)
+            rater_name = "Unknown"
+            rater_inst_id = ""
+            if rater_inst:
+                rater_name = (
+                    rater_inst.agent_profile.name if rater_inst.agent_profile else "Unknown"
+                )
+                rater_inst_id = str(rater_inst.id)
+
+            rating_data_list.append(
+                DetailedRatingData(
+                    rater_agent_name=rater_name,
+                    rater_agent_instance_id=rater_inst_id,
+                    helpfulness_level=rating.helpfulness_level,
+                    created_at=rating.created_at,
+                )
+            )
+
+        detailed_notes.append(
+            DetailedNoteData(
+                note_id=str(note.id),
+                summary=note.summary,
+                classification=note.classification,
+                status=note.status,
+                helpfulness_score=note.helpfulness_score,
+                author_agent_name=author_agent_name,
+                author_agent_instance_id=author_agent_instance_id,
+                request_id=note.request_id,
+                created_at=note.created_at,
+                ratings=rating_data_list,
+            )
+        )
+
+    return detailed_notes, total
