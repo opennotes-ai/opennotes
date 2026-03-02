@@ -1,1786 +1,270 @@
-"""Unit tests for ChunkEmbeddingService."""
-
-from unittest.mock import AsyncMock, MagicMock
+import threading
+from contextlib import contextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
-from src.fact_checking.chunk_models import ChunkEmbedding
 
-
-def _create_mock_db_for_insert(
-    *, chunk_exists_initially: bool, inserted: bool, returned_chunk: ChunkEmbedding
-) -> AsyncMock:
-    """
-    Create a mock database session for get_or_create_chunk tests.
-
-    The new implementation uses INSERT ON CONFLICT DO NOTHING, so we need to mock:
-    1. First SELECT (check if chunk exists)
-    2. INSERT with ON CONFLICT (if chunk doesn't exist initially)
-    3. Second SELECT (to fetch the actual chunk after insert)
-
-    Args:
-        chunk_exists_initially: Whether the chunk exists on first SELECT
-        inserted: Whether the INSERT actually inserted (rowcount > 0)
-        returned_chunk: The chunk to return from the final SELECT
-    """
-    mock_db = AsyncMock()
-
-    if chunk_exists_initially:
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalar_one_or_none.return_value = returned_chunk
-        mock_db.execute.return_value = mock_lookup_result
-    else:
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalar_one_or_none.return_value = None
-
-        mock_insert_result = MagicMock()
-        mock_insert_result.rowcount = 1 if inserted else 0
-
-        mock_final_lookup = MagicMock()
-        mock_final_lookup.scalar_one.return_value = returned_chunk
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            mock_insert_result,
-            mock_final_lookup,
-        ]
-
-    return mock_db
-
-
-class TestGetOrCreateChunk:
-    """Tests for ChunkEmbeddingService.get_or_create_chunk() method."""
+class TestPromotionEnqueuesChunkingTask:
+    """Test that promotion enqueues chunking task via routing function (task-1030, task-1056.01)."""
 
     @pytest.mark.asyncio
-    async def test_creates_new_chunk_when_not_exists(self):
-        """Test that a new chunk is created when text doesn't exist in database."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock(
-            return_value=([0.1] * 1536, "litellm", "text-embedding-3-small")
-        )
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_text = "This is a test chunk."
-        expected_chunk = ChunkEmbedding(
-            chunk_text=chunk_text,
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        expected_chunk.id = uuid4()
-
-        mock_db = _create_mock_db_for_insert(
-            chunk_exists_initially=False,
-            inserted=True,
-            returned_chunk=expected_chunk,
-        )
-
-        community_server_id = uuid4()
-
-        chunk, is_created = await service.get_or_create_chunk(
-            db=mock_db,
-            chunk_text=chunk_text,
-            community_server_id=community_server_id,
-        )
-
-        assert is_created is True
-        assert chunk.chunk_text == chunk_text
-        mock_llm_service.generate_embedding.assert_called_once_with(
-            mock_db, chunk_text, community_server_id
-        )
-
-    @pytest.mark.asyncio
-    async def test_returns_existing_chunk_when_exists(self):
-        """Test that existing chunk is returned without generating new embedding."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        existing_chunk = MagicMock(spec=ChunkEmbedding)
-        existing_chunk.id = uuid4()
-        existing_chunk.chunk_text = "This is a test chunk."
-        existing_chunk.embedding = [0.1] * 1536
-
-        mock_db = _create_mock_db_for_insert(
-            chunk_exists_initially=True,
-            inserted=False,
-            returned_chunk=existing_chunk,
-        )
-
-        community_server_id = uuid4()
-
-        chunk, is_created = await service.get_or_create_chunk(
-            db=mock_db,
-            chunk_text="This is a test chunk.",
-            community_server_id=community_server_id,
-        )
-
-        assert is_created is False
-        assert chunk == existing_chunk
-        mock_llm_service.generate_embedding.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_stores_embedding_provider_and_model(self):
-        """Test that embedding provider and model are stored with new chunk."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock(
-            return_value=([0.2] * 1536, "anthropic", "voyage-2")
-        )
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_text = "Test chunk"
-        expected_chunk = ChunkEmbedding(
-            chunk_text=chunk_text,
-            embedding=[0.2] * 1536,
-            embedding_provider="anthropic",
-            embedding_model="voyage-2",
-        )
-        expected_chunk.id = uuid4()
-
-        mock_db = _create_mock_db_for_insert(
-            chunk_exists_initially=False,
-            inserted=True,
-            returned_chunk=expected_chunk,
-        )
-
-        chunk, _ = await service.get_or_create_chunk(
-            db=mock_db,
-            chunk_text=chunk_text,
-            community_server_id=uuid4(),
-        )
-
-        assert chunk.embedding_provider == "anthropic"
-        assert chunk.embedding_model == "voyage-2"
-
-    @pytest.mark.asyncio
-    async def test_handles_race_condition_gracefully(self):
-        """Test that concurrent chunk creation is handled via INSERT ON CONFLICT.
-
-        Simulates the race condition where:
-        1. First SELECT finds no existing chunk
-        2. Embedding is generated
-        3. INSERT ON CONFLICT DO NOTHING returns rowcount=0 (another request won)
-        4. Final SELECT retrieves the winner's chunk
-        """
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock(
-            return_value=([0.1] * 1536, "litellm", "text-embedding-3-small")
-        )
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_text = "Concurrent chunk text"
-        winner_chunk = ChunkEmbedding(
-            chunk_text=chunk_text,
-            embedding=[0.9] * 1536,
-            embedding_provider="other-provider",
-            embedding_model="other-model",
-        )
-        winner_chunk.id = uuid4()
-
-        mock_db = _create_mock_db_for_insert(
-            chunk_exists_initially=False,
-            inserted=False,
-            returned_chunk=winner_chunk,
-        )
-
-        community_server_id = uuid4()
-
-        chunk, is_created = await service.get_or_create_chunk(
-            db=mock_db,
-            chunk_text=chunk_text,
-            community_server_id=community_server_id,
-        )
-
-        assert is_created is False
-        assert chunk == winner_chunk
-        assert chunk.embedding_provider == "other-provider"
-        mock_llm_service.generate_embedding.assert_called_once()
-
-
-class TestUpdateIsCommonFlag:
-    """Tests for ChunkEmbeddingService.update_is_common_flag() method."""
-
-    @pytest.mark.asyncio
-    async def test_sets_is_common_true_when_multiple_references(self):
-        """Test is_common is True when chunk appears in multiple documents."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        mock_db = AsyncMock()
-        chunk_id = uuid4()
-
-        fact_check_count_result = MagicMock()
-        fact_check_count_result.scalar_one.return_value = 2
-
-        previously_seen_count_result = MagicMock()
-        previously_seen_count_result.scalar_one.return_value = 1
-
-        mock_db.execute.side_effect = [
-            fact_check_count_result,
-            previously_seen_count_result,
-            MagicMock(),
-        ]
-
-        is_common = await service.update_is_common_flag(db=mock_db, chunk_id=chunk_id)
-
-        assert is_common is True
-        assert mock_db.execute.call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_sets_is_common_false_when_single_reference(self):
-        """Test is_common is False when chunk appears only once."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        mock_db = AsyncMock()
-        chunk_id = uuid4()
-
-        fact_check_count_result = MagicMock()
-        fact_check_count_result.scalar_one.return_value = 1
-
-        previously_seen_count_result = MagicMock()
-        previously_seen_count_result.scalar_one.return_value = 0
-
-        mock_db.execute.side_effect = [
-            fact_check_count_result,
-            previously_seen_count_result,
-            MagicMock(),
-        ]
-
-        is_common = await service.update_is_common_flag(db=mock_db, chunk_id=chunk_id)
-
-        assert is_common is False
-
-    @pytest.mark.asyncio
-    async def test_counts_both_join_tables(self):
-        """Test that update_is_common_flag counts both FactCheckChunk and PreviouslySeenChunk.
-
-        With IS_COMMON_THRESHOLD=2, a chunk needs total_count > 2 to be common.
-        """
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        mock_db = AsyncMock()
-        chunk_id = uuid4()
-
-        fact_check_count_result = MagicMock()
-        fact_check_count_result.scalar_one.return_value = 2
-
-        previously_seen_count_result = MagicMock()
-        previously_seen_count_result.scalar_one.return_value = 1
-
-        mock_db.execute.side_effect = [
-            fact_check_count_result,
-            previously_seen_count_result,
-            MagicMock(),
-        ]
-
-        is_common = await service.update_is_common_flag(db=mock_db, chunk_id=chunk_id)
-
-        assert is_common is True
-
-    @pytest.mark.asyncio
-    async def test_zero_references_sets_is_common_false(self):
-        """Test is_common is False when chunk has no references."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        mock_db = AsyncMock()
-        chunk_id = uuid4()
-
-        fact_check_count_result = MagicMock()
-        fact_check_count_result.scalar_one.return_value = 0
-
-        previously_seen_count_result = MagicMock()
-        previously_seen_count_result.scalar_one.return_value = 0
-
-        mock_db.execute.side_effect = [
-            fact_check_count_result,
-            previously_seen_count_result,
-            MagicMock(),
-        ]
-
-        is_common = await service.update_is_common_flag(db=mock_db, chunk_id=chunk_id)
-
-        assert is_common is False
-
-
-def _build_chunk_embed_mock_sequence(
-    chunk_texts: list[str],
-    *,
-    chunks_exist: list[bool] | None = None,
-) -> tuple[list[MagicMock], list[ChunkEmbedding]]:
-    """
-    Build mock execute side effects for chunk_and_embed tests.
-
-    For each chunk, we need get_or_create_chunk:
-    - SELECT (lookup) -> returns chunk if exists, None otherwise
-    - If not exists: INSERT (with rowcount=1), then SELECT (final lookup)
-
-    Note: batch_update_is_common_flags is called once at the end (not per-chunk)
-    and should be mocked separately via service method patching.
-
-    Returns:
-        Tuple of (execute side effects list, created chunks list)
-    """
-    if chunks_exist is None:
-        chunks_exist = [False] * len(chunk_texts)
-
-    side_effects = []
-    created_chunks = []
-
-    for i, chunk_text in enumerate(chunk_texts):
-        chunk = ChunkEmbedding(
-            chunk_text=chunk_text,
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        chunk.id = uuid4()
-        created_chunks.append(chunk)
-
-        if chunks_exist[i]:
-            mock_lookup_result = MagicMock()
-            mock_lookup_result.scalar_one_or_none.return_value = chunk
-            side_effects.append(mock_lookup_result)
-        else:
-            mock_lookup_result = MagicMock()
-            mock_lookup_result.scalar_one_or_none.return_value = None
-            side_effects.append(mock_lookup_result)
-
-            mock_insert_result = MagicMock()
-            mock_insert_result.rowcount = 1
-            side_effects.append(mock_insert_result)
-
-            mock_final_lookup = MagicMock()
-            mock_final_lookup.scalar_one.return_value = chunk
-            side_effects.append(mock_final_lookup)
-
-    return side_effects, created_chunks
-
-
-def _create_batch_mock_result(
-    chunk_texts: list[str],
-    *,
-    chunks_exist: list[bool] | None = None,
-) -> tuple[list[tuple[ChunkEmbedding, bool]], list[ChunkEmbedding]]:
-    """
-    Create mock return value for get_or_create_chunks_batch.
-
-    Args:
-        chunk_texts: List of chunk text contents
-        chunks_exist: Which chunks already existed (default: all new)
-
-    Returns:
-        Tuple of (batch result list, created chunks list)
-    """
-    if chunks_exist is None:
-        chunks_exist = [False] * len(chunk_texts)
-
-    created_chunks = []
-    batch_result = []
-
-    for i, chunk_text in enumerate(chunk_texts):
-        chunk = ChunkEmbedding(
-            chunk_text=chunk_text,
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        chunk.id = uuid4()
-        created_chunks.append(chunk)
-        batch_result.append((chunk, not chunks_exist[i]))
-
-    return batch_result, created_chunks
-
-
-class TestChunkAndEmbedFactCheck:
-    """Tests for ChunkEmbeddingService.chunk_and_embed_fact_check() method."""
-
-    @pytest.mark.asyncio
-    async def test_chunks_text_and_creates_embeddings(self):
-        """Test that text is chunked and embeddings are created for each chunk."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Chunk one.", "Chunk two."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        batch_result, _ = _create_batch_mock_result(chunk_texts)
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        execute_calls: list[object] = []
-        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
-
-        fact_check_id = uuid4()
-        community_server_id = uuid4()
-
-        chunks = await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=fact_check_id,
-            text="Chunk one. Chunk two.",
-            community_server_id=community_server_id,
-        )
-
-        mock_chunking_service.chunk_text.assert_called_once_with("Chunk one. Chunk two.")
-        service.get_or_create_chunks_batch.assert_called_once_with(
-            db=mock_db,
-            chunk_texts=chunk_texts,
-            community_server_id=community_server_id,
-        )
-        assert len(chunks) == 2
-        assert all(isinstance(c, ChunkEmbedding) for c in chunks)
-
-        # Verify upsert INSERT was called (uses db.execute instead of db.add)
-        insert_calls = [c for c in execute_calls if "INSERT" in str(c).upper()]
-        assert len(insert_calls) >= 1
-
-        service.batch_update_is_common_flags.assert_called_once()
-        call_args = service.batch_update_is_common_flags.call_args
-        assert len(call_args[0][1]) == 2
-
-    @pytest.mark.asyncio
-    async def test_creates_join_entries_for_fact_check(self):
-        """Test that FactCheckChunk join entries are created via upsert."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Single chunk."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        batch_result, _created_chunks = _create_batch_mock_result(chunk_texts)
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        execute_calls: list[object] = []
-        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
-
-        fact_check_id = uuid4()
-        community_server_id = uuid4()
-
-        chunks = await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=fact_check_id,
-            text="Single chunk.",
-            community_server_id=community_server_id,
-        )
-
-        # Verify INSERT statement for fact_check_chunks was executed
-        insert_calls = [
-            c
-            for c in execute_calls
-            if "INSERT" in str(c).upper() and "fact_check_chunks" in str(c).lower()
-        ]
-        assert len(insert_calls) >= 1, "Expected INSERT for fact_check_chunks"
-        assert len(chunks) == 1
-
-    @pytest.mark.asyncio
-    async def test_reuses_existing_chunks(self):
-        """Test that existing chunks are reused without generating new embeddings."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Existing chunk."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embeddings_batch = AsyncMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        batch_result, expected_chunks = _create_batch_mock_result(chunk_texts, chunks_exist=[True])
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        added_objects: list[object] = []
-        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
-
-        chunks = await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=uuid4(),
-            text="Existing chunk.",
-            community_server_id=uuid4(),
-        )
-
-        assert len(chunks) == 1
-        assert chunks[0] == expected_chunks[0]
-
-        chunk_embeddings_added = [o for o in added_objects if isinstance(o, ChunkEmbedding)]
-        assert len(chunk_embeddings_added) == 0
-
-
-class TestChunkAndEmbedPreviouslySeen:
-    """Tests for ChunkEmbeddingService.chunk_and_embed_previously_seen() method."""
-
-    @pytest.mark.asyncio
-    async def test_chunks_text_and_creates_embeddings(self):
-        """Test that text is chunked and embeddings are created."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Chunk A.", "Chunk B."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        batch_result, _ = _create_batch_mock_result(chunk_texts)
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        added_objects: list[object] = []
-        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
-
-        previously_seen_id = uuid4()
-        community_server_id = uuid4()
-
-        chunks = await service.chunk_and_embed_previously_seen(
-            db=mock_db,
-            previously_seen_id=previously_seen_id,
-            text="Chunk A. Chunk B.",
-            community_server_id=community_server_id,
-        )
-
-        mock_chunking_service.chunk_text.assert_called_once()
-        service.get_or_create_chunks_batch.assert_called_once_with(
-            db=mock_db,
-            chunk_texts=chunk_texts,
-            community_server_id=community_server_id,
-        )
-        assert len(chunks) == 2
-        assert all(isinstance(c, ChunkEmbedding) for c in chunks)
-
-        service.batch_update_is_common_flags.assert_called_once()
-        call_args = service.batch_update_is_common_flags.call_args
-        assert len(call_args[0][1]) == 2
-
-    @pytest.mark.asyncio
-    async def test_creates_join_entries_for_previously_seen(self):
-        """Test that PreviouslySeenChunk join entries are created via upsert."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Single chunk."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        batch_result, _ = _create_batch_mock_result(chunk_texts)
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        execute_calls: list[object] = []
-        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
-
-        previously_seen_id = uuid4()
-        community_server_id = uuid4()
-
-        chunks = await service.chunk_and_embed_previously_seen(
-            db=mock_db,
-            previously_seen_id=previously_seen_id,
-            text="Single chunk.",
-            community_server_id=community_server_id,
-        )
-
-        # Verify INSERT statement for previously_seen_chunks was executed
-        insert_calls = [
-            c
-            for c in execute_calls
-            if "INSERT" in str(c).upper() and "previously_seen_chunks" in str(c).lower()
-        ]
-        assert len(insert_calls) >= 1, "Expected INSERT for previously_seen_chunks"
-        assert len(chunks) == 1
-
-    @pytest.mark.asyncio
-    async def test_reuses_existing_chunks(self):
-        """Test that existing chunks are reused."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Shared chunk."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embeddings_batch = AsyncMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        batch_result, expected_chunks = _create_batch_mock_result(chunk_texts, chunks_exist=[True])
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        added_objects: list[object] = []
-        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
-
-        chunks = await service.chunk_and_embed_previously_seen(
-            db=mock_db,
-            previously_seen_id=uuid4(),
-            text="Shared chunk.",
-            community_server_id=uuid4(),
-        )
-
-        assert len(chunks) == 1
-        assert chunks[0] == expected_chunks[0]
-
-
-class TestChunkEmbeddingServiceInit:
-    """Tests for ChunkEmbeddingService initialization."""
-
-    def test_init_with_dependencies(self):
-        """Test that service initializes with required dependencies."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        assert service.chunking_service == mock_chunking_service
-        assert service.llm_service == mock_llm_service
-
-
-class TestOptionalCommunityServerId:
-    """Tests for optional community_server_id (global fallback) behavior."""
-
-    @pytest.mark.asyncio
-    async def test_get_or_create_chunk_with_none_community_server_id(self):
-        """Test that get_or_create_chunk works with None community_server_id (global fallback)."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock(
-            return_value=([0.1] * 1536, "litellm", "text-embedding-3-small")
-        )
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_text = "Test chunk with global fallback."
-        expected_chunk = ChunkEmbedding(
-            chunk_text=chunk_text,
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        expected_chunk.id = uuid4()
-
-        mock_db = _create_mock_db_for_insert(
-            chunk_exists_initially=False,
-            inserted=True,
-            returned_chunk=expected_chunk,
-        )
-
-        chunk, is_created = await service.get_or_create_chunk(
-            db=mock_db,
-            chunk_text=chunk_text,
-            community_server_id=None,
-        )
-
-        assert is_created is True
-        assert chunk.chunk_text == chunk_text
-        mock_llm_service.generate_embedding.assert_called_once_with(mock_db, chunk_text, None)
-
-    @pytest.mark.asyncio
-    async def test_chunk_and_embed_fact_check_with_none_community_server_id(self):
-        """Test that chunk_and_embed_fact_check works with None community_server_id."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Chunk one."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        batch_result, _ = _create_batch_mock_result(chunk_texts)
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        mock_db.add = MagicMock()
-
-        fact_check_id = uuid4()
-
-        chunks = await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=fact_check_id,
-            text="Chunk one.",
-            community_server_id=None,
-        )
-
-        service.get_or_create_chunks_batch.assert_called_once_with(
-            db=mock_db,
-            chunk_texts=chunk_texts,
-            community_server_id=None,
-        )
-        assert len(chunks) == 1
-
-
-class TestEmptyTextHandling:
-    """Tests for edge cases with empty or minimal text."""
-
-    @pytest.mark.asyncio
-    async def test_empty_chunk_list_returns_empty(self):
-        """Test that an empty chunk list returns empty results."""
-        mock_chunking_service = MagicMock()
-        mock_chunking_service.chunk_text.return_value = []
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-        service.get_or_create_chunks_batch = AsyncMock(return_value=[])
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        mock_db.add = MagicMock()
-
-        chunks = await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=uuid4(),
-            text="",
-            community_server_id=uuid4(),
-        )
-
-        assert len(chunks) == 0
-        mock_db.add.assert_not_called()
-        service.batch_update_is_common_flags.assert_called_once_with(mock_db, [])
-
-
-class TestBatchUpdateIsCommonFlags:
-    """Tests for ChunkEmbeddingService.batch_update_is_common_flags() method."""
-
-    @pytest.mark.asyncio
-    async def test_empty_chunk_ids_returns_empty_dict(self):
-        """Test that empty chunk_ids list returns empty dict without queries."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        mock_db = AsyncMock()
-
-        result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[])
-
-        assert result == {}
-        mock_db.execute.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_marks_common_when_multiple_references(self):
-        """Test chunks with count > 1 are marked as common."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_id = uuid4()
-        mock_db = AsyncMock()
-
-        mock_row = MagicMock()
-        mock_row.chunk_id = chunk_id
-        mock_row.total = 3
-
-        mock_count_result = MagicMock()
-        mock_count_result.all.return_value = [mock_row]
-
-        mock_db.execute.side_effect = [
-            MagicMock(),
-            mock_count_result,
-            MagicMock(),
-        ]
-
-        result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[chunk_id])
-
-        assert result == {chunk_id: True}
-        assert mock_db.execute.call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_marks_not_common_when_single_reference(self):
-        """Test chunks with count <= 1 are marked as not common."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_id = uuid4()
-        mock_db = AsyncMock()
-
-        mock_row = MagicMock()
-        mock_row.chunk_id = chunk_id
-        mock_row.total = 1
-
-        mock_count_result = MagicMock()
-        mock_count_result.all.return_value = [mock_row]
-
-        mock_db.execute.side_effect = [
-            MagicMock(),
-            mock_count_result,
-            MagicMock(),
-        ]
-
-        result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[chunk_id])
-
-        assert result == {chunk_id: False}
-        assert mock_db.execute.call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_handles_mixed_common_and_not_common(self):
-        """Test batch correctly separates common and not-common chunks."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        common_chunk_id = uuid4()
-        not_common_chunk_id = uuid4()
-
-        mock_db = AsyncMock()
-
-        mock_common_row = MagicMock()
-        mock_common_row.chunk_id = common_chunk_id
-        mock_common_row.total = 5
-
-        mock_not_common_row = MagicMock()
-        mock_not_common_row.chunk_id = not_common_chunk_id
-        mock_not_common_row.total = 1
-
-        mock_count_result = MagicMock()
-        mock_count_result.all.return_value = [mock_common_row, mock_not_common_row]
-
-        mock_db.execute.side_effect = [
-            MagicMock(),
-            mock_count_result,
-            MagicMock(),
-            MagicMock(),
-        ]
-
-        result = await service.batch_update_is_common_flags(
-            db=mock_db, chunk_ids=[common_chunk_id, not_common_chunk_id]
-        )
-
-        assert result == {common_chunk_id: True, not_common_chunk_id: False}
-        assert mock_db.execute.call_count == 4
-
-    @pytest.mark.asyncio
-    async def test_deduplicates_chunk_ids(self):
-        """Test that duplicate chunk IDs are deduplicated.
-
-        With IS_COMMON_THRESHOLD=2, a chunk needs total_count > 2 to be common.
-        """
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_id = uuid4()
-        mock_db = AsyncMock()
-
-        mock_row = MagicMock()
-        mock_row.chunk_id = chunk_id
-        mock_row.total = 3
-
-        mock_count_result = MagicMock()
-        mock_count_result.all.return_value = [mock_row]
-
-        mock_db.execute.side_effect = [
-            MagicMock(),
-            mock_count_result,
-            MagicMock(),
-        ]
-
-        result = await service.batch_update_is_common_flags(
-            db=mock_db, chunk_ids=[chunk_id, chunk_id, chunk_id]
-        )
-
-        assert result == {chunk_id: True}
-
-    @pytest.mark.asyncio
-    async def test_handles_chunk_with_zero_references(self):
-        """Test chunks with no references in join tables are marked not common."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_id = uuid4()
-        mock_db = AsyncMock()
-
-        mock_count_result = MagicMock()
-        mock_count_result.all.return_value = []
-
-        mock_db.execute.side_effect = [
-            MagicMock(),
-            mock_count_result,
-            MagicMock(),
-        ]
-
-        result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[chunk_id])
-
-        assert result == {chunk_id: False}
-        assert mock_db.execute.call_count == 3
-
-
-class TestRechunkingIdempotency:
-    """Tests for re-chunking the same entity multiple times."""
-
-    @pytest.mark.asyncio
-    async def test_rechunk_fact_check_cleans_up_stale_entries(self):
-        """Test that re-chunking cleans up stale chunk references after upsert.
-
-        With the upsert-first-then-cleanup approach:
-        1. INSERT ON CONFLICT DO UPDATE for current chunks
-        2. DELETE for chunks no longer referenced
-        """
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Chunk one."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        batch_result, _ = _create_batch_mock_result(chunk_texts)
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        execute_calls: list[object] = []
-        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
-
-        fact_check_id = uuid4()
-        community_server_id = uuid4()
-
-        await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=fact_check_id,
-            text="Chunk one.",
-            community_server_id=community_server_id,
-        )
-
-        # Should have both INSERT (upsert) and DELETE (cleanup)
-        insert_calls = [c for c in execute_calls if "INSERT" in str(c).upper()]
-        delete_calls = [c for c in execute_calls if "DELETE" in str(c).upper()]
-        assert len(insert_calls) >= 1, "Expected INSERT for upsert"
-        assert len(delete_calls) >= 1, "Expected DELETE for stale cleanup"
-
-    @pytest.mark.asyncio
-    async def test_rechunk_previously_seen_cleans_up_stale_entries(self):
-        """Test that re-chunking cleans up stale chunk references after upsert.
-
-        With the upsert-first-then-cleanup approach:
-        1. INSERT ON CONFLICT DO UPDATE for current chunks
-        2. DELETE for chunks no longer referenced
-        """
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Chunk one."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        batch_result, _ = _create_batch_mock_result(chunk_texts)
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        execute_calls: list[object] = []
-        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
-
-        previously_seen_id = uuid4()
-        community_server_id = uuid4()
-
-        await service.chunk_and_embed_previously_seen(
-            db=mock_db,
-            previously_seen_id=previously_seen_id,
-            text="Chunk one.",
-            community_server_id=community_server_id,
-        )
-
-        # Should have both INSERT (upsert) and DELETE (cleanup)
-        insert_calls = [c for c in execute_calls if "INSERT" in str(c).upper()]
-        delete_calls = [c for c in execute_calls if "DELETE" in str(c).upper()]
-        assert len(insert_calls) >= 1, "Expected INSERT for upsert"
-        assert len(delete_calls) >= 1, "Expected DELETE for stale cleanup"
-
-    @pytest.mark.asyncio
-    async def test_rechunk_fact_check_twice_succeeds(self):
-        """Test that calling chunk_and_embed_fact_check twice doesn't raise errors."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Same chunk."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk = ChunkEmbedding(
-            chunk_text="Same chunk.",
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        chunk.id = uuid4()
-
-        service.get_or_create_chunks_batch = AsyncMock(return_value=[(chunk, False)])
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        mock_db.add = MagicMock()
-
-        fact_check_id = uuid4()
-        community_server_id = uuid4()
-
-        chunks1 = await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=fact_check_id,
-            text="Same chunk.",
-            community_server_id=community_server_id,
-        )
-
-        mock_db.add.reset_mock()
-
-        chunks2 = await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=fact_check_id,
-            text="Same chunk.",
-            community_server_id=community_server_id,
-        )
-
-        assert len(chunks1) == 1
-        assert len(chunks2) == 1
-        assert chunks1[0] is chunk
-        assert chunks2[0] is chunk
-
-    @pytest.mark.asyncio
-    async def test_rechunk_previously_seen_twice_succeeds(self):
-        """Test that calling chunk_and_embed_previously_seen twice doesn't raise errors."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Same chunk."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk = ChunkEmbedding(
-            chunk_text="Same chunk.",
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        chunk.id = uuid4()
-
-        service.get_or_create_chunks_batch = AsyncMock(return_value=[(chunk, False)])
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        mock_db.add = MagicMock()
-
-        previously_seen_id = uuid4()
-        community_server_id = uuid4()
-
-        chunks1 = await service.chunk_and_embed_previously_seen(
-            db=mock_db,
-            previously_seen_id=previously_seen_id,
-            text="Same chunk.",
-            community_server_id=community_server_id,
-        )
-
-        mock_db.add.reset_mock()
-
-        chunks2 = await service.chunk_and_embed_previously_seen(
-            db=mock_db,
-            previously_seen_id=previously_seen_id,
-            text="Same chunk.",
-            community_server_id=community_server_id,
-        )
-
-        assert len(chunks1) == 1
-        assert len(chunks2) == 1
-        assert chunks1[0] is chunk
-        assert chunks2[0] is chunk
-
-    @pytest.mark.asyncio
-    async def test_rechunk_uses_upsert_for_join_entries(self):
-        """Test that rechunking uses INSERT ON CONFLICT (upsert) for FactCheckChunk entries.
-
-        Bug: task-898 - Direct db.add() can cause duplicate key violations if
-        there are session state issues or race conditions. Using upsert ensures
-        idempotent behavior even when duplicates exist.
-        """
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Chunk one.", "Chunk two."]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        batch_result, _ = _create_batch_mock_result(chunk_texts)
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        execute_calls: list[object] = []
-        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
-
-        fact_check_id = uuid4()
-
-        await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=fact_check_id,
-            text="Chunk one. Chunk two.",
-            community_server_id=uuid4(),
-        )
-
-        insert_calls = [
-            call
-            for call in execute_calls
-            if "INSERT" in str(call).upper() and "fact_check_chunks" in str(call).lower()
-        ]
-        assert len(insert_calls) > 0, "Expected INSERT statement for fact_check_chunks"
-
-        for insert_call in insert_calls:
-            call_str = str(insert_call).upper()
-            assert "ON CONFLICT" in call_str, (
-                f"Expected ON CONFLICT (upsert) clause in: {insert_call}"
+    async def test_promotion_enqueues_chunking_task(self):
+        """Successful promotion enqueues a chunking task via enqueue_single_fact_check_chunk."""
+        candidate_id = uuid4()
+        fact_check_item_id = uuid4()
+
+        mock_candidate = MagicMock()
+        mock_candidate.id = candidate_id
+        mock_candidate.status = "scraped"
+        mock_candidate.content = "Test content"
+        mock_candidate.rating = "Mixed"
+        mock_candidate.dataset_name = "test"
+        mock_candidate.dataset_tags = ["test"]
+        mock_candidate.title = "Test Title"
+        mock_candidate.summary = "Test summary"
+        mock_candidate.source_url = "https://example.com"
+        mock_candidate.original_id = "test-123"
+        mock_candidate.published_date = None
+        mock_candidate.rating_details = None
+        mock_candidate.extracted_data = None
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_candidate
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+
+        with (
+            patch("src.batch_jobs.rechunk_service.enqueue_single_fact_check_chunk") as mock_enqueue,
+            patch(
+                "src.fact_checking.import_pipeline.promotion.FactCheckItem"
+            ) as mock_fact_check_class,
+        ):
+            mock_enqueue.return_value = True
+            mock_fact_check_item = MagicMock()
+            mock_fact_check_item.id = fact_check_item_id
+            mock_fact_check_class.return_value = mock_fact_check_item
+
+            from src.fact_checking.import_pipeline.promotion import promote_candidate
+
+            result = await promote_candidate(mock_session, candidate_id)
+
+            assert result is True
+            mock_enqueue.assert_called_once_with(
+                fact_check_id=fact_check_item_id,
+                community_server_id=None,
             )
 
-
-class TestDuplicateChunksInDocument:
-    """Tests for handling documents where the same chunk appears at multiple positions.
-
-    Bug fix: task-901 - When a document contains repeated text (e.g., headers, disclaimers),
-    the same chunk can appear at multiple positions. The code must deduplicate join_entries
-    to avoid 'ON CONFLICT DO UPDATE command cannot affect row a second time' errors.
-    """
-
     @pytest.mark.asyncio
-    async def test_fact_check_with_repeated_chunks_succeeds(self):
-        """Test that fact check with same chunk at multiple positions doesn't fail.
+    async def test_promotion_succeeds_even_if_chunk_enqueue_fails(self):
+        """Promotion still succeeds if chunking task enqueue fails."""
+        candidate_id = uuid4()
+        fact_check_item_id = uuid4()
 
-        Simulates a document like:
-        - "Header" (position 0)
-        - "Content" (position 1)
-        - "Header" (position 2) - same text as position 0
-        """
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Header", "Content", "Header"]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
+        mock_candidate = MagicMock()
+        mock_candidate.id = candidate_id
+        mock_candidate.status = "scraped"
+        mock_candidate.content = "Test content"
+        mock_candidate.rating = "Mixed"
+        mock_candidate.dataset_name = "test"
+        mock_candidate.dataset_tags = ["test"]
+        mock_candidate.title = "Test Title"
+        mock_candidate.summary = "Test summary"
+        mock_candidate.source_url = "https://example.com"
+        mock_candidate.original_id = "test-123"
+        mock_candidate.published_date = None
+        mock_candidate.rating_details = None
+        mock_candidate.extracted_data = None
 
-        mock_llm_service = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_candidate
 
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+
+        with (
+            patch("src.batch_jobs.rechunk_service.enqueue_single_fact_check_chunk") as mock_enqueue,
+            patch(
+                "src.fact_checking.import_pipeline.promotion.FactCheckItem"
+            ) as mock_fact_check_class,
+        ):
+            mock_enqueue.side_effect = Exception("NATS connection failed")
+            mock_fact_check_item = MagicMock()
+            mock_fact_check_item.id = fact_check_item_id
+            mock_fact_check_class.return_value = mock_fact_check_item
+
+            from src.fact_checking.import_pipeline.promotion import promote_candidate
+
+            result = await promote_candidate(mock_session, candidate_id)
+
+            assert result is True
+            mock_enqueue.assert_called_once()
+
+
+class TestServiceSingletons:
+    """Test service singleton pattern for get_chunk_embedding_service (TASK-1058.27)."""
+
+    def test_get_chunk_embedding_service_returns_singleton(self):
+        """Verify get_chunk_embedding_service returns the same instance on multiple calls."""
+        from src.services.chunk_embedding import (
+            get_chunk_embedding_service,
+            reset_chunk_embedding_services,
         )
 
-        header_chunk = ChunkEmbedding(
-            chunk_text="Header",
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        header_chunk.id = uuid4()
+        reset_chunk_embedding_services()
 
-        content_chunk = ChunkEmbedding(
-            chunk_text="Content",
-            embedding=[0.2] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        content_chunk.id = uuid4()
-
-        batch_result = [
-            (header_chunk, True),
-            (content_chunk, True),
-            (header_chunk, False),
-        ]
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        execute_calls: list[object] = []
-        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
-
-        fact_check_id = uuid4()
-
-        chunks = await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=fact_check_id,
-            text="Header Content Header",
-            community_server_id=uuid4(),
-        )
-
-        assert len(chunks) == 3
-        assert chunks[0] is header_chunk
-        assert chunks[1] is content_chunk
-        assert chunks[2] is header_chunk
-
-        insert_calls = [
-            c
-            for c in execute_calls
-            if "INSERT" in str(c).upper() and "fact_check_chunks" in str(c).lower()
-        ]
-        assert len(insert_calls) >= 1
-
-    @pytest.mark.asyncio
-    async def test_previously_seen_with_repeated_chunks_succeeds(self):
-        """Test that previously seen with same chunk at multiple positions doesn't fail."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["Disclaimer", "Body", "Disclaimer"]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        disclaimer_chunk = ChunkEmbedding(
-            chunk_text="Disclaimer",
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        disclaimer_chunk.id = uuid4()
-
-        body_chunk = ChunkEmbedding(
-            chunk_text="Body",
-            embedding=[0.2] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        body_chunk.id = uuid4()
-
-        batch_result = [
-            (disclaimer_chunk, True),
-            (body_chunk, True),
-            (disclaimer_chunk, False),
-        ]
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        execute_calls: list[object] = []
-        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
-
-        previously_seen_id = uuid4()
-
-        chunks = await service.chunk_and_embed_previously_seen(
-            db=mock_db,
-            previously_seen_id=previously_seen_id,
-            text="Disclaimer Body Disclaimer",
-            community_server_id=uuid4(),
-        )
-
-        assert len(chunks) == 3
-        assert chunks[0] is disclaimer_chunk
-        assert chunks[1] is body_chunk
-        assert chunks[2] is disclaimer_chunk
-
-        insert_calls = [
-            c
-            for c in execute_calls
-            if "INSERT" in str(c).upper() and "previously_seen_chunks" in str(c).lower()
-        ]
-        assert len(insert_calls) >= 1
-
-    @pytest.mark.asyncio
-    async def test_multiple_duplicates_handled_correctly(self):
-        """Test document with chunk appearing more than twice."""
-        mock_chunking_service = MagicMock()
-        chunk_texts = ["A", "B", "A", "C", "A"]
-        mock_chunking_service.chunk_text.return_value = chunk_texts
-
-        mock_llm_service = MagicMock()
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_a = ChunkEmbedding(
-            chunk_text="A",
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        chunk_a.id = uuid4()
-
-        chunk_b = ChunkEmbedding(
-            chunk_text="B",
-            embedding=[0.2] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        chunk_b.id = uuid4()
-
-        chunk_c = ChunkEmbedding(
-            chunk_text="C",
-            embedding=[0.3] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        chunk_c.id = uuid4()
-
-        batch_result = [
-            (chunk_a, True),
-            (chunk_b, True),
-            (chunk_a, False),
-            (chunk_c, True),
-            (chunk_a, False),
-        ]
-        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
-        service.batch_update_is_common_flags = AsyncMock(return_value={})
-
-        mock_db = AsyncMock()
-        mock_db.execute = AsyncMock()
-
-        fact_check_id = uuid4()
-
-        chunks = await service.chunk_and_embed_fact_check(
-            db=mock_db,
-            fact_check_id=fact_check_id,
-            text="A B A C A",
-            community_server_id=uuid4(),
-        )
-
-        assert len(chunks) == 5
-        assert chunks[0] is chunk_a
-        assert chunks[1] is chunk_b
-        assert chunks[2] is chunk_a
-        assert chunks[3] is chunk_c
-        assert chunks[4] is chunk_a
-
-
-class TestGetOrCreateChunksBatch:
-    """Tests for ChunkEmbeddingService.get_or_create_chunks_batch() method."""
-
-    @pytest.mark.asyncio
-    async def test_returns_empty_list_for_empty_input(self):
-        """Test that empty input returns empty list without any DB/API calls."""
         mock_chunking_service = MagicMock()
         mock_llm_service = MagicMock()
-        mock_llm_service.generate_embeddings_batch = AsyncMock()
+        mock_llm_client_manager = MagicMock()
+        mock_encryption_service = MagicMock()
 
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
+        mock_settings = MagicMock()
+        mock_settings.ENCRYPTION_MASTER_KEY = "test-key"
+
+        @contextmanager
+        def mock_use_chunking_service_sync():
+            yield mock_chunking_service
+
+        with (
+            patch("src.services.chunk_embedding.get_settings", return_value=mock_settings),
+            patch(
+                "src.services.chunk_embedding.use_chunking_service_sync",
+                side_effect=mock_use_chunking_service_sync,
+            ),
+            patch("src.services.chunk_embedding.LLMService", return_value=mock_llm_service),
+            patch(
+                "src.services.chunk_embedding.LLMClientManager",
+                return_value=mock_llm_client_manager,
+            ),
+            patch(
+                "src.services.chunk_embedding.EncryptionService",
+                return_value=mock_encryption_service,
+            ),
+        ):
+            service1 = get_chunk_embedding_service()
+            service2 = get_chunk_embedding_service()
+
+            assert service1 is service2
+
+        reset_chunk_embedding_services()
+
+    def test_reset_chunk_embedding_services_clears_singletons(self):
+        """Verify reset_chunk_embedding_services clears all singleton instances including ChunkingService."""
+        from src.services.chunk_embedding import (
+            get_chunk_embedding_service,
+            reset_chunk_embedding_services,
         )
 
-        mock_db = AsyncMock()
+        reset_chunk_embedding_services()
 
-        result = await service.get_or_create_chunks_batch(
-            db=mock_db,
-            chunk_texts=[],
-            community_server_id=uuid4(),
-        )
-
-        assert result == []
-        mock_db.execute.assert_not_called()
-        mock_llm_service.generate_embeddings_batch.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_creates_new_chunks_when_none_exist(self):
-        """Test batch creation of new chunks when none exist in database."""
         mock_chunking_service = MagicMock()
         mock_llm_service = MagicMock()
-        mock_llm_service.generate_embeddings_batch = AsyncMock(
-            return_value=[
-                ([0.1] * 1536, "litellm", "text-embedding-3-small"),
-                ([0.2] * 1536, "litellm", "text-embedding-3-small"),
-            ]
+        mock_llm_client_manager = MagicMock()
+        mock_encryption_service = MagicMock()
+
+        mock_settings = MagicMock()
+        mock_settings.ENCRYPTION_MASTER_KEY = "test-key"
+
+        @contextmanager
+        def mock_use_chunking_service_sync():
+            yield mock_chunking_service
+
+        with (
+            patch("src.services.chunk_embedding.get_settings", return_value=mock_settings),
+            patch(
+                "src.services.chunk_embedding.use_chunking_service_sync",
+                side_effect=mock_use_chunking_service_sync,
+            ),
+            patch("src.services.chunk_embedding.LLMService", return_value=mock_llm_service),
+            patch(
+                "src.services.chunk_embedding.LLMClientManager",
+                return_value=mock_llm_client_manager,
+            ),
+            patch(
+                "src.services.chunk_embedding.EncryptionService",
+                return_value=mock_encryption_service,
+            ),
+            patch("src.services.chunk_embedding.reset_chunking_service") as mock_reset_chunking,
+        ):
+            service_before = get_chunk_embedding_service()
+            assert service_before is not None
+
+            reset_chunk_embedding_services()
+
+            import src.services.chunk_embedding as module
+
+            assert module._chunk_embedding_service is None
+            assert module._encryption_service is None
+            assert module._llm_client_manager is None
+            assert module._llm_service is None
+            mock_reset_chunking.assert_called_once()
+
+    def test_singleton_pattern_is_thread_safe(self):
+        """Verify singleton pattern uses proper locking for thread safety."""
+        from src.services.chunk_embedding import (
+            get_chunk_embedding_service,
+            reset_chunk_embedding_services,
         )
 
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
+        reset_chunk_embedding_services()
 
-        chunk_texts = ["Chunk one.", "Chunk two."]
-        community_server_id = uuid4()
-
-        from src.fact_checking.chunk_models import compute_chunk_text_hash
-
-        created_chunks = []
-        for text in chunk_texts:
-            chunk = ChunkEmbedding(
-                chunk_text=text,
-                chunk_text_hash=compute_chunk_text_hash(text),
-                embedding=[0.1] * 1536,
-                embedding_provider="litellm",
-                embedding_model="text-embedding-3-small",
-            )
-            chunk.id = uuid4()
-            created_chunks.append(chunk)
-
-        mock_db = AsyncMock()
-
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalars.return_value.all.return_value = []
-
-        mock_fetch_result = MagicMock()
-        mock_fetch_result.scalars.return_value.all.return_value = created_chunks
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            MagicMock(),
-            MagicMock(),
-            mock_fetch_result,
-        ]
-
-        result = await service.get_or_create_chunks_batch(
-            db=mock_db,
-            chunk_texts=chunk_texts,
-            community_server_id=community_server_id,
-        )
-
-        mock_llm_service.generate_embeddings_batch.assert_called_once_with(
-            mock_db, chunk_texts, community_server_id
-        )
-        assert len(result) == 2
-        assert all(is_created for _, is_created in result)
-
-    @pytest.mark.asyncio
-    async def test_returns_existing_chunks_without_api_call(self):
-        """Test that existing chunks are returned without making embedding API calls."""
         mock_chunking_service = MagicMock()
         mock_llm_service = MagicMock()
-        mock_llm_service.generate_embeddings_batch = AsyncMock()
+        mock_llm_client_manager = MagicMock()
+        mock_encryption_service = MagicMock()
 
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
+        mock_settings = MagicMock()
+        mock_settings.ENCRYPTION_MASTER_KEY = "test-key"
 
-        chunk_texts = ["Existing chunk."]
-        community_server_id = uuid4()
+        @contextmanager
+        def mock_use_chunking_service_sync():
+            yield mock_chunking_service
 
-        from src.fact_checking.chunk_models import compute_chunk_text_hash
+        services = []
+        errors = []
+        num_threads = 10
+        barrier = threading.Barrier(num_threads)
 
-        existing_chunk = ChunkEmbedding(
-            chunk_text="Existing chunk.",
-            chunk_text_hash=compute_chunk_text_hash("Existing chunk."),
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        existing_chunk.id = uuid4()
+        def get_service():
+            try:
+                barrier.wait()
+                service = get_chunk_embedding_service()
+                services.append(service)
+            except Exception as e:
+                errors.append(e)
 
-        mock_db = AsyncMock()
+        with (
+            patch("src.services.chunk_embedding.get_settings", return_value=mock_settings),
+            patch(
+                "src.services.chunk_embedding.use_chunking_service_sync",
+                side_effect=mock_use_chunking_service_sync,
+            ),
+            patch("src.services.chunk_embedding.LLMService", return_value=mock_llm_service),
+            patch(
+                "src.services.chunk_embedding.LLMClientManager",
+                return_value=mock_llm_client_manager,
+            ),
+            patch(
+                "src.services.chunk_embedding.EncryptionService",
+                return_value=mock_encryption_service,
+            ),
+        ):
+            threads = [threading.Thread(target=get_service) for _ in range(num_threads)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
 
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalars.return_value.all.return_value = [existing_chunk]
+        assert not errors
+        assert len(services) == num_threads
+        assert all(s is services[0] for s in services)
 
-        mock_db.execute.return_value = mock_lookup_result
-
-        result = await service.get_or_create_chunks_batch(
-            db=mock_db,
-            chunk_texts=chunk_texts,
-            community_server_id=community_server_id,
-        )
-
-        mock_llm_service.generate_embeddings_batch.assert_not_called()
-        assert len(result) == 1
-        chunk, is_created = result[0]
-        assert chunk == existing_chunk
-        assert is_created is False
-
-    @pytest.mark.asyncio
-    async def test_handles_mixed_existing_and_new_chunks(self):
-        """Test batch with some existing and some new chunks."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embeddings_batch = AsyncMock(
-            return_value=[
-                ([0.2] * 1536, "litellm", "text-embedding-3-small"),
-            ]
-        )
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_texts = ["Existing chunk.", "New chunk."]
-        community_server_id = uuid4()
-
-        from src.fact_checking.chunk_models import compute_chunk_text_hash
-
-        existing_chunk = ChunkEmbedding(
-            chunk_text="Existing chunk.",
-            chunk_text_hash=compute_chunk_text_hash("Existing chunk."),
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        existing_chunk.id = uuid4()
-
-        new_chunk = ChunkEmbedding(
-            chunk_text="New chunk.",
-            chunk_text_hash=compute_chunk_text_hash("New chunk."),
-            embedding=[0.2] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        new_chunk.id = uuid4()
-
-        mock_db = AsyncMock()
-
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalars.return_value.all.return_value = [existing_chunk]
-
-        mock_fetch_result = MagicMock()
-        mock_fetch_result.scalars.return_value.all.return_value = [new_chunk]
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            MagicMock(),
-            mock_fetch_result,
-        ]
-
-        result = await service.get_or_create_chunks_batch(
-            db=mock_db,
-            chunk_texts=chunk_texts,
-            community_server_id=community_server_id,
-        )
-
-        mock_llm_service.generate_embeddings_batch.assert_called_once_with(
-            mock_db, ["New chunk."], community_server_id
-        )
-        assert len(result) == 2
-
-        chunk1, is_created1 = result[0]
-        assert chunk1 == existing_chunk
-        assert is_created1 is False
-
-        chunk2, is_created2 = result[1]
-        assert chunk2 == new_chunk
-        assert is_created2 is True
-
-    @pytest.mark.asyncio
-    async def test_deduplicates_input_texts(self):
-        """Test that duplicate texts in input are deduplicated before processing."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embeddings_batch = AsyncMock(
-            return_value=[
-                ([0.1] * 1536, "litellm", "text-embedding-3-small"),
-            ]
-        )
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_texts = ["Same chunk.", "Same chunk.", "Same chunk."]
-        community_server_id = uuid4()
-
-        from src.fact_checking.chunk_models import compute_chunk_text_hash
-
-        created_chunk = ChunkEmbedding(
-            chunk_text="Same chunk.",
-            chunk_text_hash=compute_chunk_text_hash("Same chunk."),
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        created_chunk.id = uuid4()
-
-        mock_db = AsyncMock()
-
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalars.return_value.all.return_value = []
-
-        mock_fetch_result = MagicMock()
-        mock_fetch_result.scalars.return_value.all.return_value = [created_chunk]
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            MagicMock(),
-            mock_fetch_result,
-        ]
-
-        result = await service.get_or_create_chunks_batch(
-            db=mock_db,
-            chunk_texts=chunk_texts,
-            community_server_id=community_server_id,
-        )
-
-        mock_llm_service.generate_embeddings_batch.assert_called_once_with(
-            mock_db, ["Same chunk."], community_server_id
-        )
-        assert len(result) == 3
-        for chunk, is_created in result:
-            assert chunk == created_chunk
-            assert is_created is True
-
-    @pytest.mark.asyncio
-    async def test_preserves_input_order(self):
-        """Test that results are returned in the same order as input texts."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embeddings_batch = AsyncMock(
-            return_value=[
-                ([0.1] * 1536, "litellm", "text-embedding-3-small"),
-                ([0.2] * 1536, "litellm", "text-embedding-3-small"),
-                ([0.3] * 1536, "litellm", "text-embedding-3-small"),
-            ]
-        )
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_texts = ["First.", "Second.", "Third."]
-        community_server_id = uuid4()
-
-        from src.fact_checking.chunk_models import compute_chunk_text_hash
-
-        created_chunks = []
-        for text in chunk_texts:
-            chunk = ChunkEmbedding(
-                chunk_text=text,
-                chunk_text_hash=compute_chunk_text_hash(text),
-                embedding=[0.1] * 1536,
-                embedding_provider="litellm",
-                embedding_model="text-embedding-3-small",
-            )
-            chunk.id = uuid4()
-            created_chunks.append(chunk)
-
-        mock_db = AsyncMock()
-
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalars.return_value.all.return_value = []
-
-        mock_fetch_result = MagicMock()
-        mock_fetch_result.scalars.return_value.all.return_value = created_chunks
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            MagicMock(),
-            MagicMock(),
-            MagicMock(),
-            mock_fetch_result,
-        ]
-
-        result = await service.get_or_create_chunks_batch(
-            db=mock_db,
-            chunk_texts=chunk_texts,
-            community_server_id=community_server_id,
-        )
-
-        assert len(result) == 3
-        for i, (chunk, _) in enumerate(result):
-            assert chunk.chunk_text == chunk_texts[i]
+        reset_chunk_embedding_services()

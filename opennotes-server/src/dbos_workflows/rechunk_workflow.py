@@ -35,7 +35,7 @@ from src.fact_checking.chunking_service import use_chunking_service_sync
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.monitoring import get_logger
-from src.tasks.rechunk_tasks import get_chunk_embedding_service
+from src.services.chunk_embedding import get_chunk_embedding_service
 from src.utils.async_compat import run_sync
 
 if TYPE_CHECKING:
