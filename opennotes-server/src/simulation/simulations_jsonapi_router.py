@@ -31,11 +31,21 @@ from src.dbos_workflows.config import get_dbos_client
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.notes.models import Note, Rating
-from src.simulation.analysis import compute_full_analysis
+from src.simulation.analysis import (
+    compute_detailed_notes,
+    compute_full_analysis,
+    compute_request_variance,
+)
 from src.simulation.constants import PROGRESS_CACHE_KEY_PREFIX, PROGRESS_CACHE_TTL_SECONDS
 from src.simulation.models import SimAgentInstance, SimulationOrchestrator, SimulationRun
 from src.simulation.restart import snapshot_restart_state
-from src.simulation.schemas import AnalysisResource, AnalysisResponse
+from src.simulation.schemas import (
+    AnalysisResource,
+    AnalysisResponse,
+    DetailedAnalysisResponse,
+    DetailedNoteResource,
+    RequestVarianceMeta,
+)
 from src.simulation.workflows.orchestrator_workflow import dispatch_orchestrator
 from src.users.models import User
 
@@ -1015,4 +1025,84 @@ async def get_simulation_analysis(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             "Failed to get simulation analysis",
+        )
+
+
+@router.get(
+    "/simulations/{simulation_id}/analysis/detailed",
+    response_class=JSONResponse,
+    response_model=DetailedAnalysisResponse,
+)
+async def get_simulation_detailed_analysis(
+    simulation_id: UUID,
+    request: HTTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    page_number: int = Query(1, ge=1, alias="page[number]"),
+    page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
+) -> JSONResponse:
+    require_admin(current_user)
+
+    try:
+        run_result = await db.execute(
+            select(SimulationRun).where(
+                SimulationRun.id == simulation_id,
+                SimulationRun.deleted_at.is_(None),
+            )
+        )
+        run = run_result.scalar_one_or_none()
+
+        if not run:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"SimulationRun {simulation_id} not found",
+            )
+
+        offset = (page_number - 1) * page_size
+        detailed_notes, total = await compute_detailed_notes(
+            simulation_id, db, offset=offset, limit=page_size
+        )
+
+        request_variance = await compute_request_variance(simulation_id, db)
+
+        resources = [
+            DetailedNoteResource(id=note.note_id, attributes=note) for note in detailed_notes
+        ]
+
+        base_url = str(request.url).split("?")[0]
+        links = create_pagination_links(
+            base_url=base_url,
+            page=page_number,
+            size=page_size,
+            total=total,
+        )
+
+        meta = {
+            "count": total,
+            "request_variance": RequestVarianceMeta(
+                requests=request_variance,
+                total_requests=len(request_variance),
+            ).model_dump(mode="json"),
+        }
+
+        response = DetailedAnalysisResponse(
+            data=resources,
+            links=links,
+            meta=meta,
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to get detailed simulation analysis")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to get detailed simulation analysis",
         )
