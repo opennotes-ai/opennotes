@@ -12,6 +12,7 @@ from src.fact_checking.chunking_service import (
     use_chunking_service,
     use_chunking_service_sync,
 )
+from src.fact_checking.dataset_models import FactCheckDataset
 from src.fact_checking.embeddings_jsonapi_router import router as embeddings_jsonapi_router
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.monitored_channel_models import MonitoredChannel
@@ -30,6 +31,7 @@ __all__ = [
     "ChunkResult",
     "ChunkingService",
     "FactCheckChunk",
+    "FactCheckDataset",
     "FactCheckItem",
     "FactCheckedItemCandidate",
     "MonitoredChannel",
