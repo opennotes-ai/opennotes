@@ -78,6 +78,26 @@ def upgrade() -> None:
         )
     )
 
+    conn.execute(
+        sa.text(
+            "INSERT INTO fact_check_datasets (slug, display_name) "
+            "SELECT DISTINCT tag, tag "
+            "FROM fact_checked_item_candidates, unnest(dataset_tags) AS tag "
+            "WHERE tag NOT IN (SELECT slug FROM fact_check_datasets) "
+            "ON CONFLICT DO NOTHING"
+        )
+    )
+
+    conn.execute(
+        sa.text(
+            "INSERT INTO fact_check_datasets (slug, display_name) "
+            "SELECT DISTINCT tag, tag "
+            "FROM monitored_channels, unnest(dataset_tags) AS tag "
+            "WHERE tag NOT IN (SELECT slug FROM fact_check_datasets) "
+            "ON CONFLICT DO NOTHING"
+        )
+    )
+
     op.execute(
         sa.text("""
             CREATE FUNCTION validate_dataset_tags(tags text[]) RETURNS boolean AS $$
