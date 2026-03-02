@@ -23,6 +23,7 @@ from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
@@ -45,6 +46,7 @@ from src.common.jsonapi import (
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.database import get_db
+from src.fact_checking.dataset_models import FactCheckDataset
 from src.fact_checking.monitored_channel_models import MonitoredChannel
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
@@ -261,6 +263,23 @@ async def _handle_http_exception(e: HTTPException, db: AsyncSession) -> JSONResp
     title = _get_http_status_phrase(e.status_code)
     detail = str(e.detail)
     return create_error_response(e.status_code, title, detail)
+
+
+async def _handle_dataset_tag_integrity_error(
+    e: IntegrityError, db: AsyncSession, supplied_tags: list[str]
+) -> JSONResponse:
+    await db.rollback()
+    if "check_monitored_channels_dataset_tags_valid" not in str(e.orig):
+        raise e
+    result = await db.execute(select(FactCheckDataset.slug))
+    valid_tags = sorted(row[0] for row in result.all())
+    invalid_tags = sorted(set(supplied_tags) - set(valid_tags))
+    detail = f"Invalid dataset tag(s): {invalid_tags}. Valid tags: {valid_tags}"
+    return create_error_response(
+        422,
+        "Unprocessable Content",
+        detail,
+    )
 
 
 @router.get(
@@ -498,6 +517,9 @@ async def create_monitored_channel_jsonapi(
     except HTTPException as e:
         return await _handle_http_exception(e, db)
 
+    except IntegrityError as e:
+        return await _handle_dataset_tag_integrity_error(e, db, body.data.attributes.dataset_tags)
+
     except Exception as e:
         logger.exception(f"Failed to create monitored channel (JSON:API): {e}")
         await db.rollback()
@@ -577,6 +599,11 @@ async def update_monitored_channel_jsonapi(
 
     except HTTPException as e:
         return await _handle_http_exception(e, db)
+
+    except IntegrityError as e:
+        return await _handle_dataset_tag_integrity_error(
+            e, db, body.data.attributes.dataset_tags or []
+        )
 
     except Exception as e:
         logger.exception(f"Failed to update monitored channel (JSON:API): {e}")
