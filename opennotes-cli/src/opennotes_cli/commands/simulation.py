@@ -506,21 +506,42 @@ def simulation_launch(
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["terminal", "markdown"]),
+    type=click.Choice(["terminal", "markdown", "xlsx"]),
     default="terminal",
     help="Output format.",
 )
+@click.option("--detailed", is_flag=True, help="Fetch detailed per-note/rating/request data.")
+@click.option("--output", "output_path", default=None, help="Output file path (for xlsx format).")
 @click.pass_context
 def simulation_analysis(
-    ctx: click.Context, simulation_id: str, output_format: str
+    ctx: click.Context, simulation_id: str, output_format: str, detailed: bool, output_path: str | None
 ) -> None:
     """Show analysis results for a simulation run."""
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
 
+    if output_format == "xlsx" and not detailed:
+        error_console.print("[red]Error:[/red] --format xlsx requires --detailed flag.")
+        sys.exit(1)
+
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
     headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    if detailed:
+        accumulated = _fetch_detailed_pages(client, base_url, headers, simulation_id)
+
+        if cli_ctx.json_output:
+            console.print(json.dumps(accumulated, indent=2, default=str))
+            return
+
+        if output_format == "markdown":
+            _render_detailed_markdown(simulation_id, accumulated)
+        elif output_format == "xlsx":
+            _render_detailed_xlsx(simulation_id, accumulated, output_path)
+        else:
+            _render_detailed_terminal(simulation_id, accumulated)
+        return
 
     response = client.get(
         f"{base_url}/api/v2/simulations/{simulation_id}/analysis", headers=headers
@@ -810,3 +831,323 @@ def _render_analysis_markdown(simulation_id: str, attrs: dict[str, Any]) -> None
         lines.append("")
 
     click.echo("\n".join(lines))
+
+
+def _fetch_detailed_pages(
+    client: Any,
+    base_url: str,
+    headers: dict[str, str],
+    simulation_id: str,
+) -> dict[str, list[dict[str, Any]]]:
+    all_notes: list[dict[str, Any]] = []
+    all_ratings: list[dict[str, Any]] = []
+    all_requests: list[dict[str, Any]] = []
+    page_number = 1
+
+    while True:
+        params = {"page[number]": page_number, "page[size]": 50}
+        response = client.get(
+            f"{base_url}/api/v2/simulations/{simulation_id}/analysis/detailed",
+            headers=headers,
+            params=params,
+        )
+        handle_jsonapi_error(response)
+        result = response.json()
+
+        attrs = result.get("data", {}).get("attributes", {})
+        all_notes.extend(attrs.get("notes", []))
+        all_ratings.extend(attrs.get("ratings", []))
+        all_requests.extend(attrs.get("requests", []))
+
+        links = result.get("links", {})
+        if "next" not in links:
+            break
+        page_number += 1
+
+    return {"notes": all_notes, "ratings": all_ratings, "requests": all_requests}
+
+
+def _render_detailed_terminal(
+    simulation_id: str, data: dict[str, list[dict[str, Any]]]
+) -> None:
+    notes = data.get("notes", [])
+    ratings = data.get("ratings", [])
+    requests = data.get("requests", [])
+
+    console.print(
+        Panel(
+            f"[bold]Simulation:[/bold] {simulation_id}\n"
+            f"[bold]Notes:[/bold] {len(notes)}  "
+            f"[bold]Ratings:[/bold] {len(ratings)}  "
+            f"[bold]Requests:[/bold] {len(requests)}",
+            title="[bold]Detailed Simulation Analysis[/bold]",
+        )
+    )
+
+    if notes:
+        note_table = Table(title="Notes", show_header=True, header_style="bold")
+        note_table.add_column("Note ID", no_wrap=True)
+        note_table.add_column("Summary", max_width=50)
+        note_table.add_column("Classification")
+        note_table.add_column("Status")
+        note_table.add_column("Score", justify="right")
+        note_table.add_column("Author")
+        note_table.add_column("Request ID", no_wrap=True)
+        note_table.add_column("Created At", width=20)
+        for n in notes:
+            score = n.get("helpfulness_score")
+            score_str = f"{score}" if score is not None else "N/A"
+            note_table.add_row(
+                n.get("note_id", "N/A"),
+                (n.get("summary", "") or "")[:50],
+                n.get("classification", "N/A"),
+                n.get("status", "N/A"),
+                score_str,
+                n.get("author_agent", "N/A"),
+                n.get("request_id", "N/A"),
+                (n.get("created_at", "") or "")[:19],
+            )
+        console.print(note_table)
+
+    if ratings:
+        rating_table = Table(title="Ratings", show_header=True, header_style="bold")
+        rating_table.add_column("Note ID", no_wrap=True)
+        rating_table.add_column("Note Summary", max_width=50)
+        rating_table.add_column("Rater")
+        rating_table.add_column("Helpfulness")
+        rating_table.add_column("Created At", width=20)
+        for r in ratings:
+            rating_table.add_row(
+                r.get("note_id", "N/A"),
+                (r.get("note_summary", "") or "")[:50],
+                r.get("rater_agent", "N/A"),
+                r.get("helpfulness_level", "N/A"),
+                (r.get("created_at", "") or "")[:19],
+            )
+        console.print(rating_table)
+
+    if requests:
+        req_table = Table(title="Requests", show_header=True, header_style="bold")
+        req_table.add_column("Request ID", no_wrap=True)
+        req_table.add_column("Content", max_width=60)
+        req_table.add_column("Type")
+        req_table.add_column("Notes", justify="right")
+        req_table.add_column("Variance", justify="right")
+        for req in requests:
+            variance = req.get("variance_score")
+            variance_str = f"{variance}" if variance is not None else "N/A"
+            req_table.add_row(
+                req.get("request_id", "N/A"),
+                (req.get("content", "") or "")[:60],
+                req.get("content_type", "N/A"),
+                str(req.get("note_count", 0)),
+                variance_str,
+            )
+        console.print(req_table)
+
+    sorted_requests = sorted(
+        [r for r in requests if r.get("variance_score") is not None],
+        key=lambda r: r["variance_score"],
+        reverse=True,
+    )
+    if sorted_requests:
+        var_table = Table(
+            title="Request Variance Summary (Most Varied First)",
+            show_header=True,
+            header_style="bold",
+        )
+        var_table.add_column("Request ID", no_wrap=True)
+        var_table.add_column("Variance Score", justify="right")
+        var_table.add_column("Content", max_width=60)
+        var_table.add_column("Notes", justify="right")
+        for req in sorted_requests:
+            var_table.add_row(
+                req.get("request_id", "N/A"),
+                f"{req['variance_score']}",
+                (req.get("content", "") or "")[:60],
+                str(req.get("note_count", 0)),
+            )
+        console.print(var_table)
+
+
+def _render_detailed_markdown(
+    simulation_id: str, data: dict[str, list[dict[str, Any]]]
+) -> None:
+    notes = data.get("notes", [])
+    ratings = data.get("ratings", [])
+    requests = data.get("requests", [])
+
+    lines: list[str] = []
+    lines.append(f"# Detailed Simulation Analysis: {simulation_id}")
+    lines.append("")
+    lines.append(f"- Notes: {len(notes)}")
+    lines.append(f"- Ratings: {len(ratings)}")
+    lines.append(f"- Requests: {len(requests)}")
+    lines.append("")
+
+    lines.append("## Notes")
+    lines.append("")
+    if notes:
+        lines.append("| Note ID | Summary | Classification | Status | Score | Author | Request ID | Created At |")
+        lines.append("|---------|---------|----------------|--------|-------|--------|------------|------------|")
+        for n in notes:
+            score = n.get("helpfulness_score")
+            score_str = str(score) if score is not None else "N/A"
+            summary = (n.get("summary", "") or "")[:50]
+            lines.append(
+                f"| {n.get('note_id', 'N/A')}"
+                f" | {summary}"
+                f" | {n.get('classification', 'N/A')}"
+                f" | {n.get('status', 'N/A')}"
+                f" | {score_str}"
+                f" | {n.get('author_agent', 'N/A')}"
+                f" | {n.get('request_id', 'N/A')}"
+                f" | {(n.get('created_at', '') or '')[:19]} |"
+            )
+        lines.append("")
+    else:
+        lines.append("No notes found.")
+        lines.append("")
+
+    lines.append("## Ratings")
+    lines.append("")
+    if ratings:
+        lines.append("| Note ID | Note Summary | Rater | Helpfulness | Created At |")
+        lines.append("|---------|--------------|-------|-------------|------------|")
+        for r in ratings:
+            summary = (r.get("note_summary", "") or "")[:50]
+            lines.append(
+                f"| {r.get('note_id', 'N/A')}"
+                f" | {summary}"
+                f" | {r.get('rater_agent', 'N/A')}"
+                f" | {r.get('helpfulness_level', 'N/A')}"
+                f" | {(r.get('created_at', '') or '')[:19]} |"
+            )
+        lines.append("")
+    else:
+        lines.append("No ratings found.")
+        lines.append("")
+
+    lines.append("## Requests")
+    lines.append("")
+    if requests:
+        lines.append("| Request ID | Content | Type | Notes | Variance Score |")
+        lines.append("|------------|---------|------|-------|----------------|")
+        for req in requests:
+            variance = req.get("variance_score")
+            variance_str = str(variance) if variance is not None else "N/A"
+            content = (req.get("content", "") or "")[:60]
+            lines.append(
+                f"| {req.get('request_id', 'N/A')}"
+                f" | {content}"
+                f" | {req.get('content_type', 'N/A')}"
+                f" | {req.get('note_count', 0)}"
+                f" | {variance_str} |"
+            )
+        lines.append("")
+    else:
+        lines.append("No requests found.")
+        lines.append("")
+
+    sorted_requests = sorted(
+        [r for r in requests if r.get("variance_score") is not None],
+        key=lambda r: r["variance_score"],
+        reverse=True,
+    )
+    if sorted_requests:
+        lines.append("## Request Variance Summary")
+        lines.append("")
+        lines.append("Requests ranked by variance score (most varied first):")
+        lines.append("")
+        lines.append("| Rank | Request ID | Variance Score | Content | Notes |")
+        lines.append("|------|------------|----------------|---------|-------|")
+        for rank, req in enumerate(sorted_requests, 1):
+            content = (req.get("content", "") or "")[:60]
+            lines.append(
+                f"| {rank}"
+                f" | {req.get('request_id', 'N/A')}"
+                f" | {req['variance_score']}"
+                f" | {content}"
+                f" | {req.get('note_count', 0)} |"
+            )
+        lines.append("")
+
+    click.echo("\n".join(lines))
+
+
+def _render_detailed_xlsx(
+    simulation_id: str,
+    data: dict[str, list[dict[str, Any]]],
+    output_path: str | None,
+) -> None:
+    try:
+        from openpyxl import Workbook
+    except ImportError:
+        error_console.print("[red]Error:[/red] openpyxl is required for xlsx export. Install with: uv add openpyxl")
+        sys.exit(1)
+
+    notes = data.get("notes", [])
+    ratings = data.get("ratings", [])
+    requests = data.get("requests", [])
+
+    wb = Workbook()
+
+    ws_notes = wb.active
+    ws_notes.title = "Notes"
+    note_headers = ["Note ID", "Summary", "Classification", "Status", "Helpfulness Score", "Author Agent", "Request ID", "Created At"]
+    ws_notes.append(note_headers)
+    for n in notes:
+        ws_notes.append([
+            n.get("note_id", ""),
+            n.get("summary", ""),
+            n.get("classification", ""),
+            n.get("status", ""),
+            n.get("helpfulness_score"),
+            n.get("author_agent", ""),
+            n.get("request_id", ""),
+            n.get("created_at", ""),
+        ])
+
+    ws_ratings = wb.create_sheet("Ratings")
+    rating_headers = ["Note ID", "Note Summary", "Rater Agent", "Helpfulness Level", "Created At"]
+    ws_ratings.append(rating_headers)
+    for r in ratings:
+        ws_ratings.append([
+            r.get("note_id", ""),
+            (r.get("note_summary", "") or "")[:50],
+            r.get("rater_agent", ""),
+            r.get("helpfulness_level", ""),
+            r.get("created_at", ""),
+        ])
+
+    ws_requests = wb.create_sheet("Requests")
+    request_headers = ["Request ID", "Content", "Content Type", "Note Count", "Variance Score"]
+    ws_requests.append(request_headers)
+    for req in requests:
+        ws_requests.append([
+            req.get("request_id", ""),
+            req.get("content", ""),
+            req.get("content_type", ""),
+            req.get("note_count", 0),
+            req.get("variance_score"),
+        ])
+
+    for ws in [ws_notes, ws_ratings, ws_requests]:
+        for col in ws.columns:
+            max_length = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                try:
+                    cell_len = len(str(cell.value or ""))
+                    if cell_len > max_length:
+                        max_length = cell_len
+                except Exception:
+                    pass
+            adjusted_width = min(max_length + 2, 60)
+            ws.column_dimensions[col_letter].width = adjusted_width
+
+    if not output_path:
+        output_path = f"simulation-{simulation_id}-detailed.xlsx"
+
+    wb.save(output_path)
+    console.print(f"[green]\u2713[/green] Saved detailed analysis to [bold]{output_path}[/bold]")
