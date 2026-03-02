@@ -10684,6 +10684,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ResumeRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -21156,6 +21173,49 @@
           "data"
         ],
         "title": "ResultsListResponse"
+      },
+      "ResumeAttributes": {
+        "properties": {
+          "reset_turns": {
+            "type": "boolean",
+            "title": "Reset Turns",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ResumeAttributes"
+      },
+      "ResumeData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "simulations"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ResumeAttributes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "attributes"
+        ],
+        "title": "ResumeData"
+      },
+      "ResumeRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ResumeData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ResumeRequest"
       },
       "RiskLevel": {
         "type": "string",

@@ -34,6 +34,7 @@ from src.notes.models import Note, Rating
 from src.simulation.analysis import compute_full_analysis
 from src.simulation.constants import PROGRESS_CACHE_KEY_PREFIX, PROGRESS_CACHE_TTL_SECONDS
 from src.simulation.models import SimAgentInstance, SimulationOrchestrator, SimulationRun
+from src.simulation.restart import snapshot_restart_state
 from src.simulation.schemas import AnalysisResource, AnalysisResponse
 from src.simulation.workflows.orchestrator_workflow import dispatch_orchestrator
 from src.users.models import User
@@ -46,6 +47,22 @@ VALID_PAUSE_FROM = {"running"}
 VALID_RESUME_FROM = {"paused", "failed"}
 VALID_CANCEL_FROM = {"pending", "running", "paused"}
 TERMINAL_STATUSES = {"completed", "cancelled", "failed"}
+
+
+class ResumeAttributes(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reset_turns: bool = False
+
+
+class ResumeData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: str = "simulations"
+    attributes: ResumeAttributes
+
+
+class ResumeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    data: ResumeData
 
 
 class SimulationCreateAttributes(StrictInputSchema):
@@ -480,8 +497,10 @@ async def resume_simulation(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    body: ResumeRequest | None = None,
 ) -> JSONResponse:
     require_admin(current_user)
+    reset_turns = body.data.attributes.reset_turns if body else False
 
     try:
         result = await db.execute(
@@ -496,12 +515,13 @@ async def resume_simulation(
                 f"SimulationRun {simulation_id} not found",
             )
 
-        if run.status not in VALID_RESUME_FROM:
+        valid_from = VALID_RESUME_FROM | ({"completed"} if reset_turns else set())
+        if run.status not in valid_from:
             return create_error_response(
                 status.HTTP_409_CONFLICT,
                 "Conflict",
                 f"Cannot resume simulation in '{run.status}' status "
-                f"(must be one of: {', '.join(sorted(VALID_RESUME_FROM))})",
+                f"(must be one of: {', '.join(sorted(valid_from))})",
             )
 
         needs_redispatch = False
@@ -542,6 +562,41 @@ async def resume_simulation(
         if run.status == "failed":
             update_values["error_message"] = None
             update_values["completed_at"] = None
+
+        if reset_turns:
+            agents_result = await db.execute(
+                select(func.coalesce(func.sum(SimAgentInstance.turn_count), 0)).where(
+                    SimAgentInstance.simulation_run_id == simulation_id,
+                    SimAgentInstance.state != "removed",
+                )
+            )
+            current_total_turns = agents_result.scalar_one()
+
+            snapshot = await snapshot_restart_state(db, simulation_id)
+
+            await db.execute(
+                update(SimAgentInstance)
+                .where(
+                    SimAgentInstance.simulation_run_id == simulation_id,
+                    SimAgentInstance.state != "removed",
+                )
+                .values(
+                    cumulative_turn_count=SimAgentInstance.cumulative_turn_count
+                    + SimAgentInstance.turn_count,
+                    turn_count=0,
+                    state="active",
+                    removal_reason=None,
+                    deleted_at=None,
+                    retry_count=0,
+                )
+            )
+
+            update_values["restart_count"] = run.restart_count + 1
+            update_values["cumulative_turns"] = run.cumulative_turns + current_total_turns
+            update_values["current_config_id"] = snapshot.config_id
+            update_values["completed_at"] = None
+            update_values["error_message"] = None
+            needs_redispatch = True
 
         new_generation = run.generation
         if needs_redispatch:

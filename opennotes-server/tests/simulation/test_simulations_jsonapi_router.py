@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from src.main import app
 
@@ -593,6 +593,363 @@ class TestResumeSimulation:
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 502
+        data = response.json()
+        assert "errors" in data
+
+
+class TestRestartSimulation:
+    @staticmethod
+    def _restart_body(reset_turns: bool = True) -> dict:
+        return {
+            "data": {
+                "type": "simulations",
+                "attributes": {"reset_turns": reset_turns},
+            }
+        }
+
+    @staticmethod
+    async def _create_agents(simulation_run_id: UUID, count: int = 2) -> list[dict]:
+        from src.database import get_session_maker
+        from src.simulation.models import SimAgent, SimAgentInstance
+        from src.users.profile_models import UserProfile
+
+        agents = []
+        async with get_session_maker()() as session:
+            for i in range(count):
+                unique = uuid4().hex[:8]
+                profile = UserProfile(
+                    display_name=f"Agent Profile {unique}",
+                    is_human=False,
+                    is_active=True,
+                )
+                session.add(profile)
+                await session.flush()
+
+                sim_agent = SimAgent(
+                    name=f"TestAgent_{unique}",
+                    personality=f"Test personality {i}",
+                    model_name="test-model",
+                )
+                session.add(sim_agent)
+                await session.flush()
+
+                instance = SimAgentInstance(
+                    simulation_run_id=simulation_run_id,
+                    agent_profile_id=sim_agent.id,
+                    user_profile_id=profile.id,
+                    state="active",
+                    turn_count=5,
+                    cumulative_turn_count=0,
+                )
+                session.add(instance)
+                await session.flush()
+                await session.refresh(instance)
+                agents.append(
+                    {
+                        "id": instance.id,
+                        "state": instance.state,
+                        "turn_count": instance.turn_count,
+                    }
+                )
+
+            await session.commit()
+        return agents
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_completed_simulation(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+        await self._create_agents(run["id"])
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json=self._restart_body(),
+            )
+
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "running"
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_resets_turn_counts(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart-turns"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+        agents = await self._create_agents(run["id"])
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json=self._restart_body(),
+            )
+
+        assert response.status_code == 200
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimAgentInstance
+
+        async with get_session_maker()() as session:
+            for agent_data in agents:
+                result = await session.execute(
+                    select(SimAgentInstance).where(SimAgentInstance.id == agent_data["id"])
+                )
+                inst = result.scalar_one()
+                assert inst.turn_count == 0
+                assert inst.cumulative_turn_count == 5
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_reactivates_completed_agents(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart-reactivate"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+        agents = await self._create_agents(run["id"])
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimAgentInstance
+
+        async with get_session_maker()() as session:
+            await session.execute(
+                update(SimAgentInstance)
+                .where(SimAgentInstance.id == agents[0]["id"])
+                .values(state="completed")
+            )
+            await session.commit()
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json=self._restart_body(),
+            )
+
+        assert response.status_code == 200
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agents[0]["id"])
+            )
+            inst = result.scalar_one()
+            assert inst.state == "active"
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_keeps_removed_agents_removed(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart-removed"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+        agents = await self._create_agents(run["id"])
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimAgentInstance
+
+        async with get_session_maker()() as session:
+            await session.execute(
+                update(SimAgentInstance)
+                .where(SimAgentInstance.id == agents[0]["id"])
+                .values(state="removed", removal_reason="test removal")
+            )
+            await session.commit()
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json=self._restart_body(),
+            )
+
+        assert response.status_code == 200
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agents[0]["id"])
+            )
+            inst = result.scalar_one()
+            assert inst.state == "removed"
+            assert inst.removal_reason == "test removal"
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_creates_audit_records(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart-audit"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+        agents = await self._create_agents(run["id"])
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json=self._restart_body(),
+            )
+
+        assert response.status_code == 200
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimAgentRunLog, SimulationRunConfig
+
+        async with get_session_maker()() as session:
+            config_result = await session.execute(
+                select(SimulationRunConfig).where(
+                    SimulationRunConfig.simulation_run_id == run["id"]
+                )
+            )
+            configs = config_result.scalars().all()
+            assert len(configs) == 1
+            assert configs[0].restart_number == 0
+
+            logs_result = await session.execute(
+                select(SimAgentRunLog).where(SimAgentRunLog.simulation_run_id == run["id"])
+            )
+            logs = logs_result.scalars().all()
+            assert len(logs) == len(agents)
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_increments_restart_count(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart-count"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+        await self._create_agents(run["id"])
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json=self._restart_body(),
+            )
+
+        assert response.status_code == 200
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimulationRun
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == run["id"])
+            )
+            sim_run = result.scalar_one()
+            assert sim_run.restart_count == 1
+            assert sim_run.cumulative_turns == 10
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_resume_without_body_still_works(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-no-body"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("paused")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "running"
+
+    @pytest.mark.asyncio
+    async def test_restart_from_running_returns_409(
+        self, admin_auth_client, simulation_run_factory
+    ):
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("running")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json=self._restart_body(),
+            )
+
+        assert response.status_code == 409
+        data = response.json()
+        assert "errors" in data
+
+    @pytest.mark.asyncio
+    async def test_resume_from_completed_without_reset_returns_409(
+        self, admin_auth_client, simulation_run_factory
+    ):
+        run = await simulation_run_factory("completed")
+
+        response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 409
         data = response.json()
         assert "errors" in data
 

@@ -8,6 +8,7 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
+from ...models.resume_request import ResumeRequest
 from ...models.simulation_single_response import SimulationSingleResponse
 from ...types import UNSET, Response, Unset
 
@@ -15,6 +16,7 @@ from ...types import UNSET, Response, Unset
 def _get_kwargs(
     simulation_id: UUID,
     *,
+    body: None | ResumeRequest | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
@@ -27,6 +29,13 @@ def _get_kwargs(
             simulation_id=quote(str(simulation_id), safe=""),
         ),
     }
+
+    if isinstance(body, ResumeRequest):
+        _kwargs["json"] = body.to_dict()
+    else:
+        _kwargs["json"] = body
+
+    headers["Content-Type"] = "application/json"
 
     _kwargs["headers"] = headers
     return _kwargs
@@ -66,6 +75,7 @@ def sync_detailed(
     simulation_id: UUID,
     *,
     client: AuthenticatedClient,
+    body: None | ResumeRequest | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | SimulationSingleResponse]:
     """Resume Simulation
@@ -73,6 +83,7 @@ def sync_detailed(
     Args:
         simulation_id (UUID):
         x_api_key (None | str | Unset):
+        body (None | ResumeRequest | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -84,6 +95,7 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         simulation_id=simulation_id,
+        body=body,
         x_api_key=x_api_key,
     )
 
@@ -98,6 +110,7 @@ def sync(
     simulation_id: UUID,
     *,
     client: AuthenticatedClient,
+    body: None | ResumeRequest | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> HTTPValidationError | SimulationSingleResponse | None:
     """Resume Simulation
@@ -105,6 +118,7 @@ def sync(
     Args:
         simulation_id (UUID):
         x_api_key (None | str | Unset):
+        body (None | ResumeRequest | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -117,6 +131,7 @@ def sync(
     return sync_detailed(
         simulation_id=simulation_id,
         client=client,
+        body=body,
         x_api_key=x_api_key,
     ).parsed
 
@@ -125,6 +140,7 @@ async def asyncio_detailed(
     simulation_id: UUID,
     *,
     client: AuthenticatedClient,
+    body: None | ResumeRequest | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | SimulationSingleResponse]:
     """Resume Simulation
@@ -132,6 +148,7 @@ async def asyncio_detailed(
     Args:
         simulation_id (UUID):
         x_api_key (None | str | Unset):
+        body (None | ResumeRequest | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -143,6 +160,7 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         simulation_id=simulation_id,
+        body=body,
         x_api_key=x_api_key,
     )
 
@@ -155,6 +173,7 @@ async def asyncio(
     simulation_id: UUID,
     *,
     client: AuthenticatedClient,
+    body: None | ResumeRequest | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> HTTPValidationError | SimulationSingleResponse | None:
     """Resume Simulation
@@ -162,6 +181,7 @@ async def asyncio(
     Args:
         simulation_id (UUID):
         x_api_key (None | str | Unset):
+        body (None | ResumeRequest | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -175,6 +195,7 @@ async def asyncio(
         await asyncio_detailed(
             simulation_id=simulation_id,
             client=client,
+            body=body,
             x_api_key=x_api_key,
         )
     ).parsed

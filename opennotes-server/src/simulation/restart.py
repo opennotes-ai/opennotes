@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -66,5 +66,11 @@ async def snapshot_restart_state(
         session.add(log)
         await session.flush()
         log_ids.append(log.id)
+
+        await session.execute(
+            update(SimAgentInstance)
+            .where(SimAgentInstance.id == inst.id)
+            .values(current_run_log_id=log.id)
+        )
 
     return RestartSnapshot(config_id=config.id, log_ids=log_ids)
