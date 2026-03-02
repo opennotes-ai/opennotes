@@ -9,7 +9,7 @@ from sqlalchemy.orm import load_only, selectinload
 
 from src.monitoring import get_logger
 from src.notes import loaders
-from src.notes.models import Note, Rating
+from src.notes.models import Note, Rating, Request
 from src.simulation.models import SimAgentInstance, SimAgentMemory, SimulationRun
 from src.simulation.schemas import (
     AgentBehaviorData,
@@ -17,6 +17,7 @@ from src.simulation.schemas import (
     ConsensusMetricsData,
     DetailedNoteData,
     DetailedRatingData,
+    DetailedRequestData,
     NoteQualityData,
     PerAgentRatingData,
     RatingDistributionData,
@@ -445,3 +446,97 @@ async def compute_detailed_notes(
         )
 
     return detailed_notes, total
+
+
+def _compute_classification_diversity(classifications: list[str]) -> float:
+    if len(classifications) <= 1:
+        return 0.0
+    counter = Counter(classifications)
+    max_count = max(counter.values())
+    return 1.0 - (max_count / len(classifications))
+
+
+def _compute_rating_spread(ratings_per_note: list[list[str]]) -> float:
+    if not ratings_per_note:
+        return 0.0
+    spreads: list[float] = []
+    for levels in ratings_per_note:
+        if len(levels) <= 1:
+            spreads.append(0.0)
+            continue
+        counter = Counter(levels)
+        max_count = max(counter.values())
+        spreads.append(1.0 - (max_count / len(levels)))
+    return sum(spreads) / len(spreads) if spreads else 0.0
+
+
+async def compute_request_variance(
+    simulation_run_id: UUID,
+    db: AsyncSession,
+) -> list[DetailedRequestData]:
+    instances = await _get_agent_instances(simulation_run_id, db)
+    user_profile_ids = [inst.user_profile_id for inst in instances]
+
+    if not user_profile_ids:
+        return []
+
+    notes_result = await db.execute(
+        select(Note)
+        .where(
+            Note.author_id.in_(user_profile_ids),
+            Note.deleted_at.is_(None),
+            Note.request_id.isnot(None),
+        )
+        .options(*loaders.full())
+    )
+    notes = list(notes_result.scalars().all())
+
+    request_ids = {note.request_id for note in notes if note.request_id}
+
+    request_result = await db.execute(
+        select(Request)
+        .where(Request.request_id.in_(request_ids))
+        .options(*loaders.request_with_archive())
+    )
+    requests_by_id: dict[str, Request] = {
+        req.request_id: req for req in request_result.scalars().all()
+    }
+
+    notes_by_request: dict[str, list[Note]] = defaultdict(list)
+    for note in notes:
+        if note.request_id:
+            notes_by_request[note.request_id].append(note)
+
+    all_request_ids = set(request_ids) | set(requests_by_id.keys())
+
+    results: list[DetailedRequestData] = []
+    for req_id in all_request_ids:
+        req_notes = notes_by_request.get(req_id, [])
+        req_obj = requests_by_id.get(req_id)
+
+        content: str | None = None
+        content_type: str | None = None
+        if req_obj:
+            content = req_obj.content
+            if req_obj.message_archive:
+                content_type = req_obj.message_archive.content_type
+
+        classifications = [n.classification for n in req_notes]
+        ratings_per_note = [[r.helpfulness_level for r in n.ratings] for n in req_notes]
+
+        classification_diversity = _compute_classification_diversity(classifications)
+        rating_spread = _compute_rating_spread(ratings_per_note)
+        variance_score = round((classification_diversity + rating_spread) / 2.0, 4)
+
+        results.append(
+            DetailedRequestData(
+                request_id=req_id,
+                content=content,
+                content_type=content_type,
+                note_count=len(req_notes),
+                variance_score=variance_score,
+            )
+        )
+
+    results.sort(key=lambda r: r.variance_score, reverse=True)
+    return results
