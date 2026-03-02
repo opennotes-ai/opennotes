@@ -4,7 +4,7 @@ from uuid import UUID
 
 import pendulum
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ARRAY, CheckConstraint, Index, String, Text, func, text
+from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -52,7 +52,9 @@ class FactCheckItem(Base):
     )
 
     # Dataset identification
-    dataset_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    dataset_name: Mapped[str] = mapped_column(
+        String(100), ForeignKey("fact_check_datasets.slug"), nullable=False
+    )
     dataset_tags: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, index=True)
 
     # Core content

@@ -151,6 +151,31 @@ def validate_and_normalize_batch(
     return candidates, errors
 
 
+async def ensure_dataset_slugs_exist(
+    session: AsyncSession,
+    candidates: list[NormalizedCandidate],
+) -> None:
+    if not candidates:
+        return
+
+    all_tags: set[str] = set()
+    for c in candidates:
+        all_tags.update(c.dataset_tags)
+
+    if not all_tags:
+        return
+
+    params = [{"slug": tag, "display_name": tag} for tag in sorted(all_tags)]
+    await session.execute(
+        text(
+            "INSERT INTO fact_check_datasets (slug, display_name) "
+            "VALUES (:slug, :display_name) "
+            "ON CONFLICT DO NOTHING"
+        ),
+        params,
+    )
+
+
 async def upsert_candidates(
     session: AsyncSession,
     candidates: list[NormalizedCandidate],
@@ -171,6 +196,8 @@ async def upsert_candidates(
     """
     if not candidates:
         return 0, 0
+
+    await ensure_dataset_slugs_exist(session, candidates)
 
     values = [
         {
