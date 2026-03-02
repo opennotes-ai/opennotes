@@ -8,6 +8,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from opennotes_cli.formatting import truncate_uuid
+
 console = Console()
 error_console = Console(stderr=True)
 
@@ -145,13 +147,13 @@ def display_task_list(
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("Task ID", no_wrap=True)
+    table.add_column("Task ID", no_wrap=True, width=14)
     table.add_column("Type", width=20)
     table.add_column("Status", width=12)
     table.add_column("Progress", justify="right", width=20)
 
     for task in tasks:
-        task_id = task.get("id", "N/A")
+        task_id = truncate_uuid(task.get("id", "N/A"))
         task_type = task.get("job_type", "N/A")
         status = task.get("status", "unknown")
         completed = task.get("completed_tasks", 0)
@@ -223,13 +225,13 @@ def display_batch_job_list(
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("Job ID", no_wrap=True, width=36)
+    table.add_column("Job ID", no_wrap=True, width=14)
     table.add_column("Type", width=25)
     table.add_column("Status", width=12)
     table.add_column("Progress", justify="right", width=20)
 
     for job in jobs:
-        job_id = job.get("id", "N/A")
+        job_id = truncate_uuid(job.get("id", "N/A"))
         job_type = job.get("job_type", "N/A")
         status = job.get("status", "unknown")
         completed = job.get("completed_tasks", 0)
@@ -298,7 +300,7 @@ def display_candidates_list(data: dict[str, Any], json_output: bool = False) -> 
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", no_wrap=True, width=12)
+    table.add_column("ID", no_wrap=True, width=14)
     table.add_column("Status", width=12)
     table.add_column("Rating", width=12)
     table.add_column("Dataset", width=20)
@@ -308,9 +310,7 @@ def display_candidates_list(data: dict[str, Any], json_output: bool = False) -> 
     for candidate in candidates:
         attrs = candidate.get("attributes", {})
         candidate_id = candidate.get("id", "N/A")
-        id_truncated = (
-            candidate_id[:8] + "..." if len(candidate_id) > 11 else candidate_id
-        )
+        id_truncated = truncate_uuid(candidate_id)
 
         status_val = attrs.get("status", "unknown")
         status_color = {
