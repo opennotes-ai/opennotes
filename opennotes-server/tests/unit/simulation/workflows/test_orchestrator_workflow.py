@@ -495,7 +495,7 @@ class TestDetectStuckAgentsStep:
             result = detect_stuck_agents_step.__wrapped__(run_id)
 
         assert result["retried"] == 1
-        mock_dbos.get_workflow_status.assert_called_once_with(f"turn-{agent_id}-1-retry0")
+        mock_dbos.get_workflow_status.assert_called_once_with(f"turn-{agent_id}-gen1-1-retry0")
         update_session.execute.assert_awaited_once()
         update_session.commit.assert_awaited_once()
 
@@ -538,7 +538,7 @@ class TestDetectStuckAgentsStep:
             result = detect_stuck_agents_step.__wrapped__(run_id)
 
         assert result["retried"] == 1
-        mock_dbos.get_workflow_status.assert_called_once_with(f"turn-{agent_id}-1-retry0")
+        mock_dbos.get_workflow_status.assert_called_once_with(f"turn-{agent_id}-gen1-1-retry0")
         update_session.execute.assert_awaited_once()
         update_session.commit.assert_awaited_once()
 
@@ -652,7 +652,7 @@ class TestDetectStuckAgentsStep:
             mock_dbos.get_workflow_status.return_value = None
             detect_stuck_agents_step.__wrapped__(run_id)
 
-        mock_dbos.get_workflow_status.assert_called_once_with(f"turn-{agent_id}-4-retry1")
+        mock_dbos.get_workflow_status.assert_called_once_with(f"turn-{agent_id}-gen1-4-retry1")
 
 
 class TestScheduleTurnsStep:
@@ -851,7 +851,7 @@ class TestScheduleTurnsStep:
         ):
             schedule_turns_step.__wrapped__(str(uuid4()), config)
 
-        mock_dispatch.assert_awaited_once_with(instance_id, 3, 1)
+        mock_dispatch.assert_awaited_once_with(instance_id, 3, 1, generation=1)
 
     def test_schedule_turns_circuit_breaker_trips(self) -> None:
         from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError

@@ -1216,7 +1216,7 @@ class TestDispatchAgentTurn:
 
         mock_client = MagicMock()
         mock_handle = MagicMock()
-        mock_handle.workflow_id = "turn-abc-5-retry0"
+        mock_handle.workflow_id = "turn-abc-gen1-5-retry0"
         mock_client.enqueue.return_value = mock_handle
 
         agent_instance_id = uuid4()
@@ -1231,15 +1231,15 @@ class TestDispatchAgentTurn:
         ):
             workflow_id = await dispatch_agent_turn(agent_instance_id, turn_number)
 
-        assert workflow_id == "turn-abc-5-retry0"
+        assert workflow_id == "turn-abc-gen1-5-retry0"
         mock_client.enqueue.assert_called_once()
 
         enqueue_args = mock_client.enqueue.call_args
         options = enqueue_args.args[0]
         assert options["queue_name"] == "simulation_turn"
         assert options["workflow_name"] == "run_agent_turn"
-        assert options["workflow_id"] == f"turn-{agent_instance_id}-{turn_number}-retry0"
-        assert options["deduplication_id"] == f"turn-{agent_instance_id}-{turn_number}-retry0"
+        assert options["workflow_id"] == f"turn-{agent_instance_id}-gen1-{turn_number}-retry0"
+        assert options["deduplication_id"] == f"turn-{agent_instance_id}-gen1-{turn_number}-retry0"
 
         assert enqueue_args.args[1] == str(agent_instance_id)
 
@@ -1292,8 +1292,8 @@ class TestDispatchAgentTurn:
 
         call1_options = mock_client.enqueue.call_args_list[0].args[0]
         call2_options = mock_client.enqueue.call_args_list[1].args[0]
-        assert call1_options["workflow_id"] == f"turn-{agent_id}-1-retry0"
-        assert call2_options["workflow_id"] == f"turn-{agent_id}-1-retry2"
+        assert call1_options["workflow_id"] == f"turn-{agent_id}-gen1-1-retry0"
+        assert call2_options["workflow_id"] == f"turn-{agent_id}-gen1-1-retry2"
         assert call1_options["deduplication_id"] != call2_options["deduplication_id"]
 
 

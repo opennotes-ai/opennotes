@@ -92,6 +92,7 @@ def initialize_run_step(simulation_run_id: str) -> dict[str, Any]:
                 "max_turns_per_agent": orchestrator.max_turns_per_agent,
                 "agent_profile_ids": orchestrator.agent_profile_ids or [],
                 "community_server_id": str(run.community_server_id),
+                "generation": run.generation,
             }
 
     return run_sync(_init())
@@ -125,6 +126,7 @@ def refresh_config_step(simulation_run_id: str) -> dict[str, Any]:
                 "max_turns_per_agent": orchestrator.max_turns_per_agent,
                 "agent_profile_ids": orchestrator.agent_profile_ids or [],
                 "community_server_id": str(run.community_server_id),
+                "generation": run.generation,
             }
 
     return run_sync(_refresh())
@@ -378,7 +380,7 @@ def remove_agents_step(
 
 
 @DBOS.step()
-def detect_stuck_agents_step(simulation_run_id: str) -> dict[str, int]:
+def detect_stuck_agents_step(simulation_run_id: str, *, generation: int = 1) -> dict[str, int]:
     from src.database import get_session_maker
 
     async def _get_active_agents() -> list[tuple[UUID, int, int]]:
@@ -400,7 +402,7 @@ def detect_stuck_agents_step(simulation_run_id: str) -> dict[str, int]:
 
     agents_to_retry: list[tuple[UUID, int]] = []
     for agent_id, turn_count, retry_count in agents:
-        wf_id = f"turn-{agent_id}-{turn_count + 1}-retry{retry_count}"
+        wf_id = f"turn-{agent_id}-gen{generation}-{turn_count + 1}-retry{retry_count}"
         wf_status = DBOS.get_workflow_status(wf_id)
         if wf_status is not None and wf_status.status in (
             "ERROR",
@@ -473,6 +475,7 @@ def schedule_turns_step(
     from src.database import get_session_maker
 
     max_turns = config["max_turns_per_agent"]
+    generation = config.get("generation", 1)
 
     async def _schedule() -> dict[str, int]:
         from src.simulation.workflows.agent_turn_workflow import dispatch_agent_turn
@@ -505,7 +508,9 @@ def schedule_turns_step(
                 retry_exhausted_ids.append(instance_id)
                 continue
 
-            await dispatch_agent_turn(instance_id, turn_count + 1, retry_count)
+            await dispatch_agent_turn(
+                instance_id, turn_count + 1, retry_count, generation=generation
+            )
             dispatched_count += 1
 
         if retry_exhausted_ids:
@@ -830,7 +835,7 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 logger.exception("Failed to remove agents")
 
             try:
-                detect_stuck_agents_step(simulation_run_id)
+                detect_stuck_agents_step(simulation_run_id, generation=config.get("generation", 1))
             except Exception:
                 logger.exception("Failed to detect stuck agents")
 

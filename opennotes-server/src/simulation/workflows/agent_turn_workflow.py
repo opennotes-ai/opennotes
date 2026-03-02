@@ -589,7 +589,11 @@ RUN_AGENT_TURN_WORKFLOW_NAME: str = run_agent_turn.__qualname__
 
 
 async def dispatch_agent_turn(
-    agent_instance_id: UUID, turn_number: int, retry_count: int = 0
+    agent_instance_id: UUID,
+    turn_number: int,
+    retry_count: int = 0,
+    *,
+    generation: int = 1,
 ) -> str:
     import asyncio
 
@@ -598,7 +602,7 @@ async def dispatch_agent_turn(
     from src.dbos_workflows.config import get_dbos_client
 
     client = get_dbos_client()
-    wf_id = f"turn-{agent_instance_id}-{turn_number}-retry{retry_count}"
+    wf_id = f"turn-{agent_instance_id}-gen{generation}-{turn_number}-retry{retry_count}"
     options: EnqueueOptions = {
         "queue_name": "simulation_turn",
         "workflow_name": RUN_AGENT_TURN_WORKFLOW_NAME,
