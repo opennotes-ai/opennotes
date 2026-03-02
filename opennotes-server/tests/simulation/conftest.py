@@ -17,8 +17,10 @@ def _register_simulation_models():
         SimAgent,
         SimAgentInstance,
         SimAgentMemory,
+        SimAgentRunLog,
         SimulationOrchestrator,
         SimulationRun,
+        SimulationRunConfig,
     )
     from src.users.models import User  # noqa: F401
     from src.users.profile_models import CommunityMember, UserIdentity, UserProfile  # noqa: F401
