@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock
+import os
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from hypothesis import given
+from hypothesis import settings as hypothesis_settings
 from hypothesis import strategies as st
 
+from src.config import Settings, get_settings
 from src.fact_checking.import_pipeline.rating_normalizer import (
     CANONICAL_RATINGS,
     INTERMEDIATE_TO_CANONICAL,
@@ -21,6 +24,9 @@ from src.search.fusion_config import (
     get_fusion_alpha,
     set_fusion_alpha,
 )
+
+TEST_CREDENTIALS_ENCRYPTION_KEY = "WSaz4Oan5Rx-0zD-6wC7yOfasrJmzZDVViu6WzwSi0Q="
+TEST_ENCRYPTION_MASTER_KEY = "F5UG5HjhMjOgapb3ADail98bpydyrnrFfgkH1YB_zuE="
 
 
 def _build_case_variant_pairs() -> list[tuple[str, str]]:
@@ -43,19 +49,20 @@ def _resolve_to_final(rating: str | None) -> str | None:
     return rating
 
 
-def _parse_skip_startup_checks(raw: str) -> list[str]:
-    if not raw or not raw.strip():
-        return []
-    v = raw.strip()
-    if v.startswith("[") and v.endswith("]"):
-        try:
-            parsed = json.loads(v)
-            if isinstance(parsed, list):
-                return [str(item).strip() for item in parsed]
-        except json.JSONDecodeError:
-            inner = v[1:-1]
-            return [item.strip() for item in inner.split(",") if item.strip()]
-    return [check.strip() for check in v.split(",") if check.strip()]
+def _make_settings_with_skip_checks(skip_value: str) -> Settings:
+    valid_key = "a" * 32
+    get_settings.cache_clear()
+    with patch.dict(
+        os.environ,
+        {
+            "JWT_SECRET_KEY": valid_key,
+            "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+            "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            "SKIP_STARTUP_CHECKS": skip_value,
+        },
+        clear=True,
+    ):
+        return Settings(_env_file=None)
 
 
 def _is_float_str(s: str) -> bool:
@@ -209,6 +216,12 @@ class TestNormalizeRatingEdgeCases:
 
 
 class TestSkipStartupChecksParsing:
+    @pytest.fixture(autouse=True)
+    def _clear_singleton(self):
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
     @given(
         items=st.lists(
             st.text(alphabet="abcdefghijklmnopqrstuvwxyz_", min_size=1, max_size=20),
@@ -216,13 +229,12 @@ class TestSkipStartupChecksParsing:
             max_size=10,
         )
     )
+    @hypothesis_settings(max_examples=20)
     def test_comma_separated_roundtrip(self, items: list[str]):
         raw = ",".join(items)
-        parsed = _parse_skip_startup_checks(raw)
-        assert isinstance(parsed, list)
-        for item in parsed:
-            assert isinstance(item, str)
-        assert set(parsed) == set(items)
+        settings = _make_settings_with_skip_checks(raw)
+        assert isinstance(settings.SKIP_STARTUP_CHECKS, list)
+        assert set(settings.SKIP_STARTUP_CHECKS) == set(items)
 
     @given(
         items=st.lists(
@@ -231,67 +243,39 @@ class TestSkipStartupChecksParsing:
             max_size=10,
         )
     )
+    @hypothesis_settings(max_examples=20)
     def test_json_array_roundtrip(self, items: list[str]):
         raw = json.dumps(items)
-        parsed = _parse_skip_startup_checks(raw)
-        assert parsed == items
-
-    @pytest.mark.skip(
-        reason="task-1127: naive comma-split parser can't roundtrip arbitrary strings; replacing with native pydantic-settings list field"
-    )
-    @given(
-        items=st.lists(
-            st.text(alphabet="abcdefghijklmnopqrstuvwxyz_", min_size=1, max_size=20),
-            min_size=1,
-            max_size=10,
-        )
-    )
-    def test_bracket_notation_roundtrip(self, items: list[str]):
-        raw = "[" + ", ".join(items) + "]"
-        parsed = _parse_skip_startup_checks(raw)
-        assert set(parsed) == set(items)
-
-    @given(s=st.text())
-    def test_never_crashes(self, s: str):
-        parsed = _parse_skip_startup_checks(s)
-        assert isinstance(parsed, list)
+        settings = _make_settings_with_skip_checks(raw)
+        assert items == settings.SKIP_STARTUP_CHECKS
 
     def test_empty_string(self):
-        assert _parse_skip_startup_checks("") == []
+        settings = _make_settings_with_skip_checks("")
+        assert settings.SKIP_STARTUP_CHECKS == []
 
     def test_whitespace_only(self):
-        assert _parse_skip_startup_checks("   ") == []
-
-    @given(s=st.text(min_size=1))
-    def test_unclosed_bracket_no_crash(self, s: str):
-        parsed = _parse_skip_startup_checks("[" + s)
-        assert isinstance(parsed, list)
-
-    def test_unclosed_bracket_treated_as_comma_separated(self):
-        parsed = _parse_skip_startup_checks("[a, b, c")
-        assert isinstance(parsed, list)
-
-    @given(
-        items=st.lists(
-            st.text(alphabet="abcdefghijklmnopqrstuvwxyz_", min_size=1, max_size=20).filter(
-                lambda s: s not in ("true", "false", "null")
-            ),
-            min_size=1,
-            max_size=5,
-        ),
-    )
-    def test_json_and_bracket_agree_for_simple_strings(self, items: list[str]):
-        json_result = _parse_skip_startup_checks(json.dumps(items))
-        bracket_result = _parse_skip_startup_checks("[" + ",".join(items) + "]")
-        assert set(json_result) == set(bracket_result)
+        settings = _make_settings_with_skip_checks("   ")
+        assert settings.SKIP_STARTUP_CHECKS == []
 
     def test_mixed_format_comma_with_spaces(self):
-        parsed = _parse_skip_startup_checks("  a , b,  c  ")
-        assert parsed == ["a", "b", "c"]
+        settings = _make_settings_with_skip_checks("  a , b,  c  ")
+        assert settings.SKIP_STARTUP_CHECKS == ["a", "b", "c"]
 
     def test_trailing_comma(self):
-        parsed = _parse_skip_startup_checks("a,b,c,")
-        assert parsed == ["a", "b", "c"]
+        settings = _make_settings_with_skip_checks("a,b,c,")
+        assert settings.SKIP_STARTUP_CHECKS == ["a", "b", "c"]
+
+    def test_single_value(self):
+        settings = _make_settings_with_skip_checks("redis")
+        assert settings.SKIP_STARTUP_CHECKS == ["redis"]
+
+    def test_json_array_single_value(self):
+        settings = _make_settings_with_skip_checks('["all"]')
+        assert settings.SKIP_STARTUP_CHECKS == ["all"]
+
+    def test_json_array_multiple_values(self):
+        settings = _make_settings_with_skip_checks('["database_schema", "redis", "nats"]')
+        assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "redis", "nats"]
 
     @given(
         items=st.lists(
@@ -301,23 +285,11 @@ class TestSkipStartupChecksParsing:
         ),
         pad=st.text(alphabet=" \t", min_size=0, max_size=3),
     )
+    @hypothesis_settings(max_examples=20)
     def test_whitespace_around_items_stripped(self, items: list[str], pad: str):
         raw = ",".join(pad + item + pad for item in items)
-        parsed = _parse_skip_startup_checks(raw)
-        assert set(parsed) == set(items)
-
-    def test_malformed_json_array_falls_back_to_bracket_split(self):
-        parsed = _parse_skip_startup_checks('[a, b, "c]')
-        assert isinstance(parsed, list)
-        assert len(parsed) > 0
-
-    @given(
-        inner=st.text(alphabet="abcdefghijklmnopqrstuvwxyz_, \t", min_size=0, max_size=50),
-    )
-    def test_bracket_wrapped_always_parseable(self, inner: str):
-        raw = "[" + inner + "]"
-        parsed = _parse_skip_startup_checks(raw)
-        assert isinstance(parsed, list)
+        settings = _make_settings_with_skip_checks(raw)
+        assert set(settings.SKIP_STARTUP_CHECKS) == set(items)
 
 
 class TestFusionAlphaSelfHealing:

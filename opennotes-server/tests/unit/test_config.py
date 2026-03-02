@@ -507,8 +507,8 @@ class TestSkipStartupChecksValidation:
             settings = create_settings_no_env_file()
             assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "postgresql"]
 
-    def test_skip_startup_checks_bracket_notation_unquoted(self):
-        """Bracket notation with unquoted values like '[all]' should work."""
+    def test_skip_startup_checks_json_array_single(self):
+        """JSON array with single value should be parsed correctly."""
         valid_key = "a" * 32
         with patch.dict(
             os.environ,
@@ -516,15 +516,15 @@ class TestSkipStartupChecksValidation:
                 "JWT_SECRET_KEY": valid_key,
                 "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
                 "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-                "SKIP_STARTUP_CHECKS": "[all]",
+                "SKIP_STARTUP_CHECKS": '["all"]',
             },
             clear=True,
         ):
             settings = create_settings_no_env_file()
             assert settings.SKIP_STARTUP_CHECKS == ["all"]
 
-    def test_skip_startup_checks_bracket_notation_multiple_unquoted(self):
-        """Bracket notation with multiple unquoted values like '[a, b, c]'."""
+    def test_skip_startup_checks_json_array_multiple(self):
+        """JSON array with multiple values should be parsed correctly."""
         valid_key = "a" * 32
         with patch.dict(
             os.environ,
@@ -532,7 +532,7 @@ class TestSkipStartupChecksValidation:
                 "JWT_SECRET_KEY": valid_key,
                 "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
                 "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-                "SKIP_STARTUP_CHECKS": "[database_schema, redis, nats]",
+                "SKIP_STARTUP_CHECKS": '["database_schema", "redis", "nats"]',
             },
             clear=True,
         ):
