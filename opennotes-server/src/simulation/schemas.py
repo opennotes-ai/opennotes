@@ -284,3 +284,51 @@ class AnalysisResponse(BaseModel):
 
     data: AnalysisResource
     jsonapi: dict[str, str] = {"version": "1.1"}
+
+
+class DetailedRatingData(SQLAlchemySchema):
+    rater_agent_name: str
+    rater_agent_instance_id: str
+    helpfulness_level: str
+    created_at: datetime | None = None
+
+
+class DetailedNoteData(SQLAlchemySchema):
+    note_id: str
+    summary: str
+    classification: str
+    status: str
+    helpfulness_score: int
+    author_agent_name: str
+    author_agent_instance_id: str
+    request_id: str | None = None
+    created_at: datetime | None = None
+    ratings: list[DetailedRatingData] = Field(default_factory=list)
+
+
+class DetailedRequestData(SQLAlchemySchema):
+    request_id: str
+    content: str | None = None
+    content_type: str | None = None
+    note_count: int = 0
+    variance_score: float = 0.0
+
+
+class DetailedNoteResource(BaseModel):
+    type: str = "simulation-detailed-notes"
+    id: str
+    attributes: DetailedNoteData
+
+
+class RequestVarianceMeta(BaseModel):
+    requests: list[DetailedRequestData] = Field(default_factory=list)
+    total_requests: int = 0
+
+
+class DetailedAnalysisResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    data: list[DetailedNoteResource]
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: Any | None = None
+    meta: Any | None = None
