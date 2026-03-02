@@ -4,6 +4,7 @@ Tests rating normalization, schema validation, and candidate transformation.
 """
 
 from datetime import datetime
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -967,3 +968,110 @@ class TestValidateAndNormalizeBatchRowMismatch:
 
         assert len(candidates) == 0
         assert len(errors) == 5
+
+
+class TestEnsureDatasetSlugsExist:
+    """Tests for auto-registration of dataset slugs before batch insert."""
+
+    @pytest.mark.asyncio
+    async def test_collects_unique_tags_from_candidates(self) -> None:
+        from src.fact_checking.import_pipeline.importer import ensure_dataset_slugs_exist
+
+        candidates = [
+            NormalizedCandidate(
+                source_url="https://example.com/1",
+                claim_hash=compute_claim_hash("claim 1"),
+                title="Test 1",
+                dataset_name="snopes.com",
+                dataset_tags=["Snopes"],
+                original_id="1",
+            ),
+            NormalizedCandidate(
+                source_url="https://example.com/2",
+                claim_hash=compute_claim_hash("claim 2"),
+                title="Test 2",
+                dataset_name="politifact.com",
+                dataset_tags=["PolitiFact"],
+                original_id="2",
+            ),
+            NormalizedCandidate(
+                source_url="https://example.com/3",
+                claim_hash=compute_claim_hash("claim 3"),
+                title="Test 3",
+                dataset_name="snopes.com",
+                dataset_tags=["Snopes"],
+                original_id="3",
+            ),
+        ]
+
+        mock_session = AsyncMock()
+        await ensure_dataset_slugs_exist(mock_session, candidates)
+
+        mock_session.execute.assert_called_once()
+        params = mock_session.execute.call_args[0][1]
+
+        slugs = {p["slug"] for p in params}
+        assert slugs == {"Snopes", "PolitiFact"}
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_candidates(self) -> None:
+        from src.fact_checking.import_pipeline.importer import ensure_dataset_slugs_exist
+
+        mock_session = AsyncMock()
+        await ensure_dataset_slugs_exist(mock_session, [])
+
+        mock_session.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_tags_across_candidates(self) -> None:
+        from src.fact_checking.import_pipeline.importer import ensure_dataset_slugs_exist
+
+        candidates = [
+            NormalizedCandidate(
+                source_url="https://example.com/1",
+                claim_hash=compute_claim_hash("claim 1"),
+                title="Test 1",
+                dataset_name="snopes.com",
+                dataset_tags=["Snopes"],
+                original_id="1",
+            ),
+            NormalizedCandidate(
+                source_url="https://example.com/2",
+                claim_hash=compute_claim_hash("claim 2"),
+                title="Test 2",
+                dataset_name="snopes.com",
+                dataset_tags=["Snopes"],
+                original_id="2",
+            ),
+        ]
+
+        mock_session = AsyncMock()
+        await ensure_dataset_slugs_exist(mock_session, candidates)
+
+        mock_session.execute.assert_called_once()
+        params = mock_session.execute.call_args[0][1]
+        assert len(params) == 1
+        assert params[0]["slug"] == "Snopes"
+
+    @pytest.mark.asyncio
+    async def test_handles_multiple_tags_per_candidate(self) -> None:
+        from src.fact_checking.import_pipeline.importer import ensure_dataset_slugs_exist
+
+        candidates = [
+            NormalizedCandidate(
+                source_url="https://example.com/1",
+                claim_hash=compute_claim_hash("claim 1"),
+                title="Test 1",
+                dataset_name="example.com",
+                dataset_tags=["Tag-A", "Tag-B"],
+                original_id="1",
+            ),
+        ]
+
+        mock_session = AsyncMock()
+        await ensure_dataset_slugs_exist(mock_session, candidates)
+
+        mock_session.execute.assert_called_once()
+        params = mock_session.execute.call_args[0][1]
+        slugs = {p["slug"] for p in params}
+        assert slugs == {"Tag-A", "Tag-B"}
