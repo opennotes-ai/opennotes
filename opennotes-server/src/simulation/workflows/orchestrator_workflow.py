@@ -138,6 +138,28 @@ def refresh_config_step(simulation_run_id: str) -> dict[str, Any]:
     interval_seconds=2.0,
     backoff_rate=2.0,
 )
+def check_generation_step(simulation_run_id: str) -> int:
+    from src.database import get_session_maker
+
+    async def _check() -> int:
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun.generation).where(SimulationRun.id == UUID(simulation_run_id))
+            )
+            generation = result.scalar_one_or_none()
+            if generation is None:
+                raise ValueError(f"SimulationRun not found: {simulation_run_id}")
+            return generation
+
+    return run_sync(_check())
+
+
+@DBOS.step(
+    retries_allowed=True,
+    max_attempts=3,
+    interval_seconds=2.0,
+    backoff_rate=2.0,
+)
 def check_run_status_step(simulation_run_id: str) -> str:
     from src.database import get_session_maker
 
@@ -714,6 +736,8 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 "error": "init_failed",
             }
 
+        initial_generation = config.get("generation", 1)
+
         circuit_breaker = CircuitBreaker(
             threshold=CIRCUIT_BREAKER_THRESHOLD,
             reset_timeout=CIRCUIT_BREAKER_RESET_TIMEOUT,
@@ -765,14 +789,38 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 continue
 
             if prev_status == "paused":
+                refreshed_generation: int | None = None
                 try:
                     config = refresh_config_step(simulation_run_id)
+                    refreshed_generation = config.get("generation", initial_generation)
                     logger.info(
                         "Config refreshed after resume",
                         extra={"simulation_run_id": simulation_run_id},
                     )
                 except Exception:
                     logger.exception("Failed to refresh config after resume")
+                    try:
+                        refreshed_generation = check_generation_step(simulation_run_id)
+                    except Exception:
+                        logger.exception("Failed to check generation after refresh failure")
+
+                if refreshed_generation is not None and refreshed_generation != initial_generation:
+                    logger.info(
+                        "Generation changed from %d to %d, exiting superseded orchestrator",
+                        initial_generation,
+                        refreshed_generation,
+                        extra={
+                            "simulation_run_id": simulation_run_id,
+                            "workflow_id": workflow_id,
+                        },
+                    )
+                    return {
+                        "simulation_run_id": simulation_run_id,
+                        "status": "superseded",
+                        "iterations": iteration,
+                        "instances_finalized": 0,
+                    }
+
                 prev_status = "running"
 
             try:

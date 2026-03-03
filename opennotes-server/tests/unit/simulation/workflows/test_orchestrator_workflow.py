@@ -2159,3 +2159,175 @@ class TestPauseToRunningConfigRefresh:
             result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
 
         assert result["status"] == "cancelled"
+
+
+class TestGenerationGuard:
+    def test_orchestrator_exits_when_generation_changes_after_refresh(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
+
+        run_id = str(uuid4())
+        initial_config = _make_config()
+        initial_config["generation"] = 1
+
+        refreshed_config = _make_config()
+        refreshed_config["generation"] = 2
+
+        status_calls = iter(["paused", "running"])
+
+        with (
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
+                return_value=initial_config,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
+                side_effect=lambda _: next(status_calls),
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.refresh_config_step",
+                return_value=refreshed_config,
+            ) as mock_refresh,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
+            ) as mock_content,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
+            ) as mock_snapshot,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
+            ) as mock_spawn,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
+            ) as mock_schedule,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
+            ) as mock_metrics,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
+            ) as mock_finalize,
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "wf-old-gen"
+
+            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
+
+        mock_refresh.assert_called_once_with(run_id)
+        mock_content.assert_not_called()
+        mock_snapshot.assert_not_called()
+        mock_spawn.assert_not_called()
+        mock_schedule.assert_not_called()
+        mock_metrics.assert_not_called()
+        mock_finalize.assert_not_called()
+        assert result["status"] == "superseded"
+        assert result["simulation_run_id"] == run_id
+
+    def test_orchestrator_continues_when_generation_unchanged_after_refresh(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
+
+        run_id = str(uuid4())
+        initial_config = _make_config()
+        initial_config["generation"] = 1
+
+        refreshed_config = _make_config()
+        refreshed_config["generation"] = 1
+
+        status_calls = iter(["paused", "running", "cancelled"])
+
+        with (
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
+                return_value=initial_config,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
+                side_effect=lambda _: next(status_calls),
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.refresh_config_step",
+                return_value=refreshed_config,
+            ) as mock_refresh,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
+                return_value={"has_content": True, "pending_requests": 1, "unrated_notes": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
+                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
+                return_value={"retried": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
+                return_value={"dispatched_count": 0, "skipped_count": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
+                return_value={},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
+                return_value={"final_status": "cancelled", "instances_finalized": 0},
+            ) as mock_finalize,
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
+
+        mock_refresh.assert_called_once_with(run_id)
+        mock_finalize.assert_called_once()
+        assert result["status"] == "cancelled"
+
+    def test_orchestrator_checks_generation_even_when_refresh_fails(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
+
+        run_id = str(uuid4())
+        initial_config = _make_config()
+        initial_config["generation"] = 1
+
+        status_calls = iter(["paused", "running"])
+
+        with (
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
+                return_value=initial_config,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
+                side_effect=lambda _: next(status_calls),
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.refresh_config_step",
+                side_effect=Exception("DB connection lost"),
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_generation_step",
+                return_value=2,
+            ) as mock_check_gen,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
+            ) as mock_content,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
+            ) as mock_finalize,
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "wf-old-gen"
+            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
+
+        mock_check_gen.assert_called_once_with(run_id)
+        mock_content.assert_not_called()
+        mock_finalize.assert_not_called()
+        assert result["status"] == "superseded"
