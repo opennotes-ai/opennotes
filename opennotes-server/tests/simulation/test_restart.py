@@ -148,7 +148,10 @@ async def test_snapshot_captures_agent_state_and_turns(db):
     assert log.turns_in_segment == 42
     assert log.state_at_end == "active"
     assert log.started_at == run.started_at
-    assert log.completed_at == run.completed_at
+    if run.completed_at is not None:
+        assert log.completed_at == run.completed_at
+    else:
+        assert log.completed_at is not None
 
 
 @pytest.mark.asyncio
@@ -198,3 +201,46 @@ async def test_snapshot_returns_correct_ids_for_fk_linkage(db):
         assert (
             await db.execute(select(SimAgentRunLog).where(SimAgentRunLog.id == log_id))
         ).scalar_one() is not None
+
+
+@pytest.mark.asyncio
+async def test_snapshot_populates_current_run_log_id_on_agent_instances(db):
+    run, _, _ = await _setup_run(db)
+    inst1 = await _add_agent_instance(db, run, state="active", turn_count=10)
+    inst2 = await _add_agent_instance(db, run, state="paused", turn_count=5)
+
+    result = await snapshot_restart_state(db, run.id)
+
+    assert len(result.log_ids) == 2
+
+    refreshed_inst1 = (
+        await db.execute(select(SimAgentInstance).where(SimAgentInstance.id == inst1.id))
+    ).scalar_one()
+    assert refreshed_inst1.current_run_log_id is not None
+    assert refreshed_inst1.current_run_log_id in result.log_ids
+
+    refreshed_inst2 = (
+        await db.execute(select(SimAgentInstance).where(SimAgentInstance.id == inst2.id))
+    ).scalar_one()
+    assert refreshed_inst2.current_run_log_id is not None
+    assert refreshed_inst2.current_run_log_id in result.log_ids
+
+    assert refreshed_inst1.current_run_log_id != refreshed_inst2.current_run_log_id
+
+
+@pytest.mark.asyncio
+async def test_snapshot_uses_completed_at_fallback_for_paused_run(db):
+    run, _, _ = await _setup_run(db)
+    run.status = "paused"
+    run.completed_at = None
+    await db.flush()
+
+    await _add_agent_instance(db, run, state="active", turn_count=3)
+
+    result = await snapshot_restart_state(db, run.id)
+
+    log = (
+        await db.execute(select(SimAgentRunLog).where(SimAgentRunLog.id == result.log_ids[0]))
+    ).scalar_one()
+
+    assert log.completed_at is not None

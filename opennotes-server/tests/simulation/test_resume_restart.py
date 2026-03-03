@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pendulum
 import pytest
 from sqlalchemy import select
 
@@ -416,3 +417,340 @@ class TestResumeWithResetTurns:
             )
             sim_run = result.scalar_one()
             assert sim_run.cumulative_turns == 65
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_increments_generation(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed", generation=3)
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"reset_turns": True},
+                    }
+                },
+            )
+
+        assert response.status_code == 200
+
+        from src.database import get_session_maker
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == run["id"])
+            )
+            sim_run = result.scalar_one()
+            assert sim_run.generation == 4
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_sets_current_config_id(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"reset_turns": True},
+                    }
+                },
+            )
+
+        assert response.status_code == 200
+
+        from src.database import get_session_maker
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == run["id"])
+            )
+            sim_run = result.scalar_one()
+            assert sim_run.current_config_id is not None
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_clears_completed_at(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"reset_turns": True},
+                    }
+                },
+            )
+
+        assert response.status_code == 200
+
+        from src.database import get_session_maker
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == run["id"])
+            )
+            sim_run = result.scalar_one()
+            assert sim_run.completed_at is None
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_from_paused_succeeds(
+        self,
+        mock_dispatch,
+        admin_auth_client,
+        simulation_run_factory,
+        agent_instance_factory,
+    ):
+        mock_dispatch.return_value = "wf-restart"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("paused")
+        agent = await agent_instance_factory(run["id"], state="paused", turn_count=8)
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"reset_turns": True},
+                    }
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "running"
+
+        from src.database import get_session_maker
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == run["id"])
+            )
+            sim_run = result.scalar_one()
+            assert sim_run.restart_count == 1
+            assert sim_run.generation == 2
+            assert sim_run.current_config_id is not None
+
+            agent_result = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agent["id"])
+            )
+            inst = agent_result.scalar_one()
+            assert inst.turn_count == 0
+            assert inst.state == "active"
+            assert inst.cumulative_turn_count == 8
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_from_failed_succeeds(
+        self,
+        mock_dispatch,
+        admin_auth_client,
+        simulation_run_factory,
+        agent_instance_factory,
+    ):
+        mock_dispatch.return_value = "wf-restart"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("failed")
+        agent = await agent_instance_factory(run["id"], state="active", turn_count=12)
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"reset_turns": True},
+                    }
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "running"
+
+        from src.database import get_session_maker
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == run["id"])
+            )
+            sim_run = result.scalar_one()
+            assert sim_run.restart_count == 1
+            assert sim_run.generation == 2
+            assert sim_run.current_config_id is not None
+            assert sim_run.completed_at is None
+            assert sim_run.error_message is None
+
+            agent_result = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agent["id"])
+            )
+            inst = agent_result.scalar_one()
+            assert inst.turn_count == 0
+            assert inst.state == "active"
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_double_restart_accumulates_across_segments(
+        self,
+        mock_dispatch,
+        admin_auth_client,
+        simulation_run_factory,
+        agent_instance_factory,
+    ):
+        mock_dispatch.return_value = "wf-restart"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+        agent = await agent_instance_factory(
+            run["id"], state="completed", turn_count=10, cumulative_turn_count=0
+        )
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response1 = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"reset_turns": True},
+                    }
+                },
+            )
+
+        assert response1.status_code == 200
+
+        from src.database import get_session_maker
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == run["id"])
+            )
+            sim_run = result.scalar_one()
+            assert sim_run.restart_count == 1
+            assert sim_run.cumulative_turns == 10
+            assert sim_run.generation == 2
+
+            agent_result = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agent["id"])
+            )
+            inst = agent_result.scalar_one()
+            assert inst.turn_count == 0
+            assert inst.cumulative_turn_count == 10
+
+        async with get_session_maker()() as session:
+            from sqlalchemy import update as sa_update
+
+            await session.execute(
+                sa_update(SimAgentInstance)
+                .where(SimAgentInstance.id == agent["id"])
+                .values(turn_count=20, state="completed")
+            )
+            await session.execute(
+                sa_update(SimulationRun)
+                .where(SimulationRun.id == run["id"])
+                .values(
+                    status="completed",
+                    completed_at=pendulum.now("UTC"),
+                )
+            )
+            await session.commit()
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response2 = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"reset_turns": True},
+                    }
+                },
+            )
+
+        assert response2.status_code == 200
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == run["id"])
+            )
+            sim_run = result.scalar_one()
+            assert sim_run.restart_count == 2
+            assert sim_run.cumulative_turns == 30
+            assert sim_run.generation == 3
+            assert sim_run.completed_at is None
+
+            agent_result = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agent["id"])
+            )
+            inst = agent_result.scalar_one()
+            assert inst.turn_count == 0
+            assert inst.cumulative_turn_count == 30
+            assert inst.state == "active"
