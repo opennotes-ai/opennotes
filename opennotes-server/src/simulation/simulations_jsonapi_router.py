@@ -32,6 +32,7 @@ from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.notes.models import Note, Rating
 from src.simulation.analysis import (
+    compute_agent_profiles,
     compute_detailed_notes,
     compute_full_analysis,
     compute_request_variance,
@@ -1080,8 +1081,10 @@ async def get_simulation_detailed_analysis(
                 requests=request_variance,
                 total_requests=len(request_variance),
             )
+            agent_profiles = await compute_agent_profiles(simulation_id, db)
         else:
             variance_meta = RequestVarianceMeta()
+            agent_profiles = []
 
         resources = [
             DetailedNoteResource(id=note.note_id, attributes=note) for note in detailed_notes
@@ -1098,6 +1101,7 @@ async def get_simulation_detailed_analysis(
         meta = DetailedAnalysisMeta(
             count=total,
             request_variance=variance_meta,
+            agents=agent_profiles,
         )
 
         response = DetailedAnalysisResponse(

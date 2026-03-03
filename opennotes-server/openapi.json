@@ -11793,6 +11793,67 @@
         ],
         "title": "AgentBehaviorData"
       },
+      "AgentProfileData": {
+        "properties": {
+          "agent_instance_id": {
+            "type": "string",
+            "title": "Agent Instance Id"
+          },
+          "agent_name": {
+            "type": "string",
+            "title": "Agent Name"
+          },
+          "personality": {
+            "type": "string",
+            "title": "Personality"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "memory_compaction_strategy": {
+            "type": "string",
+            "title": "Memory Compaction Strategy"
+          },
+          "turn_count": {
+            "type": "integer",
+            "title": "Turn Count"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "token_count": {
+            "type": "integer",
+            "title": "Token Count"
+          },
+          "recent_actions": {
+            "items": {},
+            "type": "array",
+            "title": "Recent Actions"
+          },
+          "last_messages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Last Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_instance_id",
+          "agent_name",
+          "personality",
+          "model_name",
+          "memory_compaction_strategy",
+          "turn_count",
+          "state",
+          "token_count"
+        ],
+        "title": "AgentProfileData"
+      },
       "AllFusionWeightsResponse": {
         "properties": {
           "default": {
@@ -14248,6 +14309,13 @@
           },
           "request_variance": {
             "$ref": "#/components/schemas/RequestVarianceMeta"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileData"
+            },
+            "type": "array",
+            "title": "Agents"
           }
         },
         "type": "object",

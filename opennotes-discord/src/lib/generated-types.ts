@@ -3821,6 +3821,31 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** AgentProfileData */
+        AgentProfileData: {
+            /** Agent Instance Id */
+            agent_instance_id: string;
+            /** Agent Name */
+            agent_name: string;
+            /** Personality */
+            personality: string;
+            /** Model Name */
+            model_name: string;
+            /** Memory Compaction Strategy */
+            memory_compaction_strategy: string;
+            /** Turn Count */
+            turn_count: number;
+            /** State */
+            state: string;
+            /** Token Count */
+            token_count: number;
+            /** Recent Actions */
+            recent_actions?: unknown[];
+            /** Last Messages */
+            last_messages?: {
+                [key: string]: unknown;
+            }[];
+        };
         /**
          * AllFusionWeightsResponse
          * @description Response model for all fusion weights.
@@ -5163,6 +5188,8 @@ export interface components {
              */
             count: number;
             request_variance?: components["schemas"]["RequestVarianceMeta"];
+            /** Agents */
+            agents?: components["schemas"]["AgentProfileData"][];
         };
         /** DetailedAnalysisResponse */
         DetailedAnalysisResponse: {
