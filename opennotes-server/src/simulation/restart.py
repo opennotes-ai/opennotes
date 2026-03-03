@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 import pendulum
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,6 +15,24 @@ from src.simulation.models import (
     SimulationRun,
     SimulationRunConfig,
 )
+
+REMOVAL_RATE = "removal_rate"
+MAX_RETRIES_EXCEEDED = "max_retries_exceeded"
+SIMULATION_CANCELLED = "simulation_cancelled"
+SIMULATION_COMPLETED = "simulation_completed"
+
+RESTARTABLE_REMOVAL_REASONS: frozenset[str] = frozenset({REMOVAL_RATE, SIMULATION_COMPLETED})
+FOR_CAUSE_REMOVAL_REASONS: frozenset[str] = frozenset({MAX_RETRIES_EXCEEDED, SIMULATION_CANCELLED})
+
+
+def restartable_agents_filter(simulation_run_id: UUID):
+    return and_(
+        SimAgentInstance.simulation_run_id == simulation_run_id,
+        or_(
+            SimAgentInstance.state != "removed",
+            SimAgentInstance.removal_reason.in_(RESTARTABLE_REMOVAL_REASONS),
+        ),
+    )
 
 
 @dataclass
