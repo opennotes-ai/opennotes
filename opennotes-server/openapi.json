@@ -11021,6 +11021,93 @@
         }
       }
     },
+    "/api/v2/simulations/{simulation_id}/analysis/detailed": {
+      "get": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Get Simulation Detailed Analysis",
+        "operationId": "get_simulation_detailed_analysis_api_v2_simulations__simulation_id__analysis_detailed_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "page[number]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page[Number]"
+            }
+          },
+          {
+            "name": "page[size]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page[Size]"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailedAnalysisResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/version": {
       "get": {
         "tags": [
@@ -14151,6 +14238,241 @@
         ],
         "title": "ConversationFlashpointMatch",
         "description": "Match result from conversation flashpoint detection scan."
+      },
+      "DetailedAnalysisMeta": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "default": 0
+          },
+          "request_variance": {
+            "$ref": "#/components/schemas/RequestVarianceMeta"
+          }
+        },
+        "type": "object",
+        "title": "DetailedAnalysisMeta"
+      },
+      "DetailedAnalysisResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DetailedNoteResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetailedAnalysisMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "DetailedAnalysisResponse"
+      },
+      "DetailedNoteData": {
+        "properties": {
+          "note_id": {
+            "type": "string",
+            "title": "Note Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "classification": {
+            "type": "string",
+            "title": "Classification"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "helpfulness_score": {
+            "type": "number",
+            "title": "Helpfulness Score"
+          },
+          "author_agent_name": {
+            "type": "string",
+            "title": "Author Agent Name"
+          },
+          "author_agent_instance_id": {
+            "type": "string",
+            "title": "Author Agent Instance Id"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "ratings": {
+            "items": {
+              "$ref": "#/components/schemas/DetailedRatingData"
+            },
+            "type": "array",
+            "title": "Ratings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note_id",
+          "summary",
+          "classification",
+          "status",
+          "helpfulness_score",
+          "author_agent_name",
+          "author_agent_instance_id"
+        ],
+        "title": "DetailedNoteData"
+      },
+      "DetailedNoteResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "simulation-detailed-notes"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/DetailedNoteData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "DetailedNoteResource"
+      },
+      "DetailedRatingData": {
+        "properties": {
+          "rater_agent_name": {
+            "type": "string",
+            "title": "Rater Agent Name"
+          },
+          "rater_agent_instance_id": {
+            "type": "string",
+            "title": "Rater Agent Instance Id"
+          },
+          "helpfulness_level": {
+            "type": "string",
+            "title": "Helpfulness Level"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rater_agent_name",
+          "rater_agent_instance_id",
+          "helpfulness_level"
+        ],
+        "title": "DetailedRatingData"
+      },
+      "DetailedRequestData": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "note_count": {
+            "type": "integer",
+            "title": "Note Count",
+            "default": 0
+          },
+          "variance_score": {
+            "type": "number",
+            "title": "Variance Score",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id"
+        ],
+        "title": "DetailedRequestData"
       },
       "DiscordOAuthInitResponse": {
         "properties": {
@@ -21055,6 +21377,24 @@
         ],
         "title": "RequestUpdateRequest",
         "description": "JSON:API request body for updating a request."
+      },
+      "RequestVarianceMeta": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/DetailedRequestData"
+            },
+            "type": "array",
+            "title": "Requests"
+          },
+          "total_requests": {
+            "type": "integer",
+            "title": "Total Requests",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "RequestVarianceMeta"
       },
       "ResultNoteAttributes": {
         "properties": {

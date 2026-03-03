@@ -3349,6 +3349,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/simulations/{simulation_id}/analysis/detailed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Simulation Detailed Analysis */
+        get: operations["get_simulation_detailed_analysis_api_v2_simulations__simulation_id__analysis_detailed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/version": {
         parameters: {
             query?: never;
@@ -5137,6 +5154,95 @@ export interface components {
              * @description Number of context messages analyzed
              */
             context_messages: number;
+        };
+        /** DetailedAnalysisMeta */
+        DetailedAnalysisMeta: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            request_variance?: components["schemas"]["RequestVarianceMeta"];
+        };
+        /** DetailedAnalysisResponse */
+        DetailedAnalysisResponse: {
+            /** Data */
+            data: components["schemas"]["DetailedNoteResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+            meta?: components["schemas"]["DetailedAnalysisMeta"] | null;
+        };
+        /** DetailedNoteData */
+        DetailedNoteData: {
+            /** Note Id */
+            note_id: string;
+            /** Summary */
+            summary: string;
+            /** Classification */
+            classification: string;
+            /** Status */
+            status: string;
+            /** Helpfulness Score */
+            helpfulness_score: number;
+            /** Author Agent Name */
+            author_agent_name: string;
+            /** Author Agent Instance Id */
+            author_agent_instance_id: string;
+            /** Request Id */
+            request_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Ratings */
+            ratings?: components["schemas"]["DetailedRatingData"][];
+        };
+        /** DetailedNoteResource */
+        DetailedNoteResource: {
+            /**
+             * Type
+             * @default simulation-detailed-notes
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["DetailedNoteData"];
+        };
+        /** DetailedRatingData */
+        DetailedRatingData: {
+            /** Rater Agent Name */
+            rater_agent_name: string;
+            /** Rater Agent Instance Id */
+            rater_agent_instance_id: string;
+            /** Helpfulness Level */
+            helpfulness_level: string;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /** DetailedRequestData */
+        DetailedRequestData: {
+            /** Request Id */
+            request_id: string;
+            /** Content */
+            content?: string | null;
+            /** Content Type */
+            content_type?: string | null;
+            /**
+             * Note Count
+             * @default 0
+             */
+            note_count: number;
+            /**
+             * Variance Score
+             * @default 0
+             */
+            variance_score: number;
         };
         /**
          * DiscordOAuthInitResponse
@@ -8465,6 +8571,16 @@ export interface components {
          */
         RequestUpdateRequest: {
             data: components["schemas"]["RequestUpdateData"];
+        };
+        /** RequestVarianceMeta */
+        RequestVarianceMeta: {
+            /** Requests */
+            requests?: components["schemas"]["DetailedRequestData"][];
+            /**
+             * Total Requests
+             * @default 0
+             */
+            total_requests: number;
         };
         /** ResultNoteAttributes */
         ResultNoteAttributes: {
@@ -16113,6 +16229,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnalysisResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_simulation_detailed_analysis_api_v2_simulations__simulation_id__analysis_detailed_get: {
+        parameters: {
+            query?: {
+                "page[number]"?: number;
+                "page[size]"?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DetailedAnalysisResponse"];
                 };
             };
             /** @description Validation Error */

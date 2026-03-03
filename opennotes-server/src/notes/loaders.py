@@ -87,6 +87,25 @@ def request_with_archive() -> tuple[_AbstractLoad, ...]:
     return (selectinload(Request.message_archive),)
 
 
+def ratings_with_rater() -> tuple[_AbstractLoad, ...]:
+    """Load note ratings with rater profiles eager-loaded.
+
+    Returns:
+        Tuple containing chained selectinload option for Note.ratings
+        and Rating.rater relationships.
+    """
+    return (selectinload(Note.ratings).selectinload(Rating.rater),)
+
+
+def detailed() -> tuple[_AbstractLoad, ...]:
+    """Full loading for detailed analysis - ratings with raters, request, author.
+
+    Returns:
+        Tuple containing all options from ratings_with_rater(), request(), and author().
+    """
+    return (*ratings_with_rater(), *request(), *author())
+
+
 def rating_with_note() -> tuple[_AbstractLoad, ...]:
     """Load Rating with associated note.
 
