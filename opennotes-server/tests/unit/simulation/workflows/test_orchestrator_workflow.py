@@ -245,9 +245,18 @@ class TestGetPopulationSnapshotStep:
         active_result.scalar.return_value = 3
         total_result = MagicMock()
         total_result.scalar.return_value = 7
-        removed_result = MagicMock()
-        removed_result.scalar.return_value = 4
-        mock_session.execute = AsyncMock(side_effect=[active_result, total_result, removed_result])
+        removed_for_cause_result = MagicMock()
+        removed_for_cause_result.scalar.return_value = 2
+        removed_by_rate_result = MagicMock()
+        removed_by_rate_result.scalar.return_value = 2
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                active_result,
+                total_result,
+                removed_for_cause_result,
+                removed_by_rate_result,
+            ]
+        )
 
         mock_session_ctx = _make_mock_session_ctx(mock_session)
 
@@ -256,7 +265,8 @@ class TestGetPopulationSnapshotStep:
 
         assert result["active_count"] == 3
         assert result["total_spawned"] == 7
-        assert result["total_removed"] == 4
+        assert result["total_removed_for_cause"] == 2
+        assert result["total_removed_by_rate"] == 2
 
     def test_population_snapshot_empty_run(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import get_population_snapshot_step
@@ -264,7 +274,9 @@ class TestGetPopulationSnapshotStep:
         mock_session = AsyncMock()
         zero_result = MagicMock()
         zero_result.scalar.return_value = 0
-        mock_session.execute = AsyncMock(side_effect=[zero_result, zero_result, zero_result])
+        mock_session.execute = AsyncMock(
+            side_effect=[zero_result, zero_result, zero_result, zero_result]
+        )
 
         mock_session_ctx = _make_mock_session_ctx(mock_session)
 
@@ -273,7 +285,8 @@ class TestGetPopulationSnapshotStep:
 
         assert result["active_count"] == 0
         assert result["total_spawned"] == 0
-        assert result["total_removed"] == 0
+        assert result["total_removed_for_cause"] == 0
+        assert result["total_removed_by_rate"] == 0
 
 
 class TestSpawnAgentsStep:
@@ -1099,7 +1112,12 @@ class TestRunOrchestratorWorkflow:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
@@ -1232,7 +1250,12 @@ class TestRunOrchestratorWorkflow:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
@@ -1589,7 +1612,12 @@ class TestOrchestratorEmptyContentPause:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
@@ -1656,7 +1684,12 @@ class TestOrchestratorScoringIntegration:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
@@ -1718,7 +1751,12 @@ class TestOrchestratorScoringIntegration:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
@@ -1780,7 +1818,12 @@ class TestRetryExhaustedRemovalMetrics:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 3, "total_spawned": 5, "total_removed": 0},
+                return_value={
+                    "active_count": 3,
+                    "total_spawned": 5,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
@@ -1869,7 +1912,12 @@ class TestConsecutiveEmptyResetOnException:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
@@ -2004,7 +2052,12 @@ class TestPauseToRunningConfigRefresh:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
@@ -2065,7 +2118,12 @@ class TestPauseToRunningConfigRefresh:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
@@ -2126,7 +2184,12 @@ class TestPauseToRunningConfigRefresh:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
@@ -2253,7 +2316,12 @@ class TestGenerationGuard:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={"active_count": 0, "total_spawned": 0, "total_removed": 0},
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",

@@ -198,6 +198,7 @@ async def agent_instance_factory():
         state: str = "active",
         turn_count: int = 0,
         cumulative_turn_count: int = 0,
+        removal_reason: str | None = None,
     ) -> dict:
         async with get_session_maker()() as session:
             unique = uuid4().hex[:8]
@@ -223,6 +224,7 @@ async def agent_instance_factory():
                 state=state,
                 turn_count=turn_count,
                 cumulative_turn_count=cumulative_turn_count,
+                removal_reason=removal_reason,
             )
             session.add(inst)
             await session.commit()

@@ -10,7 +10,17 @@ from src.simulation.models import (
     SimAgentRunLog,
     SimulationRunConfig,
 )
-from src.simulation.restart import RestartSnapshot, snapshot_restart_state
+from src.simulation.restart import (
+    FOR_CAUSE_REMOVAL_REASONS,
+    MAX_RETRIES_EXCEEDED,
+    REMOVAL_RATE,
+    RESTARTABLE_REMOVAL_REASONS,
+    SIMULATION_CANCELLED,
+    SIMULATION_COMPLETED,
+    RestartSnapshot,
+    restartable_agents_filter,
+    snapshot_restart_state,
+)
 
 
 def _mock_orchestrator(**overrides: object) -> MagicMock:
@@ -304,3 +314,38 @@ class TestSnapshotFlushBehavior:
         await snapshot_restart_state(session, run.id)
 
         assert session.flush.call_count == 3
+
+
+class TestRemovalReasonConstants:
+    def test_restartable_reasons_include_removal_rate(self) -> None:
+        assert REMOVAL_RATE in RESTARTABLE_REMOVAL_REASONS
+
+    def test_restartable_reasons_include_simulation_completed(self) -> None:
+        assert SIMULATION_COMPLETED in RESTARTABLE_REMOVAL_REASONS
+
+    def test_for_cause_reasons_include_max_retries(self) -> None:
+        assert MAX_RETRIES_EXCEEDED in FOR_CAUSE_REMOVAL_REASONS
+
+    def test_for_cause_reasons_include_simulation_cancelled(self) -> None:
+        assert SIMULATION_CANCELLED in FOR_CAUSE_REMOVAL_REASONS
+
+    def test_no_overlap_between_sets(self) -> None:
+        assert RESTARTABLE_REMOVAL_REASONS.isdisjoint(FOR_CAUSE_REMOVAL_REASONS)
+
+    def test_constant_values_match_expected_strings(self) -> None:
+        assert REMOVAL_RATE == "removal_rate"
+        assert MAX_RETRIES_EXCEEDED == "max_retries_exceeded"
+        assert SIMULATION_CANCELLED == "simulation_cancelled"
+        assert SIMULATION_COMPLETED == "simulation_completed"
+
+
+class TestRestartableAgentsFilter:
+    def test_returns_sqlalchemy_clause(self) -> None:
+        clause = restartable_agents_filter(uuid4())
+        assert clause is not None
+
+    def test_clause_is_boolean_clause(self) -> None:
+        from sqlalchemy.sql.elements import BooleanClauseList
+
+        clause = restartable_agents_filter(uuid4())
+        assert isinstance(clause, BooleanClauseList)

@@ -226,7 +226,9 @@ class TestResumeWithResetTurns:
         mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
-        removed_agent = await agent_instance_factory(run["id"], state="removed", turn_count=5)
+        removed_agent = await agent_instance_factory(
+            run["id"], state="removed", turn_count=5, removal_reason="max_retries_exceeded"
+        )
         active_agent = await agent_instance_factory(run["id"], state="completed", turn_count=10)
 
         with patch(
@@ -754,3 +756,141 @@ class TestResumeWithResetTurns:
             assert inst.turn_count == 0
             assert inst.cumulative_turn_count == 30
             assert inst.state == "active"
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_reactivates_removal_rate_agents(
+        self,
+        mock_dispatch,
+        admin_auth_client,
+        simulation_run_factory,
+        agent_instance_factory,
+    ):
+        mock_dispatch.return_value = "wf-restart"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+        agent = await agent_instance_factory(
+            run["id"], state="removed", turn_count=5, removal_reason="removal_rate"
+        )
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"reset_turns": True},
+                    }
+                },
+            )
+
+        assert response.status_code == 200
+
+        from src.database import get_session_maker
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agent["id"])
+            )
+            inst = result.scalar_one()
+            assert inst.state == "active"
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_reactivates_simulation_completed_agents(
+        self,
+        mock_dispatch,
+        admin_auth_client,
+        simulation_run_factory,
+        agent_instance_factory,
+    ):
+        mock_dispatch.return_value = "wf-restart"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+        agent = await agent_instance_factory(
+            run["id"], state="removed", turn_count=5, removal_reason="simulation_completed"
+        )
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"reset_turns": True},
+                    }
+                },
+            )
+
+        assert response.status_code == 200
+
+        from src.database import get_session_maker
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agent["id"])
+            )
+            inst = result.scalar_one()
+            assert inst.state == "active"
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_restart_keeps_max_retries_exceeded_removed(
+        self,
+        mock_dispatch,
+        admin_auth_client,
+        simulation_run_factory,
+        agent_instance_factory,
+    ):
+        mock_dispatch.return_value = "wf-restart"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("completed")
+        agent = await agent_instance_factory(
+            run["id"], state="removed", turn_count=5, removal_reason="max_retries_exceeded"
+        )
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"reset_turns": True},
+                    }
+                },
+            )
+
+        assert response.status_code == 200
+
+        from src.database import get_session_maker
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agent["id"])
+            )
+            inst = result.scalar_one()
+            assert inst.state == "removed"
