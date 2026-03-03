@@ -1,5 +1,4 @@
 import asyncio
-import gc
 import json
 import threading
 from collections.abc import AsyncGenerator
@@ -126,9 +125,7 @@ def get_engine() -> AsyncEngine:
                     old_engine = _engine
                     _engine = _create_engine()
                     _engine_loop = current_loop
-
-                    del old_engine
-                    gc.collect()
+                    old_engine.sync_engine.dispose()
             except RuntimeError:
                 pass
 
@@ -196,12 +193,13 @@ async def init_db() -> None:
 
 
 async def close_db() -> None:
-    global _engine, _async_session_maker  # noqa: PLW0603 - Cleanup module-level singletons on shutdown
+    global _engine, _async_session_maker, _engine_loop  # noqa: PLW0603 - Cleanup module-level singletons on shutdown
     with _db_lock:
         if _engine is not None:
             await _engine.dispose()
             _engine = None
         _async_session_maker = None
+        _engine_loop = None
 
 
 def _reset_database_for_test_loop() -> None:  # pyright: ignore[reportUnusedFunction]
