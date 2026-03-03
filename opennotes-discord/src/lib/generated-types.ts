@@ -9237,6 +9237,16 @@ export interface components {
             } | null;
             /** Error Message */
             error_message?: string | null;
+            /**
+             * Restart Count
+             * @default 0
+             */
+            restart_count: number;
+            /**
+             * Cumulative Turns
+             * @default 0
+             */
+            cumulative_turns: number;
             /** Created At */
             created_at?: string | null;
             /** Updated At */

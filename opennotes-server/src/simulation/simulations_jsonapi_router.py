@@ -91,6 +91,8 @@ class SimulationAttributes(SQLAlchemySchema):
     paused_at: datetime | None = None
     metrics: dict[str, Any] | None = None
     error_message: str | None = None
+    restart_count: int = 0
+    cumulative_turns: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -171,6 +173,8 @@ def simulation_run_to_resource(run: SimulationRun) -> SimulationResource:
             paused_at=run.paused_at,
             metrics=run.metrics,
             error_message=run.error_message,
+            restart_count=run.restart_count,
+            cumulative_turns=run.cumulative_turns,
             created_at=run.created_at,
             updated_at=run.updated_at,
         ),

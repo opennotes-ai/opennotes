@@ -22629,6 +22629,16 @@
             ],
             "title": "Error Message"
           },
+          "restart_count": {
+            "type": "integer",
+            "title": "Restart Count",
+            "default": 0
+          },
+          "cumulative_turns": {
+            "type": "integer",
+            "title": "Cumulative Turns",
+            "default": 0
+          },
           "created_at": {
             "anyOf": [
               {
