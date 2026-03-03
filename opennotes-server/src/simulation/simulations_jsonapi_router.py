@@ -49,8 +49,7 @@ VALID_CANCEL_FROM = {"pending", "running", "paused"}
 TERMINAL_STATUSES = {"completed", "cancelled", "failed"}
 
 
-class ResumeAttributes(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class ResumeAttributes(StrictInputSchema):
     reset_turns: bool = False
 
 
