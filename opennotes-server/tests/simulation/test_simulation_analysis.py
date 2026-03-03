@@ -205,13 +205,18 @@ async def memory_factory():
         agent_instance_id: UUID,
         recent_actions: list | None = None,
         turn_count: int = 0,
+        message_history: list | None = None,
+        token_count: int = 0,
+        compaction_strategy: str | None = None,
     ) -> dict:
         async with get_session_maker()() as session:
             memory = SimAgentMemory(
                 agent_instance_id=agent_instance_id,
-                message_history=[],
+                message_history=message_history or [],
                 turn_count=turn_count,
                 recent_actions=recent_actions or [],
+                token_count=token_count,
+                compaction_strategy=compaction_strategy,
             )
             session.add(memory)
             await session.commit()
@@ -558,3 +563,199 @@ class TestAnalysisAuth:
             client.headers.update({"Authorization": f"Bearer {token}"})
             response = await client.get(f"/api/v2/simulations/{uuid4()}/analysis")
             assert response.status_code == 403
+
+
+class TestAgentProfileDataSchema:
+    def test_agent_profile_data_schema(self):
+        from src.simulation.schemas import AgentProfileData
+
+        data = AgentProfileData(
+            agent_instance_id="inst-1",
+            agent_name="Test Agent",
+            personality="A helpful assistant",
+            model_name="openai:gpt-4o-mini",
+            memory_compaction_strategy="sliding_window",
+            turn_count=5,
+            state="active",
+            token_count=1000,
+            recent_actions=["write_note", "rate_note"],
+            last_messages=[{"role": "user", "content": "hello"}],
+        )
+        assert data.agent_name == "Test Agent"
+        assert data.token_count == 1000
+        assert len(data.last_messages) == 1
+
+    def test_agent_profile_data_defaults(self):
+        from src.simulation.schemas import AgentProfileData
+
+        data = AgentProfileData(
+            agent_instance_id="inst-1",
+            agent_name="Test Agent",
+            personality="",
+            model_name="",
+            memory_compaction_strategy="",
+            turn_count=0,
+            state="active",
+            token_count=0,
+        )
+        assert data.recent_actions == []
+        assert data.last_messages == []
+
+    def test_detailed_analysis_meta_with_agents(self):
+        from src.simulation.schemas import AgentProfileData, DetailedAnalysisMeta
+
+        meta = DetailedAnalysisMeta(
+            count=10,
+            agents=[
+                AgentProfileData(
+                    agent_instance_id="inst-1",
+                    agent_name="Agent1",
+                    personality="Smart",
+                    model_name="openai:gpt-4o",
+                    memory_compaction_strategy="sliding_window",
+                    turn_count=3,
+                    state="active",
+                    token_count=500,
+                )
+            ],
+        )
+        assert len(meta.agents) == 1
+        assert meta.agents[0].agent_name == "Agent1"
+
+    def test_detailed_analysis_meta_agents_default_empty(self):
+        from src.simulation.schemas import DetailedAnalysisMeta
+
+        meta = DetailedAnalysisMeta(count=5)
+        assert meta.agents == []
+
+
+class TestComputeAgentProfiles:
+    @pytest.mark.asyncio
+    async def test_compute_agent_profiles_with_memory(
+        self,
+        sim_run,
+        agent_instance_factory,
+        memory_factory,
+    ):
+        from src.database import get_session_maker
+        from src.simulation.analysis import compute_agent_profiles
+
+        inst = await agent_instance_factory(state="active", turn_count=5)
+        await memory_factory(
+            agent_instance_id=inst["id"],
+            recent_actions=["write_note", "rate_note"],
+            turn_count=5,
+            message_history=[{"role": "user", "content": f"msg-{i}"} for i in range(15)],
+            token_count=1200,
+            compaction_strategy="sliding_window",
+        )
+
+        async with get_session_maker()() as session:
+            profiles = await compute_agent_profiles(sim_run["id"], session)
+
+        assert len(profiles) == 1
+        profile = profiles[0]
+        assert profile.agent_instance_id == str(inst["id"])
+        assert profile.turn_count == 5
+        assert profile.state == "active"
+        assert profile.token_count == 1200
+        assert profile.memory_compaction_strategy == "sliding_window"
+        assert len(profile.recent_actions) == 2
+        assert len(profile.last_messages) == 10
+        assert profile.last_messages[0]["content"] == "msg-5"
+
+    @pytest.mark.asyncio
+    async def test_compute_agent_profiles_no_memory(
+        self,
+        sim_run,
+        agent_instance_factory,
+    ):
+        from src.database import get_session_maker
+        from src.simulation.analysis import compute_agent_profiles
+
+        await agent_instance_factory(state="active", turn_count=3)
+
+        async with get_session_maker()() as session:
+            profiles = await compute_agent_profiles(sim_run["id"], session)
+
+        assert len(profiles) == 1
+        profile = profiles[0]
+        assert profile.token_count == 0
+        assert profile.recent_actions == []
+        assert profile.last_messages == []
+
+    @pytest.mark.asyncio
+    async def test_compute_agent_profiles_empty_simulation(
+        self,
+        sim_run,
+    ):
+        from src.database import get_session_maker
+        from src.simulation.analysis import compute_agent_profiles
+
+        async with get_session_maker()() as session:
+            profiles = await compute_agent_profiles(sim_run["id"], session)
+
+        assert profiles == []
+
+
+class TestDetailedAnalysisAgentProfiles:
+    @pytest.mark.asyncio
+    async def test_detailed_analysis_includes_agents_on_page_1(
+        self,
+        admin_auth_client,
+        sim_run,
+        agent_instance_factory,
+        note_factory,
+        memory_factory,
+    ):
+        inst = await agent_instance_factory(state="active", turn_count=5)
+        await note_factory(author_id=inst["user_profile_id"])
+        await memory_factory(
+            agent_instance_id=inst["id"],
+            recent_actions=["write_note"],
+            turn_count=5,
+            token_count=800,
+            compaction_strategy="sliding_window",
+        )
+
+        response = await admin_auth_client.get(
+            f"/api/v2/simulations/{sim_run['id']}/analysis/detailed"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        meta = data["meta"]
+        assert "agents" in meta
+        assert len(meta["agents"]) == 1
+        agent = meta["agents"][0]
+        assert agent["agent_instance_id"] == str(inst["id"])
+        assert agent["token_count"] == 800
+        assert agent["turn_count"] == 5
+
+    @pytest.mark.asyncio
+    async def test_detailed_analysis_no_agents_on_page_2(
+        self,
+        admin_auth_client,
+        sim_run,
+        agent_instance_factory,
+        note_factory,
+        memory_factory,
+    ):
+        inst = await agent_instance_factory(state="active", turn_count=5)
+        await note_factory(author_id=inst["user_profile_id"])
+        await memory_factory(
+            agent_instance_id=inst["id"],
+            recent_actions=["write_note"],
+            turn_count=5,
+            token_count=800,
+        )
+
+        response = await admin_auth_client.get(
+            f"/api/v2/simulations/{sim_run['id']}/analysis/detailed",
+            params={"page[number]": 2, "page[size]": 1},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        meta = data["meta"]
+        assert meta["agents"] == []

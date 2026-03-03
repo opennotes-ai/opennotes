@@ -92,6 +92,35 @@ def _make_detailed_response(simulation_id: str) -> MagicMock:
                 ],
                 "total_requests": 2,
             },
+            "agents": [
+                {
+                    "agent_instance_id": "inst-001",
+                    "agent_name": "Skeptic",
+                    "personality": "A skeptical fact-checker who questions claims",
+                    "model_name": "openai:gpt-4o-mini",
+                    "memory_compaction_strategy": "sliding_window",
+                    "turn_count": 5,
+                    "state": "active",
+                    "token_count": 1200,
+                    "recent_actions": ["write_note", "rate_note", "write_note"],
+                    "last_messages": [
+                        {"role": "user", "content": "Review this claim"},
+                        {"role": "assistant", "content": "I'll check the sources"},
+                    ],
+                },
+                {
+                    "agent_instance_id": "inst-002",
+                    "agent_name": "Optimist",
+                    "personality": "An optimistic analyst who sees the good in content",
+                    "model_name": "openai:gpt-4o-mini",
+                    "memory_compaction_strategy": "summarize_and_prune",
+                    "turn_count": 3,
+                    "state": "active",
+                    "token_count": 800,
+                    "recent_actions": ["rate_note"],
+                    "last_messages": [],
+                },
+            ],
         },
     }
     resp = MagicMock()
@@ -308,7 +337,7 @@ class TestXlsxRequestsSheet:
 
 
 class TestXlsxOpensCorrectly:
-    def test_workbook_has_three_sheets(self, runner: CliRunner) -> None:
+    def test_workbook_has_four_sheets(self, runner: CliRunner) -> None:
         import tempfile
 
         from openpyxl import load_workbook
@@ -322,7 +351,7 @@ class TestXlsxOpensCorrectly:
                     ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
                 )
             wb = load_workbook(output_file)
-            assert wb.sheetnames == ["Notes", "Ratings", "Requests"]
+            assert wb.sheetnames == ["Notes", "Ratings", "Requests", "Agents"]
 
     def test_columns_have_width(self, runner: CliRunner) -> None:
         import tempfile
@@ -341,6 +370,126 @@ class TestXlsxOpensCorrectly:
             ws = wb["Notes"]
             a_width = ws.column_dimensions["A"].width
             assert a_width > 0
+
+
+class TestXlsxAgentsSheet:
+    def test_agents_sheet_has_correct_headers(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            ws = wb["Agents"]
+            headers = [cell.value for cell in ws[1]]
+            assert "Agent Name" in headers
+            assert "Personality Prompt" in headers
+            assert "Model" in headers
+            assert "Memory Compaction Strategy" in headers
+            assert "Turn Count" in headers
+            assert "State" in headers
+            assert "Token Count" in headers
+            assert "Recent Actions" in headers
+            assert "Last 10 Messages" in headers
+
+    def test_agents_sheet_has_data(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            ws = wb["Agents"]
+            assert ws.max_row == 3
+            assert ws.cell(row=2, column=1).value == "Skeptic"
+            assert ws.cell(row=3, column=1).value == "Optimist"
+
+    def test_agents_sheet_personality_not_truncated(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            ws = wb["Agents"]
+            assert ws.cell(row=2, column=2).value == "A skeptical fact-checker who questions claims"
+
+
+class TestXlsxFontAndAlignment:
+    def test_cells_use_ibm_plex_sans_condensed(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            ws = wb["Notes"]
+            assert ws.cell(row=1, column=1).font.name == "IBM Plex Sans Condensed"
+            assert ws.cell(row=2, column=1).font.name == "IBM Plex Sans Condensed"
+
+    def test_cells_use_top_alignment(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            ws = wb["Notes"]
+            assert ws.cell(row=1, column=1).alignment.vertical == "top"
+            assert ws.cell(row=2, column=1).alignment.vertical == "top"
+
+    def test_font_applied_to_all_sheets(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            for sheet_name in ["Notes", "Ratings", "Requests", "Agents"]:
+                ws = wb[sheet_name]
+                assert ws.cell(row=1, column=1).font.name == "IBM Plex Sans Condensed"
 
 
 class TestOutputFlag:

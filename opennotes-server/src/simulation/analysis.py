@@ -13,6 +13,7 @@ from src.notes.models import Note, Rating, Request
 from src.simulation.models import SimAgentInstance, SimAgentMemory, SimulationRun
 from src.simulation.schemas import (
     AgentBehaviorData,
+    AgentProfileData,
     AnalysisAttributes,
     ConsensusMetricsData,
     DetailedNoteData,
@@ -38,6 +39,54 @@ async def _get_agent_instances(
         .options(selectinload(SimAgentInstance.agent_profile))
     )
     return list(result.scalars().all())
+
+
+async def compute_agent_profiles(
+    simulation_run_id: UUID,
+    db: AsyncSession,
+) -> list[AgentProfileData]:
+    instances = await _get_agent_instances(simulation_run_id, db)
+    if not instances:
+        return []
+
+    instance_ids = [inst.id for inst in instances]
+    memories_result = await db.execute(
+        select(SimAgentMemory).where(SimAgentMemory.agent_instance_id.in_(instance_ids))
+    )
+    memories_by_instance = {mem.agent_instance_id: mem for mem in memories_result.scalars().all()}
+
+    profiles = []
+    for inst in instances:
+        memory = memories_by_instance.get(inst.id)
+        last_messages: list[dict] = []
+        token_count = 0
+        recent_actions: list = []
+        compaction_strategy = ""
+
+        if memory:
+            token_count = memory.token_count
+            recent_actions = memory.recent_actions or []
+            compaction_strategy = memory.compaction_strategy or ""
+            msg_history = memory.message_history or []
+            last_messages = msg_history[-10:] if msg_history else []
+
+        profiles.append(
+            AgentProfileData(
+                agent_instance_id=str(inst.id),
+                agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
+                personality=inst.agent_profile.personality if inst.agent_profile else "",
+                model_name=inst.agent_profile.model_name if inst.agent_profile else "",
+                memory_compaction_strategy=compaction_strategy
+                or (inst.agent_profile.memory_compaction_strategy if inst.agent_profile else ""),
+                turn_count=inst.turn_count,
+                state=inst.state,
+                token_count=token_count,
+                recent_actions=recent_actions,
+                last_messages=last_messages,
+            )
+        )
+
+    return profiles
 
 
 async def compute_rating_distribution(

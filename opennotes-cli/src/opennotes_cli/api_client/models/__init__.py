@@ -11,6 +11,8 @@ from .admin_status_update_data import AdminStatusUpdateData
 from .admin_status_update_request import AdminStatusUpdateRequest
 from .agent_behavior_data import AgentBehaviorData
 from .agent_behavior_data_action_distribution import AgentBehaviorDataActionDistribution
+from .agent_profile_data import AgentProfileData
+from .agent_profile_data_last_messages_item import AgentProfileDataLastMessagesItem
 from .all_fusion_weights_response import AllFusionWeightsResponse
 from .all_fusion_weights_response_datasets import AllFusionWeightsResponseDatasets
 from .analysis_attributes import AnalysisAttributes
@@ -603,6 +605,8 @@ __all__ = (
     "AdminStatusUpdateRequest",
     "AgentBehaviorData",
     "AgentBehaviorDataActionDistribution",
+    "AgentProfileData",
+    "AgentProfileDataLastMessagesItem",
     "AllFusionWeightsResponse",
     "AllFusionWeightsResponseDatasets",
     "AnalysisAttributes",

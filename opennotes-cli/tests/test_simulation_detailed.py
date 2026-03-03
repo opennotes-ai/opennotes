@@ -86,6 +86,33 @@ SAMPLE_REQUESTS = [
     },
 ]
 
+SAMPLE_AGENTS = [
+    {
+        "agent_instance_id": "inst-001",
+        "agent_name": "Skeptic",
+        "personality": "Critical thinker who challenges claims",
+        "model_name": "gpt-4o",
+        "memory_compaction_strategy": "sliding_window",
+        "turn_count": 5,
+        "state": "active",
+        "token_count": 1200,
+        "recent_actions": ["rate_note", "write_note"],
+        "last_messages": [{"role": "assistant", "content": "Analyzing claim..."}],
+    },
+    {
+        "agent_instance_id": "inst-002",
+        "agent_name": "Optimist",
+        "personality": "Sees the best in sources",
+        "model_name": "claude-sonnet-4-20250514",
+        "memory_compaction_strategy": "summarize",
+        "turn_count": 3,
+        "state": "active",
+        "token_count": 800,
+        "recent_actions": ["write_note"],
+        "last_messages": [],
+    },
+]
+
 
 def _make_page_response(
     simulation_id: str,
@@ -95,6 +122,7 @@ def _make_page_response(
     total_pages: int,
     total_items: int,
     page_size: int = 50,
+    agents: list[dict] | None = None,
 ) -> MagicMock:
     links: dict = {
         "self": f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number}&page[size]={page_size}",
@@ -117,6 +145,7 @@ def _make_page_response(
                 "requests": requests,
                 "total_requests": len(requests),
             },
+            "agents": agents if agents is not None else [],
         },
     }
 
@@ -133,6 +162,7 @@ def _make_single_page_client() -> MagicMock:
     page_resp = _make_page_response(
         SIM_ID, SAMPLE_NOTE_RESOURCES, SAMPLE_REQUESTS,
         page_number=1, total_pages=1, total_items=2,
+        agents=SAMPLE_AGENTS,
     )
     mock_client = MagicMock()
     mock_client.get.side_effect = [csrf_resp, page_resp]
@@ -146,6 +176,7 @@ def _make_multi_page_client() -> MagicMock:
     page1_resp = _make_page_response(
         SIM_ID, SAMPLE_NOTE_RESOURCES[:1], SAMPLE_REQUESTS,
         page_number=1, total_pages=2, total_items=2, page_size=1,
+        agents=SAMPLE_AGENTS,
     )
     page2_resp = _make_page_response(
         SIM_ID, SAMPLE_NOTE_RESOURCES[1:], SAMPLE_REQUESTS,
@@ -212,6 +243,29 @@ class TestDetailedTerminalOutput:
         assert "0.92" in result.output
         assert "0.45" in result.output
 
+    def test_terminal_shows_agents_table(self, runner: CliRunner) -> None:
+        mock_client = _make_single_page_client()
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "--detailed", SIM_ID]
+            )
+        assert result.exit_code == 0
+        assert "Agents" in result.output
+        assert "Skeptic" in result.output
+        assert "Optimist" in result.output
+        assert "gpt-4o" in result.output
+        assert "active" in result.output
+
+    def test_terminal_shows_agent_count_in_header(self, runner: CliRunner) -> None:
+        mock_client = _make_single_page_client()
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "--detailed", SIM_ID]
+            )
+        assert result.exit_code == 0
+        assert "Agents" in result.output
+        assert "2" in result.output
+
 
 class TestDetailedMarkdownOutput:
     def test_markdown_has_notes_section(self, runner: CliRunner) -> None:
@@ -255,6 +309,29 @@ class TestDetailedMarkdownOutput:
         assert result.exit_code == 0
         assert "## Request Variance Summary" in result.output
         assert "0.92" in result.output
+
+    def test_markdown_has_agents_section(self, runner: CliRunner) -> None:
+        mock_client = _make_single_page_client()
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "--detailed", "--format", "markdown", SIM_ID]
+            )
+        assert result.exit_code == 0
+        assert "## Agents" in result.output
+        assert "Skeptic" in result.output
+        assert "Optimist" in result.output
+        assert "gpt-4o" in result.output
+        assert "sliding_window" in result.output
+        assert "1 messages" in result.output
+
+    def test_markdown_agents_count_in_summary(self, runner: CliRunner) -> None:
+        mock_client = _make_single_page_client()
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "--detailed", "--format", "markdown", SIM_ID]
+            )
+        assert result.exit_code == 0
+        assert "- Agents: 2" in result.output
 
 
 class TestPaginationAccumulation:

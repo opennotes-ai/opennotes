@@ -321,6 +321,19 @@ class DetailedNoteResource(BaseModel):
     attributes: DetailedNoteData
 
 
+class AgentProfileData(SQLAlchemySchema):
+    agent_instance_id: str
+    agent_name: str
+    personality: str
+    model_name: str
+    memory_compaction_strategy: str
+    turn_count: int
+    state: str
+    token_count: int
+    recent_actions: list[Any] = Field(default_factory=list)
+    last_messages: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class RequestVarianceMeta(BaseModel):
     requests: list[DetailedRequestData] = Field(default_factory=list)
     total_requests: int = 0
@@ -329,6 +342,7 @@ class RequestVarianceMeta(BaseModel):
 class DetailedAnalysisMeta(BaseModel):
     count: int = 0
     request_variance: RequestVarianceMeta = Field(default_factory=RequestVarianceMeta)
+    agents: list[AgentProfileData] = Field(default_factory=list)
 
 
 class DetailedAnalysisResponse(BaseModel):

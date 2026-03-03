@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from src.auth.dependencies import get_current_user_or_api_key
 from src.database import get_db
 from src.main import app
-from src.simulation.schemas import DetailedNoteData, DetailedRequestData
+from src.simulation.schemas import AgentProfileData, DetailedNoteData, DetailedRequestData
 
 
 def _mock_admin_user():
@@ -116,6 +116,11 @@ class TestDetailedAnalysisEndpointHappyPath:
                 new_callable=AsyncMock,
                 return_value=[],
             ),
+            patch(
+                "src.simulation.simulations_jsonapi_router.compute_agent_profiles",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
         ):
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -127,6 +132,7 @@ class TestDetailedAnalysisEndpointHappyPath:
             assert data["data"] == []
             assert data["meta"]["count"] == 0
             assert data["meta"]["request_variance"]["total_requests"] == 0
+            assert data["meta"]["agents"] == []
 
     @pytest.mark.asyncio
     async def test_returns_notes_with_variance_meta(self, override_deps):
@@ -154,6 +160,18 @@ class TestDetailedAnalysisEndpointHappyPath:
             note_count=1,
             variance_score=0.0,
         )
+        agent_data = AgentProfileData(
+            agent_instance_id="inst-001",
+            agent_name="Agent Alpha",
+            personality="Analytical",
+            model_name="gpt-4o",
+            memory_compaction_strategy="sliding_window",
+            turn_count=5,
+            state="active",
+            token_count=1200,
+            recent_actions=["write_note"],
+            last_messages=[],
+        )
 
         with (
             patch(
@@ -165,6 +183,11 @@ class TestDetailedAnalysisEndpointHappyPath:
                 "src.simulation.simulations_jsonapi_router.compute_request_variance",
                 new_callable=AsyncMock,
                 return_value=[variance_data],
+            ),
+            patch(
+                "src.simulation.simulations_jsonapi_router.compute_agent_profiles",
+                new_callable=AsyncMock,
+                return_value=[agent_data],
             ),
         ):
             transport = ASGITransport(app=app)
@@ -184,6 +207,13 @@ class TestDetailedAnalysisEndpointHappyPath:
             assert variance["total_requests"] == 1
             assert variance["requests"][0]["request_id"] == "req-001"
             assert variance["requests"][0]["content"] == "Some claim"
+            agents = data["meta"]["agents"]
+            assert len(agents) == 1
+            assert agents[0]["agent_name"] == "Agent Alpha"
+            assert agents[0]["model_name"] == "gpt-4o"
+            assert agents[0]["turn_count"] == 5
+            assert agents[0]["state"] == "active"
+            assert agents[0]["token_count"] == 1200
 
     @pytest.mark.asyncio
     async def test_helpfulness_score_float_in_response(self, override_deps):
@@ -212,6 +242,11 @@ class TestDetailedAnalysisEndpointHappyPath:
             ),
             patch(
                 "src.simulation.simulations_jsonapi_router.compute_request_variance",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.simulations_jsonapi_router.compute_agent_profiles",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
@@ -256,6 +291,11 @@ class TestDetailedAnalysisEndpointPagination:
             ),
             patch(
                 "src.simulation.simulations_jsonapi_router.compute_request_variance",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.simulations_jsonapi_router.compute_agent_profiles",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
@@ -307,6 +347,11 @@ class TestDetailedAnalysisEndpointPagination:
                 new_callable=AsyncMock,
                 return_value=[],
             ),
+            patch(
+                "src.simulation.simulations_jsonapi_router.compute_agent_profiles",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
         ):
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -320,7 +365,7 @@ class TestDetailedAnalysisEndpointPagination:
             assert data["links"]["next"] is None
 
     @pytest.mark.asyncio
-    async def test_page_2_skips_variance_computation(self, override_deps):
+    async def test_page_2_skips_variance_and_agent_computation(self, override_deps):
         admin_user = _mock_admin_user()
         mock_db = _mock_db_session(run_exists=True)
 
@@ -340,6 +385,7 @@ class TestDetailedAnalysisEndpointPagination:
         ]
 
         mock_variance = AsyncMock(return_value=[])
+        mock_agents = AsyncMock(return_value=[])
 
         with (
             patch(
@@ -350,6 +396,10 @@ class TestDetailedAnalysisEndpointPagination:
             patch(
                 "src.simulation.simulations_jsonapi_router.compute_request_variance",
                 mock_variance,
+            ),
+            patch(
+                "src.simulation.simulations_jsonapi_router.compute_agent_profiles",
+                mock_agents,
             ),
         ):
             transport = ASGITransport(app=app)
@@ -364,4 +414,6 @@ class TestDetailedAnalysisEndpointPagination:
             assert data["meta"]["count"] == 25
             assert data["meta"]["request_variance"]["total_requests"] == 0
             assert data["meta"]["request_variance"]["requests"] == []
+            assert data["meta"]["agents"] == []
             mock_variance.assert_not_called()
+            mock_agents.assert_not_called()
