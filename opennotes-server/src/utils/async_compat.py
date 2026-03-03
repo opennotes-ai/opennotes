@@ -1,15 +1,7 @@
-"""Async compatibility utilities for running async code from sync contexts.
-
-This module provides utilities for safely running async coroutines from
-synchronous code, handling both cases where an event loop is already
-running and where one needs to be created.
-"""
-
 from __future__ import annotations
 
 import asyncio
 import atexit
-import concurrent.futures
 import logging
 import threading
 from collections.abc import Coroutine
@@ -22,12 +14,30 @@ _logger = logging.getLogger(__name__)
 _thread_local = threading.local()
 _thread_local_loops: list[asyncio.AbstractEventLoop] = []
 _loops_lock = threading.Lock()
-_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+_bg_state: dict[str, Any] = {"loop": None, "thread": None}
+_bg_lock = threading.Lock()
 
 
 def _register_loop(loop: asyncio.AbstractEventLoop) -> None:
     with _loops_lock:
         _thread_local_loops.append(loop)
+
+
+def _ensure_background_loop() -> asyncio.AbstractEventLoop:
+    existing = _bg_state["loop"]
+    if existing is not None and not existing.is_closed():
+        return existing
+    with _bg_lock:
+        existing = _bg_state["loop"]
+        if existing is not None and not existing.is_closed():
+            return existing
+        loop = asyncio.new_event_loop()
+        thread = threading.Thread(target=loop.run_forever, daemon=True, name="run_sync_bg_loop")
+        thread.start()
+        _bg_state["loop"] = loop
+        _bg_state["thread"] = thread
+        return loop
 
 
 def cleanup_event_loops() -> None:
@@ -44,36 +54,26 @@ def cleanup_event_loops() -> None:
 
 def shutdown() -> None:
     cleanup_event_loops()
-    _executor.shutdown(wait=False)
+    bg_loop = _bg_state["loop"]
+    bg_thread = _bg_state["thread"]
+    if bg_loop is not None and not bg_loop.is_closed():
+        bg_loop.call_soon_threadsafe(bg_loop.stop)
+        if bg_thread is not None:
+            bg_thread.join(timeout=5)
+        if not bg_loop.is_closed():
+            bg_loop.close()
+    _bg_state["loop"] = None
+    _bg_state["thread"] = None
 
 
 atexit.register(shutdown)
 
 
 def run_sync(coro: Coroutine[Any, Any, T], *, timeout: float = 300.0) -> T:
-    """Run an async coroutine synchronously.
-
-    Handles two scenarios:
-    1. No event loop running: Reuses thread-local loop for efficiency
-    2. Event loop running: Runs in separate thread to avoid RuntimeError
-
-    This is useful for DBOS workflows which are synchronous but need to
-    call async database and service methods.
-
-    Args:
-        coro: The coroutine to execute
-        timeout: Maximum seconds to wait when running in a thread (default 300s)
-
-    Returns:
-        The result of the coroutine
-
-    Raises:
-        Any exception raised by the coroutine
-    """
     try:
         loop = asyncio.get_running_loop()
         _logger.info(
-            "run_sync: running event loop detected, submitting to executor (thread=%s, loop=%s)",
+            "run_sync: running event loop detected, submitting to background loop (thread=%s, loop=%s)",
             threading.current_thread().name,
             id(loop),
         )
@@ -88,10 +88,6 @@ def run_sync(coro: Coroutine[Any, Any, T], *, timeout: float = 300.0) -> T:
         )
         return _thread_local.loop.run_until_complete(coro)
 
-    _logger.info(
-        "run_sync: submitting to ThreadPoolExecutor (active=%d, max=%d)",
-        _executor._work_queue.qsize(),
-        _executor._max_workers,
-    )
-    future = _executor.submit(asyncio.run, coro)
+    bg_loop = _ensure_background_loop()
+    future = asyncio.run_coroutine_threadsafe(coro, bg_loop)
     return future.result(timeout=timeout)

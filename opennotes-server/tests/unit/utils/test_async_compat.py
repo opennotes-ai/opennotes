@@ -9,7 +9,6 @@ from typing import Any
 import pytest
 
 from src.utils.async_compat import (
-    _executor,
     _thread_local_loops,
     cleanup_event_loops,
     run_sync,
@@ -125,18 +124,18 @@ class TestRunSync:
         assert result == "done"
         assert call_order == ["start", "end"]
 
-    def test_run_sync_reuses_executor_from_async_context(self) -> None:
-        executor_ids: list[int] = []
+    def test_run_sync_reuses_background_loop_from_async_context(self) -> None:
+        loop_ids: list[int] = []
 
-        async def capture() -> None:
-            run_sync(asyncio.sleep(0))
-            executor_ids.append(id(_executor))
-            run_sync(asyncio.sleep(0))
-            executor_ids.append(id(_executor))
+        async def capture_loop() -> int:
+            return id(asyncio.get_running_loop())
 
-        asyncio.run(capture())
+        async def outer() -> None:
+            for _ in range(5):
+                loop_ids.append(run_sync(capture_loop()))
 
-        assert len(set(executor_ids)) == 1
+        asyncio.run(outer())
+        assert len(set(loop_ids)) == 1, f"Expected 1 background loop, got {len(set(loop_ids))}"
 
     def test_run_sync_concurrent_from_async_context(self) -> None:
         results: list[int] = []
