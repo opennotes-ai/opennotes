@@ -1254,6 +1254,16 @@ def _render_detailed_xlsx(
             adjusted_width = min(max_length + 2, 60)
             ws.column_dimensions[col_letter].width = adjusted_width
 
+    from openpyxl.styles import Alignment, Font
+
+    default_font = Font(name="IBM Plex Sans Condensed")
+    default_alignment = Alignment(vertical="top")
+    for ws in [ws_notes, ws_ratings, ws_requests, ws_agents]:
+        for row in ws.iter_rows():
+            for cell in row:
+                cell.font = default_font
+                cell.alignment = default_alignment
+
     if not output_path:
         output_path = f"simulation-{simulation_id}-detailed.xlsx"
 

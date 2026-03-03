@@ -436,6 +436,62 @@ class TestXlsxAgentsSheet:
             assert ws.cell(row=2, column=2).value == "A skeptical fact-checker who questions claims"
 
 
+class TestXlsxFontAndAlignment:
+    def test_cells_use_ibm_plex_sans_condensed(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            ws = wb["Notes"]
+            assert ws.cell(row=1, column=1).font.name == "IBM Plex Sans Condensed"
+            assert ws.cell(row=2, column=1).font.name == "IBM Plex Sans Condensed"
+
+    def test_cells_use_top_alignment(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            ws = wb["Notes"]
+            assert ws.cell(row=1, column=1).alignment.vertical == "top"
+            assert ws.cell(row=2, column=1).alignment.vertical == "top"
+
+    def test_font_applied_to_all_sheets(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            for sheet_name in ["Notes", "Ratings", "Requests", "Agents"]:
+                ws = wb[sheet_name]
+                assert ws.cell(row=1, column=1).font.name == "IBM Plex Sans Condensed"
+
+
 class TestOutputFlag:
     def test_output_flag_in_help(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["simulation", "analysis", "--help"])
