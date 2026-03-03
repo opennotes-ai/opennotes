@@ -191,6 +191,70 @@ class TestRunSync:
         assert not errors, f"Concurrent run_sync errors: {errors}"
 
 
+class TestCleanupRuntimeError:
+    def test_cleanup_handles_runtime_error_on_close(self) -> None:
+        from unittest.mock import MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.is_closed.return_value = False
+        mock_loop.is_running.return_value = False
+        mock_loop.close.side_effect = RuntimeError("loop already closed by another thread")
+
+        from src.utils.async_compat import _loops_lock
+
+        with _loops_lock:
+            _thread_local_loops.append(mock_loop)
+
+        cleanup_event_loops()
+
+        assert len(_thread_local_loops) == 0
+        mock_loop.close.assert_called_once()
+
+
+class TestEnsureBackgroundLoopDoubleCheck:
+    def test_inner_lock_fast_path_when_another_thread_fixed_it(self) -> None:
+        from unittest.mock import patch
+
+        shutdown()
+
+        healthy_loop = asyncio.new_event_loop()
+        healthy_thread = threading.Thread(
+            target=healthy_loop.run_forever, daemon=True, name="test_bg_loop"
+        )
+        healthy_thread.start()
+
+        _bg_state["loop"] = healthy_loop
+        _bg_state["thread"] = healthy_thread
+
+        call_count = 0
+
+        def mock_is_loop_healthy(loop: object, thread: object) -> bool:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return False
+            return (
+                loop is not None
+                and not loop.is_closed()  # type: ignore[union-attr]
+                and loop.is_running()  # type: ignore[union-attr]
+                and thread is not None
+                and thread.is_alive()  # type: ignore[union-attr]
+            )
+
+        with patch("src.utils.async_compat._is_loop_healthy", side_effect=mock_is_loop_healthy):
+            result = _ensure_background_loop()
+
+        assert result is healthy_loop
+        assert call_count == 2
+
+        healthy_loop.call_soon_threadsafe(healthy_loop.stop)
+        healthy_thread.join(timeout=5)
+        if not healthy_loop.is_closed():
+            healthy_loop.close()
+
+        shutdown()
+
+
 class TestCleanup:
     def test_cleanup_event_loops_closes_registered_loops(self) -> None:
         loops_before = len(_thread_local_loops)
