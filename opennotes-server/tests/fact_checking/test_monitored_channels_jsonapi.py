@@ -524,6 +524,91 @@ class TestMonitoredChannelsJSONAPIUpdate:
         assert response.status_code == 409
 
 
+class TestMonitoredChannelsJSONAPIInvalidDatasetTags:
+    """Tests for 422 responses when dataset_tags contain unregistered values."""
+
+    @pytest.mark.asyncio
+    async def test_create_monitored_channel_invalid_dataset_tags_returns_422(
+        self,
+        monitored_channels_jsonapi_auth_client,
+        monitored_channels_jsonapi_community_server,
+    ):
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
+        channel_id = f"test_channel_bad_tags_{uuid4().hex[:8]}"
+
+        request_body = {
+            "data": {
+                "type": "monitored-channels",
+                "attributes": {
+                    "community_server_id": platform_id,
+                    "channel_id": channel_id,
+                    "enabled": True,
+                    "dataset_tags": ["snopes", "totally_fake_tag"],
+                },
+            }
+        }
+
+        response = await monitored_channels_jsonapi_auth_client.post(
+            "/api/v2/monitored-channels", json=request_body
+        )
+
+        assert response.status_code == 422, (
+            f"Expected 422, got {response.status_code}: {response.text}"
+        )
+        data = response.json()
+        assert "errors" in data
+        detail = data["errors"][0]["detail"]
+        assert "dataset" in detail.lower() or "tag" in detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_update_monitored_channel_invalid_dataset_tags_returns_422(
+        self,
+        monitored_channels_jsonapi_auth_client,
+        monitored_channels_jsonapi_community_server,
+    ):
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
+        channel_id = f"test_channel_patch_bad_tags_{uuid4().hex[:8]}"
+
+        create_body = {
+            "data": {
+                "type": "monitored-channels",
+                "attributes": {
+                    "community_server_id": platform_id,
+                    "channel_id": channel_id,
+                    "enabled": True,
+                    "dataset_tags": ["snopes"],
+                },
+            }
+        }
+        create_response = await monitored_channels_jsonapi_auth_client.post(
+            "/api/v2/monitored-channels", json=create_body
+        )
+        assert create_response.status_code == 201
+        created_id = create_response.json()["data"]["id"]
+
+        update_body = {
+            "data": {
+                "type": "monitored-channels",
+                "id": created_id,
+                "attributes": {
+                    "dataset_tags": ["nonexistent_dataset_xyz"],
+                },
+            }
+        }
+
+        response = await monitored_channels_jsonapi_auth_client.patch(
+            f"/api/v2/monitored-channels/{created_id}", json=update_body
+        )
+
+        assert response.status_code == 422, (
+            f"Expected 422, got {response.status_code}: {response.text}"
+        )
+        data = response.json()
+        assert "errors" in data
+        detail = data["errors"][0]["detail"]
+        assert "dataset" in detail.lower() or "tag" in detail.lower()
+
+
 class TestMonitoredChannelsJSONAPIDelete:
     """Tests for DELETE /api/v2/monitored-channels/{id}."""
 

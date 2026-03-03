@@ -873,6 +873,46 @@ def template_database(test_services):
     run_dbos_database_migrations(system_database_url=sync_template_url)
     print("✅ DBOS system tables created in template database")
 
+    print("🌱 Seeding test-specific dataset slugs in template database")
+    seed_engine = create_engine(sync_template_url, isolation_level="AUTOCOMMIT")
+    test_dataset_slugs = [
+        "test",
+        "hybrid-search",
+        "health",
+        "science",
+        "politics",
+        "reuters",
+        "other",
+        "climate",
+        "tfidf",
+        "weight-test",
+        "pgroonga",
+        "tfidf-test",
+        "cc-fusion",
+        "chunking",
+        "history",
+        "dated",
+        "promotable",
+        "Full Fact",
+        "Snopes",
+        "PolitiFact",
+        "Example",
+        "combined",
+        "pgroonga-tfidf-test",
+        "test-dataset",
+    ]
+    with seed_engine.connect() as conn:
+        for slug in test_dataset_slugs:
+            conn.execute(
+                text(
+                    "INSERT INTO fact_check_datasets (slug, display_name) "
+                    "VALUES (:slug, :display_name) ON CONFLICT DO NOTHING"
+                ),
+                {"slug": slug, "display_name": slug},
+            )
+    seed_engine.dispose()
+    print("✅ Test dataset slugs seeded in template database")
+
     # Restore original DATABASE_URL
     os.environ["DATABASE_URL"] = original_db_url
 
