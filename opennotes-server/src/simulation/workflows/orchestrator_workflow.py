@@ -14,6 +14,13 @@ from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
 from src.simulation.models import SimAgentInstance, SimulationOrchestrator, SimulationRun
+from src.simulation.restart import (
+    FOR_CAUSE_REMOVAL_REASONS,
+    MAX_RETRIES_EXCEEDED,
+    REMOVAL_RATE,
+    SIMULATION_CANCELLED,
+    SIMULATION_COMPLETED,
+)
 from src.utils.async_compat import run_sync
 
 logger = get_logger(__name__)
@@ -232,18 +239,29 @@ def get_population_snapshot_step(simulation_run_id: str) -> dict[str, int]:
             )
             total_spawned = total_result.scalar() or 0
 
-            removed_result = await session.execute(
+            removed_for_cause_result = await session.execute(
                 select(func.count()).where(
                     SimAgentInstance.simulation_run_id == run_uuid,
                     SimAgentInstance.state == "removed",
+                    SimAgentInstance.removal_reason.in_(FOR_CAUSE_REMOVAL_REASONS),
                 )
             )
-            total_removed = removed_result.scalar() or 0
+            total_removed_for_cause = removed_for_cause_result.scalar() or 0
+
+            removed_by_rate_result = await session.execute(
+                select(func.count()).where(
+                    SimAgentInstance.simulation_run_id == run_uuid,
+                    SimAgentInstance.state == "removed",
+                    SimAgentInstance.removal_reason.notin_(FOR_CAUSE_REMOVAL_REASONS),
+                )
+            )
+            total_removed_by_rate = removed_by_rate_result.scalar() or 0
 
             return {
                 "active_count": active_count,
                 "total_spawned": total_spawned,
-                "total_removed": total_removed,
+                "total_removed_for_cause": total_removed_for_cause,
+                "total_removed_by_rate": total_removed_by_rate,
             }
 
     return run_sync(_snapshot())
@@ -385,7 +403,7 @@ def remove_agents_step(
                 )
                 .values(
                     state="removed",
-                    removal_reason="removal_rate",
+                    removal_reason=REMOVAL_RATE,
                     deleted_at=now,
                 )
                 .returning(SimAgentInstance.id)
@@ -545,7 +563,7 @@ def schedule_turns_step(
                     )
                     .values(
                         state="removed",
-                        removal_reason="max_retries_exceeded",
+                        removal_reason=MAX_RETRIES_EXCEEDED,
                         deleted_at=now,
                     )
                 )
@@ -652,7 +670,7 @@ def finalize_run_step(simulation_run_id: str, final_status: str) -> dict[str, An
 
             completion_state = "completed" if final_status == "completed" else "removed"
             removal_reason = (
-                "simulation_cancelled" if final_status == "cancelled" else "simulation_completed"
+                SIMULATION_CANCELLED if final_status == "cancelled" else SIMULATION_COMPLETED
             )
 
             if remaining_active > 0:
