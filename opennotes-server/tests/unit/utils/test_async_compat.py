@@ -10,6 +10,8 @@ from typing import Any
 import pytest
 
 from src.utils.async_compat import (
+    _bg_state,
+    _ensure_background_loop,
     _thread_local_loops,
     cleanup_event_loops,
     run_sync,
@@ -223,3 +225,83 @@ class TestCleanup:
         shutdown()
 
         assert len(_thread_local_loops) == 0
+
+
+class TestShutdownLocking:
+    def test_shutdown_acquires_bg_lock(self) -> None:
+        async def noop() -> None:
+            pass
+
+        async def outer() -> None:
+            run_sync(noop())
+
+        asyncio.run(outer())
+
+        assert _bg_state["loop"] is not None
+        assert _bg_state["thread"] is not None
+
+        shutdown()
+
+        assert _bg_state["loop"] is None
+        assert _bg_state["thread"] is None
+
+
+class TestRunSyncTimeout:
+    def test_run_sync_cancels_future_on_timeout(self) -> None:
+        async def slow_coro() -> str:
+            await asyncio.sleep(60)
+            return "never"
+
+        async def outer() -> None:
+            with pytest.raises(TimeoutError):
+                run_sync(slow_coro(), timeout=0.1)
+
+        asyncio.run(outer())
+
+
+class TestEnsureBackgroundLoopDeadThread:
+    def test_ensure_background_loop_detects_dead_thread(self) -> None:
+        async def noop() -> None:
+            pass
+
+        async def outer() -> None:
+            run_sync(noop())
+
+        asyncio.run(outer())
+
+        old_loop = _bg_state["loop"]
+        old_thread = _bg_state["thread"]
+        assert old_loop is not None
+        assert old_thread is not None
+        assert old_thread.is_alive()
+
+        old_loop.call_soon_threadsafe(old_loop.stop)
+        old_thread.join(timeout=5)
+        assert not old_thread.is_alive()
+
+        new_loop = _ensure_background_loop()
+        assert new_loop is not old_loop
+        assert new_loop.is_running()
+        new_thread = _bg_state["thread"]
+        assert new_thread is not None
+        assert new_thread.is_alive()
+
+        shutdown()
+
+
+class TestRunSyncReentrancy:
+    def test_run_sync_detects_reentrancy(self) -> None:
+        bg_loop = _ensure_background_loop()
+
+        async def reentrant_coro() -> str:
+            async def inner() -> str:
+                return "inner"
+
+            return run_sync(inner())
+
+        future = asyncio.run_coroutine_threadsafe(reentrant_coro(), bg_loop)
+
+        with pytest.raises(RuntimeError, match="deadlock"):
+            future.result(timeout=5)
+
+        shutdown()
