@@ -882,7 +882,7 @@ def _fetch_detailed_pages(
             all_requests.extend(variance.get("requests", []))
 
         links = result.get("links", {})
-        if "next" not in links:
+        if not links.get("next"):
             break
         page_number += 1
 
@@ -992,6 +992,10 @@ def _render_detailed_terminal(
         console.print(var_table)
 
 
+def _escape_md(text: str) -> str:
+    return text.replace("|", "\\|")
+
+
 def _render_detailed_markdown(
     simulation_id: str, data: dict[str, list[dict[str, Any]]]
 ) -> None:
@@ -1015,14 +1019,14 @@ def _render_detailed_markdown(
         for n in notes:
             score = n.get("helpfulness_score")
             score_str = str(score) if score is not None else "N/A"
-            summary = (n.get("summary", "") or "")[:50]
+            summary = _escape_md((n.get("summary", "") or "")[:50])
             lines.append(
                 f"| {n.get('note_id', 'N/A')}"
                 f" | {summary}"
-                f" | {n.get('classification', 'N/A')}"
-                f" | {n.get('status', 'N/A')}"
+                f" | {_escape_md(n.get('classification', 'N/A'))}"
+                f" | {_escape_md(n.get('status', 'N/A'))}"
                 f" | {score_str}"
-                f" | {n.get('author_agent', 'N/A')}"
+                f" | {_escape_md(n.get('author_agent', 'N/A'))}"
                 f" | {n.get('request_id', 'N/A')}"
                 f" | {(n.get('created_at', '') or '')[:19]} |"
             )
@@ -1037,12 +1041,12 @@ def _render_detailed_markdown(
         lines.append("| Note ID | Note Summary | Rater | Helpfulness | Created At |")
         lines.append("|---------|--------------|-------|-------------|------------|")
         for r in ratings:
-            summary = (r.get("note_summary", "") or "")[:50]
+            summary = _escape_md((r.get("note_summary", "") or "")[:50])
             lines.append(
                 f"| {r.get('note_id', 'N/A')}"
                 f" | {summary}"
-                f" | {r.get('rater_agent', 'N/A')}"
-                f" | {r.get('helpfulness_level', 'N/A')}"
+                f" | {_escape_md(r.get('rater_agent', 'N/A'))}"
+                f" | {_escape_md(r.get('helpfulness_level', 'N/A'))}"
                 f" | {(r.get('created_at', '') or '')[:19]} |"
             )
         lines.append("")
@@ -1058,11 +1062,11 @@ def _render_detailed_markdown(
         for req in requests:
             variance = req.get("variance_score")
             variance_str = str(variance) if variance is not None else "N/A"
-            content = (req.get("content", "") or "")[:60]
+            content = _escape_md((req.get("content", "") or "")[:60])
             lines.append(
                 f"| {req.get('request_id', 'N/A')}"
                 f" | {content}"
-                f" | {req.get('content_type', 'N/A')}"
+                f" | {_escape_md(req.get('content_type', 'N/A'))}"
                 f" | {req.get('note_count', 0)}"
                 f" | {variance_str} |"
             )
@@ -1084,7 +1088,7 @@ def _render_detailed_markdown(
         lines.append("| Rank | Request ID | Variance Score | Content | Notes |")
         lines.append("|------|------------|----------------|---------|-------|")
         for rank, req in enumerate(sorted_requests, 1):
-            content = (req.get("content", "") or "")[:60]
+            content = _escape_md((req.get("content", "") or "")[:60])
             lines.append(
                 f"| {rank}"
                 f" | {req.get('request_id', 'N/A')}"
@@ -1137,7 +1141,7 @@ def _render_detailed_xlsx(
     for r in ratings:
         ws_ratings.append([
             r.get("note_id", ""),
-            (r.get("note_summary", "") or "")[:50],
+            r.get("note_summary", "") or "",
             r.get("rater_agent", ""),
             r.get("helpfulness_level", ""),
             r.get("created_at", ""),

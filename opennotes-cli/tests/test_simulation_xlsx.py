@@ -70,7 +70,7 @@ def _make_detailed_response(simulation_id: str) -> MagicMock:
                 },
             },
         ],
-        "links": {},
+        "links": {"self": f"/api/v2/simulations/{simulation_id}/analysis/detailed", "next": None},
         "meta": {
             "count": 2,
             "request_variance": {
@@ -244,7 +244,7 @@ class TestXlsxRatingsSheet:
             assert "Helpfulness Level" in headers
             assert "Created At" in headers
 
-    def test_ratings_sheet_truncates_summary(self, runner: CliRunner) -> None:
+    def test_ratings_sheet_preserves_full_summary(self, runner: CliRunner) -> None:
         import tempfile
 
         from openpyxl import load_workbook
@@ -260,7 +260,7 @@ class TestXlsxRatingsSheet:
             wb = load_workbook(output_file)
             ws = wb["Ratings"]
             summary_val = ws.cell(row=2, column=2).value
-            assert len(summary_val) <= 50
+            assert summary_val == "Claim is misleading due to cherry-picked statistics"
 
 
 class TestXlsxRequestsSheet:

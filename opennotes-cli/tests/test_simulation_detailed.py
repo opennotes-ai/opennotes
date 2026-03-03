@@ -6,6 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from opennotes_cli.cli import cli
+from opennotes_cli.commands.simulation import _escape_md
 
 
 @pytest.fixture()
@@ -97,12 +98,15 @@ def _make_page_response(
 ) -> MagicMock:
     links: dict = {
         "self": f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number}&page[size]={page_size}",
+        "next": (
+            f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number + 1}&page[size]={page_size}"
+            if page_number < total_pages
+            else None
+        ),
+        "last": f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={total_pages}&page[size]={page_size}",
     }
-    if page_number < total_pages:
-        links["next"] = f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number + 1}&page[size]={page_size}"
     if page_number > 1:
         links["prev"] = f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number - 1}&page[size]={page_size}"
-    links["last"] = f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={total_pages}&page[size]={page_size}"
 
     body = {
         "data": note_resources,
@@ -335,3 +339,75 @@ class TestExistingAnalysisUnchanged:
         analysis_url = get_calls[1][0][0]
         assert "/analysis/detailed" not in analysis_url
         assert "/analysis" in analysis_url
+
+
+class TestEscapeMdHelper:
+    def test_escapes_pipe(self) -> None:
+        assert _escape_md("a | b") == "a \\| b"
+
+    def test_no_pipe_unchanged(self) -> None:
+        assert _escape_md("no pipes here") == "no pipes here"
+
+    def test_multiple_pipes(self) -> None:
+        assert _escape_md("a|b|c") == "a\\|b\\|c"
+
+    def test_empty_string(self) -> None:
+        assert _escape_md("") == ""
+
+
+class TestMarkdownPipeEscaping:
+    def test_pipe_in_summary_is_escaped(self, runner: CliRunner) -> None:
+        note_with_pipe = [
+            {
+                "type": "simulation-detailed-notes",
+                "id": "note-pipe",
+                "attributes": {
+                    "note_id": "note-pipe",
+                    "summary": "True | False claim",
+                    "classification": "MISINFORMATION",
+                    "status": "scored",
+                    "helpfulness_score": 0.5,
+                    "author_agent_name": "Agent|One",
+                    "author_agent_instance_id": "a1",
+                    "request_id": "req-p",
+                    "created_at": "2026-03-01T10:00:00Z",
+                    "ratings": [
+                        {
+                            "rater_agent_name": "Agent|Two",
+                            "rater_agent_instance_id": "a2",
+                            "helpfulness_level": "HELPFUL",
+                            "created_at": "2026-03-01T10:10:00Z",
+                        }
+                    ],
+                },
+            },
+        ]
+        pipe_requests = [
+            {
+                "request_id": "req-p",
+                "content": "text with | pipe char",
+                "content_type": "text",
+                "note_count": 1,
+                "variance_score": 0.5,
+            },
+        ]
+
+        csrf_resp = _make_csrf_response()
+        page_resp = _make_page_response(
+            SIM_ID, note_with_pipe, pipe_requests,
+            page_number=1, total_pages=1, total_items=1,
+        )
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [csrf_resp, page_resp]
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "--detailed", "--format", "markdown", SIM_ID]
+            )
+        assert result.exit_code == 0
+        assert "True \\| False claim" in result.output
+        assert "Agent\\|One" in result.output
+        assert "Agent\\|Two" in result.output
+        assert "text with \\| pipe char" in result.output
