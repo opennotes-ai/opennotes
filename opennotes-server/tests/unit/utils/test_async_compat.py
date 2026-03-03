@@ -282,6 +282,7 @@ class TestEnsureBackgroundLoopDeadThread:
         new_loop = _ensure_background_loop()
         assert new_loop is not old_loop
         assert new_loop.is_running()
+        assert old_loop.is_closed()
         new_thread = _bg_state["thread"]
         assert new_thread is not None
         assert new_thread.is_alive()

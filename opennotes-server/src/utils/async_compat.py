@@ -46,6 +46,8 @@ def _ensure_background_loop() -> asyncio.AbstractEventLoop:
         thread = _bg_state["thread"]
         if _is_loop_healthy(existing, thread):
             return existing  # type: ignore[return-value]
+        if existing is not None and not existing.is_closed():
+            existing.close()
         loop = asyncio.new_event_loop()
         thread = threading.Thread(target=loop.run_forever, daemon=True, name="run_sync_bg_loop")
         thread.start()
