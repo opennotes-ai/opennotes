@@ -1155,6 +1155,16 @@ def _render_detailed_markdown(
     click.echo("\n".join(lines))
 
 
+_XLSX_MAX_CELL_LENGTH = 32767
+_XLSX_TRUNCATION_SUFFIX = "...[truncated]"
+
+
+def _truncate_for_xlsx(value: object) -> object:
+    if isinstance(value, str) and len(value) > _XLSX_MAX_CELL_LENGTH:
+        return value[: _XLSX_MAX_CELL_LENGTH - len(_XLSX_TRUNCATION_SUFFIX)] + _XLSX_TRUNCATION_SUFFIX
+    return value
+
+
 def _render_detailed_xlsx(
     simulation_id: str,
     data: dict[str, list[dict[str, Any]]],
@@ -1241,6 +1251,11 @@ def _render_detailed_xlsx(
         ])
 
     for ws in [ws_notes, ws_ratings, ws_requests, ws_agents]:
+        for row in ws.iter_rows():
+            for cell in row:
+                cell.value = _truncate_for_xlsx(cell.value)
+
+    for ws in [ws_notes, ws_ratings, ws_requests, ws_agents]:
         for col in ws.columns:
             max_length = 0
             col_letter = col[0].column_letter
@@ -1256,12 +1271,13 @@ def _render_detailed_xlsx(
 
     from openpyxl.styles import Alignment, Font
 
+    header_font = Font(name="IBM Plex Sans Condensed", bold=True)
     default_font = Font(name="IBM Plex Sans Condensed")
     default_alignment = Alignment(vertical="top")
     for ws in [ws_notes, ws_ratings, ws_requests, ws_agents]:
         for row in ws.iter_rows():
             for cell in row:
-                cell.font = default_font
+                cell.font = header_font if cell.row == 1 else default_font
                 cell.alignment = default_alignment
 
     if not output_path:
