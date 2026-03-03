@@ -136,6 +136,12 @@ from .delete_dataset_fusion_weight_api_v1_admin_fusion_weights_dataset_delete_re
 from .delete_webhook_api_v1_webhooks_webhook_id_delete_response_delete_webhook_api_v1_webhooks_webhook_id_delete import (
     DeleteWebhookApiV1WebhooksWebhookIdDeleteResponseDeleteWebhookApiV1WebhooksWebhookIdDelete,
 )
+from .detailed_analysis_response import DetailedAnalysisResponse
+from .detailed_analysis_response_jsonapi import DetailedAnalysisResponseJsonapi
+from .detailed_analysis_response_meta_type_0 import DetailedAnalysisResponseMetaType0
+from .detailed_note_data import DetailedNoteData
+from .detailed_note_resource import DetailedNoteResource
+from .detailed_rating_data import DetailedRatingData
 from .discord_o_auth_init_response import DiscordOAuthInitResponse
 from .discord_o_auth_login_request import DiscordOAuthLoginRequest
 from .discord_o_auth_register_request import DiscordOAuthRegisterRequest
@@ -682,6 +688,12 @@ __all__ = (
     "CreateCommunityServerApiV1CommunityServersPostResponse409",
     "DeleteDatasetFusionWeightApiV1AdminFusionWeightsDatasetDeleteResponseDeleteDatasetFusionWeightApiV1AdminFusionWeightsDatasetDelete",
     "DeleteWebhookApiV1WebhooksWebhookIdDeleteResponseDeleteWebhookApiV1WebhooksWebhookIdDelete",
+    "DetailedAnalysisResponse",
+    "DetailedAnalysisResponseJsonapi",
+    "DetailedAnalysisResponseMetaType0",
+    "DetailedNoteData",
+    "DetailedNoteResource",
+    "DetailedRatingData",
     "DiscordOAuthInitResponse",
     "DiscordOAuthLoginRequest",
     "DiscordOAuthRegisterRequest",

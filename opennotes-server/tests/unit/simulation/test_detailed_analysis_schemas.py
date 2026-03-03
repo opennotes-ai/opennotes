@@ -232,19 +232,19 @@ class TestDetailedAnalysisResponse:
                     )
                 ],
                 total_requests=1,
-            ),
+            ).model_dump(),
         )
         assert response.jsonapi == {"version": "1.1"}
         assert len(response.data) == 1
-        assert response.meta.total_requests == 1
+        assert response.meta["total_requests"] == 1
 
     def test_empty_response(self):
         response = DetailedAnalysisResponse(
             data=[],
-            meta=RequestVarianceMeta(),
+            meta=RequestVarianceMeta().model_dump(),
         )
         assert len(response.data) == 0
-        assert response.meta.total_requests == 0
+        assert response.meta["total_requests"] == 0
         assert response.links is None
 
     def test_response_serialization(self):

@@ -14260,16 +14260,20 @@
           },
           "links": {
             "anyOf": [
-              {},
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
               {
                 "type": "null"
               }
-            ],
-            "title": "Links"
+            ]
           },
           "meta": {
             "anyOf": [
-              {},
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
               {
                 "type": "null"
               }
