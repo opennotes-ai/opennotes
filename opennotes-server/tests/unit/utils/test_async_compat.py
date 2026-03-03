@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import threading
 from typing import Any
 
@@ -164,6 +165,28 @@ class TestRunSync:
 
         assert not errors
         assert sorted(results) == [i * 3 for i in range(10)]
+
+    def test_concurrent_run_sync_with_session_maker(self) -> None:
+        errors: list[Exception] = []
+
+        async def db_work() -> str:
+            from src.database import get_session_maker
+
+            maker = get_session_maker()
+            loop_id = id(asyncio.get_running_loop())
+            return f"loop={loop_id},maker={id(maker)}"
+
+        async def outer() -> None:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                futures = [pool.submit(run_sync, db_work()) for _ in range(20)]
+                for f in concurrent.futures.as_completed(futures):
+                    try:
+                        f.result()
+                    except Exception as e:
+                        errors.append(e)
+
+        asyncio.run(outer())
+        assert not errors, f"Concurrent run_sync errors: {errors}"
 
 
 class TestCleanup:

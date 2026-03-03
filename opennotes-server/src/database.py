@@ -1,6 +1,7 @@
 import asyncio
 import gc
 import json
+import threading
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -83,6 +84,7 @@ class Base(DeclarativeBase):
 _engine: AsyncEngine | None = None
 _async_session_maker: async_sessionmaker[AsyncSession] | None = None
 _engine_loop: object | None = None
+_db_lock = threading.RLock()
 
 
 def _create_engine() -> AsyncEngine:
@@ -110,46 +112,48 @@ def get_engine() -> AsyncEngine:
     global _engine  # noqa: PLW0603 - Module-level lazy-loaded singleton for async engine, necessary for event loop awareness in test suite
     global _engine_loop  # noqa: PLW0603 - Tracks current event loop to detect loop changes between tests
 
-    if _engine is None:
-        _engine = _create_engine()
-        try:
-            _engine_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            _engine_loop = None
-    else:
-        try:
-            current_loop = asyncio.get_running_loop()
-            if _engine_loop is not current_loop:
-                old_engine = _engine
-                _engine = _create_engine()
-                _engine_loop = current_loop
+    with _db_lock:
+        if _engine is None:
+            _engine = _create_engine()
+            try:
+                _engine_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                _engine_loop = None
+        else:
+            try:
+                current_loop = asyncio.get_running_loop()
+                if _engine_loop is not current_loop:
+                    old_engine = _engine
+                    _engine = _create_engine()
+                    _engine_loop = current_loop
 
-                del old_engine
-                gc.collect()
-        except RuntimeError:
-            pass
+                    del old_engine
+                    gc.collect()
+            except RuntimeError:
+                pass
 
-    return _engine
+        return _engine
 
 
 def get_session_maker() -> async_sessionmaker[AsyncSession]:
     """Get or create the async session maker."""
     global _async_session_maker  # noqa: PLW0603 - Module-level lazy-loaded singleton, recreated when event loop changes
 
-    try:
-        current_loop = asyncio.get_running_loop()
-    except RuntimeError:
-        current_loop = None
+    with _db_lock:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
 
-    if _async_session_maker is None or (current_loop and current_loop != _engine_loop):
-        _async_session_maker = async_sessionmaker(
-            get_engine(),
-            class_=AsyncSession,
-            expire_on_commit=False,
-            autocommit=False,
-            autoflush=False,
-        )
-    return _async_session_maker
+        if _async_session_maker is None or (current_loop and current_loop != _engine_loop):
+            _async_session_maker = async_sessionmaker(
+                get_engine(),
+                class_=AsyncSession,
+                expire_on_commit=False,
+                autocommit=False,
+                autoflush=False,
+            )
+        return _async_session_maker
 
 
 # Make engine and async_session_maker available as module attributes for backwards compatibility
@@ -193,10 +197,11 @@ async def init_db() -> None:
 
 async def close_db() -> None:
     global _engine, _async_session_maker  # noqa: PLW0603 - Cleanup module-level singletons on shutdown
-    if _engine is not None:
-        await _engine.dispose()
-        _engine = None
-    _async_session_maker = None
+    with _db_lock:
+        if _engine is not None:
+            await _engine.dispose()
+            _engine = None
+        _async_session_maker = None
 
 
 def _reset_database_for_test_loop() -> None:  # pyright: ignore[reportUnusedFunction]
@@ -214,8 +219,9 @@ def _reset_database_for_test_loop() -> None:  # pyright: ignore[reportUnusedFunc
     current event loop.
     """
     global _engine, _async_session_maker, _engine_loop  # noqa: PLW0603 - Reset singletons for fresh event loop in tests
-    if _engine is not None:
-        _engine.sync_engine.dispose()
-    _engine = None
-    _async_session_maker = None
-    _engine_loop = None
+    with _db_lock:
+        if _engine is not None:
+            _engine.sync_engine.dispose()
+        _engine = None
+        _async_session_maker = None
+        _engine_loop = None
