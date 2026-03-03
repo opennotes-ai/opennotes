@@ -487,7 +487,7 @@ async def compute_request_variance(
             Note.deleted_at.is_(None),
             Note.request_id.isnot(None),
         )
-        .options(*loaders.full())
+        .options(*loaders.ratings())
     )
     notes = list(notes_result.scalars().all())
 
@@ -507,10 +507,8 @@ async def compute_request_variance(
         if note.request_id:
             notes_by_request[note.request_id].append(note)
 
-    all_request_ids = set(request_ids) | set(requests_by_id.keys())
-
     results: list[DetailedRequestData] = []
-    for req_id in all_request_ids:
+    for req_id in request_ids:
         req_notes = notes_by_request.get(req_id, [])
         req_obj = requests_by_id.get(req_id)
 

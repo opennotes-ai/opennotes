@@ -9,11 +9,9 @@ from attrs import field as _attrs_field
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.detailed_analysis_meta import DetailedAnalysisMeta
     from ..models.detailed_analysis_response_jsonapi import (
         DetailedAnalysisResponseJsonapi,
-    )
-    from ..models.detailed_analysis_response_meta_type_0 import (
-        DetailedAnalysisResponseMetaType0,
     )
     from ..models.detailed_note_resource import DetailedNoteResource
     from ..models.jsonapi_links import JSONAPILinks
@@ -29,19 +27,17 @@ class DetailedAnalysisResponse:
         data (list[DetailedNoteResource]):
         jsonapi (DetailedAnalysisResponseJsonapi | Unset):
         links (JSONAPILinks | None | Unset):
-        meta (DetailedAnalysisResponseMetaType0 | None | Unset):
+        meta (DetailedAnalysisMeta | None | Unset):
     """
 
     data: list[DetailedNoteResource]
     jsonapi: DetailedAnalysisResponseJsonapi | Unset = UNSET
     links: JSONAPILinks | None | Unset = UNSET
-    meta: DetailedAnalysisResponseMetaType0 | None | Unset = UNSET
+    meta: DetailedAnalysisMeta | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.detailed_analysis_response_meta_type_0 import (
-            DetailedAnalysisResponseMetaType0,
-        )
+        from ..models.detailed_analysis_meta import DetailedAnalysisMeta
         from ..models.jsonapi_links import JSONAPILinks
 
         data = []
@@ -64,7 +60,7 @@ class DetailedAnalysisResponse:
         meta: dict[str, Any] | None | Unset
         if isinstance(self.meta, Unset):
             meta = UNSET
-        elif isinstance(self.meta, DetailedAnalysisResponseMetaType0):
+        elif isinstance(self.meta, DetailedAnalysisMeta):
             meta = self.meta.to_dict()
         else:
             meta = self.meta
@@ -87,11 +83,9 @@ class DetailedAnalysisResponse:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.detailed_analysis_meta import DetailedAnalysisMeta
         from ..models.detailed_analysis_response_jsonapi import (
             DetailedAnalysisResponseJsonapi,
-        )
-        from ..models.detailed_analysis_response_meta_type_0 import (
-            DetailedAnalysisResponseMetaType0,
         )
         from ..models.detailed_note_resource import DetailedNoteResource
         from ..models.jsonapi_links import JSONAPILinks
@@ -128,9 +122,7 @@ class DetailedAnalysisResponse:
 
         links = _parse_links(d.pop("links", UNSET))
 
-        def _parse_meta(
-            data: object,
-        ) -> DetailedAnalysisResponseMetaType0 | None | Unset:
+        def _parse_meta(data: object) -> DetailedAnalysisMeta | None | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
@@ -138,12 +130,12 @@ class DetailedAnalysisResponse:
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
-                meta_type_0 = DetailedAnalysisResponseMetaType0.from_dict(data)
+                meta_type_0 = DetailedAnalysisMeta.from_dict(data)
 
                 return meta_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(DetailedAnalysisResponseMetaType0 | None | Unset, data)
+            return cast(DetailedAnalysisMeta | None | Unset, data)
 
         meta = _parse_meta(d.pop("meta", UNSET))
 

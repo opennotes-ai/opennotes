@@ -185,6 +185,45 @@ class TestDetailedAnalysisEndpointHappyPath:
             assert variance["requests"][0]["request_id"] == "req-001"
             assert variance["requests"][0]["content"] == "Some claim"
 
+    @pytest.mark.asyncio
+    async def test_helpfulness_score_float_in_response(self, override_deps):
+        admin_user = _mock_admin_user()
+        mock_db = _mock_db_session(run_exists=True)
+
+        override_deps[get_current_user_or_api_key] = lambda: admin_user
+        override_deps[get_db] = lambda: mock_db
+
+        note_data = DetailedNoteData(
+            note_id="note-float",
+            summary="Float score note",
+            classification="NOT_MISLEADING",
+            status="CURRENTLY_RATED_HELPFUL",
+            helpfulness_score=3.75,
+            author_agent_name="Agent",
+            author_agent_instance_id="inst-001",
+            ratings=[],
+        )
+
+        with (
+            patch(
+                "src.simulation.simulations_jsonapi_router.compute_detailed_notes",
+                new_callable=AsyncMock,
+                return_value=([note_data], 1),
+            ),
+            patch(
+                "src.simulation.simulations_jsonapi_router.compute_request_variance",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(f"/api/v2/simulations/{uuid4()}/analysis/detailed")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["data"][0]["attributes"]["helpfulness_score"] == 3.75
+
 
 @pytest.mark.unit
 class TestDetailedAnalysisEndpointPagination:
@@ -279,3 +318,50 @@ class TestDetailedAnalysisEndpointPagination:
             assert response.status_code == 200
             data = response.json()
             assert data["links"]["next"] is None
+
+    @pytest.mark.asyncio
+    async def test_page_2_skips_variance_computation(self, override_deps):
+        admin_user = _mock_admin_user()
+        mock_db = _mock_db_session(run_exists=True)
+
+        override_deps[get_current_user_or_api_key] = lambda: admin_user
+        override_deps[get_db] = lambda: mock_db
+
+        notes = [
+            DetailedNoteData(
+                note_id="note-page2",
+                summary="Page 2 note",
+                classification="NOT_MISLEADING",
+                status="NEEDS_MORE_RATINGS",
+                helpfulness_score=0,
+                author_agent_name="Agent",
+                author_agent_instance_id="inst",
+            )
+        ]
+
+        mock_variance = AsyncMock(return_value=[])
+
+        with (
+            patch(
+                "src.simulation.simulations_jsonapi_router.compute_detailed_notes",
+                new_callable=AsyncMock,
+                return_value=(notes, 25),
+            ),
+            patch(
+                "src.simulation.simulations_jsonapi_router.compute_request_variance",
+                mock_variance,
+            ),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(
+                    f"/api/v2/simulations/{uuid4()}/analysis/detailed",
+                    params={"page[number]": 2, "page[size]": 5},
+                )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["meta"]["count"] == 25
+            assert data["meta"]["request_variance"]["total_requests"] == 0
+            assert data["meta"]["request_variance"]["requests"] == []
+            mock_variance.assert_not_called()

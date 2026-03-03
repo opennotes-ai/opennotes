@@ -299,7 +299,7 @@ class DetailedNoteData(SQLAlchemySchema):
     summary: str
     classification: str
     status: str
-    helpfulness_score: int
+    helpfulness_score: float
     author_agent_name: str
     author_agent_instance_id: str
     request_id: str | None = None
@@ -326,10 +326,15 @@ class RequestVarianceMeta(BaseModel):
     total_requests: int = 0
 
 
+class DetailedAnalysisMeta(BaseModel):
+    count: int = 0
+    request_variance: RequestVarianceMeta = Field(default_factory=RequestVarianceMeta)
+
+
 class DetailedAnalysisResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     data: list[DetailedNoteResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
-    meta: dict[str, Any] | None = None
+    meta: DetailedAnalysisMeta | None = None

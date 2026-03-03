@@ -26,7 +26,7 @@ def _make_note(
     request_id: str | None = None,
     classification: str = "NOT_MISLEADING",
     status: str = "NEEDS_MORE_RATINGS",
-    helpfulness_score: int = 0,
+    helpfulness_score: float = 0,
     ratings: list | None = None,
     created_at: datetime | None = None,
 ) -> MagicMock:

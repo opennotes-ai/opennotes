@@ -25,7 +25,7 @@ class DetailedNoteData:
         summary (str):
         classification (str):
         status (str):
-        helpfulness_score (int):
+        helpfulness_score (float):
         author_agent_name (str):
         author_agent_instance_id (str):
         request_id (None | str | Unset):
@@ -37,7 +37,7 @@ class DetailedNoteData:
     summary: str
     classification: str
     status: str
-    helpfulness_score: int
+    helpfulness_score: float
     author_agent_name: str
     author_agent_instance_id: str
     request_id: None | str | Unset = UNSET

@@ -136,12 +136,13 @@ from .delete_dataset_fusion_weight_api_v1_admin_fusion_weights_dataset_delete_re
 from .delete_webhook_api_v1_webhooks_webhook_id_delete_response_delete_webhook_api_v1_webhooks_webhook_id_delete import (
     DeleteWebhookApiV1WebhooksWebhookIdDeleteResponseDeleteWebhookApiV1WebhooksWebhookIdDelete,
 )
+from .detailed_analysis_meta import DetailedAnalysisMeta
 from .detailed_analysis_response import DetailedAnalysisResponse
 from .detailed_analysis_response_jsonapi import DetailedAnalysisResponseJsonapi
-from .detailed_analysis_response_meta_type_0 import DetailedAnalysisResponseMetaType0
 from .detailed_note_data import DetailedNoteData
 from .detailed_note_resource import DetailedNoteResource
 from .detailed_rating_data import DetailedRatingData
+from .detailed_request_data import DetailedRequestData
 from .discord_o_auth_init_response import DiscordOAuthInitResponse
 from .discord_o_auth_login_request import DiscordOAuthLoginRequest
 from .discord_o_auth_register_request import DiscordOAuthRegisterRequest
@@ -451,6 +452,7 @@ from .request_status import RequestStatus
 from .request_update_attributes import RequestUpdateAttributes
 from .request_update_data import RequestUpdateData
 from .request_update_request import RequestUpdateRequest
+from .request_variance_meta import RequestVarianceMeta
 from .resend_verification_email_api_v1_profile_auth_resend_verification_post_response_resend_verification_email_api_v1_profile_auth_resend_verification_post import (
     ResendVerificationEmailApiV1ProfileAuthResendVerificationPostResponseResendVerificationEmailApiV1ProfileAuthResendVerificationPost,
 )
@@ -688,12 +690,13 @@ __all__ = (
     "CreateCommunityServerApiV1CommunityServersPostResponse409",
     "DeleteDatasetFusionWeightApiV1AdminFusionWeightsDatasetDeleteResponseDeleteDatasetFusionWeightApiV1AdminFusionWeightsDatasetDelete",
     "DeleteWebhookApiV1WebhooksWebhookIdDeleteResponseDeleteWebhookApiV1WebhooksWebhookIdDelete",
+    "DetailedAnalysisMeta",
     "DetailedAnalysisResponse",
     "DetailedAnalysisResponseJsonapi",
-    "DetailedAnalysisResponseMetaType0",
     "DetailedNoteData",
     "DetailedNoteResource",
     "DetailedRatingData",
+    "DetailedRequestData",
     "DiscordOAuthInitResponse",
     "DiscordOAuthLoginRequest",
     "DiscordOAuthRegisterRequest",
@@ -943,6 +946,7 @@ __all__ = (
     "RequestUpdateAttributes",
     "RequestUpdateData",
     "RequestUpdateRequest",
+    "RequestVarianceMeta",
     "ResendVerificationEmailApiV1ProfileAuthResendVerificationPostResponseResendVerificationEmailApiV1ProfileAuthResendVerificationPost",
     "ResultNoteAttributes",
     "ResultNoteResource",

@@ -5155,6 +5155,15 @@ export interface components {
              */
             context_messages: number;
         };
+        /** DetailedAnalysisMeta */
+        DetailedAnalysisMeta: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            request_variance?: components["schemas"]["RequestVarianceMeta"];
+        };
         /** DetailedAnalysisResponse */
         DetailedAnalysisResponse: {
             /** Data */
@@ -5169,10 +5178,7 @@ export interface components {
                 [key: string]: string;
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
-            /** Meta */
-            meta?: {
-                [key: string]: unknown;
-            } | null;
+            meta?: components["schemas"]["DetailedAnalysisMeta"] | null;
         };
         /** DetailedNoteData */
         DetailedNoteData: {
@@ -5218,6 +5224,25 @@ export interface components {
             helpfulness_level: string;
             /** Created At */
             created_at?: string | null;
+        };
+        /** DetailedRequestData */
+        DetailedRequestData: {
+            /** Request Id */
+            request_id: string;
+            /** Content */
+            content?: string | null;
+            /** Content Type */
+            content_type?: string | null;
+            /**
+             * Note Count
+             * @default 0
+             */
+            note_count: number;
+            /**
+             * Variance Score
+             * @default 0
+             */
+            variance_score: number;
         };
         /**
          * DiscordOAuthInitResponse
@@ -8546,6 +8571,16 @@ export interface components {
          */
         RequestUpdateRequest: {
             data: components["schemas"]["RequestUpdateData"];
+        };
+        /** RequestVarianceMeta */
+        RequestVarianceMeta: {
+            /** Requests */
+            requests?: components["schemas"]["DetailedRequestData"][];
+            /**
+             * Total Requests
+             * @default 0
+             */
+            total_requests: number;
         };
         /** ResultNoteAttributes */
         ResultNoteAttributes: {

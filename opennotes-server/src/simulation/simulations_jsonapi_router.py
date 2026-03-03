@@ -42,6 +42,7 @@ from src.simulation.restart import snapshot_restart_state
 from src.simulation.schemas import (
     AnalysisResource,
     AnalysisResponse,
+    DetailedAnalysisMeta,
     DetailedAnalysisResponse,
     DetailedNoteResource,
     RequestVarianceMeta,
@@ -929,7 +930,16 @@ async def get_simulation_results(
 
         resources: list[ResultNoteResource] = []
         for note in notes:
-            inst_id = profile_to_instance.get(note.author_id, note.author_id)
+            inst_id = profile_to_instance.get(note.author_id)
+            if inst_id is None:
+                logger.warning(
+                    "No agent instance mapping for author profile",
+                    extra={
+                        "author_id": str(note.author_id),
+                        "note_id": str(note.id),
+                        "simulation_id": str(simulation_id),
+                    },
+                )
             resources.append(
                 ResultNoteResource(
                     id=str(note.id),
@@ -939,7 +949,7 @@ async def get_simulation_results(
                         classification=note.classification,
                         note_status=note.status,
                         author_profile_id=str(note.author_id),
-                        agent_instance_id=str(inst_id),
+                        agent_instance_id=str(inst_id) if inst_id is not None else "",
                         created_at=note.created_at,
                     ),
                 )
@@ -1064,7 +1074,14 @@ async def get_simulation_detailed_analysis(
             simulation_id, db, offset=offset, limit=page_size
         )
 
-        request_variance = await compute_request_variance(simulation_id, db)
+        if page_number == 1:
+            request_variance = await compute_request_variance(simulation_id, db)
+            variance_meta = RequestVarianceMeta(
+                requests=request_variance,
+                total_requests=len(request_variance),
+            )
+        else:
+            variance_meta = RequestVarianceMeta()
 
         resources = [
             DetailedNoteResource(id=note.note_id, attributes=note) for note in detailed_notes
@@ -1078,13 +1095,10 @@ async def get_simulation_detailed_analysis(
             total=total,
         )
 
-        meta = {
-            "count": total,
-            "request_variance": RequestVarianceMeta(
-                requests=request_variance,
-                total_requests=len(request_variance),
-            ).model_dump(mode="json"),
-        }
+        meta = DetailedAnalysisMeta(
+            count=total,
+            request_variance=variance_meta,
+        )
 
         response = DetailedAnalysisResponse(
             data=resources,
