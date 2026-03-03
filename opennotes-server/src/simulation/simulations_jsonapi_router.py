@@ -38,7 +38,7 @@ from src.simulation.analysis import (
 )
 from src.simulation.constants import PROGRESS_CACHE_KEY_PREFIX, PROGRESS_CACHE_TTL_SECONDS
 from src.simulation.models import SimAgentInstance, SimulationOrchestrator, SimulationRun
-from src.simulation.restart import snapshot_restart_state
+from src.simulation.restart import restartable_agents_filter, snapshot_restart_state
 from src.simulation.schemas import (
     AnalysisResource,
     AnalysisResponse,
@@ -580,8 +580,7 @@ async def resume_simulation(
         if reset_turns:
             agents_result = await db.execute(
                 select(func.coalesce(func.sum(SimAgentInstance.turn_count), 0)).where(
-                    SimAgentInstance.simulation_run_id == simulation_id,
-                    SimAgentInstance.state != "removed",
+                    restartable_agents_filter(simulation_id)
                 )
             )
             current_total_turns = agents_result.scalar_one()
@@ -590,10 +589,7 @@ async def resume_simulation(
 
             await db.execute(
                 update(SimAgentInstance)
-                .where(
-                    SimAgentInstance.simulation_run_id == simulation_id,
-                    SimAgentInstance.state != "removed",
-                )
+                .where(restartable_agents_filter(simulation_id))
                 .values(
                     cumulative_turn_count=SimAgentInstance.cumulative_turn_count
                     + SimAgentInstance.turn_count,

@@ -66,10 +66,7 @@ async def snapshot_restart_state(
     await session.flush()
 
     instances_result = await session.execute(
-        select(SimAgentInstance).where(
-            SimAgentInstance.simulation_run_id == simulation_run_id,
-            SimAgentInstance.state != "removed",
-        )
+        select(SimAgentInstance).where(restartable_agents_filter(simulation_run_id))
     )
     log_ids: list[UUID] = []
     for inst in instances_result.scalars().all():
