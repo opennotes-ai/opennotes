@@ -275,6 +275,21 @@ class TestSnapshotReturnValue:
         assert result.log_ids == []
 
 
+class TestSnapshotPausedRunCompletedAt:
+    @pytest.mark.asyncio
+    async def test_paused_run_log_has_non_none_completed_at(self) -> None:
+        orch = _mock_orchestrator()
+        run = _mock_run(orch, status="paused", completed_at=None)
+        agent = _mock_agent_instance(simulation_run_id=run.id, state="active", turn_count=5)
+        session = _build_session(run, [agent])
+
+        await snapshot_restart_state(session, run.id)
+
+        logs = [o for o in session._added_objects if isinstance(o, SimAgentRunLog)]
+        assert len(logs) == 1
+        assert logs[0].completed_at is not None
+
+
 class TestSnapshotFlushBehavior:
     @pytest.mark.asyncio
     async def test_flush_called_for_config_and_each_agent(self) -> None:

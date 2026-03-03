@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
+import pendulum
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -61,7 +62,7 @@ async def snapshot_restart_state(
             turns_in_segment=inst.turn_count,
             state_at_end=inst.state,
             started_at=run.started_at,
-            completed_at=run.completed_at,
+            completed_at=run.completed_at or pendulum.now("UTC"),
         )
         session.add(log)
         await session.flush()
