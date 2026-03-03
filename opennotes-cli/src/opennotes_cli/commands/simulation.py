@@ -1093,6 +1093,7 @@ def _render_detailed_xlsx(
     wb = Workbook()
 
     ws_notes = wb.active
+    assert ws_notes is not None
     ws_notes.title = "Notes"
     note_headers = ["Note ID", "Summary", "Classification", "Status", "Helpfulness Score", "Author Agent", "Request ID", "Created At"]
     ws_notes.append(note_headers)
