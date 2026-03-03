@@ -842,6 +842,7 @@ def _fetch_detailed_pages(
     all_notes: list[dict[str, Any]] = []
     all_ratings: list[dict[str, Any]] = []
     all_requests: list[dict[str, Any]] = []
+    all_agents: list[dict[str, Any]] = []
     page_number = 1
 
     while True:
@@ -880,13 +881,14 @@ def _fetch_detailed_pages(
             meta = result.get("meta", {})
             variance = meta.get("request_variance", {})
             all_requests.extend(variance.get("requests", []))
+            all_agents.extend(meta.get("agents", []))
 
         links = result.get("links", {})
         if not links.get("next"):
             break
         page_number += 1
 
-    return {"notes": all_notes, "ratings": all_ratings, "requests": all_requests}
+    return {"notes": all_notes, "ratings": all_ratings, "requests": all_requests, "agents": all_agents}
 
 
 def _render_detailed_terminal(
@@ -895,13 +897,15 @@ def _render_detailed_terminal(
     notes = data.get("notes", [])
     ratings = data.get("ratings", [])
     requests = data.get("requests", [])
+    agents = data.get("agents", [])
 
     console.print(
         Panel(
             f"[bold]Simulation:[/bold] {simulation_id}\n"
             f"[bold]Notes:[/bold] {len(notes)}  "
             f"[bold]Ratings:[/bold] {len(ratings)}  "
-            f"[bold]Requests:[/bold] {len(requests)}",
+            f"[bold]Requests:[/bold] {len(requests)}  "
+            f"[bold]Agents:[/bold] {len(agents)}",
             title="[bold]Detailed Simulation Analysis[/bold]",
         )
     )
@@ -991,6 +995,28 @@ def _render_detailed_terminal(
             )
         console.print(var_table)
 
+    if agents:
+        agent_table = Table(title="Agents", show_header=True, header_style="bold")
+        agent_table.add_column("Agent Name")
+        agent_table.add_column("Model")
+        agent_table.add_column("Memory Strategy")
+        agent_table.add_column("Turn Count", justify="right")
+        agent_table.add_column("State")
+        agent_table.add_column("Token Count", justify="right")
+        agent_table.add_column("Recent Actions", max_width=40)
+        for a in agents:
+            recent = ", ".join(str(x) for x in (a.get("recent_actions", []) or [])[:5])
+            agent_table.add_row(
+                a.get("agent_name", "N/A"),
+                a.get("model_name", "N/A"),
+                a.get("memory_compaction_strategy", "N/A"),
+                str(a.get("turn_count", 0)),
+                a.get("state", "N/A"),
+                str(a.get("token_count", 0)),
+                recent or "N/A",
+            )
+        console.print(agent_table)
+
 
 def _escape_md(text: str) -> str:
     return text.replace("|", "\\|")
@@ -1002,6 +1028,7 @@ def _render_detailed_markdown(
     notes = data.get("notes", [])
     ratings = data.get("ratings", [])
     requests = data.get("requests", [])
+    agents = data.get("agents", [])
 
     lines: list[str] = []
     lines.append(f"# Detailed Simulation Analysis: {simulation_id}")
@@ -1009,6 +1036,7 @@ def _render_detailed_markdown(
     lines.append(f"- Notes: {len(notes)}")
     lines.append(f"- Ratings: {len(ratings)}")
     lines.append(f"- Requests: {len(requests)}")
+    lines.append(f"- Agents: {len(agents)}")
     lines.append("")
 
     lines.append("## Notes")
@@ -1098,6 +1126,32 @@ def _render_detailed_markdown(
             )
         lines.append("")
 
+    lines.append("## Agents")
+    lines.append("")
+    if agents:
+        lines.append("| Agent Name | Personality | Model | Memory Strategy | Turn Count | State | Token Count | Recent Actions | Last Messages |")
+        lines.append("|------------|-------------|-------|-----------------|------------|-------|-------------|----------------|---------------|")
+        for a in agents:
+            personality = _escape_md((a.get("personality", "") or "")[:80])
+            recent = _escape_md(", ".join(str(x) for x in (a.get("recent_actions", []) or [])[:5]))
+            msgs = a.get("last_messages", []) or []
+            msg_summary = _escape_md(f"{len(msgs)} messages" if msgs else "None")
+            lines.append(
+                f"| {_escape_md(a.get('agent_name', 'N/A'))}"
+                f" | {personality}"
+                f" | {_escape_md(a.get('model_name', 'N/A'))}"
+                f" | {_escape_md(a.get('memory_compaction_strategy', 'N/A'))}"
+                f" | {a.get('turn_count', 0)}"
+                f" | {_escape_md(a.get('state', 'N/A'))}"
+                f" | {a.get('token_count', 0)}"
+                f" | {recent or 'N/A'}"
+                f" | {msg_summary} |"
+            )
+        lines.append("")
+    else:
+        lines.append("No agent data found.")
+        lines.append("")
+
     click.echo("\n".join(lines))
 
 
@@ -1159,7 +1213,34 @@ def _render_detailed_xlsx(
             req.get("variance_score"),
         ])
 
-    for ws in [ws_notes, ws_ratings, ws_requests]:
+    ws_agents = wb.create_sheet("Agents")
+    agent_headers = [
+        "Agent Name", "Personality Prompt", "Model",
+        "Memory Compaction Strategy", "Turn Count", "State",
+        "Token Count", "Recent Actions", "Last 10 Messages",
+    ]
+    ws_agents.append(agent_headers)
+    agents = data.get("agents", [])
+    for a in agents:
+        recent = ", ".join(str(x) for x in (a.get("recent_actions", []) or []))
+        msgs = a.get("last_messages", []) or []
+        msg_text = "\n".join(
+            f"{m.get('role', '?')}: {m.get('content', '')}"
+            for m in msgs
+        ) if msgs else ""
+        ws_agents.append([
+            a.get("agent_name", ""),
+            a.get("personality", ""),
+            a.get("model_name", ""),
+            a.get("memory_compaction_strategy", ""),
+            a.get("turn_count", 0),
+            a.get("state", ""),
+            a.get("token_count", 0),
+            recent,
+            msg_text,
+        ])
+
+    for ws in [ws_notes, ws_ratings, ws_requests, ws_agents]:
         for col in ws.columns:
             max_length = 0
             col_letter = col[0].column_letter
