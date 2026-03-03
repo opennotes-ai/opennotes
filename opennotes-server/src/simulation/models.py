@@ -163,7 +163,6 @@ class SimulationRunConfig(Base, TimestampMixin):
     simulation_run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         nullable=False,
-        index=True,
     )
     restart_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     max_turns_per_agent: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -262,12 +261,10 @@ class SimAgentRunLog(Base, TimestampMixin):
     agent_instance_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         nullable=False,
-        index=True,
     )
     simulation_run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         nullable=False,
-        index=True,
     )
     restart_number: Mapped[int] = mapped_column(Integer, nullable=False)
     turns_in_segment: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
