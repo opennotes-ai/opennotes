@@ -82,10 +82,12 @@ def _build_session(
     session = AsyncMock()
     added_objects: list[object] = []
 
+    update_results = [MagicMock() for _ in agents]
     session.execute = AsyncMock(
         side_effect=[
             _mock_scalar_one(run),
             _mock_scalars_all(agents),
+            *update_results,
         ]
     )
 
