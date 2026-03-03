@@ -854,10 +854,32 @@ def _fetch_detailed_pages(
         handle_jsonapi_error(response)
         result = response.json()
 
-        attrs = result.get("data", {}).get("attributes", {})
-        all_notes.extend(attrs.get("notes", []))
-        all_ratings.extend(attrs.get("ratings", []))
-        all_requests.extend(attrs.get("requests", []))
+        for resource in result.get("data", []):
+            attrs = resource.get("attributes", {})
+            note = {
+                "note_id": attrs.get("note_id", ""),
+                "summary": attrs.get("summary", ""),
+                "classification": attrs.get("classification", ""),
+                "status": attrs.get("status", ""),
+                "helpfulness_score": attrs.get("helpfulness_score"),
+                "author_agent": attrs.get("author_agent_name", ""),
+                "request_id": attrs.get("request_id"),
+                "created_at": attrs.get("created_at"),
+            }
+            all_notes.append(note)
+            for r in attrs.get("ratings", []):
+                all_ratings.append({
+                    "note_id": attrs.get("note_id", ""),
+                    "note_summary": attrs.get("summary", ""),
+                    "rater_agent": r.get("rater_agent_name", ""),
+                    "helpfulness_level": r.get("helpfulness_level", ""),
+                    "created_at": r.get("created_at"),
+                })
+
+        if page_number == 1:
+            meta = result.get("meta", {})
+            variance = meta.get("request_variance", {})
+            all_requests.extend(variance.get("requests", []))
 
         links = result.get("links", {})
         if "next" not in links:

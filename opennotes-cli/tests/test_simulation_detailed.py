@@ -19,89 +19,52 @@ def _make_csrf_response() -> MagicMock:
     return resp
 
 
-def _make_page_response(
-    simulation_id: str,
-    notes: list[dict],
-    ratings: list[dict],
-    requests: list[dict],
-    page_number: int,
-    total_pages: int,
-    total_items: int,
-    page_size: int = 50,
-) -> MagicMock:
-    links: dict = {
-        "self": f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number}&page[size]={page_size}",
-    }
-    if page_number < total_pages:
-        links["next"] = f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number + 1}&page[size]={page_size}"
-    if page_number > 1:
-        links["prev"] = f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number - 1}&page[size]={page_size}"
-    links["last"] = f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={total_pages}&page[size]={page_size}"
-
-    body = {
-        "data": {
-            "type": "simulation-analysis-detailed",
-            "id": simulation_id,
-            "attributes": {
-                "notes": notes,
-                "ratings": ratings,
-                "requests": requests,
-            },
+SAMPLE_NOTE_RESOURCES = [
+    {
+        "type": "simulation-detailed-notes",
+        "id": "note-001",
+        "attributes": {
+            "note_id": "note-001",
+            "summary": "This claim is misleading because statistics are cherry-picked",
+            "classification": "MISINFORMATION",
+            "status": "scored",
+            "helpfulness_score": 0.85,
+            "author_agent_name": "Skeptic",
+            "author_agent_instance_id": "skeptic-1",
+            "request_id": "req-001",
+            "created_at": "2026-03-01T10:00:00Z",
+            "ratings": [
+                {
+                    "rater_agent_name": "Optimist",
+                    "rater_agent_instance_id": "optimist-1",
+                    "helpfulness_level": "HELPFUL",
+                    "created_at": "2026-03-01T10:10:00Z",
+                }
+            ],
         },
-        "links": links,
-        "meta": {
-            "page": {
-                "number": page_number,
-                "size": page_size,
-                "total_pages": total_pages,
-                "total_items": total_items,
-            }
+    },
+    {
+        "type": "simulation-detailed-notes",
+        "id": "note-002",
+        "attributes": {
+            "note_id": "note-002",
+            "summary": "The source is generally reliable and well-cited",
+            "classification": "ACCURATE",
+            "status": "scored",
+            "helpfulness_score": 0.72,
+            "author_agent_name": "Optimist",
+            "author_agent_instance_id": "optimist-1",
+            "request_id": "req-002",
+            "created_at": "2026-03-01T10:05:00Z",
+            "ratings": [
+                {
+                    "rater_agent_name": "Skeptic",
+                    "rater_agent_instance_id": "skeptic-1",
+                    "helpfulness_level": "SOMEWHAT_HELPFUL",
+                    "created_at": "2026-03-01T10:15:00Z",
+                }
+            ],
         },
-    }
-
-    resp = MagicMock()
-    resp.status_code = 200
-    resp.json.return_value = body
-    return resp
-
-
-SAMPLE_NOTES = [
-    {
-        "note_id": "note-001",
-        "summary": "This claim is misleading because statistics are cherry-picked",
-        "classification": "MISINFORMATION",
-        "status": "scored",
-        "helpfulness_score": 0.85,
-        "author_agent": "Skeptic",
-        "request_id": "req-001",
-        "created_at": "2026-03-01T10:00:00Z",
-    },
-    {
-        "note_id": "note-002",
-        "summary": "The source is generally reliable and well-cited",
-        "classification": "ACCURATE",
-        "status": "scored",
-        "helpfulness_score": 0.72,
-        "author_agent": "Optimist",
-        "request_id": "req-002",
-        "created_at": "2026-03-01T10:05:00Z",
-    },
-]
-
-SAMPLE_RATINGS = [
-    {
-        "note_id": "note-001",
-        "note_summary": "This claim is misleading because statistics are cherry-picked",
-        "rater_agent": "Optimist",
-        "helpfulness_level": "HELPFUL",
-        "created_at": "2026-03-01T10:10:00Z",
-    },
-    {
-        "note_id": "note-002",
-        "note_summary": "The source is generally reliable and well-cited",
-        "rater_agent": "Skeptic",
-        "helpfulness_level": "SOMEWHAT_HELPFUL",
-        "created_at": "2026-03-01T10:15:00Z",
     },
 ]
 
@@ -122,13 +85,49 @@ SAMPLE_REQUESTS = [
     },
 ]
 
+
+def _make_page_response(
+    simulation_id: str,
+    note_resources: list[dict],
+    requests: list[dict],
+    page_number: int,
+    total_pages: int,
+    total_items: int,
+    page_size: int = 50,
+) -> MagicMock:
+    links: dict = {
+        "self": f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number}&page[size]={page_size}",
+    }
+    if page_number < total_pages:
+        links["next"] = f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number + 1}&page[size]={page_size}"
+    if page_number > 1:
+        links["prev"] = f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={page_number - 1}&page[size]={page_size}"
+    links["last"] = f"/api/v2/simulations/{simulation_id}/analysis/detailed?page[number]={total_pages}&page[size]={page_size}"
+
+    body = {
+        "data": note_resources,
+        "links": links,
+        "meta": {
+            "count": total_items,
+            "request_variance": {
+                "requests": requests,
+                "total_requests": len(requests),
+            },
+        },
+    }
+
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = body
+    return resp
+
 SIM_ID = "sim-detailed-001"
 
 
 def _make_single_page_client() -> MagicMock:
     csrf_resp = _make_csrf_response()
     page_resp = _make_page_response(
-        SIM_ID, SAMPLE_NOTES, SAMPLE_RATINGS, SAMPLE_REQUESTS,
+        SIM_ID, SAMPLE_NOTE_RESOURCES, SAMPLE_REQUESTS,
         page_number=1, total_pages=1, total_items=2,
     )
     mock_client = MagicMock()
@@ -141,12 +140,12 @@ def _make_single_page_client() -> MagicMock:
 def _make_multi_page_client() -> MagicMock:
     csrf_resp = _make_csrf_response()
     page1_resp = _make_page_response(
-        SIM_ID, SAMPLE_NOTES[:1], SAMPLE_RATINGS[:1], SAMPLE_REQUESTS[:1],
-        page_number=1, total_pages=2, total_items=4, page_size=1,
+        SIM_ID, SAMPLE_NOTE_RESOURCES[:1], SAMPLE_REQUESTS,
+        page_number=1, total_pages=2, total_items=2, page_size=1,
     )
     page2_resp = _make_page_response(
-        SIM_ID, SAMPLE_NOTES[1:], SAMPLE_RATINGS[1:], SAMPLE_REQUESTS[1:],
-        page_number=2, total_pages=2, total_items=4, page_size=1,
+        SIM_ID, SAMPLE_NOTE_RESOURCES[1:], SAMPLE_REQUESTS,
+        page_number=2, total_pages=2, total_items=2, page_size=1,
     )
     mock_client = MagicMock()
     mock_client.get.side_effect = [csrf_resp, page1_resp, page2_resp]

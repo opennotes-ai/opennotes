@@ -22,48 +22,58 @@ def _make_csrf_response() -> MagicMock:
 
 def _make_detailed_response(simulation_id: str) -> MagicMock:
     body = {
-        "data": {
-            "type": "simulation-analysis-detailed",
-            "id": simulation_id,
-            "attributes": {
-                "notes": [
-                    {
-                        "note_id": "note-001",
-                        "summary": "Claim is misleading due to cherry-picked statistics",
-                        "classification": "MISINFORMATION",
-                        "status": "scored",
-                        "helpfulness_score": 0.85,
-                        "author_agent": "Skeptic",
-                        "request_id": "req-001",
-                        "created_at": "2026-03-01T10:00:00Z",
-                    },
-                    {
-                        "note_id": "note-002",
-                        "summary": "Source is reliable and well-cited",
-                        "classification": "ACCURATE",
-                        "status": "scored",
-                        "helpfulness_score": 0.72,
-                        "author_agent": "Optimist",
-                        "request_id": "req-002",
-                        "created_at": "2026-03-01T10:05:00Z",
-                    },
-                ],
-                "ratings": [
-                    {
-                        "note_id": "note-001",
-                        "note_summary": "Claim is misleading due to cherry-picked statistics and more text here",
-                        "rater_agent": "Optimist",
-                        "helpfulness_level": "HELPFUL",
-                        "created_at": "2026-03-01T10:10:00Z",
-                    },
-                    {
-                        "note_id": "note-002",
-                        "note_summary": "Source is reliable and well-cited",
-                        "rater_agent": "Skeptic",
-                        "helpfulness_level": "SOMEWHAT_HELPFUL",
-                        "created_at": "2026-03-01T10:15:00Z",
-                    },
-                ],
+        "data": [
+            {
+                "type": "simulation-detailed-notes",
+                "id": "note-001",
+                "attributes": {
+                    "note_id": "note-001",
+                    "summary": "Claim is misleading due to cherry-picked statistics",
+                    "classification": "MISINFORMATION",
+                    "status": "scored",
+                    "helpfulness_score": 0.85,
+                    "author_agent_name": "Skeptic",
+                    "author_agent_instance_id": "skeptic-1",
+                    "request_id": "req-001",
+                    "created_at": "2026-03-01T10:00:00Z",
+                    "ratings": [
+                        {
+                            "rater_agent_name": "Optimist",
+                            "rater_agent_instance_id": "optimist-1",
+                            "helpfulness_level": "HELPFUL",
+                            "created_at": "2026-03-01T10:10:00Z",
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "simulation-detailed-notes",
+                "id": "note-002",
+                "attributes": {
+                    "note_id": "note-002",
+                    "summary": "Source is reliable and well-cited",
+                    "classification": "ACCURATE",
+                    "status": "scored",
+                    "helpfulness_score": 0.72,
+                    "author_agent_name": "Optimist",
+                    "author_agent_instance_id": "optimist-1",
+                    "request_id": "req-002",
+                    "created_at": "2026-03-01T10:05:00Z",
+                    "ratings": [
+                        {
+                            "rater_agent_name": "Skeptic",
+                            "rater_agent_instance_id": "skeptic-1",
+                            "helpfulness_level": "SOMEWHAT_HELPFUL",
+                            "created_at": "2026-03-01T10:15:00Z",
+                        }
+                    ],
+                },
+            },
+        ],
+        "links": {},
+        "meta": {
+            "count": 2,
+            "request_variance": {
                 "requests": [
                     {
                         "request_id": "req-001",
@@ -80,11 +90,8 @@ def _make_detailed_response(simulation_id: str) -> MagicMock:
                         "variance_score": 0.45,
                     },
                 ],
+                "total_requests": 2,
             },
-        },
-        "links": {},
-        "meta": {
-            "page": {"number": 1, "size": 50, "total_pages": 1, "total_items": 2}
         },
     }
     resp = MagicMock()
