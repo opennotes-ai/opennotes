@@ -200,7 +200,7 @@ class TestDetailedTerminalOutput:
             )
         assert result.exit_code == 0
         assert "req-001" in result.output
-        assert "example.com" in result.output
+        assert "https://example.com/article-1" in result.output
 
     def test_terminal_shows_variance_summary(self, runner: CliRunner) -> None:
         mock_client = _make_single_page_client()
