@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import threading
 from typing import Any
 
 import pytest
 
 from src.utils.async_compat import (
-    _executor,
+    _bg_state,
+    _ensure_background_loop,
     _thread_local_loops,
     cleanup_event_loops,
     run_sync,
@@ -125,18 +127,18 @@ class TestRunSync:
         assert result == "done"
         assert call_order == ["start", "end"]
 
-    def test_run_sync_reuses_executor_from_async_context(self) -> None:
-        executor_ids: list[int] = []
+    def test_run_sync_reuses_background_loop_from_async_context(self) -> None:
+        loop_ids: list[int] = []
 
-        async def capture() -> None:
-            run_sync(asyncio.sleep(0))
-            executor_ids.append(id(_executor))
-            run_sync(asyncio.sleep(0))
-            executor_ids.append(id(_executor))
+        async def capture_loop() -> int:
+            return id(asyncio.get_running_loop())
 
-        asyncio.run(capture())
+        async def outer() -> None:
+            for _ in range(5):
+                loop_ids.append(run_sync(capture_loop()))
 
-        assert len(set(executor_ids)) == 1
+        asyncio.run(outer())
+        assert len(set(loop_ids)) == 1, f"Expected 1 background loop, got {len(set(loop_ids))}"
 
     def test_run_sync_concurrent_from_async_context(self) -> None:
         results: list[int] = []
@@ -165,6 +167,92 @@ class TestRunSync:
 
         assert not errors
         assert sorted(results) == [i * 3 for i in range(10)]
+
+    def test_concurrent_run_sync_with_session_maker(self) -> None:
+        errors: list[Exception] = []
+
+        async def db_work() -> str:
+            from src.database import get_session_maker
+
+            maker = get_session_maker()
+            loop_id = id(asyncio.get_running_loop())
+            return f"loop={loop_id},maker={id(maker)}"
+
+        async def outer() -> None:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                futures = [pool.submit(run_sync, db_work()) for _ in range(20)]
+                for f in concurrent.futures.as_completed(futures):
+                    try:
+                        f.result()
+                    except Exception as e:
+                        errors.append(e)
+
+        asyncio.run(outer())
+        assert not errors, f"Concurrent run_sync errors: {errors}"
+
+
+class TestCleanupRuntimeError:
+    def test_cleanup_handles_runtime_error_on_close(self) -> None:
+        from unittest.mock import MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.is_closed.return_value = False
+        mock_loop.is_running.return_value = False
+        mock_loop.close.side_effect = RuntimeError("loop already closed by another thread")
+
+        from src.utils.async_compat import _loops_lock
+
+        with _loops_lock:
+            _thread_local_loops.append(mock_loop)
+
+        cleanup_event_loops()
+
+        assert len(_thread_local_loops) == 0
+        mock_loop.close.assert_called_once()
+
+
+class TestEnsureBackgroundLoopDoubleCheck:
+    def test_inner_lock_fast_path_when_another_thread_fixed_it(self) -> None:
+        from unittest.mock import patch
+
+        shutdown()
+
+        healthy_loop = asyncio.new_event_loop()
+        healthy_thread = threading.Thread(
+            target=healthy_loop.run_forever, daemon=True, name="test_bg_loop"
+        )
+        healthy_thread.start()
+
+        _bg_state["loop"] = healthy_loop
+        _bg_state["thread"] = healthy_thread
+
+        call_count = 0
+
+        def mock_is_loop_healthy(loop: object, thread: object) -> bool:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return False
+            return (
+                loop is not None
+                and not loop.is_closed()  # type: ignore[union-attr]
+                and loop.is_running()  # type: ignore[union-attr]
+                and thread is not None
+                and thread.is_alive()  # type: ignore[union-attr]
+            )
+
+        with patch("src.utils.async_compat._is_loop_healthy", side_effect=mock_is_loop_healthy):
+            result = _ensure_background_loop()
+
+        assert result is healthy_loop
+        assert call_count == 2
+
+        healthy_loop.call_soon_threadsafe(healthy_loop.stop)
+        healthy_thread.join(timeout=5)
+        if not healthy_loop.is_closed():
+            healthy_loop.close()
+
+        shutdown()
 
 
 class TestCleanup:
@@ -201,3 +289,84 @@ class TestCleanup:
         shutdown()
 
         assert len(_thread_local_loops) == 0
+
+
+class TestShutdownLocking:
+    def test_shutdown_acquires_bg_lock(self) -> None:
+        async def noop() -> None:
+            pass
+
+        async def outer() -> None:
+            run_sync(noop())
+
+        asyncio.run(outer())
+
+        assert _bg_state["loop"] is not None
+        assert _bg_state["thread"] is not None
+
+        shutdown()
+
+        assert _bg_state["loop"] is None
+        assert _bg_state["thread"] is None
+
+
+class TestRunSyncTimeout:
+    def test_run_sync_cancels_future_on_timeout(self) -> None:
+        async def slow_coro() -> str:
+            await asyncio.sleep(60)
+            return "never"
+
+        async def outer() -> None:
+            with pytest.raises(TimeoutError):
+                run_sync(slow_coro(), timeout=0.1)
+
+        asyncio.run(outer())
+
+
+class TestEnsureBackgroundLoopDeadThread:
+    def test_ensure_background_loop_detects_dead_thread(self) -> None:
+        async def noop() -> None:
+            pass
+
+        async def outer() -> None:
+            run_sync(noop())
+
+        asyncio.run(outer())
+
+        old_loop = _bg_state["loop"]
+        old_thread = _bg_state["thread"]
+        assert old_loop is not None
+        assert old_thread is not None
+        assert old_thread.is_alive()
+
+        old_loop.call_soon_threadsafe(old_loop.stop)
+        old_thread.join(timeout=5)
+        assert not old_thread.is_alive()
+
+        new_loop = _ensure_background_loop()
+        assert new_loop is not old_loop
+        assert new_loop.is_running()
+        assert old_loop.is_closed()
+        new_thread = _bg_state["thread"]
+        assert new_thread is not None
+        assert new_thread.is_alive()
+
+        shutdown()
+
+
+class TestRunSyncReentrancy:
+    def test_run_sync_detects_reentrancy(self) -> None:
+        bg_loop = _ensure_background_loop()
+
+        async def reentrant_coro() -> str:
+            async def inner() -> str:
+                return "inner"
+
+            return run_sync(inner())
+
+        future = asyncio.run_coroutine_threadsafe(reentrant_coro(), bg_loop)
+
+        with pytest.raises(RuntimeError, match="deadlock"):
+            future.result(timeout=5)
+
+        shutdown()
