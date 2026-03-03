@@ -152,6 +152,34 @@ class SimulationOrchestrator(Base, TimestampMixin):
         self.deleted_at = pendulum.now("UTC")
 
 
+class SimulationRunConfig(Base, TimestampMixin):
+    __tablename__ = "simulation_run_configs"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("uuidv7()"),
+    )
+    simulation_run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=False,
+    )
+    restart_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    max_turns_per_agent: Mapped[int] = mapped_column(Integer, nullable=False)
+    turn_cadence_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_agents: Mapped[int] = mapped_column(Integer, nullable=False)
+    removal_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    scoring_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "idx_simulation_run_configs_run_restart",
+            "simulation_run_id",
+            "restart_number",
+        ),
+    )
+
+
 class SimulationRun(Base, TimestampMixin):
     __tablename__ = "simulation_runs"
 
@@ -182,6 +210,17 @@ class SimulationRun(Base, TimestampMixin):
     )
     config_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     generation: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    cumulative_turns: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    restart_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    current_config_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("simulation_run_configs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     orchestrator: Mapped[SimulationOrchestrator] = relationship(
@@ -209,6 +248,41 @@ class SimulationRun(Base, TimestampMixin):
 
     def soft_delete(self) -> None:
         self.deleted_at = pendulum.now("UTC")
+
+
+class SimAgentRunLog(Base, TimestampMixin):
+    __tablename__ = "sim_agent_run_logs"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("uuidv7()"),
+    )
+    agent_instance_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=False,
+    )
+    simulation_run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=False,
+    )
+    restart_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    turns_in_segment: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    state_at_end: Mapped[str] = mapped_column(String(20), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "idx_sim_agent_run_logs_instance_restart",
+            "agent_instance_id",
+            "restart_number",
+        ),
+        Index(
+            "idx_sim_agent_run_logs_run_id",
+            "simulation_run_id",
+        ),
+    )
 
 
 class SimAgentInstance(Base, TimestampMixin):
@@ -242,6 +316,14 @@ class SimAgentInstance(Base, TimestampMixin):
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_turn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     removal_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    cumulative_turn_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    current_run_log_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("sim_agent_run_logs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     simulation_run: Mapped[SimulationRun] = relationship(

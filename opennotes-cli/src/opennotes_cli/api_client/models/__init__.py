@@ -452,6 +452,9 @@ from .result_note_attributes import ResultNoteAttributes
 from .result_note_resource import ResultNoteResource
 from .results_list_response import ResultsListResponse
 from .results_list_response_jsonapi import ResultsListResponseJsonapi
+from .resume_attributes import ResumeAttributes
+from .resume_data import ResumeData
+from .resume_request import ResumeRequest
 from .risk_level import RiskLevel
 from .scan_error_info_schema import ScanErrorInfoSchema
 from .scan_error_summary_schema import ScanErrorSummarySchema
@@ -933,6 +936,9 @@ __all__ = (
     "ResultNoteResource",
     "ResultsListResponse",
     "ResultsListResponseJsonapi",
+    "ResumeAttributes",
+    "ResumeData",
+    "ResumeRequest",
     "RiskLevel",
     "ScanErrorInfoSchema",
     "ScanErrorSummarySchema",

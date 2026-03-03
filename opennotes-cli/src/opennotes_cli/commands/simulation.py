@@ -126,6 +126,12 @@ def simulation_status(ctx: click.Context, simulation_id: str) -> None:
     if metrics:
         panel_content += f"\n[bold]Metrics:[/bold] {json.dumps(metrics, indent=2)}"
 
+    restart_count = attrs.get("restart_count", 0)
+    if restart_count:
+        panel_content += f"\n[bold]Restarts:[/bold] {restart_count}"
+        cumulative = attrs.get("cumulative_turns", 0)
+        panel_content += f"\n[bold]Cumulative Turns:[/bold] {cumulative}"
+
     error_msg = attrs.get("error_message")
     if error_msg:
         panel_content += f"\n[bold red]Error:[/bold red] {error_msg}"
@@ -250,6 +256,48 @@ def simulation_resume(ctx: click.Context, simulation_id: str) -> None:
 def simulation_cancel(ctx: click.Context, simulation_id: str) -> None:
     """Cancel a simulation."""
     _simulation_lifecycle_cmd(ctx, simulation_id, "cancel")
+
+
+@simulation.command("restart")
+@click.argument("simulation_id")
+@click.pass_context
+def simulation_restart(ctx: click.Context, simulation_id: str) -> None:
+    """Restart a completed simulation (reset turns, keep memory)."""
+    cli_ctx: CliContext = ctx.obj
+    base_url = cli_ctx.base_url
+    client = cli_ctx.client
+
+    csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+    headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    body = {
+        "data": {
+            "type": "simulations",
+            "attributes": {"reset_turns": True},
+        }
+    }
+
+    response = client.post(
+        f"{base_url}/api/v2/simulations/{simulation_id}/resume",
+        headers=headers,
+        json=body,
+    )
+    handle_jsonapi_error(response)
+
+    result = response.json()
+
+    if cli_ctx.json_output:
+        console.print(json.dumps(result, indent=2, default=str))
+        return
+
+    attrs = result.get("data", {}).get("attributes", {})
+    status_val = attrs.get("status", "unknown")
+    color, symbol = get_status_style(status_val)
+    restart_count = attrs.get("restart_count", 0)
+    console.print(
+        f"[{color}]{symbol}[/{color}] Simulation {simulation_id} restarted "
+        f"(restart #{restart_count}), now [{color}]{status_val}[/{color}]"
+    )
 
 
 def _read_urls_from_file(path: str) -> list[str]:

@@ -8510,6 +8510,27 @@ export interface components {
             links?: components["schemas"]["JSONAPILinks"] | null;
             meta?: components["schemas"]["JSONAPIMeta"] | null;
         };
+        /** ResumeAttributes */
+        ResumeAttributes: {
+            /**
+             * Reset Turns
+             * @default false
+             */
+            reset_turns: boolean;
+        };
+        /** ResumeData */
+        ResumeData: {
+            /**
+             * Type
+             * @default simulations
+             */
+            type: string;
+            attributes: components["schemas"]["ResumeAttributes"];
+        };
+        /** ResumeRequest */
+        ResumeRequest: {
+            data: components["schemas"]["ResumeData"];
+        };
         /**
          * RiskLevel
          * @description Categorical risk level for conversation flashpoint detection.
@@ -9216,6 +9237,16 @@ export interface components {
             } | null;
             /** Error Message */
             error_message?: string | null;
+            /**
+             * Restart Count
+             * @default 0
+             */
+            restart_count: number;
+            /**
+             * Cumulative Turns
+             * @default 0
+             */
+            cumulative_turns: number;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -15933,7 +15964,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ResumeRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

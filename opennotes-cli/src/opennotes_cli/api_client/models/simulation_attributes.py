@@ -31,6 +31,8 @@ class SimulationAttributes:
         paused_at (datetime.datetime | None | Unset):
         metrics (None | SimulationAttributesMetricsType0 | Unset):
         error_message (None | str | Unset):
+        restart_count (int | Unset):  Default: 0.
+        cumulative_turns (int | Unset):  Default: 0.
         created_at (datetime.datetime | None | Unset):
         updated_at (datetime.datetime | None | Unset):
     """
@@ -43,6 +45,8 @@ class SimulationAttributes:
     paused_at: datetime.datetime | None | Unset = UNSET
     metrics: None | SimulationAttributesMetricsType0 | Unset = UNSET
     error_message: None | str | Unset = UNSET
+    restart_count: int | Unset = 0
+    cumulative_turns: int | Unset = 0
     created_at: datetime.datetime | None | Unset = UNSET
     updated_at: datetime.datetime | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -96,6 +100,10 @@ class SimulationAttributes:
         else:
             error_message = self.error_message
 
+        restart_count = self.restart_count
+
+        cumulative_turns = self.cumulative_turns
+
         created_at: None | str | Unset
         if isinstance(self.created_at, Unset):
             created_at = UNSET
@@ -131,6 +139,10 @@ class SimulationAttributes:
             field_dict["metrics"] = metrics
         if error_message is not UNSET:
             field_dict["error_message"] = error_message
+        if restart_count is not UNSET:
+            field_dict["restart_count"] = restart_count
+        if cumulative_turns is not UNSET:
+            field_dict["cumulative_turns"] = cumulative_turns
         if created_at is not UNSET:
             field_dict["created_at"] = created_at
         if updated_at is not UNSET:
@@ -230,6 +242,10 @@ class SimulationAttributes:
 
         error_message = _parse_error_message(d.pop("error_message", UNSET))
 
+        restart_count = d.pop("restart_count", UNSET)
+
+        cumulative_turns = d.pop("cumulative_turns", UNSET)
+
         def _parse_created_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
                 return data
@@ -273,6 +289,8 @@ class SimulationAttributes:
             paused_at=paused_at,
             metrics=metrics,
             error_message=error_message,
+            restart_count=restart_count,
+            cumulative_turns=cumulative_turns,
             created_at=created_at,
             updated_at=updated_at,
         )
