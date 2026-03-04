@@ -344,6 +344,10 @@ def _register_dbos_workflows() -> list[str]:
                 "BULK_APPROVAL_WORKFLOW_NAME",
             ],
         ),
+        (
+            "src.dbos_workflows.token_bucket.cleanup",
+            ["CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME"],
+        ),
     ]
 
     for module_path, attr_names in workflow_modules:

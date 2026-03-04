@@ -75,6 +75,7 @@ class TestWorkerWorkflowRegistration:
                 "scrape_candidates_workflow",
                 "promote_candidates_workflow",
                 "bulk_approval_workflow",
+                "cleanup_stale_token_holds",
             }
             assert workflow_names == expected
 
