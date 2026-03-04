@@ -38,7 +38,10 @@ def _make_scalar_result(value):
 
 def _make_scalars_result(items):
     result = MagicMock()
-    result.scalars.return_value = items
+    scalars_mock = MagicMock()
+    scalars_mock.__iter__ = MagicMock(return_value=iter(items))
+    scalars_mock.all.return_value = items
+    result.scalars.return_value = scalars_mock
     return result
 
 
@@ -76,12 +79,16 @@ class TestTryAcquireTokensAsync:
                 _make_scalar_result(None),
                 _make_scalar_result(pool),
                 _make_scalar_result(4),
+                _make_scalars_result([]),
             ]
         )
 
-        with patch(
-            "src.database.get_session_maker",
-            return_value=mock_session_maker,
+        with (
+            patch(
+                "src.database.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.dbos_workflows.token_bucket.operations.DBOS"),
         ):
             result = await try_acquire_tokens_async("llm", 3, "wf-2")
 
@@ -232,3 +239,229 @@ class TestGetPoolStatusAsync:
         assert len(result["active_holds"]) == 1
         assert result["active_holds"][0]["workflow_id"] == "wf-1"
         assert result["active_holds"][0]["weight"] == 3
+
+
+class TestActiveScavenging:
+    @pytest.mark.asyncio
+    async def test_scavenges_terminal_workflow_holds_when_pool_full(
+        self, mock_session, mock_session_maker
+    ):
+        pool = MagicMock()
+        pool.capacity = 5
+
+        hold = MagicMock()
+        hold.id = uuid4()
+        hold.workflow_id = "wf-dead"
+        hold.weight = 3
+        hold.pool_name = "llm"
+
+        mock_status = MagicMock()
+        mock_status.status = "ERROR"
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(5),
+                _make_scalars_result([hold]),
+                MagicMock(),
+                _make_scalar_result(2),
+            ]
+        )
+
+        with (
+            patch(
+                "src.database.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.dbos_workflows.token_bucket.operations.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.return_value = mock_status
+            result = await try_acquire_tokens_async("llm", 3, "wf-new")
+
+        assert result is True
+        mock_session.add.assert_called_once()
+        mock_session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_scavenging_when_capacity_available(self, mock_session, mock_session_maker):
+        pool = MagicMock()
+        pool.capacity = 10
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(3),
+            ]
+        )
+
+        with (
+            patch(
+                "src.database.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.dbos_workflows.token_bucket.operations.DBOS") as mock_dbos,
+        ):
+            result = await try_acquire_tokens_async("llm", 3, "wf-new")
+
+        assert result is True
+        mock_dbos.get_workflow_status.assert_not_called()
+        mock_session.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_scavenges_multiple_terminal_holds(self, mock_session, mock_session_maker):
+        pool = MagicMock()
+        pool.capacity = 10
+
+        hold1 = MagicMock()
+        hold1.id = uuid4()
+        hold1.workflow_id = "wf-dead-1"
+        hold1.weight = 4
+        hold1.pool_name = "llm"
+
+        hold2 = MagicMock()
+        hold2.id = uuid4()
+        hold2.workflow_id = "wf-dead-2"
+        hold2.weight = 4
+        hold2.pool_name = "llm"
+
+        status_error = MagicMock()
+        status_error.status = "ERROR"
+        status_success = MagicMock()
+        status_success.status = "SUCCESS"
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(10),
+                _make_scalars_result([hold1, hold2]),
+                MagicMock(),
+                MagicMock(),
+                _make_scalar_result(2),
+            ]
+        )
+
+        with (
+            patch(
+                "src.database.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.dbos_workflows.token_bucket.operations.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.side_effect = [status_error, status_success]
+            result = await try_acquire_tokens_async("llm", 5, "wf-new")
+
+        assert result is True
+        assert mock_dbos.get_workflow_status.call_count == 2
+        mock_session.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_still_fails_after_scavenging_if_not_enough_capacity(
+        self, mock_session, mock_session_maker
+    ):
+        pool = MagicMock()
+        pool.capacity = 10
+
+        hold = MagicMock()
+        hold.id = uuid4()
+        hold.workflow_id = "wf-dead"
+        hold.weight = 2
+        hold.pool_name = "llm"
+
+        mock_status = MagicMock()
+        mock_status.status = "CANCELLED"
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(9),
+                _make_scalars_result([hold]),
+                MagicMock(),
+                _make_scalar_result(7),
+            ]
+        )
+
+        with (
+            patch(
+                "src.database.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.dbos_workflows.token_bucket.operations.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.return_value = mock_status
+            result = await try_acquire_tokens_async("llm", 5, "wf-new")
+
+        assert result is False
+        mock_session.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_holds_with_active_workflows(self, mock_session, mock_session_maker):
+        pool = MagicMock()
+        pool.capacity = 5
+
+        hold = MagicMock()
+        hold.id = uuid4()
+        hold.workflow_id = "wf-active"
+        hold.weight = 5
+        hold.pool_name = "llm"
+
+        mock_status = MagicMock()
+        mock_status.status = "PENDING"
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(5),
+                _make_scalars_result([hold]),
+            ]
+        )
+
+        with (
+            patch(
+                "src.database.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.dbos_workflows.token_bucket.operations.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.return_value = mock_status
+            result = await try_acquire_tokens_async("llm", 3, "wf-new")
+
+        assert result is False
+        mock_session.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_holds_with_unknown_workflow_status(self, mock_session, mock_session_maker):
+        pool = MagicMock()
+        pool.capacity = 5
+
+        hold = MagicMock()
+        hold.id = uuid4()
+        hold.workflow_id = "wf-unknown"
+        hold.weight = 5
+        hold.pool_name = "llm"
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(5),
+                _make_scalars_result([hold]),
+            ]
+        )
+
+        with (
+            patch(
+                "src.database.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.dbos_workflows.token_bucket.operations.DBOS") as mock_dbos,
+        ):
+            mock_dbos.get_workflow_status.return_value = None
+            result = await try_acquire_tokens_async("llm", 3, "wf-new")
+
+        assert result is False
+        mock_session.add.assert_not_called()

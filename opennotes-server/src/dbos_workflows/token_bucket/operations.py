@@ -11,11 +11,60 @@ from src.utils.async_compat import run_sync
 
 logger = logging.getLogger(__name__)
 
+_TERMINAL_STATUSES = frozenset(
+    {
+        "ERROR",
+        "SUCCESS",
+        "CANCELLED",
+        "MAX_RECOVERY_ATTEMPTS_EXCEEDED",
+        "RETRIES_EXCEEDED",
+    }
+)
+
+
+async def _scavenge_zombie_holds(session: Any, pool_name: str) -> int:
+    """Release holds whose DBOS workflows have reached a terminal state.
+
+    Must be called while holding the SELECT FOR UPDATE lock on the pool row.
+    Returns the number of holds released.
+    """
+    holds_result = await session.execute(
+        select(TokenHold).where(
+            TokenHold.pool_name == pool_name,
+            TokenHold.released_at.is_(None),
+        )
+    )
+    active_holds = holds_result.scalars().all()
+
+    released_count = 0
+    for hold in active_holds:
+        wf_status = DBOS.get_workflow_status(hold.workflow_id)
+        if wf_status is None:
+            continue
+        if wf_status.status in _TERMINAL_STATUSES:
+            await session.execute(
+                update(TokenHold).where(TokenHold.id == hold.id).values(released_at=func.now())
+            )
+            logger.info(
+                "Scavenged zombie hold",
+                extra={
+                    "pool_name": pool_name,
+                    "workflow_id": hold.workflow_id,
+                    "workflow_status": wf_status.status,
+                    "weight": hold.weight,
+                },
+            )
+            released_count += 1
+
+    return released_count
+
 
 async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str) -> bool:
     """Atomically acquire tokens. Idempotent via workflow_id.
 
     Uses SELECT FOR UPDATE on the pool row to serialize concurrent acquisitions.
+    When the pool is full, actively scavenges holds from terminated workflows
+    before giving up.
     """
     from src.database import get_session_maker
 
@@ -47,7 +96,18 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
         total_held: int = held_result.scalar() or 0
 
         if pool_row.capacity - total_held < weight:
-            return False
+            scavenged = await _scavenge_zombie_holds(session, pool_name)
+            if scavenged > 0:
+                held_result = await session.execute(
+                    select(func.coalesce(func.sum(TokenHold.weight), 0)).where(
+                        TokenHold.pool_name == pool_name,
+                        TokenHold.released_at.is_(None),
+                    )
+                )
+                total_held = held_result.scalar() or 0
+
+            if pool_row.capacity - total_held < weight:
+                return False
 
         session.add(
             TokenHold(
