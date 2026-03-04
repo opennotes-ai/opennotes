@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 import httpx
-from trogon import tui
+from baalbek import tui
 
 from opennotes_cli.auth import AuthProvider, JwtAuthProvider, get_auth_provider
 from opennotes_cli.http import ENV_URLS
