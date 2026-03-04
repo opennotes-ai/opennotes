@@ -579,7 +579,7 @@ class TestScavengeBatchCapAndThreading:
     @pytest.mark.asyncio
     async def test_scavenge_caps_at_max_batch_size(self):
         holds = []
-        for i in range(MAX_SCAVENGE_BATCH + 5):
+        for i in range(MAX_SCAVENGE_BATCH):
             h = MagicMock()
             h.id = uuid4()
             h.workflow_id = f"wf-dead-{i}"

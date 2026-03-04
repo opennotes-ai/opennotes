@@ -37,8 +37,9 @@ async def _get_effective_capacity(session: Any, pool_name: str, static_capacity:
             TokenPoolWorker.last_heartbeat >= cutoff,
         )
     )
-    worker_capacity: int = result.scalar()
-    if worker_capacity and worker_capacity > 0:
+    raw = result.scalar()
+    worker_capacity: int = raw if raw is not None else 0
+    if worker_capacity > 0:
         return int(worker_capacity)
     return static_capacity
 
@@ -50,15 +51,17 @@ async def _scavenge_zombie_holds(session: Any, pool_name: str) -> int:
     Returns the number of holds released.
     """
     holds_result = await session.execute(
-        select(TokenHold).where(
+        select(TokenHold)
+        .where(
             TokenHold.pool_name == pool_name,
             TokenHold.released_at.is_(None),
         )
+        .limit(MAX_SCAVENGE_BATCH)
     )
     active_holds = holds_result.scalars().all()
 
     released_count = 0
-    for hold in active_holds[:MAX_SCAVENGE_BATCH]:
+    for hold in active_holds:
         try:
             wf_status = await asyncio.to_thread(DBOS.get_workflow_status, hold.workflow_id)
         except Exception:
