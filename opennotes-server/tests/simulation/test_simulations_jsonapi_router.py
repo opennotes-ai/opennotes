@@ -528,6 +528,33 @@ class TestResumeSimulation:
         mock_dispatch.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_resume_pending_skips_dispatch_when_workflow_active(
+        self, admin_auth_client, simulation_run_factory
+    ):
+        mock_client = MagicMock()
+        mock_active_wf = MagicMock()
+        mock_client.list_workflows.return_value = [mock_active_wf]
+
+        run = await simulation_run_factory("pending")
+
+        with (
+            patch(
+                "src.simulation.simulations_jsonapi_router.get_dbos_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+                new_callable=AsyncMock,
+            ) as mock_dispatch,
+        ):
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "running"
+        mock_dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_resume_from_cancelled_without_reset_returns_409(
         self, admin_auth_client, simulation_run_factory
     ):
@@ -1050,6 +1077,70 @@ class TestRestartSimulation:
                 assert inst.state == "active"
                 assert inst.removal_reason is None
                 assert inst.turn_count == 0
+                assert inst.cumulative_turn_count == 5
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_resume_from_cancelled_with_mixed_removal_reasons(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart-mixed"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("cancelled")
+        agents = await self._create_agents(run["id"])
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimAgentInstance
+
+        async with get_session_maker()() as session:
+            await session.execute(
+                update(SimAgentInstance)
+                .where(SimAgentInstance.id == agents[0]["id"])
+                .values(state="removed", removal_reason="simulation_cancelled")
+            )
+            await session.execute(
+                update(SimAgentInstance)
+                .where(SimAgentInstance.id == agents[1]["id"])
+                .values(state="removed", removal_reason="max_retries_exceeded")
+            )
+            await session.commit()
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json=self._restart_body(),
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "running"
+        mock_dispatch.assert_called_once()
+
+        async with get_session_maker()() as session:
+            result_cancelled = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agents[0]["id"])
+            )
+            inst_cancelled = result_cancelled.scalar_one()
+            assert inst_cancelled.state == "active"
+            assert inst_cancelled.removal_reason is None
+            assert inst_cancelled.turn_count == 0
+            assert inst_cancelled.cumulative_turn_count == 5
+
+            result_retries = await session.execute(
+                select(SimAgentInstance).where(SimAgentInstance.id == agents[1]["id"])
+            )
+            inst_retries = result_retries.scalar_one()
+            assert inst_retries.state == "removed"
+            assert inst_retries.removal_reason == "max_retries_exceeded"
+            assert inst_retries.turn_count == 5
 
 
 class TestCancelSimulation:
