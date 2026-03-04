@@ -633,6 +633,65 @@ class TestDbosClientEngineConfiguration:
             assert "asyncpg" not in url_arg
 
 
+class TestNullPoolKwargsStripping:
+    """Tests for TASK-1215: DBOS NullPool compatibility fix.
+
+    DBOS's configure_db_engine_parameters injects pool defaults (pool_timeout,
+    max_overflow, pool_size, pool_pre_ping) into db_engine_kwargs. When NullPool
+    is the poolclass, SQLAlchemy rejects these. Our monkey-patch strips them.
+    """
+
+    def test_patch_strips_pool_kwargs_when_nullpool(self) -> None:
+        """Monkey-patch removes pool-sizing kwargs after DBOS merges defaults."""
+        from dbos._dbos_config import configure_db_engine_parameters
+
+        data: dict[str, Any] = {
+            "db_engine_kwargs": {
+                "poolclass": NullPool,
+                "connect_args": {"prepare_threshold": None},
+            },
+        }
+        configure_db_engine_parameters(data)
+
+        engine_kwargs = data["db_engine_kwargs"]
+        assert engine_kwargs["poolclass"] is NullPool
+        for forbidden_key in ("pool_timeout", "max_overflow", "pool_size", "pool_pre_ping"):
+            assert forbidden_key not in engine_kwargs, (
+                f"{forbidden_key} must not be in db_engine_kwargs when NullPool is configured"
+            )
+
+    def test_patch_preserves_pool_kwargs_without_nullpool(self) -> None:
+        """Monkey-patch does NOT strip pool kwargs for normal pool classes."""
+        from dbos._dbos_config import configure_db_engine_parameters
+
+        data: dict[str, Any] = {
+            "db_engine_kwargs": {
+                "connect_args": {"prepare_threshold": None},
+            },
+        }
+        configure_db_engine_parameters(data)
+
+        engine_kwargs = data["db_engine_kwargs"]
+        assert "pool_timeout" in engine_kwargs
+        assert "pool_size" in engine_kwargs
+
+    def test_patch_strips_from_sys_db_engine_kwargs_too(self) -> None:
+        """Monkey-patch also strips pool kwargs from sys_db_engine_kwargs."""
+        from dbos._dbos_config import configure_db_engine_parameters
+
+        data: dict[str, Any] = {
+            "db_engine_kwargs": {
+                "poolclass": NullPool,
+                "connect_args": {"prepare_threshold": None},
+            },
+        }
+        configure_db_engine_parameters(data)
+
+        sys_kwargs = data.get("sys_db_engine_kwargs", {})
+        for forbidden_key in ("pool_timeout", "max_overflow", "pool_size", "pool_pre_ping"):
+            assert forbidden_key not in sys_kwargs
+
+
 class TestValidateDbosConnection:
     """Tests for validate_dbos_connection() function."""
 

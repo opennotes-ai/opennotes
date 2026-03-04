@@ -10,6 +10,7 @@ while the server can enqueue work without starting its own executor.
 
 import re
 import threading
+from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import sqlalchemy as sa
@@ -18,6 +19,34 @@ from sqlalchemy.pool import NullPool
 
 from src.config import settings
 from src.dbos_workflows.serializer import SafeJsonSerializer
+
+_NULLPOOL_INCOMPATIBLE_KEYS = frozenset(
+    {"pool_timeout", "max_overflow", "pool_size", "pool_pre_ping"}
+)
+
+
+def _strip_nullpool_incompatible_kwargs(engine_kwargs: dict[str, Any]) -> None:
+    if engine_kwargs.get("poolclass") is NullPool:
+        for key in _NULLPOOL_INCOMPATIBLE_KEYS:
+            engine_kwargs.pop(key, None)
+
+
+def _install_nullpool_patch() -> None:
+    import dbos._dbos_config as _dbos_config_mod
+
+    _original = _dbos_config_mod.configure_db_engine_parameters
+
+    def _patched(data: Any, **kwargs: Any) -> None:
+        _original(data, **kwargs)
+        for key in ("db_engine_kwargs", "sys_db_engine_kwargs"):
+            engine_kwargs = data.get(key)
+            if engine_kwargs:
+                _strip_nullpool_incompatible_kwargs(engine_kwargs)
+
+    _dbos_config_mod.configure_db_engine_parameters = _patched
+
+
+_install_nullpool_patch()
 
 _dbos_instance: DBOS | None = None
 _dbos_client: DBOSClient | None = None
