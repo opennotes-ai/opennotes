@@ -91,7 +91,7 @@ def cleanup_stale_workers(heartbeat_ttl_seconds: int = WORKER_HEARTBEAT_TTL) -> 
                     TokenPoolWorker.last_heartbeat < cutoff,
                 )
             )
-            count = result.rowcount
+            count: int = result.rowcount or 0  # pyright: ignore[reportAttributeAccessIssue]
             if count > 0:
                 await session.commit()
                 logger.info(
