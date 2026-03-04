@@ -503,6 +503,50 @@ class TestResumeSimulation:
         mock_dispatch.assert_not_called()
 
     @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_resume_from_pending_status(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-resume-pending"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("pending")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "running"
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_resume_from_cancelled_without_reset_returns_409(
+        self, admin_auth_client, simulation_run_factory
+    ):
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("cancelled")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 409
+        data = response.json()
+        assert "errors" in data
+
+    @pytest.mark.asyncio
     async def test_resume_from_completed_returns_409(
         self, admin_auth_client, simulation_run_factory
     ):
@@ -952,6 +996,60 @@ class TestRestartSimulation:
         assert response.status_code == 409
         data = response.json()
         assert "errors" in data
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_resume_from_cancelled_with_reset_turns(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-restart-cancelled"
+        mock_client = MagicMock()
+        mock_client.list_workflows.return_value = []
+
+        run = await simulation_run_factory("cancelled")
+        agents = await self._create_agents(run["id"])
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimAgentInstance
+
+        async with get_session_maker()() as session:
+            for agent_data in agents:
+                await session.execute(
+                    update(SimAgentInstance)
+                    .where(SimAgentInstance.id == agent_data["id"])
+                    .values(state="removed", removal_reason="simulation_cancelled")
+                )
+            await session.commit()
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/resume",
+                json=self._restart_body(),
+            )
+
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        data = response.json()
+        assert data["data"]["attributes"]["status"] == "running"
+        assert data["data"]["attributes"]["completed_at"] is None
+        mock_dispatch.assert_called_once()
+
+        async with get_session_maker()() as session:
+            for agent_data in agents:
+                result = await session.execute(
+                    select(SimAgentInstance).where(SimAgentInstance.id == agent_data["id"])
+                )
+                inst = result.scalar_one()
+                assert inst.state == "active"
+                assert inst.removal_reason is None
+                assert inst.turn_count == 0
 
 
 class TestCancelSimulation:

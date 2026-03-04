@@ -21,8 +21,10 @@ MAX_RETRIES_EXCEEDED = "max_retries_exceeded"
 SIMULATION_CANCELLED = "simulation_cancelled"
 SIMULATION_COMPLETED = "simulation_completed"
 
-RESTARTABLE_REMOVAL_REASONS: frozenset[str] = frozenset({REMOVAL_RATE, SIMULATION_COMPLETED})
-FOR_CAUSE_REMOVAL_REASONS: frozenset[str] = frozenset({MAX_RETRIES_EXCEEDED, SIMULATION_CANCELLED})
+RESTARTABLE_REMOVAL_REASONS: frozenset[str] = frozenset(
+    {REMOVAL_RATE, SIMULATION_COMPLETED, SIMULATION_CANCELLED}
+)
+FOR_CAUSE_REMOVAL_REASONS: frozenset[str] = frozenset({MAX_RETRIES_EXCEEDED})
 
 
 def restartable_agents_filter(simulation_run_id: UUID):
