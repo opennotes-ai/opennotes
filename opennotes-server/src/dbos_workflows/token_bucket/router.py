@@ -1,14 +1,33 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
-from src.dbos_workflows.token_bucket.models import TokenHold, TokenPool
+from src.dbos_workflows.token_bucket.config import WORKER_HEARTBEAT_TTL
+from src.dbos_workflows.token_bucket.models import TokenHold, TokenPool, TokenPoolWorker
 from src.dbos_workflows.token_bucket.schemas import TokenHoldDetail, TokenPoolStatus
 
 router = APIRouter(prefix="/admin/token-pools", tags=["admin"])
+
+
+async def _compute_effective_capacity(
+    session: AsyncSession, pool_name: str, static_capacity: int
+) -> int:
+    cutoff = datetime.now(UTC) - timedelta(seconds=WORKER_HEARTBEAT_TTL)
+    result = await session.execute(
+        select(func.coalesce(func.sum(TokenPoolWorker.capacity_contribution), 0)).where(
+            TokenPoolWorker.pool_name == pool_name,
+            TokenPoolWorker.last_heartbeat >= cutoff,
+        )
+    )
+    worker_capacity = result.scalar() or 0
+    if worker_capacity > 0:
+        return int(worker_capacity)
+    return static_capacity
 
 
 @router.get("/", response_model=list[TokenPoolStatus])
@@ -20,6 +39,10 @@ async def list_token_pools(
 
     statuses = []
     for pool in pools:
+        effective_capacity = await _compute_effective_capacity(
+            session, pool.pool_name, pool.capacity
+        )
+
         held_result = await session.execute(
             select(
                 func.coalesce(func.sum(TokenHold.weight), 0),
@@ -32,13 +55,13 @@ async def list_token_pools(
         row = held_result.one()
         total_held = row[0]
         hold_count = row[1]
-        available = pool.capacity - total_held
-        utilization = (total_held / pool.capacity * 100) if pool.capacity > 0 else 0.0
+        available = effective_capacity - total_held
+        utilization = (total_held / effective_capacity * 100) if effective_capacity > 0 else 0.0
 
         statuses.append(
             TokenPoolStatus(
                 pool_name=pool.pool_name,
-                capacity=pool.capacity,
+                capacity=effective_capacity,
                 available=available,
                 active_hold_count=hold_count,
                 utilization_pct=round(utilization, 1),

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from dbos import DBOS
 from sqlalchemy import func, select, update
 
-from src.dbos_workflows.token_bucket.models import TokenHold, TokenPool
+from src.dbos_workflows.token_bucket.config import WORKER_HEARTBEAT_TTL
+from src.dbos_workflows.token_bucket.models import TokenHold, TokenPool, TokenPoolWorker
 from src.utils.async_compat import run_sync
 
 logger = logging.getLogger(__name__)
@@ -20,6 +22,21 @@ _TERMINAL_STATUSES = frozenset(
         "RETRIES_EXCEEDED",
     }
 )
+
+
+async def _get_effective_capacity(session: Any, pool_name: str, static_capacity: int) -> int:
+    """Compute effective pool capacity from active workers, falling back to static capacity."""
+    cutoff = datetime.now(UTC) - timedelta(seconds=WORKER_HEARTBEAT_TTL)
+    result = await session.execute(
+        select(func.coalesce(func.sum(TokenPoolWorker.capacity_contribution), 0)).where(
+            TokenPoolWorker.pool_name == pool_name,
+            TokenPoolWorker.last_heartbeat >= cutoff,
+        )
+    )
+    worker_capacity = result.scalar() or 0
+    if worker_capacity > 0:
+        return int(worker_capacity)
+    return static_capacity
 
 
 async def _scavenge_zombie_holds(session: Any, pool_name: str) -> int:
@@ -87,6 +104,8 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
             logger.error("Token pool not found: %s", pool_name)
             return False
 
+        effective_capacity = await _get_effective_capacity(session, pool_name, pool_row.capacity)
+
         held_result = await session.execute(
             select(func.coalesce(func.sum(TokenHold.weight), 0)).where(
                 TokenHold.pool_name == pool_name,
@@ -95,7 +114,7 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
         )
         total_held: int = held_result.scalar() or 0
 
-        if pool_row.capacity - total_held < weight:
+        if effective_capacity - total_held < weight:
             scavenged = await _scavenge_zombie_holds(session, pool_name)
             if scavenged > 0:
                 held_result = await session.execute(
@@ -106,7 +125,7 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
                 )
                 total_held = held_result.scalar() or 0
 
-            if pool_row.capacity - total_held < weight:
+            if effective_capacity - total_held < weight:
                 return False
 
         session.add(
@@ -158,6 +177,8 @@ async def get_pool_status_async(pool_name: str) -> dict[str, Any] | None:
         if pool is None:
             return None
 
+        effective_capacity = await _get_effective_capacity(session, pool_name, pool.capacity)
+
         held_result = await session.execute(
             select(func.coalesce(func.sum(TokenHold.weight), 0)).where(
                 TokenHold.pool_name == pool_name,
@@ -183,8 +204,8 @@ async def get_pool_status_async(pool_name: str) -> dict[str, Any] | None:
 
         return {
             "pool_name": pool.pool_name,
-            "capacity": pool.capacity,
-            "available": pool.capacity - total_held,
+            "capacity": effective_capacity,
+            "available": effective_capacity - total_held,
             "total_held": total_held,
             "active_holds": active_holds,
         }

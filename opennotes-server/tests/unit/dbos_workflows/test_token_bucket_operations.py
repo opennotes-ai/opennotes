@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from src.dbos_workflows.token_bucket.operations import (
+    _get_effective_capacity,
     get_pool_status_async,
     release_tokens_async,
     try_acquire_tokens_async,
@@ -45,6 +46,35 @@ def _make_scalars_result(items):
     return result
 
 
+class TestGetEffectiveCapacity:
+    @pytest.mark.asyncio
+    async def test_returns_worker_sum_when_workers_exist(self):
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=_make_scalar_result(24))
+
+        result = await _get_effective_capacity(session, "default", 12)
+
+        assert result == 24
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_static_when_no_workers(self):
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=_make_scalar_result(0))
+
+        result = await _get_effective_capacity(session, "default", 12)
+
+        assert result == 12
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_static_when_query_returns_none(self):
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=_make_scalar_result(None))
+
+        result = await _get_effective_capacity(session, "default", 10)
+
+        assert result == 10
+
+
 class TestTryAcquireTokensAsync:
     @pytest.mark.asyncio
     async def test_succeeds_when_capacity_available(self, mock_session, mock_session_maker):
@@ -55,6 +85,7 @@ class TestTryAcquireTokensAsync:
             side_effect=[
                 _make_scalar_result(None),
                 _make_scalar_result(pool),
+                _make_scalar_result(0),
                 _make_scalar_result(0),
             ]
         )
@@ -78,6 +109,7 @@ class TestTryAcquireTokensAsync:
             side_effect=[
                 _make_scalar_result(None),
                 _make_scalar_result(pool),
+                _make_scalar_result(0),
                 _make_scalar_result(4),
                 _make_scalars_result([]),
             ]
@@ -144,6 +176,7 @@ class TestTryAcquireTokensAsync:
             side_effect=[
                 _make_scalar_result(None),
                 _make_scalar_result(pool),
+                _make_scalar_result(0),
                 _make_scalar_result(7),
             ]
         )
@@ -153,6 +186,29 @@ class TestTryAcquireTokensAsync:
             return_value=mock_session_maker,
         ):
             result = await try_acquire_tokens_async("llm", 3, "wf-4")
+
+        assert result is True
+        mock_session.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_uses_worker_capacity_when_available(self, mock_session, mock_session_maker):
+        pool = MagicMock()
+        pool.capacity = 10
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(24),
+                _make_scalar_result(0),
+            ]
+        )
+
+        with patch(
+            "src.database.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await try_acquire_tokens_async("llm", 20, "wf-big")
 
         assert result is True
         mock_session.add.assert_called_once()
@@ -220,6 +276,7 @@ class TestGetPoolStatusAsync:
         mock_session.execute = AsyncMock(
             side_effect=[
                 _make_scalar_result(pool),
+                _make_scalar_result(0),
                 _make_scalar_result(3),
                 _make_scalars_result([hold]),
             ]
@@ -239,6 +296,33 @@ class TestGetPoolStatusAsync:
         assert len(result["active_holds"]) == 1
         assert result["active_holds"][0]["workflow_id"] == "wf-1"
         assert result["active_holds"][0]["weight"] == 3
+
+    @pytest.mark.asyncio
+    async def test_returns_worker_capacity_when_workers_exist(
+        self, mock_session, mock_session_maker
+    ):
+        pool = MagicMock()
+        pool.pool_name = "llm"
+        pool.capacity = 10
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(pool),
+                _make_scalar_result(24),
+                _make_scalar_result(5),
+                _make_scalars_result([]),
+            ]
+        )
+
+        with patch(
+            "src.database.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await get_pool_status_async("llm")
+
+        assert result is not None
+        assert result["capacity"] == 24
+        assert result["available"] == 19
 
 
 class TestActiveScavenging:
@@ -262,6 +346,7 @@ class TestActiveScavenging:
             side_effect=[
                 _make_scalar_result(None),
                 _make_scalar_result(pool),
+                _make_scalar_result(0),
                 _make_scalar_result(5),
                 _make_scalars_result([hold]),
                 MagicMock(),
@@ -292,6 +377,7 @@ class TestActiveScavenging:
             side_effect=[
                 _make_scalar_result(None),
                 _make_scalar_result(pool),
+                _make_scalar_result(0),
                 _make_scalar_result(3),
             ]
         )
@@ -335,6 +421,7 @@ class TestActiveScavenging:
             side_effect=[
                 _make_scalar_result(None),
                 _make_scalar_result(pool),
+                _make_scalar_result(0),
                 _make_scalar_result(10),
                 _make_scalars_result([hold1, hold2]),
                 MagicMock(),
@@ -377,6 +464,7 @@ class TestActiveScavenging:
             side_effect=[
                 _make_scalar_result(None),
                 _make_scalar_result(pool),
+                _make_scalar_result(0),
                 _make_scalar_result(9),
                 _make_scalars_result([hold]),
                 MagicMock(),
@@ -415,6 +503,7 @@ class TestActiveScavenging:
             side_effect=[
                 _make_scalar_result(None),
                 _make_scalar_result(pool),
+                _make_scalar_result(0),
                 _make_scalar_result(5),
                 _make_scalars_result([hold]),
             ]
@@ -448,6 +537,7 @@ class TestActiveScavenging:
             side_effect=[
                 _make_scalar_result(None),
                 _make_scalar_result(pool),
+                _make_scalar_result(0),
                 _make_scalar_result(5),
                 _make_scalars_result([hold]),
             ]

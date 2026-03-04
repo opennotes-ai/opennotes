@@ -4,9 +4,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from dbos import DBOS
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
-from src.dbos_workflows.token_bucket.models import TokenHold
+from src.dbos_workflows.token_bucket.config import WORKER_HEARTBEAT_TTL
+from src.dbos_workflows.token_bucket.models import TokenHold, TokenPoolWorker
 from src.monitoring import get_logger
 from src.utils.async_compat import run_sync
 
@@ -77,6 +78,37 @@ def release_stale_hold(hold: dict[str, Any]) -> bool:
     return released
 
 
+@DBOS.step()
+def cleanup_stale_workers(heartbeat_ttl_seconds: int = WORKER_HEARTBEAT_TTL) -> int:
+    """Remove workers whose heartbeat has expired."""
+    from src.database import get_session_maker
+
+    async def _cleanup() -> int:
+        cutoff = datetime.now(UTC) - timedelta(seconds=heartbeat_ttl_seconds)
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(TokenPoolWorker).where(
+                    TokenPoolWorker.last_heartbeat < cutoff,
+                )
+            )
+            stale = result.scalars().all()
+            count = len(stale)
+            if count > 0:
+                await session.execute(
+                    delete(TokenPoolWorker).where(
+                        TokenPoolWorker.last_heartbeat < cutoff,
+                    )
+                )
+                await session.commit()
+                logger.info(
+                    "Removed stale workers",
+                    extra={"count": count},
+                )
+            return count
+
+    return run_sync(_cleanup())
+
+
 @DBOS.scheduled("*/5 * * * *")  # pyright: ignore[reportArgumentType]
 @DBOS.workflow()
 def cleanup_stale_token_holds(
@@ -98,15 +130,22 @@ def cleanup_stale_token_holds(
         if release_stale_hold(hold):
             released_count += 1
 
+    stale_workers_removed = cleanup_stale_workers()
+
     logger.info(
         "Stale token hold cleanup completed",
         extra={
             "found": len(stale_holds),
             "released": released_count,
+            "stale_workers_removed": stale_workers_removed,
         },
     )
 
-    return {"found": len(stale_holds), "released": released_count}
+    return {
+        "found": len(stale_holds),
+        "released": released_count,
+        "stale_workers_removed": stale_workers_removed,
+    }
 
 
 CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME: str = cleanup_stale_token_holds.__qualname__

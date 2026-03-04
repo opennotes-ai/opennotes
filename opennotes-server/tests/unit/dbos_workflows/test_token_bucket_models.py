@@ -1,4 +1,4 @@
-from src.dbos_workflows.token_bucket.models import TokenHold, TokenPool
+from src.dbos_workflows.token_bucket.models import TokenHold, TokenPool, TokenPoolWorker
 
 
 class TestTokenPoolModel:
@@ -23,3 +23,32 @@ class TestTokenHoldModel:
         fks = list(col.foreign_keys)
         assert len(fks) == 1
         assert str(fks[0].target_fullname) == "token_pools.pool_name"
+
+
+class TestTokenPoolWorkerModel:
+    def test_tablename(self):
+        assert TokenPoolWorker.__tablename__ == "token_pool_workers"
+
+    def test_has_unique_constraint(self):
+        constraint_names = [
+            c.name for c in TokenPoolWorker.__table__.constraints if hasattr(c, "name")
+        ]
+        assert "uq_token_pool_worker" in constraint_names
+
+    def test_pool_name_is_foreign_key(self):
+        col = TokenPoolWorker.__table__.c.pool_name
+        fks = list(col.foreign_keys)
+        assert len(fks) == 1
+        assert str(fks[0].target_fullname) == "token_pools.pool_name"
+
+    def test_has_worker_id_column(self):
+        assert "worker_id" in TokenPoolWorker.__table__.c
+
+    def test_has_capacity_contribution_column(self):
+        assert "capacity_contribution" in TokenPoolWorker.__table__.c
+
+    def test_has_last_heartbeat_column(self):
+        assert "last_heartbeat" in TokenPoolWorker.__table__.c
+
+    def test_has_registered_at_column(self):
+        assert "registered_at" in TokenPoolWorker.__table__.c

@@ -9,6 +9,7 @@ from src.dbos_workflows.token_bucket.cleanup import (
     CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME,
     MAX_HOLD_DURATION_SECONDS,
     cleanup_stale_token_holds,
+    cleanup_stale_workers,
     find_stale_holds,
     release_stale_hold,
 )
@@ -82,6 +83,26 @@ class TestReleaseStaleHold:
         assert result is False
 
 
+class TestCleanupStaleWorkers:
+    def test_returns_count_of_removed_workers(self):
+        with patch(
+            "src.dbos_workflows.token_bucket.cleanup.run_sync",
+            return_value=3,
+        ):
+            result = cleanup_stale_workers(90)
+
+        assert result == 3
+
+    def test_returns_zero_when_no_stale_workers(self):
+        with patch(
+            "src.dbos_workflows.token_bucket.cleanup.run_sync",
+            return_value=0,
+        ):
+            result = cleanup_stale_workers()
+
+        assert result == 0
+
+
 class TestCleanupStaleTokenHoldsWorkflow:
     def test_workflow_returns_found_and_released_counts(self):
         stale_holds = [
@@ -97,19 +118,9 @@ class TestCleanupStaleTokenHoldsWorkflow:
                 "src.dbos_workflows.token_bucket.cleanup.release_stale_hold",
                 side_effect=[True, True],
             ),
-        ):
-            result = cleanup_stale_token_holds.__wrapped__(
-                scheduled_time=datetime.now(UTC),
-                actual_time=datetime.now(UTC),
-            )
-
-        assert result == {"found": 2, "released": 2}
-
-    def test_workflow_with_no_stale_holds(self):
-        with (
             patch(
-                "src.dbos_workflows.token_bucket.cleanup.find_stale_holds",
-                return_value=[],
+                "src.dbos_workflows.token_bucket.cleanup.cleanup_stale_workers",
+                return_value=0,
             ),
         ):
             result = cleanup_stale_token_holds.__wrapped__(
@@ -117,7 +128,25 @@ class TestCleanupStaleTokenHoldsWorkflow:
                 actual_time=datetime.now(UTC),
             )
 
-        assert result == {"found": 0, "released": 0}
+        assert result == {"found": 2, "released": 2, "stale_workers_removed": 0}
+
+    def test_workflow_with_no_stale_holds(self):
+        with (
+            patch(
+                "src.dbos_workflows.token_bucket.cleanup.find_stale_holds",
+                return_value=[],
+            ),
+            patch(
+                "src.dbos_workflows.token_bucket.cleanup.cleanup_stale_workers",
+                return_value=0,
+            ),
+        ):
+            result = cleanup_stale_token_holds.__wrapped__(
+                scheduled_time=datetime.now(UTC),
+                actual_time=datetime.now(UTC),
+            )
+
+        assert result == {"found": 0, "released": 0, "stale_workers_removed": 0}
 
     def test_workflow_counts_partial_releases(self):
         stale_holds = [
@@ -134,13 +163,35 @@ class TestCleanupStaleTokenHoldsWorkflow:
                 "src.dbos_workflows.token_bucket.cleanup.release_stale_hold",
                 side_effect=[True, False, True],
             ),
+            patch(
+                "src.dbos_workflows.token_bucket.cleanup.cleanup_stale_workers",
+                return_value=2,
+            ),
         ):
             result = cleanup_stale_token_holds.__wrapped__(
                 scheduled_time=datetime.now(UTC),
                 actual_time=datetime.now(UTC),
             )
 
-        assert result == {"found": 3, "released": 2}
+        assert result == {"found": 3, "released": 2, "stale_workers_removed": 2}
+
+    def test_workflow_removes_stale_workers(self):
+        with (
+            patch(
+                "src.dbos_workflows.token_bucket.cleanup.find_stale_holds",
+                return_value=[],
+            ),
+            patch(
+                "src.dbos_workflows.token_bucket.cleanup.cleanup_stale_workers",
+                return_value=5,
+            ),
+        ):
+            result = cleanup_stale_token_holds.__wrapped__(
+                scheduled_time=datetime.now(UTC),
+                actual_time=datetime.now(UTC),
+            )
+
+        assert result["stale_workers_removed"] == 5
 
 
 class TestConstants:

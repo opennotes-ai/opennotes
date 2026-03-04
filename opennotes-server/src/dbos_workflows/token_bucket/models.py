@@ -48,3 +48,29 @@ class TokenHold(Base):
     __table_args__ = (
         UniqueConstraint("pool_name", "workflow_id", name="uq_token_hold_pool_workflow"),
     )
+
+
+class TokenPoolWorker(Base):
+    __tablename__ = "token_pool_workers"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("uuidv7()"),
+    )
+    pool_name: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("token_pools.pool_name"),
+        nullable=False,
+        index=True,
+    )
+    worker_id: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    capacity_contribution: Mapped[int] = mapped_column(Integer, nullable=False)
+    registered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_heartbeat: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("pool_name", "worker_id", name="uq_token_pool_worker"),)

@@ -379,9 +379,15 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
             dbos.launch()
             await asyncio.to_thread(validate_dbos_connection)
 
-            from src.dbos_workflows.token_bucket.config import ensure_pool_exists_async
+            from src.dbos_workflows.token_bucket.config import (
+                ensure_pool_exists_async,
+                register_worker_async,
+                start_worker_heartbeat,
+            )
 
             await ensure_pool_exists_async()
+            await register_worker_async()
+            await start_worker_heartbeat()
 
             logger.info(
                 "DBOS worker mode - queue polling enabled and validated",
@@ -497,6 +503,19 @@ def _register_health_checks(is_dbos_worker: bool) -> None:
 
 
 async def _shutdown_services(app: FastAPI, is_dbos_worker: bool) -> None:
+    if is_dbos_worker:
+        try:
+            from src.dbos_workflows.token_bucket.config import (
+                deregister_worker_async,
+                stop_worker_heartbeat,
+            )
+
+            await stop_worker_heartbeat()
+            await deregister_worker_async()
+            logger.info("Worker heartbeat stopped and deregistered")
+        except Exception as e:
+            logger.warning(f"Error during worker deregistration: {e}")
+
     await distributed_health.stop_heartbeat()
     logger.info("Distributed health heartbeat stopped")
 
