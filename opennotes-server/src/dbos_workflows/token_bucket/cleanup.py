@@ -87,18 +87,12 @@ def cleanup_stale_workers(heartbeat_ttl_seconds: int = WORKER_HEARTBEAT_TTL) -> 
         cutoff = datetime.now(UTC) - timedelta(seconds=heartbeat_ttl_seconds)
         async with get_session_maker()() as session:
             result = await session.execute(
-                select(TokenPoolWorker).where(
+                delete(TokenPoolWorker).where(
                     TokenPoolWorker.last_heartbeat < cutoff,
                 )
             )
-            stale = result.scalars().all()
-            count = len(stale)
+            count = result.rowcount
             if count > 0:
-                await session.execute(
-                    delete(TokenPoolWorker).where(
-                        TokenPoolWorker.last_heartbeat < cutoff,
-                    )
-                )
                 await session.commit()
                 logger.info(
                     "Removed stale workers",

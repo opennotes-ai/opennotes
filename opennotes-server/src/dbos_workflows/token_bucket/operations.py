@@ -37,8 +37,8 @@ async def _get_effective_capacity(session: Any, pool_name: str, static_capacity:
             TokenPoolWorker.last_heartbeat >= cutoff,
         )
     )
-    worker_capacity = result.scalar() or 0
-    if worker_capacity > 0:
+    worker_capacity: int = result.scalar()
+    if worker_capacity and worker_capacity > 0:
         return int(worker_capacity)
     return static_capacity
 
@@ -124,7 +124,7 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
                 TokenHold.released_at.is_(None),
             )
         )
-        total_held: int = held_result.scalar() or 0
+        total_held: int = held_result.scalar()
 
         if effective_capacity - total_held < weight:
             scavenged = await _scavenge_zombie_holds(session, pool_name)
@@ -135,7 +135,7 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
                         TokenHold.released_at.is_(None),
                     )
                 )
-                total_held = held_result.scalar() or 0
+                total_held = held_result.scalar()
 
             if effective_capacity - total_held < weight:
                 return False
@@ -200,7 +200,7 @@ async def get_pool_status_async(pool_name: str) -> dict[str, Any] | None:
                 TokenHold.released_at.is_(None),
             )
         )
-        total_held: int = held_result.scalar() or 0
+        total_held: int = held_result.scalar()
 
         holds_result = await session.execute(
             select(TokenHold).where(
@@ -220,7 +220,7 @@ async def get_pool_status_async(pool_name: str) -> dict[str, Any] | None:
         return {
             "pool_name": pool.pool_name,
             "capacity": effective_capacity,
-            "available": effective_capacity - total_held,
+            "available": max(0, effective_capacity - total_held),
             "total_held": total_held,
             "active_holds": active_holds,
         }

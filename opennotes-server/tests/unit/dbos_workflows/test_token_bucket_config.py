@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from src.dbos_workflows.token_bucket.config import (
     deregister_worker_async,
     ensure_pool_exists_async,
     register_worker_async,
+    start_worker_heartbeat,
     update_worker_heartbeat_async,
 )
 
@@ -192,6 +194,38 @@ class TestDeregisterWorker:
 
         mock_session.execute.assert_called_once()
         mock_session.commit.assert_called_once()
+
+
+class TestStartWorkerHeartbeatCancellation:
+    @pytest.mark.asyncio
+    async def test_cancels_existing_task_before_starting_new(self):
+        import src.dbos_workflows.token_bucket.config as config_mod
+
+        hold_event = asyncio.Event()
+
+        async def long_running():
+            await hold_event.wait()
+
+        old_task = asyncio.create_task(long_running())
+
+        saved_task = config_mod._heartbeat_task
+        config_mod._heartbeat_task = old_task
+
+        try:
+            with (
+                patch("src.config.settings") as mock_settings,
+                patch.object(config_mod, "update_worker_heartbeat_async", new_callable=AsyncMock),
+            ):
+                mock_settings.INSTANCE_ID = "test-worker"
+                await start_worker_heartbeat("test_pool", "worker-1")
+
+            assert old_task.cancelled()
+        finally:
+            if config_mod._heartbeat_task and not config_mod._heartbeat_task.done():
+                config_mod._heartbeat_task.cancel()
+                with __import__("contextlib").suppress(asyncio.CancelledError):
+                    await config_mod._heartbeat_task
+            config_mod._heartbeat_task = saved_task
 
 
 class TestSettingsCapacityWiring:

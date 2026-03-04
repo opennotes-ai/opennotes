@@ -173,6 +173,11 @@ async def start_worker_heartbeat(
 ) -> None:
     global _heartbeat_task
 
+    if _heartbeat_task and not _heartbeat_task.done():
+        _heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _heartbeat_task
+
     from src.config import settings
 
     effective_worker_id = worker_id or settings.INSTANCE_ID

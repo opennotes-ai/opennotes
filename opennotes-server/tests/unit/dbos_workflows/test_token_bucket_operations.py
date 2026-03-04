@@ -677,6 +677,44 @@ class TestScavengeBatchCapAndThreading:
         assert released == 1
 
 
+class TestGetPoolStatusClampsNegative:
+    @pytest.mark.asyncio
+    async def test_available_clamped_to_zero_when_overcommitted(
+        self, mock_session, mock_session_maker
+    ):
+        pool = MagicMock()
+        pool.pool_name = "llm"
+        pool.capacity = 5
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(pool),
+                _make_scalar_result(0),
+                _make_scalar_result(10),
+                _make_scalars_result([]),
+            ]
+        )
+
+        with patch(
+            "src.database.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await get_pool_status_async("llm")
+
+        assert result is not None
+        assert result["available"] == 0
+
+
+class TestCoalesceNoRedundantOr0:
+    def test_operations_no_redundant_or_zero_after_coalesce(self):
+        import inspect
+
+        import src.dbos_workflows.token_bucket.operations as ops_mod
+
+        source = inspect.getsource(ops_mod._get_effective_capacity)
+        assert "scalar() or 0" not in source
+
+
 class TestUniqueConstraintRace:
     @pytest.mark.asyncio
     async def test_returns_true_on_integrity_error_during_commit(

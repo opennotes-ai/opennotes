@@ -52,3 +52,21 @@ class TestTokenPoolWorkerModel:
 
     def test_has_registered_at_column(self):
         assert "registered_at" in TokenPoolWorker.__table__.c
+
+    def test_pool_name_fk_has_cascade_delete(self):
+        col = TokenPoolWorker.__table__.c.pool_name
+        fks = list(col.foreign_keys)
+        assert len(fks) == 1
+        assert fks[0].ondelete == "CASCADE"
+
+
+class TestTokenHoldIndexAndFK:
+    def test_released_at_has_index(self):
+        col = TokenHold.__table__.c.released_at
+        assert col.index is True
+
+    def test_pool_name_fk_has_cascade_delete(self):
+        col = TokenHold.__table__.c.pool_name
+        fks = list(col.foreign_keys)
+        assert len(fks) == 1
+        assert fks[0].ondelete == "CASCADE"

@@ -205,6 +205,12 @@ class TestConstants:
         assert isinstance(CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME, str)
 
 
+class TestCleanupStaleWorkersNoTOCTOU:
+    def test_cleanup_does_not_select_before_delete(self):
+        source = inspect.getsource(cleanup_stale_workers.__wrapped__)
+        assert "select(TokenPoolWorker)" not in source
+
+
 class TestDecoratorPresence:
     def test_workflow_has_wrapped_attribute(self):
         assert hasattr(cleanup_stale_token_holds, "__wrapped__")

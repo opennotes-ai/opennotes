@@ -34,7 +34,7 @@ class TokenHold(Base):
     )
     pool_name: Mapped[str] = mapped_column(
         String(128),
-        ForeignKey("token_pools.pool_name"),
+        ForeignKey("token_pools.pool_name", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -43,7 +43,9 @@ class TokenHold(Base):
     acquired_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    released_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
 
     __table_args__ = (
         UniqueConstraint("pool_name", "workflow_id", name="uq_token_hold_pool_workflow"),
@@ -60,7 +62,7 @@ class TokenPoolWorker(Base):
     )
     pool_name: Mapped[str] = mapped_column(
         String(128),
-        ForeignKey("token_pools.pool_name"),
+        ForeignKey("token_pools.pool_name", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
