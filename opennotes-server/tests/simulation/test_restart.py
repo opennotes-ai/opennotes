@@ -12,7 +12,17 @@ from src.simulation.models import (
     SimulationRun,
     SimulationRunConfig,
 )
-from src.simulation.restart import RestartSnapshot, snapshot_restart_state
+from src.simulation.restart import (
+    FOR_CAUSE_REMOVAL_REASONS,
+    RESTARTABLE_REMOVAL_REASONS,
+    RestartSnapshot,
+    snapshot_restart_state,
+)
+
+
+def test_max_retries_exceeded_in_both_sets():
+    assert "max_retries_exceeded" in RESTARTABLE_REMOVAL_REASONS
+    assert "max_retries_exceeded" in FOR_CAUSE_REMOVAL_REASONS
 
 
 async def _setup_run(db, *, restart_count=0, scoring_config=None):
@@ -51,7 +61,7 @@ async def _setup_run(db, *, restart_count=0, scoring_config=None):
     return run, orch, cs
 
 
-async def _add_agent_instance(db, run, *, state="active", turn_count=10):
+async def _add_agent_instance(db, run, *, state="active", turn_count=10, removal_reason=None):
     from src.users.profile_models import UserProfile
 
     agent = SimAgent(
@@ -72,6 +82,7 @@ async def _add_agent_instance(db, run, *, state="active", turn_count=10):
         user_profile_id=profile.id,
         state=state,
         turn_count=turn_count,
+        removal_reason=removal_reason,
     )
     db.add(inst)
     await db.flush()
@@ -122,11 +133,26 @@ async def test_snapshot_creates_agent_run_logs(db):
 
 
 @pytest.mark.asyncio
-async def test_snapshot_excludes_removed_agents(db):
+async def test_snapshot_excludes_removed_agents_without_restartable_reason(db):
     run, _, _ = await _setup_run(db)
     await _add_agent_instance(db, run, state="active", turn_count=10)
-    await _add_agent_instance(db, run, state="removed", turn_count=3)
+    await _add_agent_instance(
+        db, run, state="removed", turn_count=3, removal_reason="unknown_reason"
+    )
     await _add_agent_instance(db, run, state="completed", turn_count=20)
+
+    result = await snapshot_restart_state(db, run.id)
+
+    assert len(result.log_ids) == 2
+
+
+@pytest.mark.asyncio
+async def test_snapshot_includes_max_retries_exceeded_agents(db):
+    run, _, _ = await _setup_run(db)
+    await _add_agent_instance(db, run, state="active", turn_count=10)
+    await _add_agent_instance(
+        db, run, state="removed", turn_count=3, removal_reason="max_retries_exceeded"
+    )
 
     result = await snapshot_restart_state(db, run.id)
 
