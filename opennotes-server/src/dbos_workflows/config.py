@@ -12,7 +12,9 @@ import re
 import threading
 from urllib.parse import urlparse, urlunparse
 
+import sqlalchemy as sa
 from dbos import DBOS, DBOSClient, DBOSConfig
+from sqlalchemy.pool import NullPool
 
 from src.config import settings
 from src.dbos_workflows.serializer import SafeJsonSerializer
@@ -90,6 +92,11 @@ def get_dbos_config() -> DBOSConfig:
         "name": settings.DBOS_APP_NAME,
         "system_database_url": sync_url,
         "serializer": SafeJsonSerializer(),
+    }
+
+    config["db_engine_kwargs"] = {
+        "poolclass": NullPool,
+        "connect_args": {"prepare_threshold": None},
     }
 
     config["otlp_attributes"] = {
@@ -192,8 +199,13 @@ def get_dbos_client() -> DBOSClient:
             client = _dbos_client
             if client is None:
                 sync_url = _get_sync_database_url()
+                engine = sa.create_engine(
+                    sync_url,
+                    poolclass=NullPool,
+                    connect_args={"prepare_threshold": None},
+                )
                 client = DBOSClient(
-                    system_database_url=sync_url,
+                    system_database_engine=engine,
                     serializer=SafeJsonSerializer(),
                 )
                 _dbos_client = client
@@ -232,7 +244,7 @@ def validate_dbos_connection() -> bool:
         raise RuntimeError("system_database_url not configured in DBOS config")
 
     try:
-        with psycopg.connect(db_url) as conn, conn.cursor() as cur:
+        with psycopg.connect(db_url, prepare_threshold=None) as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
                 "WHERE table_schema = 'dbos' AND table_name = 'workflow_status')"

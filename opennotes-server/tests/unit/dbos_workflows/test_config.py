@@ -12,6 +12,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy.pool import NullPool
 
 from src.config import get_settings
 from src.dbos_workflows.config import (
@@ -554,8 +555,108 @@ class TestThreadSafety:
             assert mock_client_class.call_count == 1
 
 
+class TestDbosClientEngineConfiguration:
+    """Tests for DBOSClient engine bypass fix (TASK-1213.01)."""
+
+    def test_get_dbos_client_passes_system_database_engine(self) -> None:
+        """get_dbos_client() passes a pre-configured engine via system_database_engine."""
+        with (
+            patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
+            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+            mock_engine = MagicMock()
+            mock_create_engine.return_value = mock_engine
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+
+            reset_dbos_client()
+            get_dbos_client()
+
+            call_kwargs = mock_client_class.call_args.kwargs
+            assert "system_database_engine" in call_kwargs
+            assert call_kwargs["system_database_engine"] is mock_engine
+            assert "system_database_url" not in call_kwargs
+
+    def test_get_dbos_client_engine_uses_nullpool(self) -> None:
+        """Engine passed to DBOSClient uses NullPool."""
+        with (
+            patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
+            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+            mock_client_class.return_value = MagicMock()
+            mock_create_engine.return_value = MagicMock()
+
+            reset_dbos_client()
+            get_dbos_client()
+
+            create_engine_kwargs = mock_create_engine.call_args
+            assert create_engine_kwargs.kwargs.get("poolclass") is NullPool
+
+    def test_get_dbos_client_engine_has_prepare_threshold_none(self) -> None:
+        """Engine passed to DBOSClient has prepare_threshold=None in connect_args."""
+        with (
+            patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
+            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+            mock_client_class.return_value = MagicMock()
+            mock_create_engine.return_value = MagicMock()
+
+            reset_dbos_client()
+            get_dbos_client()
+
+            create_engine_kwargs = mock_create_engine.call_args
+            connect_args = create_engine_kwargs.kwargs.get("connect_args", {})
+            assert connect_args.get("prepare_threshold") is None
+
+    def test_get_dbos_client_engine_uses_sync_url(self) -> None:
+        """Engine is created with sync PostgreSQL URL (not asyncpg)."""
+        with (
+            patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
+            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+            mock_client_class.return_value = MagicMock()
+            mock_create_engine.return_value = MagicMock()
+
+            reset_dbos_client()
+            get_dbos_client()
+
+            url_arg = mock_create_engine.call_args.args[0]
+            assert "postgresql://" in url_arg
+            assert "asyncpg" not in url_arg
+
+
 class TestValidateDbosConnection:
     """Tests for validate_dbos_connection() function."""
+
+    def test_passes_prepare_threshold_none(self) -> None:
+        """validate_dbos_connection() passes prepare_threshold=None to psycopg.connect()."""
+        with (
+            patch("src.dbos_workflows.config.get_dbos_config") as mock_config,
+            patch("psycopg.connect") as mock_connect,
+        ):
+            mock_config.return_value = {"system_database_url": "postgresql://user:pass@host/db"}
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.return_value = (True,)
+            mock_conn = MagicMock()
+            mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+            mock_conn.__exit__ = MagicMock(return_value=False)
+            mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+            mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+            mock_connect.return_value = mock_conn
+
+            validate_dbos_connection()
+
+            call_kwargs = mock_connect.call_args.kwargs
+            assert "prepare_threshold" in call_kwargs
+            assert call_kwargs["prepare_threshold"] is None
 
     def test_raises_runtime_error_on_connection_failure(self) -> None:
         """Raises RuntimeError when database connection fails."""

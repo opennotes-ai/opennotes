@@ -13,6 +13,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.pool import NullPool
 from sqlalchemy.types import DateTime
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -226,7 +227,12 @@ async def generate_embeddings_for_dataset(
         Tuple of (items_processed, items_failed)
     """
     settings = get_settings()
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        poolclass=NullPool,
+        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+    )
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     client = AsyncOpenAI(api_key=openai_api_key)
@@ -306,7 +312,12 @@ async def verify_embeddings(dataset_name: str) -> None:
         dataset_name: Dataset to verify
     """
     settings = get_settings()
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        poolclass=NullPool,
+        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+    )
     async_session = async_sessionmaker(engine, class_=AsyncSession)
 
     async with async_session() as session:

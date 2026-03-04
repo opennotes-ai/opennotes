@@ -16,6 +16,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
 from src.tasks.broker import register_task
 
@@ -26,17 +27,14 @@ logger = logging.getLogger(__name__)
 
 
 def _create_db_engine(db_url: str) -> Any:
-    """Create async database engine with pool settings."""
-    from src.config import get_settings
-
-    settings = get_settings()
+    """Create async database engine with Supavisor-compatible settings."""
     return create_async_engine(
         db_url,
-        pool_pre_ping=True,
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_POOL_MAX_OVERFLOW,
-        pool_timeout=settings.DB_POOL_TIMEOUT,
-        pool_recycle=settings.DB_POOL_RECYCLE,
+        poolclass=NullPool,
+        connect_args={
+            "prepared_statement_cache_size": 0,
+            "statement_cache_size": 0,
+        },
     )
 
 

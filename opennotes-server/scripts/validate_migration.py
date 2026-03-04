@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from src.config import settings
 from src.notes.models import Note, Rating
@@ -89,7 +90,8 @@ async def validate_migration(verbose: bool = False) -> ValidationResult:  # noqa
         settings.DATABASE_URL,
         echo=False,
         future=True,
-        pool_pre_ping=True,
+        poolclass=NullPool,
+        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
     )
 
     async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from src.config import settings
 from src.notes import loaders as note_loaders
@@ -456,7 +457,12 @@ async def main():
     print(f"Database URL: {settings.DATABASE_URL}")
     print("=" * 60)
 
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        poolclass=NullPool,
+        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+    )
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as session:

@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 # Migration lock ID (hash of "opennotes_migrations")
 MIGRATION_LOCK_ID = 1847334512
@@ -31,7 +32,12 @@ def acquire_lock_and_run_migrations():
     print("NOTE: If another instance is running migrations, this will wait...")
 
     # Create synchronous engine for lock acquisition
-    engine = create_engine(db_url_sync, isolation_level="AUTOCOMMIT")
+    engine = create_engine(
+        db_url_sync,
+        isolation_level="AUTOCOMMIT",
+        poolclass=NullPool,
+        connect_args={"prepare_threshold": None},
+    )
 
     try:
         with engine.connect() as conn:

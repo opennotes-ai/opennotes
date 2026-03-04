@@ -56,13 +56,16 @@ class TestDbosClientFactory:
             assert first is second
             assert mock_client_class.call_count == 1
 
-    def test_get_dbos_client_uses_sync_database_url(self) -> None:
-        """Client is initialized with sync PostgreSQL URL format."""
+    def test_get_dbos_client_uses_pre_configured_engine(self) -> None:
+        """Client is initialized with a pre-configured engine via system_database_engine."""
         with (
             patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
+            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
             patch("src.dbos_workflows.config.settings") as mock_settings,
         ):
             mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+            mock_engine = MagicMock()
+            mock_create_engine.return_value = mock_engine
             mock_client = MagicMock()
             mock_client_class.return_value = mock_client
 
@@ -72,9 +75,12 @@ class TestDbosClientFactory:
             get_dbos_client()
 
             call_kwargs = mock_client_class.call_args.kwargs
-            url = call_kwargs.get("system_database_url", "")
-            assert "postgresql://" in url
-            assert "postgresql+asyncpg://" not in url
+            assert "system_database_engine" in call_kwargs
+            assert call_kwargs["system_database_engine"] is mock_engine
+
+            url_arg = mock_create_engine.call_args.args[0]
+            assert "postgresql://" in url_arg
+            assert "asyncpg" not in url_arg
 
     def test_reset_dbos_client_clears_instance(self) -> None:
         """reset_dbos_client() clears the cached instance."""
@@ -198,10 +204,11 @@ class TestServerModeInitialization:
         assert rechunk_queue.worker_concurrency == 6
 
     def test_dbos_client_config_uses_same_database(self) -> None:
-        """DBOSClient uses the same system database as DBOS."""
+        """DBOSClient engine uses the same database URL as DBOS config."""
         with (
             patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
             patch("src.dbos_workflows.config.DBOS") as mock_dbos_class,
+            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
             patch("src.dbos_workflows.config.settings") as mock_settings,
         ):
             mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
@@ -212,6 +219,7 @@ class TestServerModeInitialization:
             mock_dbos = MagicMock()
             mock_client_class.return_value = mock_client
             mock_dbos_class.return_value = mock_dbos
+            mock_create_engine.return_value = MagicMock()
 
             from src.dbos_workflows.config import (
                 get_dbos,
@@ -226,6 +234,6 @@ class TestServerModeInitialization:
             get_dbos_client()
 
             dbos_config = mock_dbos_class.call_args.kwargs["config"]
-            client_url = mock_client_class.call_args.kwargs["system_database_url"]
+            engine_url = mock_create_engine.call_args.args[0]
 
-            assert dbos_config["system_database_url"] == client_url
+            assert dbos_config["system_database_url"] == engine_url

@@ -5,7 +5,7 @@ from src.database import _reset_database_for_test_loop, get_engine
 
 class TestDisposeCloseParameter:
     @patch("src.database._create_engine")
-    def test_get_engine_loop_change_disposes_with_close_false(
+    def test_get_engine_loop_change_disposes_old_engine(
         self, mock_create_engine: MagicMock
     ) -> None:
         import asyncio
@@ -26,7 +26,7 @@ class TestDisposeCloseParameter:
                 result = get_engine()
 
             assert result is new_engine
-            old_engine.sync_engine.dispose.assert_called_once_with(close=False)
+            old_engine.sync_engine.dispose.assert_called_once_with()
         finally:
             loop.close()
             with db_module._db_lock:
@@ -34,7 +34,7 @@ class TestDisposeCloseParameter:
                 db_module._async_session_maker = None
                 db_module._engine_loop = None
 
-    def test_reset_database_for_test_loop_disposes_with_close_false(self) -> None:
+    def test_reset_database_for_test_loop_disposes_engine(self) -> None:
         import src.database as db_module
 
         mock_engine = MagicMock()
@@ -46,7 +46,7 @@ class TestDisposeCloseParameter:
 
         _reset_database_for_test_loop()
 
-        mock_engine.sync_engine.dispose.assert_called_once_with(close=False)
+        mock_engine.sync_engine.dispose.assert_called_once_with()
 
         assert db_module._engine is None
         assert db_module._async_session_maker is None

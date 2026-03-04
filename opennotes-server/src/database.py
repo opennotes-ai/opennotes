@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from src.config import get_settings
 
@@ -87,17 +88,22 @@ _db_lock = threading.RLock()
 
 
 def _create_engine() -> AsyncEngine:
-    """Create the async engine with appropriate settings for PostgreSQL."""
+    """Create the async engine with Supavisor-compatible settings.
+
+    Uses NullPool to delegate connection pooling to Supavisor (external pooler).
+    Disables asyncpg's prepared statement caches which are incompatible with
+    Supavisor's transaction-mode pooling.
+    """
     cfg = get_settings()
     return create_async_engine(
         cfg.DATABASE_URL,
         echo=cfg.DEBUG,
         future=True,
-        pool_pre_ping=True,
-        pool_size=cfg.DB_POOL_SIZE,
-        max_overflow=cfg.DB_POOL_MAX_OVERFLOW,
-        pool_timeout=cfg.DB_POOL_TIMEOUT,
-        pool_recycle=cfg.DB_POOL_RECYCLE,
+        poolclass=NullPool,
+        connect_args={
+            "prepared_statement_cache_size": 0,
+            "statement_cache_size": 0,
+        },
     )
 
 
@@ -125,7 +131,7 @@ def get_engine() -> AsyncEngine:
                     old_engine = _engine
                     _engine = _create_engine()
                     _engine_loop = current_loop
-                    old_engine.sync_engine.dispose(close=False)
+                    old_engine.sync_engine.dispose()
             except RuntimeError:
                 pass
 
@@ -219,7 +225,7 @@ def _reset_database_for_test_loop() -> None:  # pyright: ignore[reportUnusedFunc
     global _engine, _async_session_maker, _engine_loop  # noqa: PLW0603 - Reset singletons for fresh event loop in tests
     with _db_lock:
         if _engine is not None:
-            _engine.sync_engine.dispose(close=False)
+            _engine.sync_engine.dispose()
         _engine = None
         _async_session_maker = None
         _engine_loop = None
