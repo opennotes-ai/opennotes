@@ -125,7 +125,7 @@ def get_engine() -> AsyncEngine:
                     old_engine = _engine
                     _engine = _create_engine()
                     _engine_loop = current_loop
-                    old_engine.sync_engine.dispose()
+                    old_engine.sync_engine.dispose(close=False)
             except RuntimeError:
                 pass
 
@@ -219,7 +219,7 @@ def _reset_database_for_test_loop() -> None:  # pyright: ignore[reportUnusedFunc
     global _engine, _async_session_maker, _engine_loop  # noqa: PLW0603 - Reset singletons for fresh event loop in tests
     with _db_lock:
         if _engine is not None:
-            _engine.sync_engine.dispose()
+            _engine.sync_engine.dispose(close=False)
         _engine = None
         _async_session_maker = None
         _engine_loop = None
