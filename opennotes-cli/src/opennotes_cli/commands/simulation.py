@@ -244,10 +244,52 @@ def simulation_pause(ctx: click.Context, simulation_id: str) -> None:
 
 @simulation.command("resume")
 @click.argument("simulation_id")
+@click.option(
+    "--reset-turns",
+    is_flag=True,
+    default=False,
+    help="Reset turn counts (required for cancelled runs).",
+)
 @click.pass_context
-def simulation_resume(ctx: click.Context, simulation_id: str) -> None:
-    """Resume a paused simulation."""
-    _simulation_lifecycle_cmd(ctx, simulation_id, "resume")
+def simulation_resume(ctx: click.Context, simulation_id: str, reset_turns: bool) -> None:
+    """Resume a paused, pending, or cancelled simulation."""
+    if reset_turns:
+        cli_ctx: CliContext = ctx.obj
+        base_url = cli_ctx.base_url
+        client = cli_ctx.client
+
+        csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+        headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+        body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {"reset_turns": True},
+            }
+        }
+
+        response = client.post(
+            f"{base_url}/api/v2/simulations/{simulation_id}/resume",
+            headers=headers,
+            json=body,
+        )
+        handle_jsonapi_error(response)
+
+        result = response.json()
+
+        if cli_ctx.json_output:
+            console.print(json.dumps(result, indent=2, default=str))
+            return
+
+        attrs = result.get("data", {}).get("attributes", {})
+        status_val = attrs.get("status", "unknown")
+        color, symbol = get_status_style(status_val)
+        console.print(
+            f"[{color}]{symbol}[/{color}] Simulation {simulation_id} resumed with turn reset, "
+            f"now [{color}]{status_val}[/{color}]"
+        )
+    else:
+        _simulation_lifecycle_cmd(ctx, simulation_id, "resume")
 
 
 @simulation.command("cancel")
