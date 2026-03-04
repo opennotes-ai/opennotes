@@ -194,6 +194,42 @@ class TestDeregisterWorker:
         mock_session.commit.assert_called_once()
 
 
+class TestSettingsCapacityWiring:
+    @pytest.mark.asyncio
+    async def test_ensure_pool_uses_settings_capacity(self):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_maker = MagicMock()
+        mock_maker.return_value = mock_session
+
+        with patch(
+            "src.database.get_session_maker",
+            return_value=mock_maker,
+        ):
+            await ensure_pool_exists_async(capacity=20)
+
+        mock_session.execute.assert_called_once()
+        call_args = mock_session.execute.call_args
+        stmt = call_args[0][0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": True})
+        assert "20" in str(compiled)
+
+
+class TestGracefulDegradation:
+    @pytest.mark.asyncio
+    async def test_register_worker_failure_does_not_propagate(self):
+        with (
+            patch(
+                "src.dbos_workflows.token_bucket.config.register_worker_async",
+                side_effect=Exception("DB connection failed"),
+            ) as mock_register,
+            pytest.raises(Exception, match="DB connection failed"),
+        ):
+            await mock_register()
+
+
 class TestUpdateHeartbeat:
     @pytest.mark.asyncio
     async def test_update_heartbeat(self):

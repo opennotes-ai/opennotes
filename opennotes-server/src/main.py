@@ -385,9 +385,13 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
                 start_worker_heartbeat,
             )
 
-            await ensure_pool_exists_async()
-            await register_worker_async()
-            await start_worker_heartbeat()
+            await ensure_pool_exists_async(capacity=settings.TOKEN_POOL_CAPACITY)
+
+            try:
+                await register_worker_async(capacity=settings.TOKEN_POOL_CAPACITY)
+                await start_worker_heartbeat()
+            except Exception as e:
+                logger.warning(f"Worker registration failed, using static capacity: {e}")
 
             logger.info(
                 "DBOS worker mode - queue polling enabled and validated",
@@ -738,7 +742,7 @@ app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 app.include_router(fact_check_import_router, prefix=settings.API_V1_PREFIX)
 app.include_router(candidates_jsonapi_router, prefix=settings.API_V1_PREFIX)
 app.include_router(batch_jobs_router, prefix=settings.API_V1_PREFIX)
-app.include_router(token_pool_router)
+app.include_router(token_pool_router, prefix=settings.API_V1_PREFIX)
 app.include_router(
     simulations_jsonapi_router,
     prefix=settings.API_V2_PREFIX,

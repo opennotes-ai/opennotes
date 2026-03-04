@@ -1,17 +1,32 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.permissions import is_service_account
 from src.database import get_db
 from src.dbos_workflows.token_bucket.config import WORKER_HEARTBEAT_TTL
 from src.dbos_workflows.token_bucket.models import TokenHold, TokenPool, TokenPoolWorker
 from src.dbos_workflows.token_bucket.schemas import TokenHoldDetail, TokenPoolStatus
+from src.users.models import User
 
 router = APIRouter(prefix="/admin/token-pools", tags=["admin"])
+
+
+async def verify_service_account(
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> User:
+    if not is_service_account(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only service accounts can perform this action",
+        )
+    return current_user
 
 
 async def _compute_effective_capacity(
@@ -32,6 +47,7 @@ async def _compute_effective_capacity(
 
 @router.get("/", response_model=list[TokenPoolStatus])
 async def list_token_pools(
+    _service_account: Annotated[User, Depends(verify_service_account)],
     session: AsyncSession = Depends(get_db),
 ) -> list[TokenPoolStatus]:
     pools_result = await session.execute(select(TokenPool))
@@ -73,6 +89,7 @@ async def list_token_pools(
 @router.get("/{pool_name}/holds", response_model=list[TokenHoldDetail])
 async def get_pool_holds(
     pool_name: str,
+    _service_account: Annotated[User, Depends(verify_service_account)],
     session: AsyncSession = Depends(get_db),
 ) -> list[TokenHoldDetail]:
     pool_result = await session.execute(select(TokenPool).where(TokenPool.pool_name == pool_name))
