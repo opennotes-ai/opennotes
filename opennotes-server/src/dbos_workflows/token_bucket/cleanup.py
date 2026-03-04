@@ -24,10 +24,12 @@ def find_stale_holds(max_age_seconds: int = MAX_HOLD_DURATION_SECONDS) -> list[d
         cutoff = datetime.now(UTC) - timedelta(seconds=max_age_seconds)
         async with get_session_maker()() as session:
             result = await session.execute(
-                select(TokenHold).where(
+                select(TokenHold)
+                .where(
                     TokenHold.released_at.is_(None),
                     TokenHold.acquired_at < cutoff,
                 )
+                .limit(100)
             )
             holds = result.scalars().all()
             return [

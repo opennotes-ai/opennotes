@@ -15943,7 +15943,9 @@ export interface operations {
     };
     get_pool_holds_api_v1_admin_token_pools__pool_name__holds_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };

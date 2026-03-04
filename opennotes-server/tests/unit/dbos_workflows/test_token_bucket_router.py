@@ -101,7 +101,7 @@ class TestTokenPoolRouterAuth:
         assert "verify_service_account" in dep_names
 
 
-class TestRouterUsesOperationsCapacityHelper:
+class TestRouterUsesJoinedQuery:
     def test_no_local_compute_effective_capacity(self):
         import inspect
 
@@ -110,10 +110,10 @@ class TestRouterUsesOperationsCapacityHelper:
         source = inspect.getsource(router_mod)
         assert "def _compute_effective_capacity" not in source
 
-    def test_imports_get_effective_capacity_from_operations(self):
+    def test_no_cross_module_capacity_import(self):
         import src.dbos_workflows.token_bucket.router as router_mod
 
-        assert hasattr(router_mod, "_get_effective_capacity")
+        assert not hasattr(router_mod, "_get_effective_capacity")
 
 
 class TestTokenPoolRouterPrefix:

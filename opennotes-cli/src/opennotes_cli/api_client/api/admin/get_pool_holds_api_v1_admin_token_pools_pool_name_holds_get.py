@@ -14,17 +14,25 @@ from ...types import UNSET, Response, Unset
 def _get_kwargs(
     pool_name: str,
     *,
+    limit: int | Unset = 100,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
     if not isinstance(x_api_key, Unset):
         headers["X-API-Key"] = x_api_key
 
+    params: dict[str, Any] = {}
+
+    params["limit"] = limit
+
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
+
     _kwargs: dict[str, Any] = {
         "method": "get",
         "url": "/api/v1/admin/token-pools/{pool_name}/holds".format(
             pool_name=quote(str(pool_name), safe=""),
         ),
+        "params": params,
     }
 
     _kwargs["headers"] = headers
@@ -70,12 +78,14 @@ def sync_detailed(
     pool_name: str,
     *,
     client: AuthenticatedClient,
+    limit: int | Unset = 100,
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | list[TokenHoldDetail]]:
     """Get Pool Holds
 
     Args:
         pool_name (str):
+        limit (int | Unset):  Default: 100.
         x_api_key (None | str | Unset):
 
     Raises:
@@ -88,6 +98,7 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         pool_name=pool_name,
+        limit=limit,
         x_api_key=x_api_key,
     )
 
@@ -102,12 +113,14 @@ def sync(
     pool_name: str,
     *,
     client: AuthenticatedClient,
+    limit: int | Unset = 100,
     x_api_key: None | str | Unset = UNSET,
 ) -> HTTPValidationError | list[TokenHoldDetail] | None:
     """Get Pool Holds
 
     Args:
         pool_name (str):
+        limit (int | Unset):  Default: 100.
         x_api_key (None | str | Unset):
 
     Raises:
@@ -121,6 +134,7 @@ def sync(
     return sync_detailed(
         pool_name=pool_name,
         client=client,
+        limit=limit,
         x_api_key=x_api_key,
     ).parsed
 
@@ -129,12 +143,14 @@ async def asyncio_detailed(
     pool_name: str,
     *,
     client: AuthenticatedClient,
+    limit: int | Unset = 100,
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | list[TokenHoldDetail]]:
     """Get Pool Holds
 
     Args:
         pool_name (str):
+        limit (int | Unset):  Default: 100.
         x_api_key (None | str | Unset):
 
     Raises:
@@ -147,6 +163,7 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         pool_name=pool_name,
+        limit=limit,
         x_api_key=x_api_key,
     )
 
@@ -159,12 +176,14 @@ async def asyncio(
     pool_name: str,
     *,
     client: AuthenticatedClient,
+    limit: int | Unset = 100,
     x_api_key: None | str | Unset = UNSET,
 ) -> HTTPValidationError | list[TokenHoldDetail] | None:
     """Get Pool Holds
 
     Args:
         pool_name (str):
+        limit (int | Unset):  Default: 100.
         x_api_key (None | str | Unset):
 
     Raises:
@@ -179,6 +198,7 @@ async def asyncio(
         await asyncio_detailed(
             pool_name=pool_name,
             client=client,
+            limit=limit,
             x_api_key=x_api_key,
         )
     ).parsed

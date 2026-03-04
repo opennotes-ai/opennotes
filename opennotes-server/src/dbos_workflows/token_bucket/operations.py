@@ -153,6 +153,7 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
         try:
             await session.commit()
         except IntegrityError:
+            await session.rollback()
             return True
         return True
 
