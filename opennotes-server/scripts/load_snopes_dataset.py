@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.pool import NullPool
 from sqlalchemy.types import DateTime
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -194,7 +195,12 @@ async def load_snopes_dataset(csv_path: Path, clear_existing: bool = True) -> tu
     logger.info(f"Read {len(df)} rows from CSV")
 
     settings = get_settings()
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        poolclass=NullPool,
+        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+    )
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     rows_loaded = 0
@@ -242,7 +248,12 @@ async def verify_load(expected_count: int) -> None:
         expected_count: Expected number of rows in the database
     """
     settings = get_settings()
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        poolclass=NullPool,
+        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+    )
     async_session = async_sessionmaker(engine, class_=AsyncSession)
 
     async with async_session() as session:

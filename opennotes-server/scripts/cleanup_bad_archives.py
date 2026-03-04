@@ -23,6 +23,7 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 FIND_BAD_ARCHIVES_SQL = text("""
     SELECT
@@ -89,7 +90,13 @@ def _parse_pgpass(host: str, port: int = 5432, dbname: str = "opennotes") -> str
 
 
 def _make_session(database_url: str) -> async_sessionmaker[AsyncSession]:
-    engine = create_async_engine(database_url, echo=False, future=True, pool_pre_ping=True)
+    engine = create_async_engine(
+        database_url,
+        echo=False,
+        future=True,
+        poolclass=NullPool,
+        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+    )
     return async_sessionmaker(engine, expire_on_commit=False)
 
 

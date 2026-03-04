@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from src.config import settings
 from src.notes.message_archive_models import ContentType, MessageArchive
@@ -177,7 +178,8 @@ async def migrate_all(
         settings.DATABASE_URL,
         echo=False,
         future=True,
-        pool_pre_ping=True,
+        poolclass=NullPool,
+        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
     )
 
     async_session_maker = async_sessionmaker(
