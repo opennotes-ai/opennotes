@@ -5,9 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from src.dbos_workflows.token_bucket.operations import (
+    MAX_SCAVENGE_BATCH,
     _get_effective_capacity,
+    _scavenge_zombie_holds,
     get_pool_status_async,
     release_tokens_async,
     try_acquire_tokens_async,
@@ -555,3 +558,151 @@ class TestActiveScavenging:
 
         assert result is False
         mock_session.add.assert_not_called()
+
+
+def _make_fake_to_thread(call_log, side_effects):
+    idx = 0
+
+    async def fake_to_thread(fn, *args):
+        nonlocal idx
+        call_log.append((fn, args))
+        effect = side_effects[idx]
+        idx += 1
+        if isinstance(effect, Exception):
+            raise effect
+        return effect
+
+    return fake_to_thread
+
+
+class TestScavengeBatchCapAndThreading:
+    @pytest.mark.asyncio
+    async def test_scavenge_caps_at_max_batch_size(self):
+        holds = []
+        for i in range(MAX_SCAVENGE_BATCH + 5):
+            h = MagicMock()
+            h.id = uuid4()
+            h.workflow_id = f"wf-dead-{i}"
+            h.weight = 1
+            h.pool_name = "llm"
+            holds.append(h)
+
+        mock_status = MagicMock()
+        mock_status.status = "ERROR"
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_result(holds),
+                *[MagicMock() for _ in range(MAX_SCAVENGE_BATCH)],
+            ]
+        )
+
+        call_log: list[tuple[object, ...]] = []
+        fake = _make_fake_to_thread(call_log, [mock_status] * MAX_SCAVENGE_BATCH)
+
+        with patch(
+            "src.dbos_workflows.token_bucket.operations.asyncio.to_thread",
+            new=fake,
+        ):
+            released = await _scavenge_zombie_holds(session, "llm")
+
+        assert released == MAX_SCAVENGE_BATCH
+        assert len(call_log) == MAX_SCAVENGE_BATCH
+
+    @pytest.mark.asyncio
+    async def test_scavenge_uses_asyncio_to_thread(self):
+        hold = MagicMock()
+        hold.id = uuid4()
+        hold.workflow_id = "wf-dead"
+        hold.weight = 1
+        hold.pool_name = "llm"
+
+        mock_status = MagicMock()
+        mock_status.status = "SUCCESS"
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_result([hold]),
+                MagicMock(),
+            ]
+        )
+
+        call_log: list[tuple[object, ...]] = []
+        fake = _make_fake_to_thread(call_log, [mock_status])
+
+        with patch(
+            "src.dbos_workflows.token_bucket.operations.asyncio.to_thread",
+            new=fake,
+        ):
+            await _scavenge_zombie_holds(session, "llm")
+
+        assert len(call_log) == 1
+
+    @pytest.mark.asyncio
+    async def test_scavenge_per_hold_exception_does_not_abort(self):
+        hold1 = MagicMock()
+        hold1.id = uuid4()
+        hold1.workflow_id = "wf-explodes"
+        hold1.weight = 1
+        hold1.pool_name = "llm"
+
+        hold2 = MagicMock()
+        hold2.id = uuid4()
+        hold2.workflow_id = "wf-dead"
+        hold2.weight = 1
+        hold2.pool_name = "llm"
+
+        mock_status = MagicMock()
+        mock_status.status = "ERROR"
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_result([hold1, hold2]),
+                MagicMock(),
+            ]
+        )
+
+        call_log: list[tuple[object, ...]] = []
+        fake = _make_fake_to_thread(call_log, [RuntimeError("boom"), mock_status])
+
+        with patch(
+            "src.dbos_workflows.token_bucket.operations.asyncio.to_thread",
+            new=fake,
+        ):
+            released = await _scavenge_zombie_holds(session, "llm")
+
+        assert released == 1
+
+
+class TestUniqueConstraintRace:
+    @pytest.mark.asyncio
+    async def test_returns_true_on_integrity_error_during_commit(
+        self, mock_session, mock_session_maker
+    ):
+        pool = MagicMock()
+        pool.capacity = 10
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(0),
+                _make_scalar_result(0),
+            ]
+        )
+        mock_session.commit = AsyncMock(
+            side_effect=IntegrityError(
+                "duplicate key", params=None, orig=Exception("uq_token_hold_pool_workflow")
+            )
+        )
+
+        with patch(
+            "src.database.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await try_acquire_tokens_async("llm", 3, "wf-dup")
+
+        assert result is True

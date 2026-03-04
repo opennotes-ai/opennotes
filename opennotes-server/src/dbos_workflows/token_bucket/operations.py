@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from dbos import DBOS
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 
 from src.dbos_workflows.token_bucket.config import WORKER_HEARTBEAT_TTL
 from src.dbos_workflows.token_bucket.models import TokenHold, TokenPool, TokenPoolWorker
 from src.utils.async_compat import run_sync
 
 logger = logging.getLogger(__name__)
+
+MAX_SCAVENGE_BATCH = 10
 
 _TERMINAL_STATUSES = frozenset(
     {
@@ -54,8 +58,16 @@ async def _scavenge_zombie_holds(session: Any, pool_name: str) -> int:
     active_holds = holds_result.scalars().all()
 
     released_count = 0
-    for hold in active_holds:
-        wf_status = DBOS.get_workflow_status(hold.workflow_id)
+    for hold in active_holds[:MAX_SCAVENGE_BATCH]:
+        try:
+            wf_status = await asyncio.to_thread(DBOS.get_workflow_status, hold.workflow_id)
+        except Exception:
+            logger.warning(
+                "Failed to check workflow status",
+                extra={"pool_name": pool_name, "workflow_id": hold.workflow_id},
+                exc_info=True,
+            )
+            continue
         if wf_status is None:
             continue
         if wf_status.status in _TERMINAL_STATUSES:
@@ -135,7 +147,10 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
                 weight=weight,
             )
         )
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            return True
         return True
 
 
