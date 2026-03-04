@@ -27,7 +27,7 @@ class TestResetDatabaseForTestLoop:
 
             database._reset_database_for_test_loop()
 
-            mock_sync_engine.dispose.assert_called_once()
+            mock_sync_engine.dispose.assert_called_once_with(close=False)
 
             assert database._engine is None
             assert database._async_session_maker is None
@@ -70,7 +70,7 @@ class TestResetDatabaseForTestLoop:
 
         mock_sync_engine = MagicMock()
 
-        def track_dispose():
+        def track_dispose(**kwargs):
             call_order.append(("dispose", database._engine is not None))
 
         mock_sync_engine.dispose.side_effect = track_dispose
@@ -128,7 +128,7 @@ class TestGetEngineLoopChange:
             ):
                 result = database.get_engine()
 
-            mock_sync_engine.dispose.assert_called_once()
+            mock_sync_engine.dispose.assert_called_once_with(close=False)
             assert result is mock_new_engine
             assert database._engine is mock_new_engine
             assert database._engine_loop is new_loop
