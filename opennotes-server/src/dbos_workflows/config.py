@@ -13,6 +13,7 @@ import threading
 from urllib.parse import urlparse, urlunparse
 
 from dbos import DBOS, DBOSClient, DBOSConfig
+from sqlalchemy.pool import NullPool
 
 from src.config import settings
 from src.dbos_workflows.serializer import SafeJsonSerializer
@@ -90,6 +91,11 @@ def get_dbos_config() -> DBOSConfig:
         "name": settings.DBOS_APP_NAME,
         "system_database_url": sync_url,
         "serializer": SafeJsonSerializer(),
+    }
+
+    config["db_engine_kwargs"] = {
+        "poolclass": NullPool,
+        "connect_args": {"prepare_threshold": None},
     }
 
     config["otlp_attributes"] = {

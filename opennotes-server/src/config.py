@@ -192,17 +192,24 @@ class Settings(BaseSettings):
         return v
 
     DB_POOL_SIZE: int = Field(
-        default=5, description="Database connection pool size (number of connections to maintain)"
+        default=5,
+        description="Deprecated: ignored with NullPool (Supavisor handles pooling). Kept for backward compatibility.",
+        deprecated="Supavisor-compatible config uses NullPool; this field is ignored.",
     )
     DB_POOL_MAX_OVERFLOW: int = Field(
-        default=10, description="Maximum number of connections that can be created beyond pool_size"
+        default=10,
+        description="Deprecated: ignored with NullPool (Supavisor handles pooling). Kept for backward compatibility.",
+        deprecated="Supavisor-compatible config uses NullPool; this field is ignored.",
     )
     DB_POOL_TIMEOUT: int = Field(
-        default=30, description="Timeout in seconds for getting a connection from the pool"
+        default=30,
+        description="Deprecated: ignored with NullPool (Supavisor handles pooling). Kept for backward compatibility.",
+        deprecated="Supavisor-compatible config uses NullPool; this field is ignored.",
     )
     DB_POOL_RECYCLE: int = Field(
         default=3600,
-        description="Time in seconds after which to recycle connections (prevents stale connections)",
+        description="Deprecated: ignored with NullPool (Supavisor handles pooling). Kept for backward compatibility.",
+        deprecated="Supavisor-compatible config uses NullPool; this field is ignored.",
     )
 
     REDIS_URL: str = Field(default="redis://localhost:6379/0")

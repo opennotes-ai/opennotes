@@ -26,7 +26,7 @@ class TestDisposeCloseParameter:
                 result = get_engine()
 
             assert result is new_engine
-            old_engine.sync_engine.dispose.assert_called_once_with(close=False)
+            old_engine.sync_engine.dispose.assert_called_once_with()
         finally:
             loop.close()
             with db_module._db_lock:
@@ -46,7 +46,7 @@ class TestDisposeCloseParameter:
 
         _reset_database_for_test_loop()
 
-        mock_engine.sync_engine.dispose.assert_called_once_with(close=False)
+        mock_engine.sync_engine.dispose.assert_called_once_with()
 
         assert db_module._engine is None
         assert db_module._async_session_maker is None
