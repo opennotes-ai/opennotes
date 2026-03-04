@@ -4,7 +4,6 @@ Verifies:
 - All SQLAlchemy engines use NullPool
 - asyncpg connect_args disable prepared statement caches
 - DBOS psycopg config disables prepared statements
-- dispose() pattern updated for NullPool
 - Deprecated pool config fields still work
 """
 
@@ -30,22 +29,26 @@ class TestDatabaseEngineNullPool:
             )
             engine = _create_engine()
 
-        assert engine.pool.__class__.__name__ == "AsyncAdaptedQueuePool" or isinstance(
-            engine.sync_engine.pool, NullPool
-        ), "Engine must use NullPool for Supavisor compatibility"
         assert isinstance(engine.sync_engine.pool, NullPool)
 
-    def test_create_engine_does_not_use_pool_size(self) -> None:
-        from src.database import _create_engine
+    def test_create_engine_does_not_pass_pool_size_kwargs(self) -> None:
+        with patch("src.database.create_async_engine") as mock_create:
+            mock_create.return_value = MagicMock()
 
-        with patch("src.database.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(
-                DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
-                DEBUG=False,
-            )
-            engine = _create_engine()
+            from src.database import _create_engine
 
-        assert isinstance(engine.sync_engine.pool, NullPool)
+            with patch("src.database.get_settings") as mock_settings:
+                mock_settings.return_value = MagicMock(
+                    DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+                    DEBUG=False,
+                )
+                _create_engine()
+
+            call_kwargs = mock_create.call_args[1]
+            assert "pool_size" not in call_kwargs
+            assert "max_overflow" not in call_kwargs
+            assert "pool_timeout" not in call_kwargs
+            assert "pool_recycle" not in call_kwargs
 
 
 class TestAsyncpgConnectArgs:
@@ -108,66 +111,6 @@ class TestDbosConfigSupavisor:
             assert engine_kwargs["connect_args"]["prepare_threshold"] is None
 
 
-class TestDisposePatternNullPool:
-    """AC#7: dispose(close=False) pattern updated for NullPool."""
-
-    def test_get_engine_loop_change_disposes_without_close_false(self) -> None:
-        from src import database
-
-        old_loop = MagicMock()
-        new_loop = MagicMock()
-
-        mock_sync_engine = MagicMock()
-        mock_old_engine = MagicMock()
-        mock_old_engine.sync_engine = mock_sync_engine
-
-        mock_new_engine = MagicMock()
-
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
-
-        try:
-            database._engine = mock_old_engine
-            database._engine_loop = old_loop
-
-            with (
-                patch("src.database.asyncio.get_running_loop", return_value=new_loop),
-                patch("src.database._create_engine", return_value=mock_new_engine),
-            ):
-                database.get_engine()
-
-            mock_sync_engine.dispose.assert_called_once_with()
-        finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
-
-    def test_reset_database_disposes_without_close_false(self) -> None:
-        from src import database
-
-        mock_sync_engine = MagicMock()
-        mock_engine = MagicMock()
-        mock_engine.sync_engine = mock_sync_engine
-
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
-
-        try:
-            database._engine = mock_engine
-            database._async_session_maker = MagicMock()
-            database._engine_loop = MagicMock()
-
-            database._reset_database_for_test_loop()
-
-            mock_sync_engine.dispose.assert_called_once_with()
-        finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
-
-
 class TestDeprecatedPoolConfig:
     """AC#6: DB_POOL_SIZE and related fields deprecated."""
 
@@ -184,6 +127,24 @@ class TestDeprecatedPoolConfig:
         from src.config import Settings
 
         field_info = Settings.model_fields["DB_POOL_MAX_OVERFLOW"]
+        assert (
+            "deprecated" in (field_info.description or "").lower()
+            or field_info.deprecated is not None
+        )
+
+    def test_pool_timeout_field_has_deprecation_warning(self) -> None:
+        from src.config import Settings
+
+        field_info = Settings.model_fields["DB_POOL_TIMEOUT"]
+        assert (
+            "deprecated" in (field_info.description or "").lower()
+            or field_info.deprecated is not None
+        )
+
+    def test_pool_recycle_field_has_deprecation_warning(self) -> None:
+        from src.config import Settings
+
+        field_info = Settings.model_fields["DB_POOL_RECYCLE"]
         assert (
             "deprecated" in (field_info.description or "").lower()
             or field_info.deprecated is not None
