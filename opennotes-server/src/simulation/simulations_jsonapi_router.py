@@ -56,7 +56,7 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 VALID_PAUSE_FROM = {"running"}
-VALID_RESUME_FROM = {"paused", "failed"}
+VALID_RESUME_FROM = {"pending", "paused", "failed", "cancelled"}
 VALID_CANCEL_FROM = {"pending", "running", "paused"}
 TERMINAL_STATUSES = {"completed", "cancelled", "failed"}
 
@@ -531,6 +531,8 @@ async def resume_simulation(
             )
 
         valid_from = VALID_RESUME_FROM | ({"completed"} if reset_turns else set())
+        if not reset_turns:
+            valid_from = valid_from - {"cancelled"}
         if run.status not in valid_from:
             return create_error_response(
                 status.HTTP_409_CONFLICT,
@@ -574,7 +576,7 @@ async def resume_simulation(
             "updated_at": now,
         }
 
-        if run.status == "failed":
+        if run.status in ("failed", "cancelled"):
             update_values["error_message"] = None
             update_values["completed_at"] = None
 

@@ -326,8 +326,8 @@ class TestRemovalReasonConstants:
     def test_for_cause_reasons_include_max_retries(self) -> None:
         assert MAX_RETRIES_EXCEEDED in FOR_CAUSE_REMOVAL_REASONS
 
-    def test_for_cause_reasons_include_simulation_cancelled(self) -> None:
-        assert SIMULATION_CANCELLED in FOR_CAUSE_REMOVAL_REASONS
+    def test_restartable_reasons_include_simulation_cancelled(self) -> None:
+        assert SIMULATION_CANCELLED in RESTARTABLE_REMOVAL_REASONS
 
     def test_no_overlap_between_sets(self) -> None:
         assert RESTARTABLE_REMOVAL_REASONS.isdisjoint(FOR_CAUSE_REMOVAL_REASONS)
