@@ -55,9 +55,10 @@ def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "You are deciding what action to take this turn in a Community Notes simulation.\n\n"
         f"Your personality: {personality}\n\n"
         "Choose exactly one action:\n"
-        "- write_note: Write a new community note for a content request\n"
-        "- rate_note: Rate an existing community note\n"
-        "- pass_turn: Skip this turn\n\n"
+        "- write_note: Write a community note for one of the available content requests\n"
+        "- rate_note: Rate one of the available community notes on helpfulness\n"
+        "- pass_turn: Skip this turn (only when no content requests or notes are available)\n\n"
+        "IMPORTANT: If notes are available to rate, you should rate one rather than passing.\n\n"
         "Respond with your chosen action_type and a brief reasoning."
     )
 
@@ -205,6 +206,26 @@ def _truncate(text: str, max_len: int) -> str:
     return text[:max_len].rsplit(" ", 1)[0] + "..."
 
 
+def _requests_label(n_req: int, n_notes: int) -> str:
+    if n_req == 0 and n_notes > 0:
+        return (
+            f"No content requests \u2014 but {_pluralize(n_notes, 'note')} available to rate below."
+        )
+    if n_req == 0:
+        return "No content requests to write notes for."
+    if n_req == 1:
+        return "1 content request to write a note for:"
+    return f"{n_req} content requests to write notes for:"
+
+
+def _notes_label(n_notes: int) -> str | None:
+    if n_notes == 0:
+        return "No notes available to rate."
+    if n_notes == 1:
+        return "1 note available to rate:"
+    return f"{n_notes} notes available to rate:"
+
+
 def build_queue_summary(
     requests: list[dict],
     notes: list[dict],
@@ -214,20 +235,27 @@ def build_queue_summary(
     trunc = VERBOSE_TRUNCATE if verbose else BRIEF_TRUNCATE
 
     lines: list[str] = []
+    n_req = len(requests)
+    n_notes = len(notes)
 
-    lines.append(_pluralize(len(requests), "request"))
+    lines.append(_requests_label(n_req, n_notes))
+
     shown_requests = requests if max_titles is None else requests[:max_titles]
     for req in shown_requests:
         lines.append(f"  - {_truncate(req.get('content') or '', trunc)}")
-    if max_titles is not None and len(requests) > max_titles:
-        lines.append(f"  ...and {len(requests) - max_titles} more")
+    if max_titles is not None and n_req > max_titles:
+        lines.append(f"  ...and {n_req - max_titles} more")
 
-    lines.append(_pluralize(len(notes), "note"))
-    shown_notes = notes if max_titles is None else notes[:max_titles]
-    for note in shown_notes:
-        lines.append(f"  - {_truncate(note.get('summary') or '', trunc)}")
-    if max_titles is not None and len(notes) > max_titles:
-        lines.append(f"  ...and {len(notes) - max_titles} more")
+    note_label = _notes_label(n_notes)
+    if note_label is not None:
+        lines.append(note_label)
+
+    if n_notes > 0:
+        shown_notes = notes if max_titles is None else notes[:max_titles]
+        for note in shown_notes:
+            lines.append(f"  - {_truncate(note.get('summary') or '', trunc)}")
+        if max_titles is not None and n_notes > max_titles:
+            lines.append(f"  ...and {n_notes - max_titles} more")
 
     return "\n".join(lines)
 
@@ -250,7 +278,12 @@ class OpenNotesSimAgent:
         message_history: list[ModelMessage] | None = None,
     ) -> tuple[ActionSelectionResult, list[ModelMessage]]:
         brief_summary = build_queue_summary(requests, notes, verbose=False)
-        prompt = self._build_phase1_prompt(recent_actions, brief_summary)
+        prompt = self._build_phase1_prompt(
+            recent_actions,
+            brief_summary,
+            requests_count=len(requests),
+            notes_count=len(notes),
+        )
 
         result = await self._action_selector.run(
             prompt,
@@ -261,11 +294,41 @@ class OpenNotesSimAgent:
 
         if result.data.action_type == SimActionType.PASS_TURN:
             verbose_summary = build_queue_summary(requests, notes, verbose=True)
-            retry_prompt = self._build_phase1_prompt(recent_actions, verbose_summary)
+            retry_prompt = self._build_phase1_prompt(
+                recent_actions,
+                verbose_summary,
+                requests_count=len(requests),
+                notes_count=len(notes),
+            )
             result = await self._action_selector.run(
                 retry_prompt,
                 deps=deps,
-                message_history=result.all_messages(),
+                message_history=message_history,
+                model=self._model.to_pydantic_ai(),
+            )
+
+        has_notes = len(notes) > 0
+        has_requests = len(requests) > 0
+        if result.data.action_type == SimActionType.PASS_TURN and (has_notes or has_requests):
+            parts: list[str] = []
+            if has_notes:
+                verb = "is" if len(notes) == 1 else "are"
+                note_word = "note" if len(notes) == 1 else "notes"
+                parts.append(f"There {verb} {len(notes)} {note_word} available to rate.")
+            if has_requests:
+                verb = "is" if len(requests) == 1 else "are"
+                req_word = "content request" if len(requests) == 1 else "content requests"
+                parts.append(f"There {verb} {len(requests)} {req_word} to write notes for.")
+            nudge_prompt = (
+                " ".join(parts)
+                + " Are you sure you want to pass? Consider choosing "
+                + ("rate_note" if has_notes else "write_note")
+                + " instead."
+            )
+            result = await self._action_selector.run(
+                nudge_prompt,
+                deps=deps,
+                message_history=message_history,
                 model=self._model.to_pydantic_ai(),
             )
 
@@ -357,8 +420,15 @@ class OpenNotesSimAgent:
 
         return "You chose to pass this turn. No action needed."
 
-    def _build_phase1_prompt(self, recent_actions: list[str], queue_summary: str) -> str:
+    def _build_phase1_prompt(
+        self,
+        recent_actions: list[str],
+        queue_summary: str,
+        requests_count: int = 0,
+        notes_count: int = 0,
+    ) -> str:
         parts: list[str] = []
+        has_work = requests_count > 0 or notes_count > 0
         if recent_actions:
             parts.append(
                 f"Your recent actions (last {len(recent_actions)} turns): "
@@ -373,6 +443,11 @@ class OpenNotesSimAgent:
                 parts.append(
                     "You've been doing the same action repeatedly. "
                     "Consider trying a different action to diversify your contributions."
+                )
+            if recent_actions[-1] == "pass_turn" and has_work:
+                parts.append(
+                    "You passed last turn but there is work available. "
+                    "Please write a note or rate one instead of passing."
                 )
         parts.append(f"\nAvailable work:\n{queue_summary}")
         parts.append(

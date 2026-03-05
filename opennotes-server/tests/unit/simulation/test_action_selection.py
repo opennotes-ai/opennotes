@@ -47,9 +47,13 @@ class TestBuildPhase1Prompt:
             "pass_turn",
         ]
         queue_summary = (
-            "2 requests\n  - Content A\n  - Content B\n3 notes\n  - Note X\n  - Note Y\n  - Note Z"
+            "2 content requests to write notes for:\n"
+            "  - Content A\n  - Content B\n"
+            "2 notes available to rate:\n  - Note X\n  - Note Y"
         )
-        prompt = agent._build_phase1_prompt(recent_actions, queue_summary)
+        prompt = agent._build_phase1_prompt(
+            recent_actions, queue_summary, requests_count=2, notes_count=2
+        )
         assert "write_note" in prompt
         assert "rate_note" in prompt
         assert "pass_turn" in prompt
@@ -57,9 +61,14 @@ class TestBuildPhase1Prompt:
     def test_includes_queue_summary(self):
         agent = OpenNotesSimAgent()
         recent_actions = ["write_note"]
-        queue_summary = "5 requests\n  - Test content\n3 notes\n  - Test note"
-        prompt = agent._build_phase1_prompt(recent_actions, queue_summary)
-        assert "5 requests" in prompt
+        queue_summary = (
+            "5 content requests to write notes for:\n  - Test content\n"
+            "3 notes available to rate:\n  - Test note"
+        )
+        prompt = agent._build_phase1_prompt(
+            recent_actions, queue_summary, requests_count=5, notes_count=3
+        )
+        assert "5 content requests" in prompt
         assert "3 notes" in prompt
 
     def test_encourages_diversity_when_repetitive(self):
@@ -71,8 +80,13 @@ class TestBuildPhase1Prompt:
             "write_note",
             "write_note",
         ]
-        queue_summary = "2 requests\n3 notes"
-        prompt = agent._build_phase1_prompt(recent_actions, queue_summary)
+        queue_summary = (
+            "2 content requests to write notes for:\n  - A\n  - B\n"
+            "3 notes available to rate:\n  - X"
+        )
+        prompt = agent._build_phase1_prompt(
+            recent_actions, queue_summary, requests_count=2, notes_count=3
+        )
         lower = prompt.lower()
         assert any(
             word in lower for word in ["divers", "different", "vary", "repetit", "same action"]
@@ -81,24 +95,61 @@ class TestBuildPhase1Prompt:
     def test_no_diversity_warning_when_varied(self):
         agent = OpenNotesSimAgent()
         recent_actions = ["write_note", "rate_note", "write_note"]
-        queue_summary = "2 requests\n3 notes"
-        prompt = agent._build_phase1_prompt(recent_actions, queue_summary)
+        queue_summary = (
+            "2 content requests to write notes for:\n  - A\n  - B\n"
+            "3 notes available to rate:\n  - X"
+        )
+        prompt = agent._build_phase1_prompt(
+            recent_actions, queue_summary, requests_count=2, notes_count=3
+        )
         lower = prompt.lower()
         assert "same action" not in lower
         assert "diversif" not in lower
 
-    def test_no_diversity_warning_for_pass_turn_repeats(self):
+    def test_no_pass_nudge_when_no_work(self):
         agent = OpenNotesSimAgent()
         recent_actions = ["pass_turn", "pass_turn", "pass_turn"]
-        queue_summary = "0 requests\n0 notes"
-        prompt = agent._build_phase1_prompt(recent_actions, queue_summary)
+        queue_summary = "No content requests to write notes for.\nNo notes available to rate."
+        prompt = agent._build_phase1_prompt(
+            recent_actions, queue_summary, requests_count=0, notes_count=0
+        )
         lower = prompt.lower()
         assert "same action" not in lower
+        assert "passed" not in lower or "work available" not in lower
+
+    def test_pass_turn_nudge_when_work_exists(self):
+        agent = OpenNotesSimAgent()
+        recent_actions = ["pass_turn"]
+        queue_summary = (
+            "No content requests \u2014 but 3 notes available to rate below.\n"
+            "  - Note A\n  - Note B\n  - Note C"
+        )
+        prompt = agent._build_phase1_prompt(
+            recent_actions, queue_summary, requests_count=0, notes_count=3
+        )
+        lower = prompt.lower()
+        assert "passed" in lower or "pass" in lower
+        assert "work available" in lower or "available" in lower
+
+    def test_no_pass_nudge_for_first_action(self):
+        agent = OpenNotesSimAgent()
+        queue_summary = (
+            "2 content requests to write notes for:\n  - A\n  - B\n"
+            "3 notes available to rate:\n  - X"
+        )
+        prompt = agent._build_phase1_prompt([], queue_summary, requests_count=2, notes_count=3)
+        lower = prompt.lower()
+        assert "passed" not in lower
+        assert "recent actions" not in lower
 
     def test_empty_recent_actions(self):
         agent = OpenNotesSimAgent()
-        prompt = agent._build_phase1_prompt([], "2 requests\n3 notes")
-        assert "2 requests" in prompt
+        queue_summary = (
+            "2 content requests to write notes for:\n  - A\n  - B\n"
+            "3 notes available to rate:\n  - X"
+        )
+        prompt = agent._build_phase1_prompt([], queue_summary, requests_count=2, notes_count=3)
+        assert "2 content requests" in prompt
         assert isinstance(prompt, str)
         assert len(prompt) > 0
         assert "recent actions" not in prompt.lower()
@@ -106,12 +157,19 @@ class TestBuildPhase1Prompt:
     def test_shows_action_count(self):
         agent = OpenNotesSimAgent()
         recent_actions = ["write_note", "rate_note"]
-        prompt = agent._build_phase1_prompt(recent_actions, "1 request\n1 note")
+        prompt = agent._build_phase1_prompt(
+            recent_actions,
+            "1 content request to write a note for:\n  - A",
+            requests_count=1,
+            notes_count=0,
+        )
         assert "last 2 turns" in prompt
 
     def test_includes_action_choice_instruction(self):
         agent = OpenNotesSimAgent()
-        prompt = agent._build_phase1_prompt([], "1 request\n0 notes")
+        prompt = agent._build_phase1_prompt(
+            [], "1 content request to write a note for:\n  - A", requests_count=1, notes_count=0
+        )
         assert "write_note" in prompt
         assert "rate_note" in prompt
         assert "pass_turn" in prompt

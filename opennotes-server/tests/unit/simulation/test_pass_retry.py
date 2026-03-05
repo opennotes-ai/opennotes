@@ -106,14 +106,17 @@ class TestSelectAction:
             assert mock_run.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_double_pass_returns_pass(self, sample_deps):
-        """When Phase 1 returns pass both times, final result is pass."""
+    async def test_triple_pass_returns_pass(self, sample_deps):
+        """When all retries return pass (with notes available), final result is pass."""
         agent = OpenNotesSimAgent()
         pass_result1 = ActionSelectionResult(
             action_type=SimActionType.PASS_TURN, reasoning="nothing to do"
         )
         pass_result2 = ActionSelectionResult(
             action_type=SimActionType.PASS_TURN, reasoning="still nothing"
+        )
+        pass_result3 = ActionSelectionResult(
+            action_type=SimActionType.PASS_TURN, reasoning="really nothing"
         )
 
         with patch.object(
@@ -123,6 +126,7 @@ class TestSelectAction:
             side_effect=[
                 _make_run_result(pass_result1),
                 _make_run_result(pass_result2),
+                _make_run_result(pass_result3),
             ],
         ) as mock_run:
             result, _messages = await agent.select_action(
@@ -132,7 +136,7 @@ class TestSelectAction:
                 notes=sample_deps.available_notes,
             )
             assert result.action_type == SimActionType.PASS_TURN
-            assert mock_run.call_count == 2
+            assert mock_run.call_count == 3
 
     @pytest.mark.asyncio
     async def test_retry_uses_verbose_queue_summary(self, sample_deps):
@@ -193,9 +197,10 @@ class TestSelectAction:
             assert mock_run.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_retry_passes_message_history(self, sample_deps):
-        """The retry passes the first run's messages as message_history."""
+    async def test_retry_passes_original_message_history(self, sample_deps):
+        """The retry uses the original message_history, not result.all_messages()."""
         agent = OpenNotesSimAgent()
+        original_history = [MagicMock(spec_set=["role"])]
         first_messages = [MagicMock(spec_set=["role"])]
         pass_result = ActionSelectionResult(
             action_type=SimActionType.PASS_TURN, reasoning="nothing"
@@ -216,6 +221,162 @@ class TestSelectAction:
                 recent_actions=[],
                 requests=sample_deps.available_requests,
                 notes=sample_deps.available_notes,
+                message_history=original_history,
             )
             retry_call = mock_run.call_args_list[1]
-            assert retry_call.kwargs.get("message_history") is first_messages
+            assert retry_call.kwargs.get("message_history") is original_history
+            assert retry_call.kwargs.get("message_history") is not first_messages
+
+    @pytest.mark.asyncio
+    async def test_soft_guard_third_retry_when_notes_available(self, sample_deps):
+        """Third retry fires when pass persists after verbose retry and notes > 0."""
+        agent = OpenNotesSimAgent()
+        pass_result1 = ActionSelectionResult(
+            action_type=SimActionType.PASS_TURN, reasoning="nothing"
+        )
+        pass_result2 = ActionSelectionResult(
+            action_type=SimActionType.PASS_TURN, reasoning="still nothing"
+        )
+        rate_result = ActionSelectionResult(
+            action_type=SimActionType.RATE_NOTE, reasoning="ok fine"
+        )
+
+        with patch.object(
+            agent._action_selector,
+            "run",
+            new_callable=AsyncMock,
+            side_effect=[
+                _make_run_result(pass_result1),
+                _make_run_result(pass_result2),
+                _make_run_result(rate_result),
+            ],
+        ) as mock_run:
+            result, _ = await agent.select_action(
+                deps=sample_deps,
+                recent_actions=[],
+                requests=sample_deps.available_requests,
+                notes=sample_deps.available_notes,
+            )
+            assert result.action_type == SimActionType.RATE_NOTE
+            assert mock_run.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_no_soft_guard_when_nothing_available_legacy(self, sample_deps):
+        """No third retry when both notes and requests are empty (legitimate pass)."""
+        agent = OpenNotesSimAgent()
+        pass_result1 = ActionSelectionResult(
+            action_type=SimActionType.PASS_TURN, reasoning="nothing"
+        )
+        pass_result2 = ActionSelectionResult(
+            action_type=SimActionType.PASS_TURN, reasoning="still nothing"
+        )
+
+        with patch.object(
+            agent._action_selector,
+            "run",
+            new_callable=AsyncMock,
+            side_effect=[
+                _make_run_result(pass_result1),
+                _make_run_result(pass_result2),
+            ],
+        ) as mock_run:
+            result, _ = await agent.select_action(
+                deps=sample_deps,
+                recent_actions=[],
+                requests=[],
+                notes=[],
+            )
+            assert result.action_type == SimActionType.PASS_TURN
+            assert mock_run.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_soft_guard_fires_for_requests_only(self, sample_deps):
+        """Third retry fires when pass persists and requests > 0 but notes == 0."""
+        agent = OpenNotesSimAgent()
+        pass_result = ActionSelectionResult(
+            action_type=SimActionType.PASS_TURN, reasoning="nothing"
+        )
+        write_result = ActionSelectionResult(
+            action_type=SimActionType.WRITE_NOTE, reasoning="ok fine"
+        )
+
+        with patch.object(
+            agent._action_selector,
+            "run",
+            new_callable=AsyncMock,
+            side_effect=[
+                _make_run_result(pass_result),
+                _make_run_result(pass_result),
+                _make_run_result(write_result),
+            ],
+        ) as mock_run:
+            result, _ = await agent.select_action(
+                deps=sample_deps,
+                recent_actions=[],
+                requests=sample_deps.available_requests,
+                notes=[],
+            )
+            assert result.action_type == SimActionType.WRITE_NOTE
+            assert mock_run.call_count == 3
+            third_call = mock_run.call_args_list[2]
+            prompt = (
+                third_call.args[0] if third_call.args else third_call.kwargs.get("user_prompt", "")
+            )
+            assert "request" in prompt.lower()
+
+    @pytest.mark.asyncio
+    async def test_no_soft_guard_when_nothing_available(self, sample_deps):
+        """No third retry when both notes and requests are empty."""
+        agent = OpenNotesSimAgent()
+        pass_result = ActionSelectionResult(
+            action_type=SimActionType.PASS_TURN, reasoning="nothing"
+        )
+
+        with patch.object(
+            agent._action_selector,
+            "run",
+            new_callable=AsyncMock,
+            side_effect=[
+                _make_run_result(pass_result),
+                _make_run_result(pass_result),
+            ],
+        ) as mock_run:
+            result, _ = await agent.select_action(
+                deps=sample_deps,
+                recent_actions=[],
+                requests=[],
+                notes=[],
+            )
+            assert result.action_type == SimActionType.PASS_TURN
+            assert mock_run.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_soft_guard_prompt_mentions_notes(self, sample_deps):
+        """Third retry prompt mentions available notes."""
+        agent = OpenNotesSimAgent()
+        pass_result = ActionSelectionResult(
+            action_type=SimActionType.PASS_TURN, reasoning="nothing"
+        )
+        rate_result = ActionSelectionResult(action_type=SimActionType.RATE_NOTE, reasoning="ok")
+
+        with patch.object(
+            agent._action_selector,
+            "run",
+            new_callable=AsyncMock,
+            side_effect=[
+                _make_run_result(pass_result),
+                _make_run_result(pass_result),
+                _make_run_result(rate_result),
+            ],
+        ) as mock_run:
+            await agent.select_action(
+                deps=sample_deps,
+                recent_actions=[],
+                requests=sample_deps.available_requests,
+                notes=sample_deps.available_notes,
+            )
+            third_call = mock_run.call_args_list[2]
+            prompt = (
+                third_call.args[0] if third_call.args else third_call.kwargs.get("user_prompt", "")
+            )
+            assert "notes available" in prompt.lower() or "1 note" in prompt.lower()
