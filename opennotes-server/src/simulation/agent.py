@@ -7,13 +7,14 @@ from uuid import UUID
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import UsageLimits
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.llm_config.model_id import ModelId
 from src.notes.models import Note, Rating
+from src.simulation.models import SimChannelMessage
 from src.simulation.schemas import ActionSelectionResult, SimActionType, SimAgentAction
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,9 @@ class SimAgentDeps:
     agent_personality: str
     model_name: ModelId
     tool_config: dict[str, Any] | None = field(default=None)
+    simulation_run_id: UUID | None = None
+    channel_window_size: int = 20
+    recent_channel_messages: list[dict] = field(default_factory=list)
 
 
 WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "google", "groq"})
@@ -123,6 +127,23 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
             "You can also spend a turn purely researching — search for information "
             "and then pass your turn. Research results persist in your memory "
             "and will be available in future turns."
+        )
+
+    if ctx.deps.recent_channel_messages:
+        base += (
+            "\n\nShared channel:\n"
+            "Recent messages from other agents are shown below. "
+            "You can post to the channel using post_to_channel "
+            "or read more with read_channel.\n\n"
+        )
+        for msg in ctx.deps.recent_channel_messages:
+            base += f"[Agent]: {msg['message_text']}\n"
+    elif ctx.deps.simulation_run_id is not None:
+        base += (
+            "\n\nShared channel:\n"
+            "A shared communication channel is available. "
+            "Use post_to_channel to share findings or coordinate with other agents, "
+            "and read_channel to read recent messages."
         )
 
     return base
@@ -231,6 +252,56 @@ def pass_turn() -> str:
     """Do nothing this turn. Use this when no action seems appropriate
     given the current context."""
     return "Turn passed. No action taken."
+
+
+@sim_agent.tool
+async def post_to_channel(
+    ctx: RunContext[SimAgentDeps],
+    message: str,
+) -> str:
+    """Post a message to the shared agent channel. Use this to share research
+    findings, flag patterns, express uncertainty, or coordinate with other agents."""
+    if ctx.deps.simulation_run_id is None:
+        return "Error: channel not available (no simulation_run_id)."
+
+    msg = SimChannelMessage(
+        simulation_run_id=ctx.deps.simulation_run_id,
+        agent_instance_id=ctx.deps.agent_instance_id,
+        message_text=message,
+    )
+    ctx.deps.db.add(msg)
+    try:
+        await ctx.deps.db.flush()
+    except SQLAlchemyError:
+        logger.exception("Database error posting to channel")
+        return "Error: could not post to channel due to a database error."
+    return "Posted to channel."
+
+
+@sim_agent.tool
+async def read_channel(
+    ctx: RunContext[SimAgentDeps],
+) -> str:
+    """Read recent messages from the shared agent channel."""
+    if ctx.deps.simulation_run_id is None:
+        return "Channel not available."
+
+    query = (
+        select(SimChannelMessage)
+        .where(SimChannelMessage.simulation_run_id == ctx.deps.simulation_run_id)
+        .order_by(SimChannelMessage.created_at.desc())
+        .limit(ctx.deps.channel_window_size)
+    )
+    result = await ctx.deps.db.execute(query)
+    messages = result.scalars().all()
+
+    if not messages:
+        return "No channel messages yet."
+
+    lines = []
+    for msg in reversed(messages):
+        lines.append(f"[Agent {msg.agent_instance_id}]: {msg.message_text}")
+    return "\n".join(lines)
 
 
 BRIEF_MAX_TITLES = 3
@@ -559,5 +630,7 @@ __all__ = [
     "build_action_selector_instructions",
     "build_queue_summary",
     "estimate_tokens",
+    "post_to_channel",
+    "read_channel",
     "sim_agent",
 ]
