@@ -1,8 +1,10 @@
+import logging
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import func
@@ -13,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.llm_config.model_id import ModelId
 from src.notes.models import Note, Rating
 from src.simulation.schemas import ActionSelectionResult, SimActionType, SimAgentAction
+
+logger = logging.getLogger(__name__)
 
 MAX_PERSONALITY_CHARS: int = 500
 MAX_CONTEXT_REQUESTS: int = 5
@@ -34,24 +38,37 @@ class SimAgentDeps:
     available_notes: list[dict]
     agent_personality: str
     model_name: ModelId
+    tool_config: dict[str, Any] | None = field(default=None)
+
+
+WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "google", "groq"})
+
+
+def _is_research_available(deps: SimAgentDeps) -> bool:
+    tc = deps.tool_config
+    return bool(
+        tc
+        and tc.get("research_enabled")
+        and deps.model_name.provider in WEBSEARCH_SUPPORTED_PROVIDERS
+    )
 
 
 sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
     deps_type=SimAgentDeps,
-    result_type=SimAgentAction,
+    output_type=SimAgentAction,
 )
 
 
 action_selector: Agent[SimAgentDeps, ActionSelectionResult] = Agent(
     deps_type=SimAgentDeps,
-    result_type=ActionSelectionResult,
+    output_type=ActionSelectionResult,
 )
 
 
 @action_selector.system_prompt
 def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
     personality = _truncate_personality(ctx.deps.agent_personality)
-    return (
+    base = (
         "You are deciding what action to take this turn in a Community Notes simulation.\n\n"
         f"Your personality: {personality}\n\n"
         "Choose exactly one action:\n"
@@ -61,6 +78,15 @@ def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "IMPORTANT: If notes are available to rate, you should rate one rather than passing.\n\n"
         "Respond with your chosen action_type and a brief reasoning."
     )
+
+    if _is_research_available(ctx.deps):
+        base += (
+            "\n\nNote: You can use web search during any action to verify "
+            "claims or gather evidence. You may also choose pass_turn after "
+            "researching to store findings for future turns."
+        )
+
+    return base
 
 
 def estimate_tokens(text: str) -> int:
@@ -76,7 +102,7 @@ def _truncate_personality(personality: str, max_chars: int = MAX_PERSONALITY_CHA
 @sim_agent.system_prompt
 def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
     personality = _truncate_personality(ctx.deps.agent_personality)
-    return (
+    base = (
         "You are a Community Notes participant in a simulation. "
         "Your goal is to evaluate content and contribute helpful, "
         "accurate community notes.\n\n"
@@ -88,6 +114,18 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "Choose the most appropriate action based on the available "
         "requests and notes. Always explain your reasoning."
     )
+
+    if _is_research_available(ctx.deps):
+        base += (
+            "\n\nResearch tools:\n"
+            "You have access to web search. Use it to verify claims, "
+            "gather evidence, or understand context before writing or rating notes. "
+            "You can also spend a turn purely researching — search for information "
+            "and then pass your turn. Research results persist in your memory "
+            "and will be available in future turns."
+        )
+
+    return base
 
 
 @sim_agent.tool
@@ -125,10 +163,12 @@ async def write_note(
     ctx.deps.db.add(note)
     try:
         await ctx.deps.db.flush()
-    except IntegrityError as e:
-        return f"Error: database integrity error creating note: {e}"
-    except SQLAlchemyError as e:
-        return f"Error: database error creating note: {e}"
+    except IntegrityError:
+        logger.exception("Integrity error creating note for request %s", request_id)
+        return "Error: could not create note due to a constraint violation."
+    except SQLAlchemyError:
+        logger.exception("Database error creating note for request %s", request_id)
+        return "Error: could not create note due to a database error."
 
     return f"Note created for request '{request_id}' with classification '{classification}'."
 
@@ -176,10 +216,12 @@ async def rate_note(
     try:
         await ctx.deps.db.execute(stmt)
         await ctx.deps.db.flush()
-    except IntegrityError as e:
-        return f"Error: database integrity error creating rating: {e}"
-    except SQLAlchemyError as e:
-        return f"Error: database error creating rating: {e}"
+    except IntegrityError:
+        logger.exception("Integrity error creating rating for note %s", note_id)
+        return "Error: could not create rating due to a constraint violation."
+    except SQLAlchemyError:
+        logger.exception("Database error creating rating for note %s", note_id)
+        return "Error: could not create rating due to a database error."
 
     return f"Rated note '{note_id}' as '{helpfulness_level}'."
 
@@ -292,7 +334,7 @@ class OpenNotesSimAgent:
             model=self._model.to_pydantic_ai(),
         )
 
-        if result.data.action_type == SimActionType.PASS_TURN:
+        if result.output.action_type == SimActionType.PASS_TURN:
             verbose_summary = build_queue_summary(requests, notes, verbose=True)
             retry_prompt = self._build_phase1_prompt(
                 recent_actions,
@@ -332,7 +374,7 @@ class OpenNotesSimAgent:
                 model=self._model.to_pydantic_ai(),
             )
 
-        return result.data, result.all_messages()
+        return result.output, result.all_messages()
 
     async def run_turn(
         self,
@@ -349,14 +391,23 @@ class OpenNotesSimAgent:
             )
         else:
             prompt = self._build_turn_prompt(deps)
-        result = await self._agent.run(
-            prompt,
-            deps=deps,
-            message_history=message_history,
-            model=self._model.to_pydantic_ai(),
-            usage_limits=usage_limits or UsageLimits(request_limit=3, total_tokens_limit=4000),
-        )
-        return result.data, result.all_messages()
+        run_kwargs: dict[str, Any] = {
+            "deps": deps,
+            "message_history": message_history,
+            "model": self._model.to_pydantic_ai(),
+            "usage_limits": usage_limits or UsageLimits(request_limit=3, total_tokens_limit=4000),
+        }
+
+        if _is_research_available(deps):
+            run_kwargs["builtin_tools"] = [WebSearchTool()]
+        elif deps.tool_config and deps.tool_config.get("research_enabled"):
+            logger.warning(
+                "WebSearchTool requested but provider %r is not supported; skipping",
+                deps.model_name.provider,
+            )
+
+        result = await self._agent.run(prompt, **run_kwargs)
+        return result.output, result.all_messages()
 
     def _build_turn_prompt(
         self,
@@ -500,9 +551,12 @@ __all__ = [
     "MAX_PERSONALITY_CHARS",
     "PHASE1_DIVERSITY_THRESHOLD",
     "TOKEN_BUDGET",
+    "WEBSEARCH_SUPPORTED_PROVIDERS",
     "OpenNotesSimAgent",
     "SimAgentDeps",
+    "_is_research_available",
     "action_selector",
+    "build_action_selector_instructions",
     "build_queue_summary",
     "estimate_tokens",
     "sim_agent",

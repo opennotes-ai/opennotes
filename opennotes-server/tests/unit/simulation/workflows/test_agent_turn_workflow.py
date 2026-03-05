@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from pydantic_ai.usage import UsageLimits
 
 from src.llm_config.model_id import ModelId
 
@@ -38,6 +39,7 @@ def _make_context(
     memory_turn_count: int = 0,
     message_history: list | None = None,
     recent_actions: list[str] | None = None,
+    tool_config: dict | None = None,
 ) -> dict:
     return {
         "agent_instance_id": agent_instance_id or str(uuid4()),
@@ -50,6 +52,7 @@ def _make_context(
         "model_params": {"request_limit": 3, "total_tokens_limit": 4000},
         "memory_compaction_strategy": "sliding_window",
         "memory_compaction_config": None,
+        "tool_config": tool_config,
         "message_history": message_history or [],
         "memory_id": memory_id or str(uuid4()),
         "memory_turn_count": memory_turn_count,
@@ -2335,3 +2338,98 @@ class TestConfigurableDefaults:
         mock_compact.assert_called_once()
         call_kwargs = mock_compact.call_args.kwargs
         assert call_kwargs["compaction_interval"] == 5
+
+
+def _run_execute_step_and_capture_limits(context: dict) -> UsageLimits:
+    from src.simulation.workflows.agent_turn_workflow import execute_agent_turn_step
+
+    deps_data = {"available_requests": [], "available_notes": []}
+
+    mock_action = MagicMock()
+    mock_action.model_dump.return_value = {"action_type": "pass_turn", "reasoning": "idle"}
+
+    mock_agent_instance = MagicMock()
+    mock_agent_instance.run_turn = AsyncMock(return_value=(mock_action, []))
+
+    mock_session = AsyncMock()
+    mock_session.commit = AsyncMock()
+    mock_session_ctx = AsyncMock()
+    mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch(
+            "src.simulation.workflows.agent_turn_workflow.run_sync",
+            side_effect=lambda coro: __import__("asyncio")
+            .get_event_loop()
+            .run_until_complete(coro),
+        ),
+        patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        patch(
+            "src.simulation.agent.OpenNotesSimAgent",
+            return_value=mock_agent_instance,
+        ),
+        patch(
+            "src.simulation.workflows.agent_turn_workflow._serialize_messages",
+            return_value=[],
+        ),
+        patch(
+            "src.simulation.workflows.agent_turn_workflow._deserialize_messages",
+            return_value=[],
+        ),
+    ):
+        execute_agent_turn_step.__wrapped__(
+            context=context,
+            deps_data=deps_data,
+            messages=[],
+        )
+
+    return mock_agent_instance.run_turn.call_args.kwargs["usage_limits"]
+
+
+class TestResearchLimits:
+    def test_limits_from_tool_config_when_research_enabled(self) -> None:
+        context = _make_context()
+        context["tool_config"] = {
+            "research_enabled": True,
+            "request_limit": 10,
+            "token_limit": 16000,
+        }
+
+        limits = _run_execute_step_and_capture_limits(context)
+
+        assert limits.request_limit == 10
+        assert limits.total_tokens_limit == 16000
+
+    def test_default_limits_when_no_tool_config(self) -> None:
+        context = _make_context()
+
+        limits = _run_execute_step_and_capture_limits(context)
+
+        assert limits.request_limit == 3
+        assert limits.total_tokens_limit == 4000
+
+    def test_default_limits_when_research_disabled(self) -> None:
+        context = _make_context()
+        context["tool_config"] = {
+            "research_enabled": False,
+            "request_limit": 10,
+            "token_limit": 16000,
+        }
+
+        limits = _run_execute_step_and_capture_limits(context)
+
+        assert limits.request_limit == 3
+        assert limits.total_tokens_limit == 4000
+
+    def test_partial_tool_config_uses_defaults_for_missing(self) -> None:
+        context = _make_context()
+        context["tool_config"] = {
+            "research_enabled": True,
+            "token_limit": 8000,
+        }
+
+        limits = _run_execute_step_and_capture_limits(context)
+
+        assert limits.request_limit == 3
+        assert limits.total_tokens_limit == 8000

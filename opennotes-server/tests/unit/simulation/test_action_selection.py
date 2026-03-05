@@ -179,13 +179,13 @@ class TestActionSelectorAgent:
     def test_has_no_function_tools(self):
         agent = OpenNotesSimAgent()
         selector = agent._action_selector
-        assert len(selector._function_tools) == 0
+        assert len(selector._function_toolset.tools) == 0
 
     def test_result_type_is_action_selection_result(self):
-        assert action_selector.result_type == ActionSelectionResult
+        assert action_selector.output_type == ActionSelectionResult
 
     def test_module_level_agent_has_no_tools(self):
-        assert len(action_selector._function_tools) == 0
+        assert len(action_selector._function_toolset.tools) == 0
 
     def test_action_selector_is_stored_on_instance(self):
         agent = OpenNotesSimAgent()
