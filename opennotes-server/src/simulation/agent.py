@@ -55,9 +55,10 @@ def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "You are deciding what action to take this turn in a Community Notes simulation.\n\n"
         f"Your personality: {personality}\n\n"
         "Choose exactly one action:\n"
-        "- write_note: Write a new community note for a content request\n"
-        "- rate_note: Rate an existing community note\n"
-        "- pass_turn: Skip this turn\n\n"
+        "- write_note: Write a community note for one of the available content requests\n"
+        "- rate_note: Rate one of the available community notes on helpfulness\n"
+        "- pass_turn: Skip this turn (only when no content requests or notes are available)\n\n"
+        "IMPORTANT: If notes are available to rate, you should rate one rather than passing.\n\n"
         "Respond with your chosen action_type and a brief reasoning."
     )
 
@@ -279,7 +280,12 @@ class OpenNotesSimAgent:
         message_history: list[ModelMessage] | None = None,
     ) -> tuple[ActionSelectionResult, list[ModelMessage]]:
         brief_summary = build_queue_summary(requests, notes, verbose=False)
-        prompt = self._build_phase1_prompt(recent_actions, brief_summary)
+        prompt = self._build_phase1_prompt(
+            recent_actions,
+            brief_summary,
+            requests_count=len(requests),
+            notes_count=len(notes),
+        )
 
         result = await self._action_selector.run(
             prompt,
@@ -290,7 +296,12 @@ class OpenNotesSimAgent:
 
         if result.data.action_type == SimActionType.PASS_TURN:
             verbose_summary = build_queue_summary(requests, notes, verbose=True)
-            retry_prompt = self._build_phase1_prompt(recent_actions, verbose_summary)
+            retry_prompt = self._build_phase1_prompt(
+                recent_actions,
+                verbose_summary,
+                requests_count=len(requests),
+                notes_count=len(notes),
+            )
             result = await self._action_selector.run(
                 retry_prompt,
                 deps=deps,
@@ -386,8 +397,15 @@ class OpenNotesSimAgent:
 
         return "You chose to pass this turn. No action needed."
 
-    def _build_phase1_prompt(self, recent_actions: list[str], queue_summary: str) -> str:
+    def _build_phase1_prompt(
+        self,
+        recent_actions: list[str],
+        queue_summary: str,
+        requests_count: int = 0,
+        notes_count: int = 0,
+    ) -> str:
         parts: list[str] = []
+        has_work = requests_count > 0 or notes_count > 0
         if recent_actions:
             parts.append(
                 f"Your recent actions (last {len(recent_actions)} turns): "
@@ -402,6 +420,11 @@ class OpenNotesSimAgent:
                 parts.append(
                     "You've been doing the same action repeatedly. "
                     "Consider trying a different action to diversify your contributions."
+                )
+            if recent_actions[-1] == "pass_turn" and has_work:
+                parts.append(
+                    "You passed last turn but there is work available. "
+                    "Please write a note or rate one instead of passing."
                 )
         parts.append(f"\nAvailable work:\n{queue_summary}")
         parts.append(
