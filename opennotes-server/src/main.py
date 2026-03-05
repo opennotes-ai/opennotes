@@ -344,6 +344,10 @@ def _register_dbos_workflows() -> list[str]:
                 "BULK_APPROVAL_WORKFLOW_NAME",
             ],
         ),
+        (
+            "src.dbos_workflows.token_bucket.cleanup",
+            ["CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME"],
+        ),
     ]
 
     for module_path, attr_names in workflow_modules:
@@ -379,9 +383,19 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
             dbos.launch()
             await asyncio.to_thread(validate_dbos_connection)
 
-            from src.dbos_workflows.token_bucket.config import ensure_pool_exists_async
+            from src.dbos_workflows.token_bucket.config import (
+                ensure_pool_exists_async,
+                register_worker_async,
+                start_worker_heartbeat,
+            )
 
-            await ensure_pool_exists_async()
+            await ensure_pool_exists_async(capacity=settings.TOKEN_POOL_CAPACITY)
+
+            try:
+                await register_worker_async(capacity=settings.TOKEN_POOL_CAPACITY)
+                await start_worker_heartbeat()
+            except Exception as e:
+                logger.warning(f"Worker registration failed, using static capacity: {e}")
 
             logger.info(
                 "DBOS worker mode - queue polling enabled and validated",
@@ -497,6 +511,19 @@ def _register_health_checks(is_dbos_worker: bool) -> None:
 
 
 async def _shutdown_services(app: FastAPI, is_dbos_worker: bool) -> None:
+    if is_dbos_worker:
+        try:
+            from src.dbos_workflows.token_bucket.config import (
+                deregister_worker_async,
+                stop_worker_heartbeat,
+            )
+
+            await stop_worker_heartbeat()
+            await deregister_worker_async()
+            logger.info("Worker heartbeat stopped and deregistered")
+        except Exception as e:
+            logger.warning(f"Error during worker deregistration: {e}")
+
     await distributed_health.stop_heartbeat()
     logger.info("Distributed health heartbeat stopped")
 
@@ -719,7 +746,7 @@ app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 app.include_router(fact_check_import_router, prefix=settings.API_V1_PREFIX)
 app.include_router(candidates_jsonapi_router, prefix=settings.API_V1_PREFIX)
 app.include_router(batch_jobs_router, prefix=settings.API_V1_PREFIX)
-app.include_router(token_pool_router)
+app.include_router(token_pool_router, prefix=settings.API_V1_PREFIX)
 app.include_router(
     simulations_jsonapi_router,
     prefix=settings.API_V2_PREFIX,

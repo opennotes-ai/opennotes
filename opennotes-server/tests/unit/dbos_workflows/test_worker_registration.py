@@ -26,6 +26,14 @@ class TestWorkerWorkflowRegistration:
                 new_callable=AsyncMock,
             ),
             patch(
+                "src.dbos_workflows.token_bucket.config.register_worker_async",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.dbos_workflows.token_bucket.config.start_worker_heartbeat",
+                new_callable=AsyncMock,
+            ),
+            patch(
                 "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
                 return_value=MagicMock(),
             ),
@@ -67,6 +75,7 @@ class TestWorkerWorkflowRegistration:
                 "scrape_candidates_workflow",
                 "promote_candidates_workflow",
                 "bulk_approval_workflow",
+                "cleanup_stale_token_holds",
             }
             assert workflow_names == expected
 
@@ -115,6 +124,14 @@ class TestWorkerWorkflowRegistration:
             patch("src.main.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread,
             patch(
                 "src.dbos_workflows.token_bucket.config.ensure_pool_exists_async",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.dbos_workflows.token_bucket.config.register_worker_async",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.dbos_workflows.token_bucket.config.start_worker_heartbeat",
                 new_callable=AsyncMock,
             ),
             patch(

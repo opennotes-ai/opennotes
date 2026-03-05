@@ -3178,7 +3178,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/token-pools/": {
+    "/api/v1/admin/token-pools/": {
         parameters: {
             query?: never;
             header?: never;
@@ -3186,7 +3186,7 @@ export interface paths {
             cookie?: never;
         };
         /** List Token Pools */
-        get: operations["list_token_pools_admin_token_pools__get"];
+        get: operations["list_token_pools_api_v1_admin_token_pools__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3195,7 +3195,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/token-pools/{pool_name}/holds": {
+    "/api/v1/admin/token-pools/{pool_name}/holds": {
         parameters: {
             query?: never;
             header?: never;
@@ -3203,7 +3203,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Pool Holds */
-        get: operations["get_pool_holds_admin_token_pools__pool_name__holds_get"];
+        get: operations["get_pool_holds_api_v1_admin_token_pools__pool_name__holds_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -15910,10 +15910,12 @@ export interface operations {
             };
         };
     };
-    list_token_pools_admin_token_pools__get: {
+    list_token_pools_api_v1_admin_token_pools__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -15928,12 +15930,25 @@ export interface operations {
                     "application/json": components["schemas"]["TokenPoolStatus"][];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
-    get_pool_holds_admin_token_pools__pool_name__holds_get: {
+    get_pool_holds_api_v1_admin_token_pools__pool_name__holds_get: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
             path: {
                 pool_name: string;
             };

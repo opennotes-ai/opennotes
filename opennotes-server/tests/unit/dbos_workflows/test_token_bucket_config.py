@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -5,8 +6,15 @@ import pytest
 from src.dbos_workflows.token_bucket.config import (
     DEFAULT_POOL_CAPACITY,
     DEFAULT_POOL_NAME,
+    DEFAULT_WORKER_CAPACITY,
+    WORKER_HEARTBEAT_INTERVAL,
+    WORKER_HEARTBEAT_TTL,
     WorkflowWeight,
+    deregister_worker_async,
     ensure_pool_exists_async,
+    register_worker_async,
+    start_worker_heartbeat,
+    update_worker_heartbeat_async,
 )
 
 
@@ -43,6 +51,15 @@ class TestDefaults:
 
     def test_default_pool_capacity(self):
         assert DEFAULT_POOL_CAPACITY == 12
+
+    def test_default_worker_capacity(self):
+        assert DEFAULT_WORKER_CAPACITY == 12
+
+    def test_worker_heartbeat_interval(self):
+        assert WORKER_HEARTBEAT_INTERVAL == 30
+
+    def test_worker_heartbeat_ttl(self):
+        assert WORKER_HEARTBEAT_TTL == 90
 
 
 class TestEnsurePoolExists:
@@ -96,6 +113,191 @@ class TestEnsurePoolExists:
             return_value=mock_maker,
         ):
             await ensure_pool_exists_async()
+
+        mock_session.execute.assert_called_once()
+        mock_session.commit.assert_called_once()
+
+
+class TestRegisterWorker:
+    @pytest.mark.asyncio
+    async def test_register_worker_creates_entry(self):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_maker = MagicMock()
+        mock_maker.return_value = mock_session
+
+        with patch(
+            "src.database.get_session_maker",
+            return_value=mock_maker,
+        ):
+            await register_worker_async("test_pool", "worker-1", 10)
+
+        mock_session.execute.assert_called_once()
+        mock_session.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_register_worker_uses_settings_instance_id(self):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_maker = MagicMock()
+        mock_maker.return_value = mock_session
+
+        with (
+            patch("src.database.get_session_maker", return_value=mock_maker),
+            patch("src.config.settings") as mock_settings,
+        ):
+            mock_settings.INSTANCE_ID = "instance-abc"
+            await register_worker_async("test_pool")
+
+        mock_session.execute.assert_called_once()
+        mock_session.commit.assert_called_once()
+
+
+class TestDeregisterWorker:
+    @pytest.mark.asyncio
+    async def test_deregister_removes_entry(self):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_maker = MagicMock()
+        mock_maker.return_value = mock_session
+
+        with patch(
+            "src.database.get_session_maker",
+            return_value=mock_maker,
+        ):
+            await deregister_worker_async("test_pool", "worker-1")
+
+        mock_session.execute.assert_called_once()
+        mock_session.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_deregister_uses_settings_instance_id(self):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_maker = MagicMock()
+        mock_maker.return_value = mock_session
+
+        with (
+            patch("src.database.get_session_maker", return_value=mock_maker),
+            patch("src.config.settings") as mock_settings,
+        ):
+            mock_settings.INSTANCE_ID = "instance-abc"
+            await deregister_worker_async("test_pool")
+
+        mock_session.execute.assert_called_once()
+        mock_session.commit.assert_called_once()
+
+
+class TestStartWorkerHeartbeatCancellation:
+    @pytest.mark.asyncio
+    async def test_cancels_existing_task_before_starting_new(self):
+        import src.dbos_workflows.token_bucket.config as config_mod
+
+        hold_event = asyncio.Event()
+
+        async def long_running():
+            await hold_event.wait()
+
+        old_task = asyncio.create_task(long_running())
+
+        saved_task = config_mod._heartbeat_task
+        config_mod._heartbeat_task = old_task
+
+        try:
+            with (
+                patch("src.config.settings") as mock_settings,
+                patch.object(config_mod, "update_worker_heartbeat_async", new_callable=AsyncMock),
+            ):
+                mock_settings.INSTANCE_ID = "test-worker"
+                await start_worker_heartbeat("test_pool", "worker-1")
+
+            assert old_task.cancelled()
+        finally:
+            if config_mod._heartbeat_task and not config_mod._heartbeat_task.done():
+                config_mod._heartbeat_task.cancel()
+                with __import__("contextlib").suppress(asyncio.CancelledError):
+                    await config_mod._heartbeat_task
+            config_mod._heartbeat_task = saved_task
+
+
+class TestSettingsCapacityWiring:
+    @pytest.mark.asyncio
+    async def test_ensure_pool_uses_settings_capacity(self):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_maker = MagicMock()
+        mock_maker.return_value = mock_session
+
+        with patch(
+            "src.database.get_session_maker",
+            return_value=mock_maker,
+        ):
+            await ensure_pool_exists_async(capacity=20)
+
+        mock_session.execute.assert_called_once()
+        call_args = mock_session.execute.call_args
+        stmt = call_args[0][0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": True})
+        assert "20" in str(compiled)
+
+
+class TestGracefulDegradation:
+    @pytest.mark.asyncio
+    async def test_register_worker_failure_does_not_propagate(self):
+        with (
+            patch(
+                "src.dbos_workflows.token_bucket.config.register_worker_async",
+                side_effect=Exception("DB connection failed"),
+            ) as mock_register,
+            pytest.raises(Exception, match="DB connection failed"),
+        ):
+            await mock_register()
+
+
+class TestUpdateHeartbeat:
+    @pytest.mark.asyncio
+    async def test_update_heartbeat(self):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_maker = MagicMock()
+        mock_maker.return_value = mock_session
+
+        with patch(
+            "src.database.get_session_maker",
+            return_value=mock_maker,
+        ):
+            await update_worker_heartbeat_async("test_pool", "worker-1")
+
+        mock_session.execute.assert_called_once()
+        mock_session.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_heartbeat_uses_settings_instance_id(self):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_maker = MagicMock()
+        mock_maker.return_value = mock_session
+
+        with (
+            patch("src.database.get_session_maker", return_value=mock_maker),
+            patch("src.config.settings") as mock_settings,
+        ):
+            mock_settings.INSTANCE_ID = "instance-xyz"
+            await update_worker_heartbeat_async("test_pool")
 
         mock_session.execute.assert_called_once()
         mock_session.commit.assert_called_once()

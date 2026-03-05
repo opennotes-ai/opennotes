@@ -10306,24 +10306,57 @@
         }
       }
     },
-    "/admin/token-pools/": {
+    "/api/v1/admin/token-pools/": {
       "get": {
         "tags": [
           "admin"
         ],
         "summary": "List Token Pools",
-        "operationId": "list_token_pools_admin_token_pools__get",
+        "operationId": "list_token_pools_api_v1_admin_token_pools__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/TokenPoolStatus"
                   },
-                  "type": "array",
-                  "title": "Response List Token Pools Admin Token Pools  Get"
+                  "title": "Response List Token Pools Api V1 Admin Token Pools  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -10331,13 +10364,18 @@
         }
       }
     },
-    "/admin/token-pools/{pool_name}/holds": {
+    "/api/v1/admin/token-pools/{pool_name}/holds": {
       "get": {
         "tags": [
           "admin"
         ],
         "summary": "Get Pool Holds",
-        "operationId": "get_pool_holds_admin_token_pools__pool_name__holds_get",
+        "operationId": "get_pool_holds_api_v1_admin_token_pools__pool_name__holds_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "pool_name",
@@ -10346,6 +10384,34 @@
             "schema": {
               "type": "string",
               "title": "Pool Name"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -10359,7 +10425,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TokenHoldDetail"
                   },
-                  "title": "Response Get Pool Holds Admin Token Pools  Pool Name  Holds Get"
+                  "title": "Response Get Pool Holds Api V1 Admin Token Pools  Pool Name  Holds Get"
                 }
               }
             }
