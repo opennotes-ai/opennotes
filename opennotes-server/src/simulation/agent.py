@@ -68,7 +68,7 @@ action_selector: Agent[SimAgentDeps, ActionSelectionResult] = Agent(
 @action_selector.system_prompt
 def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
     personality = _truncate_personality(ctx.deps.agent_personality)
-    return (
+    base = (
         "You are deciding what action to take this turn in a Community Notes simulation.\n\n"
         f"Your personality: {personality}\n\n"
         "Choose exactly one action:\n"
@@ -77,6 +77,16 @@ def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "- pass_turn: Skip this turn\n\n"
         "Respond with your chosen action_type and a brief reasoning."
     )
+
+    tc = ctx.deps.tool_config
+    if tc and tc.get("research_enabled"):
+        base += (
+            "\n\nNote: You can use web search during any action to verify "
+            "claims or gather evidence. You may also choose pass_turn after "
+            "researching to store findings for future turns."
+        )
+
+    return base
 
 
 def estimate_tokens(text: str) -> int:
@@ -92,7 +102,7 @@ def _truncate_personality(personality: str, max_chars: int = MAX_PERSONALITY_CHA
 @sim_agent.system_prompt
 def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
     personality = _truncate_personality(ctx.deps.agent_personality)
-    return (
+    base = (
         "You are a Community Notes participant in a simulation. "
         "Your goal is to evaluate content and contribute helpful, "
         "accurate community notes.\n\n"
@@ -104,6 +114,19 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "Choose the most appropriate action based on the available "
         "requests and notes. Always explain your reasoning."
     )
+
+    tc = ctx.deps.tool_config
+    if tc and tc.get("research_enabled"):
+        base += (
+            "\n\nResearch tools:\n"
+            "You have access to web search. Use it to verify claims, "
+            "gather evidence, or understand context before writing or rating notes. "
+            "You can also spend a turn purely researching — search for information "
+            "and then pass your turn. Research results persist in your memory "
+            "and will be available in future turns."
+        )
+
+    return base
 
 
 @sim_agent.tool
@@ -446,6 +469,7 @@ __all__ = [
     "OpenNotesSimAgent",
     "SimAgentDeps",
     "action_selector",
+    "build_action_selector_instructions",
     "build_queue_summary",
     "estimate_tokens",
     "filter_research_tools",

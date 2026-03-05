@@ -18,6 +18,7 @@ from src.simulation.agent import (
     OpenNotesSimAgent,
     SimAgentDeps,
     _truncate_personality,
+    build_action_selector_instructions,
     build_instructions,
     estimate_tokens,
     filter_research_tools,
@@ -942,3 +943,60 @@ class TestResearchToolsGating:
 
     def test_research_tool_names_contains_web_search(self):
         assert "web_search" in RESEARCH_TOOL_NAMES
+
+
+class TestResearchPrompts:
+    def _make_ctx(self, tool_config=None):
+        deps = SimAgentDeps(
+            db=MagicMock(),
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="Test personality",
+            model_name=_GENERIC_MODEL_ID,
+            tool_config=tool_config,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+        return ctx
+
+    def test_instructions_include_research_when_enabled(self):
+        ctx = self._make_ctx(tool_config={"research_enabled": True})
+        result = build_instructions(ctx)
+        assert "web search" in result.lower()
+        assert "research" in result.lower()
+
+    def test_instructions_omit_research_when_disabled(self):
+        ctx = self._make_ctx(tool_config=None)
+        result = build_instructions(ctx)
+        assert "web search" not in result.lower()
+
+    def test_instructions_omit_research_when_false(self):
+        ctx = self._make_ctx(tool_config={"research_enabled": False})
+        result = build_instructions(ctx)
+        assert "web search" not in result.lower()
+
+    def test_instructions_mention_memory_persistence(self):
+        ctx = self._make_ctx(tool_config={"research_enabled": True})
+        result = build_instructions(ctx)
+        assert "future turns" in result.lower() or "memory" in result.lower()
+
+    def test_action_selector_includes_research_when_enabled(self):
+        ctx = self._make_ctx(tool_config={"research_enabled": True})
+        result = build_action_selector_instructions(ctx)
+        assert "web search" in result.lower() or "research" in result.lower()
+
+    def test_action_selector_omits_research_when_disabled(self):
+        ctx = self._make_ctx(tool_config=None)
+        result = build_action_selector_instructions(ctx)
+        assert "web search" not in result.lower()
+
+    def test_existing_prompt_unchanged_without_research(self):
+        ctx = self._make_ctx(tool_config=None)
+        result = build_instructions(ctx)
+        assert "Community Notes participant" in result
+        assert "write_note" in result
+        assert "rate_note" in result
+        assert "pass_turn" in result
