@@ -17,6 +17,7 @@ from src.simulation.agent import (
     WEBSEARCH_SUPPORTED_PROVIDERS,
     OpenNotesSimAgent,
     SimAgentDeps,
+    _is_research_available,
     _truncate_personality,
     build_action_selector_instructions,
     build_instructions,
@@ -1033,6 +1034,8 @@ class TestWebSearchToolGating:
 
 
 class TestResearchPrompts:
+    _SUPPORTED_MODEL_ID = ModelId.from_pydantic_ai("anthropic:claude-3-haiku-20240307")
+
     def _make_ctx(self, tool_config=None):
         deps = SimAgentDeps(
             db=MagicMock(),
@@ -1042,7 +1045,7 @@ class TestResearchPrompts:
             available_requests=[],
             available_notes=[],
             agent_personality="Test personality",
-            model_name=_GENERIC_MODEL_ID,
+            model_name=self._SUPPORTED_MODEL_ID,
             tool_config=tool_config,
         )
         ctx = MagicMock()
@@ -1087,3 +1090,77 @@ class TestResearchPrompts:
         assert "write_note" in result
         assert "rate_note" in result
         assert "pass_turn" in result
+
+
+class TestIsResearchAvailable:
+    def _make_deps(self, provider: str, tool_config=None):
+        return SimAgentDeps(
+            db=MagicMock(),
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="Test",
+            model_name=ModelId.from_pydantic_ai(f"{provider}:test-model"),
+            tool_config=tool_config,
+        )
+
+    def test_true_for_supported_provider_with_research_enabled(self):
+        deps = self._make_deps("anthropic", tool_config={"research_enabled": True})
+        assert _is_research_available(deps) is True
+
+    def test_false_for_unsupported_provider_with_research_enabled(self):
+        deps = self._make_deps("openai", tool_config={"research_enabled": True})
+        assert _is_research_available(deps) is False
+
+    def test_false_when_research_disabled(self):
+        deps = self._make_deps("anthropic", tool_config={"research_enabled": False})
+        assert _is_research_available(deps) is False
+
+    def test_false_when_tool_config_none(self):
+        deps = self._make_deps("anthropic", tool_config=None)
+        assert _is_research_available(deps) is False
+
+    def test_all_supported_providers(self):
+        for provider in ("anthropic", "google", "groq"):
+            deps = self._make_deps(provider, tool_config={"research_enabled": True})
+            assert _is_research_available(deps) is True
+
+
+class TestResearchPromptsUnsupportedProvider:
+    def _make_ctx(self, provider: str, tool_config=None):
+        deps = SimAgentDeps(
+            db=MagicMock(),
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="Test personality",
+            model_name=ModelId.from_pydantic_ai(f"{provider}:test-model"),
+            tool_config=tool_config,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+        return ctx
+
+    def test_instructions_omit_research_for_unsupported_provider(self):
+        ctx = self._make_ctx("openai", tool_config={"research_enabled": True})
+        result = build_instructions(ctx)
+        assert "web search" not in result.lower()
+
+    def test_action_selector_omits_research_for_unsupported_provider(self):
+        ctx = self._make_ctx("openai", tool_config={"research_enabled": True})
+        result = build_action_selector_instructions(ctx)
+        assert "web search" not in result.lower()
+
+    def test_instructions_include_research_for_supported_provider(self):
+        ctx = self._make_ctx("anthropic", tool_config={"research_enabled": True})
+        result = build_instructions(ctx)
+        assert "web search" in result.lower()
+
+    def test_action_selector_includes_research_for_supported_provider(self):
+        ctx = self._make_ctx("anthropic", tool_config={"research_enabled": True})
+        result = build_action_selector_instructions(ctx)
+        assert "web search" in result.lower()

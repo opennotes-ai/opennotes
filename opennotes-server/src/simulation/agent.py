@@ -43,6 +43,16 @@ class SimAgentDeps:
 
 WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "google", "groq"})
 
+
+def _is_research_available(deps: SimAgentDeps) -> bool:
+    tc = deps.tool_config
+    return bool(
+        tc
+        and tc.get("research_enabled")
+        and deps.model_name.provider in WEBSEARCH_SUPPORTED_PROVIDERS
+    )
+
+
 sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
     deps_type=SimAgentDeps,
     output_type=SimAgentAction,
@@ -68,8 +78,7 @@ def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "Respond with your chosen action_type and a brief reasoning."
     )
 
-    tc = ctx.deps.tool_config
-    if tc and tc.get("research_enabled"):
+    if _is_research_available(ctx.deps):
         base += (
             "\n\nNote: You can use web search during any action to verify "
             "claims or gather evidence. You may also choose pass_turn after "
@@ -105,8 +114,7 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "requests and notes. Always explain your reasoning."
     )
 
-    tc = ctx.deps.tool_config
-    if tc and tc.get("research_enabled"):
+    if _is_research_available(ctx.deps):
         base += (
             "\n\nResearch tools:\n"
             "You have access to web search. Use it to verify claims, "
@@ -327,15 +335,13 @@ class OpenNotesSimAgent:
             "usage_limits": usage_limits or UsageLimits(request_limit=3, total_tokens_limit=4000),
         }
 
-        tc = deps.tool_config
-        if tc and tc.get("research_enabled"):
-            if deps.model_name.provider in WEBSEARCH_SUPPORTED_PROVIDERS:
-                run_kwargs["builtin_tools"] = [WebSearchTool()]
-            else:
-                logger.warning(
-                    "WebSearchTool requested but provider %r is not supported; skipping",
-                    deps.model_name.provider,
-                )
+        if _is_research_available(deps):
+            run_kwargs["builtin_tools"] = [WebSearchTool()]
+        elif deps.tool_config and deps.tool_config.get("research_enabled"):
+            logger.warning(
+                "WebSearchTool requested but provider %r is not supported; skipping",
+                deps.model_name.provider,
+            )
 
         result = await self._agent.run(prompt, **run_kwargs)
         return result.output, result.all_messages()
@@ -473,6 +479,7 @@ __all__ = [
     "WEBSEARCH_SUPPORTED_PROVIDERS",
     "OpenNotesSimAgent",
     "SimAgentDeps",
+    "_is_research_available",
     "action_selector",
     "build_action_selector_instructions",
     "build_queue_summary",
