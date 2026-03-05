@@ -422,7 +422,7 @@ class OpenNotesSimAgent:
 
         has_notes = len(notes) > 0
         has_requests = len(requests) > 0
-        if result.data.action_type == SimActionType.PASS_TURN and (has_notes or has_requests):
+        if result.output.action_type == SimActionType.PASS_TURN and (has_notes or has_requests):
             parts: list[str] = []
             if has_notes:
                 verb = "is" if len(notes) == 1 else "are"
