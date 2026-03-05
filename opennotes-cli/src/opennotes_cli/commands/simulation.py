@@ -887,49 +887,52 @@ def _fetch_detailed_pages(
     all_agents: list[dict[str, Any]] = []
     page_number = 1
 
-    while True:
-        params = {"page[number]": page_number, "page[size]": 50}
-        response = client.get(
-            f"{base_url}/api/v2/simulations/{simulation_id}/analysis/detailed",
-            headers=headers,
-            params=params,
-        )
-        handle_jsonapi_error(response)
-        result = response.json()
+    with error_console.status("Fetching detailed analysis...") as status:
+        while True:
+            status.update(f"Fetching page {page_number} ({len(all_notes)} notes so far)")
+            params = {"page[number]": page_number, "page[size]": 50}
+            response = client.get(
+                f"{base_url}/api/v2/simulations/{simulation_id}/analysis/detailed",
+                headers=headers,
+                params=params,
+            )
+            handle_jsonapi_error(response)
+            result = response.json()
 
-        for resource in result.get("data", []):
-            attrs = resource.get("attributes", {})
-            note = {
-                "note_id": attrs.get("note_id", ""),
-                "summary": attrs.get("summary", ""),
-                "classification": attrs.get("classification", ""),
-                "status": attrs.get("status", ""),
-                "helpfulness_score": attrs.get("helpfulness_score"),
-                "author_agent": attrs.get("author_agent_name", ""),
-                "request_id": attrs.get("request_id"),
-                "created_at": attrs.get("created_at"),
-            }
-            all_notes.append(note)
-            for r in attrs.get("ratings", []):
-                all_ratings.append({
+            for resource in result.get("data", []):
+                attrs = resource.get("attributes", {})
+                note = {
                     "note_id": attrs.get("note_id", ""),
-                    "note_summary": attrs.get("summary", ""),
-                    "rater_agent": r.get("rater_agent_name", ""),
-                    "helpfulness_level": r.get("helpfulness_level", ""),
-                    "created_at": r.get("created_at"),
-                })
+                    "summary": attrs.get("summary", ""),
+                    "classification": attrs.get("classification", ""),
+                    "status": attrs.get("status", ""),
+                    "helpfulness_score": attrs.get("helpfulness_score"),
+                    "author_agent": attrs.get("author_agent_name", ""),
+                    "request_id": attrs.get("request_id"),
+                    "created_at": attrs.get("created_at"),
+                }
+                all_notes.append(note)
+                for r in attrs.get("ratings", []):
+                    all_ratings.append({
+                        "note_id": attrs.get("note_id", ""),
+                        "note_summary": attrs.get("summary", ""),
+                        "rater_agent": r.get("rater_agent_name", ""),
+                        "helpfulness_level": r.get("helpfulness_level", ""),
+                        "created_at": r.get("created_at"),
+                    })
 
-        if page_number == 1:
-            meta = result.get("meta", {})
-            variance = meta.get("request_variance", {})
-            all_requests.extend(variance.get("requests", []))
-            all_agents.extend(meta.get("agents", []))
+            if page_number == 1:
+                meta = result.get("meta", {})
+                variance = meta.get("request_variance", {})
+                all_requests.extend(variance.get("requests", []))
+                all_agents.extend(meta.get("agents", []))
 
-        links = result.get("links", {})
-        if not links.get("next"):
-            break
-        page_number += 1
+            links = result.get("links", {})
+            if not links.get("next"):
+                break
+            page_number += 1
 
+    error_console.print(f"Fetched {len(all_notes)} notes across {page_number} page(s)")
     return {"notes": all_notes, "ratings": all_ratings, "requests": all_requests, "agents": all_agents}
 
 
