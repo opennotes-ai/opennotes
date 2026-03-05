@@ -38,7 +38,9 @@ def mock_db():
     db = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
-    db.execute = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(return_value=mock_result)
     return db
 
 
@@ -72,6 +74,9 @@ def sample_deps(mock_db):
         agent_personality="You are a skeptical fact-checker who values evidence.",
         model_name=_TEST_MODEL_ID,
         tool_config=None,
+        simulation_run_id=uuid4(),
+        channel_window_size=20,
+        recent_channel_messages=[],
     )
 
 
@@ -115,8 +120,8 @@ class TestToolsRegistered:
     def test_pass_turn_tool_registered(self):
         assert "pass_turn" in self._get_tool_names()
 
-    def test_three_tools_total(self):
-        assert len(sim_agent._function_toolset.tools) == 3
+    def test_five_tools_total(self):
+        assert len(sim_agent._function_toolset.tools) == 5
 
 
 class TestWriteNoteTool:
@@ -482,6 +487,9 @@ class TestDeps:
         assert "available_notes" in field_names
         assert "agent_personality" in field_names
         assert "model_name" in field_names
+        assert "simulation_run_id" in field_names
+        assert "channel_window_size" in field_names
+        assert "recent_channel_messages" in field_names
 
     def test_deps_model_name_is_model_id(self, sample_deps):
         assert isinstance(sample_deps.model_name, ModelId)
