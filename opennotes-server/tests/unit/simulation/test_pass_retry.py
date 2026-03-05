@@ -47,7 +47,7 @@ def sample_deps(mock_db):
 
 def _make_run_result(data, messages=None):
     result = MagicMock()
-    result.data = data
+    result.output = data
     result.all_messages.return_value = messages or []
     return result
 

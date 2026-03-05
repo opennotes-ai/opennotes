@@ -96,7 +96,7 @@ class TestAgentClassExists:
 
 class TestToolsRegistered:
     def _get_tool_names(self):
-        return list(sim_agent._function_tools.keys())
+        return list(sim_agent._function_toolset.tools.keys())
 
     def test_write_note_tool_registered(self):
         assert "write_note" in self._get_tool_names()
@@ -111,7 +111,7 @@ class TestToolsRegistered:
         assert "pass_turn" in self._get_tool_names()
 
     def test_three_tools_total(self):
-        assert len(sim_agent._function_tools) == 3
+        assert len(sim_agent._function_toolset.tools) == 3
 
 
 class TestWriteNoteTool:
@@ -477,7 +477,7 @@ class TestOutput:
         assert SimActionType.PASS_TURN == "pass_turn"
 
     def test_agent_result_type_is_sim_agent_action(self):
-        assert sim_agent.result_type == SimAgentAction
+        assert sim_agent.output_type == SimAgentAction
 
     def test_pass_turn_action(self):
         action = SimAgentAction(

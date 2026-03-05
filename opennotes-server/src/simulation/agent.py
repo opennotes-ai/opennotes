@@ -38,13 +38,13 @@ class SimAgentDeps:
 
 sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
     deps_type=SimAgentDeps,
-    result_type=SimAgentAction,
+    output_type=SimAgentAction,
 )
 
 
 action_selector: Agent[SimAgentDeps, ActionSelectionResult] = Agent(
     deps_type=SimAgentDeps,
-    result_type=ActionSelectionResult,
+    output_type=ActionSelectionResult,
 )
 
 
@@ -259,7 +259,7 @@ class OpenNotesSimAgent:
             model=self._model.to_pydantic_ai(),
         )
 
-        if result.data.action_type == SimActionType.PASS_TURN:
+        if result.output.action_type == SimActionType.PASS_TURN:
             verbose_summary = build_queue_summary(requests, notes, verbose=True)
             retry_prompt = self._build_phase1_prompt(recent_actions, verbose_summary)
             result = await self._action_selector.run(
@@ -269,7 +269,7 @@ class OpenNotesSimAgent:
                 model=self._model.to_pydantic_ai(),
             )
 
-        return result.data, result.all_messages()
+        return result.output, result.all_messages()
 
     async def run_turn(
         self,
@@ -293,7 +293,7 @@ class OpenNotesSimAgent:
             model=self._model.to_pydantic_ai(),
             usage_limits=usage_limits or UsageLimits(request_limit=3, total_tokens_limit=4000),
         )
-        return result.data, result.all_messages()
+        return result.output, result.all_messages()
 
     def _build_turn_prompt(
         self,
