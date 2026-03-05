@@ -305,7 +305,20 @@ class OpenNotesSimAgent:
             result = await self._action_selector.run(
                 retry_prompt,
                 deps=deps,
-                message_history=result.all_messages(),
+                message_history=message_history,
+                model=self._model.to_pydantic_ai(),
+            )
+
+        if result.data.action_type == SimActionType.PASS_TURN and len(notes) > 0:
+            note_word = "note" if len(notes) == 1 else "notes"
+            nudge_prompt = (
+                f"There are {len(notes)} {note_word} available to rate. "
+                "Are you sure you want to pass? If any note interests you, choose rate_note."
+            )
+            result = await self._action_selector.run(
+                nudge_prompt,
+                deps=deps,
+                message_history=message_history,
                 model=self._model.to_pydantic_ai(),
             )
 
