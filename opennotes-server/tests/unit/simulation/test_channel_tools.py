@@ -5,7 +5,9 @@ import pytest
 
 from src.llm_config.model_id import ModelId
 from src.simulation.agent import (
+    MAX_CHANNEL_MESSAGE_LENGTH,
     SimAgentDeps,
+    build_instructions,
     post_to_channel,
     read_channel,
     sim_agent,
@@ -90,6 +92,29 @@ class TestPostToChannel:
         mock_db.add.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_rejects_message_exceeding_max_length(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        long_message = "x" * (MAX_CHANNEL_MESSAGE_LENGTH + 1)
+
+        result = await post_to_channel(ctx, message=long_message)
+
+        assert "Error" in result
+        assert "too long" in result
+        sample_deps.db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_accepts_message_at_max_length(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        exact_message = "x" * MAX_CHANNEL_MESSAGE_LENGTH
+
+        result = await post_to_channel(ctx, message=exact_message)
+
+        assert result == "Posted to channel."
+        sample_deps.db.add.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_handles_db_error(self, sample_deps):
         from sqlalchemy.exc import SQLAlchemyError
 
@@ -126,7 +151,8 @@ class TestReadChannel:
 
         result = await read_channel(ctx)
 
-        assert f"[Agent {agent_id}]" in result
+        short_id = str(agent_id)[:8]
+        assert f"[Agent {short_id}]" in result
         assert "Found something interesting" in result
         assert "Confirming pattern" in result
 
@@ -163,3 +189,33 @@ class TestReadChannel:
         result = await read_channel(ctx)
 
         assert result == "No channel messages yet."
+
+
+class TestChannelAgentIdentity:
+    def test_system_prompt_shows_agent_short_id(self):
+        agent_id = uuid4()
+        deps = SimAgentDeps(
+            db=MagicMock(),
+            community_server_id=uuid4(),
+            agent_instance_id=agent_id,
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="Test personality",
+            model_name=_TEST_MODEL_ID,
+            simulation_run_id=uuid4(),
+            recent_channel_messages=[
+                {
+                    "agent_instance_id": str(agent_id),
+                    "message_text": "Hello from agent",
+                }
+            ],
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        result = build_instructions(ctx)
+
+        short_id = str(agent_id)[:8]
+        assert f"[Agent {short_id}]" in result
+        assert "[Agent]:" not in result

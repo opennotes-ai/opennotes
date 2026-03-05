@@ -23,6 +23,7 @@ MAX_PERSONALITY_CHARS: int = 500
 MAX_CONTEXT_REQUESTS: int = 5
 MAX_CONTEXT_NOTES: int = 5
 MAX_LINKED_NOTES_PER_REQUEST: int = 10
+MAX_CHANNEL_MESSAGE_LENGTH: int = 2000
 TOKEN_BUDGET: int = 4000
 
 
@@ -137,7 +138,8 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
             "or read more with read_channel.\n\n"
         )
         for msg in ctx.deps.recent_channel_messages:
-            base += f"[Agent]: {msg['message_text']}\n"
+            short_id = str(msg["agent_instance_id"])[:8]
+            base += f"[Agent {short_id}]: {msg['message_text']}\n"
     elif ctx.deps.simulation_run_id is not None:
         base += (
             "\n\nShared channel:\n"
@@ -264,6 +266,12 @@ async def post_to_channel(
     if ctx.deps.simulation_run_id is None:
         return "Error: channel not available (no simulation_run_id)."
 
+    if len(message) > MAX_CHANNEL_MESSAGE_LENGTH:
+        return (
+            f"Error: message too long ({len(message)} chars). "
+            f"Maximum is {MAX_CHANNEL_MESSAGE_LENGTH} characters."
+        )
+
     msg = SimChannelMessage(
         simulation_run_id=ctx.deps.simulation_run_id,
         agent_instance_id=ctx.deps.agent_instance_id,
@@ -300,7 +308,8 @@ async def read_channel(
 
     lines = []
     for msg in reversed(messages):
-        lines.append(f"[Agent {msg.agent_instance_id}]: {msg.message_text}")
+        short_id = str(msg.agent_instance_id)[:8]
+        lines.append(f"[Agent {short_id}]: {msg.message_text}")
     return "\n".join(lines)
 
 
@@ -616,6 +625,7 @@ class OpenNotesSimAgent:
 
 
 __all__ = [
+    "MAX_CHANNEL_MESSAGE_LENGTH",
     "MAX_CONTEXT_NOTES",
     "MAX_CONTEXT_REQUESTS",
     "MAX_LINKED_NOTES_PER_REQUEST",
