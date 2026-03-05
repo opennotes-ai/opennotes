@@ -205,6 +205,28 @@ def _truncate(text: str, max_len: int) -> str:
     return text[:max_len].rsplit(" ", 1)[0] + "..."
 
 
+def _requests_label(n_req: int, n_notes: int) -> str:
+    if n_req == 0 and n_notes > 0:
+        return (
+            f"No content requests \u2014 but {_pluralize(n_notes, 'note')} available to rate below."
+        )
+    if n_req == 0:
+        return "No content requests to write notes for."
+    if n_req == 1:
+        return "1 content request to write a note for:"
+    return f"{n_req} content requests to write notes for:"
+
+
+def _notes_label(n_notes: int, n_req: int) -> str | None:
+    if n_notes == 0:
+        return "No notes available to rate."
+    if n_req == 0:
+        return None
+    if n_notes == 1:
+        return "1 note available to rate:"
+    return f"{n_notes} notes available to rate:"
+
+
 def build_queue_summary(
     requests: list[dict],
     notes: list[dict],
@@ -214,20 +236,27 @@ def build_queue_summary(
     trunc = VERBOSE_TRUNCATE if verbose else BRIEF_TRUNCATE
 
     lines: list[str] = []
+    n_req = len(requests)
+    n_notes = len(notes)
 
-    lines.append(_pluralize(len(requests), "request"))
+    lines.append(_requests_label(n_req, n_notes))
+
     shown_requests = requests if max_titles is None else requests[:max_titles]
     for req in shown_requests:
         lines.append(f"  - {_truncate(req.get('content') or '', trunc)}")
-    if max_titles is not None and len(requests) > max_titles:
-        lines.append(f"  ...and {len(requests) - max_titles} more")
+    if max_titles is not None and n_req > max_titles:
+        lines.append(f"  ...and {n_req - max_titles} more")
 
-    lines.append(_pluralize(len(notes), "note"))
-    shown_notes = notes if max_titles is None else notes[:max_titles]
-    for note in shown_notes:
-        lines.append(f"  - {_truncate(note.get('summary') or '', trunc)}")
-    if max_titles is not None and len(notes) > max_titles:
-        lines.append(f"  ...and {len(notes) - max_titles} more")
+    note_label = _notes_label(n_notes, n_req)
+    if note_label is not None:
+        lines.append(note_label)
+
+    if n_notes > 0 and n_req > 0:
+        shown_notes = notes if max_titles is None else notes[:max_titles]
+        for note in shown_notes:
+            lines.append(f"  - {_truncate(note.get('summary') or '', trunc)}")
+        if max_titles is not None and n_notes > max_titles:
+            lines.append(f"  ...and {n_notes - max_titles} more")
 
     return "\n".join(lines)
 
