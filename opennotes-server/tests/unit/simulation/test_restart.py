@@ -329,8 +329,16 @@ class TestRemovalReasonConstants:
     def test_restartable_reasons_include_simulation_cancelled(self) -> None:
         assert SIMULATION_CANCELLED in RESTARTABLE_REMOVAL_REASONS
 
-    def test_no_overlap_between_sets(self) -> None:
-        assert RESTARTABLE_REMOVAL_REASONS.isdisjoint(FOR_CAUSE_REMOVAL_REASONS)
+    def test_max_retries_exceeded_in_both_sets(self) -> None:
+        assert MAX_RETRIES_EXCEEDED in FOR_CAUSE_REMOVAL_REASONS
+        assert MAX_RETRIES_EXCEEDED in RESTARTABLE_REMOVAL_REASONS
+
+    def test_no_unintentional_overlap_between_sets(self) -> None:
+        intentional_overlap = {MAX_RETRIES_EXCEEDED}
+        unintentional = (
+            RESTARTABLE_REMOVAL_REASONS & FOR_CAUSE_REMOVAL_REASONS
+        ) - intentional_overlap
+        assert not unintentional, f"Unexpected overlap: {unintentional}"
 
     def test_constant_values_match_expected_strings(self) -> None:
         assert REMOVAL_RATE == "removal_rate"
