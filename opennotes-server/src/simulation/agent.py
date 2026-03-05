@@ -1,9 +1,11 @@
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic_ai.messages import ModelMessage
+from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
@@ -34,11 +36,26 @@ class SimAgentDeps:
     available_notes: list[dict]
     agent_personality: str
     model_name: ModelId
+    tool_config: dict[str, Any] | None = field(default=None)
+
+
+RESEARCH_TOOL_NAMES = frozenset({"web_search"})
+
+
+async def filter_research_tools(
+    ctx: RunContext[SimAgentDeps], tool_defs: list[ToolDefinition]
+) -> list[ToolDefinition] | None:
+    tc = ctx.deps.tool_config
+    if tc and tc.get("research_enabled"):
+        return tool_defs
+    return [td for td in tool_defs if td.name not in RESEARCH_TOOL_NAMES]
 
 
 sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
     deps_type=SimAgentDeps,
     output_type=SimAgentAction,
+    builtin_tools=[WebSearchTool()],
+    prepare_tools=filter_research_tools,
 )
 
 
@@ -424,11 +441,13 @@ __all__ = [
     "MAX_LINKED_NOTES_PER_REQUEST",
     "MAX_PERSONALITY_CHARS",
     "PHASE1_DIVERSITY_THRESHOLD",
+    "RESEARCH_TOOL_NAMES",
     "TOKEN_BUDGET",
     "OpenNotesSimAgent",
     "SimAgentDeps",
     "action_selector",
     "build_queue_summary",
     "estimate_tokens",
+    "filter_research_tools",
     "sim_agent",
 ]

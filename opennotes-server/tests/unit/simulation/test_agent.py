@@ -4,8 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from pydantic_ai import Agent
+from pydantic_ai import Agent, WebSearchTool
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import ToolDefinition
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from src.llm_config.model_id import ModelId
@@ -13,11 +14,13 @@ from src.simulation.agent import (
     MAX_CONTEXT_NOTES,
     MAX_CONTEXT_REQUESTS,
     MAX_PERSONALITY_CHARS,
+    RESEARCH_TOOL_NAMES,
     OpenNotesSimAgent,
     SimAgentDeps,
     _truncate_personality,
     build_instructions,
     estimate_tokens,
+    filter_research_tools,
     pass_turn,
     rate_note,
     sim_agent,
@@ -67,6 +70,7 @@ def sample_deps(mock_db):
         ],
         agent_personality="You are a skeptical fact-checker who values evidence.",
         model_name=_TEST_MODEL_ID,
+        tool_config=None,
     )
 
 
@@ -660,9 +664,10 @@ class TestBuildTurnPromptWithLinkedNotes:
 
 class TestRunTurnWithTestModel:
     @pytest.mark.asyncio
-    async def test_run_turn_returns_action_and_messages(self, sample_deps):
+    async def test_run_turn_returns_action_and_messages(self, sample_deps, monkeypatch):
         agent = OpenNotesSimAgent()
         m = TestModel()
+        monkeypatch.setattr(sim_agent, "_builtin_tools", [])
         with sim_agent.override(model=m):
             action, messages = await agent.run_turn(sample_deps)
 
@@ -671,9 +676,10 @@ class TestRunTurnWithTestModel:
         assert len(messages) > 0
 
     @pytest.mark.asyncio
-    async def test_run_turn_respects_model_override(self, sample_deps):
+    async def test_run_turn_respects_model_override(self, sample_deps, monkeypatch):
         agent = OpenNotesSimAgent(model=_GENERIC_MODEL_ID)
         m = TestModel()
+        monkeypatch.setattr(sim_agent, "_builtin_tools", [])
         with sim_agent.override(model=m):
             action, _messages = await agent.run_turn(sample_deps)
 
@@ -865,3 +871,74 @@ class TestBuildTurnPromptTokenBudget:
             prompts.add(prompt)
 
         assert len(prompts) > 1
+
+
+class TestResearchToolsGating:
+    def _make_ctx(self, tool_config: dict | None = None) -> MagicMock:
+        ctx = MagicMock()
+        ctx.deps = SimAgentDeps(
+            db=AsyncMock(),
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+            tool_config=tool_config,
+        )
+        return ctx
+
+    def _make_tool_defs(self) -> list[ToolDefinition]:
+        return [
+            ToolDefinition(name="write_note", description="write a note"),
+            ToolDefinition(name="web_search", description="search the web"),
+            ToolDefinition(name="rate_note", description="rate a note"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_prepare_tools_filters_search_when_disabled(self):
+        ctx = self._make_ctx(tool_config=None)
+        tool_defs = self._make_tool_defs()
+
+        result = await filter_research_tools(ctx, tool_defs)
+
+        assert result is not None
+        names = {td.name for td in result}
+        assert "web_search" not in names
+        assert "write_note" in names
+        assert "rate_note" in names
+
+    @pytest.mark.asyncio
+    async def test_prepare_tools_filters_when_research_false(self):
+        ctx = self._make_ctx(tool_config={"research_enabled": False})
+        tool_defs = self._make_tool_defs()
+
+        result = await filter_research_tools(ctx, tool_defs)
+
+        assert result is not None
+        names = {td.name for td in result}
+        assert "web_search" not in names
+
+    @pytest.mark.asyncio
+    async def test_prepare_tools_keeps_search_when_enabled(self):
+        ctx = self._make_ctx(tool_config={"research_enabled": True})
+        tool_defs = self._make_tool_defs()
+
+        result = await filter_research_tools(ctx, tool_defs)
+
+        assert result is not None
+        names = {td.name for td in result}
+        assert "web_search" in names
+        assert "write_note" in names
+        assert "rate_note" in names
+
+    def test_sim_agent_has_websearch_builtin(self):
+        has_web_search = any(isinstance(t, WebSearchTool) for t in sim_agent._builtin_tools)
+        assert has_web_search
+
+    def test_sim_agent_has_prepare_tools(self):
+        assert sim_agent._prepare_tools is not None
+
+    def test_research_tool_names_contains_web_search(self):
+        assert "web_search" in RESEARCH_TOOL_NAMES

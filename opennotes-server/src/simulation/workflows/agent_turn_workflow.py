@@ -93,6 +93,7 @@ def load_agent_context_step(agent_instance_id: str) -> dict[str, Any]:
                 "model_params": profile.model_params,
                 "memory_compaction_strategy": profile.memory_compaction_strategy,
                 "memory_compaction_config": profile.memory_compaction_config,
+                "tool_config": profile.tool_config,
                 "message_history": message_history,
                 "memory_id": memory_id,
                 "memory_turn_count": memory_turn_count,
@@ -265,6 +266,7 @@ def select_action_step(
             available_notes=deps_data["available_notes"],
             agent_personality=context["personality"],
             model_name=model_id,
+            tool_config=context.get("tool_config"),
         )
 
         selection, phase1_messages = await agent.select_action(
@@ -344,6 +346,7 @@ def execute_agent_turn_step(
                 available_notes=deps_data["available_notes"],
                 agent_personality=context["personality"],
                 model_name=model_id,
+                tool_config=context.get("tool_config"),
             )
 
             try:
