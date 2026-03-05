@@ -39,6 +39,7 @@ def _make_context(
     memory_turn_count: int = 0,
     message_history: list | None = None,
     recent_actions: list[str] | None = None,
+    tool_config: dict | None = None,
 ) -> dict:
     return {
         "agent_instance_id": agent_instance_id or str(uuid4()),
@@ -51,6 +52,7 @@ def _make_context(
         "model_params": {"request_limit": 3, "total_tokens_limit": 4000},
         "memory_compaction_strategy": "sliding_window",
         "memory_compaction_config": None,
+        "tool_config": tool_config,
         "message_history": message_history or [],
         "memory_id": memory_id or str(uuid4()),
         "memory_turn_count": memory_turn_count,

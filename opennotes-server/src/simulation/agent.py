@@ -1,3 +1,4 @@
+import logging
 import random
 from dataclasses import dataclass, field
 from typing import Any
@@ -5,7 +6,6 @@ from uuid import UUID
 
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic_ai.messages import ModelMessage
-from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.llm_config.model_id import ModelId
 from src.notes.models import Note, Rating
 from src.simulation.schemas import ActionSelectionResult, SimActionType, SimAgentAction
+
+logger = logging.getLogger(__name__)
 
 MAX_PERSONALITY_CHARS: int = 500
 MAX_CONTEXT_REQUESTS: int = 5
@@ -39,23 +41,11 @@ class SimAgentDeps:
     tool_config: dict[str, Any] | None = field(default=None)
 
 
-RESEARCH_TOOL_NAMES = frozenset({"web_search"})
-
-
-async def filter_research_tools(
-    ctx: RunContext[SimAgentDeps], tool_defs: list[ToolDefinition]
-) -> list[ToolDefinition] | None:
-    tc = ctx.deps.tool_config
-    if tc and tc.get("research_enabled"):
-        return tool_defs
-    return [td for td in tool_defs if td.name not in RESEARCH_TOOL_NAMES]
-
+WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "google", "groq"})
 
 sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
     deps_type=SimAgentDeps,
     output_type=SimAgentAction,
-    builtin_tools=[WebSearchTool()],
-    prepare_tools=filter_research_tools,
 )
 
 
@@ -164,10 +154,12 @@ async def write_note(
     ctx.deps.db.add(note)
     try:
         await ctx.deps.db.flush()
-    except IntegrityError as e:
-        return f"Error: database integrity error creating note: {e}"
-    except SQLAlchemyError as e:
-        return f"Error: database error creating note: {e}"
+    except IntegrityError:
+        logger.exception("Integrity error creating note for request %s", request_id)
+        return "Error: could not create note due to a constraint violation."
+    except SQLAlchemyError:
+        logger.exception("Database error creating note for request %s", request_id)
+        return "Error: could not create note due to a database error."
 
     return f"Note created for request '{request_id}' with classification '{classification}'."
 
@@ -215,10 +207,12 @@ async def rate_note(
     try:
         await ctx.deps.db.execute(stmt)
         await ctx.deps.db.flush()
-    except IntegrityError as e:
-        return f"Error: database integrity error creating rating: {e}"
-    except SQLAlchemyError as e:
-        return f"Error: database error creating rating: {e}"
+    except IntegrityError:
+        logger.exception("Integrity error creating rating for note %s", note_id)
+        return "Error: could not create rating due to a constraint violation."
+    except SQLAlchemyError:
+        logger.exception("Database error creating rating for note %s", note_id)
+        return "Error: could not create rating due to a database error."
 
     return f"Rated note '{note_id}' as '{helpfulness_level}'."
 
@@ -326,13 +320,24 @@ class OpenNotesSimAgent:
             )
         else:
             prompt = self._build_turn_prompt(deps)
-        result = await self._agent.run(
-            prompt,
-            deps=deps,
-            message_history=message_history,
-            model=self._model.to_pydantic_ai(),
-            usage_limits=usage_limits or UsageLimits(request_limit=3, total_tokens_limit=4000),
-        )
+        run_kwargs: dict[str, Any] = {
+            "deps": deps,
+            "message_history": message_history,
+            "model": self._model.to_pydantic_ai(),
+            "usage_limits": usage_limits or UsageLimits(request_limit=3, total_tokens_limit=4000),
+        }
+
+        tc = deps.tool_config
+        if tc and tc.get("research_enabled"):
+            if deps.model_name.provider in WEBSEARCH_SUPPORTED_PROVIDERS:
+                run_kwargs["builtin_tools"] = [WebSearchTool()]
+            else:
+                logger.warning(
+                    "WebSearchTool requested but provider %r is not supported; skipping",
+                    deps.model_name.provider,
+                )
+
+        result = await self._agent.run(prompt, **run_kwargs)
         return result.output, result.all_messages()
 
     def _build_turn_prompt(
@@ -464,14 +469,13 @@ __all__ = [
     "MAX_LINKED_NOTES_PER_REQUEST",
     "MAX_PERSONALITY_CHARS",
     "PHASE1_DIVERSITY_THRESHOLD",
-    "RESEARCH_TOOL_NAMES",
     "TOKEN_BUDGET",
+    "WEBSEARCH_SUPPORTED_PROVIDERS",
     "OpenNotesSimAgent",
     "SimAgentDeps",
     "action_selector",
     "build_action_selector_instructions",
     "build_queue_summary",
     "estimate_tokens",
-    "filter_research_tools",
     "sim_agent",
 ]

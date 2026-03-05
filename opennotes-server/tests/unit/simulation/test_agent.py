@@ -1,4 +1,5 @@
 import inspect
+import logging
 from dataclasses import fields
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -6,7 +7,6 @@ from uuid import uuid4
 import pytest
 from pydantic_ai import Agent, WebSearchTool
 from pydantic_ai.models.test import TestModel
-from pydantic_ai.tools import ToolDefinition
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from src.llm_config.model_id import ModelId
@@ -14,14 +14,13 @@ from src.simulation.agent import (
     MAX_CONTEXT_NOTES,
     MAX_CONTEXT_REQUESTS,
     MAX_PERSONALITY_CHARS,
-    RESEARCH_TOOL_NAMES,
+    WEBSEARCH_SUPPORTED_PROVIDERS,
     OpenNotesSimAgent,
     SimAgentDeps,
     _truncate_personality,
     build_action_selector_instructions,
     build_instructions,
     estimate_tokens,
-    filter_research_tools,
     pass_turn,
     rate_note,
     sim_agent,
@@ -221,8 +220,7 @@ class TestWriteNoteTool:
             classification="NOT_MISLEADING",
         )
 
-        assert "Error" in result
-        assert "integrity error" in result
+        assert result == "Error: could not create note due to a constraint violation."
 
     @pytest.mark.asyncio
     async def test_write_note_handles_sqlalchemy_error(self, sample_deps):
@@ -238,8 +236,25 @@ class TestWriteNoteTool:
             classification="NOT_MISLEADING",
         )
 
-        assert "Error" in result
-        assert "database error" in result
+        assert result == "Error: could not create note due to a database error."
+
+    @pytest.mark.asyncio
+    async def test_write_note_integrity_error_does_not_leak_details(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.db.flush = AsyncMock(
+            side_effect=IntegrityError("ix_notes_author_request", {}, None)
+        )
+
+        req_id = sample_deps.available_requests[0]["request_id"]
+        result = await write_note(
+            ctx,
+            request_id=req_id,
+            summary="test",
+            classification="NOT_MISLEADING",
+        )
+
+        assert "ix_notes_author_request" not in result
 
 
 class TestRateNoteTool:
@@ -359,8 +374,7 @@ class TestRateNoteTool:
             helpfulness_level="HELPFUL",
         )
 
-        assert "Error" in result
-        assert "integrity error" in result
+        assert result == "Error: could not create rating due to a constraint violation."
 
     @pytest.mark.asyncio
     async def test_rate_note_handles_sqlalchemy_error(self, sample_deps):
@@ -375,8 +389,24 @@ class TestRateNoteTool:
             helpfulness_level="HELPFUL",
         )
 
-        assert "Error" in result
-        assert "database error" in result
+        assert result == "Error: could not create rating due to a database error."
+
+    @pytest.mark.asyncio
+    async def test_rate_note_integrity_error_does_not_leak_details(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.db.execute = AsyncMock(
+            side_effect=IntegrityError("ix_ratings_note_rater", {}, None)
+        )
+
+        note_id = sample_deps.available_notes[0]["note_id"]
+        result = await rate_note(
+            ctx,
+            note_id=note_id,
+            helpfulness_level="HELPFUL",
+        )
+
+        assert "ix_ratings_note_rater" not in result
 
 
 class TestPassTurnTool:
@@ -665,10 +695,9 @@ class TestBuildTurnPromptWithLinkedNotes:
 
 class TestRunTurnWithTestModel:
     @pytest.mark.asyncio
-    async def test_run_turn_returns_action_and_messages(self, sample_deps, monkeypatch):
+    async def test_run_turn_returns_action_and_messages(self, sample_deps):
         agent = OpenNotesSimAgent()
         m = TestModel()
-        monkeypatch.setattr(sim_agent, "_builtin_tools", [])
         with sim_agent.override(model=m):
             action, messages = await agent.run_turn(sample_deps)
 
@@ -677,10 +706,9 @@ class TestRunTurnWithTestModel:
         assert len(messages) > 0
 
     @pytest.mark.asyncio
-    async def test_run_turn_respects_model_override(self, sample_deps, monkeypatch):
+    async def test_run_turn_respects_model_override(self, sample_deps):
         agent = OpenNotesSimAgent(model=_GENERIC_MODEL_ID)
         m = TestModel()
-        monkeypatch.setattr(sim_agent, "_builtin_tools", [])
         with sim_agent.override(model=m):
             action, _messages = await agent.run_turn(sample_deps)
 
@@ -874,75 +902,134 @@ class TestBuildTurnPromptTokenBudget:
         assert len(prompts) > 1
 
 
-class TestResearchToolsGating:
-    def _make_ctx(self, tool_config: dict | None = None) -> MagicMock:
-        ctx = MagicMock()
-        ctx.deps = SimAgentDeps(
-            db=AsyncMock(),
+class TestWebSearchToolGating:
+    def test_sim_agent_has_no_builtin_tools(self):
+        assert len(sim_agent._builtin_tools) == 0
+
+    def test_sim_agent_has_no_prepare_tools(self):
+        assert sim_agent._prepare_tools is None
+
+    def test_websearch_supported_providers_is_frozenset(self):
+        assert isinstance(WEBSEARCH_SUPPORTED_PROVIDERS, frozenset)
+        assert "anthropic" in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "google" in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "groq" in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "openai" not in WEBSEARCH_SUPPORTED_PROVIDERS
+
+    @pytest.mark.asyncio
+    async def test_run_turn_passes_websearch_when_enabled_and_supported(self, mock_db):
+        from unittest.mock import patch
+
+        supported_model = ModelId.from_pydantic_ai("anthropic:claude-3-haiku-20240307")
+        deps = SimAgentDeps(
+            db=mock_db,
             community_server_id=uuid4(),
             agent_instance_id=uuid4(),
             user_profile_id=uuid4(),
-            available_requests=[],
+            available_requests=[
+                {"request_id": str(uuid4()), "content": "test", "status": "PENDING"}
+            ],
             available_notes=[],
             agent_personality="test",
-            model_name=_GENERIC_MODEL_ID,
-            tool_config=tool_config,
+            model_name=supported_model,
+            tool_config={"research_enabled": True},
         )
-        return ctx
 
-    def _make_tool_defs(self) -> list[ToolDefinition]:
-        return [
-            ToolDefinition(name="write_note", description="write a note"),
-            ToolDefinition(name="web_search", description="search the web"),
-            ToolDefinition(name="rate_note", description="rate a note"),
-        ]
+        mock_action = SimAgentAction(action_type=SimActionType.PASS_TURN, reasoning="test")
+        mock_result = MagicMock()
+        mock_result.output = mock_action
+        mock_result.all_messages.return_value = []
 
-    @pytest.mark.asyncio
-    async def test_prepare_tools_filters_search_when_disabled(self):
-        ctx = self._make_ctx(tool_config=None)
-        tool_defs = self._make_tool_defs()
+        captured_kwargs: dict = {}
 
-        result = await filter_research_tools(ctx, tool_defs)
+        async def capture_run(prompt, **kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_result
 
-        assert result is not None
-        names = {td.name for td in result}
-        assert "web_search" not in names
-        assert "write_note" in names
-        assert "rate_note" in names
+        agent = OpenNotesSimAgent(model=supported_model)
+        with patch.object(agent._agent, "run", side_effect=capture_run):
+            await agent.run_turn(deps)
+
+        assert "builtin_tools" in captured_kwargs
+        assert any(isinstance(t, WebSearchTool) for t in captured_kwargs["builtin_tools"])
 
     @pytest.mark.asyncio
-    async def test_prepare_tools_filters_when_research_false(self):
-        ctx = self._make_ctx(tool_config={"research_enabled": False})
-        tool_defs = self._make_tool_defs()
+    async def test_run_turn_skips_websearch_when_disabled(self, mock_db):
+        from unittest.mock import patch
 
-        result = await filter_research_tools(ctx, tool_defs)
+        supported_model = ModelId.from_pydantic_ai("anthropic:claude-3-haiku-20240307")
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[
+                {"request_id": str(uuid4()), "content": "test", "status": "PENDING"}
+            ],
+            available_notes=[],
+            agent_personality="test",
+            model_name=supported_model,
+            tool_config=None,
+        )
 
-        assert result is not None
-        names = {td.name for td in result}
-        assert "web_search" not in names
+        mock_action = SimAgentAction(action_type=SimActionType.PASS_TURN, reasoning="test")
+        mock_result = MagicMock()
+        mock_result.output = mock_action
+        mock_result.all_messages.return_value = []
+
+        captured_kwargs: dict = {}
+
+        async def capture_run(prompt, **kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_result
+
+        agent = OpenNotesSimAgent(model=supported_model)
+        with patch.object(agent._agent, "run", side_effect=capture_run):
+            await agent.run_turn(deps)
+
+        assert "builtin_tools" not in captured_kwargs
 
     @pytest.mark.asyncio
-    async def test_prepare_tools_keeps_search_when_enabled(self):
-        ctx = self._make_ctx(tool_config={"research_enabled": True})
-        tool_defs = self._make_tool_defs()
+    async def test_run_turn_skips_websearch_for_unsupported_provider_and_logs(
+        self, mock_db, caplog
+    ):
+        from unittest.mock import patch
 
-        result = await filter_research_tools(ctx, tool_defs)
+        unsupported_model = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[
+                {"request_id": str(uuid4()), "content": "test", "status": "PENDING"}
+            ],
+            available_notes=[],
+            agent_personality="test",
+            model_name=unsupported_model,
+            tool_config={"research_enabled": True},
+        )
 
-        assert result is not None
-        names = {td.name for td in result}
-        assert "web_search" in names
-        assert "write_note" in names
-        assert "rate_note" in names
+        mock_action = SimAgentAction(action_type=SimActionType.PASS_TURN, reasoning="test")
+        mock_result = MagicMock()
+        mock_result.output = mock_action
+        mock_result.all_messages.return_value = []
 
-    def test_sim_agent_has_websearch_builtin(self):
-        has_web_search = any(isinstance(t, WebSearchTool) for t in sim_agent._builtin_tools)
-        assert has_web_search
+        captured_kwargs: dict = {}
 
-    def test_sim_agent_has_prepare_tools(self):
-        assert sim_agent._prepare_tools is not None
+        async def capture_run(prompt, **kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_result
 
-    def test_research_tool_names_contains_web_search(self):
-        assert "web_search" in RESEARCH_TOOL_NAMES
+        agent = OpenNotesSimAgent(model=unsupported_model)
+        with (
+            caplog.at_level(logging.WARNING, logger="src.simulation.agent"),
+            patch.object(agent._agent, "run", side_effect=capture_run),
+        ):
+            await agent.run_turn(deps)
+
+        assert "builtin_tools" not in captured_kwargs
+        assert any("not supported" in r.message for r in caplog.records)
 
 
 class TestResearchPrompts:
