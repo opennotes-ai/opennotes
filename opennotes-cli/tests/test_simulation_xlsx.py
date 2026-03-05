@@ -582,6 +582,74 @@ class TestXlsxFontAndAlignment:
                 assert ws.cell(row=1, column=1).font.name == "IBM Plex Sans Condensed"
 
 
+class TestFormatPydanticAiMessages:
+    def test_parts_none_treated_as_empty(self) -> None:
+        from opennotes_cli.commands.simulation import _format_pydantic_ai_messages
+
+        msgs = [{"parts": None, "kind": "request"}]
+        assert _format_pydantic_ai_messages(msgs) == ""
+
+    def test_parts_key_missing_treated_as_empty(self) -> None:
+        from opennotes_cli.commands.simulation import _format_pydantic_ai_messages
+
+        msgs = [{"kind": "request"}]
+        assert _format_pydantic_ai_messages(msgs) == ""
+
+    def test_dict_content_serialized_as_json(self) -> None:
+        from opennotes_cli.commands.simulation import _format_pydantic_ai_messages
+
+        msgs = [
+            {
+                "parts": [
+                    {
+                        "tool_name": "search",
+                        "content": {"results": [1, 2, 3]},
+                        "tool_call_id": "tc1",
+                        "part_kind": "tool-return",
+                    }
+                ],
+                "kind": "request",
+            }
+        ]
+        result = _format_pydantic_ai_messages(msgs)
+        assert "tool-return:" in result
+        assert '"results"' in result
+        assert "[1, 2, 3]" in result
+
+    def test_list_content_serialized_as_json(self) -> None:
+        from opennotes_cli.commands.simulation import _format_pydantic_ai_messages
+
+        msgs = [
+            {
+                "parts": [
+                    {
+                        "content": [{"type": "text", "text": "hello"}],
+                        "part_kind": "user-prompt",
+                        "timestamp": "2026-03-01T10:00:00Z",
+                    }
+                ],
+                "kind": "request",
+            }
+        ]
+        result = _format_pydantic_ai_messages(msgs)
+        assert "user:" in result
+        assert '"text"' in result
+        assert '"hello"' in result
+
+    def test_string_content_unchanged(self) -> None:
+        from opennotes_cli.commands.simulation import _format_pydantic_ai_messages
+
+        msgs = [
+            {
+                "parts": [
+                    {"content": "plain text", "part_kind": "text"},
+                ],
+                "kind": "response",
+            }
+        ]
+        assert _format_pydantic_ai_messages(msgs) == "assistant: plain text"
+
+
 class TestOutputFlag:
     def test_output_flag_in_help(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["simulation", "analysis", "--help"])

@@ -1219,16 +1219,20 @@ _PART_KIND_TO_ROLE = {
 def _format_pydantic_ai_messages(msgs: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for msg in msgs:
-        parts = msg.get("parts", [])
+        parts = msg.get("parts") or []
         for part in parts:
             part_kind = part.get("part_kind", "")
             if part_kind == "system-prompt":
                 continue
             role = _PART_KIND_TO_ROLE.get(part_kind, part_kind)
             if part_kind == "tool-call":
-                content = part.get("tool_name", "")
+                raw = part.get("tool_name", "")
             else:
-                content = part.get("content", "")
+                raw = part.get("content", "")
+            if isinstance(raw, str):
+                content = raw
+            else:
+                content = json.dumps(raw, default=str)
             lines.append(f"{role}: {content}")
     return "\n".join(lines)
 
