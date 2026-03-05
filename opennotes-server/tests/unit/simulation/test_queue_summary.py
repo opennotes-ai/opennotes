@@ -108,6 +108,7 @@ class TestBuildQueueSummaryEdgeCases:
         result = build_queue_summary([], notes)
         assert "1 note available to rate" in result
         assert "No content requests" in result
+        assert "Only note" in result
 
     def test_exactly_3_items_no_more_suffix(self):
         requests = [_make_request(f"Req {i}") for i in range(3)]
@@ -132,9 +133,12 @@ class TestBuildQueueSummaryEdgeCases:
         assert "No content requests" in result
         assert "but" in result.lower()
         assert "notes available to rate" in result.lower()
+        assert "Some note" in result
+        assert "Another note" in result
 
     def test_no_requests_single_note_cross_reference(self):
         notes = [_make_note("Only note")]
         result = build_queue_summary([], notes)
         assert "No content requests" in result
         assert "but" in result.lower()
+        assert "Only note" in result

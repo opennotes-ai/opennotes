@@ -218,11 +218,9 @@ def _requests_label(n_req: int, n_notes: int) -> str:
     return f"{n_req} content requests to write notes for:"
 
 
-def _notes_label(n_notes: int, n_req: int) -> str | None:
+def _notes_label(n_notes: int) -> str | None:
     if n_notes == 0:
         return "No notes available to rate."
-    if n_req == 0:
-        return None
     if n_notes == 1:
         return "1 note available to rate:"
     return f"{n_notes} notes available to rate:"
@@ -248,11 +246,11 @@ def build_queue_summary(
     if max_titles is not None and n_req > max_titles:
         lines.append(f"  ...and {n_req - max_titles} more")
 
-    note_label = _notes_label(n_notes, n_req)
+    note_label = _notes_label(n_notes)
     if note_label is not None:
         lines.append(note_label)
 
-    if n_notes > 0 and n_req > 0:
+    if n_notes > 0:
         shown_notes = notes if max_titles is None else notes[:max_titles]
         for note in shown_notes:
             lines.append(f"  - {_truncate(note.get('summary') or '', trunc)}")
@@ -309,11 +307,23 @@ class OpenNotesSimAgent:
                 model=self._model.to_pydantic_ai(),
             )
 
-        if result.data.action_type == SimActionType.PASS_TURN and len(notes) > 0:
-            note_word = "note" if len(notes) == 1 else "notes"
+        has_notes = len(notes) > 0
+        has_requests = len(requests) > 0
+        if result.data.action_type == SimActionType.PASS_TURN and (has_notes or has_requests):
+            parts: list[str] = []
+            if has_notes:
+                verb = "is" if len(notes) == 1 else "are"
+                note_word = "note" if len(notes) == 1 else "notes"
+                parts.append(f"There {verb} {len(notes)} {note_word} available to rate.")
+            if has_requests:
+                verb = "is" if len(requests) == 1 else "are"
+                req_word = "content request" if len(requests) == 1 else "content requests"
+                parts.append(f"There {verb} {len(requests)} {req_word} to write notes for.")
             nudge_prompt = (
-                f"There are {len(notes)} {note_word} available to rate. "
-                "Are you sure you want to pass? If any note interests you, choose rate_note."
+                " ".join(parts)
+                + " Are you sure you want to pass? Consider choosing "
+                + ("rate_note" if has_notes else "write_note")
+                + " instead."
             )
             result = await self._action_selector.run(
                 nudge_prompt,
