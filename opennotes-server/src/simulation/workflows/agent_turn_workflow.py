@@ -308,6 +308,11 @@ def execute_agent_turn_step(
             "total_tokens_limit", settings.SIMULATION_DEFAULT_TOKEN_LIMIT
         )
 
+        tool_config = context.get("tool_config") or {}
+        if tool_config.get("research_enabled"):
+            request_limit = tool_config.get("request_limit", request_limit)
+            token_limit = tool_config.get("token_limit", token_limit)
+
         usage_limits = UsageLimits(
             request_limit=request_limit,
             total_tokens_limit=token_limit,
