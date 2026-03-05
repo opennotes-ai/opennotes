@@ -104,8 +104,20 @@ def _make_detailed_response(simulation_id: str) -> MagicMock:
                     "token_count": 1200,
                     "recent_actions": ["write_note", "rate_note", "write_note"],
                     "last_messages": [
-                        {"role": "user", "content": "Review this claim"},
-                        {"role": "assistant", "content": "I'll check the sources"},
+                        {
+                            "parts": [
+                                {"content": "Review this claim", "part_kind": "user-prompt", "timestamp": "2026-03-01T10:00:00Z"},
+                            ],
+                            "kind": "request",
+                        },
+                        {
+                            "parts": [
+                                {"content": "I'll check the sources", "part_kind": "text"},
+                            ],
+                            "kind": "response",
+                            "model_name": "openai:gpt-4o-mini",
+                            "timestamp": "2026-03-01T10:00:01Z",
+                        },
                     ],
                 },
                 {
@@ -397,7 +409,7 @@ class TestXlsxAgentsSheet:
             assert "State" in headers
             assert "Token Count" in headers
             assert "Recent Actions" in headers
-            assert "Last 10 Messages" in headers
+            assert "Last 30 Messages" in headers
 
     def test_agents_sheet_has_data(self, runner: CliRunner) -> None:
         import tempfile
@@ -417,6 +429,84 @@ class TestXlsxAgentsSheet:
             assert ws.max_row == 3
             assert ws.cell(row=2, column=1).value == "Skeptic"
             assert ws.cell(row=3, column=1).value == "Optimist"
+
+    def test_agents_sheet_messages_formatted(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            ws = wb["Agents"]
+            msg_col = 9
+            msg_text = ws.cell(row=2, column=msg_col).value
+            assert "user: Review this claim" in msg_text
+            assert "assistant: I'll check the sources" in msg_text
+            empty_msg = ws.cell(row=3, column=msg_col).value
+            assert empty_msg == "" or empty_msg is None
+
+    def test_agents_sheet_multipart_messages(self, runner: CliRunner) -> None:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        body = _make_detailed_response(SIM_ID).json.return_value
+        body["meta"]["agents"][0]["last_messages"] = [
+            {
+                "parts": [
+                    {"content": "System prompt", "part_kind": "system-prompt"},
+                    {"content": "User question", "part_kind": "user-prompt", "timestamp": "2026-03-01T10:00:00Z"},
+                ],
+                "kind": "request",
+            },
+            {
+                "parts": [
+                    {"content": "Let me check", "part_kind": "text"},
+                    {"tool_name": "search", "args": {"q": "test"}, "tool_call_id": "tc1", "part_kind": "tool-call"},
+                ],
+                "kind": "response",
+                "model_name": "openai:gpt-4o-mini",
+                "timestamp": "2026-03-01T10:00:01Z",
+            },
+            {
+                "parts": [
+                    {"tool_name": "search", "content": "results", "tool_call_id": "tc1", "part_kind": "tool-return"},
+                ],
+                "kind": "request",
+            },
+        ]
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = body
+
+        csrf_resp = _make_csrf_response()
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [csrf_resp, resp]
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test.xlsx")
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                runner.invoke(
+                    cli,
+                    ["--local", "simulation", "analysis", "--detailed", "--format", "xlsx", "--output", output_file, SIM_ID],
+                )
+            wb = load_workbook(output_file)
+            ws = wb["Agents"]
+            msg_text = ws.cell(row=2, column=9).value
+            assert "user: User question" in msg_text
+            assert "system-prompt" not in msg_text.lower() or "System prompt" not in msg_text
+            assert "assistant: Let me check" in msg_text
+            assert "tool-call: search" in msg_text
+            assert "tool-return: results" in msg_text
 
     def test_agents_sheet_personality_not_truncated(self, runner: CliRunner) -> None:
         import tempfile

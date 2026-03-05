@@ -68,7 +68,7 @@ async def compute_agent_profiles(
             recent_actions = memory.recent_actions or []
             compaction_strategy = memory.compaction_strategy or ""
             msg_history = memory.message_history or []
-            last_messages = msg_history[-10:] if msg_history else []
+            last_messages = msg_history[-30:] if msg_history else []
 
         profiles.append(
             AgentProfileData(
