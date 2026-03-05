@@ -258,25 +258,26 @@ def build_deps_step(
                     }
                 )
 
-        recent_channel_messages: list[dict[str, Any]] = []
-        if simulation_run_id:
-            from src.simulation.models import SimChannelMessage
+            recent_channel_messages: list[dict[str, Any]] = []
+            if simulation_run_id:
+                from src.simulation.models import SimChannelMessage
 
-            channel_query = (
-                select(SimChannelMessage)
-                .where(SimChannelMessage.simulation_run_id == UUID(simulation_run_id))
-                .order_by(SimChannelMessage.created_at.desc())
-                .limit(20)
-            )
-            channel_result = await session.execute(channel_query)
-            recent_channel_messages = [
-                {
-                    "agent_instance_id": str(msg.agent_instance_id),
-                    "message_text": msg.message_text,
-                    "created_at": msg.created_at.isoformat() if msg.created_at else None,
-                }
-                for msg in reversed(channel_result.scalars().all())
-            ]
+                channel_window_size = 20
+                channel_query = (
+                    select(SimChannelMessage)
+                    .where(SimChannelMessage.simulation_run_id == UUID(simulation_run_id))
+                    .order_by(SimChannelMessage.created_at.desc())
+                    .limit(channel_window_size)
+                )
+                channel_result = await session.execute(channel_query)
+                recent_channel_messages = [
+                    {
+                        "agent_instance_id": str(msg.agent_instance_id),
+                        "message_text": msg.message_text,
+                        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                    }
+                    for msg in reversed(channel_result.scalars().all())
+                ]
 
         return {
             "available_requests": available_requests,
