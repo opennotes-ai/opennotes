@@ -645,7 +645,7 @@ class TestComputeAgentProfiles:
             agent_instance_id=inst["id"],
             recent_actions=["write_note", "rate_note"],
             turn_count=5,
-            message_history=[{"role": "user", "content": f"msg-{i}"} for i in range(15)],
+            message_history=[{"role": "user", "content": f"msg-{i}"} for i in range(35)],
             token_count=1200,
             compaction_strategy="sliding_window",
         )
@@ -661,7 +661,7 @@ class TestComputeAgentProfiles:
         assert profile.token_count == 1200
         assert profile.memory_compaction_strategy == "sliding_window"
         assert len(profile.recent_actions) == 2
-        assert len(profile.last_messages) == 10
+        assert len(profile.last_messages) == 30
         assert profile.last_messages[0]["content"] == "msg-5"
 
     @pytest.mark.asyncio

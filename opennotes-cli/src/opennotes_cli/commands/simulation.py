@@ -1207,6 +1207,36 @@ def _truncate_for_xlsx(value: object) -> object:
     return value
 
 
+_PART_KIND_TO_ROLE = {
+    "user-prompt": "user",
+    "text": "assistant",
+    "tool-call": "tool-call",
+    "tool-return": "tool-return",
+    "retry-prompt": "retry",
+}
+
+
+def _format_pydantic_ai_messages(msgs: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for msg in msgs:
+        parts = msg.get("parts") or []
+        for part in parts:
+            part_kind = part.get("part_kind", "")
+            if part_kind == "system-prompt":
+                continue
+            role = _PART_KIND_TO_ROLE.get(part_kind, part_kind)
+            if part_kind == "tool-call":
+                raw = part.get("tool_name", "")
+            else:
+                raw = part.get("content", "")
+            if isinstance(raw, str):
+                content = raw
+            else:
+                content = json.dumps(raw, default=str)
+            lines.append(f"{role}: {content}")
+    return "\n".join(lines)
+
+
 def _render_detailed_xlsx(
     simulation_id: str,
     data: dict[str, list[dict[str, Any]]],
@@ -1269,17 +1299,14 @@ def _render_detailed_xlsx(
     agent_headers = [
         "Agent Name", "Personality Prompt", "Model",
         "Memory Compaction Strategy", "Turn Count", "State",
-        "Token Count", "Recent Actions", "Last 10 Messages",
+        "Token Count", "Recent Actions", "Last 30 Messages",
     ]
     ws_agents.append(agent_headers)
     agents = data.get("agents", [])
     for a in agents:
         recent = ", ".join(str(x) for x in (a.get("recent_actions", []) or []))
         msgs = a.get("last_messages", []) or []
-        msg_text = "\n".join(
-            f"{m.get('role', '?')}: {m.get('content', '')}"
-            for m in msgs
-        ) if msgs else ""
+        msg_text = _format_pydantic_ai_messages(msgs) if msgs else ""
         ws_agents.append([
             a.get("agent_name", ""),
             a.get("personality", ""),
