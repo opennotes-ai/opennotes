@@ -28,6 +28,16 @@ class TestIsCloudRunEnvironment:
         with patch.dict("os.environ", {"K_SERVICE": ""}, clear=False):
             assert is_cloud_run_environment() is False
 
+    def test_returns_true_when_cloud_run_worker_pool_set(self) -> None:
+        env = {"CLOUD_RUN_WORKER_POOL": "true"}
+        with patch.dict("os.environ", env, clear=True):
+            assert is_cloud_run_environment() is True
+
+    def test_returns_true_when_both_k_service_and_worker_pool_set(self) -> None:
+        env = {"K_SERVICE": "my-service", "CLOUD_RUN_WORKER_POOL": "true"}
+        with patch.dict("os.environ", env, clear=True):
+            assert is_cloud_run_environment() is True
+
 
 class TestDetectGcpCloudRunResource:
     def test_returns_none_outside_cloud_run(self) -> None:
@@ -414,6 +424,51 @@ class TestAppHubAttributes:
             assert "gcp.apphub.service" not in attrs
             assert "gcp.apphub.criticality" not in attrs
             assert "gcp.apphub.environment" not in attrs
+
+
+class TestWorkerPoolResource:
+    def test_worker_pool_detected_as_cloud_run(self) -> None:
+        env = {
+            "CLOUD_RUN_WORKER_POOL": "true",
+            "OTEL_SERVICE_NAME": "opennotes-dbos-worker",
+            "GOOGLE_CLOUD_PROJECT": "open-notes-core",
+        }
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata",
+                return_value="unique-container-abc123",
+            ),
+        ):
+            result = detect_gcp_cloud_run_resource()
+            assert result is not None
+            attrs = dict(result.attributes)
+            assert attrs[ResourceAttributes.CLOUD_PROVIDER] == "gcp"
+            assert attrs[ResourceAttributes.CLOUD_PLATFORM] == "gcp_cloud_run"
+            assert attrs[ResourceAttributes.FAAS_NAME] == "opennotes-dbos-worker"
+            assert attrs[ResourceAttributes.FAAS_INSTANCE] == "unique-container-abc123"
+
+    def test_worker_pool_without_k_service_uses_otel_service_name(self) -> None:
+        env = {
+            "CLOUD_RUN_WORKER_POOL": "true",
+            "OTEL_SERVICE_NAME": "opennotes-dbos-worker",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            result = detect_gcp_cloud_run_resource()
+            assert result is not None
+            attrs = dict(result.attributes)
+            assert attrs[ResourceAttributes.FAAS_NAME] == "opennotes-dbos-worker"
+
+    def test_k_service_takes_precedence_over_otel_service_name(self) -> None:
+        env = {
+            "K_SERVICE": "opennotes-server",
+            "OTEL_SERVICE_NAME": "some-other-name",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            result = detect_gcp_cloud_run_resource()
+            assert result is not None
+            attrs = dict(result.attributes)
+            assert attrs[ResourceAttributes.FAAS_NAME] == "opennotes-server"
 
     def test_apphub_service_defaults_to_k_service(self) -> None:
         env = {

@@ -115,15 +115,15 @@ def resolve_effective_instance_id(config_default: str) -> str:
 
 
 def is_cloud_run_environment() -> bool:
-    """Check if running in Cloud Run environment.
+    """Check if running in a Cloud Run environment (Service or Worker Pool).
 
-    Detection is based on K_SERVICE environment variable which is always
-    set in Cloud Run.
+    Detection is based on K_SERVICE (set by Cloud Run Services) or
+    CLOUD_RUN_WORKER_POOL (set explicitly for Worker Pool deployments).
 
     Returns:
         True if running in Cloud Run, False otherwise.
     """
-    return bool(os.getenv("K_SERVICE"))
+    return bool(os.getenv("K_SERVICE") or os.getenv("CLOUD_RUN_WORKER_POOL"))
 
 
 def _collect_apphub_attributes(service_name: str) -> dict[str, str]:
@@ -178,7 +178,7 @@ def detect_gcp_cloud_run_resource() -> Resource | None:
         from opentelemetry.sdk.resources import Resource  # noqa: PLC0415
         from opentelemetry.semconv.resource import ResourceAttributes  # noqa: PLC0415
 
-        service_name = os.getenv("K_SERVICE", "")
+        service_name = os.getenv("K_SERVICE") or os.getenv("OTEL_SERVICE_NAME", "")
         revision = os.getenv("K_REVISION", "")
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
         region = os.getenv("CLOUD_RUN_REGION") or os.getenv("CLOUD_RUN_LOCATION", "")

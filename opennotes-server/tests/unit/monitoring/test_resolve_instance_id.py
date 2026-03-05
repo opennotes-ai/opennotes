@@ -49,6 +49,28 @@ class TestResolveEffectiveInstanceId:
             result = resolve_effective_instance_id("opennotes-dbos-worker-1")
         assert result == "unique-container-abc123"
 
+    def test_worker_pool_uses_metadata_server(self) -> None:
+        with (
+            patch.dict("os.environ", {"CLOUD_RUN_WORKER_POOL": "true"}, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata",
+                return_value="unique-worker-pool-id-xyz",
+            ),
+        ):
+            result = resolve_effective_instance_id("opennotes-server-1")
+        assert result == "unique-worker-pool-id-xyz"
+
+    def test_worker_pool_falls_back_to_config_when_metadata_unavailable(self) -> None:
+        with (
+            patch.dict("os.environ", {"CLOUD_RUN_WORKER_POOL": "true"}, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata",
+                return_value=None,
+            ),
+        ):
+            result = resolve_effective_instance_id("opennotes-server-1")
+        assert result == "opennotes-server-1"
+
     def test_dbos_worker_falls_back_to_config_when_metadata_unavailable(self) -> None:
         with (
             patch.dict(
