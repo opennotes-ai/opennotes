@@ -147,6 +147,7 @@ def compact_memory_step(
 )
 def build_deps_step(
     community_server_id: str,
+    simulation_run_id: str = "",
 ) -> dict[str, Any]:
     from src.database import get_session_maker
     from src.notes.models import Note, Request
@@ -233,9 +234,31 @@ def build_deps_step(
                     }
                 )
 
+            recent_channel_messages: list[dict[str, Any]] = []
+            if simulation_run_id:
+                from src.simulation.models import SimChannelMessage
+
+                channel_window_size = 20
+                channel_query = (
+                    select(SimChannelMessage)
+                    .where(SimChannelMessage.simulation_run_id == UUID(simulation_run_id))
+                    .order_by(SimChannelMessage.created_at.desc())
+                    .limit(channel_window_size)
+                )
+                channel_result = await session.execute(channel_query)
+                recent_channel_messages = [
+                    {
+                        "agent_instance_id": str(msg.agent_instance_id),
+                        "message_text": msg.message_text,
+                        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                    }
+                    for msg in reversed(channel_result.scalars().all())
+                ]
+
         return {
             "available_requests": available_requests,
             "available_notes": available_notes,
+            "recent_channel_messages": recent_channel_messages,
         }
 
     return run_sync(_build())
@@ -257,6 +280,7 @@ def select_action_step(
 
         message_history = _deserialize_messages(messages) if messages else None
 
+        tool_config = context.get("tool_config") or {}
         deps = SimAgentDeps(
             db=None,  # type: ignore[arg-type]
             community_server_id=UUID(context["community_server_id"]),
@@ -267,6 +291,11 @@ def select_action_step(
             agent_personality=context["personality"],
             model_name=model_id,
             tool_config=context.get("tool_config"),
+            simulation_run_id=UUID(context["simulation_run_id"])
+            if context.get("simulation_run_id")
+            else None,
+            channel_window_size=tool_config.get("channel_window_size", 20) if tool_config else 20,
+            recent_channel_messages=deps_data.get("recent_channel_messages", []),
         )
 
         selection, phase1_messages = await agent.select_action(
@@ -352,6 +381,11 @@ def execute_agent_turn_step(
                 agent_personality=context["personality"],
                 model_name=model_id,
                 tool_config=context.get("tool_config"),
+                simulation_run_id=UUID(context["simulation_run_id"])
+                if context.get("simulation_run_id")
+                else None,
+                channel_window_size=tool_config.get("channel_window_size", 20),
+                recent_channel_messages=deps_data.get("recent_channel_messages", []),
             )
 
             try:
@@ -518,6 +552,7 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
 
         deps_data = build_deps_step(
             community_server_id=context["community_server_id"],
+            simulation_run_id=context.get("simulation_run_id", ""),
         )
 
         selection = select_action_step(
