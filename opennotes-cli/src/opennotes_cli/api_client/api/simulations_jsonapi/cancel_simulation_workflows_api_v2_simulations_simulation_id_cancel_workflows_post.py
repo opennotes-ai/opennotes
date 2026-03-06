@@ -7,6 +7,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.cancel_workflows_response import CancelWorkflowsResponse
 from ...models.http_validation_error import HTTPValidationError
 from ...types import UNSET, Response, Unset
 
@@ -49,9 +50,10 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Any | HTTPValidationError | None:
+) -> CancelWorkflowsResponse | HTTPValidationError | None:
     if response.status_code == 200:
-        response_200 = response.json()
+        response_200 = CancelWorkflowsResponse.from_dict(response.json())
+
         return response_200
 
     if response.status_code == 422:
@@ -67,7 +69,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[Any | HTTPValidationError]:
+) -> Response[CancelWorkflowsResponse | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -83,8 +85,13 @@ def sync_detailed(
     dry_run: bool | Unset = False,
     generation: int | None | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[Any | HTTPValidationError]:
+) -> Response[CancelWorkflowsResponse | HTTPValidationError]:
     """Cancel Simulation Workflows
+
+     Cancel DBOS turn workflows for a simulation.
+
+    This is an operational/debugging endpoint that returns plain JSON
+    (not JSON:API format) for ease of scripting and monitoring.
 
     Args:
         simulation_id (UUID):
@@ -97,7 +104,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError]
+        Response[CancelWorkflowsResponse | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -121,8 +128,13 @@ def sync(
     dry_run: bool | Unset = False,
     generation: int | None | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
-) -> Any | HTTPValidationError | None:
+) -> CancelWorkflowsResponse | HTTPValidationError | None:
     """Cancel Simulation Workflows
+
+     Cancel DBOS turn workflows for a simulation.
+
+    This is an operational/debugging endpoint that returns plain JSON
+    (not JSON:API format) for ease of scripting and monitoring.
 
     Args:
         simulation_id (UUID):
@@ -135,7 +147,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError
+        CancelWorkflowsResponse | HTTPValidationError
     """
 
     return sync_detailed(
@@ -154,8 +166,13 @@ async def asyncio_detailed(
     dry_run: bool | Unset = False,
     generation: int | None | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[Any | HTTPValidationError]:
+) -> Response[CancelWorkflowsResponse | HTTPValidationError]:
     """Cancel Simulation Workflows
+
+     Cancel DBOS turn workflows for a simulation.
+
+    This is an operational/debugging endpoint that returns plain JSON
+    (not JSON:API format) for ease of scripting and monitoring.
 
     Args:
         simulation_id (UUID):
@@ -168,7 +185,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError]
+        Response[CancelWorkflowsResponse | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -190,8 +207,13 @@ async def asyncio(
     dry_run: bool | Unset = False,
     generation: int | None | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
-) -> Any | HTTPValidationError | None:
+) -> CancelWorkflowsResponse | HTTPValidationError | None:
     """Cancel Simulation Workflows
+
+     Cancel DBOS turn workflows for a simulation.
+
+    This is an operational/debugging endpoint that returns plain JSON
+    (not JSON:API format) for ease of scripting and monitoring.
 
     Args:
         simulation_id (UUID):
@@ -204,7 +226,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError
+        CancelWorkflowsResponse | HTTPValidationError
     """
 
     return (

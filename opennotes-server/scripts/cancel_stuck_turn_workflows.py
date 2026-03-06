@@ -97,8 +97,11 @@ async def main(dry_run: bool) -> None:
                     )
 
                     if not dry_run:
-                        await asyncio.to_thread(client.cancel_workflow, wf.workflow_id)
-                        cancelled += 1
+                        try:
+                            await asyncio.to_thread(client.cancel_workflow, wf.workflow_id)
+                            cancelled += 1
+                        except Exception as e:
+                            print(f"  ERROR: Failed to cancel {wf.workflow_id}: {e}")
 
             print()
 

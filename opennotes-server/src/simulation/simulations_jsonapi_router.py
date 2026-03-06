@@ -71,17 +71,46 @@ async def _cancel_turn_workflows(simulation_id: UUID, db: AsyncSession) -> int:
             return 0
 
         client = get_dbos_client()
-        cancelled = 0
-        for agent_id in agent_ids:
-            workflows = await asyncio.to_thread(
+
+        list_tasks = [
+            asyncio.to_thread(
                 client.list_workflows,
                 workflow_id_prefix=f"turn-{agent_id}-",
                 status=["ENQUEUED", "PENDING"],
                 load_input=False,
                 load_output=False,
             )
-            for wf in workflows:
-                await asyncio.to_thread(client.cancel_workflow, wf.workflow_id)
+            for agent_id in agent_ids
+        ]
+        list_results = await asyncio.gather(*list_tasks, return_exceptions=True)
+
+        all_workflow_ids: list[str] = []
+        for r in list_results:
+            if isinstance(r, BaseException):
+                logger.warning(
+                    "Failed to list workflows for agent (non-fatal)",
+                    extra={"simulation_id": str(simulation_id), "error": str(r)},
+                )
+                continue
+            for wf in r:
+                all_workflow_ids.append(wf.workflow_id)
+
+        if not all_workflow_ids:
+            return 0
+
+        cancel_tasks = [
+            asyncio.to_thread(client.cancel_workflow, wf_id) for wf_id in all_workflow_ids
+        ]
+        cancel_results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
+
+        cancelled = 0
+        for wf_id, cr in zip(all_workflow_ids, cancel_results, strict=True):
+            if isinstance(cr, BaseException):
+                logger.warning(
+                    "Failed to cancel workflow (non-fatal)",
+                    extra={"simulation_id": str(simulation_id), "workflow_id": wf_id},
+                )
+            else:
                 cancelled += 1
 
         logger.info(
@@ -207,6 +236,16 @@ class ResultsListResponse(BaseModel):
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
     meta: JSONAPIMeta | None = None
+
+
+class CancelWorkflowsResponse(SQLAlchemySchema):
+    simulation_id: str
+    dry_run: bool
+    generation: int | None = None
+    workflow_ids: list[str]
+    total: int
+    cancelled: int
+    errors: list[str] = []
 
 
 def simulation_run_to_resource(run: SimulationRun) -> SimulationResource:
@@ -778,6 +817,7 @@ async def cancel_simulation(
 @router.post(
     "/simulations/{simulation_id}/cancel-workflows",
     response_class=JSONResponse,
+    response_model=CancelWorkflowsResponse,
 )
 async def cancel_simulation_workflows(
     simulation_id: UUID,
@@ -786,6 +826,11 @@ async def cancel_simulation_workflows(
     dry_run: bool = False,
     generation: int | None = None,
 ) -> JSONResponse:
+    """Cancel DBOS turn workflows for a simulation.
+
+    This is an operational/debugging endpoint that returns plain JSON
+    (not JSON:API format) for ease of scripting and monitoring.
+    """
     require_admin(current_user)
 
     try:
@@ -810,41 +855,57 @@ async def cancel_simulation_workflows(
         agent_ids = [str(row[0]) for row in result.all()]
 
         if not agent_ids:
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "simulation_id": str(simulation_id),
-                    "dry_run": dry_run,
-                    "generation": generation,
-                    "workflow_ids": [],
-                    "total": 0,
-                    "cancelled": 0,
-                },
+            resp = CancelWorkflowsResponse(
+                simulation_id=str(simulation_id),
+                dry_run=dry_run,
+                generation=generation,
+                workflow_ids=[],
+                total=0,
+                cancelled=0,
             )
+            return JSONResponse(status_code=200, content=resp.model_dump(mode="json"))
 
         client = get_dbos_client()
-        workflow_ids: list[str] = []
-        for agent_id in agent_ids:
-            if generation is not None:
-                prefix = f"turn-{agent_id}-gen{generation}-"
-            else:
-                prefix = f"turn-{agent_id}-"
 
-            workflows = await asyncio.to_thread(
+        list_tasks = [
+            asyncio.to_thread(
                 client.list_workflows,
-                workflow_id_prefix=prefix,
+                workflow_id_prefix=(
+                    f"turn-{agent_id}-gen{generation}-"
+                    if generation is not None
+                    else f"turn-{agent_id}-"
+                ),
                 status=["ENQUEUED", "PENDING"],
                 load_input=False,
                 load_output=False,
             )
-            for wf in workflows:
+            for agent_id in agent_ids
+        ]
+        list_results = await asyncio.gather(*list_tasks, return_exceptions=True)
+
+        workflow_ids: list[str] = []
+        for r in list_results:
+            if isinstance(r, BaseException):
+                logger.warning(
+                    "Failed to list workflows for agent",
+                    extra={"simulation_id": str(simulation_id), "error": str(r)},
+                )
+                continue
+            for wf in r:
                 workflow_ids.append(wf.workflow_id)
 
         cancelled = 0
-        if not dry_run:
-            for wf_id in workflow_ids:
-                await asyncio.to_thread(client.cancel_workflow, wf_id)
-                cancelled += 1
+        errors: list[str] = []
+        if not dry_run and workflow_ids:
+            cancel_tasks = [
+                asyncio.to_thread(client.cancel_workflow, wf_id) for wf_id in workflow_ids
+            ]
+            cancel_results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
+            for wf_id, cr in zip(workflow_ids, cancel_results, strict=True):
+                if isinstance(cr, BaseException):
+                    errors.append(f"{wf_id}: {cr}")
+                else:
+                    cancelled += 1
 
         logger.info(
             "Cancel-workflows endpoint completed",
@@ -854,20 +915,20 @@ async def cancel_simulation_workflows(
                 "generation": generation,
                 "total": len(workflow_ids),
                 "cancelled": cancelled,
+                "errors": len(errors),
             },
         )
 
-        return JSONResponse(
-            status_code=200,
-            content={
-                "simulation_id": str(simulation_id),
-                "dry_run": dry_run,
-                "generation": generation,
-                "workflow_ids": workflow_ids,
-                "total": len(workflow_ids),
-                "cancelled": cancelled,
-            },
+        resp = CancelWorkflowsResponse(
+            simulation_id=str(simulation_id),
+            dry_run=dry_run,
+            generation=generation,
+            workflow_ids=workflow_ids,
+            total=len(workflow_ids),
+            cancelled=cancelled,
+            errors=errors,
         )
+        return JSONResponse(status_code=200, content=resp.model_dump(mode="json"))
 
     except Exception:
         logger.exception("Failed to cancel simulation workflows")

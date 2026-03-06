@@ -3307,7 +3307,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancel Simulation Workflows */
+        /**
+         * Cancel Simulation Workflows
+         * @description Cancel DBOS turn workflows for a simulation.
+         *
+         *     This is an operational/debugging endpoint that returns plain JSON
+         *     (not JSON:API format) for ease of scripting and monitoring.
+         */
         post: operations["cancel_simulation_workflows_api_v2_simulations__simulation_id__cancel_workflows_post"];
         delete?: never;
         options?: never;
@@ -4421,6 +4427,26 @@ export interface components {
                 [key: string]: string;
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /** CancelWorkflowsResponse */
+        CancelWorkflowsResponse: {
+            /** Simulation Id */
+            simulation_id: string;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Generation */
+            generation?: number | null;
+            /** Workflow Ids */
+            workflow_ids: string[];
+            /** Total */
+            total: number;
+            /** Cancelled */
+            cancelled: number;
+            /**
+             * Errors
+             * @default []
+             */
+            errors: string[];
         };
         /**
          * CandidateAttributes
@@ -16220,7 +16246,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CancelWorkflowsResponse"];
                 };
             };
             /** @description Validation Error */
