@@ -45,7 +45,15 @@ class TokenGate:
         self._workflow_id = wf_id
         elapsed = 0.0
         while True:
-            acquired = try_acquire_tokens(self.pool, self.weight, wf_id)
+            try:
+                acquired = try_acquire_tokens(self.pool, self.weight, wf_id)
+            except Exception:
+                logger.warning(
+                    "try_acquire_tokens failed, will retry",
+                    extra={"pool": self.pool, "workflow_id": wf_id, "elapsed": elapsed},
+                    exc_info=True,
+                )
+                acquired = False
             if acquired:
                 logger.info(
                     "Tokens acquired",

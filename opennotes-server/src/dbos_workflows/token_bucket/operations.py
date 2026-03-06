@@ -150,6 +150,10 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
                 await session.commit()
             except IntegrityError:
                 await session.rollback()
+                logger.warning(
+                    "Concurrent token acquire detected (IntegrityError), treating as acquired",
+                    extra={"pool_name": pool_name, "workflow_id": workflow_id},
+                )
                 return True
             return True
 

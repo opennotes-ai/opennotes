@@ -835,3 +835,38 @@ class TestUniqueConstraintRace:
             result = await try_acquire_tokens_async("llm", 3, "wf-dup")
 
         assert result is True
+
+    @pytest.mark.asyncio
+    async def test_integrity_error_logs_warning(self, mock_session, mock_session_maker):
+        pool = MagicMock()
+        pool.capacity = 10
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(0),
+                _make_scalar_result(0),
+            ]
+        )
+        mock_session.commit = AsyncMock(
+            side_effect=IntegrityError(
+                "duplicate key", params=None, orig=Exception("uq_token_hold_pool_workflow")
+            )
+        )
+
+        with (
+            patch(
+                "src.database.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.dbos_workflows.token_bucket.operations.logger") as mock_logger,
+        ):
+            result = await try_acquire_tokens_async("llm", 3, "wf-race")
+
+        assert result is True
+        mock_logger.warning.assert_called_once()
+        call_args = mock_logger.warning.call_args
+        assert "concurrent" in call_args[0][0].lower()
+        assert call_args[1]["extra"]["pool_name"] == "llm"
+        assert call_args[1]["extra"]["workflow_id"] == "wf-race"

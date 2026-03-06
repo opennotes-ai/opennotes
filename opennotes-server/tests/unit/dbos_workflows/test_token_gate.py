@@ -3,6 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from src.dbos_workflows.token_bucket.gate import TokenGate
+from src.dbos_workflows.token_bucket.gate import logger as gate_logger
 
 
 class TestTokenGateAcquire:
@@ -49,6 +50,45 @@ class TestTokenGateAcquire:
 
         gate = TokenGate(pool="default", weight=100, max_wait_seconds=2.0, poll_interval=2.0)
         with pytest.raises(TimeoutError):
+            gate.acquire()
+
+    @patch("src.dbos_workflows.token_bucket.gate.DBOS")
+    @patch("src.dbos_workflows.token_bucket.gate.try_acquire_tokens")
+    def test_acquire_retries_on_transient_error(self, mock_acquire, mock_dbos):
+        mock_dbos.workflow_id = "wf-123"
+        mock_acquire.side_effect = [RuntimeError("connection reset"), True]
+
+        gate = TokenGate(pool="default", weight=3, poll_interval=1.0)
+        gate.acquire()
+
+        assert mock_acquire.call_count == 2
+        assert mock_dbos.sleep.call_count == 1
+
+    @patch("src.dbos_workflows.token_bucket.gate.DBOS")
+    @patch("src.dbos_workflows.token_bucket.gate.try_acquire_tokens")
+    def test_acquire_logs_warning_on_transient_error(self, mock_acquire, mock_dbos, caplog):
+        mock_dbos.workflow_id = "wf-456"
+        mock_acquire.side_effect = [RuntimeError("db gone"), True]
+
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger=gate_logger.name):
+            gate = TokenGate(pool="gpu", weight=2, poll_interval=1.0)
+            gate.acquire()
+
+        assert any("try_acquire_tokens failed" in r.message for r in caplog.records)
+        warning_record = next(r for r in caplog.records if "try_acquire_tokens failed" in r.message)
+        assert warning_record.pool == "gpu"
+        assert warning_record.workflow_id == "wf-456"
+
+    @patch("src.dbos_workflows.token_bucket.gate.DBOS")
+    @patch("src.dbos_workflows.token_bucket.gate.try_acquire_tokens")
+    def test_acquire_all_errors_still_times_out(self, mock_acquire, mock_dbos):
+        mock_dbos.workflow_id = "wf-123"
+        mock_acquire.side_effect = RuntimeError("persistent failure")
+
+        gate = TokenGate(pool="default", weight=1, max_wait_seconds=3.0, poll_interval=2.0)
+        with pytest.raises(TimeoutError, match="timed out"):
             gate.acquire()
 
 
