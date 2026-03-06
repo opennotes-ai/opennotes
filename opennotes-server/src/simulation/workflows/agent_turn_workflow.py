@@ -525,6 +525,13 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
     gate = TokenGate(pool="default", weight=WorkflowWeight.SIMULATION_TURN)
     gate.acquire()
     try:
+        if not check_simulation_active_step(agent_instance_id):
+            logger.info(
+                "Simulation became inactive during gate wait, skipping turn",
+                extra={"agent_instance_id": agent_instance_id},
+            )
+            return {"agent_instance_id": agent_instance_id, "status": "skipped_inactive"}
+
         settings = get_settings()
         workflow_id = DBOS.workflow_id
         assert workflow_id is not None

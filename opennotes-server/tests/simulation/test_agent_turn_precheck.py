@@ -137,6 +137,41 @@ class TestRunAgentTurnEarlyExit:
         assert result["status"] == "skipped_inactive"
         assert result["agent_instance_id"] == agent_id
 
+    def test_skips_when_simulation_becomes_inactive_after_acquire(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_id = str(uuid4())
+
+        mock_gate = MagicMock()
+        mock_dbos = MagicMock()
+        mock_dbos.workflow_id = "wf-test-789"
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.TokenGate",
+                return_value=mock_gate,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.DBOS",
+                mock_dbos,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                side_effect=[True, False],
+            ) as mock_check,
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+            ) as mock_load,
+        ):
+            result = run_agent_turn.__wrapped__(agent_id)
+
+        assert mock_check.call_count == 2
+        mock_gate.acquire.assert_called_once()
+        mock_gate.release.assert_called_once()
+        mock_load.assert_not_called()
+        assert result["status"] == "skipped_inactive"
+        assert result["agent_instance_id"] == agent_id
+
     def test_continues_when_simulation_active(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import run_agent_turn
 
