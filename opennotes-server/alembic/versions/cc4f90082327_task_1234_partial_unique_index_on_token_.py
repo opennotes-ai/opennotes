@@ -35,6 +35,16 @@ def downgrade() -> None:
         table_name="token_holds",
         postgresql_where=sa.text("released_at IS NULL"),
     )
+    op.execute(
+        sa.text("""
+            DELETE FROM token_holds
+            WHERE id NOT IN (
+                SELECT DISTINCT ON (pool_name, workflow_id) id
+                FROM token_holds
+                ORDER BY pool_name, workflow_id, acquired_at DESC
+            )
+        """)
+    )
     op.create_unique_constraint(
         "uq_token_hold_pool_workflow",
         "token_holds",

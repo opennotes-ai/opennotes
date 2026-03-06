@@ -108,6 +108,21 @@ class TestTokenGateRelease:
 
         mock_release.assert_not_called()
 
+    @patch("src.dbos_workflows.token_bucket.gate.release_tokens")
+    @patch("src.dbos_workflows.token_bucket.gate.try_acquire_tokens")
+    @patch("src.dbos_workflows.token_bucket.gate.DBOS")
+    def test_workflow_id_not_set_on_timeout(self, mock_dbos, mock_acquire, mock_release):
+        mock_dbos.workflow_id = "wf-timeout"
+        mock_acquire.return_value = False
+
+        gate = TokenGate(pool="default", weight=1, max_wait_seconds=1.0, poll_interval=1.0)
+        with pytest.raises(TimeoutError):
+            gate.acquire()
+
+        assert gate._workflow_id is None
+        gate.release()
+        mock_release.assert_not_called()
+
 
 class TestTokenGateDefaults:
     def test_default_values(self):

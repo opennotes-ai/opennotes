@@ -649,6 +649,42 @@ class TestScavengeBatchCapAndThreading:
         assert released == 1
 
 
+class TestScavengeReleasedAtGuard:
+    @pytest.mark.asyncio
+    async def test_scavenge_update_includes_released_at_null_guard(self):
+        hold = MagicMock()
+        hold.id = uuid4()
+        hold.workflow_id = "wf-dead"
+        hold.weight = 1
+        hold.pool_name = "llm"
+
+        mock_status = MagicMock()
+        mock_status.status = "ERROR"
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_result([hold]),
+                MagicMock(),
+            ]
+        )
+
+        call_log: list[tuple[object, ...]] = []
+        fake = _make_fake_to_thread(call_log, [mock_status])
+
+        with patch(
+            "src.dbos_workflows.token_bucket.operations.asyncio.to_thread",
+            new=fake,
+        ):
+            await _scavenge_zombie_holds(session, "llm")
+
+        update_call = session.execute.call_args_list[1]
+        update_stmt = update_call[0][0]
+        compiled = update_stmt.compile(compile_kwargs={"literal_binds": True})
+        sql_text = str(compiled)
+        assert "released_at IS NULL" in sql_text
+
+
 class TestGetPoolStatusClampsNegative:
     @pytest.mark.asyncio
     async def test_available_clamped_to_zero_when_overcommitted(
@@ -835,6 +871,7 @@ class TestUniqueConstraintRace:
             result = await try_acquire_tokens_async("llm", 3, "wf-dup")
 
         assert result is True
+        mock_session.rollback.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_integrity_error_logs_warning(self, mock_session, mock_session_maker):
@@ -870,3 +907,66 @@ class TestUniqueConstraintRace:
         assert "concurrent" in call_args[0][0].lower()
         assert call_args[1]["extra"]["pool_name"] == "llm"
         assert call_args[1]["extra"]["workflow_id"] == "wf-race"
+
+    @pytest.mark.asyncio
+    async def test_reraises_non_unique_constraint_integrity_error(
+        self, mock_session, mock_session_maker
+    ):
+        pool = MagicMock()
+        pool.capacity = 10
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(0),
+                _make_scalar_result(0),
+            ]
+        )
+        mock_session.commit = AsyncMock(
+            side_effect=IntegrityError(
+                "foreign key violation",
+                params=None,
+                orig=Exception("fk_token_holds_pool_name"),
+            )
+        )
+
+        with (
+            patch(
+                "src.database.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            pytest.raises(IntegrityError, match="foreign key violation"),
+        ):
+            await try_acquire_tokens_async("llm", 3, "wf-fk-error")
+
+    @pytest.mark.asyncio
+    async def test_returns_true_for_psycopg2_diag_constraint(
+        self, mock_session, mock_session_maker
+    ):
+        pool = MagicMock()
+        pool.capacity = 10
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(0),
+                _make_scalar_result(0),
+            ]
+        )
+        orig = MagicMock()
+        orig.diag = MagicMock()
+        orig.diag.constraint_name = "uq_token_hold_pool_workflow"
+        mock_session.commit = AsyncMock(
+            side_effect=IntegrityError("duplicate key", params=None, orig=orig)
+        )
+
+        with patch(
+            "src.database.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await try_acquire_tokens_async("llm", 3, "wf-psycopg2")
+
+        assert result is True
+        mock_session.rollback.assert_awaited_once()
