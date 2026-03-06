@@ -7,7 +7,7 @@
 # =============================================================================
 # This Dockerfile uses a multi-stage build optimized for Docker layer caching:
 #
-# 1. base:     Python + system deps + Rust (for cryptography) + uv
+# 1. base:     Python + system deps + uv
 # 2. ml-deps:  Heavy ML packages (torch, transformers, etc.) - CPU-only (~800MB)
 #              ONLY changes when ml-requirements.txt changes
 # 3. dev/prod: App dependencies + source code - changes frequently
@@ -29,9 +29,6 @@ FROM python:3.11-slim AS base
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl build-essential git && rm -rf /var/lib/apt/lists/*
-
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN pip install --no-cache-dir uv
 
