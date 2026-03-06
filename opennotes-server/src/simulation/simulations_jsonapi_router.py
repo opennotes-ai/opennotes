@@ -61,6 +61,43 @@ VALID_CANCEL_FROM = {"pending", "running", "paused"}
 TERMINAL_STATUSES = {"completed", "cancelled", "failed"}
 
 
+async def _cancel_turn_workflows(simulation_id: UUID, db: AsyncSession) -> int:
+    try:
+        result = await db.execute(
+            select(SimAgentInstance.id).where(SimAgentInstance.simulation_run_id == simulation_id)
+        )
+        agent_ids = [str(row[0]) for row in result.all()]
+        if not agent_ids:
+            return 0
+
+        client = get_dbos_client()
+        cancelled = 0
+        for agent_id in agent_ids:
+            workflows = await asyncio.to_thread(
+                client.list_workflows,
+                workflow_id_prefix=f"turn-{agent_id}-",
+                status=["ENQUEUED", "PENDING"],
+                load_input=False,
+                load_output=False,
+            )
+            for wf in workflows:
+                await asyncio.to_thread(client.cancel_workflow, wf.workflow_id)
+                cancelled += 1
+
+        logger.info(
+            "Cancelled turn workflows",
+            extra={"simulation_id": str(simulation_id), "cancelled": cancelled},
+        )
+        return cancelled
+    except Exception:
+        logger.warning(
+            "Failed to cancel turn workflows (non-fatal)",
+            extra={"simulation_id": str(simulation_id)},
+            exc_info=True,
+        )
+        return 0
+
+
 class ResumeAttributes(StrictInputSchema):
     reset_turns: bool = False
 
@@ -480,6 +517,8 @@ async def pause_simulation(
         )
         await db.commit()
 
+        await _cancel_turn_workflows(simulation_id, db)
+
         await db.refresh(run)
         resource = simulation_run_to_resource(run)
         response = SimulationSingleResponse(
@@ -711,6 +750,8 @@ async def cancel_simulation(
             .values(status="cancelled", completed_at=now, updated_at=now)
         )
         await db.commit()
+
+        await _cancel_turn_workflows(simulation_id, db)
 
         await db.refresh(run)
         resource = simulation_run_to_resource(run)
