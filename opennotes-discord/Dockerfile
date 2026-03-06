@@ -8,33 +8,26 @@ ENV CI=true
 # Enable pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy workspace configuration from opennotes-discord (where workspace is defined)
+# Copy dependency resolution files only (lockfile, workspace config, package.json per package)
 COPY opennotes-discord/pnpm-workspace.yaml opennotes-discord/package.json opennotes-discord/pnpm-lock.yaml ./
+COPY opennotes-discord/packages/shared-types/package.json ./packages/shared-types/package.json
+COPY opennotes-discord/packages/test-utils/package.json ./packages/test-utils/package.json
 
-# Copy workspace packages (shared dependencies) from opennotes-discord
-COPY opennotes-discord/packages ./packages
-
-# Copy OpenAPI spec for type generation
-COPY opennotes-server/openapi.json ./opennotes-server/openapi.json
-
-# Copy Discord bot package
-COPY opennotes-discord ./opennotes-discord
-
-# Install all workspace dependencies (including dev for build)
+# Install all workspace dependencies (cached unless lockfile or package.json changes)
 RUN pnpm install --frozen-lockfile
 
-# Clean and build workspace packages (remove stale tsbuildinfo to force fresh build)
+# Copy workspace package source and build (cached unless packages/ source changes)
+COPY opennotes-discord/packages ./packages
 RUN rm -rf packages/*/dist packages/*/*.tsbuildinfo && \
     pnpm --filter './packages/**' run build
 
+# Copy OpenAPI spec for type generation and Discord bot source
+COPY opennotes-server/openapi.json ./opennotes-server/openapi.json
+COPY opennotes-discord ./opennotes-discord
+
 # Set working directory to Discord bot for final build steps
 WORKDIR /workspace/opennotes-discord
-
-# Set up node_modules symlinks for this workspace package
-# (pnpm workspaces require node_modules at each package location)
 RUN pnpm install --frozen-lockfile
-
-# Build the application
 RUN pnpm run build
 
 # Production stage
