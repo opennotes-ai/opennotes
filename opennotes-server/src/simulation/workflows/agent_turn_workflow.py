@@ -23,11 +23,35 @@ logger = get_logger(__name__)
 
 _message_list_ta: TypeAdapter[list[ModelMessage]] = TypeAdapter(list[ModelMessage])
 
+_INACTIVE_STATUSES = frozenset({"paused", "cancelled", "completed", "failed"})
+
 simulation_turn_queue = Queue(
     name="simulation_turn",
     worker_concurrency=6,
     concurrency=24,
 )
+
+
+@DBOS.step(
+    retries_allowed=True,
+    max_attempts=2,
+    interval_seconds=1.0,
+    backoff_rate=2.0,
+)
+def check_simulation_active_step(agent_instance_id: str) -> bool:
+    from src.database import get_session_maker
+
+    async def _check() -> bool:
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun.status)
+                .join(SimAgentInstance, SimAgentInstance.simulation_run_id == SimulationRun.id)
+                .where(SimAgentInstance.id == UUID(agent_instance_id))
+            )
+            status = result.scalar_one_or_none()
+            return status is not None and status not in _INACTIVE_STATUSES
+
+    return run_sync(_check())
 
 
 def _serialize_messages(messages: list[ModelMessage]) -> list[dict[str, Any]]:
@@ -491,9 +515,23 @@ def persist_state_step(
 
 @DBOS.workflow()
 def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
+    if not check_simulation_active_step(agent_instance_id):
+        logger.info(
+            "Simulation not active, skipping turn",
+            extra={"agent_instance_id": agent_instance_id},
+        )
+        return {"agent_instance_id": agent_instance_id, "status": "skipped_inactive"}
+
     gate = TokenGate(pool="default", weight=WorkflowWeight.SIMULATION_TURN)
     gate.acquire()
     try:
+        if not check_simulation_active_step(agent_instance_id):
+            logger.info(
+                "Simulation became inactive during gate wait, skipping turn",
+                extra={"agent_instance_id": agent_instance_id},
+            )
+            return {"agent_instance_id": agent_instance_id, "status": "skipped_inactive"}
+
         settings = get_settings()
         workflow_id = DBOS.workflow_id
         assert workflow_id is not None

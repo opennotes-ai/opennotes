@@ -310,6 +310,10 @@ class TestSimulationTurnTokenGated:
         with (
             patch("src.simulation.workflows.agent_turn_workflow.TokenGate") as mock_gate_cls,
             patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
                 "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
                 return_value={
                     "agent_instance_id": agent_instance_id,

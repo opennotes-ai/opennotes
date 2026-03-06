@@ -16,6 +16,15 @@ from src.utils.async_compat import run_sync
 logger = logging.getLogger(__name__)
 
 MAX_SCAVENGE_BATCH = 10
+_EXPECTED_CONSTRAINT = "uq_token_hold_pool_workflow"
+
+
+def _is_unique_constraint_violation(exc: IntegrityError) -> bool:
+    constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    if constraint_name == _EXPECTED_CONSTRAINT:
+        return True
+    return _EXPECTED_CONSTRAINT in str(exc.orig)
+
 
 _TERMINAL_STATUSES = frozenset(
     {
@@ -82,7 +91,9 @@ async def _scavenge_zombie_holds(session: Any, pool_name: str) -> int:
             continue
         if wf_status.status in _TERMINAL_STATUSES:
             await session.execute(
-                update(TokenHold).where(TokenHold.id == hold.id).values(released_at=func.now())
+                update(TokenHold)
+                .where(TokenHold.id == hold.id, TokenHold.released_at.is_(None))
+                .values(released_at=func.now())
             )
             logger.info(
                 "Scavenged zombie hold",
@@ -148,8 +159,14 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
             )
             try:
                 await session.commit()
-            except IntegrityError:
+            except IntegrityError as exc:
                 await session.rollback()
+                if not _is_unique_constraint_violation(exc):
+                    raise
+                logger.warning(
+                    "Concurrent token acquire detected (IntegrityError), treating as acquired",
+                    extra={"pool_name": pool_name, "workflow_id": workflow_id},
+                )
                 return True
             return True
 

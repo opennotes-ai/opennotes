@@ -10855,6 +10855,97 @@
         }
       }
     },
+    "/api/v2/simulations/{simulation_id}/cancel-workflows": {
+      "post": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Cancel Simulation Workflows",
+        "description": "Cancel DBOS turn workflows for a simulation.\n\nThis is an operational/debugging endpoint that returns plain JSON\n(not JSON:API format) for ease of scripting and monitoring.",
+        "operationId": "cancel_simulation_workflows_api_v2_simulations__simulation_id__cancel_workflows_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "dry_run",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Dry Run"
+            }
+          },
+          {
+            "name": "generation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Generation"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelWorkflowsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/simulations/{simulation_id}/progress": {
       "get": {
         "tags": [
@@ -13014,6 +13105,61 @@
         ],
         "title": "BulkScanSingleResponse",
         "description": "JSON:API response for a single bulk scan resource."
+      },
+      "CancelWorkflowsResponse": {
+        "properties": {
+          "simulation_id": {
+            "type": "string",
+            "title": "Simulation Id"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "workflow_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Workflow Ids"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "simulation_id",
+          "dry_run",
+          "workflow_ids",
+          "total",
+          "cancelled"
+        ],
+        "title": "CancelWorkflowsResponse"
       },
       "CandidateAttributes": {
         "properties": {

@@ -980,6 +980,10 @@ class TestRunAgentTurnWorkflow:
 
         with (
             patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
                 "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
                 return_value=context,
             ),
@@ -1070,6 +1074,10 @@ class TestRunAgentTurnWorkflow:
 
         with (
             patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
                 "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
                 side_effect=track_load,
             ),
@@ -1120,6 +1128,10 @@ class TestRunAgentTurnWorkflow:
 
         with (
             patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
                 "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
                 return_value=context,
             ),
@@ -1166,6 +1178,10 @@ class TestRunAgentTurnWorkflow:
         phase1_msgs = [{"kind": "response", "parts": [{"part_kind": "text", "content": "pass"}]}]
 
         with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
                 return_value=context,
@@ -1574,6 +1590,10 @@ class TestRecentActions:
 
         with (
             patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
                 "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
                 return_value=context,
             ),
@@ -1631,6 +1651,10 @@ class TestTwoPhaseFlow:
             }
 
         with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
                 return_value=context,
@@ -1702,6 +1726,10 @@ class TestTwoPhaseFlow:
 
         with (
             patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
                 "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
                 return_value=context,
             ),
@@ -1757,6 +1785,10 @@ class TestTwoPhaseFlow:
             return fn
 
         with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
                 side_effect=track("load", context),
@@ -2305,6 +2337,10 @@ class TestConfigurableDefaults:
             patch(
                 "src.simulation.workflows.agent_turn_workflow.TokenGate",
                 return_value=mock_gate,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",

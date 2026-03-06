@@ -3298,6 +3298,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/simulations/{simulation_id}/cancel-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Simulation Workflows
+         * @description Cancel DBOS turn workflows for a simulation.
+         *
+         *     This is an operational/debugging endpoint that returns plain JSON
+         *     (not JSON:API format) for ease of scripting and monitoring.
+         */
+        post: operations["cancel_simulation_workflows_api_v2_simulations__simulation_id__cancel_workflows_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/simulations/{simulation_id}/progress": {
         parameters: {
             query?: never;
@@ -4404,6 +4427,26 @@ export interface components {
                 [key: string]: string;
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /** CancelWorkflowsResponse */
+        CancelWorkflowsResponse: {
+            /** Simulation Id */
+            simulation_id: string;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Generation */
+            generation?: number | null;
+            /** Workflow Ids */
+            workflow_ids: string[];
+            /** Total */
+            total: number;
+            /** Cancelled */
+            cancelled: number;
+            /**
+             * Errors
+             * @default []
+             */
+            errors: string[];
         };
         /**
          * CandidateAttributes
@@ -16168,6 +16211,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SimulationSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_simulation_workflows_api_v2_simulations__simulation_id__cancel_workflows_post: {
+        parameters: {
+            query?: {
+                dry_run?: boolean;
+                generation?: number | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelWorkflowsResponse"];
                 };
             };
             /** @description Validation Error */

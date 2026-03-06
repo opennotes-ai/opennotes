@@ -42,11 +42,19 @@ class TokenGate:
         wf_id = DBOS.workflow_id
         if wf_id is None:
             raise RuntimeError("TokenGate.acquire() must be called inside a DBOS workflow")
-        self._workflow_id = wf_id
         elapsed = 0.0
         while True:
-            acquired = try_acquire_tokens(self.pool, self.weight, wf_id)
+            try:
+                acquired = try_acquire_tokens(self.pool, self.weight, wf_id)
+            except Exception:
+                logger.warning(
+                    "try_acquire_tokens failed, will retry",
+                    extra={"pool": self.pool, "workflow_id": wf_id, "elapsed": elapsed},
+                    exc_info=True,
+                )
+                acquired = False
             if acquired:
+                self._workflow_id = wf_id
                 logger.info(
                     "Tokens acquired",
                     extra={

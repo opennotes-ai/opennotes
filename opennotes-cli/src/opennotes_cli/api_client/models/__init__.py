@@ -56,6 +56,7 @@ from .bulk_scan_results_resource_relationships_type_0 import (
 )
 from .bulk_scan_single_response import BulkScanSingleResponse
 from .bulk_scan_single_response_jsonapi import BulkScanSingleResponseJsonapi
+from .cancel_workflows_response import CancelWorkflowsResponse
 from .candidate_attributes import CandidateAttributes
 from .candidate_attributes_predicted_ratings_type_0 import (
     CandidateAttributesPredictedRatingsType0,
@@ -644,6 +645,7 @@ __all__ = (
     "BulkScanResultsResourceRelationshipsType0",
     "BulkScanSingleResponse",
     "BulkScanSingleResponseJsonapi",
+    "CancelWorkflowsResponse",
     "CandidateAttributes",
     "CandidateAttributesPredictedRatingsType0",
     "CandidateListResponse",
