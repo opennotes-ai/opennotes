@@ -1331,3 +1331,147 @@ class TestCancelSimulation:
         assert response.status_code == 200
         data = response.json()
         assert data["data"]["attributes"]["status"] == "cancelled"
+
+
+class TestCancelWorkflows:
+    @pytest.mark.asyncio
+    async def test_cancel_workflows_dry_run(
+        self, admin_auth_client, simulation_run_factory, agent_instance_factory
+    ):
+        run = await simulation_run_factory("running")
+        inst1 = await agent_instance_factory(run["id"])
+        inst2 = await agent_instance_factory(run["id"])
+
+        mock_wf1 = MagicMock()
+        mock_wf1.workflow_id = f"turn-{inst1['id']}-gen1-1-retry0"
+        mock_wf2 = MagicMock()
+        mock_wf2.workflow_id = f"turn-{inst2['id']}-gen1-2-retry0"
+
+        mock_client = MagicMock()
+
+        def _list_workflows(**kwargs):
+            prefix = kwargs.get("workflow_id_prefix", "")
+            if str(inst1["id"]) in prefix:
+                return [mock_wf1]
+            if str(inst2["id"]) in prefix:
+                return [mock_wf2]
+            return []
+
+        mock_client.list_workflows.side_effect = _list_workflows
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/cancel-workflows?dry_run=true"
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["dry_run"] is True
+        assert data["total"] == 2
+        assert mock_wf1.workflow_id in data["workflow_ids"]
+        assert mock_wf2.workflow_id in data["workflow_ids"]
+        mock_client.cancel_workflow.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cancel_workflows_execute(
+        self, admin_auth_client, simulation_run_factory, agent_instance_factory
+    ):
+        run = await simulation_run_factory("running")
+        inst1 = await agent_instance_factory(run["id"])
+
+        mock_wf1 = MagicMock()
+        mock_wf1.workflow_id = f"turn-{inst1['id']}-gen1-1-retry0"
+
+        mock_client = MagicMock()
+
+        def _list_workflows(**kwargs):
+            prefix = kwargs.get("workflow_id_prefix", "")
+            if str(inst1["id"]) in prefix:
+                return [mock_wf1]
+            return []
+
+        mock_client.list_workflows.side_effect = _list_workflows
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/cancel-workflows"
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["dry_run"] is False
+        assert data["total"] == 1
+        assert data["cancelled"] == 1
+        assert mock_wf1.workflow_id in data["workflow_ids"]
+        mock_client.cancel_workflow.assert_called_once_with(mock_wf1.workflow_id)
+
+    @pytest.mark.asyncio
+    async def test_cancel_workflows_with_generation_filter(
+        self, admin_auth_client, simulation_run_factory, agent_instance_factory
+    ):
+        run = await simulation_run_factory("running")
+        inst1 = await agent_instance_factory(run["id"])
+
+        mock_wf_gen2 = MagicMock()
+        mock_wf_gen2.workflow_id = f"turn-{inst1['id']}-gen2-5-retry0"
+
+        mock_client = MagicMock()
+
+        def _list_workflows(**kwargs):
+            prefix = kwargs.get("workflow_id_prefix", "")
+            if "gen2" in prefix:
+                return [mock_wf_gen2]
+            return []
+
+        mock_client.list_workflows.side_effect = _list_workflows
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            return_value=mock_client,
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/cancel-workflows?generation=2"
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cancelled"] == 1
+        assert data["generation"] == 2
+
+        call_args = mock_client.list_workflows.call_args_list
+        for call in call_args:
+            prefix = call.kwargs.get("workflow_id_prefix", "")
+            assert "gen2" in prefix
+
+    @pytest.mark.asyncio
+    async def test_cancel_workflows_not_found(self, admin_auth_client):
+        from uuid import uuid4
+
+        fake_id = str(uuid4())
+
+        response = await admin_auth_client.post(f"/api/v2/simulations/{fake_id}/cancel-workflows")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_cancel_workflows_dbos_unavailable(
+        self, admin_auth_client, simulation_run_factory, agent_instance_factory
+    ):
+        run = await simulation_run_factory("running")
+        await agent_instance_factory(run["id"])
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.get_dbos_client",
+            side_effect=RuntimeError("DBOS unavailable"),
+        ):
+            response = await admin_auth_client.post(
+                f"/api/v2/simulations/{run['id']}/cancel-workflows"
+            )
+
+        assert response.status_code == 500

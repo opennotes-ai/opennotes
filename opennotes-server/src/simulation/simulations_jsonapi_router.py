@@ -775,6 +775,109 @@ async def cancel_simulation(
         )
 
 
+@router.post(
+    "/simulations/{simulation_id}/cancel-workflows",
+    response_class=JSONResponse,
+)
+async def cancel_simulation_workflows(
+    simulation_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    dry_run: bool = False,
+    generation: int | None = None,
+) -> JSONResponse:
+    require_admin(current_user)
+
+    try:
+        run_result = await db.execute(
+            select(SimulationRun).where(
+                SimulationRun.id == simulation_id,
+                SimulationRun.deleted_at.is_(None),
+            )
+        )
+        run = run_result.scalar_one_or_none()
+
+        if not run:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"SimulationRun {simulation_id} not found",
+            )
+
+        result = await db.execute(
+            select(SimAgentInstance.id).where(SimAgentInstance.simulation_run_id == simulation_id)
+        )
+        agent_ids = [str(row[0]) for row in result.all()]
+
+        if not agent_ids:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "simulation_id": str(simulation_id),
+                    "dry_run": dry_run,
+                    "generation": generation,
+                    "workflow_ids": [],
+                    "total": 0,
+                    "cancelled": 0,
+                },
+            )
+
+        client = get_dbos_client()
+        workflow_ids: list[str] = []
+        for agent_id in agent_ids:
+            if generation is not None:
+                prefix = f"turn-{agent_id}-gen{generation}-"
+            else:
+                prefix = f"turn-{agent_id}-"
+
+            workflows = await asyncio.to_thread(
+                client.list_workflows,
+                workflow_id_prefix=prefix,
+                status=["ENQUEUED", "PENDING"],
+                load_input=False,
+                load_output=False,
+            )
+            for wf in workflows:
+                workflow_ids.append(wf.workflow_id)
+
+        cancelled = 0
+        if not dry_run:
+            for wf_id in workflow_ids:
+                await asyncio.to_thread(client.cancel_workflow, wf_id)
+                cancelled += 1
+
+        logger.info(
+            "Cancel-workflows endpoint completed",
+            extra={
+                "simulation_id": str(simulation_id),
+                "dry_run": dry_run,
+                "generation": generation,
+                "total": len(workflow_ids),
+                "cancelled": cancelled,
+            },
+        )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "simulation_id": str(simulation_id),
+                "dry_run": dry_run,
+                "generation": generation,
+                "workflow_ids": workflow_ids,
+                "total": len(workflow_ids),
+                "cancelled": cancelled,
+            },
+        )
+
+    except Exception:
+        logger.exception("Failed to cancel simulation workflows")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to cancel simulation workflows",
+        )
+
+
 @router.get(
     "/simulations/{simulation_id}/progress",
     response_class=JSONResponse,

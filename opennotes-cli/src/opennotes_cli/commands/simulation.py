@@ -300,6 +300,60 @@ def simulation_cancel(ctx: click.Context, simulation_id: str) -> None:
     _simulation_lifecycle_cmd(ctx, simulation_id, "cancel")
 
 
+@simulation.command("cancel-workflows")
+@click.argument("simulation_id")
+@click.option("--generation", type=int, default=None, help="Only cancel workflows from this generation.")
+@click.option("--dry-run", is_flag=True, default=False, help="List workflows without cancelling.")
+@click.pass_context
+def simulation_cancel_workflows(
+    ctx: click.Context, simulation_id: str, generation: int | None, dry_run: bool
+) -> None:
+    """List and bulk-cancel orphaned turn workflows for a simulation."""
+    cli_ctx: CliContext = ctx.obj
+    base_url = cli_ctx.base_url
+    client = cli_ctx.client
+
+    csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+    headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    params: dict[str, str | int] = {}
+    if dry_run:
+        params["dry_run"] = "true"
+    if generation is not None:
+        params["generation"] = generation
+
+    response = client.post(
+        f"{base_url}/api/v2/simulations/{simulation_id}/cancel-workflows",
+        headers=headers,
+        params=params,
+    )
+    handle_jsonapi_error(response)
+
+    result = response.json()
+
+    if cli_ctx.json_output:
+        console.print(json.dumps(result, indent=2, default=str))
+        return
+
+    workflow_ids = result.get("workflow_ids", [])
+    total = result.get("total", 0)
+    cancelled = result.get("cancelled", 0)
+
+    if dry_run:
+        console.print(f"[yellow]Dry run:[/yellow] found {total} workflow(s)")
+    else:
+        console.print(f"[green]Cancelled {cancelled}[/green] of {total} workflow(s)")
+
+    if workflow_ids:
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Workflow ID", no_wrap=True)
+        for wf_id in workflow_ids:
+            table.add_row(wf_id)
+        console.print(table)
+    else:
+        console.print("[dim]No workflows found.[/dim]")
+
+
 @simulation.command("restart")
 @click.argument("simulation_id")
 @click.pass_context
