@@ -4,4 +4,5 @@ export default defineConfig({
   server: {
     preset: "node-server",
   },
+  middleware: "src/middleware/index.ts",
 });
