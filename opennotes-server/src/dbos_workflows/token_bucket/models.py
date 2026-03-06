@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,7 +48,13 @@ class TokenHold(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("pool_name", "workflow_id", name="uq_token_hold_pool_workflow"),
+        Index(
+            "uq_token_hold_pool_workflow",
+            "pool_name",
+            "workflow_id",
+            unique=True,
+            postgresql_where=text("released_at IS NULL"),
+        ),
     )
 
 

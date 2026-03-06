@@ -14,9 +14,19 @@ class TestTokenHoldModel:
     def test_tablename(self):
         assert TokenHold.__tablename__ == "token_holds"
 
-    def test_has_unique_constraint(self):
-        constraint_names = [c.name for c in TokenHold.__table__.constraints if hasattr(c, "name")]
-        assert "uq_token_hold_pool_workflow" in constraint_names
+    def test_partial_unique_index_on_pool_workflow(self):
+        table = TokenHold.__table__
+        idx = next(
+            (i for i in table.indexes if i.name == "uq_token_hold_pool_workflow"),
+            None,
+        )
+        assert idx is not None, "uq_token_hold_pool_workflow index must exist"
+        assert idx.unique is True
+        col_names = [c.name for c in idx.columns]
+        assert col_names == ["pool_name", "workflow_id"]
+        where_clause = idx.dialect_options.get("postgresql", {}).get("where")
+        assert where_clause is not None, "index must have a WHERE clause"
+        assert "released_at IS NULL" in str(where_clause)
 
     def test_pool_name_is_foreign_key(self):
         col = TokenHold.__table__.c.pool_name
