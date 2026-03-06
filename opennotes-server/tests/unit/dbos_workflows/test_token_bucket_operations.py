@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from src.dbos_workflows.token_bucket.operations import (
     MAX_SCAVENGE_BATCH,
@@ -681,7 +681,7 @@ class TestGetEffectiveCapacityFallback:
     @pytest.mark.asyncio
     async def test_falls_back_to_static_when_query_raises(self):
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=Exception("relation does not exist"))
+        session.execute = AsyncMock(side_effect=SQLAlchemyError("relation does not exist"))
 
         result = await _get_effective_capacity(session, "default", 12)
 
@@ -690,7 +690,7 @@ class TestGetEffectiveCapacityFallback:
     @pytest.mark.asyncio
     async def test_logs_warning_on_fallback(self):
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=Exception("table missing"))
+        session.execute = AsyncMock(side_effect=SQLAlchemyError("table missing"))
 
         with patch("src.dbos_workflows.token_bucket.operations.logger") as mock_logger:
             result = await _get_effective_capacity(session, "default", 10)
@@ -759,6 +759,41 @@ class TestScavengeIndependentCommit:
         assert result is False
         scavenge_session.commit.assert_awaited_once()
         acquire_session.add.assert_not_called()
+
+
+class TestScavengeCommitFailureHandled:
+    @pytest.mark.asyncio
+    async def test_scavenge_session_error_does_not_propagate(self):
+        pool = MagicMock()
+        pool.capacity = 5
+
+        acquire_session = AsyncMock()
+        acquire_session.__aenter__ = AsyncMock(return_value=acquire_session)
+        acquire_session.__aexit__ = AsyncMock(return_value=None)
+        acquire_session.add = MagicMock()
+        acquire_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_result(None),
+                _make_scalar_result(pool),
+                _make_scalar_result(0),
+                _make_scalar_result(5),
+            ]
+        )
+
+        scavenge_session = AsyncMock()
+        scavenge_session.__aenter__ = AsyncMock(return_value=scavenge_session)
+        scavenge_session.__aexit__ = AsyncMock(return_value=None)
+        scavenge_session.execute = AsyncMock(
+            side_effect=RuntimeError("DB connection lost"),
+        )
+
+        sessions = iter([acquire_session, scavenge_session])
+        maker = MagicMock(side_effect=lambda: next(sessions))
+
+        with patch("src.database.get_session_maker", return_value=maker):
+            result = await try_acquire_tokens_async("llm", 3, "wf-new")
+
+        assert result is False
 
 
 class TestCoalesceNoRedundantOr0:

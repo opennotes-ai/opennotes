@@ -7,7 +7,7 @@ from typing import Any
 
 from dbos import DBOS
 from sqlalchemy import func, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from src.dbos_workflows.token_bucket.config import WORKER_HEARTBEAT_TTL
 from src.dbos_workflows.token_bucket.models import TokenHold, TokenPool, TokenPoolWorker
@@ -42,7 +42,7 @@ async def _get_effective_capacity(session: Any, pool_name: str, static_capacity:
         worker_capacity: int = raw if raw is not None else 0
         if worker_capacity > 0:
             return int(worker_capacity)
-    except Exception:
+    except SQLAlchemyError:
         logger.warning(
             "Worker capacity query failed, falling back to static capacity",
             extra={"pool_name": pool_name, "static_capacity": static_capacity},
@@ -54,7 +54,7 @@ async def _get_effective_capacity(session: Any, pool_name: str, static_capacity:
 async def _scavenge_zombie_holds(session: Any, pool_name: str) -> int:
     """Release holds whose DBOS workflows have reached a terminal state.
 
-    Must be called while holding the SELECT FOR UPDATE lock on the pool row.
+    Runs in its own session/transaction, independent of the acquisition lock.
     Returns the number of holds released.
     """
     holds_result = await session.execute(
@@ -156,14 +156,21 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
         should_scavenge = True
 
     if should_scavenge:
-        async with get_session_maker()() as scavenge_session:
-            scavenged = await _scavenge_zombie_holds(scavenge_session, pool_name)
-            if scavenged > 0:
-                await scavenge_session.commit()
-                logger.info(
-                    "Scavenged zombie holds in separate transaction",
-                    extra={"pool_name": pool_name, "scavenged": scavenged},
-                )
+        try:
+            async with get_session_maker()() as scavenge_session:
+                scavenged = await _scavenge_zombie_holds(scavenge_session, pool_name)
+                if scavenged > 0:
+                    await scavenge_session.commit()
+                    logger.info(
+                        "Scavenged zombie holds in separate transaction",
+                        extra={"pool_name": pool_name, "scavenged": scavenged},
+                    )
+        except Exception:
+            logger.warning(
+                "Scavenge failed, will retry on next acquisition attempt",
+                extra={"pool_name": pool_name},
+                exc_info=True,
+            )
 
     return False
 
