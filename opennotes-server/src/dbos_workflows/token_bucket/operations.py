@@ -30,17 +30,24 @@ _TERMINAL_STATUSES = frozenset(
 
 async def _get_effective_capacity(session: Any, pool_name: str, static_capacity: int) -> int:
     """Compute effective pool capacity from active workers, falling back to static capacity."""
-    cutoff = datetime.now(UTC) - timedelta(seconds=WORKER_HEARTBEAT_TTL)
-    result = await session.execute(
-        select(func.coalesce(func.sum(TokenPoolWorker.capacity_contribution), 0)).where(
-            TokenPoolWorker.pool_name == pool_name,
-            TokenPoolWorker.last_heartbeat >= cutoff,
+    try:
+        cutoff = datetime.now(UTC) - timedelta(seconds=WORKER_HEARTBEAT_TTL)
+        result = await session.execute(
+            select(func.coalesce(func.sum(TokenPoolWorker.capacity_contribution), 0)).where(
+                TokenPoolWorker.pool_name == pool_name,
+                TokenPoolWorker.last_heartbeat >= cutoff,
+            )
         )
-    )
-    raw = result.scalar()
-    worker_capacity: int = raw if raw is not None else 0
-    if worker_capacity > 0:
-        return int(worker_capacity)
+        raw = result.scalar()
+        worker_capacity: int = raw if raw is not None else 0
+        if worker_capacity > 0:
+            return int(worker_capacity)
+    except Exception:
+        logger.warning(
+            "Worker capacity query failed, falling back to static capacity",
+            extra={"pool_name": pool_name, "static_capacity": static_capacity},
+            exc_info=True,
+        )
     return static_capacity
 
 
@@ -95,10 +102,12 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
     """Atomically acquire tokens. Idempotent via workflow_id.
 
     Uses SELECT FOR UPDATE on the pool row to serialize concurrent acquisitions.
-    When the pool is full, actively scavenges holds from terminated workflows
-    before giving up.
+    When the pool is full, scavenges holds from terminated workflows in a
+    separate transaction so released holds persist even if acquisition fails.
     """
     from src.database import get_session_maker
+
+    should_scavenge = False
 
     async with get_session_maker()() as session:
         existing = await session.execute(
@@ -129,33 +138,34 @@ async def try_acquire_tokens_async(pool_name: str, weight: int, workflow_id: str
         )
         total_held: int = held_result.scalar() or 0
 
-        if effective_capacity - total_held < weight:
-            scavenged = await _scavenge_zombie_holds(session, pool_name)
-            if scavenged > 0:
-                held_result = await session.execute(
-                    select(func.coalesce(func.sum(TokenHold.weight), 0)).where(
-                        TokenHold.pool_name == pool_name,
-                        TokenHold.released_at.is_(None),
-                    )
+        if effective_capacity - total_held >= weight:
+            session.add(
+                TokenHold(
+                    pool_name=pool_name,
+                    workflow_id=workflow_id,
+                    weight=weight,
                 )
-                total_held = held_result.scalar() or 0
-
-            if effective_capacity - total_held < weight:
-                return False
-
-        session.add(
-            TokenHold(
-                pool_name=pool_name,
-                workflow_id=workflow_id,
-                weight=weight,
             )
-        )
-        try:
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                return True
             return True
-        return True
+
+        should_scavenge = True
+
+    if should_scavenge:
+        async with get_session_maker()() as scavenge_session:
+            scavenged = await _scavenge_zombie_holds(scavenge_session, pool_name)
+            if scavenged > 0:
+                await scavenge_session.commit()
+                logger.info(
+                    "Scavenged zombie holds in separate transaction",
+                    extra={"pool_name": pool_name, "scavenged": scavenged},
+                )
+
+    return False
 
 
 async def release_tokens_async(pool_name: str, workflow_id: str) -> bool:
