@@ -1,6 +1,5 @@
 """Tests for startup validation checks."""
 
-import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,7 +8,6 @@ from src.startup_validation import (
     CheckResult,
     CheckSeverity,
     StartupValidationError,
-    check_database_schema,
     check_fact_check_dataset,
     check_llm_provider_configuration,
     check_nats_connectivity,
@@ -23,58 +21,6 @@ from src.startup_validation import (
 @pytest.mark.asyncio
 class TestStartupValidationChecks:
     """Test individual validation checks."""
-
-    async def test_check_database_schema_success(self):
-        """Test successful database schema validation."""
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "No new upgrade operations detected."
-        mock_result.stderr = ""
-
-        with (
-            patch("src.startup_validation.settings") as mock_settings,
-            patch("subprocess.run", return_value=mock_result),
-        ):
-            mock_settings.ENVIRONMENT = "production"
-            result = await check_database_schema()
-
-        assert result.passed is True
-        assert result.severity == CheckSeverity.CRITICAL
-        assert "schema matches" in result.message.lower()
-
-    async def test_check_database_schema_drift_detected(self):
-        """Test database schema drift detection."""
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = "Pending migrations detected"
-        mock_result.stderr = ""
-
-        with (
-            patch("src.startup_validation.settings") as mock_settings,
-            patch("subprocess.run", return_value=mock_result),
-        ):
-            mock_settings.ENVIRONMENT = "production"
-            result = await check_database_schema()
-
-        assert result.passed is False
-        assert result.severity == CheckSeverity.CRITICAL
-        assert "drift" in result.message.lower()
-
-    async def test_check_database_schema_timeout(self):
-        """Test database schema check timeout handling."""
-        with (
-            patch("src.startup_validation.settings") as mock_settings,
-            patch(
-                "subprocess.run",
-                side_effect=subprocess.TimeoutExpired("alembic", 30),
-            ),
-        ):
-            mock_settings.ENVIRONMENT = "production"
-            result = await check_database_schema()
-
-        assert result.passed is False
-        assert result.severity == CheckSeverity.CRITICAL
-        assert "timed out" in result.message.lower()
 
     async def test_check_required_environment_variables_success(self):
         """Test successful environment variable validation."""
@@ -253,7 +199,6 @@ class TestStartupValidationOrchestrator:
         )
 
         with (
-            patch("src.startup_validation.check_database_schema", return_value=passing_check),
             patch(
                 "src.startup_validation.check_required_environment_variables",
                 return_value=passing_check,
@@ -271,7 +216,7 @@ class TestStartupValidationOrchestrator:
         ):
             results = await run_startup_checks()
 
-        assert len(results) == 7
+        assert len(results) == 6
         assert all(r.passed for r in results)
 
     async def test_run_startup_checks_critical_failure_raises(self):
@@ -283,20 +228,20 @@ class TestStartupValidationOrchestrator:
             message="Success",
         )
         failing_check = CheckResult(
-            name="database_schema",
+            name="PostgreSQL Connectivity",
             passed=False,
             severity=CheckSeverity.CRITICAL,
-            message="Schema drift detected",
+            message="Failed to connect to PostgreSQL",
         )
 
         with (
-            patch("src.startup_validation.check_database_schema", return_value=failing_check),
             patch(
                 "src.startup_validation.check_required_environment_variables",
                 return_value=passing_check,
             ),
             patch(
-                "src.startup_validation.check_postgresql_connectivity", return_value=passing_check
+                "src.startup_validation.check_postgresql_connectivity",
+                return_value=failing_check,
             ),
             patch("src.startup_validation.check_redis_connectivity", return_value=passing_check),
             patch("src.startup_validation.check_nats_connectivity", return_value=passing_check),
@@ -310,7 +255,7 @@ class TestStartupValidationOrchestrator:
             await run_startup_checks()
 
         assert len(exc_info.value.failed_checks) == 1
-        assert exc_info.value.failed_checks[0].name == "database_schema"
+        assert exc_info.value.failed_checks[0].name == "PostgreSQL Connectivity"
 
     async def test_run_startup_checks_warning_does_not_raise(self):
         """Test that warnings do not prevent startup."""
@@ -328,7 +273,6 @@ class TestStartupValidationOrchestrator:
         )
 
         with (
-            patch("src.startup_validation.check_database_schema", return_value=passing_check),
             patch(
                 "src.startup_validation.check_required_environment_variables",
                 return_value=passing_check,
@@ -346,7 +290,7 @@ class TestStartupValidationOrchestrator:
         ):
             results = await run_startup_checks()
 
-        assert len(results) == 7
+        assert len(results) == 6
         warnings = [r for r in results if not r.passed and r.severity == CheckSeverity.WARNING]
         assert len(warnings) == 1
 
@@ -361,16 +305,15 @@ class TestStartupValidationOrchestrator:
 
         with (
             patch(
-                "src.startup_validation.check_database_schema", return_value=passing_check
-            ) as mock_schema,
-            patch(
                 "src.startup_validation.check_required_environment_variables",
                 return_value=passing_check,
             ),
             patch(
                 "src.startup_validation.check_postgresql_connectivity", return_value=passing_check
             ) as mock_pg,
-            patch("src.startup_validation.check_redis_connectivity", return_value=passing_check),
+            patch(
+                "src.startup_validation.check_redis_connectivity", return_value=passing_check
+            ) as mock_redis,
             patch("src.startup_validation.check_nats_connectivity", return_value=passing_check),
             patch(
                 "src.startup_validation.check_llm_provider_configuration",
@@ -378,12 +321,11 @@ class TestStartupValidationOrchestrator:
             ),
             patch("src.startup_validation.check_fact_check_dataset", return_value=passing_check),
         ):
-            results = await run_startup_checks(skip_checks=["database_schema", "postgresql"])
+            results = await run_startup_checks(skip_checks=["postgresql", "redis"])
 
-        # Only 5 checks should run (7 total - 2 skipped)
-        assert len(results) == 5
-        mock_schema.assert_not_called()
+        assert len(results) == 4
         mock_pg.assert_not_called()
+        mock_redis.assert_not_called()
 
 
 @pytest.mark.asyncio

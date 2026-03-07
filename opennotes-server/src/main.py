@@ -118,6 +118,7 @@ from src.simulation.orchestrators_jsonapi_router import router as orchestrators_
 from src.simulation.playground_jsonapi_router import router as playground_jsonapi_router
 from src.simulation.sim_agents_jsonapi_router import router as sim_agents_jsonapi_router
 from src.simulation.simulations_jsonapi_router import router as simulations_jsonapi_router
+from src.startup_migrations import run_startup_migrations
 from src.startup_validation import run_startup_checks
 from src.tasks.broker import PullBasedJetStreamBroker, get_broker, reset_broker
 from src.users.admin_router import router as admin_router
@@ -585,6 +586,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     _validate_encryption_key()
     await _run_startup_validation()
+
+    if not settings.TESTING:
+        await run_startup_migrations(settings.SERVER_MODE)
 
     await init_db()
     logger.info("Database initialized")
