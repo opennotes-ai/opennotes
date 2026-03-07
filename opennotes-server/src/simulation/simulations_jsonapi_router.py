@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import ColumnElement, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key, require_admin, require_scope_or_admin
@@ -426,7 +426,7 @@ async def list_simulations(
         is_public = True
 
     try:
-        base_filter = [SimulationRun.deleted_at.is_(None)]
+        base_filter: list[ColumnElement[bool]] = [SimulationRun.deleted_at.is_(None)]
         if is_public is not None:
             base_filter.append(SimulationRun.is_public == is_public)
 
