@@ -20,10 +20,12 @@ Usage:
 """
 
 import asyncio
+import json
 import os
 import secrets
 import sys
 from pathlib import Path
+from uuid import UUID
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -38,6 +40,12 @@ DEV_API_KEY_NAME = "Discord Bot (Development)"
 PROD_API_KEY_NAME = "Discord Bot (Production)"
 SERVICE_USER_USERNAME = "discord-bot-service"
 SERVICE_USER_EMAIL = "discord-bot@opennotes.local"
+
+PLAYGROUND_DEV_API_KEY = "pg_dev_key_for_playground_readonly_access"
+PLAYGROUND_API_KEY_NAME = "Playground (Development)"
+PLAYGROUND_SERVICE_USER_USERNAME = "playground-service"
+PLAYGROUND_SERVICE_USER_EMAIL = "playground@opennotes.local"
+PLAYGROUND_SCOPES = ["simulations:read"]
 
 
 def generate_api_key() -> tuple[str, str]:
@@ -97,37 +105,59 @@ async def get_or_create_service_user(db: AsyncSession):
 
 
 async def seed_api_key(
-    db: AsyncSession, api_key: str, key_name: str, key_prefix: str | None = None
+    db: AsyncSession,
+    api_key: str,
+    key_name: str,
+    key_prefix: str | None = None,
+    user_id: UUID | None = None,
+    scopes: list[str] | None = None,
 ) -> str:
-    """Seed an API key into the database. Returns the key value."""
-    user_id = await get_or_create_service_user(db)
+    if user_id is None:
+        user_id = await get_or_create_service_user(db)
 
     key_hash = get_password_hash(api_key)
+    scopes_json = json.dumps(scopes) if scopes is not None else None
 
     result = await db.execute(
-        text("SELECT id, is_active FROM api_keys WHERE user_id = :user_id AND name = :name"),
+        text(
+            "SELECT id, is_active, scopes::text FROM api_keys WHERE user_id = :user_id AND name = :name"
+        ),
         {"user_id": user_id, "name": key_name},
     )
     row = result.first()
 
     if row:
-        api_key_id, is_active = row
-        if is_active:
+        api_key_id, is_active, existing_scopes_text = row
+        existing_scopes = json.loads(existing_scopes_text) if existing_scopes_text else None
+        needs_scope_update = existing_scopes != scopes
+
+        if is_active and not needs_scope_update:
             print(f"✓ API key '{key_name}' already exists and is active")
+        elif is_active and needs_scope_update:
+            await db.execute(
+                text("UPDATE api_keys SET scopes = :scopes::jsonb WHERE id = :id"),
+                {"id": api_key_id, "scopes": scopes_json},
+            )
+            print(f"✓ Updated scopes on API key '{key_name}'")
         else:
             await db.execute(
                 text(
-                    "UPDATE api_keys SET is_active = true, key_hash = :key_hash, key_prefix = :key_prefix WHERE id = :id"
+                    "UPDATE api_keys SET is_active = true, key_hash = :key_hash, key_prefix = :key_prefix, scopes = :scopes::jsonb WHERE id = :id"
                 ),
-                {"id": api_key_id, "key_hash": key_hash, "key_prefix": key_prefix},
+                {
+                    "id": api_key_id,
+                    "key_hash": key_hash,
+                    "key_prefix": key_prefix,
+                    "scopes": scopes_json,
+                },
             )
             print(f"✓ Reactivated API key '{key_name}'")
         return api_key
 
     result = await db.execute(
         text("""
-            INSERT INTO api_keys (user_id, name, key_hash, key_prefix, is_active, created_at)
-            VALUES (:user_id, :name, :key_hash, :key_prefix, :is_active, NOW())
+            INSERT INTO api_keys (user_id, name, key_hash, key_prefix, is_active, scopes, created_at)
+            VALUES (:user_id, :name, :key_hash, :key_prefix, :is_active, :scopes::jsonb, NOW())
             RETURNING id
         """),
         {
@@ -136,6 +166,7 @@ async def seed_api_key(
             "key_hash": key_hash,
             "key_prefix": key_prefix,
             "is_active": True,
+            "scopes": scopes_json,
         },
     )
     api_key_id = result.scalar_one()
@@ -143,11 +174,74 @@ async def seed_api_key(
     print(f"✓ Created API key '{key_name}' (ID: {api_key_id})")
     print(f"  User ID: {user_id}")
     print("  Never expires: True")
+    if scopes:
+        print(f"  Scopes: {scopes}")
     return api_key
 
 
+async def get_or_create_playground_service_user(db: AsyncSession):
+    result = await db.execute(
+        text("SELECT id, username, is_service_account FROM users WHERE username = :username"),
+        {"username": PLAYGROUND_SERVICE_USER_USERNAME},
+    )
+    row = result.first()
+
+    if row:
+        user_id = row[0]
+        is_service_account = row[2]
+
+        if not is_service_account:
+            await db.execute(
+                text("UPDATE users SET is_service_account = true WHERE id = :user_id"),
+                {"user_id": user_id},
+            )
+            print(
+                f"✓ Service user '{PLAYGROUND_SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - updated is_service_account flag"
+            )
+        else:
+            print(
+                f"✓ Service user '{PLAYGROUND_SERVICE_USER_USERNAME}' already exists (ID: {user_id})"
+            )
+        return user_id
+
+    hashed_password = get_password_hash("unused-service-account-password")
+
+    result = await db.execute(
+        text("""
+            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, created_at, updated_at)
+            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, NOW(), NOW())
+            RETURNING id
+        """),
+        {
+            "username": PLAYGROUND_SERVICE_USER_USERNAME,
+            "email": PLAYGROUND_SERVICE_USER_EMAIL,
+            "hashed_password": hashed_password,
+            "full_name": "Playground Service Account",
+            "role": "user",
+            "is_active": True,
+            "is_superuser": False,
+            "is_service_account": True,
+        },
+    )
+    user_id = result.scalar_one()
+
+    print(f"✓ Created service user '{PLAYGROUND_SERVICE_USER_USERNAME}' (ID: {user_id})")
+    return user_id
+
+
+async def seed_playground_api_key(db: AsyncSession) -> None:
+    user_id = await get_or_create_playground_service_user(db)
+    api_key = await seed_api_key(
+        db,
+        PLAYGROUND_DEV_API_KEY,
+        PLAYGROUND_API_KEY_NAME,
+        user_id=user_id,
+        scopes=PLAYGROUND_SCOPES,
+    )
+    print(f"  Key value: {api_key}")
+
+
 async def seed_dev_api_key(db: AsyncSession) -> None:
-    """Seed the development API key (hardcoded value for local dev)."""
     api_key = await seed_api_key(db, DEV_API_KEY, DEV_API_KEY_NAME)
     print(f"  Key value: {api_key}")
 
@@ -211,6 +305,7 @@ async def main() -> None:
                 print("=" * 60)
             elif environment in ["development", "local"]:
                 await seed_dev_api_key(session)
+                await seed_playground_api_key(session)
                 await session.commit()
                 print()
                 print("✓ API key seeding completed successfully")
