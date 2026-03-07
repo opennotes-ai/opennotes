@@ -134,14 +134,14 @@ async def seed_api_key(
             print(f"✓ API key '{key_name}' already exists and is active")
         elif is_active and needs_scope_update:
             await db.execute(
-                text("UPDATE api_keys SET scopes = :scopes::jsonb WHERE id = :id"),
+                text("UPDATE api_keys SET scopes = CAST(:scopes AS jsonb) WHERE id = :id"),
                 {"id": api_key_id, "scopes": scopes_json},
             )
             print(f"✓ Updated scopes on API key '{key_name}'")
         else:
             await db.execute(
                 text(
-                    "UPDATE api_keys SET is_active = true, key_hash = :key_hash, key_prefix = :key_prefix, scopes = :scopes::jsonb WHERE id = :id"
+                    "UPDATE api_keys SET is_active = true, key_hash = :key_hash, key_prefix = :key_prefix, scopes = CAST(:scopes AS jsonb) WHERE id = :id"
                 ),
                 {
                     "id": api_key_id,
@@ -156,7 +156,7 @@ async def seed_api_key(
     result = await db.execute(
         text("""
             INSERT INTO api_keys (user_id, name, key_hash, key_prefix, is_active, scopes, created_at)
-            VALUES (:user_id, :name, :key_hash, :key_prefix, :is_active, :scopes::jsonb, NOW())
+            VALUES (:user_id, :name, :key_hash, :key_prefix, :is_active, CAST(:scopes AS jsonb), NOW())
             RETURNING id
         """),
         {
@@ -329,4 +329,4 @@ if __name__ == "__main__":
         sys.exit(0)
     except Exception as e:
         print(f"\n✗ Fatal error: {e}")
-        sys.exit(0)
+        sys.exit(1)

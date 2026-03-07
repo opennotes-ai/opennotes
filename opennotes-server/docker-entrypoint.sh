@@ -8,8 +8,7 @@ echo "=================================================="
 # Seed API keys for development if enabled
 if [ "${SEED_DEV_API_KEYS}" = "true" ]; then
     echo "Seeding development API keys..."
-    python scripts/seed_api_keys.py
-    if [ $? -ne 0 ]; then
+    if ! python scripts/seed_api_keys.py; then
         echo "WARNING: Failed to seed API keys. Continuing anyway..."
     fi
 fi
