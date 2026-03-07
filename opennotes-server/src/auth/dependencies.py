@@ -1,13 +1,13 @@
 from typing import Annotated, Any
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.auth import verify_token
 from src.database import get_db
 from src.users.crud import get_user_by_id, verify_api_key
-from src.users.models import User
+from src.users.models import APIKey, User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 http_bearer = HTTPBearer(auto_error=False)
@@ -64,6 +64,7 @@ async def get_current_active_user(
 
 
 async def get_current_user_or_api_key(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(http_bearer)],
     x_api_key: Annotated[str | None, Depends(get_x_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -72,7 +73,8 @@ async def get_current_user_or_api_key(
     if x_api_key:
         api_key_result = await verify_api_key(db, x_api_key)
         if api_key_result:
-            _, user = api_key_result
+            api_key_obj, user = api_key_result
+            request.state.api_key = api_key_obj
             return user
 
     # Fall back to Authorization header (Bearer token)
@@ -95,7 +97,8 @@ async def get_current_user_or_api_key(
     # Try API key in Authorization header (legacy support)
     api_key_result = await verify_api_key(db, token)
     if api_key_result:
-        _, user = api_key_result
+        api_key_obj, user = api_key_result
+        request.state.api_key = api_key_obj
         return user
 
     raise HTTPException(
@@ -146,6 +149,35 @@ def require_admin(user: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required",
         )
+
+
+def require_scope_or_admin(user: User, request: Request, scope: str) -> bool:
+    """Check if the user has admin privileges or a scoped API key with the required scope.
+
+    Returns True if access is via a scoped API key (caller should apply scope
+    restrictions like filtering to public resources), False if access is via
+    admin privileges (no restrictions needed).
+
+    Raises HTTPException 403 if neither condition is met.
+    """
+    is_admin = user.is_superuser or user.is_service_account
+
+    api_key: APIKey | None = getattr(request.state, "api_key", None)
+    if api_key:
+        if not api_key.has_scope(scope):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="API key lacks required scope",
+            )
+        return not is_admin or api_key.is_scoped()
+
+    if is_admin:
+        return False
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin privileges required",
+    )
 
 
 def require_superuser_or_service_account(

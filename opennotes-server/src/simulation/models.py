@@ -222,6 +222,7 @@ class SimulationRun(Base, TimestampMixin):
         nullable=True,
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
     orchestrator: Mapped[SimulationOrchestrator] = relationship(
         "SimulationOrchestrator", lazy="raise"
@@ -236,6 +237,7 @@ class SimulationRun(Base, TimestampMixin):
         Index("idx_simulation_runs_deleted_at", "deleted_at"),
         Index("idx_simulation_runs_status", "status"),
         Index("idx_simulation_runs_orchestrator_status", "orchestrator_id", "status"),
+        Index("idx_simulation_runs_is_public", "is_public"),
         CheckConstraint(
             "status IN ('pending', 'running', 'paused', 'completed', 'cancelled', 'failed')",
             name="ck_simulation_runs_status",

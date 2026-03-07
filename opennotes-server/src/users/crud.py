@@ -209,6 +209,22 @@ async def authenticate_user(
         await db.commit()
         return None
 
+    if user.is_service_account:
+        _ = verify_password(password, DUMMY_PASSWORD_HASH)
+        await asyncio.sleep(secrets.randbelow(41) / 1000)
+        await create_audit_log(
+            db=db,
+            user_id=user.id,
+            action="LOGIN_FAILED",
+            resource="authentication",
+            resource_id=str(user.id),
+            details={"username": username, "reason": "service_account_login_blocked"},
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        await db.commit()
+        return None
+
     is_valid, needs_rehash = verify_password(password, user.hashed_password)
     if not is_valid:
         await asyncio.sleep(secrets.randbelow(41) / 1000)
@@ -367,6 +383,7 @@ async def create_api_key(
         key_hash=key_hash,
         expires_at=expires_at,
         is_active=True,
+        scopes=api_key_create.scopes,
     )
 
     db.add(api_key)

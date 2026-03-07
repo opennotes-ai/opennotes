@@ -29,6 +29,7 @@ _.file = ".env.yaml"
 [vars]
 server_dir = "opennotes-server"
 discord_dir = "opennotes-discord"
+playground_dir = "opennotes-playground"
 
 # ========================================
 # Internal Helper Tasks
@@ -181,6 +182,11 @@ echo "Development environment ready!"
 echo "   Server: http://localhost:8000"
 echo "   Discord: http://localhost:3000"
 '''
+
+[tasks."dev:playground"]
+description = "Run playground dev server"
+dir = "{{vars.playground_dir}}"
+run = "pnpm dev"
 
 # ========================================
 # Testing Tasks
@@ -550,7 +556,7 @@ outputs = ["node_modules/.modules.yaml"]
 
 [tasks."build:containers:all"]
 description = "Build all Docker images"
-depends = ["build:containers:server", "build:containers:discord", "build:containers:postgres"]
+depends = ["build:containers:server", "build:containers:discord", "build:containers:playground", "build:containers:postgres"]
 alias = "build"
 
 [tasks."build:containers:server"]
@@ -562,6 +568,10 @@ run = "docker build -t opennotes-server:{{env.IMAGE_TAG}} -f {{vars.server_dir}}
 depends = ["_env:convert", "build:types:openapi", "build:deps:discord"]
 description = "Build opennotes-discord image"
 run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} -f {{vars.discord_dir}}/Dockerfile ."
+
+[tasks."build:containers:playground"]
+description = "Build opennotes-playground image"
+run = "docker build -t opennotes-playground:{{env.IMAGE_TAG}} {{vars.playground_dir}}/"
 
 [tasks."build:containers:postgres"]
 description = "Build PostgreSQL image with pgvector, pgroonga, and pg_cron (smart rebuild)"
