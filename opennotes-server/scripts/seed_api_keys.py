@@ -235,6 +235,7 @@ async def seed_playground_api_key(db: AsyncSession) -> None:
         db,
         PLAYGROUND_DEV_API_KEY,
         PLAYGROUND_API_KEY_NAME,
+        key_prefix="playground",
         user_id=user_id,
         scopes=PLAYGROUND_SCOPES,
     )
