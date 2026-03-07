@@ -464,6 +464,40 @@ class TestSubprocessTimeout:
         sql_calls = _execute_call_strings(mock_conn)
         assert any("pg_advisory_unlock" in s for s in sql_calls)
 
+    async def test_alembic_downgrade_timeout_logs_critical_and_releases_lock(self):
+        mock_engine, mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(returncode=1, stderr="upgrade failed")
+
+        mock_settings = MagicMock()
+        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run",
+                side_effect=[
+                    current_result,
+                    upgrade_result,
+                    subprocess.TimeoutExpired(cmd="alembic downgrade", timeout=300),
+                ],
+            ),
+            patch(f"{MODULE}.logger") as mock_logger,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        critical_calls = mock_logger.critical.call_args_list
+        assert any("downgrade timed out" in str(c) for c in critical_calls)
+        timeout_call = next(c for c in critical_calls if "downgrade timed out" in str(c))
+        extra = timeout_call.kwargs.get("extra", {})
+        assert extra.get("alert_type") == "migration_rollback_timeout"
+
+        sql_calls = _execute_call_strings(mock_conn)
+        assert any("pg_advisory_unlock" in s for s in sql_calls)
+
     async def test_alembic_upgrade_timeout_logs_critical_and_releases_lock(self):
         mock_engine, mock_conn = _make_mock_engine()
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")

@@ -116,14 +116,27 @@ def _run_migrations_sync(is_worker: bool) -> None:
                         "pre_deploy_revision": pre_deploy_revision,
                     },
                 )
-                rollback = subprocess.run(
-                    [sys.executable, "-m", "alembic", "downgrade", pre_deploy_revision],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    cwd=server_dir,
-                    timeout=SUBPROCESS_TIMEOUT,
-                )
+                try:
+                    rollback = subprocess.run(
+                        [sys.executable, "-m", "alembic", "downgrade", pre_deploy_revision],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        cwd=server_dir,
+                        timeout=SUBPROCESS_TIMEOUT,
+                    )
+                except subprocess.TimeoutExpired:
+                    logger.critical(
+                        "alembic downgrade timed out — rollback may be incomplete",
+                        extra={
+                            "alert_type": "migration_rollback_timeout",
+                            "timeout_seconds": SUBPROCESS_TIMEOUT,
+                            "pre_deploy_revision": pre_deploy_revision,
+                        },
+                    )
+                    conn.execute(text(f"SELECT pg_advisory_unlock({MIGRATION_LOCK_ID})"))
+                    logger.info("Migration lock released")
+                    return
                 if rollback.returncode != 0:
                     logger.critical(
                         "Migration rollback ALSO failed",
