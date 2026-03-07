@@ -1,45 +1,31 @@
 from http import HTTPStatus
 from typing import Any
+from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...models.simulation_list_response import SimulationListResponse
+from ...models.simulation_single_response import SimulationSingleResponse
 from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
+    simulation_id: UUID,
     *,
-    pagenumber: int | Unset = 1,
-    pagesize: int | Unset = 20,
-    filteris_public: bool | None | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
     if not isinstance(x_api_key, Unset):
         headers["X-API-Key"] = x_api_key
 
-    params: dict[str, Any] = {}
-
-    params["page[number]"] = pagenumber
-
-    params["page[size]"] = pagesize
-
-    json_filteris_public: bool | None | Unset
-    if isinstance(filteris_public, Unset):
-        json_filteris_public = UNSET
-    else:
-        json_filteris_public = filteris_public
-    params["filter[is_public]"] = json_filteris_public
-
-    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
-
     _kwargs: dict[str, Any] = {
-        "method": "get",
-        "url": "/api/v2/simulations",
-        "params": params,
+        "method": "post",
+        "url": "/api/v2/simulations/{simulation_id}/publish".format(
+            simulation_id=quote(str(simulation_id), safe=""),
+        ),
     }
 
     _kwargs["headers"] = headers
@@ -48,9 +34,9 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | SimulationListResponse | None:
+) -> HTTPValidationError | SimulationSingleResponse | None:
     if response.status_code == 200:
-        response_200 = SimulationListResponse.from_dict(response.json())
+        response_200 = SimulationSingleResponse.from_dict(response.json())
 
         return response_200
 
@@ -67,7 +53,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | SimulationListResponse]:
+) -> Response[HTTPValidationError | SimulationSingleResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -77,19 +63,15 @@ def _build_response(
 
 
 def sync_detailed(
+    simulation_id: UUID,
     *,
     client: AuthenticatedClient,
-    pagenumber: int | Unset = 1,
-    pagesize: int | Unset = 20,
-    filteris_public: bool | None | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[HTTPValidationError | SimulationListResponse]:
-    """List Simulations
+) -> Response[HTTPValidationError | SimulationSingleResponse]:
+    """Publish Simulation
 
     Args:
-        pagenumber (int | Unset):  Default: 1.
-        pagesize (int | Unset):  Default: 20.
-        filteris_public (bool | None | Unset):
+        simulation_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -97,13 +79,11 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | SimulationListResponse]
+        Response[HTTPValidationError | SimulationSingleResponse]
     """
 
     kwargs = _get_kwargs(
-        pagenumber=pagenumber,
-        pagesize=pagesize,
-        filteris_public=filteris_public,
+        simulation_id=simulation_id,
         x_api_key=x_api_key,
     )
 
@@ -115,19 +95,15 @@ def sync_detailed(
 
 
 def sync(
+    simulation_id: UUID,
     *,
     client: AuthenticatedClient,
-    pagenumber: int | Unset = 1,
-    pagesize: int | Unset = 20,
-    filteris_public: bool | None | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
-) -> HTTPValidationError | SimulationListResponse | None:
-    """List Simulations
+) -> HTTPValidationError | SimulationSingleResponse | None:
+    """Publish Simulation
 
     Args:
-        pagenumber (int | Unset):  Default: 1.
-        pagesize (int | Unset):  Default: 20.
-        filteris_public (bool | None | Unset):
+        simulation_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -135,32 +111,26 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | SimulationListResponse
+        HTTPValidationError | SimulationSingleResponse
     """
 
     return sync_detailed(
+        simulation_id=simulation_id,
         client=client,
-        pagenumber=pagenumber,
-        pagesize=pagesize,
-        filteris_public=filteris_public,
         x_api_key=x_api_key,
     ).parsed
 
 
 async def asyncio_detailed(
+    simulation_id: UUID,
     *,
     client: AuthenticatedClient,
-    pagenumber: int | Unset = 1,
-    pagesize: int | Unset = 20,
-    filteris_public: bool | None | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[HTTPValidationError | SimulationListResponse]:
-    """List Simulations
+) -> Response[HTTPValidationError | SimulationSingleResponse]:
+    """Publish Simulation
 
     Args:
-        pagenumber (int | Unset):  Default: 1.
-        pagesize (int | Unset):  Default: 20.
-        filteris_public (bool | None | Unset):
+        simulation_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -168,13 +138,11 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | SimulationListResponse]
+        Response[HTTPValidationError | SimulationSingleResponse]
     """
 
     kwargs = _get_kwargs(
-        pagenumber=pagenumber,
-        pagesize=pagesize,
-        filteris_public=filteris_public,
+        simulation_id=simulation_id,
         x_api_key=x_api_key,
     )
 
@@ -184,19 +152,15 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    simulation_id: UUID,
     *,
     client: AuthenticatedClient,
-    pagenumber: int | Unset = 1,
-    pagesize: int | Unset = 20,
-    filteris_public: bool | None | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
-) -> HTTPValidationError | SimulationListResponse | None:
-    """List Simulations
+) -> HTTPValidationError | SimulationSingleResponse | None:
+    """Publish Simulation
 
     Args:
-        pagenumber (int | Unset):  Default: 1.
-        pagesize (int | Unset):  Default: 20.
-        filteris_public (bool | None | Unset):
+        simulation_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -204,15 +168,13 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | SimulationListResponse
+        HTTPValidationError | SimulationSingleResponse
     """
 
     return (
         await asyncio_detailed(
+            simulation_id=simulation_id,
             client=client,
-            pagenumber=pagenumber,
-            pagesize=pagesize,
-            filteris_public=filteris_public,
             x_api_key=x_api_key,
         )
     ).parsed

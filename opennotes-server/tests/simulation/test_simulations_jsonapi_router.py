@@ -1571,3 +1571,357 @@ class TestCancelWorkflows:
         data = response.json()
         assert "errors" in data
         assert data["errors"] == []
+
+
+class TestPublishSimulation:
+    @pytest.mark.asyncio
+    async def test_publish_sets_is_public_true(self, admin_auth_client, simulation_run_factory):
+        run = await simulation_run_factory("completed")
+
+        response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/publish")
+
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        data = response.json()
+        assert data["data"]["attributes"]["is_public"] is True
+
+    @pytest.mark.asyncio
+    async def test_publish_already_public_is_idempotent(
+        self, admin_auth_client, simulation_run_factory
+    ):
+        run = await simulation_run_factory("completed")
+
+        first = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/publish")
+        assert first.status_code == 200
+
+        second = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/publish")
+        assert second.status_code == 200
+        assert second.json()["data"]["attributes"]["is_public"] is True
+
+    @pytest.mark.asyncio
+    async def test_publish_nonexistent_returns_404(self, admin_auth_client):
+        fake_id = str(uuid4())
+        response = await admin_auth_client.post(f"/api/v2/simulations/{fake_id}/publish")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_publish_deleted_sim_returns_404(self, admin_auth_client, simulation_run_factory):
+        import pendulum
+
+        from src.database import get_session_maker
+        from src.simulation.models import SimulationRun
+
+        run = await simulation_run_factory("completed")
+
+        async with get_session_maker()() as session:
+            await session.execute(
+                update(SimulationRun)
+                .where(SimulationRun.id == run["id"])
+                .values(deleted_at=pendulum.now("UTC"))
+            )
+            await session.commit()
+
+        response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/publish")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_unpublish_sets_is_public_false(self, admin_auth_client, simulation_run_factory):
+        run = await simulation_run_factory("completed")
+
+        await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/publish")
+
+        response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/unpublish")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["is_public"] is False
+
+    @pytest.mark.asyncio
+    async def test_unpublish_already_private_is_idempotent(
+        self, admin_auth_client, simulation_run_factory
+    ):
+        run = await simulation_run_factory("completed")
+
+        response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/unpublish")
+        assert response.status_code == 200
+        assert response.json()["data"]["attributes"]["is_public"] is False
+
+    @pytest.mark.asyncio
+    async def test_unpublish_nonexistent_returns_404(self, admin_auth_client):
+        fake_id = str(uuid4())
+        response = await admin_auth_client.post(f"/api/v2/simulations/{fake_id}/unpublish")
+        assert response.status_code == 404
+
+
+class TestPublishUnpublishAuth:
+    @pytest.mark.asyncio
+    async def test_publish_unauthenticated_returns_401(self):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(f"/api/v2/simulations/{uuid4()}/publish")
+            assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_unpublish_unauthenticated_returns_401(self):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(f"/api/v2/simulations/{uuid4()}/unpublish")
+            assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_publish_non_admin_returns_403(self):
+        from src.auth.auth import create_access_token
+        from src.database import get_session_maker
+        from src.users.models import User
+
+        unique = uuid4().hex[:8]
+        user_data = {
+            "username": f"regular_{unique}",
+            "email": f"regular_{unique}@example.com",
+            "password": "TestPassword123!",
+            "full_name": "Regular User",
+        }
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post("/api/v1/auth/register", json=user_data)
+
+        async with get_session_maker()() as session:
+            stmt = select(User).where(User.username == user_data["username"])
+            result = await session.execute(stmt)
+            user = result.scalar_one()
+
+        token = create_access_token(
+            {"sub": str(user.id), "username": user.username, "role": user.role}
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.headers.update({"Authorization": f"Bearer {token}"})
+            response = await client.post(f"/api/v2/simulations/{uuid4()}/publish")
+            assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_unpublish_non_admin_returns_403(self):
+        from src.auth.auth import create_access_token
+        from src.database import get_session_maker
+        from src.users.models import User
+
+        unique = uuid4().hex[:8]
+        user_data = {
+            "username": f"regular_{unique}",
+            "email": f"regular_{unique}@example.com",
+            "password": "TestPassword123!",
+            "full_name": "Regular User",
+        }
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post("/api/v1/auth/register", json=user_data)
+
+        async with get_session_maker()() as session:
+            stmt = select(User).where(User.username == user_data["username"])
+            result = await session.execute(stmt)
+            user = result.scalar_one()
+
+        token = create_access_token(
+            {"sub": str(user.id), "username": user.username, "role": user.role}
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.headers.update({"Authorization": f"Bearer {token}"})
+            response = await client.post(f"/api/v2/simulations/{uuid4()}/unpublish")
+            assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_publish_scoped_key_without_admin_returns_403(self):
+        from src.auth.models import APIKeyCreate
+        from src.database import get_session_maker
+        from src.users.crud import create_api_key
+        from src.users.models import User
+
+        unique = uuid4().hex[:8]
+        user_data = {
+            "username": f"scoped_{unique}",
+            "email": f"scoped_{unique}@example.com",
+            "password": "TestPassword123!",
+            "full_name": "Scoped User",
+        }
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post("/api/v1/auth/register", json=user_data)
+
+        async with get_session_maker()() as session:
+            stmt = select(User).where(User.username == user_data["username"])
+            result = await session.execute(stmt)
+            user = result.scalar_one()
+
+            _, raw_key = await create_api_key(
+                db=session,
+                user_id=user.id,
+                api_key_create=APIKeyCreate(
+                    name="scoped-key",
+                    expires_in_days=30,
+                    scopes=["simulations:read"],
+                ),
+            )
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.headers.update({"X-API-Key": raw_key})
+            response = await client.post(f"/api/v2/simulations/{uuid4()}/publish")
+            assert response.status_code == 403
+
+
+class TestScopedKeyFiltering:
+    @pytest.fixture
+    async def service_account_scoped_client(self):
+        from src.auth.models import APIKeyCreate
+        from src.database import get_session_maker
+        from src.users.crud import create_api_key
+        from src.users.models import User
+
+        unique = uuid4().hex[:8]
+        async with get_session_maker()() as session:
+            user = User(
+                username=f"svc_{unique}",
+                email=f"svc_{unique}@example.com",
+                hashed_password="unused-placeholder",
+                is_active=True,
+                is_service_account=True,
+            )
+            session.add(user)
+            await session.flush()
+
+            _, raw_key = await create_api_key(
+                db=session,
+                user_id=user.id,
+                api_key_create=APIKeyCreate(
+                    name="scoped-sim-key",
+                    expires_in_days=30,
+                    scopes=["simulations:read"],
+                ),
+            )
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.headers.update({"X-API-Key": raw_key})
+            yield client
+
+    @pytest.fixture
+    async def wrong_scope_client(self):
+        from src.auth.password import get_password_hash
+        from src.database import get_session_maker
+        from src.users.models import APIKey, User
+
+        unique = uuid4().hex[:8]
+        async with get_session_maker()() as session:
+            user = User(
+                username=f"wrong_{unique}",
+                email=f"wrong_{unique}@example.com",
+                hashed_password="unused-placeholder",
+                is_active=True,
+                is_service_account=True,
+            )
+            session.add(user)
+            await session.flush()
+
+            raw_key, key_prefix = APIKey.generate_key()
+            api_key = APIKey(
+                user_id=user.id,
+                name="wrong-scope-key",
+                key_prefix=key_prefix,
+                key_hash=get_password_hash(raw_key),
+                is_active=True,
+                scopes=["notes:read"],
+            )
+            session.add(api_key)
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.headers.update({"X-API-Key": raw_key})
+            yield client
+
+    @pytest.mark.asyncio
+    async def test_scoped_key_list_only_sees_public_sims(
+        self,
+        admin_auth_client,
+        service_account_scoped_client,
+        simulation_run_factory,
+    ):
+        run_public = await simulation_run_factory("completed")
+        await simulation_run_factory("completed")
+
+        await admin_auth_client.post(f"/api/v2/simulations/{run_public['id']}/publish")
+
+        response = await service_account_scoped_client.get("/api/v2/simulations")
+
+        assert response.status_code == 200
+        data = response.json()
+        returned_ids = [item["id"] for item in data["data"]]
+        assert str(run_public["id"]) in returned_ids
+
+        for item in data["data"]:
+            assert item["attributes"]["is_public"] is True
+
+    @pytest.mark.asyncio
+    async def test_scoped_key_get_public_sim_succeeds(
+        self,
+        admin_auth_client,
+        service_account_scoped_client,
+        simulation_run_factory,
+    ):
+        run = await simulation_run_factory("completed")
+        await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/publish")
+
+        response = await service_account_scoped_client.get(f"/api/v2/simulations/{run['id']}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["is_public"] is True
+
+    @pytest.mark.asyncio
+    async def test_scoped_key_get_private_sim_returns_404(
+        self,
+        service_account_scoped_client,
+        simulation_run_factory,
+    ):
+        run = await simulation_run_factory("completed")
+
+        response = await service_account_scoped_client.get(f"/api/v2/simulations/{run['id']}")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_wrong_scope_key_gets_403(
+        self,
+        wrong_scope_client,
+    ):
+        response = await wrong_scope_client.get("/api/v2/simulations")
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_admin_sees_all_sims_including_private(
+        self,
+        admin_auth_client,
+        simulation_run_factory,
+    ):
+        run_a = await simulation_run_factory("completed")
+        run_b = await simulation_run_factory("completed")
+
+        await admin_auth_client.post(f"/api/v2/simulations/{run_a['id']}/publish")
+
+        response = await admin_auth_client.get("/api/v2/simulations")
+
+        assert response.status_code == 200
+        data = response.json()
+        returned_ids = [item["id"] for item in data["data"]]
+        assert str(run_a["id"]) in returned_ids
+        assert str(run_b["id"]) in returned_ids

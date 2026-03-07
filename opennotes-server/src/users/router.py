@@ -547,6 +547,7 @@ async def create_user_api_key(
             id=api_key.id,
             name=api_key.name,
             key=raw_key,
+            scopes=api_key.scopes,
             created_at=api_key.created_at,
             expires_at=api_key.expires_at,
         )
@@ -569,6 +570,7 @@ async def list_user_api_keys(
             id=key.id,
             name=key.name,
             key="***",
+            scopes=key.scopes,
             created_at=key.created_at,
             expires_at=key.expires_at,
         )

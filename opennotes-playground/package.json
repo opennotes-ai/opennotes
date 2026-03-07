@@ -1,0 +1,31 @@
+{
+  "name": "opennotes-playground",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "types:generate": "openapi-typescript ../opennotes-server/openapi.json -o src/lib/generated-types.ts",
+    "dev": "vinxi dev",
+    "build": "vinxi build",
+    "start": "vinxi start"
+  },
+  "dependencies": {
+    "@solidjs/router": "^0.15.3",
+    "@solidjs/start": "^1.1.0",
+    "@supabase/ssr": "^0.9.0",
+    "@supabase/supabase-js": "^2.98.0",
+    "openapi-fetch": "^0.17.0",
+    "solid-js": "^1.9.5",
+    "vinxi": "^0.5.3"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild"
+    ]
+  }
+}

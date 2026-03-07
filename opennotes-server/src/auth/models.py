@@ -7,6 +7,8 @@ from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validat
 
 from src.common.base_schemas import StrictInputSchema
 
+ALLOWED_API_KEY_SCOPES = frozenset({"simulations:read"})
+
 
 class Token(BaseModel):
     access_token: str
@@ -124,12 +126,30 @@ class UserLogin(StrictInputSchema):
 class APIKeyCreate(StrictInputSchema):
     name: str = Field(..., min_length=1, max_length=100)
     expires_in_days: int | None = Field(None, gt=0, le=365)
+    scopes: list[str] | None = Field(
+        None,
+        description="List of permission scopes. None means unrestricted access.",
+    )
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        invalid = [s for s in v if s not in ALLOWED_API_KEY_SCOPES]
+        if invalid:
+            raise ValueError(
+                f"Invalid scope(s): {', '.join(invalid)}. "
+                f"Allowed: {', '.join(sorted(ALLOWED_API_KEY_SCOPES))}"
+            )
+        return v
 
 
 class APIKeyResponse(BaseModel):
     id: UUID
     name: str
     key: str
+    scopes: list[str] | None = None
     created_at: datetime
     expires_at: datetime | None
 
