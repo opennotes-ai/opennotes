@@ -33,6 +33,7 @@ class SimulationAttributes:
         error_message (None | str | Unset):
         restart_count (int | Unset):  Default: 0.
         cumulative_turns (int | Unset):  Default: 0.
+        is_public (bool | Unset):  Default: False.
         created_at (datetime.datetime | None | Unset):
         updated_at (datetime.datetime | None | Unset):
     """
@@ -47,6 +48,7 @@ class SimulationAttributes:
     error_message: None | str | Unset = UNSET
     restart_count: int | Unset = 0
     cumulative_turns: int | Unset = 0
+    is_public: bool | Unset = False
     created_at: datetime.datetime | None | Unset = UNSET
     updated_at: datetime.datetime | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -104,6 +106,8 @@ class SimulationAttributes:
 
         cumulative_turns = self.cumulative_turns
 
+        is_public = self.is_public
+
         created_at: None | str | Unset
         if isinstance(self.created_at, Unset):
             created_at = UNSET
@@ -143,6 +147,8 @@ class SimulationAttributes:
             field_dict["restart_count"] = restart_count
         if cumulative_turns is not UNSET:
             field_dict["cumulative_turns"] = cumulative_turns
+        if is_public is not UNSET:
+            field_dict["is_public"] = is_public
         if created_at is not UNSET:
             field_dict["created_at"] = created_at
         if updated_at is not UNSET:
@@ -246,6 +252,8 @@ class SimulationAttributes:
 
         cumulative_turns = d.pop("cumulative_turns", UNSET)
 
+        is_public = d.pop("is_public", UNSET)
+
         def _parse_created_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
                 return data
@@ -291,6 +299,7 @@ class SimulationAttributes:
             error_message=error_message,
             restart_count=restart_count,
             cumulative_turns=cumulative_turns,
+            is_public=is_public,
             created_at=created_at,
             updated_at=updated_at,
         )

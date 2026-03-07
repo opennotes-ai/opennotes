@@ -10542,6 +10542,22 @@
             }
           },
           {
+            "name": "filter[is_public]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Is Public]"
+            }
+          },
+          {
             "name": "X-API-Key",
             "in": "header",
             "required": false,
@@ -10929,6 +10945,134 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CancelWorkflowsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/simulations/{simulation_id}/publish": {
+      "post": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Publish Simulation",
+        "operationId": "publish_simulation_api_v2_simulations__simulation_id__publish_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/simulations/{simulation_id}/unpublish": {
+      "post": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Unpublish Simulation",
+        "operationId": "unpublish_simulation_api_v2_simulations__simulation_id__unpublish_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationSingleResponse"
                 }
               }
             }
@@ -23258,6 +23402,11 @@
             "type": "integer",
             "title": "Cumulative Turns",
             "default": 0
+          },
+          "is_public": {
+            "type": "boolean",
+            "title": "Is Public",
+            "default": false
           },
           "created_at": {
             "anyOf": [

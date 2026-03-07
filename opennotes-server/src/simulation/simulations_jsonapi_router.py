@@ -171,6 +171,7 @@ class SimulationAttributes(SQLAlchemySchema):
     error_message: str | None = None
     restart_count: int = 0
     cumulative_turns: int = 0
+    is_public: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -263,6 +264,7 @@ def simulation_run_to_resource(run: SimulationRun) -> SimulationResource:
             error_message=run.error_message,
             restart_count=run.restart_count,
             cumulative_turns=run.cumulative_turns,
+            is_public=run.is_public,
             created_at=run.created_at,
             updated_at=run.updated_at,
         ),
@@ -417,18 +419,24 @@ async def list_simulations(
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     page_number: int = Query(1, ge=1, alias="page[number]"),
     page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
+    is_public: bool | None = Query(None, alias="filter[is_public]"),
 ) -> JSONResponse:
-    require_admin(current_user)
+    if is_public is not True:
+        require_admin(current_user)
 
     try:
-        count_query = select(func.count(SimulationRun.id)).where(SimulationRun.deleted_at.is_(None))
+        base_filter = [SimulationRun.deleted_at.is_(None)]
+        if is_public is not None:
+            base_filter.append(SimulationRun.is_public == is_public)
+
+        count_query = select(func.count(SimulationRun.id)).where(*base_filter)
         count_result = await db.execute(count_query)
         total = count_result.scalar() or 0
 
         offset = (page_number - 1) * page_size
         query = (
             select(SimulationRun)
-            .where(SimulationRun.deleted_at.is_(None))
+            .where(*base_filter)
             .order_by(desc(SimulationRun.created_at))
             .limit(page_size)
             .offset(offset)
@@ -936,6 +944,124 @@ async def cancel_simulation_workflows(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             "Failed to cancel simulation workflows",
+        )
+
+
+@router.post(
+    "/simulations/{simulation_id}/publish",
+    response_class=JSONResponse,
+    response_model=SimulationSingleResponse,
+)
+async def publish_simulation(
+    simulation_id: UUID,
+    request: HTTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    require_admin(current_user)
+
+    try:
+        result = await db.execute(
+            select(SimulationRun).where(
+                SimulationRun.id == simulation_id,
+                SimulationRun.deleted_at.is_(None),
+            )
+        )
+        run = result.scalar_one_or_none()
+
+        if not run:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"SimulationRun {simulation_id} not found",
+            )
+
+        now = pendulum.now("UTC")
+        await db.execute(
+            update(SimulationRun)
+            .where(SimulationRun.id == simulation_id)
+            .values(is_public=True, updated_at=now)
+        )
+        await db.commit()
+        await db.refresh(run)
+
+        resource = simulation_run_to_resource(run)
+        response = SimulationSingleResponse(
+            data=resource,
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception:
+        logger.exception("Failed to publish simulation")
+        await db.rollback()
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to publish simulation",
+        )
+
+
+@router.post(
+    "/simulations/{simulation_id}/unpublish",
+    response_class=JSONResponse,
+    response_model=SimulationSingleResponse,
+)
+async def unpublish_simulation(
+    simulation_id: UUID,
+    request: HTTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    require_admin(current_user)
+
+    try:
+        result = await db.execute(
+            select(SimulationRun).where(
+                SimulationRun.id == simulation_id,
+                SimulationRun.deleted_at.is_(None),
+            )
+        )
+        run = result.scalar_one_or_none()
+
+        if not run:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"SimulationRun {simulation_id} not found",
+            )
+
+        now = pendulum.now("UTC")
+        await db.execute(
+            update(SimulationRun)
+            .where(SimulationRun.id == simulation_id)
+            .values(is_public=False, updated_at=now)
+        )
+        await db.commit()
+        await db.refresh(run)
+
+        resource = simulation_run_to_resource(run)
+        response = SimulationSingleResponse(
+            data=resource,
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception:
+        logger.exception("Failed to unpublish simulation")
+        await db.rollback()
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to unpublish simulation",
         )
 
 

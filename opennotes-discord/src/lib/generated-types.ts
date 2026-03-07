@@ -3321,6 +3321,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/simulations/{simulation_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Simulation */
+        post: operations["publish_simulation_api_v2_simulations__simulation_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/simulations/{simulation_id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unpublish Simulation */
+        post: operations["unpublish_simulation_api_v2_simulations__simulation_id__unpublish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/simulations/{simulation_id}/progress": {
         parameters: {
             query?: never;
@@ -9433,6 +9467,11 @@ export interface components {
              * @default 0
              */
             cumulative_turns: number;
+            /**
+             * Is Public
+             * @default false
+             */
+            is_public: boolean;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -16024,6 +16063,7 @@ export interface operations {
             query?: {
                 "page[number]"?: number;
                 "page[size]"?: number;
+                "filter[is_public]"?: boolean | null;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -16247,6 +16287,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CancelWorkflowsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_simulation_api_v2_simulations__simulation_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpublish_simulation_api_v2_simulations__simulation_id__unpublish_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationSingleResponse"];
                 };
             };
             /** @description Validation Error */
