@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.dependencies import get_current_user_or_api_key, require_admin
+from src.auth.dependencies import get_current_user_or_api_key, require_admin, require_scope_or_admin
 from src.cache.redis_client import redis_client
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import (
@@ -421,8 +421,9 @@ async def list_simulations(
     page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
     is_public: bool | None = Query(None, alias="filter[is_public]"),
 ) -> JSONResponse:
-    if is_public is not True:
-        require_admin(current_user)
+    scoped = require_scope_or_admin(current_user, request, "simulations:read")
+    if scoped:
+        is_public = True
 
     try:
         base_filter = [SimulationRun.deleted_at.is_(None)]
@@ -485,15 +486,17 @@ async def get_simulation(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
-    require_admin(current_user)
+    scoped = require_scope_or_admin(current_user, request, "simulations:read")
 
     try:
-        result = await db.execute(
-            select(SimulationRun).where(
-                SimulationRun.id == simulation_id,
-                SimulationRun.deleted_at.is_(None),
-            )
-        )
+        filters = [
+            SimulationRun.id == simulation_id,
+            SimulationRun.deleted_at.is_(None),
+        ]
+        if scoped:
+            filters.append(SimulationRun.is_public == True)
+
+        result = await db.execute(select(SimulationRun).where(*filters))
         run = result.scalar_one_or_none()
 
         if not run:
@@ -1072,12 +1075,28 @@ async def unpublish_simulation(
 )
 async def get_simulation_progress(
     simulation_id: UUID,
+    request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
-    require_admin(current_user)
+    scoped = require_scope_or_admin(current_user, request, "simulations:read")
 
     try:
+        if scoped:
+            run_check = await db.execute(
+                select(SimulationRun.is_public).where(
+                    SimulationRun.id == simulation_id,
+                    SimulationRun.deleted_at.is_(None),
+                )
+            )
+            is_public = run_check.scalar_one_or_none()
+            if is_public is None or not is_public:
+                return create_error_response(
+                    status.HTTP_404_NOT_FOUND,
+                    "Not Found",
+                    f"SimulationRun {simulation_id} not found",
+                )
+
         cache_key = f"{PROGRESS_CACHE_KEY_PREFIX}{simulation_id}"
         try:
             cached = await redis_client.get(cache_key)
@@ -1192,15 +1211,17 @@ async def get_simulation_results(
     page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
     agent_instance_id: UUID | None = Query(None),
 ) -> JSONResponse:
-    require_admin(current_user)
+    scoped = require_scope_or_admin(current_user, request, "simulations:read")
 
     try:
-        run_result = await db.execute(
-            select(SimulationRun).where(
-                SimulationRun.id == simulation_id,
-                SimulationRun.deleted_at.is_(None),
-            )
-        )
+        filters = [
+            SimulationRun.id == simulation_id,
+            SimulationRun.deleted_at.is_(None),
+        ]
+        if scoped:
+            filters.append(SimulationRun.is_public == True)
+
+        run_result = await db.execute(select(SimulationRun).where(*filters))
         run = run_result.scalar_one_or_none()
 
         if not run:
@@ -1322,18 +1343,21 @@ async def get_simulation_results(
 )
 async def get_simulation_analysis(
     simulation_id: UUID,
+    request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
-    require_admin(current_user)
+    scoped = require_scope_or_admin(current_user, request, "simulations:read")
 
     try:
-        run_result = await db.execute(
-            select(SimulationRun).where(
-                SimulationRun.id == simulation_id,
-                SimulationRun.deleted_at.is_(None),
-            )
-        )
+        filters = [
+            SimulationRun.id == simulation_id,
+            SimulationRun.deleted_at.is_(None),
+        ]
+        if scoped:
+            filters.append(SimulationRun.is_public == True)
+
+        run_result = await db.execute(select(SimulationRun).where(*filters))
         run = run_result.scalar_one_or_none()
 
         if not run:
@@ -1381,15 +1405,17 @@ async def get_simulation_detailed_analysis(
     page_number: int = Query(1, ge=1, alias="page[number]"),
     page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
 ) -> JSONResponse:
-    require_admin(current_user)
+    scoped = require_scope_or_admin(current_user, request, "simulations:read")
 
     try:
-        run_result = await db.execute(
-            select(SimulationRun).where(
-                SimulationRun.id == simulation_id,
-                SimulationRun.deleted_at.is_(None),
-            )
-        )
+        filters = [
+            SimulationRun.id == simulation_id,
+            SimulationRun.deleted_at.is_(None),
+        ]
+        if scoped:
+            filters.append(SimulationRun.is_public == True)
+
+        run_result = await db.execute(select(SimulationRun).where(*filters))
         run = run_result.scalar_one_or_none()
 
         if not run:

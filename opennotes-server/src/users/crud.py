@@ -367,6 +367,7 @@ async def create_api_key(
         key_hash=key_hash,
         expires_at=expires_at,
         is_active=True,
+        scopes=api_key_create.scopes,
     )
 
     db.add(api_key)

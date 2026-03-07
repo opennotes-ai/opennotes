@@ -11794,6 +11794,21 @@
               }
             ],
             "title": "Expires In Days"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes",
+            "description": "List of permission scopes. None means unrestricted access."
           }
         },
         "additionalProperties": false,
@@ -11817,6 +11832,20 @@
           "key": {
             "type": "string",
             "title": "Key"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
           },
           "created_at": {
             "type": "string",

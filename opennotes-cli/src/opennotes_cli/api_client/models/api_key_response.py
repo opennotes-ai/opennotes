@@ -9,6 +9,8 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from dateutil.parser import isoparse
 
+from ..types import UNSET, Unset
+
 T = TypeVar("T", bound="APIKeyResponse")
 
 
@@ -21,6 +23,7 @@ class APIKeyResponse:
         key (str):
         created_at (datetime.datetime):
         expires_at (datetime.datetime | None):
+        scopes (list[str] | None | Unset):
     """
 
     id: UUID
@@ -28,6 +31,7 @@ class APIKeyResponse:
     key: str
     created_at: datetime.datetime
     expires_at: datetime.datetime | None
+    scopes: list[str] | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -45,6 +49,15 @@ class APIKeyResponse:
         else:
             expires_at = self.expires_at
 
+        scopes: list[str] | None | Unset
+        if isinstance(self.scopes, Unset):
+            scopes = UNSET
+        elif isinstance(self.scopes, list):
+            scopes = self.scopes
+
+        else:
+            scopes = self.scopes
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -56,6 +69,8 @@ class APIKeyResponse:
                 "expires_at": expires_at,
             }
         )
+        if scopes is not UNSET:
+            field_dict["scopes"] = scopes
 
         return field_dict
 
@@ -85,12 +100,30 @@ class APIKeyResponse:
 
         expires_at = _parse_expires_at(d.pop("expires_at"))
 
+        def _parse_scopes(data: object) -> list[str] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                scopes_type_0 = cast(list[str], data)
+
+                return scopes_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[str] | None | Unset, data)
+
+        scopes = _parse_scopes(d.pop("scopes", UNSET))
+
         api_key_response = cls(
             id=id,
             name=name,
             key=key,
             created_at=created_at,
             expires_at=expires_at,
+            scopes=scopes,
         )
 
         api_key_response.additional_properties = d

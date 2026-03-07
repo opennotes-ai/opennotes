@@ -124,12 +124,17 @@ class UserLogin(StrictInputSchema):
 class APIKeyCreate(StrictInputSchema):
     name: str = Field(..., min_length=1, max_length=100)
     expires_in_days: int | None = Field(None, gt=0, le=365)
+    scopes: list[str] | None = Field(
+        None,
+        description="List of permission scopes. None means unrestricted access.",
+    )
 
 
 class APIKeyResponse(BaseModel):
     id: UUID
     name: str
     key: str
+    scopes: list[str] | None = None
     created_at: datetime
     expires_at: datetime | None
 

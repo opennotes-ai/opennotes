@@ -3735,6 +3735,11 @@ export interface components {
             name: string;
             /** Expires In Days */
             expires_in_days?: number | null;
+            /**
+             * Scopes
+             * @description List of permission scopes. None means unrestricted access.
+             */
+            scopes?: string[] | null;
         };
         /** APIKeyResponse */
         APIKeyResponse: {
@@ -3747,6 +3752,8 @@ export interface components {
             name: string;
             /** Key */
             key: string;
+            /** Scopes */
+            scopes?: string[] | null;
             /**
              * Created At
              * Format: date-time

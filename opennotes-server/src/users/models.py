@@ -4,6 +4,7 @@ from uuid import UUID
 
 import pendulum
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -107,11 +108,20 @@ class APIKey(Base):
     key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    scopes: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True, default=None)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: pendulum.now("UTC")
     )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def has_scope(self, scope: str) -> bool:
+        if self.scopes is None:
+            return True
+        return scope in self.scopes
+
+    def is_scoped(self) -> bool:
+        return self.scopes is not None and len(self.scopes) > 0
 
     def __repr__(self) -> str:
         return f"<APIKey(id={self.id}, user_id={self.user_id}, name='{self.name}')>"
