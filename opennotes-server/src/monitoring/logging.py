@@ -321,6 +321,9 @@ class LogContext:
     def error(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self._log(logging.ERROR, msg, *args, **kwargs)
 
+    def critical(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        self._log(logging.CRITICAL, msg, *args, **kwargs)
+
     def exception(self, msg: str, *args: Any, **kwargs: Any) -> None:
         kwargs["exc_info"] = True
         self._log(logging.ERROR, msg, *args, **kwargs)
