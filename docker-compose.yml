@@ -27,7 +27,6 @@
 #   - monitoring: Observability stack (Prometheus, Grafana, Loki, Tempo, etc.)
 #
 # Note: Migrations run automatically on opennotes-server startup.
-#       Use SKIP_MIGRATIONS=true to disable for worker instances if needed.
 #
 # Note: Development API keys auto-seed on first startup in development.
 #       Set SEED_DEV_API_KEYS=true in environment to enable.

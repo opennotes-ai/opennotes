@@ -1,3 +1,4 @@
+import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -274,34 +275,18 @@ class TestRunStartupMigrationsWorker:
 
 @pytest.mark.asyncio
 class TestRunStartupMigrationsExceptionHandling:
-    async def test_unexpected_exception_releases_lock(self):
+    async def test_unexpected_exception_logs_critical(self):
         mock_engine = MagicMock()
         mock_engine.connect.return_value.__enter__ = MagicMock(
             side_effect=RuntimeError("connection failed")
         )
         mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
 
-        mock_unlock_conn = MagicMock()
-        mock_unlock_engine = MagicMock()
-        mock_unlock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_unlock_conn)
-        mock_unlock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
-
         mock_settings = MagicMock()
         mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
 
-        call_count = 0
-        engines = [mock_engine, mock_unlock_engine]
-
-        def create_engine_side_effect(*args, **kwargs):
-            nonlocal call_count
-            if call_count < len(engines):
-                eng = engines[call_count]
-                call_count += 1
-                return eng
-            return mock_unlock_engine
-
         with (
-            patch(f"{MODULE}.create_engine", side_effect=create_engine_side_effect),
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.logger") as mock_logger,
         ):
@@ -428,3 +413,164 @@ class TestBaseRevisionFallback:
 
         downgrade_call = mock_run.call_args_list[2]
         assert "base" in downgrade_call.args[0]
+
+
+@pytest.mark.asyncio
+class TestSubprocessTimeout:
+    async def test_subprocess_run_calls_have_timeout(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(stdout="")
+
+        mock_settings = MagicMock()
+        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]
+            ) as mock_run,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        for call in mock_run.call_args_list:
+            assert call.kwargs.get("timeout") == 300
+
+    async def test_alembic_current_timeout_logs_critical_and_releases_lock(self):
+        mock_engine, mock_conn = _make_mock_engine()
+
+        mock_settings = MagicMock()
+        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="alembic current", timeout=300),
+            ),
+            patch(f"{MODULE}.logger") as mock_logger,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        mock_logger.critical.assert_called_once()
+        assert "timed out" in str(mock_logger.critical.call_args)
+
+        sql_calls = _execute_call_strings(mock_conn)
+        assert any("pg_advisory_unlock" in s for s in sql_calls)
+
+    async def test_alembic_upgrade_timeout_logs_critical_and_releases_lock(self):
+        mock_engine, mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+
+        mock_settings = MagicMock()
+        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run",
+                side_effect=[
+                    current_result,
+                    subprocess.TimeoutExpired(cmd="alembic upgrade", timeout=300),
+                ],
+            ),
+            patch(f"{MODULE}.logger") as mock_logger,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        mock_logger.critical.assert_called_once()
+        assert "timed out" in str(mock_logger.critical.call_args)
+
+        sql_calls = _execute_call_strings(mock_conn)
+        assert any("pg_advisory_unlock" in s for s in sql_calls)
+
+
+@pytest.mark.asyncio
+class TestAlembicCurrentReturncode:
+    async def test_nonzero_returncode_aborts_migration(self):
+        mock_engine, mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(returncode=1, stderr="alembic error")
+
+        mock_settings = MagicMock()
+        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(f"{MODULE}.subprocess.run", return_value=current_result) as mock_run,
+            patch(f"{MODULE}.logger") as mock_logger,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        assert mock_run.call_count == 1
+        mock_logger.critical.assert_called_once()
+        assert "alembic current failed" in str(mock_logger.critical.call_args)
+
+        sql_calls = _execute_call_strings(mock_conn)
+        assert any("pg_advisory_unlock" in s for s in sql_calls)
+
+
+@pytest.mark.asyncio
+class TestMultiHeadParsing:
+    async def test_multi_head_output_parsed_correctly(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\ndef456 (head)\n")
+        upgrade_result = _make_subprocess_result(returncode=1, stderr="fail")
+        downgrade_result = _make_subprocess_result(stdout="ok")
+
+        mock_settings = MagicMock()
+        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run",
+                side_effect=[current_result, upgrade_result, downgrade_result],
+            ) as mock_run,
+            patch(f"{MODULE}.logger") as mock_logger,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        downgrade_call = mock_run.call_args_list[2]
+        assert "abc123" in downgrade_call.args[0]
+
+        info_calls = [str(c) for c in mock_logger.info.call_args_list]
+        assert any("abc123" in s and "def456" in s for s in info_calls)
+
+    async def test_single_head_output_parsed_correctly(self):
+        from src.startup_migrations import _parse_current_revision
+
+        result = _parse_current_revision("abc123 (head)\n")
+        assert result == ["abc123"]
+
+    async def test_multi_head_output_returns_all_revisions(self):
+        from src.startup_migrations import _parse_current_revision
+
+        result = _parse_current_revision("abc123 (head)\ndef456 (head)\n")
+        assert result == ["abc123", "def456"]
+
+    async def test_empty_output_returns_empty_list(self):
+        from src.startup_migrations import _parse_current_revision
+
+        result = _parse_current_revision("")
+        assert result == []
+
+    async def test_whitespace_only_returns_empty_list(self):
+        from src.startup_migrations import _parse_current_revision
+
+        result = _parse_current_revision("   \n  \n")
+        assert result == []

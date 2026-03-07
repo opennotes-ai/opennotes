@@ -274,8 +274,8 @@ class TestSkipStartupChecksParsing:
         assert settings.SKIP_STARTUP_CHECKS == ["all"]
 
     def test_json_array_multiple_values(self):
-        settings = _make_settings_with_skip_checks('["database_schema", "redis", "nats"]')
-        assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "redis", "nats"]
+        settings = _make_settings_with_skip_checks('["environment_variables", "redis", "nats"]')
+        assert settings.SKIP_STARTUP_CHECKS == ["environment_variables", "redis", "nats"]
 
     @given(
         items=st.lists(

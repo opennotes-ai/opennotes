@@ -11,11 +11,21 @@ from src.monitoring import get_logger
 
 logger = get_logger(__name__)
 MIGRATION_LOCK_ID = 1847334512
+SUBPROCESS_TIMEOUT = 300
 
 
 def _get_sync_db_url() -> str:
     settings = get_settings()
     return settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
+
+def _parse_current_revision(stdout: str) -> list[str]:
+    revisions = []
+    for line in stdout.strip().splitlines():
+        rev = line.strip().split(" ")[0]
+        if rev:
+            revisions.append(rev)
+    return revisions
 
 
 def _run_migrations_sync(is_worker: bool) -> None:
@@ -37,25 +47,64 @@ def _run_migrations_sync(is_worker: bool) -> None:
                 conn.execute(text(f"SELECT pg_advisory_unlock({MIGRATION_LOCK_ID})"))
                 return
 
-            current_rev = subprocess.run(
-                [sys.executable, "-m", "alembic", "current"],
-                capture_output=True,
-                text=True,
-                check=False,
-                cwd=server_dir,
-            )
-            pre_deploy_revision = (
-                current_rev.stdout.strip().split(" ")[0] if current_rev.stdout.strip() else "base"
-            )
-            logger.info(f"Pre-deploy revision: {pre_deploy_revision}")
+            try:
+                current_rev = subprocess.run(
+                    [sys.executable, "-m", "alembic", "current"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    cwd=server_dir,
+                    timeout=SUBPROCESS_TIMEOUT,
+                )
+            except subprocess.TimeoutExpired:
+                logger.critical(
+                    "alembic current timed out — aborting migration attempt",
+                    extra={
+                        "alert_type": "migration_failure",
+                        "timeout_seconds": SUBPROCESS_TIMEOUT,
+                    },
+                )
+                conn.execute(text(f"SELECT pg_advisory_unlock({MIGRATION_LOCK_ID})"))
+                logger.info("Migration lock released")
+                return
 
-            result = subprocess.run(
-                [sys.executable, "-m", "alembic", "upgrade", "head"],
-                capture_output=True,
-                text=True,
-                check=False,
-                cwd=server_dir,
-            )
+            if current_rev.returncode != 0:
+                logger.critical(
+                    "alembic current failed — aborting migration attempt",
+                    extra={
+                        "alert_type": "migration_failure",
+                        "alembic_stdout": current_rev.stdout,
+                        "alembic_stderr": current_rev.stderr,
+                    },
+                )
+                conn.execute(text(f"SELECT pg_advisory_unlock({MIGRATION_LOCK_ID})"))
+                logger.info("Migration lock released")
+                return
+
+            revisions = _parse_current_revision(current_rev.stdout)
+            pre_deploy_revision = revisions[0] if revisions else "base"
+            logger.info(f"Pre-deploy revision(s): {revisions or ['base']}")
+
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "alembic", "upgrade", "head"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    cwd=server_dir,
+                    timeout=SUBPROCESS_TIMEOUT,
+                )
+            except subprocess.TimeoutExpired:
+                logger.critical(
+                    "alembic upgrade head timed out — aborting migration attempt",
+                    extra={
+                        "alert_type": "migration_failure",
+                        "timeout_seconds": SUBPROCESS_TIMEOUT,
+                    },
+                )
+                conn.execute(text(f"SELECT pg_advisory_unlock({MIGRATION_LOCK_ID})"))
+                logger.info("Migration lock released")
+                return
 
             if result.returncode != 0:
                 logger.critical(
@@ -73,6 +122,7 @@ def _run_migrations_sync(is_worker: bool) -> None:
                     text=True,
                     check=False,
                     cwd=server_dir,
+                    timeout=SUBPROCESS_TIMEOUT,
                 )
                 if rollback.returncode != 0:
                     logger.critical(
@@ -96,11 +146,6 @@ def _run_migrations_sync(is_worker: bool) -> None:
             extra={"alert_type": "migration_failure"},
             exc_info=True,
         )
-        try:
-            with engine.connect() as conn:
-                conn.execute(text(f"SELECT pg_advisory_unlock({MIGRATION_LOCK_ID})"))
-        except Exception:
-            pass
     finally:
         engine.dispose()
 

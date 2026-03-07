@@ -484,12 +484,12 @@ class TestSkipStartupChecksValidation:
                 "JWT_SECRET_KEY": valid_key,
                 "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
                 "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-                "SKIP_STARTUP_CHECKS": "database_schema,postgresql,redis",
+                "SKIP_STARTUP_CHECKS": "environment_variables,postgresql,redis",
             },
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "postgresql", "redis"]
+            assert settings.SKIP_STARTUP_CHECKS == ["environment_variables", "postgresql", "redis"]
 
     def test_skip_startup_checks_json_array(self):
         """Valid JSON array format should be parsed correctly."""
@@ -500,12 +500,12 @@ class TestSkipStartupChecksValidation:
                 "JWT_SECRET_KEY": valid_key,
                 "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
                 "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-                "SKIP_STARTUP_CHECKS": '["database_schema", "postgresql"]',
+                "SKIP_STARTUP_CHECKS": '["environment_variables", "postgresql"]',
             },
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "postgresql"]
+            assert settings.SKIP_STARTUP_CHECKS == ["environment_variables", "postgresql"]
 
     def test_skip_startup_checks_json_array_single(self):
         """JSON array with single value should be parsed correctly."""
@@ -532,12 +532,12 @@ class TestSkipStartupChecksValidation:
                 "JWT_SECRET_KEY": valid_key,
                 "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
                 "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-                "SKIP_STARTUP_CHECKS": '["database_schema", "redis", "nats"]',
+                "SKIP_STARTUP_CHECKS": '["environment_variables", "redis", "nats"]',
             },
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "redis", "nats"]
+            assert settings.SKIP_STARTUP_CHECKS == ["environment_variables", "redis", "nats"]
 
     def test_skip_startup_checks_single_value(self):
         """Single value without brackets or commas should work."""
@@ -548,12 +548,12 @@ class TestSkipStartupChecksValidation:
                 "JWT_SECRET_KEY": valid_key,
                 "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
                 "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-                "SKIP_STARTUP_CHECKS": "database_schema",
+                "SKIP_STARTUP_CHECKS": "environment_variables",
             },
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.SKIP_STARTUP_CHECKS == ["database_schema"]
+            assert settings.SKIP_STARTUP_CHECKS == ["environment_variables"]
 
     def test_skip_startup_checks_strips_whitespace(self):
         """Whitespace should be stripped from values."""
@@ -564,12 +564,12 @@ class TestSkipStartupChecksValidation:
                 "JWT_SECRET_KEY": valid_key,
                 "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
                 "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-                "SKIP_STARTUP_CHECKS": "  database_schema , postgresql  ",
+                "SKIP_STARTUP_CHECKS": "  environment_variables , postgresql  ",
             },
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "postgresql"]
+            assert settings.SKIP_STARTUP_CHECKS == ["environment_variables", "postgresql"]
 
 
 class TestBulkContentScanRepromptDaysValidation:
