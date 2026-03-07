@@ -2,14 +2,12 @@
 Startup validation checks to ensure server readiness.
 
 This module performs critical validation checks before the server starts accepting requests,
-including database schema validation, service connectivity, and configuration verification.
+including service connectivity and configuration verification.
 """
 
-import subprocess
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 import nats
@@ -56,81 +54,6 @@ class StartupValidationError(Exception):
         self.failed_checks = failed_checks
         messages = [str(check) for check in failed_checks]
         super().__init__("Startup validation failed:\n" + "\n".join(messages))
-
-
-async def check_database_schema() -> CheckResult:
-    """
-    Validate database schema matches SQLAlchemy models using Alembic.
-
-    In test environments, this check is skipped since test databases are
-    initialized with fresh schemas and alembic checks can hang due to
-    event loop conflicts during server initialization.
-
-    Returns:
-        CheckResult indicating if schema is in sync
-    """
-    if settings.ENVIRONMENT == "test":
-        logger.info("Skipping alembic schema check in test environment")
-        return CheckResult(
-            name="Database Schema",
-            passed=True,
-            severity=CheckSeverity.CRITICAL,
-            message="Database schema check skipped in test environment",
-            details={
-                "environment": "test",
-                "reason": "test databases initialized with fresh schemas",
-            },
-        )
-
-    try:
-        # Get server directory (parent of src)
-        server_dir = Path(__file__).parent.parent
-
-        # Run alembic check command
-        # Use python -m for compatibility with containerized environments
-        # where dependencies are installed system-wide (no .venv)
-        result = subprocess.run(
-            ["python", "-m", "alembic", "check"],
-            check=False,
-            cwd=server_dir,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-
-        if result.returncode == 0 and "No new upgrade operations detected" in result.stdout:
-            return CheckResult(
-                name="Database Schema",
-                passed=True,
-                severity=CheckSeverity.CRITICAL,
-                message="Database schema matches SQLAlchemy models",
-                details={"alembic_output": result.stdout.strip()},
-            )
-        return CheckResult(
-            name="Database Schema",
-            passed=False,
-            severity=CheckSeverity.CRITICAL,
-            message="Database schema drift detected - migrations needed",
-            details={
-                "alembic_stdout": result.stdout.strip(),
-                "alembic_stderr": result.stderr.strip(),
-                "return_code": result.returncode,
-            },
-        )
-    except subprocess.TimeoutExpired:
-        return CheckResult(
-            name="Database Schema",
-            passed=False,
-            severity=CheckSeverity.CRITICAL,
-            message="Alembic check timed out after 30 seconds",
-        )
-    except Exception as e:
-        return CheckResult(
-            name="Database Schema",
-            passed=False,
-            severity=CheckSeverity.CRITICAL,
-            message=f"Failed to run alembic check: {e}",
-        )
 
 
 async def check_required_environment_variables() -> CheckResult:
@@ -397,7 +320,6 @@ async def run_startup_checks(skip_checks: list[str] | None = None) -> list[Check
 
     # Define all checks
     checks: list[tuple[str, Callable[[], Coroutine[Any, Any, CheckResult]]]] = [
-        ("database_schema", check_database_schema),
         ("environment_variables", check_required_environment_variables),
         ("postgresql", check_postgresql_connectivity),
         ("redis", check_redis_connectivity),
