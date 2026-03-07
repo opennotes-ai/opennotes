@@ -106,16 +106,15 @@ async def get_or_create_service_user(db: AsyncSession):
 
 async def seed_api_key(
     db: AsyncSession,
-    api_key: str,
+    key_hash: str,
     key_name: str,
     key_prefix: str | None = None,
     user_id: UUID | None = None,
     scopes: list[str] | None = None,
-) -> str:
+) -> None:
     if user_id is None:
         user_id = await get_or_create_service_user(db)
 
-    key_hash = get_password_hash(api_key)
     scopes_json = json.dumps(scopes) if scopes is not None else None
 
     result = await db.execute(
@@ -152,7 +151,7 @@ async def seed_api_key(
                 },
             )
             print(f"✓ Reactivated API key '{key_name}'")
-        return api_key
+        return
 
     result = await db.execute(
         text("""
@@ -176,7 +175,6 @@ async def seed_api_key(
     print("  Never expires: True")
     if scopes:
         print(f"  Scopes: {scopes}")
-    return api_key
 
 
 async def get_or_create_playground_user(db: AsyncSession):
@@ -231,9 +229,10 @@ async def get_or_create_playground_user(db: AsyncSession):
 
 async def seed_playground_api_key(db: AsyncSession) -> None:
     user_id = await get_or_create_playground_user(db)
+    key_hash = get_password_hash(PLAYGROUND_DEV_API_KEY)
     await seed_api_key(
         db,
-        PLAYGROUND_DEV_API_KEY,
+        key_hash,
         PLAYGROUND_API_KEY_NAME,
         key_prefix="playground",
         user_id=user_id,
@@ -242,11 +241,11 @@ async def seed_playground_api_key(db: AsyncSession) -> None:
 
 
 async def seed_dev_api_key(db: AsyncSession) -> None:
-    await seed_api_key(db, DEV_API_KEY, DEV_API_KEY_NAME)
+    key_hash = get_password_hash(DEV_API_KEY)
+    await seed_api_key(db, key_hash, DEV_API_KEY_NAME)
 
 
-async def seed_prod_api_key(db: AsyncSession) -> str:
-    """Seed a production API key. Generates a new key or uses OPENNOTES_API_KEY env var."""
+async def _seed_and_save_prod_key(db: AsyncSession) -> None:
     provided_key = os.environ.get("OPENNOTES_API_KEY", "")
 
     if provided_key and not provided_key.startswith("CHANGE_THIS"):
@@ -256,13 +255,15 @@ async def seed_prod_api_key(db: AsyncSession) -> str:
             parts = api_key.split("_", 2)
             if len(parts) == 3:
                 key_prefix = parts[1]
-        print("Using provided API key from OPENNOTES_API_KEY env var")
     else:
         api_key, key_prefix = generate_api_key()
-        print("Generated new API key (no valid OPENNOTES_API_KEY provided)")
 
-    await seed_api_key(db, api_key, PROD_API_KEY_NAME, key_prefix)
-    return api_key
+    key_hash = get_password_hash(api_key)
+    await seed_api_key(db, key_hash, PROD_API_KEY_NAME, key_prefix)
+
+    key_file = Path("/tmp/opennotes-api-key.txt")
+    key_file.write_text(api_key)
+    key_file.chmod(0o600)
 
 
 async def main() -> None:
@@ -288,19 +289,17 @@ async def main() -> None:
             print()
 
             if is_production:
-                api_key = await seed_prod_api_key(session)
+                await _seed_and_save_prod_key(session)
                 await session.commit()
                 print()
                 print("=" * 60)
-                print("⚠️  IMPORTANT: Save this API key securely!")
+                print("API key written to /tmp/opennotes-api-key.txt (mode 0600)")
                 print("=" * 60)
                 print()
-                print(f"  OPENNOTES_API_KEY: {api_key}")
-                print()
-                print("Add this to your secrets.yaml and re-encrypt with SOPS:")
-                print(f'  opennotes_api_key: "{api_key}"')
-                print()
-                print("Then redeploy for the change to take effect.")
+                print("  1. Read the key:  cat /tmp/opennotes-api-key.txt")
+                print("  2. Add to secrets.yaml and re-encrypt with SOPS")
+                print("  3. Delete the file:  rm /tmp/opennotes-api-key.txt")
+                print("  4. Redeploy for the change to take effect")
                 print("=" * 60)
             elif environment in ["development", "local"]:
                 await seed_dev_api_key(session)
