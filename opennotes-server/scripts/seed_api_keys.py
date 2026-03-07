@@ -231,7 +231,7 @@ async def get_or_create_playground_user(db: AsyncSession):
 
 async def seed_playground_api_key(db: AsyncSession) -> None:
     user_id = await get_or_create_playground_user(db)
-    api_key = await seed_api_key(
+    await seed_api_key(
         db,
         PLAYGROUND_DEV_API_KEY,
         PLAYGROUND_API_KEY_NAME,
@@ -239,12 +239,10 @@ async def seed_playground_api_key(db: AsyncSession) -> None:
         user_id=user_id,
         scopes=PLAYGROUND_SCOPES,
     )
-    print(f"  Key value: {api_key}")
 
 
 async def seed_dev_api_key(db: AsyncSession) -> None:
-    api_key = await seed_api_key(db, DEV_API_KEY, DEV_API_KEY_NAME)
-    print(f"  Key value: {api_key}")
+    await seed_api_key(db, DEV_API_KEY, DEV_API_KEY_NAME)
 
 
 async def seed_prod_api_key(db: AsyncSession) -> str:
