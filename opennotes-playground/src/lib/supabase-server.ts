@@ -36,13 +36,3 @@ export async function getUser() {
   } = await supabase.auth.getUser();
   return user;
 }
-
-export async function getSession() {
-  const event = getRequestEvent();
-  if (!event) throw new Error("No request event available");
-  const supabase = createClient(event.request, event.response.headers);
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  return session;
-}
