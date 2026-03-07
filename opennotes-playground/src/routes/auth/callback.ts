@@ -1,12 +1,6 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { createClient } from "~/lib/supabase-server";
-
-function safeRedirectPath(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("://")) {
-    return "/";
-  }
-  return value;
-}
+import { safeRedirectPath } from "~/lib/safe-redirect";
 
 export async function GET(event: APIEvent) {
   const url = new URL(event.request.url);

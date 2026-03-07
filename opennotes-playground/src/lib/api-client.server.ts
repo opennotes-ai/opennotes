@@ -26,7 +26,7 @@ function getClient() {
   const isProduction = process.env.NODE_ENV === "production";
 
   const baseUrl = process.env.OPENNOTES_SERVER_URL || (isProduction ? undefined : "http://localhost:8000");
-  const apiKey = process.env.OPENNOTES_API_KEY || (isProduction ? undefined : "");
+  const apiKey = process.env.OPENNOTES_API_KEY?.trim() || (isProduction ? undefined : "");
 
   if (isProduction && !baseUrl) {
     throw new Error("OPENNOTES_SERVER_URL environment variable is required in production");

@@ -169,7 +169,7 @@ def require_scope_or_admin(user: User, request: Request, scope: str) -> bool:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="API key lacks required scope",
             )
-        return not (is_admin and not api_key.is_scoped())
+        return not is_admin or api_key.is_scoped()
 
     if is_admin:
         return False
