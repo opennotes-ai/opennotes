@@ -8,7 +8,8 @@ const getSimulations = query(async (page: number) => {
   "use server";
   try {
     return await listSimulations(page, 20);
-  } catch {
+  } catch (error) {
+    console.error("Failed to load simulations:", error);
     return null;
   }
 }, "simulations");
@@ -22,7 +23,18 @@ export default function SimulationsPage() {
     <main style={{ "max-width": "800px", margin: "0 auto", padding: "2rem 1rem" }}>
       <h1>Simulations</h1>
       <Suspense fallback={<p>Loading simulations...</p>}>
-        <Show when={data()} keyed>
+        <Show
+          when={data()}
+          keyed
+          fallback={
+            <div style={{ "text-align": "center", "margin-top": "2rem", padding: "1.5rem", "background-color": "#f8d7da", "border-radius": "6px" }}>
+              <p style={{ color: "#721c24", "font-weight": "500", margin: "0 0 0.5rem" }}>
+                Failed to load simulations. The API may be unreachable.
+              </p>
+              <a href="/simulations" style={{ color: "#1976d2" }}>Try again</a>
+            </div>
+          }
+        >
           {(response) => (
             <>
               <Show when={response.meta}>
