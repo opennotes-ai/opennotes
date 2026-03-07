@@ -130,7 +130,7 @@ export default function SimulationDetailPage() {
                     </div>
                   </Show>
                   <div style={{ "margin-top": "0.5rem", "font-size": "0.8rem", color: "#999" }}>
-                    Orchestrator: {attrs.orchestrator_id.slice(0, 8)} | Community Server: {attrs.community_server_id.slice(0, 8)}
+                    Orchestrator: {attrs.orchestrator_id?.slice(0, 8) ?? "N/A"} | Community Server: {attrs.community_server_id?.slice(0, 8) ?? "N/A"}
                   </div>
                 </section>
 

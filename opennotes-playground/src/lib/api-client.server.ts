@@ -11,12 +11,21 @@ export type DetailedAnalysisResponse =
 export type ResultsListResponse = components["schemas"]["ResultsListResponse"];
 
 function getClient() {
-  const baseUrl = process.env.OPENNOTES_SERVER_URL || "http://localhost:8000";
-  const apiKey = process.env.OPENNOTES_API_KEY || "";
+  const isProduction = process.env.NODE_ENV === "production";
+
+  const baseUrl = process.env.OPENNOTES_SERVER_URL || (isProduction ? undefined : "http://localhost:8000");
+  const apiKey = process.env.OPENNOTES_API_KEY || (isProduction ? undefined : "");
+
+  if (isProduction && !baseUrl) {
+    throw new Error("OPENNOTES_SERVER_URL environment variable is required in production");
+  }
+  if (isProduction && !apiKey) {
+    throw new Error("OPENNOTES_API_KEY environment variable is required in production");
+  }
 
   return createClient<paths>({
-    baseUrl,
-    headers: { "X-API-Key": apiKey },
+    baseUrl: baseUrl!,
+    headers: { "X-API-Key": apiKey! },
   });
 }
 

@@ -6,12 +6,16 @@ import Pagination from "~/components/Pagination";
 
 const getSimulations = query(async (page: number) => {
   "use server";
-  return listSimulations(page, 20);
+  try {
+    return await listSimulations(page, 20);
+  } catch {
+    return null;
+  }
 }, "simulations");
 
 export default function SimulationsPage() {
   const [searchParams] = useSearchParams();
-  const page = () => Number(searchParams.page) || 1;
+  const page = () => Math.max(1, Number(searchParams.page) || 1);
   const data = createAsync(() => getSimulations(page()));
 
   return (

@@ -965,10 +965,12 @@ async def publish_simulation(
 
     try:
         result = await db.execute(
-            select(SimulationRun).where(
+            select(SimulationRun)
+            .where(
                 SimulationRun.id == simulation_id,
                 SimulationRun.deleted_at.is_(None),
             )
+            .with_for_update()
         )
         run = result.scalar_one_or_none()
 
@@ -982,7 +984,10 @@ async def publish_simulation(
         now = pendulum.now("UTC")
         await db.execute(
             update(SimulationRun)
-            .where(SimulationRun.id == simulation_id)
+            .where(
+                SimulationRun.id == simulation_id,
+                SimulationRun.deleted_at.is_(None),
+            )
             .values(is_public=True, updated_at=now)
         )
         await db.commit()
@@ -1024,10 +1029,12 @@ async def unpublish_simulation(
 
     try:
         result = await db.execute(
-            select(SimulationRun).where(
+            select(SimulationRun)
+            .where(
                 SimulationRun.id == simulation_id,
                 SimulationRun.deleted_at.is_(None),
             )
+            .with_for_update()
         )
         run = result.scalar_one_or_none()
 
@@ -1041,7 +1048,10 @@ async def unpublish_simulation(
         now = pendulum.now("UTC")
         await db.execute(
             update(SimulationRun)
-            .where(SimulationRun.id == simulation_id)
+            .where(
+                SimulationRun.id == simulation_id,
+                SimulationRun.deleted_at.is_(None),
+            )
             .values(is_public=False, updated_at=now)
         )
         await db.commit()

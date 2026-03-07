@@ -16,6 +16,9 @@ WORKDIR /app
 
 COPY --from=builder /app/.output /app/.output
 
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nodejs
+USER nodejs
+
 ENV PORT=8080
 EXPOSE 8080
 

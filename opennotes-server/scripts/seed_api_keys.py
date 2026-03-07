@@ -41,7 +41,7 @@ PROD_API_KEY_NAME = "Discord Bot (Production)"
 SERVICE_USER_USERNAME = "discord-bot-service"
 SERVICE_USER_EMAIL = "discord-bot@opennotes.local"
 
-PLAYGROUND_DEV_API_KEY = "pg_dev_key_for_playground_readonly_access"
+PLAYGROUND_DEV_API_KEY = "opk_playground_dev_readonly_access_key_2024"
 PLAYGROUND_API_KEY_NAME = "Playground (Development)"
 PLAYGROUND_SERVICE_USER_USERNAME = "playground-service"
 PLAYGROUND_SERVICE_USER_EMAIL = "playground@opennotes.local"

@@ -1,6 +1,6 @@
 import { Router, A } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
-import { Suspense } from "solid-js";
+import { ErrorBoundary, Suspense } from "solid-js";
 import AuthStatus from "~/components/AuthStatus";
 
 export default function App() {
@@ -15,7 +15,19 @@ export default function App() {
               <AuthStatus />
             </span>
           </nav>
-          <Suspense>{props.children}</Suspense>
+          <ErrorBoundary
+            fallback={(err, reset) => (
+              <div style={{ padding: "2rem", "text-align": "center" }}>
+                <h1>Something went wrong</h1>
+                <p style={{ color: "#666" }}>{err.message}</p>
+                <button onClick={reset} style={{ "margin-top": "1rem", padding: "0.5rem 1rem", cursor: "pointer" }}>
+                  Try again
+                </button>
+              </div>
+            )}
+          >
+            <Suspense>{props.children}</Suspense>
+          </ErrorBoundary>
         </>
       )}
     >
