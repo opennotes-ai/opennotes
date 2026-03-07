@@ -515,6 +515,8 @@ def persist_state_step(
 
 @DBOS.workflow()
 def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
+    from dbos._error import DBOSWorkflowCancelledError
+
     if not check_simulation_active_step(agent_instance_id):
         logger.info(
             "Simulation not active, skipping turn",
@@ -627,6 +629,15 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             "persisted": persist_result["persisted"],
             "workflow_id": workflow_id,
         }
+    except DBOSWorkflowCancelledError:
+        logger.info(
+            "Agent turn workflow cancelled",
+            extra={
+                "workflow_id": DBOS.workflow_id,
+                "agent_instance_id": agent_instance_id,
+            },
+        )
+        return {"agent_instance_id": agent_instance_id, "status": "cancelled"}
     finally:
         gate.release()
 

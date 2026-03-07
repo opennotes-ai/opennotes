@@ -2469,3 +2469,139 @@ class TestResearchLimits:
 
         assert limits.request_limit == 3
         assert limits.total_tokens_limit == 8000
+
+
+class TestRunAgentTurnCancellation:
+    def test_cancelled_workflow_returns_cancelled_status(self) -> None:
+        from dbos._error import DBOSWorkflowCancelledError
+
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                side_effect=DBOSWorkflowCancelledError("Workflow cancelled"),
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate") as mock_gate_cls,
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test-cancel"
+            mock_gate = MagicMock()
+            mock_gate_cls.return_value = mock_gate
+
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert result["status"] == "cancelled"
+        assert result["agent_instance_id"] == agent_instance_id
+        mock_gate.release.assert_called_once()
+
+    def test_cancelled_workflow_during_execute_step(self) -> None:
+        from dbos._error import DBOSWorkflowCancelledError
+
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={"available_requests": [], "available_notes": []},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "write_note",
+                    "reasoning": "Found a request",
+                    "phase1_messages": [{"kind": "response"}],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+                side_effect=DBOSWorkflowCancelledError("Workflow cancelled"),
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate") as mock_gate_cls,
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test-cancel-mid"
+            mock_gate = MagicMock()
+            mock_gate_cls.return_value = mock_gate
+
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert result["status"] == "cancelled"
+        assert result["agent_instance_id"] == agent_instance_id
+        mock_gate.release.assert_called_once()
+
+    def test_cancelled_workflow_logs_at_info_level(self) -> None:
+        from dbos._error import DBOSWorkflowCancelledError
+
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                side_effect=DBOSWorkflowCancelledError("Workflow cancelled"),
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.agent_turn_workflow.logger") as mock_logger,
+        ):
+            mock_dbos.workflow_id = "wf-test-cancel-log"
+
+            run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        mock_logger.info.assert_any_call(
+            "Agent turn workflow cancelled",
+            extra={
+                "workflow_id": "wf-test-cancel-log",
+                "agent_instance_id": agent_instance_id,
+            },
+        )
+        mock_logger.error.assert_not_called()
+
+    def test_cancelled_before_gate_acquire_propagates(self) -> None:
+        from dbos._error import DBOSWorkflowCancelledError
+
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate") as mock_gate_cls,
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS"),
+        ):
+            mock_gate = MagicMock()
+            mock_gate.acquire.side_effect = DBOSWorkflowCancelledError("Cancelled during acquire")
+            mock_gate_cls.return_value = mock_gate
+
+            with pytest.raises(DBOSWorkflowCancelledError):
+                run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
