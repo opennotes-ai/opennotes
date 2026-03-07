@@ -79,7 +79,7 @@ async def get_or_create_service_user(db: AsyncSession):
             print(f"✓ Service user '{SERVICE_USER_USERNAME}' already exists (ID: {user_id})")
         return user_id
 
-    hashed_password = get_password_hash("unused-service-account-password")
+    hashed_password = get_password_hash(secrets.token_urlsafe(64))
 
     result = await db.execute(
         text("""
@@ -179,7 +179,7 @@ async def seed_api_key(
     return api_key
 
 
-async def get_or_create_playground_service_user(db: AsyncSession):
+async def get_or_create_playground_user(db: AsyncSession):
     result = await db.execute(
         text("SELECT id, username, is_service_account FROM users WHERE username = :username"),
         {"username": PLAYGROUND_SERVICE_USER_USERNAME},
@@ -190,21 +190,21 @@ async def get_or_create_playground_service_user(db: AsyncSession):
         user_id = row[0]
         is_service_account = row[2]
 
-        if not is_service_account:
+        if is_service_account:
             await db.execute(
-                text("UPDATE users SET is_service_account = true WHERE id = :user_id"),
+                text("UPDATE users SET is_service_account = false WHERE id = :user_id"),
                 {"user_id": user_id},
             )
             print(
-                f"✓ Service user '{PLAYGROUND_SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - updated is_service_account flag"
+                f"✓ Playground user '{PLAYGROUND_SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - cleared is_service_account flag"
             )
         else:
             print(
-                f"✓ Service user '{PLAYGROUND_SERVICE_USER_USERNAME}' already exists (ID: {user_id})"
+                f"✓ Playground user '{PLAYGROUND_SERVICE_USER_USERNAME}' already exists (ID: {user_id})"
             )
         return user_id
 
-    hashed_password = get_password_hash("unused-service-account-password")
+    hashed_password = get_password_hash(secrets.token_urlsafe(64))
 
     result = await db.execute(
         text("""
@@ -216,21 +216,21 @@ async def get_or_create_playground_service_user(db: AsyncSession):
             "username": PLAYGROUND_SERVICE_USER_USERNAME,
             "email": PLAYGROUND_SERVICE_USER_EMAIL,
             "hashed_password": hashed_password,
-            "full_name": "Playground Service Account",
+            "full_name": "Playground User",
             "role": "user",
             "is_active": True,
             "is_superuser": False,
-            "is_service_account": True,
+            "is_service_account": False,
         },
     )
     user_id = result.scalar_one()
 
-    print(f"✓ Created service user '{PLAYGROUND_SERVICE_USER_USERNAME}' (ID: {user_id})")
+    print(f"✓ Created playground user '{PLAYGROUND_SERVICE_USER_USERNAME}' (ID: {user_id})")
     return user_id
 
 
 async def seed_playground_api_key(db: AsyncSession) -> None:
-    user_id = await get_or_create_playground_service_user(db)
+    user_id = await get_or_create_playground_user(db)
     api_key = await seed_api_key(
         db,
         PLAYGROUND_DEV_API_KEY,

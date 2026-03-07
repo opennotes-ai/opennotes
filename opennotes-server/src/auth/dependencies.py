@@ -160,12 +160,19 @@ def require_scope_or_admin(user: User, request: Request, scope: str) -> bool:
 
     Raises HTTPException 403 if neither condition is met.
     """
-    if user.is_superuser or user.is_service_account:
-        return False
+    is_admin = user.is_superuser or user.is_service_account
 
     api_key: APIKey | None = getattr(request.state, "api_key", None)
-    if api_key and api_key.has_scope(scope):
-        return bool(api_key.is_scoped())
+    if api_key:
+        if not api_key.has_scope(scope):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="API key lacks required scope",
+            )
+        return not (is_admin and not api_key.is_scoped())
+
+    if is_admin:
+        return False
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
