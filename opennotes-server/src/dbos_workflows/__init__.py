@@ -1,23 +1,15 @@
 """DBOS workflow infrastructure for durable background tasks.
 
 Architecture:
-    Server mode (opennotes-server):
-        Uses DBOSClient for lightweight enqueue-only operations.
-        Does not poll queues or execute workflows.
-        Use get_dbos_client() in this mode.
-
     Worker mode (opennotes-dbos-worker):
         Uses DBOS with launch() for queue polling and execution.
         Processes workflows dispatched by servers.
         Use get_dbos() in this mode.
 
 Configuration:
-    get_dbos_client(): Get DBOSClient instance (server mode, enqueue only)
     get_dbos(): Get DBOS instance (worker mode, full execution)
     destroy_dbos(): Gracefully destroy DBOS singleton during shutdown
-    destroy_dbos_client(): Gracefully destroy DBOSClient singleton during shutdown
     reset_dbos(): Reset DBOS singleton for testing
-    reset_dbos_client(): Reset DBOSClient singleton for testing
 
 Adapters:
     BatchJobDBOSAdapter: Sync DBOS workflow state to BatchJob records.
@@ -68,11 +60,8 @@ from src.dbos_workflows.circuit_breaker import (
 )
 from src.dbos_workflows.config import (
     destroy_dbos,
-    destroy_dbos_client,
     get_dbos,
-    get_dbos_client,
     reset_dbos,
-    reset_dbos_client,
 )
 from src.dbos_workflows.content_monitoring_workflows import (
     AI_NOTE_GENERATION_WORKFLOW_NAME,
@@ -151,7 +140,6 @@ __all__ = [
     "cleanup_stale_batch_jobs_workflow",
     "content_scan_orchestration_workflow",
     "destroy_dbos",
-    "destroy_dbos_client",
     "dispatch_bulk_approval_workflow",
     "dispatch_content_scan_workflow",
     "dispatch_dbos_previously_seen_rechunk_workflow",
@@ -164,7 +152,6 @@ __all__ = [
     "fact_check_import_workflow",
     "flashpoint_scan_step",
     "get_dbos",
-    "get_dbos_client",
     "load_messages_from_redis",
     "monitor_stuck_batch_jobs_workflow",
     "preprocess_batch_step",
@@ -174,7 +161,6 @@ __all__ = [
     "rechunk_previously_seen_workflow",
     "relevance_filter_step",
     "reset_dbos",
-    "reset_dbos_client",
     "scrape_candidates_workflow",
     "send_all_transmitted_signal",
     "similarity_scan_step",

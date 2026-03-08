@@ -28,7 +28,6 @@ from src.dbos_workflows.batch_job_helpers import (
     update_batch_job_progress_sync,
 )
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
-from src.dbos_workflows.config import get_dbos_client
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.fact_checking.chunking_service import use_chunking_service_sync
@@ -157,6 +156,8 @@ async def dispatch_dbos_rechunk_workflow(
     await db.refresh(job)
 
     try:
+        from src.dbos_workflows.config import get_dbos_client
+
         client = get_dbos_client()
         options: EnqueueOptions = {
             "queue_name": "rechunk",
@@ -495,6 +496,8 @@ async def enqueue_single_fact_check_chunk(
         The DBOS workflow_id if successfully enqueued, None on failure
     """
     try:
+        from src.dbos_workflows.config import get_dbos_client
+
         client = get_dbos_client()
         options: EnqueueOptions = {
             "queue_name": "rechunk",
@@ -825,6 +828,8 @@ async def dispatch_dbos_previously_seen_rechunk_workflow(
     await db.refresh(job)
 
     try:
+        from src.dbos_workflows.config import get_dbos_client
+
         client = get_dbos_client()
         options: EnqueueOptions = {
             "queue_name": "rechunk",
