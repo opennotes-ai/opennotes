@@ -6,7 +6,9 @@
     "types:generate": "openapi-typescript ../opennotes-server/openapi.json -o src/lib/generated-types.ts",
     "dev": "vinxi dev",
     "build": "vinxi build",
-    "start": "vinxi start"
+    "start": "vinxi start",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@solidjs/router": "^0.15.3",

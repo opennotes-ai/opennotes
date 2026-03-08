@@ -21,9 +21,9 @@ This guide walks through creating and configuring the Supabase project that prov
 1. In the Supabase dashboard, go to **Project Settings** > **API**
 2. Copy these two values into your `.env` file:
    - **Project URL** -> `VITE_SUPABASE_URL` (e.g., `https://abcdefghijk.supabase.co`)
-   - **anon / public key** -> `VITE_SUPABASE_ANON_KEY` (the `anon` key, not the `service_role` key)
+   - **Publishable key** -> `VITE_SUPABASE_PUBLISHABLE_KEY` (the `sb_publishable_...` key from API Keys settings, or legacy `anon` key)
 
-The `anon` key is safe to expose in client-side code. It only grants access allowed by Row Level Security policies.
+The publishable key is safe to expose in client-side code. It only grants access allowed by Row Level Security policies.
 
 ## 3. Enable Email/Password Auth
 
@@ -41,9 +41,9 @@ The auth callback route at `/auth/callback` handles the OAuth code exchange usin
 1. Go to **Authentication** > **URL Configuration**
 2. Set the **Site URL** to your primary deployment URL:
    - Production: `https://playground.opennotes.ai`
-   - Development: `http://localhost:3000`
+   - Development: `http://localhost:3100`
 3. Add the following to **Redirect URLs**:
-   - `http://localhost:3000/auth/callback` (local development)
+   - `http://localhost:3100/auth/callback` (local development)
    - `https://playground.opennotes.ai/auth/callback` (production)
 
 You can use wildcard patterns for preview deployments if needed (e.g., `https://*.playground.opennotes.ai/auth/callback`).
@@ -67,7 +67,7 @@ The playground uses `@supabase/ssr` with SolidStart for cookie-based server-side
 - **Middleware** (`src/middleware/index.ts`): Refreshes the auth session on every request via `getUser()`
 - **Auth callback** (`src/routes/auth/callback.ts`): Exchanges the OAuth code for a session using `exchangeCodeForSession()`
 
-Both the browser and server clients read `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from environment variables. The `VITE_` prefix makes them available to client-side code via Vite's `import.meta.env`.
+Both the browser and server clients read `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from environment variables. The `VITE_` prefix makes them available to client-side code via Vite's `import.meta.env` (SolidStart uses Vinxi, which is built on Vite).
 
 ## Adding OAuth Providers (Google, GitHub, etc.)
 
@@ -97,12 +97,12 @@ await supabase.auth.signInWithOAuth({
 
 **Auth callback returns 302 to /login:**
 - Verify the redirect URL is whitelisted in Supabase URL Configuration
-- Check that `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set correctly
+- Check that `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are set correctly
 
 **Cookies not being set:**
 - The middleware must run on every request to refresh sessions
 - Check that `app.config.ts` references the middleware file
 
 **"Invalid API key" errors:**
-- Make sure you copied the `anon` key, not the `service_role` key
+- Make sure you copied the publishable key (`sb_publishable_...`), not the `service_role` key
 - Confirm the environment variables have the `VITE_` prefix

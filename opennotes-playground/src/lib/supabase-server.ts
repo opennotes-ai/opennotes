@@ -6,13 +6,19 @@ import {
 import { getRequestEvent } from "solid-js/web";
 
 export function createClient(request: Request, responseHeaders: Headers) {
-  return createServerClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY,
-    {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key) {
+    throw new Error(
+      "Missing Supabase config: VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY required"
+    );
+  }
+  return createServerClient(url, key, {
       cookies: {
         getAll() {
-          return parseCookieHeader(request.headers.get("Cookie") ?? "");
+          return parseCookieHeader(
+            request.headers.get("Cookie") ?? ""
+          ).map(({ name, value }) => ({ name, value: value ?? "" }));
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {

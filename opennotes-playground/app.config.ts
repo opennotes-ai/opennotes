@@ -5,4 +5,9 @@ export default defineConfig({
     preset: "node-server",
   },
   middleware: "src/middleware/index.ts",
+  vite: {
+    server: {
+      port: 3100,
+    },
+  },
 });

@@ -515,7 +515,7 @@ def persist_state_step(
 
 @DBOS.workflow()
 def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
-    from dbos._error import DBOSWorkflowCancelledError
+    from dbos._error import DBOSWorkflowCancelledError  # no public re-export as of dbos 1.x
 
     if not check_simulation_active_step(agent_instance_id):
         logger.info(

@@ -82,6 +82,15 @@ def _run_migrations_sync(is_worker: bool) -> None:
                 return
 
             revisions = _parse_current_revision(current_rev.stdout)
+            if len(revisions) > 1:
+                logger.warning(
+                    "Multiple alembic heads detected — rollback will only target the first head; "
+                    "merge heads before deploying to avoid partial rollback",
+                    extra={
+                        "alert_type": "migration_multiple_heads",
+                        "heads": revisions,
+                    },
+                )
             pre_deploy_revision = revisions[0] if revisions else "base"
             logger.info(f"Pre-deploy revision(s): {revisions or ['base']}")
 
@@ -164,5 +173,9 @@ def _run_migrations_sync(is_worker: bool) -> None:
 
 
 async def run_startup_migrations(server_mode: str) -> None:
+    settings = get_settings()
+    if settings.SKIP_MIGRATIONS:
+        logger.info("SKIP_MIGRATIONS is set — skipping startup migrations")
+        return
     is_worker = server_mode == "dbos_worker"
     await asyncio.to_thread(_run_migrations_sync, is_worker)
