@@ -3,7 +3,7 @@
 Tests cover:
 - AC #5: DBOS worker mode startup and graceful shutdown lifecycle
 - AC #6: Rechunk DBOS workflow end-to-end (single-item chunking)
-- AC #7: DBOS queue enqueueing via DBOSClient
+- AC #7: DBOS queue enqueueing via Queue.enqueue()
 
 These are unit tests with mocked DBOS infrastructure, verifying the
 calling patterns and lifecycle management without requiring a real
@@ -515,7 +515,7 @@ class TestDbosQueueEnqueueing:
 
     @pytest.mark.asyncio
     async def test_batch_dispatch_enqueues_workflow_with_item_ids(self) -> None:
-        """dispatch_dbos_rechunk_workflow enqueues via DBOSClient with item IDs."""
+        """dispatch_dbos_rechunk_workflow enqueues via queue.enqueue() with item IDs."""
         from src.dbos_workflows.rechunk_workflow import dispatch_dbos_rechunk_workflow
 
         item_ids_raw = [uuid4() for _ in range(5)]
