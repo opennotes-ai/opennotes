@@ -439,8 +439,6 @@ class TestPauseSimulation:
         mock_wf2 = MagicMock()
         mock_wf2.workflow_id = f"turn-{inst2['id']}-1"
 
-        mock_client = MagicMock()
-
         def _list_workflows(**kwargs):
             prefix = kwargs.get("workflow_id_prefix", "")
             if str(inst1["id"]) in prefix:
@@ -449,19 +447,17 @@ class TestPauseSimulation:
                 return [mock_wf2]
             return []
 
-        mock_client.list_workflows.side_effect = _list_workflows
-
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = _list_workflows
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/pause")
 
         assert response.status_code == 200
         data = response.json()
         assert data["data"]["attributes"]["status"] == "paused"
 
-        cancelled_ids = [call.args[0] for call in mock_client.cancel_workflow.call_args_list]
+        cancelled_ids = [call.args[0] for call in mock_dbos.cancel_workflow.call_args_list]
         assert mock_wf1.workflow_id in cancelled_ids
         assert mock_wf2.workflow_id in cancelled_ids
 
@@ -473,9 +469,9 @@ class TestPauseSimulation:
         await agent_instance_factory(run["id"])
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            side_effect=RuntimeError("DBOS unavailable"),
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = RuntimeError("DBOS unavailable")
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/pause")
 
         assert response.status_code == 200
@@ -493,15 +489,13 @@ class TestResumeSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-resume"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("paused")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 200, (
@@ -521,15 +515,13 @@ class TestResumeSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-resume-failed"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("failed")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 200
@@ -542,22 +534,20 @@ class TestResumeSimulation:
     async def test_resume_skips_dispatch_when_workflow_active(
         self, admin_auth_client, simulation_run_factory
     ):
-        mock_client = MagicMock()
         mock_active_wf = MagicMock()
-        mock_client.list_workflows.return_value = [mock_active_wf]
 
         run = await simulation_run_factory("paused")
 
         with (
             patch(
-                "src.simulation.simulations_jsonapi_router.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.simulations_jsonapi_router.DBOS",
+            ) as mock_dbos,
             patch(
                 "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
                 new_callable=AsyncMock,
             ) as mock_dispatch,
         ):
+            mock_dbos.list_workflows.return_value = [mock_active_wf]
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 200
@@ -574,15 +564,13 @@ class TestResumeSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-resume-pending"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("pending")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 200
@@ -594,22 +582,20 @@ class TestResumeSimulation:
     async def test_resume_pending_skips_dispatch_when_workflow_active(
         self, admin_auth_client, simulation_run_factory
     ):
-        mock_client = MagicMock()
         mock_active_wf = MagicMock()
-        mock_client.list_workflows.return_value = [mock_active_wf]
 
         run = await simulation_run_factory("pending")
 
         with (
             patch(
-                "src.simulation.simulations_jsonapi_router.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.simulations_jsonapi_router.DBOS",
+            ) as mock_dbos,
             patch(
                 "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
                 new_callable=AsyncMock,
             ) as mock_dispatch,
         ):
+            mock_dbos.list_workflows.return_value = [mock_active_wf]
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 200
@@ -621,15 +607,12 @@ class TestResumeSimulation:
     async def test_resume_from_cancelled_without_reset_returns_409(
         self, admin_auth_client, simulation_run_factory
     ):
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
-
         run = await simulation_run_factory("cancelled")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 409
@@ -675,15 +658,13 @@ class TestResumeSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-gen2"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("paused")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 200
@@ -697,9 +678,9 @@ class TestResumeSimulation:
         run = await simulation_run_factory("paused")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            side_effect=RuntimeError("DBOS unavailable"),
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = RuntimeError("DBOS unavailable")
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 503
@@ -715,15 +696,12 @@ class TestResumeSimulation:
     async def test_resume_returns_502_when_dispatch_fails(
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
-
         run = await simulation_run_factory("paused")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 502
@@ -798,16 +776,14 @@ class TestRestartSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         await self._create_agents(run["id"])
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json=self._restart_body(),
@@ -829,16 +805,14 @@ class TestRestartSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart-turns"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agents = await self._create_agents(run["id"])
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json=self._restart_body(),
@@ -867,8 +841,6 @@ class TestRestartSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart-reactivate"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agents = await self._create_agents(run["id"])
@@ -885,9 +857,9 @@ class TestRestartSimulation:
             await session.commit()
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json=self._restart_body(),
@@ -911,8 +883,6 @@ class TestRestartSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart-removed"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agents = await self._create_agents(run["id"])
@@ -929,9 +899,9 @@ class TestRestartSimulation:
             await session.commit()
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json=self._restart_body(),
@@ -956,16 +926,14 @@ class TestRestartSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart-audit"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agents = await self._create_agents(run["id"])
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json=self._restart_body(),
@@ -1001,16 +969,14 @@ class TestRestartSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart-count"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         await self._create_agents(run["id"])
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json=self._restart_body(),
@@ -1038,15 +1004,13 @@ class TestRestartSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-no-body"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("paused")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 200
@@ -1057,15 +1021,12 @@ class TestRestartSimulation:
     async def test_restart_from_running_returns_409(
         self, admin_auth_client, simulation_run_factory
     ):
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
-
         run = await simulation_run_factory("running")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json=self._restart_body(),
@@ -1096,8 +1057,6 @@ class TestRestartSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart-cancelled"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("cancelled")
         agents = await self._create_agents(run["id"])
@@ -1115,9 +1074,9 @@ class TestRestartSimulation:
             await session.commit()
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json=self._restart_body(),
@@ -1151,8 +1110,6 @@ class TestRestartSimulation:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart-mixed"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("cancelled")
         agents = await self._create_agents(run["id"])
@@ -1174,9 +1131,9 @@ class TestRestartSimulation:
             await session.commit()
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json=self._restart_body(),
@@ -1296,8 +1253,6 @@ class TestCancelSimulation:
         mock_wf2 = MagicMock()
         mock_wf2.workflow_id = f"turn-{inst2['id']}-1"
 
-        mock_client = MagicMock()
-
         def _list_workflows(**kwargs):
             prefix = kwargs.get("workflow_id_prefix", "")
             if str(inst1["id"]) in prefix:
@@ -1306,19 +1261,17 @@ class TestCancelSimulation:
                 return [mock_wf2]
             return []
 
-        mock_client.list_workflows.side_effect = _list_workflows
-
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = _list_workflows
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/cancel")
 
         assert response.status_code == 200
         data = response.json()
         assert data["data"]["attributes"]["status"] == "cancelled"
 
-        cancelled_ids = [call.args[0] for call in mock_client.cancel_workflow.call_args_list]
+        cancelled_ids = [call.args[0] for call in mock_dbos.cancel_workflow.call_args_list]
         assert mock_wf1.workflow_id in cancelled_ids
         assert mock_wf2.workflow_id in cancelled_ids
 
@@ -1330,9 +1283,9 @@ class TestCancelSimulation:
         await agent_instance_factory(run["id"])
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            side_effect=RuntimeError("DBOS unavailable"),
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = RuntimeError("DBOS unavailable")
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/cancel")
 
         assert response.status_code == 200
@@ -1354,8 +1307,6 @@ class TestCancelWorkflows:
         mock_wf2 = MagicMock()
         mock_wf2.workflow_id = f"turn-{inst2['id']}-gen1-2-retry0"
 
-        mock_client = MagicMock()
-
         def _list_workflows(**kwargs):
             prefix = kwargs.get("workflow_id_prefix", "")
             if str(inst1["id"]) in prefix:
@@ -1364,12 +1315,10 @@ class TestCancelWorkflows:
                 return [mock_wf2]
             return []
 
-        mock_client.list_workflows.side_effect = _list_workflows
-
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = _list_workflows
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/cancel-workflows?dry_run=true"
             )
@@ -1380,7 +1329,7 @@ class TestCancelWorkflows:
         assert data["total"] == 2
         assert mock_wf1.workflow_id in data["workflow_ids"]
         assert mock_wf2.workflow_id in data["workflow_ids"]
-        mock_client.cancel_workflow.assert_not_called()
+        mock_dbos.cancel_workflow.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_cancel_workflows_execute(
@@ -1392,20 +1341,16 @@ class TestCancelWorkflows:
         mock_wf1 = MagicMock()
         mock_wf1.workflow_id = f"turn-{inst1['id']}-gen1-1-retry0"
 
-        mock_client = MagicMock()
-
         def _list_workflows(**kwargs):
             prefix = kwargs.get("workflow_id_prefix", "")
             if str(inst1["id"]) in prefix:
                 return [mock_wf1]
             return []
 
-        mock_client.list_workflows.side_effect = _list_workflows
-
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = _list_workflows
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/cancel-workflows"
             )
@@ -1416,7 +1361,7 @@ class TestCancelWorkflows:
         assert data["total"] == 1
         assert data["cancelled"] == 1
         assert mock_wf1.workflow_id in data["workflow_ids"]
-        mock_client.cancel_workflow.assert_called_once_with(mock_wf1.workflow_id)
+        mock_dbos.cancel_workflow.assert_called_once_with(mock_wf1.workflow_id)
 
     @pytest.mark.asyncio
     async def test_cancel_workflows_with_generation_filter(
@@ -1428,20 +1373,16 @@ class TestCancelWorkflows:
         mock_wf_gen2 = MagicMock()
         mock_wf_gen2.workflow_id = f"turn-{inst1['id']}-gen2-5-retry0"
 
-        mock_client = MagicMock()
-
         def _list_workflows(**kwargs):
             prefix = kwargs.get("workflow_id_prefix", "")
             if "gen2" in prefix:
                 return [mock_wf_gen2]
             return []
 
-        mock_client.list_workflows.side_effect = _list_workflows
-
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = _list_workflows
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/cancel-workflows?generation=2"
             )
@@ -1451,7 +1392,7 @@ class TestCancelWorkflows:
         assert data["cancelled"] == 1
         assert data["generation"] == 2
 
-        call_args = mock_client.list_workflows.call_args_list
+        call_args = mock_dbos.list_workflows.call_args_list
         for call in call_args:
             prefix = call.kwargs.get("workflow_id_prefix", "")
             assert "gen2" in prefix
@@ -1474,14 +1415,16 @@ class TestCancelWorkflows:
         await agent_instance_factory(run["id"])
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            side_effect=RuntimeError("DBOS unavailable"),
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = RuntimeError("DBOS unavailable")
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/cancel-workflows"
             )
 
-        assert response.status_code == 500
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 0
 
     @pytest.mark.asyncio
     async def test_cancel_workflows_partial_failure(
@@ -1496,8 +1439,6 @@ class TestCancelWorkflows:
         mock_wf2 = MagicMock()
         mock_wf2.workflow_id = f"turn-{inst2['id']}-gen1-2-retry0"
 
-        mock_client = MagicMock()
-
         def _list_workflows(**kwargs):
             prefix = kwargs.get("workflow_id_prefix", "")
             if str(inst1["id"]) in prefix:
@@ -1505,8 +1446,6 @@ class TestCancelWorkflows:
             if str(inst2["id"]) in prefix:
                 return [mock_wf2]
             return []
-
-        mock_client.list_workflows.side_effect = _list_workflows
 
         call_count = 0
 
@@ -1516,12 +1455,11 @@ class TestCancelWorkflows:
             if wf_id == mock_wf2.workflow_id:
                 raise RuntimeError("DBOS cancel failed")
 
-        mock_client.cancel_workflow.side_effect = _cancel_workflow
-
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = _list_workflows
+            mock_dbos.cancel_workflow.side_effect = _cancel_workflow
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/cancel-workflows"
             )
@@ -1543,13 +1481,10 @@ class TestCancelWorkflows:
         mock_wf1 = MagicMock()
         mock_wf1.workflow_id = f"turn-{inst1['id']}-gen1-1-retry0"
 
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = [mock_wf1]
-
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = [mock_wf1]
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/cancel-workflows?dry_run=true"
             )
