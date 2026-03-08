@@ -50,9 +50,7 @@ from src.config_router import router as config_router
 from src.database import close_db, get_session_maker, init_db
 from src.dbos_workflows.config import (
     destroy_dbos,
-    destroy_dbos_client,
     get_dbos,
-    get_dbos_client,
     validate_dbos_connection,
 )
 from src.dbos_workflows.token_bucket.router import router as token_pool_router
@@ -416,11 +414,16 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
             logger.error(f"Flashpoint detector warm-up failed: {e}", exc_info=True)
     else:
         try:
-            get_dbos_client()
-            logger.info("DBOS server mode - DBOSClient validated for enqueueing")
+            from dbos import DBOS
+
+            dbos = get_dbos()
+            DBOS.listen_queues([])
+            dbos.launch()
+            await asyncio.to_thread(validate_dbos_connection)
+            logger.info("DBOS server mode - full DBOS with empty queue listeners")
         except Exception as e:
-            logger.error(f"DBOSClient initialization failed: {e}")
-            raise RuntimeError(f"DBOSClient initialization failed: {e}") from e
+            logger.error(f"DBOS server-mode initialization failed: {e}")
+            raise RuntimeError(f"DBOS server-mode initialization failed: {e}") from e
 
 
 async def _init_worker_services(
@@ -491,11 +494,11 @@ def _register_health_checks(is_dbos_worker: bool) -> None:
                     status=HealthStatus.HEALTHY,
                     details={"mode": "worker", "schema": "dbos", "workflows_enabled": True},
                 )
-            _client = get_dbos_client()
-            del _client
+            _dbos = get_dbos()
+            del _dbos
             return ComponentHealth(
                 status=HealthStatus.HEALTHY,
-                details={"mode": "server", "schema": "dbos", "enqueue_enabled": True},
+                details={"mode": "server", "schema": "dbos", "full_dbos": True},
             )
         except Exception as e:
             return ComponentHealth(
@@ -567,22 +570,11 @@ async def _shutdown_services(app: FastAPI, is_dbos_worker: bool) -> None:
 
 
 def _destroy_dbos(is_dbos_worker: bool) -> None:
-    if is_dbos_worker:
-        try:
-            destroy_dbos()
-            logger.info("DBOS worker destroyed")
-        except Exception as e:
-            logger.warning(f"Error destroying DBOS worker: {e}")
-    else:
-        try:
-            destroy_dbos_client()
-            logger.info("DBOSClient destroyed")
-        except Exception as e:
-            logger.warning(f"Error destroying DBOSClient: {e}")
-        try:
-            destroy_dbos()
-        except Exception:
-            pass
+    try:
+        destroy_dbos()
+        logger.info("DBOS destroyed")
+    except Exception as e:
+        logger.warning(f"Error destroying DBOS: {e}")
 
 
 @asynccontextmanager

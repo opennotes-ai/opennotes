@@ -86,12 +86,17 @@ class TestWorkerWorkflowRegistration:
 
         with (
             patch("src.main.settings") as mock_settings,
-            patch("src.main.get_dbos_client") as mock_get_client,
+            patch("src.main.get_dbos") as mock_get_dbos,
+            patch("src.main.validate_dbos_connection"),
             patch("src.main.logger") as mock_logger,
+            patch("src.main.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread,
+            patch("dbos.DBOS.listen_queues"),
         ):
             mock_settings.TESTING = False
             mock_settings.DBOS_CONDUCTOR_KEY = None
-            mock_get_client.return_value = MagicMock()
+            mock_dbos = MagicMock()
+            mock_get_dbos.return_value = mock_dbos
+            mock_to_thread.return_value = True
 
             await _init_dbos(is_dbos_worker=False)
 
