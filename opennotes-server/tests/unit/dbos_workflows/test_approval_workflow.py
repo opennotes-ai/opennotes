@@ -664,21 +664,22 @@ class TestDispatchFromImportService:
 
 class TestDispatchBulkApprovalWorkflow:
     @pytest.mark.asyncio
-    async def test_dispatch_enqueues_via_dbos_client(self) -> None:
-        from src.dbos_workflows.approval_workflow import dispatch_bulk_approval_workflow
+    async def test_dispatch_enqueues_via_queue(self) -> None:
+        from src.dbos_workflows.approval_workflow import (
+            bulk_approval_workflow,
+            dispatch_bulk_approval_workflow,
+        )
 
-        mock_client = MagicMock()
         mock_handle = MagicMock()
         mock_handle.workflow_id = "dbos-wf-456"
-        mock_client.enqueue.return_value = mock_handle
 
         job_id = uuid4()
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.dbos_workflows.approval_workflow.approval_queue.enqueue",
+                return_value=mock_handle,
+            ) as mock_enqueue,
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
             workflow_id = await dispatch_bulk_approval_workflow(
@@ -689,13 +690,12 @@ class TestDispatchBulkApprovalWorkflow:
             )
 
         assert workflow_id == "dbos-wf-456"
-        mock_client.enqueue.assert_called_once()
-        enqueue_args = mock_client.enqueue.call_args
-        options = enqueue_args.args[0]
-        assert options["queue_name"] == "approval"
-        assert options["workflow_name"] == "bulk_approval_workflow"
+        mock_enqueue.assert_called_once()
+        enqueue_args = mock_enqueue.call_args
+        assert enqueue_args.args[0] is bulk_approval_workflow
 
         (
+            _func,
             batch_job_id,
             threshold,
             auto_promote,
@@ -706,7 +706,7 @@ class TestDispatchBulkApprovalWorkflow:
             has_content,
             published_date_from,
             published_date_to,
-        ) = enqueue_args.args[1:]
+        ) = enqueue_args.args
         assert batch_job_id == str(job_id)
         assert threshold == 0.9
         assert auto_promote is True

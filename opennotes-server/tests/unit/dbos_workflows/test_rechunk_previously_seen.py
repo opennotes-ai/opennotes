@@ -366,20 +366,19 @@ class TestDispatchPreviouslySeenRechunkWorkflow:
         mock_job = MagicMock()
         mock_job.id = uuid4()
 
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "test-workflow-id"
+
         with (
             patch("src.dbos_workflows.rechunk_workflow.BatchJobService") as mock_batch_job_cls,
-            patch("src.dbos_workflows.rechunk_workflow.get_dbos_client") as mock_get_client,
+            patch(
+                "asyncio.to_thread", new_callable=AsyncMock, return_value=mock_handle
+            ) as mock_to_thread,
         ):
             mock_service = mock_batch_job_cls.return_value
             mock_service.create_job = AsyncMock(return_value=mock_job)
             mock_service.start_job = AsyncMock()
             mock_service.set_workflow_id = AsyncMock()
-
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "test-workflow-id"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
 
             result = await dispatch_dbos_previously_seen_rechunk_workflow(
                 db=mock_db,
@@ -391,6 +390,15 @@ class TestDispatchPreviouslySeenRechunkWorkflow:
             mock_service.create_job.assert_called_once()
             mock_service.start_job.assert_called_once()
             mock_service.set_workflow_id.assert_called_once()
+
+            enqueue_args = mock_to_thread.call_args
+            from src.dbos_workflows.rechunk_workflow import (
+                rechunk_previously_seen_workflow,
+                rechunk_queue,
+            )
+
+            assert enqueue_args.args[0] is rechunk_queue.enqueue
+            assert enqueue_args.args[1] is rechunk_previously_seen_workflow
 
             stmt_arg = mock_db.execute.call_args[0][0]
             compiled = str(stmt_arg.compile(compile_kwargs={"literal_binds": True}))
@@ -456,16 +464,16 @@ class TestDispatchPreviouslySeenRechunkWorkflow:
 
         with (
             patch("src.dbos_workflows.rechunk_workflow.BatchJobService") as mock_batch_job_cls,
-            patch("src.dbos_workflows.rechunk_workflow.get_dbos_client") as mock_get_client,
+            patch(
+                "asyncio.to_thread",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("DBOS unavailable"),
+            ),
         ):
             mock_service = mock_batch_job_cls.return_value
             mock_service.create_job = AsyncMock(return_value=mock_job)
             mock_service.start_job = AsyncMock()
             mock_service.fail_job = AsyncMock()
-
-            mock_client = MagicMock()
-            mock_client.enqueue.side_effect = RuntimeError("DBOS unavailable")
-            mock_get_client.return_value = mock_client
 
             with pytest.raises(RuntimeError, match="DBOS unavailable"):
                 await dispatch_dbos_previously_seen_rechunk_workflow(
