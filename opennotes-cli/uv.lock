@@ -35,8 +35,8 @@ wheels = [
 
 [[package]]
 name = "baalbek"
-version = "0.2.18"
-source = { git = "https://github.com/anateus/baalbek#567ba7db638c16c07ab80e75d90c96d1a5e1fa59" }
+version = "0.3.0"
+source = { git = "https://github.com/anateus/baalbek#edf753c815c3db8505dcc045d94c6e8031184ed7" }
 dependencies = [
     { name = "click" },
     { name = "pfzy" },

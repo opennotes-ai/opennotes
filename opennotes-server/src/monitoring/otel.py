@@ -50,6 +50,57 @@ BAGGAGE_KEYS_TO_PROPAGATE = [
 ]
 
 
+VALID_ATTR_TYPES = (bool, str, bytes, int, float)
+
+
+class AttributeSanitizingSpanProcessor:
+    """Filter out non-primitive span attribute values before export.
+
+    OpenTelemetry only accepts bool, str, bytes, int, float (or sequences of these).
+    Third-party instrumentors (e.g., Anthropic SDK via Traceloop) may set sentinel
+    values like ``Omit``/``NOT_GIVEN`` that cause warnings. This processor silently
+    drops such values in on_end() before they reach the exporter.
+    """
+
+    instance: "AttributeSanitizingSpanProcessor | None" = None
+
+    def on_start(self, span: "Span", parent_context: "context.Context | None" = None) -> None:
+        pass
+
+    def on_end(self, span: "ReadableSpan") -> None:
+        try:
+            if not hasattr(span, "_attributes") or not span._attributes:
+                return
+            filtered = {}
+            for key, value in span._attributes.items():
+                if isinstance(value, VALID_ATTR_TYPES) or (
+                    isinstance(value, (list, tuple))
+                    and all(isinstance(v, VALID_ATTR_TYPES) for v in value)
+                ):
+                    filtered[key] = value
+            span._attributes = filtered
+        except Exception:
+            logger.warning("AttributeSanitizingSpanProcessor.on_end failed", exc_info=True)
+
+    def shutdown(self) -> None:
+        pass
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True
+
+
+def _get_attribute_sanitizing_processor() -> "SpanProcessor":
+    """Get an AttributeSanitizingSpanProcessor wrapped as a SpanProcessor."""
+    from opentelemetry.sdk.trace import SpanProcessor as SpanProcessorBase
+
+    class _AttributeSanitizingProcessorImpl(AttributeSanitizingSpanProcessor, SpanProcessorBase):
+        pass
+
+    if AttributeSanitizingSpanProcessor.instance is None:
+        AttributeSanitizingSpanProcessor.instance = _AttributeSanitizingProcessorImpl()
+    return AttributeSanitizingSpanProcessor.instance  # pyright: ignore[reportReturnType]
+
+
 class BaggageSpanProcessor:
     """Copy baggage items to span attributes for visibility.
 
@@ -87,8 +138,8 @@ def _get_baggage_span_processor() -> "SpanProcessor":
     """
     from opentelemetry.sdk.trace import SpanProcessor as SpanProcessorBase
 
-    class _BaggageSpanProcessorImpl(SpanProcessorBase, BaggageSpanProcessor):
-        """Concrete implementation that inherits from both SpanProcessor and BaggageSpanProcessor."""
+    class _BaggageSpanProcessorImpl(BaggageSpanProcessor, SpanProcessorBase):
+        pass
 
     if BaggageSpanProcessor.instance is None:
         BaggageSpanProcessor.instance = _BaggageSpanProcessorImpl()
@@ -150,7 +201,7 @@ def setup_otel(
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
             from opentelemetry.propagators.composite import CompositePropagator
             from opentelemetry.sdk.resources import Resource
-            from opentelemetry.sdk.trace import TracerProvider
+            from opentelemetry.sdk.trace import SpanLimits, TracerProvider
             from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
             from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
             from opentelemetry.semconv.resource import ResourceAttributes
@@ -176,8 +227,13 @@ def setup_otel(
                 logger.info("Merged GCP Cloud Run resource attributes into trace resource")
 
             sampler = ParentBasedTraceIdRatio(sample_rate)
-            _tracer_provider = TracerProvider(resource=resource, sampler=sampler)
+            _tracer_provider = TracerProvider(
+                resource=resource,
+                sampler=sampler,
+                span_limits=SpanLimits(max_attributes=128),
+            )
 
+            _tracer_provider.add_span_processor(_get_attribute_sanitizing_processor())
             _tracer_provider.add_span_processor(_get_baggage_span_processor())
 
             from src.monitoring.gcp_resource_detector import is_cloud_run_environment
@@ -396,6 +452,7 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
         _span_exporter = None
         _meter_provider = None
         _otel_initialized = False
+        AttributeSanitizingSpanProcessor.instance = None
         BaggageSpanProcessor.instance = None
         logger.debug("OpenTelemetry state reset, ready for reinitialization")
 
