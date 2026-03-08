@@ -15,9 +15,13 @@ workflow steps and by content_scan_workflow.py.
 import logging
 from typing import TYPE_CHECKING, Any
 
+import asyncpg
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
+from src.common.connection_retry import async_connect_with_retry
+from src.config import get_settings
 from src.tasks.broker import register_task
 
 if TYPE_CHECKING:
@@ -28,13 +32,26 @@ logger = logging.getLogger(__name__)
 
 def _create_db_engine(db_url: str) -> Any:
     """Create async database engine with Supavisor-compatible settings."""
+    cfg = get_settings()
+    url = make_url(db_url)
+    dsn = url.render_as_string(hide_password=False).replace(
+        "postgresql+asyncpg://", "postgresql://"
+    )
+
+    async def _raw_connect():
+        return await asyncpg.connect(dsn=dsn, statement_cache_size=0)
+
+    creator = async_connect_with_retry(
+        _raw_connect,
+        max_retries=cfg.DB_CONNECT_MAX_RETRIES,
+        backoff_base=cfg.DB_CONNECT_BACKOFF_BASE_SECONDS,
+    )
+
     return create_async_engine(
         db_url,
         poolclass=NullPool,
-        connect_args={
-            "prepared_statement_cache_size": 0,
-            "statement_cache_size": 0,
-        },
+        async_creator=creator,
+        connect_args={"prepared_statement_cache_size": 0},
     )
 
 

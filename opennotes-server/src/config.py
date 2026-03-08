@@ -195,6 +195,17 @@ class Settings(BaseSettings):
             )
         return v
 
+    DB_CONNECT_MAX_RETRIES: int = Field(
+        default=3,
+        ge=0,
+        description="Max retries for transient DB connection errors (DNS, refused). 0 disables retry.",
+    )
+    DB_CONNECT_BACKOFF_BASE_SECONDS: float = Field(
+        default=0.5,
+        gt=0,
+        description="Base delay in seconds for DB connection retry exponential backoff.",
+    )
+
     DB_POOL_SIZE: int = Field(
         default=5,
         description="Deprecated: ignored with NullPool (Supavisor handles pooling). Kept for backward compatibility.",
