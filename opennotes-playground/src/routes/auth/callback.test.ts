@@ -41,4 +41,12 @@ describe("safeRedirectPath", () => {
   it("returns / for path with :// embedded after slash", () => {
     expect(safeRedirectPath("/foo://bar")).toBe("/");
   });
+
+  it("returns / for backslash after leading slash (/\\evil.com)", () => {
+    expect(safeRedirectPath("/\\evil.com")).toBe("/");
+  });
+
+  it("returns / for backslash anywhere in path (/foo\\bar)", () => {
+    expect(safeRedirectPath("/foo\\bar")).toBe("/");
+  });
 });
