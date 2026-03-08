@@ -9,8 +9,7 @@ pytestmark = pytest.mark.unit
 
 
 class TestStartupMigrationsRetryWiring:
-    @pytest.mark.asyncio
-    async def test_engine_creation_uses_sync_connect_with_retry_creator(self):
+    def test_engine_creation_uses_sync_connect_with_retry_creator(self):
         mock_engine, mock_conn = MagicMock(), MagicMock()
         mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
@@ -26,9 +25,9 @@ class TestStartupMigrationsRetryWiring:
             patch(f"{MODULE_STARTUP}.sync_connect_with_retry") as mock_retry,
         ):
             mock_retry.return_value = MagicMock()
-            from src.startup_migrations import run_startup_migrations
+            from src.startup_migrations import _run_migrations_sync
 
-            await run_startup_migrations("dbos_worker")
+            _run_migrations_sync(is_worker=True)
 
         mock_retry.assert_called_once()
         _, retry_kwargs = mock_retry.call_args
@@ -39,8 +38,7 @@ class TestStartupMigrationsRetryWiring:
         assert "creator" in ce_kwargs
         assert ce_kwargs["creator"] is mock_retry.return_value
 
-    @pytest.mark.asyncio
-    async def test_engine_creation_no_longer_uses_connect_args(self):
+    def test_engine_creation_no_longer_uses_connect_args(self):
         mock_engine, mock_conn = MagicMock(), MagicMock()
         mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
@@ -55,9 +53,9 @@ class TestStartupMigrationsRetryWiring:
             patch(f"{MODULE_STARTUP}.get_settings", return_value=mock_settings),
             patch(f"{MODULE_STARTUP}.sync_connect_with_retry", return_value=MagicMock()),
         ):
-            from src.startup_migrations import run_startup_migrations
+            from src.startup_migrations import _run_migrations_sync
 
-            await run_startup_migrations("dbos_worker")
+            _run_migrations_sync(is_worker=True)
 
         ce_kwargs = mock_ce.call_args.kwargs
         assert "connect_args" not in ce_kwargs
