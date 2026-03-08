@@ -238,7 +238,7 @@ env = { PYTHONPATH = ".", RATE_LIMIT_ENABLED = "false" }
 
 [tasks.lint]
 description = "Run all linters"
-depends = ["lint:server", "lint:discord"]
+depends = ["lint:server", "lint:discord", "lint:playground"]
 
 [tasks."lint:server"]
 description = "Run Python linters (use -- --fix to auto-fix)"
@@ -267,6 +267,11 @@ else
     pnpm run lint
 fi
 '''
+
+[tasks."lint:playground"]
+description = "Run Playground type-check"
+dir = "{{vars.playground_dir}}"
+run = "pnpm run type-check"
 
 # ========================================
 # Database Tasks
@@ -564,6 +569,13 @@ run = "pnpm install"
 sources = ["pnpm-lock.yaml"]
 outputs = ["node_modules/.modules.yaml"]
 
+[tasks."build:deps:playground"]
+description = "Install Playground dependencies (skipped if lock files unchanged)"
+dir = "{{vars.playground_dir}}"
+run = "pnpm install"
+sources = ["pnpm-lock.yaml"]
+outputs = ["node_modules/.modules.yaml"]
+
 [tasks."build:containers:all"]
 description = "Build all Docker images"
 depends = ["build:containers:server", "build:containers:discord", "build:containers:playground", "build:containers:postgres"]
@@ -580,6 +592,7 @@ description = "Build opennotes-discord image"
 run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} -f {{vars.discord_dir}}/Dockerfile ."
 
 [tasks."build:containers:playground"]
+depends = ["_env:convert", "build:types:openapi", "build:deps:playground"]
 description = "Build opennotes-playground image"
 run = "docker build -t opennotes-playground:{{env.IMAGE_TAG}} {{vars.playground_dir}}/"
 
