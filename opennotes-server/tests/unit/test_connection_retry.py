@@ -43,6 +43,42 @@ class TestIsTransientConnectionError:
     def test_does_not_retry_bare_oserror(self):
         assert is_transient_connection_error(OSError("generic OS error")) is False
 
+    def test_detects_psycopg2_operational_error_no_pgcode(self):
+        import psycopg2
+
+        exc = psycopg2.OperationalError("could not translate host name")
+        assert exc.pgcode is None
+        assert is_transient_connection_error(exc) is True
+
+    def test_detects_psycopg_operational_error_no_pgcode(self):
+        import psycopg
+
+        exc = psycopg.OperationalError("connection failed")
+        assert exc.sqlstate is None
+        assert is_transient_connection_error(exc) is True
+
+    def test_rejects_psycopg2_operational_error_with_pgcode(self):
+        import psycopg2
+
+        class _OpErrorWithCode(psycopg2.OperationalError):
+            def __init__(self, msg, pgcode=None):
+                super().__init__(msg)
+                self._pgcode = pgcode
+
+            @property
+            def pgcode(self):
+                return self._pgcode
+
+        exc = _OpErrorWithCode("password authentication failed", pgcode="28P01")
+        assert is_transient_connection_error(exc) is False
+
+    def test_rejects_psycopg_operational_error_with_pgcode(self):
+        import psycopg
+
+        exc = psycopg.OperationalError("server error")
+        exc.sqlstate = "28P01"
+        assert is_transient_connection_error(exc) is False
+
 
 class TestAsyncConnectWithRetry:
     @pytest.mark.asyncio

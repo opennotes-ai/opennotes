@@ -1,4 +1,3 @@
-import socket
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -167,7 +166,9 @@ class TestValidateDbosConnectionRetryWiring:
             nonlocal call_count
             call_count += 1
             if call_count < 3:
-                raise socket.gaierror(-3, "Temporary failure in name resolution")
+                import psycopg
+
+                raise psycopg.OperationalError("connection failed: could not translate host name")
             return mock_conn
 
         with (

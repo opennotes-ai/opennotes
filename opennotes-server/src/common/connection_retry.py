@@ -19,7 +19,23 @@ TRANSIENT_CONNECTION_ERRORS = (
 
 
 def is_transient_connection_error(exc: Exception) -> bool:
-    return isinstance(exc, TRANSIENT_CONNECTION_ERRORS)
+    if isinstance(exc, TRANSIENT_CONNECTION_ERRORS):
+        return True
+    try:
+        import psycopg2  # noqa: PLC0415
+
+        if isinstance(exc, psycopg2.OperationalError):
+            return exc.pgcode is None
+    except ImportError:
+        pass
+    try:
+        import psycopg  # noqa: PLC0415
+
+        if isinstance(exc, psycopg.OperationalError):
+            return exc.sqlstate is None
+    except ImportError:
+        pass
+    return False
 
 
 def _get_metric():
