@@ -695,7 +695,7 @@ def simulation_analysis(
         if output_format == "markdown":
             _render_detailed_markdown(simulation_id, accumulated, use_huuid)
         elif output_format == "xlsx":
-            _render_detailed_xlsx(simulation_id, accumulated, output_path)
+            _render_detailed_xlsx(simulation_id, accumulated, output_path, use_huuid)
         else:
             _render_detailed_terminal(simulation_id, accumulated, use_huuid)
         return
@@ -1359,6 +1359,7 @@ def _render_detailed_xlsx(
     simulation_id: str,
     data: dict[str, list[dict[str, Any]]],
     output_path: str | None,
+    use_huuid: bool = False,
 ) -> None:
     try:
         from openpyxl import Workbook
@@ -1379,13 +1380,13 @@ def _render_detailed_xlsx(
     ws_notes.append(note_headers)
     for n in notes:
         ws_notes.append([
-            n.get("note_id", ""),
+            format_id(n.get("note_id"), use_huuid),
             n.get("summary", ""),
             n.get("classification", ""),
             n.get("status", ""),
             n.get("helpfulness_score"),
             n.get("author_agent", ""),
-            n.get("request_id", ""),
+            format_id(n.get("request_id"), use_huuid),
             n.get("created_at", ""),
         ])
 
@@ -1394,7 +1395,7 @@ def _render_detailed_xlsx(
     ws_ratings.append(rating_headers)
     for r in ratings:
         ws_ratings.append([
-            r.get("note_id", ""),
+            format_id(r.get("note_id"), use_huuid),
             r.get("note_summary", "") or "",
             r.get("rater_agent", ""),
             r.get("helpfulness_level", ""),
@@ -1406,7 +1407,7 @@ def _render_detailed_xlsx(
     ws_requests.append(request_headers)
     for req in requests:
         ws_requests.append([
-            req.get("request_id", ""),
+            format_id(req.get("request_id"), use_huuid),
             req.get("content", ""),
             req.get("content_type", ""),
             req.get("note_count", 0),
