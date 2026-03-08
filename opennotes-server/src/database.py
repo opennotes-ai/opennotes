@@ -110,7 +110,6 @@ def _create_engine() -> AsyncEngine:
             user=url.username,
             password=url.password,
             database=url.database,
-            prepared_statement_cache_size=0,
             statement_cache_size=0,
         )
 

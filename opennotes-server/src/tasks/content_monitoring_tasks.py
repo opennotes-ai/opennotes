@@ -42,7 +42,6 @@ def _create_db_engine(db_url: str) -> Any:
             user=url.username,
             password=url.password,
             database=url.database,
-            prepared_statement_cache_size=0,
             statement_cache_size=0,
         )
 
