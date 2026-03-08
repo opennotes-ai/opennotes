@@ -114,9 +114,12 @@ def setup_traceloop(
             except ImportError:
                 logger.warning("GCP exporter packages not installed, skipping GCP exporters")
 
-        from traceloop.sdk.instruments import Instruments
+        try:
+            from traceloop.sdk.instruments import Instruments
 
-        init_kwargs["block_instruments"] = {Instruments.REDIS}
+            init_kwargs["block_instruments"] = {Instruments.REDIS}
+        except (ImportError, AttributeError):
+            logger.warning("Could not configure block_instruments — Instruments.REDIS unavailable")
 
         Traceloop.init(**init_kwargs)
 
