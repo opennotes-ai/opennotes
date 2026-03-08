@@ -1,13 +1,12 @@
 import asyncio
+import logging
 import random
 import socket
 import time
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-from src.monitoring import get_logger
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
