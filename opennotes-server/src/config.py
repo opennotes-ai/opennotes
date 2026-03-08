@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(default=False)
     TESTING: bool = Field(default=False)
     SKIP_STARTUP_CHECKS: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    SKIP_MIGRATIONS: bool = Field(
+        default=False,
+        description="Skip running Alembic migrations on startup (e.g. for worker containers)",
+    )
 
     @field_validator("SKIP_STARTUP_CHECKS", mode="before")
     @classmethod

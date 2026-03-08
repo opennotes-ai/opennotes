@@ -24,13 +24,24 @@ class TestStartupValidationChecks:
 
     async def test_check_required_environment_variables_success(self):
         """Test successful environment variable validation."""
-        with patch("src.startup_validation.settings") as mock_settings:
-            mock_settings.DATABASE_URL = "postgresql+asyncpg://test"
-            mock_settings.REDIS_URL = "redis://test"
-            mock_settings.NATS_URL = "nats://test"
-            mock_settings.SECRET_KEY = "test_secret_key_long_enough"
-            mock_settings.ENCRYPTION_KEY = "test_encryption_key"
+        mock_settings = MagicMock(
+            spec=[
+                "DATABASE_URL",
+                "REDIS_URL",
+                "NATS_URL",
+                "JWT_SECRET_KEY",
+                "CREDENTIALS_ENCRYPTION_KEY",
+                "ENCRYPTION_MASTER_KEY",
+            ]
+        )
+        mock_settings.DATABASE_URL = "postgresql+asyncpg://test"
+        mock_settings.REDIS_URL = "redis://test"
+        mock_settings.NATS_URL = "nats://test"
+        mock_settings.JWT_SECRET_KEY = "test_secret_key_long_enough"
+        mock_settings.CREDENTIALS_ENCRYPTION_KEY = "test_credentials_key"
+        mock_settings.ENCRYPTION_MASTER_KEY = "test_master_key"
 
+        with patch("src.startup_validation.settings", mock_settings):
             result = await check_required_environment_variables()
 
         assert result.passed is True
@@ -38,20 +49,35 @@ class TestStartupValidationChecks:
 
     async def test_check_required_environment_variables_missing(self):
         """Test missing environment variables detection."""
-        with patch("src.startup_validation.settings") as mock_settings:
-            mock_settings.DATABASE_URL = ""
-            mock_settings.REDIS_URL = "redis://test"
-            mock_settings.NATS_URL = ""
-            mock_settings.SECRET_KEY = "test"
-            mock_settings.ENCRYPTION_KEY = ""
+        mock_settings = MagicMock(
+            spec=[
+                "DATABASE_URL",
+                "REDIS_URL",
+                "NATS_URL",
+                "JWT_SECRET_KEY",
+                "CREDENTIALS_ENCRYPTION_KEY",
+                "ENCRYPTION_MASTER_KEY",
+            ]
+        )
+        mock_settings.DATABASE_URL = ""
+        mock_settings.REDIS_URL = "redis://test"
+        mock_settings.NATS_URL = ""
+        mock_settings.JWT_SECRET_KEY = "test"
+        mock_settings.CREDENTIALS_ENCRYPTION_KEY = ""
+        mock_settings.ENCRYPTION_MASTER_KEY = ""
 
+        with patch("src.startup_validation.settings", mock_settings):
             result = await check_required_environment_variables()
 
         assert result.passed is False
         assert result.severity == CheckSeverity.CRITICAL
         assert "missing" in result.message.lower()
         assert result.details is not None
-        assert len(result.details["missing_vars"]) > 0
+        missing = result.details["missing_vars"]
+        assert "DATABASE_URL" in missing
+        assert "NATS_URL" in missing
+        assert "CREDENTIALS_ENCRYPTION_KEY" in missing
+        assert "ENCRYPTION_MASTER_KEY" in missing
 
     async def test_check_postgresql_connectivity_success(self):
         """Test successful PostgreSQL connectivity."""
