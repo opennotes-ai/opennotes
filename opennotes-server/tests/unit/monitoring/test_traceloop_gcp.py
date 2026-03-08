@@ -89,6 +89,31 @@ class TestTraceloopGcpExporters:
         assert "logging_exporter" not in init_kwargs
 
 
+class TestTraceloopBlockInstruments:
+    @patch(GCP_DETECTOR_PATH, return_value=False)
+    @patch(TRACELOOP_PATH)
+    def test_blocks_redis_instrumentation(self, mock_traceloop_cls, mock_is_gcp) -> None:
+        import src.monitoring.traceloop as traceloop_mod
+
+        traceloop_mod._traceloop_configured = False
+
+        mock_exporter = MagicMock()
+        traceloop_mod.setup_traceloop(
+            app_name="test",
+            service_name="test-service",
+            version="0.0.1",
+            environment="test",
+            instance_id="inst-1",
+            exporter=mock_exporter,
+        )
+
+        init_kwargs = mock_traceloop_cls.init.call_args[1]
+        from traceloop.sdk.instruments import Instruments
+
+        assert "block_instruments" in init_kwargs
+        assert Instruments.REDIS in init_kwargs["block_instruments"]
+
+
 class TestTraceloopGcpImportError:
     @patch(GCP_DETECTOR_PATH, return_value=True)
     @patch(TRACELOOP_PATH)
