@@ -198,7 +198,7 @@ env = { PORT = "3100" }
 
 [tasks.test]
 description = "Run all tests"
-depends = ["test:server", "test:discord"]
+depends = ["test:server", "test:discord", "test:playground"]
 
 [tasks."test:server"]
 description = "Run server tests (pass options via --)"
@@ -212,6 +212,12 @@ description = "Run Discord bot tests (pass options via --)"
 dir = "{{vars.discord_dir}}"
 run = "pnpm test \"$@\""
 sources = ["src/**/*.ts", "tests/**/*.ts"]
+
+[tasks."test:playground"]
+description = "Run Playground tests (pass options via --)"
+dir = "{{vars.playground_dir}}"
+run = "pnpm test \"$@\""
+sources = ["src/**/*.ts", "src/**/*.tsx"]
 
 [tasks."test:heavy"]
 description = "Run heavy/resource-intensive tests sequentially (OOM-risk under xdist)"

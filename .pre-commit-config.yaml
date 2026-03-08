@@ -163,3 +163,11 @@ repos:
         files: ^opennotes-discord/src/.*\.ts$
         pass_filenames: false
         require_serial: true
+
+      - id: typecheck-playground
+        name: TypeScript type check (opennotes-playground)
+        entry: bash -c 'cd opennotes-playground && pnpm run type-check'
+        language: system
+        files: ^opennotes-playground/src/.*\.tsx?$
+        pass_filenames: false
+        require_serial: true
