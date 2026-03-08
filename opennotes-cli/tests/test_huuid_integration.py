@@ -57,6 +57,14 @@ class TestFormatId:
         result = format_id(uid, use_huuid=False)
         assert result == uid
 
+    def test_none_returns_na(self):
+        result = format_id(None, use_huuid=True)
+        assert result == "N/A"
+
+    def test_none_returns_na_when_huuid_disabled(self):
+        result = format_id(None, use_huuid=False)
+        assert result == "N/A"
+
     def test_passthrough_for_non_uuid(self):
         result = format_id("N/A", use_huuid=True)
         assert result == "N/A"

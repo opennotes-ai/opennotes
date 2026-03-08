@@ -23,7 +23,9 @@ def resolve_id(value: str) -> str:
         raise click.BadParameter(f"Invalid ID: '{value}'. Expected a UUID or huuid.")
 
 
-def format_id(uuid_str: str, use_huuid: bool) -> str:
+def format_id(uuid_str: str | None, use_huuid: bool) -> str:
+    if uuid_str is None:
+        return "N/A"
     if not use_huuid:
         return uuid_str
     try:

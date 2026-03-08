@@ -1023,7 +1023,7 @@ def _fetch_detailed_pages(
                     "status": attrs.get("status", ""),
                     "helpfulness_score": attrs.get("helpfulness_score"),
                     "author_agent": attrs.get("author_agent_name", ""),
-                    "request_id": attrs.get("request_id"),
+                    "request_id": attrs.get("request_id") or "",
                     "created_at": attrs.get("created_at"),
                 }
                 all_notes.append(note)
