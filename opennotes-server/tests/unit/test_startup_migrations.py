@@ -23,6 +23,13 @@ def _make_mock_engine():
     return mock_engine, mock_conn
 
 
+def _make_mock_settings(db_url="postgresql+asyncpg://user:pass@host/db"):
+    mock_settings = MagicMock()
+    mock_settings.SKIP_MIGRATIONS = False
+    mock_settings.DATABASE_URL = db_url
+    return mock_settings
+
+
 def _execute_call_strings(mock_conn):
     return [str(c.args[0]) for c in mock_conn.execute.call_args_list]
 
@@ -34,8 +41,7 @@ class TestRunStartupMigrationsServerSuccess:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="Running upgrade abc123 -> def456")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -61,8 +67,7 @@ class TestRunStartupMigrationsServerSuccess:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="Applied migrations")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -87,8 +92,7 @@ class TestRunStartupMigrationsServerSuccess:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -109,8 +113,7 @@ class TestRunStartupMigrationsServerSuccess:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="Running upgrade abc123 -> def456")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -134,8 +137,7 @@ class TestRunStartupMigrationsServerFailure:
         upgrade_result = _make_subprocess_result(returncode=1, stderr="Migration error")
         downgrade_result = _make_subprocess_result(stdout="Downgraded")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -159,8 +161,7 @@ class TestRunStartupMigrationsServerFailure:
         upgrade_result = _make_subprocess_result(returncode=1, stderr="boom")
         downgrade_result = _make_subprocess_result(stdout="ok")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -186,8 +187,7 @@ class TestRunStartupMigrationsServerFailure:
         upgrade_result = _make_subprocess_result(returncode=1, stderr="boom")
         downgrade_result = _make_subprocess_result(stdout="ok")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -210,8 +210,7 @@ class TestRunStartupMigrationsServerFailure:
         upgrade_result = _make_subprocess_result(returncode=1, stderr="upgrade failed")
         downgrade_result = _make_subprocess_result(returncode=1, stderr="downgrade also failed")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -237,8 +236,7 @@ class TestRunStartupMigrationsWorker:
     async def test_worker_acquires_and_immediately_releases_lock(self):
         mock_engine, mock_conn = _make_mock_engine()
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -258,8 +256,7 @@ class TestRunStartupMigrationsWorker:
     async def test_worker_does_not_run_alembic_commands(self):
         mock_engine, _mock_conn = _make_mock_engine()
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -282,8 +279,7 @@ class TestRunStartupMigrationsExceptionHandling:
         )
         mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -302,8 +298,7 @@ class TestRunStartupMigrationsExceptionHandling:
         mock_engine, mock_conn = _make_mock_engine()
         mock_conn.execute.side_effect = RuntimeError("db error")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -326,8 +321,7 @@ class TestDatabaseUrlConversion:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host:5432/mydb"
+        mock_settings = _make_mock_settings("postgresql+asyncpg://user:pass@host:5432/mydb")
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine) as mock_ce,
@@ -348,8 +342,7 @@ class TestMigrationLockId:
     async def test_uses_expected_lock_id(self):
         mock_engine, mock_conn = _make_mock_engine()
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -371,8 +364,7 @@ class TestNoMigrationsPending:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -396,8 +388,7 @@ class TestBaseRevisionFallback:
         upgrade_result = _make_subprocess_result(returncode=1, stderr="fail")
         downgrade_result = _make_subprocess_result(stdout="ok")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -422,8 +413,7 @@ class TestSubprocessTimeout:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -442,8 +432,7 @@ class TestSubprocessTimeout:
     async def test_alembic_current_timeout_logs_critical_and_releases_lock(self):
         mock_engine, mock_conn = _make_mock_engine()
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -469,8 +458,7 @@ class TestSubprocessTimeout:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(returncode=1, stderr="upgrade failed")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -502,8 +490,7 @@ class TestSubprocessTimeout:
         mock_engine, mock_conn = _make_mock_engine()
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -534,8 +521,7 @@ class TestAlembicCurrentReturncode:
         mock_engine, mock_conn = _make_mock_engine()
         current_result = _make_subprocess_result(returncode=1, stderr="alembic error")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
@@ -563,8 +549,7 @@ class TestMultiHeadParsing:
         upgrade_result = _make_subprocess_result(returncode=1, stderr="fail")
         downgrade_result = _make_subprocess_result(stdout="ok")
 
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
