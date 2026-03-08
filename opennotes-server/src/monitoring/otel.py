@@ -198,7 +198,7 @@ def setup_otel(
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
             from opentelemetry.propagators.composite import CompositePropagator
             from opentelemetry.sdk.resources import Resource
-            from opentelemetry.sdk.trace import TracerProvider
+            from opentelemetry.sdk.trace import SpanLimits, TracerProvider
             from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
             from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
             from opentelemetry.semconv.resource import ResourceAttributes
@@ -224,7 +224,11 @@ def setup_otel(
                 logger.info("Merged GCP Cloud Run resource attributes into trace resource")
 
             sampler = ParentBasedTraceIdRatio(sample_rate)
-            _tracer_provider = TracerProvider(resource=resource, sampler=sampler)
+            _tracer_provider = TracerProvider(
+                resource=resource,
+                sampler=sampler,
+                span_limits=SpanLimits(max_attributes=128),
+            )
 
             _tracer_provider.add_span_processor(_get_attribute_sanitizing_processor())
             _tracer_provider.add_span_processor(_get_baggage_span_processor())

@@ -219,3 +219,25 @@ class TestGetSpanExporter:
 
         exporter = get_span_exporter()
         assert exporter is None
+
+
+class TestSpanLimitsConfiguration:
+    @patch(GCP_DETECTOR_PATH, return_value=False)
+    def test_tracer_provider_has_increased_span_limits(self, mock_is_gcp) -> None:
+        from src.monitoring.otel import shutdown_otel
+
+        shutdown_otel(flush_timeout_millis=100)
+
+        from src.monitoring.otel import setup_otel
+
+        setup_otel(
+            service_name="test-service",
+            otlp_endpoint="http://localhost:4317",
+        )
+
+        from src.monitoring.otel import _tracer_provider
+
+        assert _tracer_provider is not None
+        assert _tracer_provider._span_limits.max_attributes == 128
+
+        shutdown_otel(flush_timeout_millis=100)
