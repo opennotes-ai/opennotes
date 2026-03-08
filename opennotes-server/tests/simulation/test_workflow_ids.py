@@ -6,84 +6,105 @@ from uuid import uuid4
 import pytest
 
 
+@pytest.mark.unit
 class TestDispatchAgentTurnGenerationWorkflowId:
     @pytest.mark.asyncio
     async def test_dispatch_includes_generation_in_workflow_id(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import dispatch_agent_turn
 
-        mock_client = MagicMock()
         mock_handle = MagicMock()
-        mock_handle.workflow_id = "test-wf"
-        mock_client.enqueue.return_value = mock_handle
+        mock_handle.get_workflow_id.return_value = "test-wf"
 
         agent_id = uuid4()
+        captured_wf_ids: list[str] = []
+        captured_dedup_ids: list[str] = []
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
+                "src.simulation.workflows.agent_turn_workflow.simulation_turn_queue"
+            ) as mock_queue,
+            patch(
+                "dbos.SetWorkflowID",
+                side_effect=lambda wf_id: captured_wf_ids.append(wf_id) or MagicMock(),
+            ),
+            patch(
+                "dbos.SetEnqueueOptions",
+                side_effect=lambda deduplication_id: captured_dedup_ids.append(deduplication_id)
+                or MagicMock(),
             ),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             await dispatch_agent_turn(agent_id, 5, generation=3)
 
-        options = mock_client.enqueue.call_args.args[0]
         expected_id = f"turn-{agent_id}-gen3-5-retry0"
-        assert options["workflow_id"] == expected_id
-        assert options["deduplication_id"] == expected_id
+        assert captured_wf_ids[0] == expected_id
+        assert captured_dedup_ids[0] == expected_id
 
     @pytest.mark.asyncio
     async def test_dispatch_default_generation_is_1(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import dispatch_agent_turn
 
-        mock_client = MagicMock()
         mock_handle = MagicMock()
-        mock_handle.workflow_id = "test-wf"
-        mock_client.enqueue.return_value = mock_handle
+        mock_handle.get_workflow_id.return_value = "test-wf"
 
         agent_id = uuid4()
+        captured_wf_ids: list[str] = []
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
+                "src.simulation.workflows.agent_turn_workflow.simulation_turn_queue"
+            ) as mock_queue,
+            patch(
+                "dbos.SetWorkflowID",
+                side_effect=lambda wf_id: captured_wf_ids.append(wf_id) or MagicMock(),
+            ),
+            patch(
+                "dbos.SetEnqueueOptions",
+                side_effect=lambda **kw: MagicMock(),
             ),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             await dispatch_agent_turn(agent_id, 2)
 
-        options = mock_client.enqueue.call_args.args[0]
         expected_id = f"turn-{agent_id}-gen1-2-retry0"
-        assert options["workflow_id"] == expected_id
+        assert captured_wf_ids[0] == expected_id
 
     @pytest.mark.asyncio
     async def test_dispatch_different_generations_produce_different_ids(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import dispatch_agent_turn
 
-        mock_client = MagicMock()
         mock_handle = MagicMock()
-        mock_handle.workflow_id = "test-wf"
-        mock_client.enqueue.return_value = mock_handle
+        mock_handle.get_workflow_id.return_value = "test-wf"
 
         agent_id = uuid4()
+        captured_wf_ids: list[str] = []
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
+                "src.simulation.workflows.agent_turn_workflow.simulation_turn_queue"
+            ) as mock_queue,
+            patch(
+                "dbos.SetWorkflowID",
+                side_effect=lambda wf_id: captured_wf_ids.append(wf_id) or MagicMock(),
+            ),
+            patch(
+                "dbos.SetEnqueueOptions",
+                side_effect=lambda **kw: MagicMock(),
             ),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             await dispatch_agent_turn(agent_id, 1, generation=1)
             await dispatch_agent_turn(agent_id, 1, generation=2)
 
-        call1_options = mock_client.enqueue.call_args_list[0].args[0]
-        call2_options = mock_client.enqueue.call_args_list[1].args[0]
-        assert call1_options["workflow_id"] != call2_options["workflow_id"]
-        assert "gen1" in call1_options["workflow_id"]
-        assert "gen2" in call2_options["workflow_id"]
+        assert captured_wf_ids[0] != captured_wf_ids[1]
+        assert "gen1" in captured_wf_ids[0]
+        assert "gen2" in captured_wf_ids[1]
 
 
+@pytest.mark.unit
 class TestDetectStuckAgentsGenerationWorkflowId:
     def _run_detect_stuck(self, agent_id, turn_count, retry_count, generation):
         import asyncio
@@ -135,6 +156,7 @@ class TestDetectStuckAgentsGenerationWorkflowId:
         mock_dbos.get_workflow_status.assert_called_once_with(f"turn-{agent_id}-gen1-1-retry0")
 
 
+@pytest.mark.unit
 class TestInitializeRunStepIncludesGeneration:
     def test_initialize_run_returns_generation_in_config(self) -> None:
         import asyncio
@@ -192,6 +214,7 @@ class TestInitializeRunStepIncludesGeneration:
         assert config["generation"] == 5
 
 
+@pytest.mark.unit
 class TestRefreshConfigStepIncludesGeneration:
     def test_refresh_config_returns_generation_in_config(self) -> None:
         import asyncio
@@ -245,6 +268,7 @@ class TestRefreshConfigStepIncludesGeneration:
         assert config["generation"] == 3
 
 
+@pytest.mark.unit
 class TestScheduleTurnsPassesGeneration:
     def test_schedule_turns_passes_generation_to_dispatch(self) -> None:
         import asyncio
