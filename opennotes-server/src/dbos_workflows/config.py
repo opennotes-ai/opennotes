@@ -13,10 +13,12 @@ import threading
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
+import psycopg
 import sqlalchemy as sa
 from dbos import DBOS, DBOSClient, DBOSConfig
 from sqlalchemy.pool import NullPool
 
+from src.common.connection_retry import sync_connect_with_retry
 from src.config import settings
 from src.dbos_workflows.serializer import SafeJsonSerializer
 
@@ -123,9 +125,17 @@ def get_dbos_config() -> DBOSConfig:
         "serializer": SafeJsonSerializer(),
     }
 
+    def _raw_dbos_connect():
+        return psycopg.connect(sync_url, prepare_threshold=None)
+
     config["db_engine_kwargs"] = {
         "poolclass": NullPool,
         "connect_args": {"prepare_threshold": None},
+        "creator": sync_connect_with_retry(
+            _raw_dbos_connect,
+            max_retries=settings.DB_CONNECT_MAX_RETRIES,
+            backoff_base=settings.DB_CONNECT_BACKOFF_BASE_SECONDS,
+        ),
     }
 
     config["otlp_attributes"] = {
@@ -228,10 +238,18 @@ def get_dbos_client() -> DBOSClient:
             client = _dbos_client
             if client is None:
                 sync_url = _get_sync_database_url()
+
+                def _raw_connect():
+                    return psycopg.connect(sync_url, prepare_threshold=None)
+
                 engine = sa.create_engine(
                     sync_url,
                     poolclass=NullPool,
-                    connect_args={"prepare_threshold": None},
+                    creator=sync_connect_with_retry(
+                        _raw_connect,
+                        max_retries=settings.DB_CONNECT_MAX_RETRIES,
+                        backoff_base=settings.DB_CONNECT_BACKOFF_BASE_SECONDS,
+                    ),
                 )
                 client = DBOSClient(
                     system_database_engine=engine,

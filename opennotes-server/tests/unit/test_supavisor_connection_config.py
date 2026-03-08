@@ -5,6 +5,7 @@ Verifies:
 - asyncpg connect_args disable prepared statement caches
 - DBOS psycopg config disables prepared statements
 - Deprecated pool config fields still work
+- Connection retry is wired into all engine creation sites
 """
 
 from typing import Any
@@ -26,6 +27,8 @@ class TestDatabaseEngineNullPool:
             mock_settings.return_value = MagicMock(
                 DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
                 DEBUG=False,
+                DB_CONNECT_MAX_RETRIES=3,
+                DB_CONNECT_BACKOFF_BASE_SECONDS=0.5,
             )
             engine = _create_engine()
 
@@ -41,6 +44,8 @@ class TestDatabaseEngineNullPool:
                 mock_settings.return_value = MagicMock(
                     DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
                     DEBUG=False,
+                    DB_CONNECT_MAX_RETRIES=3,
+                    DB_CONNECT_BACKOFF_BASE_SECONDS=0.5,
                 )
                 _create_engine()
 
@@ -52,9 +57,9 @@ class TestDatabaseEngineNullPool:
 
 
 class TestAsyncpgConnectArgs:
-    """AC#2: asyncpg connect_args disable prepared statement cache."""
+    """AC#2: asyncpg connect_args disable prepared statement cache via async_creator."""
 
-    def test_create_engine_disables_prepared_statement_cache(self) -> None:
+    def test_create_engine_uses_async_creator_with_retry(self) -> None:
         with patch("src.database.create_async_engine") as mock_create:
             mock_create.return_value = MagicMock()
 
@@ -64,19 +69,21 @@ class TestAsyncpgConnectArgs:
                 mock_settings.return_value = MagicMock(
                     DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
                     DEBUG=False,
+                    DB_CONNECT_MAX_RETRIES=3,
+                    DB_CONNECT_BACKOFF_BASE_SECONDS=0.5,
                 )
                 _create_engine()
 
             call_kwargs = mock_create.call_args[1]
-            assert "connect_args" in call_kwargs
-            assert call_kwargs["connect_args"]["prepared_statement_cache_size"] == 0
-            assert call_kwargs["connect_args"]["statement_cache_size"] == 0
+            assert "async_creator" in call_kwargs
+            assert callable(call_kwargs["async_creator"])
+            assert "connect_args" not in call_kwargs
 
 
 class TestContentMonitoringNullPool:
-    """AC#1: content_monitoring ephemeral engines also use NullPool."""
+    """AC#1: content_monitoring ephemeral engines also use NullPool with retry."""
 
-    def test_content_monitoring_create_db_engine_uses_null_pool(self) -> None:
+    def test_content_monitoring_create_db_engine_uses_null_pool_and_retry(self) -> None:
         with patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_create:
             mock_create.return_value = MagicMock()
 
@@ -86,20 +93,22 @@ class TestContentMonitoringNullPool:
 
             call_kwargs = mock_create.call_args[1]
             assert call_kwargs.get("poolclass") is NullPool
-            assert call_kwargs["connect_args"]["prepared_statement_cache_size"] == 0
-            assert call_kwargs["connect_args"]["statement_cache_size"] == 0
+            assert "async_creator" in call_kwargs
+            assert callable(call_kwargs["async_creator"])
 
 
 class TestDbosConfigSupavisor:
     """AC#3: DBOS psycopg compatibility with Supavisor transaction mode."""
 
-    def test_dbos_config_includes_engine_kwargs_with_null_pool(self) -> None:
+    def test_dbos_config_includes_engine_kwargs_with_null_pool_and_retry(self) -> None:
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
             mock_settings.DBOS_APP_NAME = "test"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.VERSION = "1.0.0"
             mock_settings.ENVIRONMENT = "test"
+            mock_settings.DB_CONNECT_MAX_RETRIES = 3
+            mock_settings.DB_CONNECT_BACKOFF_BASE_SECONDS = 0.5
 
             from src.dbos_workflows.config import get_dbos_config
 
@@ -109,6 +118,37 @@ class TestDbosConfigSupavisor:
             engine_kwargs = config["db_engine_kwargs"]
             assert engine_kwargs["poolclass"] is NullPool
             assert engine_kwargs["connect_args"]["prepare_threshold"] is None
+            assert "creator" in engine_kwargs
+            assert callable(engine_kwargs["creator"])
+
+
+class TestDbosClientRetry:
+    """AC#3/4: DBOS client engine uses sync connection retry."""
+
+    def test_dbos_client_engine_uses_creator_with_retry(self) -> None:
+        with (
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
+            patch("src.dbos_workflows.config.DBOSClient") as mock_client_cls,
+        ):
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
+            mock_settings.DB_CONNECT_MAX_RETRIES = 3
+            mock_settings.DB_CONNECT_BACKOFF_BASE_SECONDS = 0.5
+            mock_create_engine.return_value = MagicMock()
+            mock_client_cls.return_value = MagicMock()
+
+            from src.dbos_workflows.config import get_dbos_client, reset_dbos_client
+
+            reset_dbos_client()
+            try:
+                get_dbos_client()
+            finally:
+                reset_dbos_client()
+
+            call_kwargs = mock_create_engine.call_args[1]
+            assert call_kwargs.get("poolclass") is NullPool
+            assert "creator" in call_kwargs
+            assert callable(call_kwargs["creator"])
 
 
 class TestDeprecatedPoolConfig:

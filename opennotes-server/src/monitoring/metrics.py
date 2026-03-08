@@ -490,3 +490,9 @@ taskiq_tasks_total = meter.create_counter(
     description="Total TaskIQ tasks executed",
     unit="1",
 )
+
+db_connection_retries_total = meter.create_counter(
+    "db.connection.retries",
+    description="Total DB connection retry attempts by outcome",
+    unit="1",
+)
