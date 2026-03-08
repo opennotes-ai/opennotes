@@ -208,29 +208,29 @@ class TestDispatchCommunityScoring:
     async def test_dispatch_creates_workflow_id_with_temporal_component(self) -> None:
         from src.simulation.workflows.scoring_workflow import (
             dispatch_community_scoring,
+            score_community_server,
         )
 
         cs_id = uuid4()
         before_ts = int(time.time())
 
+        captured_wf_id = None
         mock_handle = MagicMock()
-        mock_handle.workflow_id = "will-be-set-by-capture"
 
-        mock_client = MagicMock()
-
-        def capture_enqueue(options, *args):
-            mock_handle.workflow_id = options["workflow_id"]
-            return mock_handle
-
-        mock_client.enqueue.side_effect = capture_enqueue
+        def capture_set_wf_id(wf_id):
+            nonlocal captured_wf_id
+            captured_wf_id = wf_id
+            mock_handle.get_workflow_id.return_value = wf_id
+            return MagicMock()
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.workflows.scoring_workflow.community_scoring_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID", side_effect=capture_set_wf_id),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             wf_id = await dispatch_community_scoring(cs_id)
 
         after_ts = int(time.time())
@@ -240,39 +240,30 @@ class TestDispatchCommunityScoring:
         ts_part = int(wf_id[len(prefix) :])
         assert before_ts <= ts_part <= after_ts
 
-        mock_client.enqueue.assert_called_once()
-        call_args = mock_client.enqueue.call_args
-        options = call_args[0][0]
-        assert options["queue_name"] == "community_scoring"
-        assert "deduplication_id" not in options
-        assert call_args[0][1] == str(cs_id)
+        mock_queue.enqueue.assert_called_once_with(score_community_server, str(cs_id))
 
     @pytest.mark.asyncio
     async def test_dispatch_uses_correct_workflow_name(self) -> None:
         from src.simulation.workflows.scoring_workflow import (
-            SCORE_COMMUNITY_SERVER_WORKFLOW_NAME,
             dispatch_community_scoring,
+            score_community_server,
         )
 
         cs_id = uuid4()
         mock_handle = MagicMock()
-        mock_handle.workflow_id = f"score-community-{cs_id}"
-
-        mock_client = MagicMock()
-        mock_client.enqueue.return_value = mock_handle
+        mock_handle.get_workflow_id.return_value = f"score-community-{cs_id}"
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.workflows.scoring_workflow.community_scoring_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID"),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             await dispatch_community_scoring(cs_id)
 
-        call_args = mock_client.enqueue.call_args
-        options = call_args[0][0]
-        assert options["workflow_name"] == SCORE_COMMUNITY_SERVER_WORKFLOW_NAME
+        mock_queue.enqueue.assert_called_once_with(score_community_server, str(cs_id))
 
     @pytest.mark.asyncio
     async def test_dispatch_successive_calls_produce_different_workflow_ids(self) -> None:
@@ -283,24 +274,22 @@ class TestDispatchCommunityScoring:
         cs_id = uuid4()
         captured_ids: list[str] = []
 
-        mock_client = MagicMock()
+        mock_handle = MagicMock()
 
-        def capture_enqueue(options, *args):
-            handle = MagicMock()
-            handle.workflow_id = options["workflow_id"]
-            captured_ids.append(options["workflow_id"])
-            return handle
-
-        mock_client.enqueue.side_effect = capture_enqueue
+        def capture_set_wf_id(wf_id):
+            captured_ids.append(wf_id)
+            mock_handle.get_workflow_id.return_value = wf_id
+            return MagicMock()
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.workflows.scoring_workflow.community_scoring_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID", side_effect=capture_set_wf_id),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
             patch("src.simulation.workflows.scoring_workflow.time") as mock_time,
         ):
+            mock_queue.enqueue.return_value = mock_handle
             mock_time.time.side_effect = [1000000, 1000001]
             await dispatch_community_scoring(cs_id)
             await dispatch_community_scoring(cs_id)

@@ -1466,82 +1466,94 @@ class TestSetRunStatusStep:
 
 class TestDispatchOrchestrator:
     @pytest.mark.asyncio
-    async def test_dispatch_orchestrator_enqueues_via_dbos_client(self) -> None:
-        from src.simulation.workflows.orchestrator_workflow import dispatch_orchestrator
-
-        mock_client = MagicMock()
-        mock_handle = MagicMock()
-        mock_handle.workflow_id = "orchestrator-abc"
-        mock_client.enqueue.return_value = mock_handle
+    async def test_dispatch_orchestrator_enqueues_via_queue(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import (
+            dispatch_orchestrator,
+            run_orchestrator,
+        )
 
         run_id = uuid4()
+        mock_handle = MagicMock()
+        mock_handle.get_workflow_id.return_value = f"orchestrator-{run_id}-gen1"
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.workflows.orchestrator_workflow.simulation_orchestrator_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID"),
+            patch("dbos.SetEnqueueOptions"),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             workflow_id = await dispatch_orchestrator(run_id)
 
-        assert workflow_id == "orchestrator-abc"
-        mock_client.enqueue.assert_called_once()
+        assert workflow_id == f"orchestrator-{run_id}-gen1"
+        mock_queue.enqueue.assert_called_once_with(run_orchestrator, str(run_id))
 
     @pytest.mark.asyncio
     async def test_dispatch_orchestrator_uses_deduplication_id(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import dispatch_orchestrator
 
-        mock_client = MagicMock()
-        mock_handle = MagicMock()
-        mock_handle.workflow_id = "test-wf"
-        mock_client.enqueue.return_value = mock_handle
-
         run_id = uuid4()
+        mock_handle = MagicMock()
+        mock_handle.get_workflow_id.return_value = f"orchestrator-{run_id}-gen1"
+
+        captured_wf_ids: list[str] = []
+        captured_dedup_ids: list[str] = []
+
+        def capture_set_wf_id(wf_id):
+            captured_wf_ids.append(wf_id)
+            return MagicMock()
+
+        def capture_set_enqueue_opts(*, deduplication_id):
+            captured_dedup_ids.append(deduplication_id)
+            return MagicMock()
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.workflows.orchestrator_workflow.simulation_orchestrator_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID", side_effect=capture_set_wf_id),
+            patch("dbos.SetEnqueueOptions", side_effect=capture_set_enqueue_opts),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             await dispatch_orchestrator(run_id)
             await dispatch_orchestrator(run_id)
 
-        call1_options = mock_client.enqueue.call_args_list[0].args[0]
-        call2_options = mock_client.enqueue.call_args_list[1].args[0]
-        assert call1_options["workflow_id"] == call2_options["workflow_id"]
-        assert call1_options["deduplication_id"] == call2_options["deduplication_id"]
-        assert call1_options["workflow_id"] == f"orchestrator-{run_id}-gen1"
-        assert call1_options["queue_name"] == "simulation_orchestrator"
+        assert captured_wf_ids[0] == captured_wf_ids[1]
+        assert captured_dedup_ids[0] == captured_dedup_ids[1]
+        assert captured_wf_ids[0] == f"orchestrator-{run_id}-gen1"
 
     @pytest.mark.asyncio
     async def test_dispatch_orchestrator_different_generation_different_workflow_id(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import dispatch_orchestrator
 
-        mock_client = MagicMock()
-        mock_handle = MagicMock()
-        mock_handle.workflow_id = "test-wf"
-        mock_client.enqueue.return_value = mock_handle
-
         run_id = uuid4()
+        mock_handle = MagicMock()
+        mock_handle.get_workflow_id.return_value = "test-wf"
+
+        captured_wf_ids: list[str] = []
+
+        def capture_set_wf_id(wf_id):
+            captured_wf_ids.append(wf_id)
+            return MagicMock()
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.workflows.orchestrator_workflow.simulation_orchestrator_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID", side_effect=capture_set_wf_id),
+            patch("dbos.SetEnqueueOptions"),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             await dispatch_orchestrator(run_id, generation=1)
             await dispatch_orchestrator(run_id, generation=2)
 
-        call1_options = mock_client.enqueue.call_args_list[0].args[0]
-        call2_options = mock_client.enqueue.call_args_list[1].args[0]
-        assert call1_options["workflow_id"] == f"orchestrator-{run_id}-gen1"
-        assert call2_options["workflow_id"] == f"orchestrator-{run_id}-gen2"
-        assert call1_options["workflow_id"] != call2_options["workflow_id"]
+        assert captured_wf_ids[0] == f"orchestrator-{run_id}-gen1"
+        assert captured_wf_ids[1] == f"orchestrator-{run_id}-gen2"
+        assert captured_wf_ids[0] != captured_wf_ids[1]
 
 
 class TestRunScoringStep:
