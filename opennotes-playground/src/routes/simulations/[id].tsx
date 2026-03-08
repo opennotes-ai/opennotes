@@ -70,9 +70,9 @@ function isError(result: unknown): result is SimulationError {
 
 export default function SimulationDetailPage() {
   const params = useParams();
-  const simulation = createAsync(() => fetchSimulation(params.id));
-  const analysis = createAsync(() => fetchAnalysis(params.id));
-  const detailed = createAsync(() => fetchDetailedAnalysis(params.id));
+  const simulation = createAsync(() => fetchSimulation(params.id!));
+  const analysis = createAsync(() => fetchAnalysis(params.id!));
+  const detailed = createAsync(() => fetchDetailedAnalysis(params.id!));
 
   const simError = () => {
     const r = simulation();
