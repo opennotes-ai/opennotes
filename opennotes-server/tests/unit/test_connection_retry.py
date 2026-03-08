@@ -330,39 +330,39 @@ class TestSyncConnectWithRetry:
             with pytest.raises(socket.gaierror):
                 connect()
 
+    def test_zero_retries_raises_immediately(self):
+        creator = MagicMock(side_effect=socket.gaierror(-3, "fail"))
+        connect = sync_connect_with_retry(creator, max_retries=0, backoff_base=0.01)
+        with pytest.raises(socket.gaierror):
+            connect()
+        assert creator.call_count == 1
+
     def test_uses_exponential_backoff(self):
-        import time as time_mod
-
-        call_times: list[float] = []
-
-        def timed_creator():
-            call_times.append(time_mod.monotonic())
-            if len(call_times) < 3:
-                raise socket.gaierror(-3, "fail")
-            return "conn"
-
-        connect = sync_connect_with_retry(timed_creator, max_retries=3, backoff_base=0.05)
-        connect()
-        delay1 = call_times[1] - call_times[0]
-        delay2 = call_times[2] - call_times[1]
-        assert delay1 >= 0.03
-        assert delay2 >= 0.06
-        assert delay2 > delay1
+        creator = MagicMock(
+            side_effect=[socket.gaierror(-3, "fail"), socket.gaierror(-3, "fail"), "conn"]
+        )
+        with patch("src.common.connection_retry.time.sleep") as mock_sleep:
+            connect = sync_connect_with_retry(creator, max_retries=3, backoff_base=0.5, jitter=0.0)
+            connect()
+            assert mock_sleep.call_count == 2
+            delays = [call.args[0] for call in mock_sleep.call_args_list]
+            assert delays[0] == pytest.approx(0.5, abs=0.1)
+            assert delays[1] == pytest.approx(1.0, abs=0.2)
+            assert delays[1] > delays[0]
 
     def test_max_delay_caps_backoff(self):
-        import time as time_mod
-
-        call_times: list[float] = []
-
-        def timed_creator():
-            call_times.append(time_mod.monotonic())
-            if len(call_times) < 4:
-                raise socket.gaierror(-3, "fail")
-            return "conn"
-
-        connect = sync_connect_with_retry(
-            timed_creator, max_retries=5, backoff_base=1.0, max_delay=0.15, jitter=0.0
+        creator = MagicMock(
+            side_effect=[
+                socket.gaierror(-3, "fail"),
+                socket.gaierror(-3, "fail"),
+                socket.gaierror(-3, "fail"),
+                "conn",
+            ]
         )
-        connect()
-        delay3 = call_times[3] - call_times[2]
-        assert delay3 < 0.25
+        with patch("src.common.connection_retry.time.sleep") as mock_sleep:
+            connect = sync_connect_with_retry(
+                creator, max_retries=5, backoff_base=1.0, max_delay=0.15, jitter=0.0
+            )
+            connect()
+            delays = [call.args[0] for call in mock_sleep.call_args_list]
+            assert all(d <= 0.15 for d in delays)

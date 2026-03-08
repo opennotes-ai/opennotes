@@ -81,7 +81,10 @@ class TestDbosClientRetryWiring:
             from src.dbos_workflows.config import get_dbos_client, reset_dbos_client
 
             reset_dbos_client()
-            get_dbos_client()
+            try:
+                get_dbos_client()
+            finally:
+                reset_dbos_client()
 
         mock_retry.assert_called_once()
         _, retry_kwargs = mock_retry.call_args
@@ -108,7 +111,10 @@ class TestDbosClientRetryWiring:
             from src.dbos_workflows.config import get_dbos_client, reset_dbos_client
 
             reset_dbos_client()
-            get_dbos_client()
+            try:
+                get_dbos_client()
+            finally:
+                reset_dbos_client()
 
         ce_kwargs = mock_create_engine.call_args.kwargs
         assert "connect_args" not in ce_kwargs

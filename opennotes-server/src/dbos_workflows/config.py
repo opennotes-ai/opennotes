@@ -234,13 +234,7 @@ def get_dbos_client() -> DBOSClient:
                 url = make_url(sync_url)
 
                 def _raw_connect():
-                    return psycopg2.connect(
-                        host=url.host,
-                        port=url.port or 5432,
-                        user=url.username,
-                        password=url.password,
-                        dbname=url.database,
-                    )
+                    return psycopg2.connect(url.render_as_string(hide_password=False))
 
                 creator = sync_connect_with_retry(
                     _raw_connect,
