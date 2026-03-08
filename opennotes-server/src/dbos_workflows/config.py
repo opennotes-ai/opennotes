@@ -94,6 +94,9 @@ def get_dbos_config() -> DBOSConfig:
         "connect_args": {"prepare_threshold": None},
     }
 
+    config["admin_port"] = settings.DBOS_ADMIN_PORT
+    config["run_admin_server"] = settings.DBOS_RUN_ADMIN_SERVER
+
     config["otlp_attributes"] = {
         "service.version": settings.VERSION,
         "deployment.environment": settings.ENVIRONMENT,

@@ -259,6 +259,55 @@ class TestGetDbosConfig:
             assert "otlp_traces_endpoints" not in config
             assert "otlp_logs_endpoints" not in config
 
+    def test_includes_admin_port_from_settings(self) -> None:
+        """Config includes admin_port from DBOS_ADMIN_PORT setting."""
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.DBOS_APP_NAME = "opennotes-server"
+            mock_settings.DBOS_ADMIN_PORT = 9999
+            mock_settings.DBOS_RUN_ADMIN_SERVER = True
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
+
+            config: dict[str, Any] = dict(get_dbos_config())
+
+            assert config["admin_port"] == 9999
+
+    def test_includes_run_admin_server_from_settings(self) -> None:
+        """Config includes run_admin_server from DBOS_RUN_ADMIN_SERVER setting."""
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.DBOS_APP_NAME = "opennotes-server"
+            mock_settings.DBOS_ADMIN_PORT = 3001
+            mock_settings.DBOS_RUN_ADMIN_SERVER = False
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
+
+            config: dict[str, Any] = dict(get_dbos_config())
+
+            assert config["run_admin_server"] is False
+
+    def test_admin_port_defaults(self) -> None:
+        """Config uses default admin_port and run_admin_server values."""
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.DBOS_APP_NAME = "opennotes-server"
+            mock_settings.DBOS_ADMIN_PORT = 3001
+            mock_settings.DBOS_RUN_ADMIN_SERVER = True
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
+
+            config: dict[str, Any] = dict(get_dbos_config())
+
+            assert config["admin_port"] == 3001
+            assert config["run_admin_server"] is True
+
     def test_config_does_not_include_conductor_key(self) -> None:
         with (
             patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,

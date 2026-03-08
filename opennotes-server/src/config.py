@@ -892,6 +892,14 @@ class Settings(BaseSettings):
         default="opennotes-server",
         description="Application name for DBOS (lowercase, alphanumeric, dashes, underscores only)",
     )
+    DBOS_ADMIN_PORT: int = Field(
+        default=3001,
+        description="DBOS admin server port",
+    )
+    DBOS_RUN_ADMIN_SERVER: bool = Field(
+        default=True,
+        description="Enable DBOS admin server",
+    )
     DBOS_CONDUCTOR_KEY: str | None = Field(
         default=None,
         description="DBOS Conductor API key for workflow observability and management",
