@@ -261,9 +261,12 @@ async def _seed_and_save_prod_key(db: AsyncSession) -> None:
     key_hash = get_password_hash(api_key)
     await seed_api_key(db, key_hash, PROD_API_KEY_NAME, key_prefix)
 
-    key_file = Path("/tmp/opennotes-api-key.txt")
-    key_file.write_text(api_key)
-    key_file.chmod(0o600)
+    key_path = "/tmp/opennotes-api-key.txt"
+    fd = os.open(key_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, api_key.encode())
+    finally:
+        os.close(fd)
 
 
 async def main() -> None:
