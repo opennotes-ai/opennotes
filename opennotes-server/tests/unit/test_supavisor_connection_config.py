@@ -100,15 +100,13 @@ class TestContentMonitoringNullPool:
 class TestDbosConfigSupavisor:
     """AC#3: DBOS psycopg compatibility with Supavisor transaction mode."""
 
-    def test_dbos_config_includes_engine_kwargs_with_null_pool_and_retry(self) -> None:
+    def test_dbos_config_includes_engine_kwargs_with_null_pool(self) -> None:
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
             mock_settings.DBOS_APP_NAME = "test"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.VERSION = "1.0.0"
             mock_settings.ENVIRONMENT = "test"
-            mock_settings.DB_CONNECT_MAX_RETRIES = 3
-            mock_settings.DB_CONNECT_BACKOFF_BASE_SECONDS = 0.5
 
             from src.dbos_workflows.config import get_dbos_config
 
@@ -118,22 +116,18 @@ class TestDbosConfigSupavisor:
             engine_kwargs = config["db_engine_kwargs"]
             assert engine_kwargs["poolclass"] is NullPool
             assert engine_kwargs["connect_args"]["prepare_threshold"] is None
-            assert "creator" in engine_kwargs
-            assert callable(engine_kwargs["creator"])
 
 
-class TestDbosClientRetry:
-    """AC#3/4: DBOS client engine uses sync connection retry."""
+class TestDbosClientConfig:
+    """AC#3/4: DBOS client engine uses NullPool with connect_args."""
 
-    def test_dbos_client_engine_uses_creator_with_retry(self) -> None:
+    def test_dbos_client_engine_uses_nullpool_and_connect_args(self) -> None:
         with (
             patch("src.dbos_workflows.config.settings") as mock_settings,
             patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
             patch("src.dbos_workflows.config.DBOSClient") as mock_client_cls,
         ):
             mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
-            mock_settings.DB_CONNECT_MAX_RETRIES = 3
-            mock_settings.DB_CONNECT_BACKOFF_BASE_SECONDS = 0.5
             mock_create_engine.return_value = MagicMock()
             mock_client_cls.return_value = MagicMock()
 
@@ -147,8 +141,7 @@ class TestDbosClientRetry:
 
             call_kwargs = mock_create_engine.call_args[1]
             assert call_kwargs.get("poolclass") is NullPool
-            assert "creator" in call_kwargs
-            assert callable(call_kwargs["creator"])
+            assert call_kwargs["connect_args"]["prepare_threshold"] is None
 
 
 class TestDeprecatedPoolConfig:
