@@ -397,7 +397,8 @@ class TestDispatchPreviouslySeenRechunkWorkflow:
                 rechunk_queue,
             )
 
-            assert enqueue_args.args[0] is rechunk_queue.enqueue
+            assert enqueue_args.args[0].__self__ is rechunk_queue
+            assert enqueue_args.args[0].__func__ is rechunk_queue.enqueue.__func__
             assert enqueue_args.args[1] is rechunk_previously_seen_workflow
 
             stmt_arg = mock_db.execute.call_args[0][0]
