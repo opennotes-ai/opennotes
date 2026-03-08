@@ -1,15 +1,16 @@
-"""Tests for Supavisor-compatible connection configuration (task-1213).
+"""Tests for Supavisor-compatible connection configuration (task-1213, task-1246.05).
 
 Verifies:
 - All SQLAlchemy engines use NullPool
-- asyncpg connect_args disable prepared statement caches
+- asyncpg connect_args disable prepared statement caches at SQLAlchemy adapter level
+- URL query parameters (sslmode, options, etc.) are preserved through the creator
 - DBOS psycopg config disables prepared statements
 - Deprecated pool config fields still work
 - Connection retry is wired into all engine creation sites
 """
 
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.pool import NullPool
@@ -77,7 +78,25 @@ class TestAsyncpgConnectArgs:
             call_kwargs = mock_create.call_args[1]
             assert "async_creator" in call_kwargs
             assert callable(call_kwargs["async_creator"])
-            assert "connect_args" not in call_kwargs
+
+    def test_create_engine_passes_prepared_statement_cache_size_zero(self) -> None:
+        with patch("src.database.create_async_engine") as mock_create:
+            mock_create.return_value = MagicMock()
+
+            from src.database import _create_engine
+
+            with patch("src.database.get_settings") as mock_settings:
+                mock_settings.return_value = MagicMock(
+                    DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+                    DEBUG=False,
+                    DB_CONNECT_MAX_RETRIES=3,
+                    DB_CONNECT_BACKOFF_BASE_SECONDS=0.5,
+                )
+                _create_engine()
+
+            call_kwargs = mock_create.call_args[1]
+            assert "connect_args" in call_kwargs
+            assert call_kwargs["connect_args"]["prepared_statement_cache_size"] == 0
 
 
 class TestContentMonitoringNullPool:
@@ -95,6 +114,166 @@ class TestContentMonitoringNullPool:
             assert call_kwargs.get("poolclass") is NullPool
             assert "async_creator" in call_kwargs
             assert callable(call_kwargs["async_creator"])
+
+    def test_content_monitoring_passes_prepared_statement_cache_size_zero(self) -> None:
+        with patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_create:
+            mock_create.return_value = MagicMock()
+
+            from src.tasks.content_monitoring_tasks import _create_db_engine
+
+            _create_db_engine("postgresql+asyncpg://user:pass@localhost:5432/testdb")
+
+            call_kwargs = mock_create.call_args[1]
+            assert "connect_args" in call_kwargs
+            assert call_kwargs["connect_args"]["prepared_statement_cache_size"] == 0
+
+
+class TestUrlQueryParamsPreserved:
+    """AC#2 (task-1246.05): URL query parameters preserved through the creator."""
+
+    @pytest.mark.asyncio
+    async def test_raw_connect_preserves_sslmode(self) -> None:
+        captured_raw_connect = None
+
+        def capture_retry(creator, **kwargs):
+            nonlocal captured_raw_connect
+            captured_raw_connect = creator
+            return creator
+
+        with (
+            patch("src.database.asyncpg.connect", new_callable=AsyncMock) as mock_connect,
+            patch("src.database.async_connect_with_retry", side_effect=capture_retry),
+            patch("src.database.create_async_engine") as mock_create,
+            patch("src.database.get_settings") as mock_settings,
+        ):
+            mock_create.return_value = MagicMock()
+            mock_connect.return_value = MagicMock()
+            mock_settings.return_value = MagicMock(
+                DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb?sslmode=require",
+                DEBUG=False,
+                DB_CONNECT_MAX_RETRIES=0,
+                DB_CONNECT_BACKOFF_BASE_SECONDS=0.5,
+            )
+
+            from src.database import _create_engine
+
+            _create_engine()
+
+            assert captured_raw_connect is not None
+            await captured_raw_connect()
+
+            mock_connect.assert_called_once()
+            connect_kwargs = mock_connect.call_args.kwargs
+            dsn_value = connect_kwargs.get("dsn", "")
+            assert "sslmode=require" in str(dsn_value)
+
+    @pytest.mark.asyncio
+    async def test_raw_connect_preserves_application_name(self) -> None:
+        captured_raw_connect = None
+
+        def capture_retry(creator, **kwargs):
+            nonlocal captured_raw_connect
+            captured_raw_connect = creator
+            return creator
+
+        with (
+            patch("src.database.asyncpg.connect", new_callable=AsyncMock) as mock_connect,
+            patch("src.database.async_connect_with_retry", side_effect=capture_retry),
+            patch("src.database.create_async_engine") as mock_create,
+            patch("src.database.get_settings") as mock_settings,
+        ):
+            mock_create.return_value = MagicMock()
+            mock_connect.return_value = MagicMock()
+            mock_settings.return_value = MagicMock(
+                DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb?application_name=opennotes",
+                DEBUG=False,
+                DB_CONNECT_MAX_RETRIES=0,
+                DB_CONNECT_BACKOFF_BASE_SECONDS=0.5,
+            )
+
+            from src.database import _create_engine
+
+            _create_engine()
+
+            assert captured_raw_connect is not None
+            await captured_raw_connect()
+
+            mock_connect.assert_called_once()
+            connect_kwargs = mock_connect.call_args.kwargs
+            dsn_value = connect_kwargs.get("dsn", "")
+            assert "application_name=opennotes" in str(dsn_value)
+
+    @pytest.mark.asyncio
+    async def test_raw_connect_strips_asyncpg_dialect_prefix(self) -> None:
+        captured_raw_connect = None
+
+        def capture_retry(creator, **kwargs):
+            nonlocal captured_raw_connect
+            captured_raw_connect = creator
+            return creator
+
+        with (
+            patch("src.database.asyncpg.connect", new_callable=AsyncMock) as mock_connect,
+            patch("src.database.async_connect_with_retry", side_effect=capture_retry),
+            patch("src.database.create_async_engine") as mock_create,
+            patch("src.database.get_settings") as mock_settings,
+        ):
+            mock_create.return_value = MagicMock()
+            mock_connect.return_value = MagicMock()
+            mock_settings.return_value = MagicMock(
+                DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+                DEBUG=False,
+                DB_CONNECT_MAX_RETRIES=0,
+                DB_CONNECT_BACKOFF_BASE_SECONDS=0.5,
+            )
+
+            from src.database import _create_engine
+
+            _create_engine()
+
+            assert captured_raw_connect is not None
+            await captured_raw_connect()
+
+            mock_connect.assert_called_once()
+            connect_kwargs = mock_connect.call_args.kwargs
+            dsn_value = str(connect_kwargs.get("dsn", ""))
+            assert "postgresql://" in dsn_value
+            assert "+asyncpg" not in dsn_value
+
+    @pytest.mark.asyncio
+    async def test_raw_connect_passes_statement_cache_size_zero(self) -> None:
+        captured_raw_connect = None
+
+        def capture_retry(creator, **kwargs):
+            nonlocal captured_raw_connect
+            captured_raw_connect = creator
+            return creator
+
+        with (
+            patch("src.database.asyncpg.connect", new_callable=AsyncMock) as mock_connect,
+            patch("src.database.async_connect_with_retry", side_effect=capture_retry),
+            patch("src.database.create_async_engine") as mock_create,
+            patch("src.database.get_settings") as mock_settings,
+        ):
+            mock_create.return_value = MagicMock()
+            mock_connect.return_value = MagicMock()
+            mock_settings.return_value = MagicMock(
+                DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+                DEBUG=False,
+                DB_CONNECT_MAX_RETRIES=0,
+                DB_CONNECT_BACKOFF_BASE_SECONDS=0.5,
+            )
+
+            from src.database import _create_engine
+
+            _create_engine()
+
+            assert captured_raw_connect is not None
+            await captured_raw_connect()
+
+            mock_connect.assert_called_once()
+            connect_kwargs = mock_connect.call_args.kwargs
+            assert connect_kwargs.get("statement_cache_size") == 0
 
 
 class TestDbosConfigSupavisor:

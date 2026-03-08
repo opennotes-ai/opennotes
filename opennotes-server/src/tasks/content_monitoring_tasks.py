@@ -34,16 +34,12 @@ def _create_db_engine(db_url: str) -> Any:
     """Create async database engine with Supavisor-compatible settings."""
     cfg = get_settings()
     url = make_url(db_url)
+    dsn = url.render_as_string(hide_password=False).replace(
+        "postgresql+asyncpg://", "postgresql://"
+    )
 
     async def _raw_connect():
-        return await asyncpg.connect(
-            host=url.host,
-            port=url.port or 5432,
-            user=url.username,
-            password=url.password,
-            database=url.database,
-            statement_cache_size=0,
-        )
+        return await asyncpg.connect(dsn=dsn, statement_cache_size=0)
 
     creator = async_connect_with_retry(
         _raw_connect,
@@ -51,7 +47,12 @@ def _create_db_engine(db_url: str) -> Any:
         backoff_base=cfg.DB_CONNECT_BACKOFF_BASE_SECONDS,
     )
 
-    return create_async_engine(db_url, poolclass=NullPool, async_creator=creator)
+    return create_async_engine(
+        db_url,
+        poolclass=NullPool,
+        async_creator=creator,
+        connect_args={"prepared_statement_cache_size": 0},
+    )
 
 
 def _get_llm_service() -> Any:
