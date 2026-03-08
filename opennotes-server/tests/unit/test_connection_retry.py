@@ -194,6 +194,23 @@ class TestAsyncConnectWithRetry:
             await connect()
         assert creator.call_count == 1
 
+    @pytest.mark.asyncio
+    async def test_max_delay_caps_backoff(self):
+        call_times: list[float] = []
+
+        async def timed_creator():
+            call_times.append(asyncio.get_event_loop().time())
+            if len(call_times) < 4:
+                raise socket.gaierror(-3, "fail")
+            return "conn"
+
+        connect = async_connect_with_retry(
+            timed_creator, max_retries=5, backoff_base=1.0, max_delay=0.15, jitter=0.0
+        )
+        await connect()
+        delay3 = call_times[3] - call_times[2]
+        assert delay3 < 0.25
+
 
 class TestSyncConnectWithRetry:
     def test_succeeds_on_first_attempt(self):
@@ -276,3 +293,40 @@ class TestSyncConnectWithRetry:
             connect = sync_connect_with_retry(creator, max_retries=2, backoff_base=0.01)
             with pytest.raises(socket.gaierror):
                 connect()
+
+    def test_uses_exponential_backoff(self):
+        import time as time_mod
+
+        call_times: list[float] = []
+
+        def timed_creator():
+            call_times.append(time_mod.monotonic())
+            if len(call_times) < 3:
+                raise socket.gaierror(-3, "fail")
+            return "conn"
+
+        connect = sync_connect_with_retry(timed_creator, max_retries=3, backoff_base=0.05)
+        connect()
+        delay1 = call_times[1] - call_times[0]
+        delay2 = call_times[2] - call_times[1]
+        assert delay1 >= 0.03
+        assert delay2 >= 0.06
+        assert delay2 > delay1
+
+    def test_max_delay_caps_backoff(self):
+        import time as time_mod
+
+        call_times: list[float] = []
+
+        def timed_creator():
+            call_times.append(time_mod.monotonic())
+            if len(call_times) < 4:
+                raise socket.gaierror(-3, "fail")
+            return "conn"
+
+        connect = sync_connect_with_retry(
+            timed_creator, max_retries=5, backoff_base=1.0, max_delay=0.15, jitter=0.0
+        )
+        connect()
+        delay3 = call_times[3] - call_times[2]
+        assert delay3 < 0.25

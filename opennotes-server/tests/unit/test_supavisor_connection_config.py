@@ -103,8 +103,15 @@ class TestContentMonitoringNullPool:
     """AC#1: content_monitoring ephemeral engines also use NullPool with retry."""
 
     def test_content_monitoring_create_db_engine_uses_null_pool_and_retry(self) -> None:
-        with patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_create:
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_create,
+            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
+        ):
             mock_create.return_value = MagicMock()
+            mock_settings.return_value = MagicMock(
+                DB_CONNECT_MAX_RETRIES=3,
+                DB_CONNECT_BACKOFF_BASE_SECONDS=0.5,
+            )
 
             from src.tasks.content_monitoring_tasks import _create_db_engine
 
@@ -116,8 +123,15 @@ class TestContentMonitoringNullPool:
             assert callable(call_kwargs["async_creator"])
 
     def test_content_monitoring_passes_prepared_statement_cache_size_zero(self) -> None:
-        with patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_create:
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_create,
+            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
+        ):
             mock_create.return_value = MagicMock()
+            mock_settings.return_value = MagicMock(
+                DB_CONNECT_MAX_RETRIES=3,
+                DB_CONNECT_BACKOFF_BASE_SECONDS=0.5,
+            )
 
             from src.tasks.content_monitoring_tasks import _create_db_engine
 
@@ -276,6 +290,52 @@ class TestUrlQueryParamsPreserved:
             assert connect_kwargs.get("statement_cache_size") == 0
 
 
+class TestRetryConfigValidation:
+    """AC#2 (task-1246.08): Config fields have appropriate Pydantic validators."""
+
+    def test_max_retries_rejects_negative(self) -> None:
+        from pydantic import ValidationError
+
+        from src.config import Settings
+
+        with pytest.raises(ValidationError, match="DB_CONNECT_MAX_RETRIES"):
+            Settings(
+                DB_CONNECT_MAX_RETRIES=-1,
+                DATABASE_URL="postgresql+asyncpg://u:p@h:5432/db",
+            )
+
+    def test_max_retries_accepts_zero(self) -> None:
+        from src.config import Settings
+
+        field_info = Settings.model_fields["DB_CONNECT_MAX_RETRIES"]
+        assert field_info.metadata is not None
+        ge_constraint = [m for m in field_info.metadata if hasattr(m, "ge")]
+        assert len(ge_constraint) > 0
+        assert ge_constraint[0].ge == 0
+
+    def test_backoff_base_rejects_zero(self) -> None:
+        from pydantic import ValidationError
+
+        from src.config import Settings
+
+        with pytest.raises(ValidationError, match="DB_CONNECT_BACKOFF_BASE_SECONDS"):
+            Settings(
+                DB_CONNECT_BACKOFF_BASE_SECONDS=0,
+                DATABASE_URL="postgresql+asyncpg://u:p@h:5432/db",
+            )
+
+    def test_backoff_base_rejects_negative(self) -> None:
+        from pydantic import ValidationError
+
+        from src.config import Settings
+
+        with pytest.raises(ValidationError, match="DB_CONNECT_BACKOFF_BASE_SECONDS"):
+            Settings(
+                DB_CONNECT_BACKOFF_BASE_SECONDS=-0.5,
+                DATABASE_URL="postgresql+asyncpg://u:p@h:5432/db",
+            )
+
+
 class TestDbosConfigSupavisor:
     """AC#3: DBOS psycopg compatibility with Supavisor transaction mode."""
 
@@ -298,15 +358,17 @@ class TestDbosConfigSupavisor:
 
 
 class TestDbosClientConfig:
-    """AC#3/4: DBOS client engine uses NullPool with connect_args."""
+    """AC#3/4: DBOS client engine uses NullPool with creator-based retry."""
 
-    def test_dbos_client_engine_uses_nullpool_and_connect_args(self) -> None:
+    def test_dbos_client_engine_uses_nullpool_and_creator(self) -> None:
         with (
             patch("src.dbos_workflows.config.settings") as mock_settings,
             patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
             patch("src.dbos_workflows.config.DBOSClient") as mock_client_cls,
         ):
             mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
+            mock_settings.DB_CONNECT_MAX_RETRIES = 3
+            mock_settings.DB_CONNECT_BACKOFF_BASE_SECONDS = 0.5
             mock_create_engine.return_value = MagicMock()
             mock_client_cls.return_value = MagicMock()
 
@@ -320,7 +382,8 @@ class TestDbosClientConfig:
 
             call_kwargs = mock_create_engine.call_args[1]
             assert call_kwargs.get("poolclass") is NullPool
-            assert call_kwargs["connect_args"]["prepare_threshold"] is None
+            assert "creator" in call_kwargs
+            assert callable(call_kwargs["creator"])
 
 
 class TestDeprecatedPoolConfig:
