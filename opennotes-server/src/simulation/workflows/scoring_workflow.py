@@ -5,19 +5,20 @@ import time
 from typing import Any
 from uuid import UUID
 
-from dbos import DBOS
+from dbos import DBOS, Queue
 
 from src.utils.async_compat import run_sync
 
 logger = logging.getLogger(__name__)
 
+community_scoring_queue = Queue(
+    name="community_scoring",
+    concurrency=3,
+)
+
 
 @DBOS.workflow()
 def score_community_server(community_server_id: str) -> dict[str, Any]:
-    """DBOS workflow for manual community server scoring.
-
-    Wraps score_community_server_notes as a DBOS step for durable execution.
-    """
     result = run_community_scoring_step(community_server_id)
     logger.info(
         "Community server scoring workflow completed",
@@ -58,31 +59,27 @@ SCORE_COMMUNITY_SERVER_WORKFLOW_NAME: str = score_community_server.__qualname__
 
 
 async def dispatch_community_scoring(community_server_id: UUID) -> str:
-    """Dispatch community server scoring via DBOSClient.enqueue()."""
     import asyncio
 
-    from dbos import EnqueueOptions
+    from dbos import SetWorkflowID
 
-    from src.dbos_workflows.config import get_dbos_client
-
-    client = get_dbos_client()
     wf_id = f"score-community-{community_server_id}-{int(time.time())}"
-    options: EnqueueOptions = {
-        "queue_name": "community_scoring",
-        "workflow_name": SCORE_COMMUNITY_SERVER_WORKFLOW_NAME,
-        "workflow_id": wf_id,
-    }
-    handle = await asyncio.to_thread(
-        client.enqueue,
-        options,
-        str(community_server_id),
-    )
+
+    def _enqueue() -> str:
+        with SetWorkflowID(wf_id):
+            handle = community_scoring_queue.enqueue(
+                score_community_server,
+                str(community_server_id),
+            )
+            return handle.get_workflow_id()
+
+    workflow_id = await asyncio.to_thread(_enqueue)
 
     logger.info(
         "Community scoring workflow dispatched",
         extra={
             "community_server_id": str(community_server_id),
-            "workflow_id": handle.workflow_id,
+            "workflow_id": workflow_id,
         },
     )
-    return handle.workflow_id
+    return workflow_id

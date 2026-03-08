@@ -174,35 +174,30 @@ async def dispatch_playground_url_extraction(
 ) -> str:
     import json
 
-    from dbos import EnqueueOptions
+    from dbos import SetEnqueueOptions, SetWorkflowID
 
-    from src.dbos_workflows.config import get_dbos_client
-
-    client = get_dbos_client()
     wf_id = f"playground-urls-{uuid4().hex}"
-    options: EnqueueOptions = {
-        "queue_name": playground_url_queue.name,
-        "workflow_name": RUN_PLAYGROUND_URL_EXTRACTION_NAME,
-        "workflow_id": wf_id,
-        "deduplication_id": wf_id,
-    }
-
     urls_json = json.dumps(urls)
-    handle = await asyncio.to_thread(
-        client.enqueue,
-        options,
-        urls_json,
-        str(community_server_id),
-        requested_by,
-    )
+
+    def _enqueue() -> str:
+        with SetWorkflowID(wf_id), SetEnqueueOptions(deduplication_id=wf_id):
+            handle = playground_url_queue.enqueue(
+                run_playground_url_extraction,
+                urls_json,
+                str(community_server_id),
+                requested_by,
+            )
+            return handle.get_workflow_id()
+
+    workflow_id = await asyncio.to_thread(_enqueue)
 
     logger.info(
         "Playground URL extraction workflow dispatched",
         extra={
-            "workflow_id": handle.workflow_id,
+            "workflow_id": workflow_id,
             "url_count": len(urls),
             "community_server_id": str(community_server_id),
         },
     )
 
-    return handle.workflow_id
+    return workflow_id
