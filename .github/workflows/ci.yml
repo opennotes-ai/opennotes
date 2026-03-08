@@ -80,15 +80,21 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-          cache-dependency-path: opennotes-discord/pnpm-lock.yaml
+          cache-dependency-path: |
+            opennotes-discord/pnpm-lock.yaml
+            opennotes-playground/pnpm-lock.yaml
 
       - name: Setup CI environment
         run: |
           echo "Setting up CI environment from .env.ci.yaml..."
           cp .env.ci.yaml .env.yaml
 
-      - name: Install Node dependencies
+      - name: Install Node dependencies (discord)
         working-directory: opennotes-discord
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Node dependencies (playground)
+        working-directory: opennotes-playground
         run: pnpm install --frozen-lockfile
 
       - name: Load cached venv
