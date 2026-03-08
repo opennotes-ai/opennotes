@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from opennotes_cli.display import handle_jsonapi_error
+from opennotes_cli.formatting import format_id, resolve_id
 from opennotes_cli.http import add_csrf, get_csrf_token
 
 if TYPE_CHECKING:
@@ -69,7 +70,7 @@ def sim_agent_list(ctx: click.Context, page: int, page_size: int) -> None:
         if isinstance(model_name, dict):
             model_name = f"{model_name.get('provider', '?')}:{model_name.get('model', '?')}"
         table.add_row(
-            str(item.get("id", "N/A")),
+            format_id(str(item.get("id", "N/A")), cli_ctx.use_huuid),
             str(attrs.get("name", "N/A")),
             str(model_name),
             str(attrs.get("memory_compaction_strategy", "N/A")),
@@ -85,6 +86,12 @@ def sim_agent_list(ctx: click.Context, page: int, page_size: int) -> None:
 @click.pass_context
 def sim_agent_get(ctx: click.Context, agent_id: str) -> None:
     """Show details of an agent personality."""
+    try:
+        agent_id = resolve_id(agent_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -107,8 +114,9 @@ def sim_agent_get(ctx: click.Context, agent_id: str) -> None:
     if isinstance(model_name_val, dict):
         model_name_val = f"{model_name_val.get('provider', '?')}:{model_name_val.get('model', '?')}"
 
+    raw_id = result.get("data", {}).get("id", "N/A")
     panel_content = (
-        f"[bold]ID:[/bold] {result.get('data', {}).get('id', 'N/A')}\n"
+        f"[bold]ID:[/bold] {format_id(raw_id, cli_ctx.use_huuid)}\n"
         f"[bold]Name:[/bold] {attrs.get('name', 'N/A')}\n"
         f"[bold]Model:[/bold] {model_name_val}\n"
         f"[bold]Memory Strategy:[/bold] {attrs.get('memory_compaction_strategy', 'N/A')}"
@@ -195,7 +203,7 @@ def sim_agent_create(
         console.print(json.dumps(result, indent=2, default=str))
         return
 
-    agent_id = result.get("data", {}).get("id", "N/A")
+    agent_id = format_id(result.get("data", {}).get("id", "N/A"), cli_ctx.use_huuid)
     agent_name = result.get("data", {}).get("attributes", {}).get("name", "N/A")
     console.print(
         f"[green]\u2713[/green] Created agent [bold]{agent_name}[/bold]: {agent_id}"

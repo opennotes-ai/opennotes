@@ -117,8 +117,8 @@ class TestScoreCommand:
             result = runner.invoke(cli, ["--local", "score", "guild-123"])
 
         assert result.exit_code != 0
-        assert "invalid community server id" in result.output.lower()
-        assert "expected a uuid" in result.output.lower()
+        assert "invalid id" in result.output.lower()
+        assert "expected a uuid or huuid" in result.output.lower()
 
     def test_score_rejects_empty_string(self, runner: CliRunner) -> None:
         with patch("opennotes_cli.cli.httpx.Client", return_value=MagicMock()):

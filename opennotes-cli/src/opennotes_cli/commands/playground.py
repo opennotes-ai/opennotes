@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from opennotes_cli.display import get_cli_prefix, handle_jsonapi_error
+from opennotes_cli.formatting import format_id, resolve_id
 from opennotes_cli.http import add_csrf, get_csrf_token
 
 if TYPE_CHECKING:
@@ -64,7 +65,7 @@ def playground_create(
         console.print(json.dumps(result, indent=2, default=str))
         return
 
-    cs_id = result.get("id", "N/A")
+    cs_id = format_id(result.get("id", "N/A"), cli_ctx.use_huuid)
     console.print(
         Panel(
             f"[bold]ID:[/bold] {cs_id}\n"
@@ -102,6 +103,12 @@ def playground_add_request(
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
+
+    try:
+        community_server_id = resolve_id(community_server_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
 
     if not urls and not texts:
         error_console.print("[red]Error:[/red] At least one --url or --text must be provided.")
@@ -148,7 +155,7 @@ def playground_add_request(
 
     data = result.get("data", {})
     attrs = data.get("attributes", {})
-    workflow_id = attrs.get("workflow_id", "unknown")
+    workflow_id = format_id(attrs.get("workflow_id", "unknown"), cli_ctx.use_huuid)
     url_count = attrs.get("url_count", len(urls))
     text_count = attrs.get("text_count", len(texts))
     job_status = attrs.get("status", "ACCEPTED")

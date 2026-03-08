@@ -12,6 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from opennotes_cli.display import get_cli_prefix, get_status_style, handle_jsonapi_error
+from opennotes_cli.formatting import format_id, resolve_id
 from opennotes_cli.http import add_csrf, get_csrf_token
 from opennotes_cli.polling import poll_simulation_until_complete
 
@@ -71,10 +72,10 @@ def simulation_list(ctx: click.Context, page: int, page_size: int) -> None:
         created = (attrs.get("created_at") or "")[:19]
 
         table.add_row(
-            item.get("id", "N/A"),
+            format_id(item.get("id", "N/A"), cli_ctx.use_huuid),
             f"[{color}]{symbol} {status}[/{color}]",
-            attrs.get("orchestrator_id", "N/A"),
-            attrs.get("community_server_id", "N/A"),
+            format_id(attrs.get("orchestrator_id", "N/A"), cli_ctx.use_huuid),
+            format_id(attrs.get("community_server_id", "N/A"), cli_ctx.use_huuid),
             created,
         )
 
@@ -87,6 +88,12 @@ def simulation_list(ctx: click.Context, page: int, page_size: int) -> None:
 @click.pass_context
 def simulation_status(ctx: click.Context, simulation_id: str) -> None:
     """Show status of a simulation run."""
+    try:
+        simulation_id = resolve_id(simulation_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -110,10 +117,10 @@ def simulation_status(ctx: click.Context, simulation_id: str) -> None:
     color, symbol = get_status_style(status)
 
     panel_content = (
-        f"[bold]ID:[/bold] {result.get('data', {}).get('id', 'N/A')}\n"
+        f"[bold]ID:[/bold] {format_id(result.get('data', {}).get('id', 'N/A'), cli_ctx.use_huuid)}\n"
         f"[bold]Status:[/bold] [{color}]{symbol} {status}[/{color}]\n"
-        f"[bold]Orchestrator:[/bold] {attrs.get('orchestrator_id', 'N/A')}\n"
-        f"[bold]Community Server:[/bold] {attrs.get('community_server_id', 'N/A')}"
+        f"[bold]Orchestrator:[/bold] {format_id(attrs.get('orchestrator_id', 'N/A'), cli_ctx.use_huuid)}\n"
+        f"[bold]Community Server:[/bold] {format_id(attrs.get('community_server_id', 'N/A'), cli_ctx.use_huuid)}"
     )
 
     for ts_field in ("started_at", "completed_at", "paused_at", "created_at", "updated_at"):
@@ -151,6 +158,17 @@ def simulation_create(
     ctx: click.Context, orchestrator_id: str, community_server_id: str, wait: bool
 ) -> None:
     """Create and start a simulation run."""
+    try:
+        orchestrator_id = resolve_id(orchestrator_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+    try:
+        community_server_id = resolve_id(community_server_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -178,7 +196,7 @@ def simulation_create(
 
     if wait:
         if not cli_ctx.json_output:
-            console.print(f"[dim]Simulation created: {sim_id}[/dim]")
+            console.print(f"[dim]Simulation created: {format_id(sim_id, cli_ctx.use_huuid)}[/dim]")
             console.print("[dim]Waiting for completion...[/dim]\n")
         result = poll_simulation_until_complete(client, base_url, headers, sim_id)
 
@@ -192,17 +210,17 @@ def simulation_create(
 
     console.print(
         Panel(
-            f"[bold]ID:[/bold] {sim_id}\n"
+            f"[bold]ID:[/bold] {format_id(sim_id, cli_ctx.use_huuid)}\n"
             f"[bold]Status:[/bold] [{color}]{symbol} {status}[/{color}]\n"
-            f"[bold]Orchestrator:[/bold] {attrs.get('orchestrator_id', 'N/A')}\n"
-            f"[bold]Community Server:[/bold] {attrs.get('community_server_id', 'N/A')}",
+            f"[bold]Orchestrator:[/bold] {format_id(attrs.get('orchestrator_id', 'N/A'), cli_ctx.use_huuid)}\n"
+            f"[bold]Community Server:[/bold] {format_id(attrs.get('community_server_id', 'N/A'), cli_ctx.use_huuid)}",
             title="[bold green]Simulation Created[/bold green]",
         )
     )
 
     if not wait:
         cli_prefix = get_cli_prefix(cli_ctx.env_name)
-        console.print(f"\n[dim]Check status:[/dim] {cli_prefix} simulation status {sim_id}")
+        console.print(f"\n[dim]Check status:[/dim] {cli_prefix} simulation status {format_id(sim_id, cli_ctx.use_huuid)}")
 
 
 def _simulation_lifecycle_cmd(
@@ -230,7 +248,7 @@ def _simulation_lifecycle_cmd(
     status = attrs.get("status", "unknown")
     color, symbol = get_status_style(status)
     console.print(
-        f"[{color}]{symbol}[/{color}] Simulation {simulation_id} is now [{color}]{status}[/{color}]"
+        f"[{color}]{symbol}[/{color}] Simulation {format_id(simulation_id, cli_ctx.use_huuid)} is now [{color}]{status}[/{color}]"
     )
 
 
@@ -239,6 +257,11 @@ def _simulation_lifecycle_cmd(
 @click.pass_context
 def simulation_pause(ctx: click.Context, simulation_id: str) -> None:
     """Pause a running simulation."""
+    try:
+        simulation_id = resolve_id(simulation_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
     _simulation_lifecycle_cmd(ctx, simulation_id, "pause")
 
 
@@ -253,6 +276,12 @@ def simulation_pause(ctx: click.Context, simulation_id: str) -> None:
 @click.pass_context
 def simulation_resume(ctx: click.Context, simulation_id: str, reset_turns: bool) -> None:
     """Resume a paused, pending, or cancelled simulation."""
+    try:
+        simulation_id = resolve_id(simulation_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     if reset_turns:
         cli_ctx: CliContext = ctx.obj
         base_url = cli_ctx.base_url
@@ -285,7 +314,7 @@ def simulation_resume(ctx: click.Context, simulation_id: str, reset_turns: bool)
         status_val = attrs.get("status", "unknown")
         color, symbol = get_status_style(status_val)
         console.print(
-            f"[{color}]{symbol}[/{color}] Simulation {simulation_id} resumed with turn reset, "
+            f"[{color}]{symbol}[/{color}] Simulation {format_id(simulation_id, cli_ctx.use_huuid)} resumed with turn reset, "
             f"now [{color}]{status_val}[/{color}]"
         )
     else:
@@ -297,6 +326,11 @@ def simulation_resume(ctx: click.Context, simulation_id: str, reset_turns: bool)
 @click.pass_context
 def simulation_cancel(ctx: click.Context, simulation_id: str) -> None:
     """Cancel a simulation."""
+    try:
+        simulation_id = resolve_id(simulation_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
     _simulation_lifecycle_cmd(ctx, simulation_id, "cancel")
 
 
@@ -309,6 +343,12 @@ def simulation_cancel_workflows(
     ctx: click.Context, simulation_id: str, generation: int | None, dry_run: bool
 ) -> None:
     """List and bulk-cancel orphaned turn workflows for a simulation."""
+    try:
+        simulation_id = resolve_id(simulation_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -348,7 +388,7 @@ def simulation_cancel_workflows(
         table = Table(show_header=True, header_style="bold")
         table.add_column("Workflow ID", no_wrap=True)
         for wf_id in workflow_ids:
-            table.add_row(wf_id)
+            table.add_row(format_id(wf_id, cli_ctx.use_huuid))
         console.print(table)
     else:
         console.print("[dim]No workflows found.[/dim]")
@@ -359,6 +399,12 @@ def simulation_cancel_workflows(
 @click.pass_context
 def simulation_restart(ctx: click.Context, simulation_id: str) -> None:
     """Restart a completed simulation (reset turns, keep memory)."""
+    try:
+        simulation_id = resolve_id(simulation_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -391,7 +437,7 @@ def simulation_restart(ctx: click.Context, simulation_id: str) -> None:
     color, symbol = get_status_style(status_val)
     restart_count = attrs.get("restart_count", 0)
     console.print(
-        f"[{color}]{symbol}[/{color}] Simulation {simulation_id} restarted "
+        f"[{color}]{symbol}[/{color}] Simulation {format_id(simulation_id, cli_ctx.use_huuid)} restarted "
         f"(restart #{restart_count}), now [{color}]{status_val}[/{color}]"
     )
 
@@ -479,6 +525,14 @@ def simulation_launch(
 
     if agent_ids:
         agent_id_list = [a.strip() for a in agent_ids.split(",") if a.strip()]
+        resolved_agent_ids: list[str] = []
+        for aid in agent_id_list:
+            try:
+                resolved_agent_ids.append(resolve_id(aid))
+            except click.BadParameter as e:
+                error_console.print(f"[red]Error:[/red] {e}")
+                sys.exit(1)
+        agent_id_list = resolved_agent_ids
     else:
         response = client.get(
             f"{base_url}/api/v2/sim-agents",
@@ -509,7 +563,7 @@ def simulation_launch(
     handle_jsonapi_error(response)
     orch_id = response.json().get("data", {}).get("id")
     if not cli_ctx.json_output:
-        console.print(f"[green]\u2713[/green] Created orchestrator: [bold]{orch_id}[/bold]")
+        console.print(f"[green]\u2713[/green] Created orchestrator: [bold]{format_id(orch_id, cli_ctx.use_huuid)}[/bold]")
 
     pg_headers = add_csrf(cli_ctx.auth.get_headers(), csrf_token)
     pg_payload: dict[str, Any] = {
@@ -525,7 +579,7 @@ def simulation_launch(
     handle_jsonapi_error(response)
     cs_id = response.json().get("id")
     if not cli_ctx.json_output:
-        console.print(f"[green]\u2713[/green] Created playground: [bold]{cs_id}[/bold]")
+        console.print(f"[green]\u2713[/green] Created playground: [bold]{format_id(cs_id, cli_ctx.use_huuid)}[/bold]")
 
     jsonapi_headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
 
@@ -572,7 +626,7 @@ def simulation_launch(
     sim_id = result.get("data", {}).get("id")
 
     if not cli_ctx.json_output:
-        console.print(f"[green]\u2713[/green] Started simulation: [bold]{sim_id}[/bold]")
+        console.print(f"[green]\u2713[/green] Started simulation: [bold]{format_id(sim_id, cli_ctx.use_huuid)}[/bold]")
 
     if wait:
         if not cli_ctx.json_output:
@@ -590,10 +644,10 @@ def simulation_launch(
 
     cli_prefix = get_cli_prefix(cli_ctx.env_name)
     console.print(
-        f"\n[dim]Monitor:[/dim]  {cli_prefix} simulation status {sim_id}"
+        f"\n[dim]Monitor:[/dim]  {cli_prefix} simulation status {format_id(sim_id, cli_ctx.use_huuid)}"
     )
     console.print(
-        f"[dim]Update:[/dim]   {cli_prefix} orchestrator apply {orch_id} --simulation {sim_id} --max-agents 20"
+        f"[dim]Update:[/dim]   {cli_prefix} orchestrator apply {format_id(orch_id, cli_ctx.use_huuid)} --simulation {format_id(sim_id, cli_ctx.use_huuid)} --max-agents 20"
     )
 
 
@@ -613,9 +667,16 @@ def simulation_analysis(
     ctx: click.Context, simulation_id: str, output_format: str, detailed: bool, output_path: str | None
 ) -> None:
     """Show analysis results for a simulation run."""
+    try:
+        simulation_id = resolve_id(simulation_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
+    use_huuid = cli_ctx.use_huuid
 
     if output_format == "xlsx" and not detailed:
         error_console.print("[red]Error:[/red] --format xlsx requires --detailed flag.")
@@ -632,11 +693,11 @@ def simulation_analysis(
             return
 
         if output_format == "markdown":
-            _render_detailed_markdown(simulation_id, accumulated)
+            _render_detailed_markdown(simulation_id, accumulated, use_huuid)
         elif output_format == "xlsx":
             _render_detailed_xlsx(simulation_id, accumulated, output_path)
         else:
-            _render_detailed_terminal(simulation_id, accumulated)
+            _render_detailed_terminal(simulation_id, accumulated, use_huuid)
         return
 
     response = client.get(
@@ -654,13 +715,13 @@ def simulation_analysis(
 
     if _is_empty_analysis(attrs):
         if output_format == "markdown":
-            click.echo(f"# Simulation Analysis: {simulation_id}\n\nAnalysis not available yet — simulation may still be running.")
+            click.echo(f"# Simulation Analysis: {format_id(simulation_id, use_huuid)}\n\nAnalysis not available yet — simulation may still be running.")
         else:
             console.print("[yellow]Analysis not available yet — simulation may still be running.[/yellow]")
         return
 
     if output_format == "markdown":
-        _render_analysis_markdown(simulation_id, attrs)
+        _render_analysis_markdown(simulation_id, attrs, use_huuid)
     else:
         _render_analysis_terminal(attrs)
 
@@ -799,9 +860,9 @@ def _render_analysis_terminal(attrs: dict[str, Any]) -> None:
         console.print(qc_table)
 
 
-def _render_analysis_markdown(simulation_id: str, attrs: dict[str, Any]) -> None:
+def _render_analysis_markdown(simulation_id: str, attrs: dict[str, Any], use_huuid: bool) -> None:
     lines: list[str] = []
-    lines.append(f"# Simulation Analysis: {simulation_id}")
+    lines.append(f"# Simulation Analysis: {format_id(simulation_id, use_huuid)}")
     lines.append("")
 
     rating_dist = attrs.get("rating_distribution", {})
@@ -991,7 +1052,7 @@ def _fetch_detailed_pages(
 
 
 def _render_detailed_terminal(
-    simulation_id: str, data: dict[str, list[dict[str, Any]]]
+    simulation_id: str, data: dict[str, list[dict[str, Any]]], use_huuid: bool
 ) -> None:
     notes = data.get("notes", [])
     ratings = data.get("ratings", [])
@@ -1000,7 +1061,7 @@ def _render_detailed_terminal(
 
     console.print(
         Panel(
-            f"[bold]Simulation:[/bold] {simulation_id}\n"
+            f"[bold]Simulation:[/bold] {format_id(simulation_id, use_huuid)}\n"
             f"[bold]Notes:[/bold] {len(notes)}  "
             f"[bold]Ratings:[/bold] {len(ratings)}  "
             f"[bold]Requests:[/bold] {len(requests)}  "
@@ -1023,13 +1084,13 @@ def _render_detailed_terminal(
             score = n.get("helpfulness_score")
             score_str = f"{score}" if score is not None else "N/A"
             note_table.add_row(
-                n.get("note_id", "N/A"),
+                format_id(n.get("note_id", "N/A"), use_huuid),
                 (n.get("summary", "") or "")[:50],
                 n.get("classification", "N/A"),
                 n.get("status", "N/A"),
                 score_str,
                 n.get("author_agent", "N/A"),
-                n.get("request_id", "N/A"),
+                format_id(n.get("request_id", "N/A"), use_huuid),
                 (n.get("created_at", "") or "")[:19],
             )
         console.print(note_table)
@@ -1043,7 +1104,7 @@ def _render_detailed_terminal(
         rating_table.add_column("Created At", width=20)
         for r in ratings:
             rating_table.add_row(
-                r.get("note_id", "N/A"),
+                format_id(r.get("note_id", "N/A"), use_huuid),
                 (r.get("note_summary", "") or "")[:50],
                 r.get("rater_agent", "N/A"),
                 r.get("helpfulness_level", "N/A"),
@@ -1062,7 +1123,7 @@ def _render_detailed_terminal(
             variance = req.get("variance_score")
             variance_str = f"{variance}" if variance is not None else "N/A"
             req_table.add_row(
-                req.get("request_id", "N/A"),
+                format_id(req.get("request_id", "N/A"), use_huuid),
                 (req.get("content", "") or "")[:60],
                 req.get("content_type", "N/A"),
                 str(req.get("note_count", 0)),
@@ -1087,7 +1148,7 @@ def _render_detailed_terminal(
         var_table.add_column("Notes", justify="right")
         for req in sorted_requests:
             var_table.add_row(
-                req.get("request_id", "N/A"),
+                format_id(req.get("request_id", "N/A"), use_huuid),
                 f"{req['variance_score']}",
                 (req.get("content", "") or "")[:60],
                 str(req.get("note_count", 0)),
@@ -1122,7 +1183,7 @@ def _escape_md(text: str) -> str:
 
 
 def _render_detailed_markdown(
-    simulation_id: str, data: dict[str, list[dict[str, Any]]]
+    simulation_id: str, data: dict[str, list[dict[str, Any]]], use_huuid: bool
 ) -> None:
     notes = data.get("notes", [])
     ratings = data.get("ratings", [])
@@ -1130,7 +1191,7 @@ def _render_detailed_markdown(
     agents = data.get("agents", [])
 
     lines: list[str] = []
-    lines.append(f"# Detailed Simulation Analysis: {simulation_id}")
+    lines.append(f"# Detailed Simulation Analysis: {format_id(simulation_id, use_huuid)}")
     lines.append("")
     lines.append(f"- Notes: {len(notes)}")
     lines.append(f"- Ratings: {len(ratings)}")
@@ -1148,13 +1209,13 @@ def _render_detailed_markdown(
             score_str = str(score) if score is not None else "N/A"
             summary = _escape_md((n.get("summary", "") or "")[:50])
             lines.append(
-                f"| {n.get('note_id', 'N/A')}"
+                f"| {format_id(n.get('note_id', 'N/A'), use_huuid)}"
                 f" | {summary}"
                 f" | {_escape_md(n.get('classification', 'N/A'))}"
                 f" | {_escape_md(n.get('status', 'N/A'))}"
                 f" | {score_str}"
                 f" | {_escape_md(n.get('author_agent', 'N/A'))}"
-                f" | {n.get('request_id', 'N/A')}"
+                f" | {format_id(n.get('request_id', 'N/A'), use_huuid)}"
                 f" | {(n.get('created_at', '') or '')[:19]} |"
             )
         lines.append("")
@@ -1170,7 +1231,7 @@ def _render_detailed_markdown(
         for r in ratings:
             summary = _escape_md((r.get("note_summary", "") or "")[:50])
             lines.append(
-                f"| {r.get('note_id', 'N/A')}"
+                f"| {format_id(r.get('note_id', 'N/A'), use_huuid)}"
                 f" | {summary}"
                 f" | {_escape_md(r.get('rater_agent', 'N/A'))}"
                 f" | {_escape_md(r.get('helpfulness_level', 'N/A'))}"
@@ -1191,7 +1252,7 @@ def _render_detailed_markdown(
             variance_str = str(variance) if variance is not None else "N/A"
             content = _escape_md((req.get("content", "") or "")[:60])
             lines.append(
-                f"| {req.get('request_id', 'N/A')}"
+                f"| {format_id(req.get('request_id', 'N/A'), use_huuid)}"
                 f" | {content}"
                 f" | {_escape_md(req.get('content_type', 'N/A'))}"
                 f" | {req.get('note_count', 0)}"
@@ -1218,7 +1279,7 @@ def _render_detailed_markdown(
             content = _escape_md((req.get("content", "") or "")[:60])
             lines.append(
                 f"| {rank}"
-                f" | {req.get('request_id', 'N/A')}"
+                f" | {format_id(req.get('request_id', 'N/A'), use_huuid)}"
                 f" | {req['variance_score']}"
                 f" | {content}"
                 f" | {req.get('note_count', 0)} |"

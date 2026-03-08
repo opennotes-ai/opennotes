@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 
 from opennotes_cli.display import display_batch_job_list, display_batch_job_status
+from opennotes_cli.formatting import format_id, resolve_id
 from opennotes_cli.http import add_csrf, get_csrf_token
 from opennotes_cli.polling import poll_batch_job_until_complete
 
@@ -29,6 +30,12 @@ def batch() -> None:
 @click.pass_context
 def batch_status(ctx: click.Context, job_id: str, wait: bool) -> None:
     """Get status of a batch job."""
+    try:
+        job_id = resolve_id(job_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -65,7 +72,7 @@ def batch_status(ctx: click.Context, job_id: str, wait: bool) -> None:
                 console.print("[dim]Waiting for completion...[/dim]\n")
             result = poll_batch_job_until_complete(client, base_url, headers, job_id)
 
-    display_batch_job_status(result, cli_ctx.json_output)
+    display_batch_job_status(result, cli_ctx.json_output, cli_ctx.use_huuid)
 
 
 @batch.command("list")
@@ -126,7 +133,7 @@ def batch_list(
                     job["completed_tasks"] = progress_data.get("processed_count", 0)
                     job["failed_tasks"] = progress_data.get("error_count", 0)
 
-    display_batch_job_list(result, cli_ctx.env_name, cli_ctx.json_output)
+    display_batch_job_list(result, cli_ctx.env_name, cli_ctx.json_output, cli_ctx.use_huuid)
 
 
 @batch.command("cancel")
@@ -134,6 +141,12 @@ def batch_list(
 @click.pass_context
 def batch_cancel(ctx: click.Context, job_id: str) -> None:
     """Cancel a running or pending batch job."""
+    try:
+        job_id = resolve_id(job_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -171,4 +184,5 @@ def batch_cancel(ctx: click.Context, job_id: str) -> None:
             json.dumps({"message": "Job cancelled", "job_id": job_id}, indent=2)
         )
     else:
-        console.print(f"[green]\u2713[/green] Job {job_id} cancelled")
+        display_id = format_id(job_id, cli_ctx.use_huuid)
+        console.print(f"[green]\u2713[/green] Job {display_id} cancelled")

@@ -16,7 +16,7 @@ def runner() -> CliRunner:
 SAMPLE_ANALYSIS_RESPONSE: dict = {
     "data": {
         "type": "simulation-analysis",
-        "id": "sim-abc-123",
+        "id": "019536b8-bdb2-7c81-8975-77f5c3dbdff8",
         "attributes": {
             "rating_distribution": {
                 "overall": {"HELPFUL": 5, "NOT_HELPFUL": 2, "SOMEWHAT_HELPFUL": 3},
@@ -111,7 +111,7 @@ class TestAnalysisTerminalOutput:
         mock_client = _make_mock_client(mock_resp)
 
         with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
-            result = runner.invoke(cli, ["--local", "simulation", "analysis", "sim-abc-123"])
+            result = runner.invoke(cli, ["--local", "simulation", "analysis", "019536b8-bdb2-7c81-8975-77f5c3dbdff8"])
 
         assert result.exit_code == 0
         assert "Rating Distribution" in result.output
@@ -137,11 +137,11 @@ class TestAnalysisMarkdownOutput:
 
         with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
             result = runner.invoke(
-                cli, ["--local", "simulation", "analysis", "--format", "markdown", "sim-abc-123"]
+                cli, ["--local", "simulation", "analysis", "--format", "markdown", "019536b8-bdb2-7c81-8975-77f5c3dbdff8"]
             )
 
         assert result.exit_code == 0
-        assert "# Simulation Analysis: sim-abc-123" in result.output
+        assert "# Simulation Analysis:" in result.output
         assert "## Rating Distribution" in result.output
         assert "| Rating | Count | % |" in result.output
         assert "HELPFUL" in result.output
@@ -166,19 +166,19 @@ class TestAnalysisJsonOutput:
 
         with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
             result = runner.invoke(
-                cli, ["--local", "--json", "simulation", "analysis", "sim-abc-123"]
+                cli, ["--local", "--json", "simulation", "analysis", "019536b8-bdb2-7c81-8975-77f5c3dbdff8"]
             )
 
         assert result.exit_code == 0
         assert "simulation-analysis" in result.output
-        assert "sim-abc-123" in result.output
+        assert "019536b8-bdb2-7c81-8975-77f5c3dbdff8" in result.output
         assert "rating_distribution" in result.output
 
 
 EMPTY_ANALYSIS_RESPONSE: dict = {
     "data": {
         "type": "simulation-analysis",
-        "id": "sim-empty-001",
+        "id": "019536b8-bdb2-7c81-8975-88a5c3dbdff8",
         "attributes": {
             "rating_distribution": {"overall": {}, "per_agent": [], "total_ratings": 0},
             "consensus_metrics": {
@@ -217,7 +217,7 @@ class TestAnalysisEmptyData:
         mock_client = _make_mock_client(mock_resp)
 
         with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
-            result = runner.invoke(cli, ["--local", "simulation", "analysis", "sim-empty-001"])
+            result = runner.invoke(cli, ["--local", "simulation", "analysis", "019536b8-bdb2-7c81-8975-88a5c3dbdff8"])
 
         assert result.exit_code == 0
         assert "not available yet" in result.output
@@ -231,7 +231,7 @@ class TestAnalysisEmptyData:
 
         with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
             result = runner.invoke(
-                cli, ["--local", "simulation", "analysis", "--format", "markdown", "sim-empty-001"]
+                cli, ["--local", "simulation", "analysis", "--format", "markdown", "019536b8-bdb2-7c81-8975-88a5c3dbdff8"]
             )
 
         assert result.exit_code == 0
@@ -241,7 +241,7 @@ class TestAnalysisEmptyData:
 ZERO_RATINGS_ANALYSIS_RESPONSE: dict = {
     "data": {
         "type": "simulation-analysis",
-        "id": "sim-zero-ratings",
+        "id": "019536b8-bdb2-7c81-8975-99b5c3dbdff8",
         "attributes": {
             "rating_distribution": {"overall": {}, "per_agent": [], "total_ratings": 0},
             "consensus_metrics": {
@@ -280,7 +280,7 @@ class TestAnalysisZeroRatingsNAPath:
         mock_client = _make_mock_client(mock_resp)
 
         with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
-            result = runner.invoke(cli, ["--local", "simulation", "analysis", "sim-zero-ratings"])
+            result = runner.invoke(cli, ["--local", "simulation", "analysis", "019536b8-bdb2-7c81-8975-99b5c3dbdff8"])
 
         assert result.exit_code == 0
         assert "N/A" in result.output
@@ -297,7 +297,7 @@ class TestAnalysisZeroRatingsNAPath:
 
         with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
             result = runner.invoke(
-                cli, ["--local", "simulation", "analysis", "--format", "markdown", "sim-zero-ratings"]
+                cli, ["--local", "simulation", "analysis", "--format", "markdown", "019536b8-bdb2-7c81-8975-99b5c3dbdff8"]
             )
 
         assert result.exit_code == 0

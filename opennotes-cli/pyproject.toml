@@ -12,6 +12,7 @@ dependencies = [
     "python-dateutil>=2.8.0",
     "rich>=13.0",
     "baalbek @ git+https://github.com/anateus/baalbek",
+    "huuid>=0.8.0",
 ]
 
 [project.optional-dependencies]

@@ -154,7 +154,7 @@ def _make_page_response(
     resp.json.return_value = body
     return resp
 
-SIM_ID = "sim-detailed-001"
+SIM_ID = "019536b8-bdb2-7c81-8975-77f5c3dbdff8"
 
 
 def _make_single_page_client() -> MagicMock:
@@ -405,7 +405,7 @@ class TestExistingAnalysisUnchanged:
 
         with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
             result = runner.invoke(
-                cli, ["--local", "simulation", "analysis", "sim-abc-123"]
+                cli, ["--local", "simulation", "analysis", "019536b8-bdb2-7c81-8975-77f5c3dbdff8"]
             )
 
         assert result.exit_code == 0

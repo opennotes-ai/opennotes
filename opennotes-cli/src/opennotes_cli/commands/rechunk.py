@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 
 from opennotes_cli.display import display_task_list, display_task_start, display_task_status
+from opennotes_cli.formatting import format_id, resolve_id
 from opennotes_cli.http import add_csrf, get_csrf_token
 from opennotes_cli.polling import poll_task_until_complete
 
@@ -29,7 +30,7 @@ def rechunk() -> None:
     "--community-id",
     required=False,
     default=None,
-    help="Community server ID (UUID) for LLM credentials. If not provided, uses global API keys.",
+    help="Community server ID (UUID or huuid) for LLM credentials. If not provided, uses global API keys.",
 )
 @click.option(
     "-b",
@@ -44,6 +45,13 @@ def rechunk_factchecks(
     ctx: click.Context, community_id: str | None, batch_size: int, wait: bool
 ) -> None:
     """Rechunk and re-embed all fact-check items."""
+    if community_id:
+        try:
+            community_id = resolve_id(community_id)
+        except click.BadParameter as e:
+            error_console.print(f"[red]Error:[/red] {e}")
+            sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -88,12 +96,12 @@ def rechunk_factchecks(
     if wait:
         task_id = result.get("task_id")
         if not cli_ctx.json_output:
-            console.print(f"[dim]Task started: {task_id}[/dim]")
+            console.print(f"[dim]Task started: {format_id(task_id, cli_ctx.use_huuid)}[/dim]")
             console.print("[dim]Waiting for completion...[/dim]\n")
         final_status = poll_task_until_complete(client, base_url, headers, task_id)
-        display_task_status(final_status, cli_ctx.json_output)
+        display_task_status(final_status, cli_ctx.json_output, cli_ctx.use_huuid)
     else:
-        display_task_start(result, cli_ctx.env_name, cli_ctx.json_output)
+        display_task_start(result, cli_ctx.env_name, cli_ctx.json_output, cli_ctx.use_huuid)
 
 
 @rechunk.command("previously-seen")
@@ -101,7 +109,7 @@ def rechunk_factchecks(
     "-c",
     "--community-id",
     required=True,
-    help="Community server ID (UUID) to filter and authenticate.",
+    help="Community server ID (UUID or huuid) to filter and authenticate.",
 )
 @click.option(
     "-b",
@@ -116,6 +124,12 @@ def rechunk_previously_seen(
     ctx: click.Context, community_id: str, batch_size: int, wait: bool
 ) -> None:
     """Rechunk and re-embed previously seen messages for a community."""
+    try:
+        community_id = resolve_id(community_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -159,12 +173,12 @@ def rechunk_previously_seen(
     if wait:
         task_id = result.get("task_id")
         if not cli_ctx.json_output:
-            console.print(f"[dim]Task started: {task_id}[/dim]")
+            console.print(f"[dim]Task started: {format_id(task_id, cli_ctx.use_huuid)}[/dim]")
             console.print("[dim]Waiting for completion...[/dim]\n")
         final_status = poll_task_until_complete(client, base_url, headers, task_id)
-        display_task_status(final_status, cli_ctx.json_output)
+        display_task_status(final_status, cli_ctx.json_output, cli_ctx.use_huuid)
     else:
-        display_task_start(result, cli_ctx.env_name, cli_ctx.json_output)
+        display_task_start(result, cli_ctx.env_name, cli_ctx.json_output, cli_ctx.use_huuid)
 
 
 @rechunk.command("status")
@@ -173,6 +187,12 @@ def rechunk_previously_seen(
 @click.pass_context
 def rechunk_status(ctx: click.Context, task_id: str, wait: bool) -> None:
     """Get status of a rechunk task."""
+    try:
+        task_id = resolve_id(task_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -224,7 +244,7 @@ def rechunk_status(ctx: click.Context, task_id: str, wait: bool) -> None:
                 console.print("[dim]Waiting for completion...[/dim]\n")
             result = poll_task_until_complete(client, base_url, headers, task_id)
 
-    display_task_status(result, cli_ctx.json_output)
+    display_task_status(result, cli_ctx.json_output, cli_ctx.use_huuid)
 
 
 @rechunk.command("delete")
@@ -233,6 +253,12 @@ def rechunk_status(ctx: click.Context, task_id: str, wait: bool) -> None:
 @click.pass_context
 def rechunk_delete(ctx: click.Context, task_id: str, force: bool) -> None:
     """Cancel and delete a rechunk task."""
+    try:
+        task_id = resolve_id(task_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
@@ -282,7 +308,8 @@ def rechunk_delete(ctx: click.Context, task_id: str, force: bool) -> None:
         if cli_ctx.json_output:
             console.print(json.dumps({"message": "Task cancelled"}, indent=2))
         else:
-            console.print(f"[green]\u2713[/green] Task {task_id} cancelled")
+            display_id = format_id(task_id, cli_ctx.use_huuid)
+            console.print(f"[green]\u2713[/green] Task {display_id} cancelled")
         return
 
     result = response.json()
@@ -346,4 +373,4 @@ def rechunk_list(ctx: click.Context, status_filter: str | None) -> None:
                     job["completed_tasks"] = progress_data.get("processed_count", 0)
                     job["failed_tasks"] = progress_data.get("error_count", 0)
 
-    display_task_list(result, cli_ctx.env_name, cli_ctx.json_output)
+    display_task_list(result, cli_ctx.env_name, cli_ctx.json_output, cli_ctx.use_huuid)

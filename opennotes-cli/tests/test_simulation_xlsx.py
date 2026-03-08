@@ -141,7 +141,7 @@ def _make_detailed_response(simulation_id: str) -> MagicMock:
     return resp
 
 
-SIM_ID = "sim-xlsx-001"
+SIM_ID = "019536b8-bdb2-7c81-8975-77f5c3dbdff8"
 
 
 def _make_xlsx_client() -> MagicMock:
