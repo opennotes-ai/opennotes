@@ -389,15 +389,6 @@ wheels = [
 ]
 
 [[package]]
-name = "backoff"
-version = "2.2.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/47/d7/5bbeb12c44d7c4f2fb5b56abce497eb5ed9f34d85701de869acedd602619/backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba", size = 17001, upload-time = "2022-10-05T19:19:32.061Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/df/73/b6e24bd22e6720ca8ee9a85a0c4a2971af8497d8f3193fa05390cbd46e09/backoff-2.2.1-py3-none-any.whl", hash = "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8", size = 15148, upload-time = "2022-10-05T19:19:30.546Z" },
-]
-
-[[package]]
 name = "backports-tarfile"
 version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3550,15 +3541,6 @@ wheels = [
 ]
 
 [[package]]
-name = "monotonic"
-version = "1.6"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ea/ca/8e91948b782ddfbd194f323e7e7d9ba12e5877addf04fb2bf8fca38e86ac/monotonic-1.6.tar.gz", hash = "sha256:3a55207bcfed53ddd5c5bae174524062935efed17792e9de2ad0205ce9ad63f7", size = 7615, upload-time = "2021-08-11T14:37:28.79Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9a/67/7e8406a29b6c45be7af7740456f7f37025f0506ae2e05fb9009a53946860/monotonic-1.6-py2.py3-none-any.whl", hash = "sha256:68687e19a14f11f26d140dd5c86f3dba4bf5df58003000ed467e0e2a69bca96c", size = 8154, upload-time = "2021-04-09T21:58:05.122Z" },
-]
-
-[[package]]
 name = "more-itertools"
 version = "10.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4373,7 +4355,7 @@ requires-dist = [
     { name = "torch", specifier = ">=2.1.2" },
     { name = "torch", marker = "extra == 'dev'", specifier = "==2.1.2" },
     { name = "torch", marker = "extra == 'scoring'", specifier = "==2.1.2" },
-    { name = "traceloop-sdk", specifier = ">=0.35.0" },
+    { name = "traceloop-sdk", specifier = ">=0.53.0" },
     { name = "trafilatura", specifier = ">=2.0.0,<3.0.0" },
     { name = "transformers", specifier = ">=4.36.0,<4.41.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.24.0" },
@@ -4541,6 +4523,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/04/ed/9c65cd209407fd807fa05be03ee30f159bdac8d59e7ea16a8fe5a1601222/opentelemetry_instrumentation-0.59b0.tar.gz", hash = "sha256:6010f0faaacdaf7c4dff8aac84e226d23437b331dcda7e70367f6d73a7db1adc", size = 31544, upload-time = "2025-10-16T08:39:31.959Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/f5/7a40ff3f62bfe715dad2f633d7f1174ba1a7dd74254c15b2558b3401262a/opentelemetry_instrumentation-0.59b0-py3-none-any.whl", hash = "sha256:44082cc8fe56b0186e87ee8f7c17c327c4c2ce93bdbe86496e600985d74368ee", size = 33020, upload-time = "2025-10-16T08:38:31.463Z" },
+]
+
+[[package]]
+name = "opentelemetry-instrumentation-agno"
+version = "0.53.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-semantic-conventions-ai" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9b/fe/b1d31ca174c24ca4f8001aa1bdcc7f0dcb9b026a8fcc29b9eff0188285ed/opentelemetry_instrumentation_agno-0.53.0.tar.gz", hash = "sha256:67ff165475ca1c48ea41fe9db2d9f89d72430b8e995ea1aa8b329f04473b7a0c", size = 82789, upload-time = "2026-03-04T07:48:59.318Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/7f/6273711889af1bc73405bd4bc90a0c5ddcee06d0d2c6d6c7e3d928715e17/opentelemetry_instrumentation_agno-0.53.0-py3-none-any.whl", hash = "sha256:bab72e73e12dfcfae6440d6d47f124d6cdd9d6a5ef391ef896b79742696595d1", size = 8895, upload-time = "2026-03-04T07:48:22.637Z" },
 ]
 
 [[package]]
@@ -5074,6 +5071,21 @@ wheels = [
 ]
 
 [[package]]
+name = "opentelemetry-instrumentation-voyageai"
+version = "0.53.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-semantic-conventions-ai" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ff/36/3dafcf9b3b6a6a2717975caf2f383f0e0219de21cbaa500069429a10517a/opentelemetry_instrumentation_voyageai-0.53.0.tar.gz", hash = "sha256:8382bbbf00d32dcf38d6b0faabff6bd933163d46a5a4de3e86c49114bb00c9b5", size = 168928, upload-time = "2026-03-04T07:49:28.682Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fe/11/07b7ca37383411bef50dabee45d5d487ebfe512ac96ae2696dc7d610c45c/opentelemetry_instrumentation_voyageai-0.53.0-py3-none-any.whl", hash = "sha256:43342c73dc6cafe4e7d7c6ce66fc5964481d43d1dd71de55ef1fcd5d6c72c6e3", size = 6646, upload-time = "2026-03-04T07:48:53.83Z" },
+]
+
+[[package]]
 name = "opentelemetry-instrumentation-watsonx"
 version = "0.48.1"
 source = { registry = "https://pypi.org/simple" }
@@ -5560,23 +5572,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
-]
-
-[[package]]
-name = "posthog"
-version = "3.25.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "backoff" },
-    { name = "distro" },
-    { name = "monotonic" },
-    { name = "python-dateutil" },
-    { name = "requests" },
-    { name = "six" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/85/a9/ec3bbc23b6f3c23c52e0b5795b1357cca74aa5cfb254213f1e471fef9b4d/posthog-3.25.0.tar.gz", hash = "sha256:9168f3e7a0a5571b6b1065c41b3c171fbc68bfe72c3ac0bfd6e3d2fcdb7df2ca", size = 75968, upload-time = "2025-04-15T21:15:45.552Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/54/e2/c158366e621562ef224f132e75c1d1c1fce6b078a19f7d8060451a12d4b9/posthog-3.25.0-py2.py3-none-any.whl", hash = "sha256:85db78c13d1ecb11aed06fad53759c4e8fb3633442c2f3d0336bc0ce8a585d30", size = 89115, upload-time = "2025-04-15T21:15:43.934Z" },
 ]
 
 [[package]]
@@ -7890,7 +7885,7 @@ wheels = [
 
 [[package]]
 name = "traceloop-sdk"
-version = "0.48.1"
+version = "0.53.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -7901,6 +7896,7 @@ dependencies = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-instrumentation-agno" },
     { name = "opentelemetry-instrumentation-alephalpha" },
     { name = "opentelemetry-instrumentation-anthropic" },
     { name = "opentelemetry-instrumentation-bedrock" },
@@ -7933,18 +7929,18 @@ dependencies = [
     { name = "opentelemetry-instrumentation-transformers" },
     { name = "opentelemetry-instrumentation-urllib3" },
     { name = "opentelemetry-instrumentation-vertexai" },
+    { name = "opentelemetry-instrumentation-voyageai" },
     { name = "opentelemetry-instrumentation-watsonx" },
     { name = "opentelemetry-instrumentation-weaviate" },
     { name = "opentelemetry-instrumentation-writer" },
     { name = "opentelemetry-sdk" },
     { name = "opentelemetry-semantic-conventions-ai" },
-    { name = "posthog" },
     { name = "pydantic" },
     { name = "tenacity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e4/f1/bdf609dfb683a643c5ec061cb6cd1e4594484414001d627bff47f5f8a697/traceloop_sdk-0.48.1.tar.gz", hash = "sha256:dd96fe1458e9cdbdcb82ea7af89113f8b6266c449ec1fe22aa0003543f2badc6", size = 32503, upload-time = "2025-11-17T15:28:15.295Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8d/ce/47a5bd7d3538c625483a4196aab0cedd34a4da53198c600fc78ccce40302/traceloop_sdk-0.53.0.tar.gz", hash = "sha256:3cd761733eea055d0dc87b5a22c8cc8a6350eca896a80acb5a7e11d089aee3fb", size = 321028, upload-time = "2026-03-04T07:51:59.083Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/01/01/cbee3575ea78ebb315f4f63d7c1ca1e06840cc7fc8f22b9b843653d5bc19/traceloop_sdk-0.48.1-py3-none-any.whl", hash = "sha256:694199b151835440fff595e4303d64bea282821fc7715c56806d313cae2f3d9b", size = 47008, upload-time = "2025-11-17T15:28:13.703Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/1f/fac766ba7d53c8cc02c9dd99daa141eb242c0e3c8d49ee792071742ba8fa/traceloop_sdk-0.53.0-py3-none-any.whl", hash = "sha256:29cee493dda92c872b4578a7f570794669a64f51ab09d61a0893749d616bfcfd", size = 74452, upload-time = "2026-03-04T07:51:57.649Z" },
 ]
 
 [[package]]
