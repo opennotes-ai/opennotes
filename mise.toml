@@ -187,9 +187,10 @@ echo "   Playground: http://localhost:3100"
 '''
 
 [tasks."dev:playground"]
-description = "Run playground dev server"
+description = "Run playground dev server on port 3100"
 dir = "{{vars.playground_dir}}"
 run = "pnpm dev"
+env = { PORT = "3100" }
 
 # ========================================
 # Testing Tasks
