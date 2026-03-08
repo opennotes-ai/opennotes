@@ -112,6 +112,54 @@ class TestScoreCommand:
 
         assert result.exit_code != 0
 
+    def test_score_accepts_huuid(self, runner: CliRunner) -> None:
+        mock_csrf_resp = MagicMock()
+        mock_csrf_resp.status_code = 200
+
+        mock_score_resp = MagicMock()
+        mock_score_resp.status_code = 202
+        mock_score_resp.json.return_value = {
+            "workflow_id": "score-community-abc123",
+            "message": "Scoring workflow dispatched",
+        }
+
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_csrf_resp
+        mock_client.post.return_value = mock_score_resp
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(cli, ["--local", "score", "Vudrotlab-Kuvkattor-Tevzelpim-Liksiksas"])
+
+        assert result.exit_code == 0
+        assert "score-community-abc123" in result.output
+
+    def test_score_uuid_flag(self, runner: CliRunner) -> None:
+        wf_id = "019536b8-bdb2-7c81-8975-77f5c3dbdff8"
+
+        mock_csrf_resp = MagicMock()
+        mock_csrf_resp.status_code = 200
+
+        mock_score_resp = MagicMock()
+        mock_score_resp.status_code = 202
+        mock_score_resp.json.return_value = {
+            "workflow_id": wf_id,
+            "message": "Scoring workflow dispatched",
+        }
+
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_csrf_resp
+        mock_client.post.return_value = mock_score_resp
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(cli, ["--local", "--uuid", "score", str(uuid4())])
+
+        assert result.exit_code == 0
+        assert wf_id in result.output
+
     def test_score_rejects_non_uuid(self, runner: CliRunner) -> None:
         with patch("opennotes_cli.cli.httpx.Client", return_value=MagicMock()):
             result = runner.invoke(cli, ["--local", "score", "guild-123"])

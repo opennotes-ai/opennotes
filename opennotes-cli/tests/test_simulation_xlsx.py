@@ -154,6 +154,35 @@ def _make_xlsx_client() -> MagicMock:
     return mock_client
 
 
+HUUID_SIM_ID = "Vudrotlab-Kuvkattor-Tevzelpim-Liksiksas"
+
+
+class TestXlsxHuuidInput:
+    def test_xlsx_accepts_huuid(self, runner: CliRunner) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = os.path.join(tmpdir, "test-huuid.xlsx")
+            mock_client = _make_xlsx_client()
+            with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+                result = runner.invoke(
+                    cli,
+                    [
+                        "--local",
+                        "simulation",
+                        "analysis",
+                        "--detailed",
+                        "--format",
+                        "xlsx",
+                        "--output",
+                        output_file,
+                        HUUID_SIM_ID,
+                    ],
+                )
+            assert result.exit_code == 0, f"CLI failed: {result.output}"
+            assert os.path.exists(output_file)
+
+
 class TestXlsxRequiresDetailed:
     def test_xlsx_without_detailed_errors(self, runner: CliRunner) -> None:
         result = runner.invoke(

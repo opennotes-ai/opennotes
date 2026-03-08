@@ -317,6 +317,55 @@ class TestAnalysisNotFound:
         mock_client = _make_mock_client(mock_resp)
 
         with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
-            result = runner.invoke(cli, ["--local", "simulation", "analysis", "nonexistent-id"])
+            result = runner.invoke(cli, ["--local", "simulation", "analysis", "00000000-0000-7000-8000-000000000000"])
 
         assert result.exit_code != 0
+
+
+class TestAnalysisHuuidInput:
+    def test_analysis_accepts_huuid(self, runner: CliRunner) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = SAMPLE_ANALYSIS_RESPONSE
+
+        mock_client = _make_mock_client(mock_resp)
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "Vudrotlab-Kuvkattor-Tevzelpim-Liksiksas"]
+            )
+
+        assert result.exit_code == 0
+        assert "Rating Distribution" in result.output
+
+
+class TestAnalysisUuidFlag:
+    def test_uuid_flag_shows_raw_uuid(self, runner: CliRunner) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = SAMPLE_ANALYSIS_RESPONSE
+
+        mock_client = _make_mock_client(mock_resp)
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "--uuid", "simulation", "analysis", "--format", "markdown", "019536b8-bdb2-7c81-8975-77f5c3dbdff8"]
+            )
+
+        assert result.exit_code == 0
+        assert "019536b8-bdb2-7c81-8975-77f5c3dbdff8" in result.output
+
+    def test_default_shows_huuid(self, runner: CliRunner) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = SAMPLE_ANALYSIS_RESPONSE
+
+        mock_client = _make_mock_client(mock_resp)
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "--format", "markdown", "019536b8-bdb2-7c81-8975-77f5c3dbdff8"]
+            )
+
+        assert result.exit_code == 0
+        assert "Vudrotlab-Kuvkattor-Tevzelpim-Liksiksas" in result.output
