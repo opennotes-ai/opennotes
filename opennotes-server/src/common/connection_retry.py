@@ -10,7 +10,12 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-TRANSIENT_CONNECTION_ERRORS = (socket.gaierror, ConnectionRefusedError, OSError)
+TRANSIENT_CONNECTION_ERRORS = (
+    socket.gaierror,
+    ConnectionRefusedError,
+    ConnectionResetError,
+    ConnectionAbortedError,
+)
 
 
 def is_transient_connection_error(exc: Exception) -> bool:
@@ -21,6 +26,13 @@ def _get_metric():
     from src.monitoring.metrics import db_connection_retries_total  # noqa: PLC0415
 
     return db_connection_retries_total
+
+
+def _emit_metric(outcome: str) -> None:
+    try:
+        _get_metric().add(1, {"outcome": outcome})
+    except Exception:
+        logger.debug("Failed to emit connection retry metric", exc_info=True)
 
 
 def async_connect_with_retry(
@@ -38,7 +50,7 @@ def async_connect_with_retry(
                     logger.warning(
                         "DB connection succeeded after retry", extra={"attempt": attempt + 1}
                     )
-                    _get_metric().add(1, {"outcome": "success"})
+                    _emit_metric("success")
                 return result
             except Exception as e:
                 if not is_transient_connection_error(e):
@@ -48,7 +60,7 @@ def async_connect_with_retry(
                         "DB connection retries exhausted",
                         extra={"attempts": attempt + 1, "error": str(e)},
                     )
-                    _get_metric().add(1, {"outcome": "exhausted"})
+                    _emit_metric("exhausted")
                     raise
                 delay = min(backoff_base * (2**attempt), max_delay)
                 delay *= 1 + random.uniform(-jitter, jitter)
@@ -77,7 +89,7 @@ def sync_connect_with_retry(
                     logger.warning(
                         "DB connection succeeded after retry", extra={"attempt": attempt + 1}
                     )
-                    _get_metric().add(1, {"outcome": "success"})
+                    _emit_metric("success")
                 return result
             except Exception as e:
                 if not is_transient_connection_error(e):
@@ -87,7 +99,7 @@ def sync_connect_with_retry(
                         "DB connection retries exhausted",
                         extra={"attempts": attempt + 1, "error": str(e)},
                     )
-                    _get_metric().add(1, {"outcome": "exhausted"})
+                    _emit_metric("exhausted")
                     raise
                 delay = min(backoff_base * (2**attempt), max_delay)
                 delay *= 1 + random.uniform(-jitter, jitter)
