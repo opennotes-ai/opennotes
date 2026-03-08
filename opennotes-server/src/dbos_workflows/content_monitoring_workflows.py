@@ -21,7 +21,6 @@ from uuid import UUID
 import orjson
 import pendulum
 from dbos import DBOS, Queue
-from dbos._client import EnqueueOptions
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -490,19 +489,12 @@ def start_ai_note_workflow(
     similarity_score: float | None = None,
     moderation_metadata: dict[str, Any] | None = None,
 ) -> None:
-    from src.dbos_workflows.config import get_dbos_client
-
     moderation_metadata_json = (
         orjson.dumps(moderation_metadata).decode() if moderation_metadata else None
     )
 
-    client = get_dbos_client()
-    options: EnqueueOptions = {
-        "queue_name": "content_monitoring",
-        "workflow_name": AI_NOTE_GENERATION_WORKFLOW_NAME,
-    }
-    client.enqueue(
-        options,
+    content_monitoring_queue.enqueue(
+        ai_note_generation_workflow,
         community_server_id,
         request_id,
         content,
@@ -532,15 +524,8 @@ def call_persist_audit_log(
     user_agent: str | None = None,
     created_at_iso: str | None = None,
 ) -> None:
-    from src.dbos_workflows.config import get_dbos_client
-
-    client = get_dbos_client()
-    options: EnqueueOptions = {
-        "queue_name": "content_monitoring",
-        "workflow_name": AUDIT_LOG_WORKFLOW_NAME,
-    }
-    client.enqueue(
-        options,
+    content_monitoring_queue.enqueue(
+        _audit_log_wrapper_workflow,
         user_id,
         action,
         resource,

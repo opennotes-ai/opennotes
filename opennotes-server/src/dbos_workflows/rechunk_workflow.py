@@ -14,7 +14,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from dbos import DBOS, EnqueueOptions, Queue
+from dbos import DBOS, Queue
 from sqlalchemy import select
 
 from src.batch_jobs.constants import (
@@ -156,16 +156,9 @@ async def dispatch_dbos_rechunk_workflow(
     await db.refresh(job)
 
     try:
-        from src.dbos_workflows.config import get_dbos_client
-
-        client = get_dbos_client()
-        options: EnqueueOptions = {
-            "queue_name": "rechunk",
-            "workflow_name": RECHUNK_FACT_CHECK_WORKFLOW_NAME,
-        }
         handle = await asyncio.to_thread(
-            client.enqueue,
-            options,
+            rechunk_queue.enqueue,
+            rechunk_fact_check_workflow,
             str(job.id),
             str(community_server_id) if community_server_id else None,
             item_ids,
@@ -484,9 +477,8 @@ async def enqueue_single_fact_check_chunk(
 ) -> str | None:
     """Enqueue a single fact-check item for chunking via DBOS.
 
-    This function uses DBOSClient.enqueue() to submit the workflow to the
-    rechunk queue for durable processing by a DBOS worker. The client
-    does not poll the queue - it only enqueues work.
+    This function uses rechunk_queue.enqueue() to submit the workflow to the
+    rechunk queue for durable processing by a DBOS worker.
 
     Args:
         fact_check_id: UUID of the FactCheckItem to process
@@ -496,16 +488,9 @@ async def enqueue_single_fact_check_chunk(
         The DBOS workflow_id if successfully enqueued, None on failure
     """
     try:
-        from src.dbos_workflows.config import get_dbos_client
-
-        client = get_dbos_client()
-        options: EnqueueOptions = {
-            "queue_name": "rechunk",
-            "workflow_name": CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
-        }
         handle = await asyncio.to_thread(
-            client.enqueue,
-            options,
+            rechunk_queue.enqueue,
+            chunk_single_fact_check_workflow,
             str(fact_check_id),
             str(community_server_id) if community_server_id else None,
         )
@@ -828,16 +813,9 @@ async def dispatch_dbos_previously_seen_rechunk_workflow(
     await db.refresh(job)
 
     try:
-        from src.dbos_workflows.config import get_dbos_client
-
-        client = get_dbos_client()
-        options: EnqueueOptions = {
-            "queue_name": "rechunk",
-            "workflow_name": RECHUNK_PREVIOUSLY_SEEN_WORKFLOW_NAME,
-        }
         handle = await asyncio.to_thread(
-            client.enqueue,
-            options,
+            rechunk_queue.enqueue,
+            rechunk_previously_seen_workflow,
             str(job.id),
             str(community_server_id),
             item_ids,

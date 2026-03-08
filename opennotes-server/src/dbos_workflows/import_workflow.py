@@ -9,7 +9,7 @@ Three workflows cover the full import lifecycle:
 Architecture:
     ImportBatchJobService              DBOS Worker
         |                                  |
-        | client.enqueue(import_wf)       |
+        | queue.enqueue(import_wf)        |
         | -----> (queued)                  |
         |         start_import_step -----> |
         |         import_csv_step -------> |
@@ -30,7 +30,7 @@ import asyncio
 from typing import Any
 from uuid import UUID
 
-from dbos import DBOS, EnqueueOptions, Queue
+from dbos import DBOS, Queue
 
 from src.batch_jobs.constants import (
     DEFAULT_SCRAPE_CONCURRENCY,
@@ -1064,16 +1064,9 @@ async def dispatch_import_workflow(
     dry_run: bool,
     enqueue_scrapes: bool,
 ) -> str:
-    from src.dbos_workflows.config import get_dbos_client
-
-    client = get_dbos_client()
-    options: EnqueueOptions = {
-        "queue_name": "import_pipeline",
-        "workflow_name": FACT_CHECK_IMPORT_WORKFLOW_NAME,
-    }
     handle = await asyncio.to_thread(
-        client.enqueue,
-        options,
+        import_pipeline_queue.enqueue,
+        fact_check_import_workflow,
         str(batch_job_id),
         batch_size,
         dry_run,
@@ -1098,16 +1091,9 @@ async def dispatch_scrape_workflow(
     concurrency: int = DEFAULT_SCRAPE_CONCURRENCY,
     base_delay: float = 1.0,
 ) -> str:
-    from src.dbos_workflows.config import get_dbos_client
-
-    client = get_dbos_client()
-    options: EnqueueOptions = {
-        "queue_name": "import_pipeline",
-        "workflow_name": SCRAPE_CANDIDATES_WORKFLOW_NAME,
-    }
     handle = await asyncio.to_thread(
-        client.enqueue,
-        options,
+        import_pipeline_queue.enqueue,
+        scrape_candidates_workflow,
         str(batch_job_id),
         batch_size,
         dry_run,
@@ -1131,16 +1117,9 @@ async def dispatch_promote_workflow(
     batch_size: int,
     dry_run: bool,
 ) -> str:
-    from src.dbos_workflows.config import get_dbos_client
-
-    client = get_dbos_client()
-    options: EnqueueOptions = {
-        "queue_name": "import_pipeline",
-        "workflow_name": PROMOTE_CANDIDATES_WORKFLOW_NAME,
-    }
     handle = await asyncio.to_thread(
-        client.enqueue,
-        options,
+        import_pipeline_queue.enqueue,
+        promote_candidates_workflow,
         str(batch_job_id),
         batch_size,
         dry_run,
