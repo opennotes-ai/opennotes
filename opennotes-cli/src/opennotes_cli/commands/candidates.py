@@ -126,7 +126,7 @@ def import_candidates(
         if not cli_ctx.json_output:
             console.print(f"[dim]Job started: {format_id(job_id, cli_ctx.use_huuid)}[/dim]")
             console.print("[dim]Waiting for completion...[/dim]\n")
-        final_status = poll_batch_job_until_complete(client, base_url, headers, job_id)
+        final_status = poll_batch_job_until_complete(client, base_url, headers, job_id, use_huuid=cli_ctx.use_huuid)
         display_batch_job_status(final_status, cli_ctx.json_output, cli_ctx.use_huuid)
     else:
         display_batch_job_start(result, cli_ctx.env_name, cli_ctx.json_output, cli_ctx.use_huuid)
@@ -193,7 +193,7 @@ def scrape_candidates(
         if not cli_ctx.json_output:
             console.print(f"[dim]Job started: {format_id(job_id, cli_ctx.use_huuid)}[/dim]")
             console.print("[dim]Waiting for completion...[/dim]\n")
-        final_status = poll_batch_job_until_complete(client, base_url, headers, job_id)
+        final_status = poll_batch_job_until_complete(client, base_url, headers, job_id, use_huuid=cli_ctx.use_huuid)
         display_batch_job_status(final_status, cli_ctx.json_output, cli_ctx.use_huuid)
     else:
         display_batch_job_start(result, cli_ctx.env_name, cli_ctx.json_output, cli_ctx.use_huuid)
@@ -252,7 +252,7 @@ def promote_candidates(
         if not cli_ctx.json_output:
             console.print(f"[dim]Job started: {format_id(job_id, cli_ctx.use_huuid)}[/dim]")
             console.print("[dim]Waiting for completion...[/dim]\n")
-        final_status = poll_batch_job_until_complete(client, base_url, headers, job_id)
+        final_status = poll_batch_job_until_complete(client, base_url, headers, job_id, use_huuid=cli_ctx.use_huuid)
         display_batch_job_status(final_status, cli_ctx.json_output, cli_ctx.use_huuid)
     else:
         display_batch_job_start(result, cli_ctx.env_name, cli_ctx.json_output, cli_ctx.use_huuid)
@@ -384,7 +384,7 @@ def set_rating_cmd(
 
     if cli_ctx.verbose and not cli_ctx.json_output:
         console.print(f"[dim]Environment: {cli_ctx.env_name}[/dim]")
-        console.print(f"[dim]Setting rating on candidate {candidate_id}...[/dim]")
+        console.print(f"[dim]Setting rating on candidate {format_id(candidate_id, cli_ctx.use_huuid)}...[/dim]")
 
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
     headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
@@ -412,7 +412,7 @@ def set_rating_cmd(
         )
         sys.exit(1)
     if response.status_code == 404:
-        error_console.print(f"[red]Error:[/red] Candidate {candidate_id} not found.")
+        error_console.print(f"[red]Error:[/red] Candidate {format_id(candidate_id, cli_ctx.use_huuid)} not found.")
         sys.exit(1)
     if response.status_code >= 400:
         error_console.print(
@@ -523,7 +523,7 @@ def approve_predicted_cmd(
         if not cli_ctx.json_output:
             console.print(f"[dim]Job started: {format_id(job_id, cli_ctx.use_huuid)}[/dim]")
             console.print("[dim]Waiting for completion...[/dim]\n")
-        final_status = poll_batch_job_until_complete(client, base_url, headers, job_id)
+        final_status = poll_batch_job_until_complete(client, base_url, headers, job_id, use_huuid=cli_ctx.use_huuid)
         display_batch_job_status(final_status, cli_ctx.json_output, cli_ctx.use_huuid)
     else:
         display_batch_job_start(result, cli_ctx.env_name, cli_ctx.json_output, cli_ctx.use_huuid)

@@ -42,7 +42,7 @@ def batch_status(ctx: click.Context, job_id: str, wait: bool) -> None:
 
     if cli_ctx.verbose and not cli_ctx.json_output:
         console.print(f"[dim]Environment: {cli_ctx.env_name}[/dim]")
-        console.print(f"[dim]Fetching job status: {job_id}[/dim]")
+        console.print(f"[dim]Fetching job status: {format_id(job_id, cli_ctx.use_huuid)}[/dim]")
 
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
     headers = add_csrf(cli_ctx.auth.get_headers(), csrf_token)
@@ -51,7 +51,7 @@ def batch_status(ctx: click.Context, job_id: str, wait: bool) -> None:
     response = client.get(url, headers=headers)
 
     if response.status_code == 404:
-        error_console.print(f"[red]Error:[/red] Job {job_id} not found.")
+        error_console.print(f"[red]Error:[/red] Job {format_id(job_id, cli_ctx.use_huuid)} not found.")
         sys.exit(1)
     if response.status_code == 403:
         error_console.print("[red]Error:[/red] Access denied. Authentication required.")
@@ -70,7 +70,7 @@ def batch_status(ctx: click.Context, job_id: str, wait: bool) -> None:
         if status not in ("completed", "failed", "cancelled"):
             if not cli_ctx.json_output:
                 console.print("[dim]Waiting for completion...[/dim]\n")
-            result = poll_batch_job_until_complete(client, base_url, headers, job_id)
+            result = poll_batch_job_until_complete(client, base_url, headers, job_id, use_huuid=cli_ctx.use_huuid)
 
     display_batch_job_status(result, cli_ctx.json_output, cli_ctx.use_huuid)
 
@@ -153,7 +153,7 @@ def batch_cancel(ctx: click.Context, job_id: str) -> None:
 
     if cli_ctx.verbose and not cli_ctx.json_output:
         console.print(f"[dim]Environment: {cli_ctx.env_name}[/dim]")
-        console.print(f"[dim]Cancelling job: {job_id}[/dim]")
+        console.print(f"[dim]Cancelling job: {format_id(job_id, cli_ctx.use_huuid)}[/dim]")
 
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
     headers = add_csrf(cli_ctx.auth.get_headers(), csrf_token)
@@ -162,7 +162,7 @@ def batch_cancel(ctx: click.Context, job_id: str) -> None:
     response = client.delete(url, headers=headers)
 
     if response.status_code == 404:
-        error_console.print(f"[red]Error:[/red] Job {job_id} not found.")
+        error_console.print(f"[red]Error:[/red] Job {format_id(job_id, cli_ctx.use_huuid)} not found.")
         sys.exit(1)
     if response.status_code == 403:
         error_console.print("[red]Error:[/red] Access denied. Authentication required.")

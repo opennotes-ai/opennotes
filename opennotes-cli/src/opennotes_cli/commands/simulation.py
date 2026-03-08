@@ -198,7 +198,7 @@ def simulation_create(
         if not cli_ctx.json_output:
             console.print(f"[dim]Simulation created: {format_id(sim_id, cli_ctx.use_huuid)}[/dim]")
             console.print("[dim]Waiting for completion...[/dim]\n")
-        result = poll_simulation_until_complete(client, base_url, headers, sim_id)
+        result = poll_simulation_until_complete(client, base_url, headers, sim_id, use_huuid=cli_ctx.use_huuid)
 
     if cli_ctx.json_output:
         console.print(json.dumps(result, indent=2, default=str))
@@ -631,7 +631,7 @@ def simulation_launch(
     if wait:
         if not cli_ctx.json_output:
             console.print("[dim]Waiting for completion...[/dim]\n")
-        result = poll_simulation_until_complete(client, base_url, jsonapi_headers, sim_id)
+        result = poll_simulation_until_complete(client, base_url, jsonapi_headers, sim_id, use_huuid=cli_ctx.use_huuid)
 
     if cli_ctx.json_output:
         console.print(json.dumps({

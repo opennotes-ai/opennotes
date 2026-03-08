@@ -98,7 +98,7 @@ def rechunk_factchecks(
         if not cli_ctx.json_output:
             console.print(f"[dim]Task started: {format_id(task_id, cli_ctx.use_huuid)}[/dim]")
             console.print("[dim]Waiting for completion...[/dim]\n")
-        final_status = poll_task_until_complete(client, base_url, headers, task_id)
+        final_status = poll_task_until_complete(client, base_url, headers, task_id, use_huuid=cli_ctx.use_huuid)
         display_task_status(final_status, cli_ctx.json_output, cli_ctx.use_huuid)
     else:
         display_task_start(result, cli_ctx.env_name, cli_ctx.json_output, cli_ctx.use_huuid)
@@ -175,7 +175,7 @@ def rechunk_previously_seen(
         if not cli_ctx.json_output:
             console.print(f"[dim]Task started: {format_id(task_id, cli_ctx.use_huuid)}[/dim]")
             console.print("[dim]Waiting for completion...[/dim]\n")
-        final_status = poll_task_until_complete(client, base_url, headers, task_id)
+        final_status = poll_task_until_complete(client, base_url, headers, task_id, use_huuid=cli_ctx.use_huuid)
         display_task_status(final_status, cli_ctx.json_output, cli_ctx.use_huuid)
     else:
         display_task_start(result, cli_ctx.env_name, cli_ctx.json_output, cli_ctx.use_huuid)
@@ -199,7 +199,7 @@ def rechunk_status(ctx: click.Context, task_id: str, wait: bool) -> None:
 
     if cli_ctx.verbose and not cli_ctx.json_output:
         console.print(f"[dim]Environment: {cli_ctx.env_name}[/dim]")
-        console.print(f"[dim]Fetching task status: {task_id}[/dim]")
+        console.print(f"[dim]Fetching task status: {format_id(task_id, cli_ctx.use_huuid)}[/dim]")
 
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
     headers = add_csrf(cli_ctx.auth.get_headers(), csrf_token)
@@ -208,7 +208,7 @@ def rechunk_status(ctx: click.Context, task_id: str, wait: bool) -> None:
     response = client.get(url, headers=headers)
 
     if response.status_code == 404:
-        error_console.print(f"[red]Error:[/red] Task {task_id} not found.")
+        error_console.print(f"[red]Error:[/red] Task {format_id(task_id, cli_ctx.use_huuid)} not found.")
         error_console.print(
             "[dim]The task may have expired (24h TTL) or the ID is invalid.[/dim]"
         )
@@ -242,7 +242,7 @@ def rechunk_status(ctx: click.Context, task_id: str, wait: bool) -> None:
         if status not in ("completed", "failed"):
             if not cli_ctx.json_output:
                 console.print("[dim]Waiting for completion...[/dim]\n")
-            result = poll_task_until_complete(client, base_url, headers, task_id)
+            result = poll_task_until_complete(client, base_url, headers, task_id, use_huuid=cli_ctx.use_huuid)
 
     display_task_status(result, cli_ctx.json_output, cli_ctx.use_huuid)
 
@@ -265,7 +265,7 @@ def rechunk_delete(ctx: click.Context, task_id: str, force: bool) -> None:
 
     if cli_ctx.verbose and not cli_ctx.json_output:
         console.print(f"[dim]Environment: {cli_ctx.env_name}[/dim]")
-        console.print(f"[dim]Deleting task: {task_id}[/dim]")
+        console.print(f"[dim]Deleting task: {format_id(task_id, cli_ctx.use_huuid)}[/dim]")
 
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
     headers = add_csrf(cli_ctx.auth.get_headers(), csrf_token)
@@ -278,7 +278,7 @@ def rechunk_delete(ctx: click.Context, task_id: str, force: bool) -> None:
     response = client.delete(url, headers=headers, params=params)
 
     if response.status_code == 404:
-        error_console.print(f"[red]Error:[/red] Task {task_id} not found.")
+        error_console.print(f"[red]Error:[/red] Task {format_id(task_id, cli_ctx.use_huuid)} not found.")
         error_console.print(
             "[dim]The task may have expired (24h TTL) or the ID is invalid.[/dim]"
         )

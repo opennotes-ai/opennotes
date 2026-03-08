@@ -15,6 +15,7 @@ from rich.progress import (
 )
 
 from opennotes_cli.display import get_status_style, handle_jsonapi_error
+from opennotes_cli.formatting import format_id
 
 error_console = Console(stderr=True)
 console = Console()
@@ -27,6 +28,7 @@ def poll_task_until_complete(
     task_id: str,
     interval: float = 5.0,
     max_retries: int = 120,
+    use_huuid: bool = False,
 ) -> dict[str, Any]:
     job_url = f"{base_url}/api/v1/chunks/jobs/{task_id}"
     progress_url = f"{base_url}/api/v1/batch-jobs/{task_id}/progress"
@@ -48,7 +50,7 @@ def poll_task_until_complete(
             response = client.get(job_url, headers=headers)
 
             if response.status_code == 404:
-                error_console.print(f"[red]Error:[/red] Task {task_id} not found")
+                error_console.print(f"[red]Error:[/red] Task {format_id(task_id, use_huuid)} not found")
                 sys.exit(1)
 
             if response.status_code >= 400:
@@ -95,7 +97,7 @@ def poll_task_until_complete(
             time.sleep(interval)
 
     error_console.print(
-        f"[red]Error:[/red] Timed out after {max_retries} polls waiting for task {task_id}"
+        f"[red]Error:[/red] Timed out after {max_retries} polls waiting for task {format_id(task_id, use_huuid)}"
     )
     sys.exit(1)
 
@@ -107,6 +109,7 @@ def poll_batch_job_until_complete(
     job_id: str,
     interval: float = 2.0,
     max_retries: int = 300,
+    use_huuid: bool = False,
 ) -> dict[str, Any]:
     job_url = f"{base_url}/api/v1/batch-jobs/{job_id}"
     progress_url = f"{base_url}/api/v1/batch-jobs/{job_id}/progress"
@@ -128,7 +131,7 @@ def poll_batch_job_until_complete(
             response = client.get(job_url, headers=headers)
 
             if response.status_code == 404:
-                error_console.print(f"[red]Error:[/red] Job {job_id} not found")
+                error_console.print(f"[red]Error:[/red] Job {format_id(job_id, use_huuid)} not found")
                 sys.exit(1)
 
             if response.status_code >= 400:
@@ -175,7 +178,7 @@ def poll_batch_job_until_complete(
             time.sleep(interval)
 
     error_console.print(
-        f"[red]Error:[/red] Timed out after {max_retries} polls waiting for job {job_id}"
+        f"[red]Error:[/red] Timed out after {max_retries} polls waiting for job {format_id(job_id, use_huuid)}"
     )
     sys.exit(1)
 
@@ -187,6 +190,7 @@ def poll_simulation_until_complete(
     simulation_id: str,
     interval: float = 5.0,
     max_retries: int = 720,
+    use_huuid: bool = False,
 ) -> dict[str, Any]:
     url = f"{base_url}/api/v2/simulations/{simulation_id}"
 
@@ -218,6 +222,6 @@ def poll_simulation_until_complete(
             time.sleep(interval)
 
     error_console.print(
-        f"[red]Error:[/red] Timed out after {max_retries} polls waiting for simulation {simulation_id}"
+        f"[red]Error:[/red] Timed out after {max_retries} polls waiting for simulation {format_id(simulation_id, use_huuid)}"
     )
     sys.exit(1)

@@ -73,7 +73,7 @@ def score(ctx: click.Context, community_server_id: str) -> None:
     handle_error_response(
         response,
         custom_handlers={
-            404: f"Community server {community_server_id} not found.",
+            404: f"Community server {format_id(community_server_id, cli_ctx.use_huuid)} not found.",
         },
     )
 
