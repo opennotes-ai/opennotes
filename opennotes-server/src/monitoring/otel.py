@@ -68,16 +68,19 @@ class AttributeSanitizingSpanProcessor:
         pass
 
     def on_end(self, span: "ReadableSpan") -> None:
-        if not hasattr(span, "_attributes") or not span._attributes:
-            return
-        filtered = {}
-        for key, value in span._attributes.items():
-            if isinstance(value, VALID_ATTR_TYPES) or (
-                isinstance(value, (list, tuple))
-                and all(isinstance(v, VALID_ATTR_TYPES) for v in value)
-            ):
-                filtered[key] = value
-        span._attributes = filtered
+        try:
+            if not hasattr(span, "_attributes") or not span._attributes:
+                return
+            filtered = {}
+            for key, value in span._attributes.items():
+                if isinstance(value, VALID_ATTR_TYPES) or (
+                    isinstance(value, (list, tuple))
+                    and all(isinstance(v, VALID_ATTR_TYPES) for v in value)
+                ):
+                    filtered[key] = value
+            span._attributes = filtered
+        except Exception:
+            logger.warning("AttributeSanitizingSpanProcessor.on_end failed", exc_info=True)
 
     def shutdown(self) -> None:
         pass
@@ -90,7 +93,7 @@ def _get_attribute_sanitizing_processor() -> "SpanProcessor":
     """Get an AttributeSanitizingSpanProcessor wrapped as a SpanProcessor."""
     from opentelemetry.sdk.trace import SpanProcessor as SpanProcessorBase
 
-    class _AttributeSanitizingProcessorImpl(SpanProcessorBase, AttributeSanitizingSpanProcessor):
+    class _AttributeSanitizingProcessorImpl(AttributeSanitizingSpanProcessor, SpanProcessorBase):
         pass
 
     if AttributeSanitizingSpanProcessor.instance is None:
@@ -135,8 +138,8 @@ def _get_baggage_span_processor() -> "SpanProcessor":
     """
     from opentelemetry.sdk.trace import SpanProcessor as SpanProcessorBase
 
-    class _BaggageSpanProcessorImpl(SpanProcessorBase, BaggageSpanProcessor):
-        """Concrete implementation that inherits from both SpanProcessor and BaggageSpanProcessor."""
+    class _BaggageSpanProcessorImpl(BaggageSpanProcessor, SpanProcessorBase):
+        pass
 
     if BaggageSpanProcessor.instance is None:
         BaggageSpanProcessor.instance = _BaggageSpanProcessorImpl()

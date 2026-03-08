@@ -1,5 +1,8 @@
+import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import pytest
 
 
 class _FakeSpan:
@@ -99,3 +102,105 @@ class TestAttributeSanitizingSpanProcessor:
         span = _FakeSpan({"valid": "yes", "obj": CustomObj()})
         processor.on_end(span)
         assert span._attributes == {"valid": "yes"}
+
+    def test_on_end_exception_does_not_propagate(self):
+        processor = self._make_processor()
+        span = _FakeSpan({"key": "value"})
+        span._attributes = property(lambda s: (_ for _ in ()).throw(RuntimeError("boom")))
+        processor.on_end(span)
+
+
+class TestAttributeSanitizingProcessorFactory:
+    @pytest.fixture(autouse=True)
+    def _reset_singleton(self):
+        from src.monitoring.otel import AttributeSanitizingSpanProcessor
+
+        AttributeSanitizingSpanProcessor.instance = None
+        yield
+        AttributeSanitizingSpanProcessor.instance = None
+
+    def test_factory_on_end_filters_invalid_attributes(self):
+        from src.monitoring.otel import _get_attribute_sanitizing_processor
+
+        processor = _get_attribute_sanitizing_processor()
+        sentinel = SimpleNamespace(name="Omit")
+        span = _FakeSpan({"good": "value", "bad": sentinel})
+        processor.on_end(span)
+        assert span._attributes == {"good": "value"}
+
+    def test_factory_returns_singleton(self):
+        from src.monitoring.otel import _get_attribute_sanitizing_processor
+
+        first = _get_attribute_sanitizing_processor()
+        second = _get_attribute_sanitizing_processor()
+        assert first is second
+
+    def test_factory_instance_is_span_processor(self):
+        from opentelemetry.sdk.trace import SpanProcessor as SpanProcessorBase
+
+        from src.monitoring.otel import _get_attribute_sanitizing_processor
+
+        processor = _get_attribute_sanitizing_processor()
+        assert isinstance(processor, SpanProcessorBase)
+
+    def test_factory_full_integration_sentinel_removed(self):
+        from src.monitoring.otel import _get_attribute_sanitizing_processor
+
+        processor = _get_attribute_sanitizing_processor()
+        sentinel = type("NOT_GIVEN", (), {})()
+        span = _FakeSpan(
+            {
+                "http.method": "GET",
+                "http.url": "https://example.com",
+                "llm.api_key": sentinel,
+                "count": 42,
+            }
+        )
+        processor.on_end(span)
+        assert span._attributes == {
+            "http.method": "GET",
+            "http.url": "https://example.com",
+            "count": 42,
+        }
+
+    def test_factory_on_end_exception_is_suppressed(self, caplog):
+        from src.monitoring.otel import _get_attribute_sanitizing_processor
+
+        processor = _get_attribute_sanitizing_processor()
+
+        class _ExplodingSpan:
+            @property
+            def _attributes(self):
+                raise RuntimeError("kaboom")
+
+        with caplog.at_level(logging.WARNING, logger="src.monitoring.otel"):
+            processor.on_end(_ExplodingSpan())
+
+    def test_factory_on_end_with_empty_span(self):
+        from src.monitoring.otel import _get_attribute_sanitizing_processor
+
+        processor = _get_attribute_sanitizing_processor()
+        span = _FakeSpan({})
+        processor.on_end(span)
+        assert span._attributes == {}
+
+
+class TestBaggageSpanProcessorFactory:
+    @pytest.fixture(autouse=True)
+    def _reset_singleton(self):
+        from src.monitoring.otel import BaggageSpanProcessor
+
+        BaggageSpanProcessor.instance = None
+        yield
+        BaggageSpanProcessor.instance = None
+
+    def test_factory_on_start_sets_baggage_attributes(self):
+        from opentelemetry import baggage, context
+
+        from src.monitoring.otel import _get_baggage_span_processor
+
+        processor = _get_baggage_span_processor()
+        ctx = baggage.set_baggage("request_id", "req-123", context.get_current())
+        mock_span = MagicMock()
+        processor.on_start(mock_span, ctx)
+        mock_span.set_attribute.assert_any_call("request_id", "req-123")
