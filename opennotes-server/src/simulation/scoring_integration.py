@@ -105,6 +105,22 @@ async def _maybe_persist_snapshot(
                 )
 
 
+async def _safe_persist_snapshot(
+    scorer: Any,
+    community_server_id: UUID,
+    tier_value: str,
+    scorer_type: str,
+    db: AsyncSession,
+) -> None:
+    try:
+        await _maybe_persist_snapshot(scorer, community_server_id, tier_value, scorer_type, db)
+    except Exception:
+        logger.exception(
+            "Snapshot persistence failed, continuing with scoring commit",
+            extra={"community_server_id": str(community_server_id)},
+        )
+
+
 async def _record_scoring_metrics(
     db: AsyncSession,
     community_server_id: UUID,
@@ -289,7 +305,7 @@ async def score_community_server_notes(
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
 
-    await _maybe_persist_snapshot(scorer, community_server_id, tier.value, scorer_type, db)
+    await _safe_persist_snapshot(scorer, community_server_id, tier.value, scorer_type, db)
 
     await db.commit()
 
@@ -441,7 +457,7 @@ async def trigger_scoring_for_simulation(
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
 
-    await _maybe_persist_snapshot(scorer, community_server_id, tier.value, scorer_type, db)
+    await _safe_persist_snapshot(scorer, community_server_id, tier.value, scorer_type, db)
 
     result = ScoringRunResult(
         scores_computed=scores_computed,
