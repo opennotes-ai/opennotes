@@ -11,6 +11,7 @@ from baalbek import tui
 from opennotes_cli.auth import AuthProvider, JwtAuthProvider, get_auth_provider
 from opennotes_cli.http import ENV_URLS
 
+from opennotes_cli.commands.analyze import analyze
 from opennotes_cli.commands.batch import batch
 from opennotes_cli.commands.candidates import fact_check
 from opennotes_cli.commands.health import health
@@ -108,6 +109,7 @@ def cli(
     ctx.call_on_close(client.close)
 
 
+cli.add_command(analyze)
 cli.add_command(health)
 cli.add_command(hybrid_search)
 cli.add_command(rechunk)
