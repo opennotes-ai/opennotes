@@ -274,6 +274,38 @@ def analyze() -> None:
     """Analysis tools for community server data."""
 
 
+def _fetch_history(
+    client: httpx.Client,
+    base_url: str,
+    headers: dict[str, str],
+    community_server_id: str,
+) -> list[dict[str, Any]]:
+    url = f"{base_url}/api/v2/community-servers/{community_server_id}/scoring-history"
+    response = client.get(url, headers=headers)
+    handle_jsonapi_error(response)
+    data = response.json()
+    return [
+        resource.get("attributes", {})
+        for resource in data.get("data", [])
+    ]
+
+
+def _fetch_history_snapshot(
+    client: httpx.Client,
+    base_url: str,
+    headers: dict[str, str],
+    community_server_id: str,
+    timestamp: str,
+) -> dict[str, Any] | None:
+    url = f"{base_url}/api/v2/community-servers/{community_server_id}/scoring-history/{timestamp}"
+    response = client.get(url, headers=headers)
+    if response.status_code == 404:
+        return None
+    handle_jsonapi_error(response)
+    data = response.json()
+    return data.get("data", {}).get("attributes", {}).get("snapshot")
+
+
 @analyze.command("mf")
 @click.argument("community_server_id")
 @click.option("--rescore", is_flag=True, help="Trigger fresh scoring before analysis")
@@ -286,6 +318,8 @@ def analyze() -> None:
     help="Output format",
 )
 @click.option("--sections", type=str, default="all", help="Sections to show: factors,correlation,recovery or 'all'")
+@click.option("--history", is_flag=True, help="List available historical scoring snapshots")
+@click.option("--snapshot-date", type=str, default=None, help="Fetch and analyze a historical snapshot by timestamp")
 @click.pass_context
 def mf_analysis(
     ctx: click.Context,
@@ -294,6 +328,8 @@ def mf_analysis(
     no_prompt: bool,
     fmt: str,
     sections: str,
+    history: bool,
+    snapshot_date: str | None,
 ) -> None:
     """Analyze MF scoring factors for a community server."""
     try:
@@ -309,6 +345,55 @@ def mf_analysis(
 
     if cli_ctx.json_output:
         fmt = "json"
+
+    if history:
+        entries = _fetch_history(client, base_url, headers, community_server_id)
+        if not entries:
+            error_console.print("[yellow]No historical snapshots found.[/yellow]")
+            sys.exit(0)
+
+        if fmt == "json":
+            console.print(json.dumps(entries, indent=2, default=str))
+            return
+
+        table = Table(title="Scoring History", show_header=True, header_style="bold")
+        table.add_column("Timestamp", no_wrap=True)
+        table.add_column("Size", justify="right")
+        for entry in entries:
+            size_kb = entry.get("size", 0) / 1024
+            table.add_row(entry.get("timestamp", "?"), f"{size_kb:.1f} KB")
+        console.print(table)
+        return
+
+    if snapshot_date:
+        snapshot = _fetch_history_snapshot(
+            client, base_url, headers, community_server_id, snapshot_date
+        )
+        if snapshot is None:
+            error_console.print(f"[red]Error:[/red] No snapshot found for timestamp '{snapshot_date}'")
+            sys.exit(1)
+
+        if fmt == "json":
+            console.print(json.dumps(snapshot, indent=2, default=str))
+            return
+
+        rater_factors = snapshot.get("rater_factors", [])
+        note_factors = snapshot.get("note_factors", [])
+
+        console.print(
+            Panel(
+                f"[bold]Snapshot:[/bold] {snapshot_date}\n"
+                f"[bold]Tier:[/bold] {snapshot.get('tier', 'N/A')}\n"
+                f"[bold]Global Intercept:[/bold] {snapshot.get('global_intercept', 0):.4f}\n"
+                f"[bold]Raters:[/bold] {snapshot.get('rater_count', 0)} | "
+                f"[bold]Notes:[/bold] {snapshot.get('note_count', 0)}",
+                title="[bold blue]Historical Scoring Snapshot[/bold blue]",
+            )
+        )
+        _render_rater_table(rater_factors, "table")
+        console.print()
+        _render_note_table(note_factors, "table")
+        return
 
     csrf_token = None
     if rescore:

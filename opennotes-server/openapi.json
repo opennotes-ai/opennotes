@@ -4112,6 +4112,151 @@
         }
       }
     },
+    "/api/v2/community-servers/{community_server_id}/scoring-history": {
+      "get": {
+        "tags": [
+          "scoring-jsonapi"
+        ],
+        "summary": "Get Scoring History",
+        "description": "List available historical scoring snapshots from GCS.\n\nReturns a list of available snapshots with timestamps and sizes.\nRequires simulations:read scope or admin privileges.",
+        "operationId": "get_scoring_history_api_v2_community_servers__community_server_id__scoring_history_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoringHistoryListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/community-servers/{community_server_id}/scoring-history/{timestamp}": {
+      "get": {
+        "tags": [
+          "scoring-jsonapi"
+        ],
+        "summary": "Get Scoring History Snapshot",
+        "description": "Fetch a specific historical scoring snapshot from GCS.\n\nReturns the full scoring snapshot data for a given timestamp.\nRequires simulations:read scope or admin privileges.",
+        "operationId": "get_scoring_history_snapshot_api_v2_community_servers__community_server_id__scoring_history__timestamp__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "timestamp",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Timestamp"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoringHistorySnapshotResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/scoring/health": {
       "get": {
         "tags": [
@@ -22457,6 +22602,159 @@
           "scorers_exercised"
         ],
         "title": "ScoringCoverageData"
+      },
+      "ScoringHistoryEntryAttributes": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "ISO 8601 timestamp of the snapshot"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "GCS blob path"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size",
+            "description": "Blob size in bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "path",
+          "size"
+        ],
+        "title": "ScoringHistoryEntryAttributes"
+      },
+      "ScoringHistoryEntryResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "scoring-history-entries",
+            "title": "Type",
+            "default": "scoring-history-entries"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ScoringHistoryEntryAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "ScoringHistoryEntryResource"
+      },
+      "ScoringHistoryListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ScoringHistoryEntryResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ScoringHistoryListResponse"
+      },
+      "ScoringHistorySnapshotAttributes": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "ISO 8601 timestamp of the snapshot"
+          },
+          "snapshot": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Snapshot",
+            "description": "Full scoring snapshot data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "snapshot"
+        ],
+        "title": "ScoringHistorySnapshotAttributes"
+      },
+      "ScoringHistorySnapshotResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "scoring-history-snapshots",
+            "title": "Type",
+            "default": "scoring-history-snapshots"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ScoringHistorySnapshotAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "ScoringHistorySnapshotResource"
+      },
+      "ScoringHistorySnapshotResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ScoringHistorySnapshotResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ScoringHistorySnapshotResponse"
       },
       "ScoringResultAttributes": {
         "properties": {

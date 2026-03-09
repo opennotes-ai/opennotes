@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,6 +14,7 @@ from src.llm_config.models import CommunityServer
 from src.monitoring.metrics import notes_scored_total
 from src.notes import loaders as note_loaders
 from src.notes.models import Note, Rating, Request
+from src.notes.scoring.gcs_storage import upload_scoring_snapshot
 from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 from src.notes.scoring.scorer_factory import ScorerFactory
 from src.notes.scoring.snapshot_persistence import persist_scoring_snapshot
@@ -75,19 +77,32 @@ async def _maybe_persist_snapshot(
     if isinstance(scorer, MFCoreScorerAdapter):
         factors = scorer.get_last_scoring_factors()
         if factors:
+            metadata = {
+                "tier": tier_value,
+                "scorer_name": scorer_type,
+                "note_count": factors["note_count"],
+                "rater_count": factors["rater_count"],
+            }
             await persist_scoring_snapshot(
                 community_server_id=community_server_id,
                 rater_factors=factors["rater_factors"],
                 note_factors=factors["note_factors"],
                 global_intercept=factors["global_intercept"],
-                metadata={
-                    "tier": tier_value,
-                    "scorer_name": scorer_type,
-                    "note_count": factors["note_count"],
-                    "rater_count": factors["rater_count"],
-                },
+                metadata=metadata,
                 db=db,
             )
+
+            try:
+                gcs_snapshot = {**factors, **metadata}
+                loop = asyncio.get_event_loop()
+                loop.run_in_executor(
+                    None, upload_scoring_snapshot, community_server_id, gcs_snapshot
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to schedule GCS scoring snapshot upload",
+                    extra={"community_server_id": str(community_server_id)},
+                )
 
 
 async def _record_scoring_metrics(

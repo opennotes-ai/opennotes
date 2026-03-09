@@ -538,6 +538,13 @@ class Settings(BaseSettings):
         "Aligns with MIN_RATINGS_NEEDED for consistency.",
     )
 
+    SCORING_HISTORY_BUCKET: str = Field(
+        default="",
+        description="GCS bucket name for scoring snapshot history. "
+        "When empty, GCS upload is disabled (graceful no-op for local dev). "
+        "Format: gs://bucket-name/{community_server_id}/{timestamp}.json",
+    )
+
     ENABLE_METRICS: bool = Field(default=True, description="Enable metrics middleware")
     ENABLE_TRACING: bool = Field(default=True, description="Enable OpenTelemetry tracing")
     ENABLE_JSON_LOGGING: bool = Field(default=True, description="Enable JSON structured logging")

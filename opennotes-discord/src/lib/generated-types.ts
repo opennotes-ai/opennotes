@@ -1480,6 +1480,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/community-servers/{community_server_id}/scoring-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Scoring History
+         * @description List available historical scoring snapshots from GCS.
+         *
+         *     Returns a list of available snapshots with timestamps and sizes.
+         *     Requires simulations:read scope or admin privileges.
+         */
+        get: operations["get_scoring_history_api_v2_community_servers__community_server_id__scoring_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/community-servers/{community_server_id}/scoring-history/{timestamp}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Scoring History Snapshot
+         * @description Fetch a specific historical scoring snapshot from GCS.
+         *
+         *     Returns the full scoring snapshot data for a given timestamp.
+         *     Requires simulations:read scope or admin privileges.
+         */
+        get: operations["get_scoring_history_snapshot_api_v2_community_servers__community_server_id__scoring_history__timestamp__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/scoring/health": {
         parameters: {
             query?: never;
@@ -8947,6 +8993,94 @@ export interface components {
             /** Scorers Exercised */
             scorers_exercised: string[];
         };
+        /** ScoringHistoryEntryAttributes */
+        ScoringHistoryEntryAttributes: {
+            /**
+             * Timestamp
+             * @description ISO 8601 timestamp of the snapshot
+             */
+            timestamp: string;
+            /**
+             * Path
+             * @description GCS blob path
+             */
+            path: string;
+            /**
+             * Size
+             * @description Blob size in bytes
+             */
+            size: number;
+        };
+        /** ScoringHistoryEntryResource */
+        ScoringHistoryEntryResource: {
+            /**
+             * Type
+             * @default scoring-history-entries
+             * @constant
+             */
+            type: "scoring-history-entries";
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["ScoringHistoryEntryAttributes"];
+        };
+        /** ScoringHistoryListResponse */
+        ScoringHistoryListResponse: {
+            /** Data */
+            data: components["schemas"]["ScoringHistoryEntryResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            /** Meta */
+            meta?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** ScoringHistorySnapshotAttributes */
+        ScoringHistorySnapshotAttributes: {
+            /**
+             * Timestamp
+             * @description ISO 8601 timestamp of the snapshot
+             */
+            timestamp: string;
+            /**
+             * Snapshot
+             * @description Full scoring snapshot data
+             */
+            snapshot: {
+                [key: string]: unknown;
+            };
+        };
+        /** ScoringHistorySnapshotResource */
+        ScoringHistorySnapshotResource: {
+            /**
+             * Type
+             * @default scoring-history-snapshots
+             * @constant
+             */
+            type: "scoring-history-snapshots";
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["ScoringHistorySnapshotAttributes"];
+        };
+        /** ScoringHistorySnapshotResponse */
+        ScoringHistorySnapshotResponse: {
+            data: components["schemas"]["ScoringHistorySnapshotResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+        };
         /**
          * ScoringResultAttributes
          * @description Attributes for scoring result resource.
@@ -12549,6 +12683,87 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScoringAnalysisResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scoring_history_api_v2_community_servers__community_server_id__scoring_history_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoringHistoryListResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scoring_history_snapshot_api_v2_community_servers__community_server_id__scoring_history__timestamp__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+                timestamp: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoringHistorySnapshotResponse"];
                 };
             };
             /** @description Not authenticated */
