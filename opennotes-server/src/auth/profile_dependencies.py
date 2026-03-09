@@ -52,6 +52,13 @@ async def get_current_profile(
         user = await get_user_by_id(db, legacy_token_data.user_id)
 
         if user is not None:
+            if user.tokens_valid_after is not None:
+                if legacy_token_data.iat is None:
+                    raise credentials_exception
+                valid_after_int = int(user.tokens_valid_after.timestamp())
+                if legacy_token_data.iat < valid_after_int:
+                    raise credentials_exception
+
             legacy_profile = await _get_profile_from_user(db, user)
             if legacy_profile is not None:
                 return legacy_profile

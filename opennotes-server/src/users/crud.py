@@ -297,13 +297,16 @@ async def create_refresh_token(
     return refresh_token
 
 
-async def get_refresh_token(db: AsyncSession, token: str) -> RefreshToken | None:
-    result = await db.execute(
-        select(RefreshToken).where(
-            RefreshToken.is_revoked == False,
-            RefreshToken.expires_at > pendulum.now("UTC"),
-        )
-    )
+async def get_refresh_token(
+    db: AsyncSession, token: str, user_id: UUID | None = None
+) -> RefreshToken | None:
+    conditions = [
+        RefreshToken.is_revoked == False,
+        RefreshToken.expires_at > pendulum.now("UTC"),
+    ]
+    if user_id is not None:
+        conditions.append(RefreshToken.user_id == user_id)
+    result = await db.execute(select(RefreshToken).where(*conditions))
     refresh_tokens = result.scalars().all()
 
     for refresh_token in refresh_tokens:
