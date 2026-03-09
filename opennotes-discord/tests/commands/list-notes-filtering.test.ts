@@ -84,6 +84,14 @@ jest.unstable_mockModule('../../src/services/BotChannelService.js', () => ({
   },
 }));
 
+const mockResolveUserProfileId = jest.fn<(...args: any[]) => Promise<string>>();
+
+jest.unstable_mockModule('../../src/lib/user-profile-resolver.js', () => ({
+  resolveUserProfileId: mockResolveUserProfileId,
+  isValidUUID: jest.fn(),
+  clearCache: jest.fn(),
+}));
+
 let execute: typeof import('../../src/commands/list.js').execute;
 
 beforeAll(async () => {
@@ -197,6 +205,8 @@ describe('list notes filtering', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    mockResolveUserProfileId.mockImplementation(async (discordId: string) => `profile-uuid-${discordId}`);
+
     mockBotChannelHelper = await import('../../src/lib/bot-channel-helper.js');
     (mockBotChannelHelper.getBotChannelOrRedirect as any).mockResolvedValue({
       shouldProceed: true,
@@ -226,7 +236,7 @@ describe('list notes filtering', () => {
         1,
         4,
         'community-uuid-123',
-        'user-123'
+        'profile-uuid-user-123'
       );
 
       const calls = mockApiClient.listNotesWithStatus.mock.calls;
@@ -236,7 +246,7 @@ describe('list notes filtering', () => {
       expect(page).toBe(1);
       expect(size).toBe(4);
       expect(communityServerId).toBe('community-uuid-123');
-      expect(excludeRatedByUserId).toBe('user-123');
+      expect(excludeRatedByUserId).toBe('profile-uuid-user-123');
     }, 10000);
 
     it('should still call listNotesWithStatus when community server UUID is unavailable', async () => {
@@ -271,7 +281,7 @@ describe('list notes filtering', () => {
         1,
         4,
         undefined,
-        'user-456'
+        'profile-uuid-user-456'
       );
     }, 10000);
   });
