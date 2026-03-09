@@ -80,7 +80,7 @@ class TestDatabaseEngineQueuePool:
 
 
 class TestStatementCacheDisabled:
-    """AC#3: statement_cache_size=0 retained in connect_args."""
+    """AC#3: statement_cache_size=0 and prepared_statement_cache_size=0 in connect_args."""
 
     def test_connect_args_disables_statement_cache(self) -> None:
         with patch("src.database.create_async_engine") as mock_create:
@@ -102,6 +102,7 @@ class TestStatementCacheDisabled:
             call_kwargs = mock_create.call_args[1]
             assert "connect_args" in call_kwargs
             assert call_kwargs["connect_args"]["statement_cache_size"] == 0
+            assert call_kwargs["connect_args"]["prepared_statement_cache_size"] == 0
 
 
 class TestNoAsyncCreatorOrRetry:

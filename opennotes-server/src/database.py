@@ -92,8 +92,10 @@ def _create_engine() -> AsyncEngine:
     App-side QueuePool reuses connections to Supavisor, avoiding DNS/TLS overhead
     per request. Supavisor multiplexes onto bounded PG backends.
 
-    statement_cache_size=0 is required for Supavisor transaction-mode pooling
-    (prepared statements created on one backend may not exist on another).
+    statement_cache_size=0 disables asyncpg native prepared statement cache.
+    prepared_statement_cache_size=0 disables SQLAlchemy asyncpg dialect cache (default 100).
+    Both are required for Supavisor transaction-mode pooling (prepared statements
+    created on one backend may not exist on another).
     """
     cfg = get_settings()
     return create_async_engine(
@@ -105,7 +107,10 @@ def _create_engine() -> AsyncEngine:
         pool_timeout=cfg.DB_POOL_TIMEOUT,
         pool_recycle=cfg.DB_POOL_RECYCLE,
         pool_pre_ping=True,
-        connect_args={"statement_cache_size": 0},
+        connect_args={
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        },
     )
 
 
