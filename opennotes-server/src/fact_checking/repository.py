@@ -390,6 +390,8 @@ async def hybrid_search_with_chunks(
     if not (0.0 <= alpha <= 1.0):
         raise ValueError(f"Alpha must be between 0.0 and 1.0, got {alpha}")
 
+    query_text = strip_discord_markdown(query_text)
+
     query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
 
     # Convert similarity threshold to max distance (cosine distance = 1 - similarity)
@@ -459,7 +461,7 @@ async def hybrid_search_with_chunks(
                 is_common,
                 pgroonga_score(tableoid, ctid) AS raw_score
             FROM chunk_embeddings
-            WHERE chunk_text &@~ :query_text
+            WHERE chunk_text &@~ pgroonga_query_escape(:query_text)
         ),
         chunk_keyword_with_bm25 AS (
             -- Apply BM25-lite length normalization and JOIN with fact_check relationships

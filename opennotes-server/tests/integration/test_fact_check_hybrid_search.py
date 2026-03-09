@@ -970,3 +970,48 @@ class TestHybridSearchPerformanceMetrics:
                 assert 0 < duration < 30000, (
                     f"Query duration should be positive and < 30s, got {duration}ms"
                 )
+
+
+class TestHybridSearchWithChunksPGroongaEscaping:
+    """Tests that PGroonga special characters in query text don't cause errors."""
+
+    async def test_strikethrough_markdown_does_not_crash(self, chunk_search_test_items):
+        """Reproduce production bug: ~~text~~ caused PGroonga parse error."""
+        from src.fact_checking.repository import hybrid_search_with_chunks
+
+        query_text = "~~vaccine claims~~"
+        query_embedding = generate_test_embedding(seed=99)
+
+        async with get_session_maker()() as session:
+            results = await hybrid_search_with_chunks(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                limit=5,
+            )
+            assert isinstance(results, list)
+
+    async def test_pgroonga_special_chars_do_not_crash(self, chunk_search_test_items):
+        """Ensure all PGroonga query syntax chars are safely escaped."""
+        from src.fact_checking.repository import hybrid_search_with_chunks
+
+        special_queries = [
+            "test + positive",
+            "test - negative",
+            "test (grouped)",
+            "test ~prefix",
+            'test "quoted"',
+            "test * wildcard",
+            "combo ~~strike~~ and **bold**",
+        ]
+        query_embedding = generate_test_embedding(seed=99)
+
+        async with get_session_maker()() as session:
+            for query in special_queries:
+                results = await hybrid_search_with_chunks(
+                    session=session,
+                    query_text=query,
+                    query_embedding=query_embedding,
+                    limit=5,
+                )
+                assert isinstance(results, list), f"Failed for query: {query}"
