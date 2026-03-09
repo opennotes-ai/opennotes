@@ -40,6 +40,7 @@ import {
 import { V2_ICONS, calculateUrgency } from '../utils/v2-components.js';
 import type { ScoreConfidence } from '../services/ScoringService.js';
 import { suppressExpectedDiscordErrors, extractPlatformMessageId } from '../lib/discord-utils.js';
+import { resolveUserProfileId } from '../lib/user-profile-resolver.js';
 import { cache } from '../cache.js';
 
 const configCache = new ConfigCache(apiClient);
@@ -47,6 +48,7 @@ const lastUsage = new Map<string, number>();
 
 interface QueueState {
   userId: string;
+  profileUuid: string;
   guildId: string | null;
   communityServerUuid: string | undefined;
   currentPage: number;
@@ -261,6 +263,8 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
 
     logger.info(`User ${userId} requested notes queue in bot channel`);
 
+    const profileUuid = await resolveUserProfileId(userId, apiClient);
+
     let communityServerUuid: string | undefined;
     if (guildId) {
       try {
@@ -278,7 +282,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
     const notesPerPage = LIST_COMMAND_LIMITS.NOTES_PER_PAGE;
     const [thresholds, notesResponse] = await Promise.all([
       configCache.getRatingThresholds(),
-      apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS', 1, notesPerPage, communityServerUuid, userId),
+      apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS', 1, notesPerPage, communityServerUuid, profileUuid),
     ]);
 
     logger.debug('Fetched thresholds and notes', {
@@ -300,6 +304,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
     const queueStateId = generateShortId();
     await cache.set(`queue_state:${queueStateId}`, {
       userId,
+      profileUuid,
       guildId,
       communityServerUuid,
       currentPage: 1,
@@ -1011,6 +1016,8 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
       return;
     }
 
+    const profileUuid = await resolveUserProfileId(userId, apiClient);
+
     let communityServerUuid: string | undefined;
     try {
       const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
@@ -1071,7 +1078,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
       const notesPerPage = LIST_COMMAND_LIMITS.NOTES_PER_PAGE;
       const [thresholds, notesResponse] = await Promise.all([
         configCache.getRatingThresholds(),
-        apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS', 1, notesPerPage, communityServerUuid, userId),
+        apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS', 1, notesPerPage, communityServerUuid, profileUuid),
       ]);
 
       const totalPages = Math.ceil(notesResponse.total / notesPerPage);
@@ -1088,6 +1095,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
       const queueStateId = generateShortId();
       await cache.set(`queue_state:${queueStateId}`, {
         userId,
+        profileUuid,
         guildId,
         communityServerUuid,
         currentPage: 1,
@@ -1206,7 +1214,7 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
       1,
       1,
       state.communityServerUuid,
-      state.userId
+      state.profileUuid
     );
     const totalNotes = notesResponse.total;
     const totalPages = Math.ceil(totalNotes / notesPerPage);
@@ -1228,7 +1236,7 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
       newPage,
       notesPerPage,
       state.communityServerUuid,
-      state.userId
+      state.profileUuid
     );
 
     const updatedState: QueueState = {
