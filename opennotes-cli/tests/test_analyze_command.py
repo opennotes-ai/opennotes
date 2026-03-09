@@ -1,6 +1,18 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+
+import pytest
+from click.testing import CliRunner
+
+from opennotes_cli.cli import cli
 from opennotes_cli.commands.analyze import analyze
+
+
+@pytest.fixture()
+def runner() -> CliRunner:
+    return CliRunner()
 
 
 class TestAnalyzeCommandGroup:
@@ -31,3 +43,96 @@ class TestAnalyzeCommandGroup:
         mf_cmd = analyze.commands["mf"]
         param_names = [p.name for p in mf_cmd.params]
         assert "no_prompt" in param_names
+
+
+class TestTriggerRescore:
+    def test_reads_workflow_id_from_flat_response(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_csrf_resp = MagicMock()
+        mock_csrf_resp.status_code = 200
+
+        mock_score_resp = MagicMock()
+        mock_score_resp.status_code = 202
+        mock_score_resp.json.return_value = {
+            "workflow_id": "score-community-test123",
+            "message": "Scoring workflow dispatched",
+        }
+
+        mock_analysis_resp = MagicMock()
+        mock_analysis_resp.status_code = 200
+        mock_analysis_resp.json.return_value = {
+            "data": {
+                "attributes": {
+                    "rater_factors": [],
+                    "note_factors": [],
+                    "scored_at": "2026-01-01",
+                    "tier": "FULL",
+                    "global_intercept": 0.0,
+                    "rater_count": 0,
+                    "note_count": 0,
+                }
+            }
+        }
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [mock_csrf_resp, mock_analysis_resp]
+        mock_client.post.return_value = mock_score_resp
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--rescore", "--no-prompt", community_id],
+            )
+
+        assert result.exit_code == 0
+        assert "score-community-test123" in result.output
+        assert "background" in result.output.lower()
+
+    def test_handles_409_conflict(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_csrf_resp = MagicMock()
+        mock_csrf_resp.status_code = 200
+
+        mock_score_resp = MagicMock()
+        mock_score_resp.status_code = 409
+
+        mock_analysis_resp = MagicMock()
+        mock_analysis_resp.status_code = 200
+        mock_analysis_resp.json.return_value = {
+            "data": {
+                "attributes": {
+                    "rater_factors": [],
+                    "note_factors": [],
+                    "scored_at": "2026-01-01",
+                    "tier": "FULL",
+                    "global_intercept": 0.0,
+                    "rater_count": 0,
+                    "note_count": 0,
+                }
+            }
+        }
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [mock_csrf_resp, mock_analysis_resp]
+        mock_client.post.return_value = mock_score_resp
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--rescore", "--no-prompt", community_id],
+            )
+
+        assert result.exit_code == 0
+        assert "already in progress" in result.output.lower()
+
+    def test_no_batch_job_polling(self) -> None:
+        from opennotes_cli.commands import analyze as analyze_mod
+
+        assert not hasattr(analyze_mod, "poll_batch_job_until_complete") or \
+            "poll_batch_job_until_complete" not in dir(analyze_mod)

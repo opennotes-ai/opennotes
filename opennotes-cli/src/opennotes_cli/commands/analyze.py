@@ -13,7 +13,6 @@ from rich.table import Table
 
 from opennotes_cli.display import handle_jsonapi_error
 from opennotes_cli.http import add_csrf, get_csrf_token, handle_error_response
-from opennotes_cli.polling import poll_batch_job_until_complete
 
 if TYPE_CHECKING:
     from opennotes_cli.cli import CliContext
@@ -46,18 +45,21 @@ def _trigger_rescore(
     score_headers = add_csrf(dict(headers), csrf_token)
     url = f"{base_url}/api/v2/community-servers/{community_server_id}/score"
     response = client.post(url, headers=score_headers)
+
+    if response.status_code == 409:
+        error_console.print(
+            "[yellow]Scoring is already in progress for this community server.[/yellow]"
+        )
+        return
+
     handle_error_response(response)
-    data = response.json()
+    result = response.json()
 
-    job_data = data.get("data", {})
-    job_id = job_data.get("id")
-    if not job_id:
-        error_console.print("[red]Error:[/red] No job ID returned from scoring request")
-        sys.exit(1)
-
-    console.print(f"[blue]Scoring job started:[/blue] {job_id}")
-    poll_batch_job_until_complete(client, base_url, headers, job_id)
-    console.print("[green]Scoring complete.[/green]")
+    workflow_id = result.get("workflow_id", "N/A")
+    console.print(
+        f"[green]\u2713[/green] Scoring dispatched: workflow [bold]{workflow_id}[/bold]"
+    )
+    console.print("[dim]Scoring is running in the background.[/dim]")
 
 
 def _render_rater_table(rater_factors: list[dict[str, Any]], fmt: str) -> str | None:
