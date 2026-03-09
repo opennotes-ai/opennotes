@@ -26,7 +26,7 @@ from src.auth.community_dependencies import (
     get_user_community_ids,
     verify_community_membership_by_uuid,
 )
-from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.dependencies import get_current_user_or_api_key, require_scope_or_admin
 from src.auth.permissions import is_service_account
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.filters import FilterBuilder, FilterField, FilterOperator
@@ -48,6 +48,11 @@ from src.notes.scoring import (
     ScorerFactory,
     get_tier_config,
     get_tier_for_note_count,
+)
+from src.notes.scoring.analysis import compute_scoring_factor_analysis
+from src.notes.scoring.schemas import (
+    ScoringAnalysisResource,
+    ScoringAnalysisResponse,
 )
 from src.notes.scoring_schemas import (
     DataConfidence,
@@ -868,6 +873,60 @@ async def score_notes_jsonapi(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             f"Scoring failed: {e!s}",
+        )
+
+
+@router.get(
+    "/community-servers/{community_server_id}/scoring-analysis",
+    response_class=JSONResponse,
+    response_model=ScoringAnalysisResponse,
+)
+async def get_scoring_analysis(
+    community_server_id: UUID,
+    request: HTTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    """Get scoring factor analysis for a community server.
+
+    Returns the latest scoring snapshot with rater and note factor matrices,
+    enriched with agent identity information for simulation agents.
+
+    Requires simulations:read scope or admin privileges.
+    """
+    try:
+        require_scope_or_admin(current_user, request, "simulations:read")
+    except HTTPException as e:
+        return create_error_response(e.status_code, "Forbidden", e.detail)
+
+    try:
+        analysis = await compute_scoring_factor_analysis(community_server_id, db)
+
+        if analysis is None:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"No scoring snapshot found for community server {community_server_id}",
+            )
+
+        response = ScoringAnalysisResponse(
+            data=ScoringAnalysisResource(
+                id=str(community_server_id),
+                attributes=analysis,
+            ),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to get scoring analysis: {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to retrieve scoring analysis",
         )
 
 

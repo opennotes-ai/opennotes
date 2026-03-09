@@ -4044,6 +4044,74 @@
         }
       }
     },
+    "/api/v2/community-servers/{community_server_id}/scoring-analysis": {
+      "get": {
+        "tags": [
+          "scoring-jsonapi"
+        ],
+        "summary": "Get Scoring Analysis",
+        "description": "Get scoring factor analysis for a community server.\n\nReturns the latest scoring snapshot with rater and note factor matrices,\nenriched with agent identity information for simulation agents.\n\nRequires simulations:read scope or admin privileges.",
+        "operationId": "get_scoring_analysis_api_v2_community_servers__community_server_id__scoring_analysis_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoringAnalysisResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/scoring/health": {
       "get": {
         "tags": [
@@ -17627,6 +17695,65 @@
         ],
         "title": "NoteData"
       },
+      "NoteFactorData": {
+        "properties": {
+          "note_id": {
+            "type": "string",
+            "title": "Note Id"
+          },
+          "intercept": {
+            "type": "number",
+            "title": "Intercept"
+          },
+          "factor1": {
+            "type": "number",
+            "title": "Factor1"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "classification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification"
+          },
+          "author_agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Agent Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note_id",
+          "intercept",
+          "factor1",
+          "status",
+          "classification",
+          "author_agent_name"
+        ],
+        "title": "NoteFactorData"
+      },
       "NoteJSONAPIAttributes": {
         "properties": {
           "author_id": {
@@ -20757,6 +20884,53 @@
         ],
         "title": "ProgressResponse"
       },
+      "RaterFactorData": {
+        "properties": {
+          "rater_id": {
+            "type": "string",
+            "title": "Rater Id"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
+          },
+          "personality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personality"
+          },
+          "intercept": {
+            "type": "number",
+            "title": "Intercept"
+          },
+          "factor1": {
+            "type": "number",
+            "title": "Factor1"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rater_id",
+          "agent_name",
+          "personality",
+          "intercept",
+          "factor1"
+        ],
+        "title": "RaterFactorData"
+      },
       "RatingAttributes": {
         "properties": {
           "note_id": {
@@ -22123,6 +22297,108 @@
           "standard"
         ],
         "title": "ScoreConfidence"
+      },
+      "ScoringAnalysisAttributes": {
+        "properties": {
+          "scored_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scored At"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          },
+          "global_intercept": {
+            "type": "number",
+            "title": "Global Intercept"
+          },
+          "rater_count": {
+            "type": "integer",
+            "title": "Rater Count"
+          },
+          "note_count": {
+            "type": "integer",
+            "title": "Note Count"
+          },
+          "rater_factors": {
+            "items": {
+              "$ref": "#/components/schemas/RaterFactorData"
+            },
+            "type": "array",
+            "title": "Rater Factors"
+          },
+          "note_factors": {
+            "items": {
+              "$ref": "#/components/schemas/NoteFactorData"
+            },
+            "type": "array",
+            "title": "Note Factors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scored_at",
+          "tier",
+          "global_intercept",
+          "rater_count",
+          "note_count",
+          "rater_factors",
+          "note_factors"
+        ],
+        "title": "ScoringAnalysisAttributes"
+      },
+      "ScoringAnalysisResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "scoring-analyses",
+            "title": "Type",
+            "default": "scoring-analyses"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ScoringAnalysisAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "ScoringAnalysisResource"
+      },
+      "ScoringAnalysisResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ScoringAnalysisResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ScoringAnalysisResponse"
       },
       "ScoringCoverageData": {
         "properties": {

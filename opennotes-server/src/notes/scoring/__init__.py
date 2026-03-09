@@ -9,6 +9,7 @@ from src.notes.scoring.bayesian_average_scorer import BayesianAverageScorer
 from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
 from src.notes.scoring.data_provider import CommunityDataProvider
 from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
+from src.notes.scoring.models import ScoringSnapshot
 from src.notes.scoring.note_status_history_builder import NoteStatusHistoryBuilder
 from src.notes.scoring.ratings_dataframe_builder import RatingsDataFrameBuilder
 from src.notes.scoring.scorer_factory import ScorerFactory
@@ -38,6 +39,7 @@ __all__ = [
     "ScorerTimeoutError",
     "ScoringDataValidator",
     "ScoringResult",
+    "ScoringSnapshot",
     "ScoringTier",
     "TierThresholds",
     "UserEnrollmentBuilder",

@@ -13,7 +13,9 @@ from src.llm_config.models import CommunityServer
 from src.monitoring.metrics import notes_scored_total
 from src.notes import loaders as note_loaders
 from src.notes.models import Note, Rating, Request
+from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 from src.notes.scoring.scorer_factory import ScorerFactory
+from src.notes.scoring.snapshot_persistence import persist_scoring_snapshot
 from src.notes.scoring.tier_config import (
     ScoringTier,
     get_tier_for_note_count,
@@ -61,6 +63,31 @@ class CommunityServerScoringResult:
     total_scores_computed: int
     tier_name: str
     scorer_type: str
+
+
+async def _maybe_persist_snapshot(
+    scorer: Any,
+    community_server_id: UUID,
+    tier_value: str,
+    scorer_type: str,
+    db: AsyncSession,
+) -> None:
+    if isinstance(scorer, MFCoreScorerAdapter):
+        factors = scorer.get_last_scoring_factors()
+        if factors:
+            await persist_scoring_snapshot(
+                community_server_id=community_server_id,
+                rater_factors=factors["rater_factors"],
+                note_factors=factors["note_factors"],
+                global_intercept=factors["global_intercept"],
+                metadata={
+                    "tier": tier_value,
+                    "scorer_name": scorer_type,
+                    "note_count": factors["note_count"],
+                    "rater_count": factors["rater_count"],
+                },
+                db=db,
+            )
 
 
 async def _record_scoring_metrics(
@@ -247,6 +274,8 @@ async def score_community_server_notes(
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
 
+    await _maybe_persist_snapshot(scorer, community_server_id, tier.value, scorer_type, db)
+
     await db.commit()
 
     platform = await _record_scoring_metrics(
@@ -396,6 +425,8 @@ async def trigger_scoring_for_simulation(
         )
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
+
+    await _maybe_persist_snapshot(scorer, community_server_id, tier.value, scorer_type, db)
 
     result = ScoringRunResult(
         scores_computed=scores_computed,

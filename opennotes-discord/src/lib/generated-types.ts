@@ -1455,6 +1455,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/community-servers/{community_server_id}/scoring-analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Scoring Analysis
+         * @description Get scoring factor analysis for a community server.
+         *
+         *     Returns the latest scoring snapshot with rater and note factor matrices,
+         *     enriched with agent identity information for simulation agents.
+         *
+         *     Requires simulations:read scope or admin privileges.
+         */
+        get: operations["get_scoring_analysis_api_v2_community_servers__community_server_id__scoring_analysis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/scoring/health": {
         parameters: {
             query?: never;
@@ -6686,6 +6711,21 @@ export interface components {
             /** Classification */
             classification: string;
         };
+        /** NoteFactorData */
+        NoteFactorData: {
+            /** Note Id */
+            note_id: string;
+            /** Intercept */
+            intercept: number;
+            /** Factor1 */
+            factor1: number;
+            /** Status */
+            status: string | null;
+            /** Classification */
+            classification: string | null;
+            /** Author Agent Name */
+            author_agent_name: string | null;
+        };
         /**
          * NoteJSONAPIAttributes
          * @description Note attributes for JSON:API resource.
@@ -8143,6 +8183,19 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** RaterFactorData */
+        RaterFactorData: {
+            /** Rater Id */
+            rater_id: string;
+            /** Agent Name */
+            agent_name: string | null;
+            /** Personality */
+            personality: string | null;
+            /** Intercept */
+            intercept: number;
+            /** Factor1 */
+            factor1: number;
+        };
         /**
          * RatingAttributes
          * @description Rating attributes for JSON:API resource.
@@ -8826,6 +8879,51 @@ export interface components {
          * @enum {string}
          */
         ScoreConfidence: "no_data" | "provisional" | "standard";
+        /** ScoringAnalysisAttributes */
+        ScoringAnalysisAttributes: {
+            /**
+             * Scored At
+             * Format: date-time
+             */
+            scored_at: string;
+            /** Tier */
+            tier: string | null;
+            /** Global Intercept */
+            global_intercept: number;
+            /** Rater Count */
+            rater_count: number;
+            /** Note Count */
+            note_count: number;
+            /** Rater Factors */
+            rater_factors: components["schemas"]["RaterFactorData"][];
+            /** Note Factors */
+            note_factors: components["schemas"]["NoteFactorData"][];
+        };
+        /** ScoringAnalysisResource */
+        ScoringAnalysisResource: {
+            /**
+             * Type
+             * @default scoring-analyses
+             * @constant
+             */
+            type: "scoring-analyses";
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["ScoringAnalysisAttributes"];
+        };
+        /** ScoringAnalysisResponse */
+        ScoringAnalysisResponse: {
+            data: components["schemas"]["ScoringAnalysisResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+        };
         /** ScoringCoverageData */
         ScoringCoverageData: {
             /** Current Tier */
@@ -12411,6 +12509,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScoringResultResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scoring_analysis_api_v2_community_servers__community_server_id__scoring_analysis_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoringAnalysisResponse"];
                 };
             };
             /** @description Not authenticated */
