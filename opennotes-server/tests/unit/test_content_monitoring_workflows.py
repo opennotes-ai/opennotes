@@ -262,11 +262,6 @@ class TestHelperFunctionsStillAccessible:
         result = _build_general_explanation_prompt("test message")
         assert "test message" in result
 
-    def test_create_db_engine_accessible(self):
-        from src.tasks.content_monitoring_tasks import _create_db_engine
-
-        assert callable(_create_db_engine)
-
     def test_get_llm_service_accessible(self):
         from src.tasks.content_monitoring_tasks import _get_llm_service
 

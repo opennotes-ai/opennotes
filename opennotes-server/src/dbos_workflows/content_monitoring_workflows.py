@@ -67,11 +67,12 @@ def generate_ai_note_step(
     similarity_score: float | None = None,
     moderation_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    async def _generate() -> dict[str, Any]:  # noqa: PLR0912
+    async def _generate() -> dict[str, Any]:
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
         from src.config import get_settings
+        from src.database import get_engine
         from src.fact_checking.models import FactCheckItem
         from src.llm_config.models import CommunityServer
         from src.llm_config.providers.base import LLMMessage
@@ -80,7 +81,6 @@ def generate_ai_note_step(
             _build_fact_check_prompt,
             _build_flashpoint_prompt,
             _build_general_explanation_prompt,
-            _create_db_engine,
             _get_llm_service,
         )
         from src.users import PLACEHOLDER_USER_ID
@@ -118,7 +118,7 @@ def generate_ai_note_step(
                 span.set_attribute("task.rate_limited", True)
                 return {"status": "rate_limited", "retry_after": retry_after}
 
-            engine = _create_db_engine(settings.DATABASE_URL)
+            engine = get_engine()
             async_session = async_sessionmaker(engine, expire_on_commit=False)
 
             try:
@@ -248,8 +248,6 @@ def generate_ai_note_step(
                     exc_info=True,
                 )
                 raise
-            finally:
-                await engine.dispose()
 
     return run_sync(_generate())
 
@@ -293,10 +291,10 @@ def generate_vision_description_step(
     async def _generate() -> dict[str, Any]:
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
-        from src.config import get_settings
+        from src.database import get_engine
         from src.notes.message_archive_models import MessageArchive
         from src.services.vision_service import VisionService
-        from src.tasks.content_monitoring_tasks import _create_db_engine, _get_llm_service
+        from src.tasks.content_monitoring_tasks import _get_llm_service
 
         archive_uuid = UUID(message_archive_id)
 
@@ -305,8 +303,7 @@ def generate_vision_description_step(
             span.set_attribute("task.community_server_id", community_server_id)
             span.set_attribute("task.component", "content_monitoring")
 
-            settings = get_settings()
-            engine = _create_db_engine(settings.DATABASE_URL)
+            engine = get_engine()
             async_session = async_sessionmaker(engine, expire_on_commit=False)
 
             try:
@@ -367,8 +364,6 @@ def generate_vision_description_step(
                     exc_info=True,
                 )
                 raise
-            finally:
-                await engine.dispose()
 
     return run_sync(_generate())
 
@@ -405,8 +400,7 @@ def persist_audit_log_step(
     async def _persist() -> dict[str, Any]:
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
-        from src.config import get_settings
-        from src.tasks.content_monitoring_tasks import _create_db_engine
+        from src.database import get_engine
         from src.users.models import AuditLog
 
         with _tracer.start_as_current_span("content.audit_log") as span:
@@ -416,8 +410,7 @@ def persist_audit_log_step(
             if user_id:
                 span.set_attribute("task.user_id", user_id)
 
-            settings = get_settings()
-            engine = _create_db_engine(settings.DATABASE_URL)
+            engine = get_engine()
             async_session = async_sessionmaker(engine, expire_on_commit=False)
 
             try:
@@ -461,8 +454,6 @@ def persist_audit_log_step(
                     exc_info=True,
                 )
                 raise
-            finally:
-                await engine.dispose()
 
     return run_sync(_persist())
 

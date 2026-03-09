@@ -83,22 +83,19 @@ async def _handle_message_batch(self, event: BulkScanMessageBatchEvent) -> None:
 
 ## Key Design Decisions
 
-### 1. Self-Contained Tasks
+### 1. Shared Engine Singleton
 
-Tasks create their own database and Redis connections rather than relying on shared state:
+Tasks use the shared engine singleton from `database.py` via `get_engine()` rather than creating per-task engines:
 
 ```python
-def _create_db_engine(db_url: str) -> Any:
-    settings = get_settings()
-    return create_async_engine(
-        db_url,
-        pool_pre_ping=True,
-        pool_size=settings.DB_POOL_SIZE,
-        ...
-    )
+from src.database import get_engine, get_session_maker
+
+engine = get_engine()
+async with get_session_maker()() as session:
+    ...
 ```
 
-This ensures tasks work reliably in distributed worker environments.
+The engine is event-loop-aware and automatically recreates connections when the loop changes.
 
 ### 2. Lazy Imports
 
@@ -143,7 +140,7 @@ TaskIQ's OpenTelemetryMiddleware propagates trace context automatically.
 
 ### 5. Resource Cleanup
 
-Tasks always clean up resources in `finally` blocks:
+Tasks use the shared database engine singleton from `database.py` and should **not** call `engine.dispose()`. Session cleanup is handled by the `async with async_session()` context manager. External resources like Redis should still be cleaned up:
 
 ```python
 try:
@@ -151,7 +148,6 @@ try:
         # ... task logic ...
 finally:
     await redis_client.disconnect()
-    await engine.dispose()
 ```
 
 ## Worker Configuration
