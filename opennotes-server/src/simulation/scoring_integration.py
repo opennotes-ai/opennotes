@@ -30,6 +30,12 @@ logger = logging.getLogger(__name__)
 SCORING_BATCH_SIZE = 100
 
 
+def _log_gcs_upload_error(future: asyncio.Future) -> None:  # type: ignore[type-arg]
+    exc = future.exception()
+    if exc is not None:
+        logger.error("GCS scoring snapshot upload failed", exc_info=exc)
+
+
 @dataclass
 class ScoringRunResult:
     scores_computed: int
@@ -95,9 +101,10 @@ async def _maybe_persist_snapshot(
             try:
                 gcs_snapshot = {**factors, **metadata}
                 loop = asyncio.get_event_loop()
-                loop.run_in_executor(
+                future = loop.run_in_executor(
                     None, upload_scoring_snapshot, community_server_id, gcs_snapshot
                 )
+                future.add_done_callback(_log_gcs_upload_error)
             except Exception:
                 logger.exception(
                     "Failed to schedule GCS scoring snapshot upload",

@@ -54,7 +54,7 @@ def list_scoring_snapshots(
         client = storage.Client()
         bucket = client.bucket(settings.SCORING_HISTORY_BUCKET)
         prefix = f"{community_server_id}/"
-        blobs = bucket.list_blobs(prefix=prefix)
+        blobs = bucket.list_blobs(prefix=prefix, max_results=1000)
 
         snapshots: list[dict[str, Any]] = []
         for blob in blobs:

@@ -882,7 +882,7 @@ async def score_notes_jsonapi(
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
-            f"Scoring failed: {e!s}",
+            "Scoring failed due to an internal error",
         )
 
 

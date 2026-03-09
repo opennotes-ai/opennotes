@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import numpy as np
+from scipy.cluster.hierarchy import linkage
 
 from opennotes_cli.analysis.correlation import (
     ClusterInfo,
@@ -97,3 +100,26 @@ class TestComputeCorrelationMatrix:
         ]
         result = compute_correlation_matrix(factors)
         assert result.labels == ["uuid-1", "uuid-2", "uuid-3"]
+
+    def test_linkage_uses_average_method(self):
+        factors = self._make_factors([
+            ("A", 1.0, 1.0),
+            ("B", 0.9, 0.95),
+            ("C", -1.0, -1.0),
+        ])
+        with patch("opennotes_cli.analysis.correlation.linkage", wraps=linkage) as mock_linkage:
+            compute_correlation_matrix(factors)
+            mock_linkage.assert_called_once()
+            call_kwargs = mock_linkage.call_args
+            assert call_kwargs.kwargs.get("method") == "average"
+
+    def test_cosine_distance_does_not_crash_linkage(self):
+        factors = self._make_factors([
+            ("A", 1.0, 0.0),
+            ("B", 0.0, 1.0),
+            ("C", -1.0, 0.0),
+            ("D", 0.0, -1.0),
+        ])
+        result = compute_correlation_matrix(factors)
+        assert len(result.clusters) >= 1
+        assert not np.any(np.isnan(result.similarity_matrix))

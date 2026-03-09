@@ -67,7 +67,7 @@ def compute_correlation_matrix(rater_factors: list[dict[str, Any]]) -> Correlati
     dist_matrix = np.clip(dist_matrix, 0.0, None)
 
     condensed = squareform(dist_matrix)
-    Z = linkage(condensed, method="ward")
+    Z = linkage(condensed, method="average")
 
     max_d = np.median(Z[:, 2]) * 1.2
     cluster_labels = fcluster(Z, t=max_d, criterion="distance")

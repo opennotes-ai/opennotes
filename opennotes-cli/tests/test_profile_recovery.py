@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from opennotes_cli.analysis.profile_recovery import (
     ASSIGNMENT_MATRIX,
     DIMENSIONS,
@@ -103,3 +105,18 @@ class TestComputeProfileRecovery:
         assert result.n_agents_matched == 20
         assert result.n_agents_total == 20
         assert len(result.agent_comparisons) == 20
+
+    def test_constant_factor_vectors_no_nan(self):
+        factors = self._make_factors([
+            ("Mara", 0.5, 0.3),
+            ("Dex", 0.5, 0.3),
+            ("Sable", 0.5, 0.3),
+            ("Kai", 0.5, 0.3),
+        ])
+        result = compute_profile_recovery(factors)
+        assert not math.isnan(result.archetype_factor_correlation)
+        assert not math.isnan(result.archetype_factor_p_value)
+        assert not math.isnan(result.archetype_factor_spearman)
+        assert not math.isnan(result.archetype_factor_spearman_p)
+        assert result.archetype_factor_correlation == 0.0
+        assert result.archetype_factor_p_value == 1.0

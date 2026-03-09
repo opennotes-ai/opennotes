@@ -111,7 +111,7 @@ def _render_note_table(note_factors: list[dict[str, Any]], fmt: str) -> str | No
         lines.append("| Note ID | Author | Intercept | Factor1 | Status |")
         lines.append("|---------|--------|-----------|---------|--------|")
         for nf in sorted(note_factors, key=lambda x: x.get("intercept", 0), reverse=True):
-            nid = nf.get("note_id", "?")[:8]
+            nid = (nf.get("note_id") or "?")[:8]
             author = nf.get("author_agent_name") or "-"
             status = nf.get("status") or "-"
             lines.append(
@@ -128,7 +128,7 @@ def _render_note_table(note_factors: list[dict[str, Any]], fmt: str) -> str | No
     table.add_column("Status")
 
     for nf in sorted(note_factors, key=lambda x: x.get("intercept", 0), reverse=True):
-        nid = nf.get("note_id", "?")[:8] + "..."
+        nid = (nf.get("note_id") or "?")[:8] + "..."
         author = nf.get("author_agent_name") or "-"
         status = nf.get("status") or "-"
         table.add_row(

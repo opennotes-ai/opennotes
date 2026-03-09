@@ -208,8 +208,18 @@ def compute_profile_recovery(rater_factors: list[dict[str, Any]]) -> ProfileReco
                 f_sim = 0.0
             factor_dists.append(f_sim)
 
-    pearson_result = pearsonr(archetype_dists, factor_dists)  # type: ignore[arg-type]
-    spearman_result = spearmanr(archetype_dists, factor_dists)  # type: ignore[arg-type]
+    arch_arr = np.array(archetype_dists)
+    fac_arr = np.array(factor_dists)
+    if np.std(arch_arr) == 0.0 or np.std(fac_arr) == 0.0:
+        pearson_corr, pearson_p = 0.0, 1.0
+        spearman_corr, spearman_p = 0.0, 1.0
+    else:
+        pearson_result = pearsonr(arch_arr, fac_arr)
+        spearman_result = spearmanr(arch_arr, fac_arr)
+        pearson_corr = float(pearson_result[0])
+        pearson_p = float(pearson_result[1])
+        spearman_corr = float(spearman_result[0])
+        spearman_p = float(spearman_result[1])
 
     agent_comparisons = []
     for name, dims, fv in matched_agents:
@@ -255,10 +265,10 @@ def compute_profile_recovery(rater_factors: list[dict[str, Any]]) -> ProfileReco
 
     return ProfileRecoveryResult(
         agent_comparisons=agent_comparisons,
-        archetype_factor_correlation=float(pearson_result[0]),
-        archetype_factor_p_value=float(pearson_result[1]),
-        archetype_factor_spearman=float(spearman_result[0]),
-        archetype_factor_spearman_p=float(spearman_result[1]),
+        archetype_factor_correlation=pearson_corr,
+        archetype_factor_p_value=pearson_p,
+        archetype_factor_spearman=spearman_corr,
+        archetype_factor_spearman_p=spearman_p,
         n_agents_matched=n,
         n_agents_total=len(rater_factors),
     )
