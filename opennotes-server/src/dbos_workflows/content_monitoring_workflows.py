@@ -67,7 +67,7 @@ def generate_ai_note_step(
     similarity_score: float | None = None,
     moderation_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    async def _generate() -> dict[str, Any]:  # noqa: PLR0912
+    async def _generate() -> dict[str, Any]:
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -248,8 +248,6 @@ def generate_ai_note_step(
                     exc_info=True,
                 )
                 raise
-            finally:
-                await engine.dispose()
 
     return run_sync(_generate())
 
@@ -366,8 +364,6 @@ def generate_vision_description_step(
                     exc_info=True,
                 )
                 raise
-            finally:
-                await engine.dispose()
 
     return run_sync(_generate())
 
@@ -458,8 +454,6 @@ def persist_audit_log_step(
                     exc_info=True,
                 )
                 raise
-            finally:
-                await engine.dispose()
 
     return run_sync(_persist())
 
