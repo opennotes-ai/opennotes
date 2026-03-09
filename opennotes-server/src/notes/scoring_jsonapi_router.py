@@ -11,6 +11,7 @@ Reference: https://jsonapi.org/format/
 """
 
 import asyncio
+import re
 import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
@@ -96,6 +97,7 @@ logger = get_logger(__name__)
 
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 scorer_factory = ScorerFactory()
+_ISO8601_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 top_notes_filter_builder = FilterBuilder().add_auth_gated_filter(
     FilterField(
@@ -1013,6 +1015,13 @@ async def get_scoring_history_snapshot(
         require_scope_or_admin(current_user, request, "simulations:read")
     except HTTPException as e:
         return create_error_response(e.status_code, "Forbidden", e.detail)
+
+    if not _ISO8601_UTC_RE.match(timestamp):
+        return create_error_response(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Validation Error",
+            "timestamp must be in ISO 8601 UTC format: YYYY-MM-DDTHH:MM:SSZ",
+        )
 
     try:
         loop = asyncio.get_event_loop()
