@@ -1,5 +1,8 @@
 FROM node:22-slim AS builder
 
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_PUBLISHABLE_KEY
+
 RUN corepack enable pnpm
 
 WORKDIR /app
@@ -19,7 +22,6 @@ COPY --from=builder /app/.output /app/.output
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nodejs
 USER nodejs
 
-ENV PORT=8080
 EXPOSE 8080
 
 CMD ["node", ".output/server/index.mjs"]
