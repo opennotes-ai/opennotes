@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
 from click.testing import CliRunner
 
@@ -136,3 +137,86 @@ class TestTriggerRescore:
 
         assert not hasattr(analyze_mod, "poll_batch_job_until_complete") or \
             "poll_batch_job_until_complete" not in dir(analyze_mod)
+
+
+class TestNetworkErrorHandling:
+    def test_fetch_analysis_connection_error(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = httpx.ConnectError("Connection refused")
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--no-prompt", community_id],
+            )
+
+        assert result.exit_code != 0
+        assert "could not connect" in result.output.lower()
+
+    def test_fetch_analysis_timeout(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = httpx.ReadTimeout("Read timed out")
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--no-prompt", community_id],
+            )
+
+        assert result.exit_code != 0
+        assert "timed out" in result.output.lower()
+
+    def test_trigger_rescore_connection_error(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_csrf_resp = MagicMock()
+        mock_csrf_resp.status_code = 200
+
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_csrf_resp
+        mock_client.post.side_effect = httpx.ConnectError("Connection refused")
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--rescore", "--no-prompt", community_id],
+            )
+
+        assert result.exit_code != 0
+        assert "could not connect" in result.output.lower()
+
+    def test_history_connection_error(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = httpx.ConnectError("Connection refused")
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--history", community_id],
+            )
+
+        assert result.exit_code != 0
+        assert "could not connect" in result.output.lower()
+
+    def test_csrf_token_connection_error(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = httpx.ConnectError("Connection refused")
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--rescore", "--no-prompt", community_id],
+            )
+
+        assert result.exit_code != 0
+        assert "could not connect" in result.output.lower()

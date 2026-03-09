@@ -28,7 +28,14 @@ def _fetch_analysis(
     community_server_id: str,
 ) -> dict[str, Any] | None:
     url = f"{base_url}/api/v2/community-servers/{community_server_id}/scoring-analysis"
-    response = client.get(url, headers=headers)
+    try:
+        response = client.get(url, headers=headers)
+    except httpx.ConnectError:
+        error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+        sys.exit(1)
+    except httpx.TimeoutException:
+        error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
+        sys.exit(1)
     if response.status_code == 404:
         return None
     handle_jsonapi_error(response)
@@ -44,7 +51,14 @@ def _trigger_rescore(
 ) -> None:
     score_headers = add_csrf(dict(headers), csrf_token)
     url = f"{base_url}/api/v2/community-servers/{community_server_id}/score"
-    response = client.post(url, headers=score_headers)
+    try:
+        response = client.post(url, headers=score_headers)
+    except httpx.ConnectError:
+        error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+        sys.exit(1)
+    except httpx.TimeoutException:
+        error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
+        sys.exit(1)
 
     if response.status_code == 409:
         error_console.print(
@@ -283,7 +297,14 @@ def _fetch_history(
     community_server_id: str,
 ) -> list[dict[str, Any]]:
     url = f"{base_url}/api/v2/community-servers/{community_server_id}/scoring-history"
-    response = client.get(url, headers=headers)
+    try:
+        response = client.get(url, headers=headers)
+    except httpx.ConnectError:
+        error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+        sys.exit(1)
+    except httpx.TimeoutException:
+        error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
+        sys.exit(1)
     handle_jsonapi_error(response)
     data = response.json()
     return [
@@ -300,7 +321,14 @@ def _fetch_history_snapshot(
     timestamp: str,
 ) -> dict[str, Any] | None:
     url = f"{base_url}/api/v2/community-servers/{community_server_id}/scoring-history/{timestamp}"
-    response = client.get(url, headers=headers)
+    try:
+        response = client.get(url, headers=headers)
+    except httpx.ConnectError:
+        error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+        sys.exit(1)
+    except httpx.TimeoutException:
+        error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
+        sys.exit(1)
     if response.status_code == 404:
         return None
     handle_jsonapi_error(response)
@@ -399,14 +427,28 @@ def mf_analysis(
 
     csrf_token = None
     if rescore:
-        csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+        try:
+            csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+        except httpx.ConnectError:
+            error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+            sys.exit(1)
+        except httpx.TimeoutException:
+            error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
+            sys.exit(1)
         _trigger_rescore(client, base_url, headers, csrf_token, community_server_id)
 
     data = _fetch_analysis(client, base_url, headers, community_server_id)
 
     if data is None and not no_prompt and not rescore:
         if click.confirm("No scoring snapshot found. Trigger a scoring run?"):
-            csrf_token = csrf_token or get_csrf_token(client, base_url, cli_ctx.auth)
+            try:
+                csrf_token = csrf_token or get_csrf_token(client, base_url, cli_ctx.auth)
+            except httpx.ConnectError:
+                error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+                sys.exit(1)
+            except httpx.TimeoutException:
+                error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
+                sys.exit(1)
             _trigger_rescore(client, base_url, headers, csrf_token, community_server_id)
             data = _fetch_analysis(client, base_url, headers, community_server_id)
 
