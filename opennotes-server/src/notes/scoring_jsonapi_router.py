@@ -10,6 +10,8 @@ It provides:
 Reference: https://jsonapi.org/format/
 """
 
+import asyncio
+import re
 import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
@@ -26,7 +28,7 @@ from src.auth.community_dependencies import (
     get_user_community_ids,
     verify_community_membership_by_uuid,
 )
-from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.dependencies import get_current_user_or_api_key, require_scope_or_admin
 from src.auth.permissions import is_service_account
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.filters import FilterBuilder, FilterField, FilterOperator
@@ -48,6 +50,18 @@ from src.notes.scoring import (
     ScorerFactory,
     get_tier_config,
     get_tier_for_note_count,
+)
+from src.notes.scoring.analysis import compute_scoring_factor_analysis
+from src.notes.scoring.gcs_storage import fetch_scoring_snapshot, list_scoring_snapshots
+from src.notes.scoring.schemas import (
+    ScoringAnalysisResource,
+    ScoringAnalysisResponse,
+    ScoringHistoryEntryAttributes,
+    ScoringHistoryEntryResource,
+    ScoringHistoryListResponse,
+    ScoringHistorySnapshotAttributes,
+    ScoringHistorySnapshotResource,
+    ScoringHistorySnapshotResponse,
 )
 from src.notes.scoring_schemas import (
     DataConfidence,
@@ -83,6 +97,7 @@ logger = get_logger(__name__)
 
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 scorer_factory = ScorerFactory()
+_ISO8601_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 top_notes_filter_builder = FilterBuilder().add_auth_gated_filter(
     FilterField(
@@ -867,7 +882,181 @@ async def score_notes_jsonapi(
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
-            f"Scoring failed: {e!s}",
+            "Scoring failed due to an internal error",
+        )
+
+
+@router.get(
+    "/community-servers/{community_server_id}/scoring-analysis",
+    response_class=JSONResponse,
+    response_model=ScoringAnalysisResponse,
+)
+async def get_scoring_analysis(
+    community_server_id: UUID,
+    request: HTTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    """Get scoring factor analysis for a community server.
+
+    Returns the latest scoring snapshot with rater and note factor matrices,
+    enriched with agent identity information for simulation agents.
+
+    Requires simulations:read scope or admin privileges.
+    """
+    try:
+        require_scope_or_admin(current_user, request, "simulations:read")
+    except HTTPException as e:
+        return create_error_response(e.status_code, "Forbidden", e.detail)
+
+    try:
+        analysis = await compute_scoring_factor_analysis(community_server_id, db)
+
+        if analysis is None:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"No scoring snapshot found for community server {community_server_id}",
+            )
+
+        response = ScoringAnalysisResponse(
+            data=ScoringAnalysisResource(
+                id=str(community_server_id),
+                attributes=analysis,
+            ),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to get scoring analysis: {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to retrieve scoring analysis",
+        )
+
+
+@router.get(
+    "/community-servers/{community_server_id}/scoring-history",
+    response_class=JSONResponse,
+    response_model=ScoringHistoryListResponse,
+)
+async def get_scoring_history(
+    community_server_id: UUID,
+    request: HTTPRequest,
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    """List available historical scoring snapshots from GCS.
+
+    Returns a list of available snapshots with timestamps and sizes.
+    Requires simulations:read scope or admin privileges.
+    """
+    try:
+        require_scope_or_admin(current_user, request, "simulations:read")
+    except HTTPException as e:
+        return create_error_response(e.status_code, "Forbidden", e.detail)
+
+    try:
+        loop = asyncio.get_event_loop()
+        entries = await loop.run_in_executor(None, list_scoring_snapshots, community_server_id)
+
+        resources = [
+            ScoringHistoryEntryResource(
+                id=entry["timestamp"],
+                attributes=ScoringHistoryEntryAttributes(
+                    timestamp=entry["timestamp"],
+                    path=entry["path"],
+                    size=entry["size"],
+                ),
+            )
+            for entry in entries
+        ]
+
+        response = ScoringHistoryListResponse(
+            data=resources,
+            meta={"total": len(resources)},
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to list scoring history: {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to list scoring history",
+        )
+
+
+@router.get(
+    "/community-servers/{community_server_id}/scoring-history/{timestamp}",
+    response_class=JSONResponse,
+    response_model=ScoringHistorySnapshotResponse,
+)
+async def get_scoring_history_snapshot(
+    community_server_id: UUID,
+    timestamp: str,
+    request: HTTPRequest,
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    """Fetch a specific historical scoring snapshot from GCS.
+
+    Returns the full scoring snapshot data for a given timestamp.
+    Requires simulations:read scope or admin privileges.
+    """
+    try:
+        require_scope_or_admin(current_user, request, "simulations:read")
+    except HTTPException as e:
+        return create_error_response(e.status_code, "Forbidden", e.detail)
+
+    if not _ISO8601_UTC_RE.match(timestamp):
+        return create_error_response(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Validation Error",
+            "timestamp must be in ISO 8601 UTC format: YYYY-MM-DDTHH:MM:SSZ",
+        )
+
+    try:
+        loop = asyncio.get_event_loop()
+        snapshot = await loop.run_in_executor(
+            None, fetch_scoring_snapshot, community_server_id, timestamp
+        )
+
+        if snapshot is None:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"No scoring snapshot found for timestamp {timestamp}",
+            )
+
+        response = ScoringHistorySnapshotResponse(
+            data=ScoringHistorySnapshotResource(
+                id=timestamp,
+                attributes=ScoringHistorySnapshotAttributes(
+                    timestamp=timestamp,
+                    snapshot=snapshot,
+                ),
+            ),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to fetch scoring history snapshot: {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to fetch scoring history snapshot",
         )
 
 

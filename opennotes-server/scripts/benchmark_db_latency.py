@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Benchmark database query latency for Supavisor migration comparison.
+"""Benchmark database query latency.
 
 Runs N simple SELECT 1 queries and reports p50, p95, p99 latency.
-Use before and after the NullPool migration to compare performance.
+Use to measure per-query database latency.
 
 Regression threshold: p99 should not exceed 200ms for SELECT 1.
 
@@ -117,7 +117,7 @@ def main() -> None:
 
         database_url = get_settings().DATABASE_URL
 
-    print(f"Running {args.queries} SELECT 1 queries with NullPool...")
+    print(f"Running {args.queries} SELECT 1 queries...")
     latencies = asyncio.run(run_benchmark(database_url, args.queries))
     print_results(latencies)
 

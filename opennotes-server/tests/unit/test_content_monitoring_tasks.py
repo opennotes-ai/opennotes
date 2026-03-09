@@ -159,11 +159,6 @@ class TestHelperFunctionsAccessible:
         assert "Test Title" in result
         assert "85.00%" in result
 
-    def test_create_db_engine_accessible(self):
-        from src.tasks.content_monitoring_tasks import _create_db_engine
-
-        assert callable(_create_db_engine)
-
     def test_get_llm_service_accessible(self):
         from src.tasks.content_monitoring_tasks import _get_llm_service
 

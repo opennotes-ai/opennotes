@@ -1471,5 +1471,6 @@ def _render_detailed_xlsx(
     if not output_path:
         output_path = f"simulation-{simulation_id}-detailed.xlsx"
 
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)
     console.print(f"[green]\u2713[/green] Saved detailed analysis to [bold]{output_path}[/bold]")

@@ -303,9 +303,16 @@ async def list_notes_jsonapi(
 
         rated_by_list: list[UUID] | None = None
         if filter_rated_by_not_in:
-            rated_by_list = [
-                UUID(x.strip()) for x in filter_rated_by_not_in.split(",") if x.strip()
-            ]
+            try:
+                rated_by_list = [
+                    UUID(x.strip()) for x in filter_rated_by_not_in.split(",") if x.strip()
+                ]
+            except ValueError:
+                return create_error_response(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Bad Request",
+                    "filter[rater_id__not_in] must contain valid UUIDs",
+                )
 
         community_server_id_value = filter_community_server_id
         community_server_id_in_value = None

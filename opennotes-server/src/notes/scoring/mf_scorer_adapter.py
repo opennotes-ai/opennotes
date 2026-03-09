@@ -152,6 +152,8 @@ class MFCoreScorerAdapter:
         self._data_provider = data_provider
         self._community_id = community_id
         self._lock = threading.Lock()
+        self._last_model_result: ModelResult | None = None
+        self._last_int_to_uuid: dict[int, str] | None = None
 
         if data_provider is not None:
             _PandasPatchState.ensure_patched()
@@ -210,6 +212,8 @@ class MFCoreScorerAdapter:
             if self._data_provider is not None:
                 try:
                     model_result, int_to_uuid = self._execute_batch_scoring()
+                    self._last_model_result = model_result
+                    self._last_int_to_uuid = int_to_uuid
                     batch_results = self._process_model_result(model_result, int_to_uuid)
                     self._cache.update(batch_results)
                     self._evict_if_needed()
@@ -285,6 +289,63 @@ class MFCoreScorerAdapter:
             "cache_version": self._cache_version,
             "current_version": self._current_version,
             "is_valid": self._is_cache_valid(),
+        }
+
+    def get_last_scoring_factors(self) -> dict[str, Any] | None:
+        """
+        Extract factor matrices from the last batch scoring run.
+
+        Returns None if no batch scoring has been executed. Otherwise returns
+        a dict with rater_factors, note_factors, and global_intercept extracted
+        from the last ModelResult.
+        """
+        if self._last_model_result is None or self._last_int_to_uuid is None:
+            return None
+
+        model_result = self._last_model_result
+        int_to_uuid = self._last_int_to_uuid
+
+        rater_factors: list[dict[str, Any]] = []
+        if model_result.helpfulnessScores is not None:
+            hs = model_result.helpfulnessScores
+            for _, row in hs.iterrows():
+                rater_id_raw = row.get("raterParticipantId", "")
+                rater_factors.append(
+                    {
+                        "rater_id": str(rater_id_raw),
+                        "intercept": float(row.get("coreRaterIntercept", 0.0)),
+                        "factor1": float(row.get("coreRaterFactor1", 0.0)),
+                    }
+                )
+
+        note_factors: list[dict[str, Any]] = []
+        if model_result.scoredNotes is not None:
+            sn = model_result.scoredNotes
+            for _, row in sn.iterrows():
+                int_note_id = int(row["noteId"])
+                note_id = int_to_uuid.get(int_note_id, str(int_note_id))
+                note_factors.append(
+                    {
+                        "note_id": note_id,
+                        "intercept": float(row.get("coreNoteIntercept", 0.0)),
+                        "factor1": float(row.get("coreNoteFactor1", 0.0)),
+                        "status": str(row.get("coreRatingStatus", "")),
+                    }
+                )
+
+        global_intercept = 0.0
+        if (
+            model_result.scoredNotes is not None
+            and "coreNoteIntercept" in model_result.scoredNotes.columns
+        ):
+            global_intercept = float(model_result.scoredNotes["coreNoteIntercept"].mean())
+
+        return {
+            "rater_factors": rater_factors,
+            "note_factors": note_factors,
+            "global_intercept": global_intercept,
+            "rater_count": len(rater_factors),
+            "note_count": len(note_factors),
         }
 
     def _evict_if_needed(self, max_size: int = 10000) -> None:

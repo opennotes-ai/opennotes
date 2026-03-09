@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Seed API keys into the database for Discord bot authentication.
+Seed API keys into the database for Discord bot and playground authentication.
 
-This script ensures that the API key used by the Discord bot exists in the database.
-It's idempotent and safe to run multiple times.
+This script ensures that the API keys used by the Discord bot and playground
+service exist in the database. It's idempotent and safe to run multiple times.
 
 Usage:
-    # Development/Local (uses hardcoded dev key):
+    # Development/Local (uses hardcoded dev keys):
     python scripts/seed_api_keys.py
 
-    # Production (generates new key or uses provided key):
+    # Production (generates new keys or uses provided keys):
     ENVIRONMENT=production python scripts/seed_api_keys.py
 
-    # Production with specific key value:
-    ENVIRONMENT=production OPENNOTES_API_KEY=opk_xxx_yyy python scripts/seed_api_keys.py
+    # Production with specific key values:
+    ENVIRONMENT=production OPENNOTES_API_KEY=opk_xxx_yyy PLAYGROUND_API_KEY=opk_xxx_yyy python scripts/seed_api_keys.py
 
     Or via mise:
     mise run db:seed-api-keys
@@ -43,6 +43,7 @@ SERVICE_USER_EMAIL = "discord-bot@opennotes.local"
 
 PLAYGROUND_DEV_API_KEY = "opk_playground_dev_readonly_access_key_2024"
 PLAYGROUND_API_KEY_NAME = "Playground (Development)"
+PROD_PLAYGROUND_API_KEY_NAME = "Playground (Production)"
 PLAYGROUND_SERVICE_USER_USERNAME = "playground-service"
 PLAYGROUND_SERVICE_USER_EMAIL = "playground@opennotes.local"
 PLAYGROUND_SCOPES = ["simulations:read"]
@@ -134,14 +135,14 @@ async def seed_api_key(
             print(f"✓ API key '{key_name}' already exists and is active")
         elif is_active and needs_scope_update:
             await db.execute(
-                text("UPDATE api_keys SET scopes = :scopes::jsonb WHERE id = :id"),
+                text("UPDATE api_keys SET scopes = CAST(:scopes AS jsonb) WHERE id = :id"),
                 {"id": api_key_id, "scopes": scopes_json},
             )
             print(f"✓ Updated scopes on API key '{key_name}'")
         else:
             await db.execute(
                 text(
-                    "UPDATE api_keys SET is_active = true, key_hash = :key_hash, key_prefix = :key_prefix, scopes = :scopes::jsonb WHERE id = :id"
+                    "UPDATE api_keys SET is_active = true, key_hash = :key_hash, key_prefix = :key_prefix, scopes = CAST(:scopes AS jsonb) WHERE id = :id"
                 ),
                 {
                     "id": api_key_id,
@@ -156,7 +157,7 @@ async def seed_api_key(
     result = await db.execute(
         text("""
             INSERT INTO api_keys (user_id, name, key_hash, key_prefix, is_active, scopes, created_at)
-            VALUES (:user_id, :name, :key_hash, :key_prefix, :is_active, :scopes::jsonb, NOW())
+            VALUES (:user_id, :name, :key_hash, :key_prefix, :is_active, CAST(:scopes AS jsonb), NOW())
             RETURNING id
         """),
         {
@@ -269,6 +270,38 @@ async def _seed_and_save_prod_key(db: AsyncSession) -> None:
         os.close(fd)
 
 
+async def _seed_and_save_prod_playground_key(db: AsyncSession) -> None:
+    provided_key = os.environ.get("PLAYGROUND_API_KEY", "")
+
+    if provided_key and not provided_key.startswith("CHANGE_THIS"):
+        api_key = provided_key
+        key_prefix = None
+        if api_key.startswith("opk_"):
+            parts = api_key.split("_", 2)
+            if len(parts) == 3:
+                key_prefix = parts[1]
+    else:
+        api_key, key_prefix = generate_api_key()
+
+    user_id = await get_or_create_playground_user(db)
+    key_hash = get_password_hash(api_key)
+    await seed_api_key(
+        db,
+        key_hash,
+        PROD_PLAYGROUND_API_KEY_NAME,
+        key_prefix,
+        user_id=user_id,
+        scopes=PLAYGROUND_SCOPES,
+    )
+
+    key_path = "/tmp/playground-api-key.txt"
+    fd = os.open(key_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, api_key.encode())
+    finally:
+        os.close(fd)
+
+
 async def main() -> None:
     environment = os.environ.get("ENVIRONMENT", "unknown")
     is_production = environment == "production"
@@ -293,16 +326,22 @@ async def main() -> None:
 
             if is_production:
                 await _seed_and_save_prod_key(session)
+                await _seed_and_save_prod_playground_key(session)
                 await session.commit()
                 print()
                 print("=" * 60)
-                print("API key written to /tmp/opennotes-api-key.txt (mode 0600)")
+                print("API keys written (mode 0600):")
+                print("  - Discord bot:  /tmp/opennotes-api-key.txt")
+                print("  - Playground:   /tmp/playground-api-key.txt")
                 print("=" * 60)
                 print()
-                print("  1. Read the key:  cat /tmp/opennotes-api-key.txt")
+                print("  1. Read the keys:")
+                print("       cat /tmp/opennotes-api-key.txt")
+                print("       cat /tmp/playground-api-key.txt")
                 print("  2. Add to secrets.yaml and re-encrypt with SOPS")
-                print("  3. Delete the file:  rm /tmp/opennotes-api-key.txt")
-                print("  4. Redeploy for the change to take effect")
+                print("  3. Delete the files:")
+                print("       rm /tmp/opennotes-api-key.txt /tmp/playground-api-key.txt")
+                print("  4. Redeploy for the changes to take effect")
                 print("=" * 60)
             elif environment in ["development", "local"]:
                 await seed_dev_api_key(session)
