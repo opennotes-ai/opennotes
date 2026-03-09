@@ -92,6 +92,14 @@ async def get_current_user_or_api_key(
     if token_data:
         user = await get_user_by_id(db, token_data.user_id)
         if user and user.is_active:
+            if user.tokens_valid_after and token_data.iat is not None:
+                valid_after_int = int(user.tokens_valid_after.timestamp())
+                if token_data.iat < valid_after_int:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid authentication credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
             return user
 
     # Try API key in Authorization header (legacy support)
