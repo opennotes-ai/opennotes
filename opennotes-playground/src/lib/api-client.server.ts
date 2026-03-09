@@ -1,4 +1,5 @@
 import createClient from "openapi-fetch";
+import { GoogleAuth } from "google-auth-library";
 import type { paths, components } from "./generated-types";
 
 export type SimulationListResponse =
@@ -11,6 +12,7 @@ export type DetailedAnalysisResponse =
 export type ResultsListResponse = components["schemas"]["ResultsListResponse"];
 
 const FETCH_TIMEOUT_MS = 10_000;
+const IDENTITY_TOKEN_MAX_RETRIES = 3;
 
 export class PlaygroundApiError extends Error {
   constructor(
@@ -20,6 +22,26 @@ export class PlaygroundApiError extends Error {
     super(message);
     this.name = "PlaygroundApiError";
   }
+}
+
+export async function getIdentityToken(targetAudience: string): Promise<string | null> {
+  if (process.env.NODE_ENV !== "production") return null;
+
+  for (let attempt = 0; attempt < IDENTITY_TOKEN_MAX_RETRIES; attempt++) {
+    try {
+      const auth = new GoogleAuth();
+      const client = await auth.getIdTokenClient(targetAudience);
+      const rawHeaders = await client.getRequestHeaders();
+      const authValue = typeof rawHeaders.get === "function"
+        ? rawHeaders.get("Authorization")
+        : (rawHeaders as unknown as Record<string, string>)["Authorization"];
+      return authValue || null;
+    } catch (error) {
+      if (attempt === IDENTITY_TOKEN_MAX_RETRIES - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt));
+    }
+  }
+  return null;
 }
 
 function getClient() {
@@ -38,8 +60,21 @@ function getClient() {
   return createClient<paths>({
     baseUrl: baseUrl!,
     headers: { "X-API-Key": apiKey! },
-    fetch: (request: Request) =>
-      fetch(new Request(request, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })),
+    fetch: async (request: Request) => {
+      if (isProduction) {
+        const token = await getIdentityToken(baseUrl!);
+        if (token) {
+          const headers = new Headers(request.headers);
+          headers.set("Authorization", token);
+          request = new Request(request.url, {
+            method: request.method,
+            headers,
+            body: request.body,
+          });
+        }
+      }
+      return fetch(new Request(request, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }));
+    },
   });
 }
 
