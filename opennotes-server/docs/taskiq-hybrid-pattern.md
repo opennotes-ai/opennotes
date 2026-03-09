@@ -140,7 +140,7 @@ TaskIQ's OpenTelemetryMiddleware propagates trace context automatically.
 
 ### 5. Resource Cleanup
 
-Tasks always clean up resources in `finally` blocks:
+Tasks use the shared database engine singleton from `database.py` and should **not** call `engine.dispose()`. Session cleanup is handled by the `async with async_session()` context manager. External resources like Redis should still be cleaned up:
 
 ```python
 try:
@@ -148,7 +148,6 @@ try:
         # ... task logic ...
 finally:
     await redis_client.disconnect()
-    await engine.dispose()
 ```
 
 ## Worker Configuration
