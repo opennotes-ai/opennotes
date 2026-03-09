@@ -11,9 +11,13 @@ vi.mock("google-auth-library", () => ({
   }),
 }));
 
+let capturedFetchInterceptor: ((req: Request) => Promise<Response>) | null =
+  null;
+
 vi.mock("openapi-fetch", () => ({
   default: vi.fn().mockImplementation((opts: any) => {
     const capturedFetch = opts.fetch;
+    capturedFetchInterceptor = capturedFetch;
     const capturedHeaders = opts.headers;
     return {
       _opts: opts,
@@ -41,6 +45,7 @@ beforeEach(() => {
   mockGoogleAuthConstructor.mockReset();
   mockGetIdTokenClient.mockReset();
   mockGetRequestHeaders.mockReset();
+  capturedFetchInterceptor = null;
   process.env = { ...originalEnv };
 });
 
@@ -168,6 +173,18 @@ describe("getAuthorizationHeader", () => {
     await expect(promise).rejects.toThrow(/timed out/i);
     vi.useRealTimers();
   });
+
+  it("returns null when getRequestHeaders has no Authorization key", async () => {
+    process.env.NODE_ENV = "production";
+    mockGetRequestHeaders.mockResolvedValue(mockHeaders());
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const result = await getAuthorizationHeader("https://example.run.app");
+    expect(result).toBeNull();
+  });
 });
 
 describe("getClient fetch interceptor", () => {
@@ -235,6 +252,48 @@ describe("getClient fetch interceptor", () => {
     await expect(listSimulations()).rejects.toThrow(
       /Failed to fetch identity token/,
     );
+    fetchSpy.mockRestore();
+  });
+
+  it("preserves POST request body through interceptor", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.OPENNOTES_SERVER_URL = "https://server.run.app";
+    process.env.OPENNOTES_API_KEY = "prod-key";
+
+    mockGetRequestHeaders.mockResolvedValue(
+      mockHeaders({ Authorization: "Bearer token" }),
+    );
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    const { listSimulations } = await import("./api-client.server");
+    await listSimulations();
+
+    expect(capturedFetchInterceptor).not.toBeNull();
+
+    const postBody = JSON.stringify({ content: "test note" });
+    const postRequest = new Request("https://server.run.app/api/v2/test", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": "prod-key",
+      },
+      body: postBody,
+    });
+
+    await capturedFetchInterceptor!(postRequest);
+
+    const calledRequest = fetchSpy.mock.calls[1][0] as Request;
+    expect(calledRequest.method).toBe("POST");
+    const body = await calledRequest.text();
+    expect(JSON.parse(body)).toEqual({ content: "test note" });
+    expect(calledRequest.headers.get("Authorization")).toBe("Bearer token");
+
     fetchSpy.mockRestore();
   });
 });
