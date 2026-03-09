@@ -51,18 +51,18 @@ class TestRaterIdNotInValidation:
     def test_invalid_uuid_returns_400(self, client):
         response = client.get("/api/v2/notes?filter[rater_id__not_in]=not-a-uuid")
         assert response.status_code == 400
-        assert "valid UUIDs" in response.json()["detail"]
+        assert "valid UUIDs" in response.json()["errors"][0]["detail"]
 
     def test_discord_snowflake_returns_400(self, client):
         response = client.get("/api/v2/notes?filter[rater_id__not_in]=123456789012345678")
         assert response.status_code == 400
-        assert "valid UUIDs" in response.json()["detail"]
+        assert "valid UUIDs" in response.json()["errors"][0]["detail"]
 
     def test_mixed_valid_and_invalid_returns_400(self, client):
         valid_uuid = str(uuid4())
         response = client.get(f"/api/v2/notes?filter[rater_id__not_in]={valid_uuid},not-a-uuid")
         assert response.status_code == 400
-        assert "valid UUIDs" in response.json()["detail"]
+        assert "valid UUIDs" in response.json()["errors"][0]["detail"]
 
     def test_valid_uuid_does_not_return_400(self, client):
         valid_uuid = str(uuid4())
