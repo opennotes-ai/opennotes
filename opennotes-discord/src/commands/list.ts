@@ -48,7 +48,7 @@ const lastUsage = new Map<string, number>();
 
 interface QueueState {
   userId: string;
-  profileUuid: string;
+  profileUuid?: string;
   guildId: string | null;
   communityServerUuid: string | undefined;
   currentPage: number;
@@ -263,7 +263,20 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
 
     logger.info(`User ${userId} requested notes queue in bot channel`);
 
-    const profileUuid = await resolveUserProfileId(userId, apiClient);
+    let profileUuid: string | undefined;
+    try {
+      profileUuid = await resolveUserProfileId(userId, apiClient);
+    } catch (error) {
+      logger.error('Failed to resolve user profile UUID', {
+        error_id: errorId,
+        user_id: userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await interaction.editReply({
+        content: 'Could not find your user profile. Please try again later.',
+      });
+      return;
+    }
 
     let communityServerUuid: string | undefined;
     if (guildId) {
@@ -1016,7 +1029,20 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
       return;
     }
 
-    const profileUuid = await resolveUserProfileId(userId, apiClient);
+    let profileUuid: string | undefined;
+    try {
+      profileUuid = await resolveUserProfileId(userId, apiClient);
+    } catch (error) {
+      logger.error('Failed to resolve user profile UUID', {
+        error_id: errorId,
+        user_id: userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await interaction.editReply({
+        content: 'Could not find your user profile. Please try again later.',
+      });
+      return;
+    }
 
     let communityServerUuid: string | undefined;
     try {
@@ -1208,13 +1234,18 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
       return;
     }
 
+    let profileUuid = state.profileUuid;
+    if (!profileUuid) {
+      profileUuid = await resolveUserProfileId(state.userId, apiClient);
+    }
+
     const notesPerPage = LIST_COMMAND_LIMITS.NOTES_PER_PAGE;
     const notesResponse = await apiClient.listNotesWithStatus(
       'NEEDS_MORE_RATINGS',
       1,
       1,
       state.communityServerUuid,
-      state.profileUuid
+      profileUuid
     );
     const totalNotes = notesResponse.total;
     const totalPages = Math.ceil(totalNotes / notesPerPage);
@@ -1236,12 +1267,13 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
       newPage,
       notesPerPage,
       state.communityServerUuid,
-      state.profileUuid
+      profileUuid
     );
 
     const updatedState: QueueState = {
       ...state,
       currentPage: newPage,
+      profileUuid,
     };
     await cache.set(cacheKey, updatedState, LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS);
 
