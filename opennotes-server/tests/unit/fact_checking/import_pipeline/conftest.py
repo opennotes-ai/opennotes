@@ -12,7 +12,7 @@ def create_mock_settings():
     """Create mock settings for tests."""
     settings = MagicMock()
     settings.DB_POOL_SIZE = 5
-    settings.DB_POOL_MAX_OVERFLOW = 10
+    settings.DB_POOL_MAX_OVERFLOW = 5
     settings.DB_POOL_TIMEOUT = 30
     settings.DB_POOL_RECYCLE = 1800
     return settings

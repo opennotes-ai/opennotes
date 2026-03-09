@@ -18,7 +18,8 @@ pytestmark = pytest.mark.unit
 class TestDatabaseEngineQueuePool:
     """AC#2: Engine uses QueuePool with pool_size, max_overflow, pool_pre_ping, pool_recycle."""
 
-    def test_create_engine_uses_queue_pool(self) -> None:
+    @pytest.mark.asyncio
+    async def test_create_engine_uses_queue_pool(self) -> None:
         from src.database import _create_engine
 
         with patch("src.database.get_settings") as mock_settings:
@@ -32,7 +33,10 @@ class TestDatabaseEngineQueuePool:
             )
             engine = _create_engine()
 
-        assert isinstance(engine.sync_engine.pool, QueuePool)
+        try:
+            assert isinstance(engine.sync_engine.pool, QueuePool)
+        finally:
+            await engine.dispose()
 
     def test_create_engine_passes_pool_kwargs(self) -> None:
         with patch("src.database.create_async_engine") as mock_create:
