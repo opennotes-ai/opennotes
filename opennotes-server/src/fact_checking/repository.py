@@ -5,6 +5,7 @@ hybrid search combining full-text search (FTS) and vector similarity
 using Convex Combination (CC) score fusion.
 """
 
+import re
 import time
 from dataclasses import dataclass
 
@@ -16,6 +17,13 @@ from src.fact_checking.models import FactCheckItem
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
+
+_DISCORD_MARKDOWN_RE = re.compile(r"```[a-z]*\n?|```|~~|\*{2}|__|\|{2}|`")
+
+
+def strip_discord_markdown(text: str) -> str:
+    return _DISCORD_MARKDOWN_RE.sub("", text)
+
 
 # Default fusion weight (alpha) for Convex Combination.
 # Used when Redis is unavailable or no alpha is specified.
