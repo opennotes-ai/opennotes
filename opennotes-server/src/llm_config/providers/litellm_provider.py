@@ -17,6 +17,10 @@ from src.monitoring import get_logger
 logger = get_logger(__name__)
 
 
+class EmptyLLMResponseError(Exception):
+    """Raised when LLM returns an empty response that fails JSON schema validation."""
+
+
 class LiteLLMProviderSettings(ProviderSettings):
     """Settings for LiteLLM unified provider."""
 
@@ -149,6 +153,18 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         try:
             response = await litellm.acompletion(**request_kwargs)
         except JSONSchemaValidationError as e:
+            raw = getattr(e, "raw_response", None)
+            if not raw or (isinstance(raw, str) and not raw.strip()):
+                logger.warning(
+                    "LLM returned empty response, raising retryable error",
+                    extra={
+                        "model": model_str,
+                        "raw_response": raw,
+                    },
+                )
+                raise EmptyLLMResponseError(
+                    f"LLM returned empty response for model {model_str}"
+                ) from e
             logger.exception(
                 "LiteLLM JSON schema validation failed",
                 extra={
@@ -156,7 +172,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
                     "response_format": str(params.response_format)
                     if params.response_format
                     else None,
-                    "raw_response": getattr(e, "raw_response", None),
+                    "raw_response": raw,
                     "error": str(e),
                 },
             )
