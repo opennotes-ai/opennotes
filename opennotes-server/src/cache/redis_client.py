@@ -515,9 +515,9 @@ _thread_local = threading.local()
 async def get_shared_redis_client(redis_url: str | None = None) -> redis.Redis:
     """Return a long-lived, per-thread Redis connection for DBOS steps.
 
-    Each thread gets its own Redis connection bound to its own event loop.
+    Each thread gets its own Redis connection bound to its event loop.
     This prevents 'Task got Future attached to a different loop' errors
-    when DBOS worker threads (which create thread-local event loops via
+    when DBOS worker threads (which use a shared background event loop via
     ``run_sync()``) try to use a connection created on the main uvicorn loop.
 
     Within a single thread, the connection is reused across calls and only

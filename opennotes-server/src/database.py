@@ -206,14 +206,10 @@ def _reset_database_for_test_loop() -> None:  # pyright: ignore[reportUnusedFunc
     Reset database engine and session maker for a new test event loop.
 
     When using asyncio_default_fixture_loop_scope=function in pytest.ini,
-    each test gets a fresh event loop. The async engine and session maker
-    are bound to the event loop they were created in. Reusing them across
-    tests causes "Task got Future attached to a different loop" errors.
-
-    This function disposes the engine's connection pool (synchronously via
-    sync_engine) and resets the module-level variables so the next call to
-    get_engine() or get_session_maker() creates new ones bound to the
-    current event loop.
+    each test gets a fresh event loop. This resets the module-level
+    singletons so the next call to get_engine() or get_session_maker()
+    creates new ones bound to the current event loop. The old engine is
+    left for GC (no synchronous dispose to avoid MissingGreenlet).
     """
     global _engine, _async_session_maker, _engine_loop  # noqa: PLW0603 - Reset singletons for fresh event loop in tests
     with _db_lock:
