@@ -1,5 +1,6 @@
 import createClient from "openapi-fetch";
 import { GoogleAuth } from "google-auth-library";
+import type { IdTokenClient } from "google-auth-library";
 import type { paths, components } from "./generated-types";
 
 export type SimulationListResponse =
@@ -13,6 +14,7 @@ export type ResultsListResponse = components["schemas"]["ResultsListResponse"];
 
 const FETCH_TIMEOUT_MS = 10_000;
 const IDENTITY_TOKEN_MAX_RETRIES = 3;
+const TOKEN_FETCH_TIMEOUT_MS = 5_000;
 
 export class PlaygroundApiError extends Error {
   constructor(
@@ -24,24 +26,53 @@ export class PlaygroundApiError extends Error {
   }
 }
 
+let authInstance: GoogleAuth | null = null;
+const idTokenClientCache = new Map<string, IdTokenClient>();
+
+function getAuthInstance(): GoogleAuth {
+  if (!authInstance) {
+    authInstance = new GoogleAuth();
+  }
+  return authInstance;
+}
+
 export async function getIdentityToken(targetAudience: string): Promise<string | null> {
   if (process.env.NODE_ENV !== "production") return null;
 
-  for (let attempt = 0; attempt < IDENTITY_TOKEN_MAX_RETRIES; attempt++) {
-    try {
-      const auth = new GoogleAuth();
-      const client = await auth.getIdTokenClient(targetAudience);
-      const rawHeaders = await client.getRequestHeaders();
-      const authValue = typeof rawHeaders.get === "function"
-        ? rawHeaders.get("Authorization")
-        : (rawHeaders as unknown as Record<string, string>)["Authorization"];
-      return authValue || null;
-    } catch (error) {
-      if (attempt === IDENTITY_TOKEN_MAX_RETRIES - 1) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt));
-    }
-  }
-  return null;
+  return new Promise<string | null>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error("Identity token fetch timed out after 5s"));
+      }
+    }, TOKEN_FETCH_TIMEOUT_MS);
+
+    (async () => {
+      for (let attempt = 0; attempt < IDENTITY_TOKEN_MAX_RETRIES; attempt++) {
+        try {
+          const auth = getAuthInstance();
+          let client = idTokenClientCache.get(targetAudience);
+          if (!client) {
+            client = await auth.getIdTokenClient(targetAudience);
+            idTokenClientCache.set(targetAudience, client);
+          }
+          const rawHeaders = await client.getRequestHeaders();
+          const authValue = typeof rawHeaders.get === "function"
+            ? rawHeaders.get("Authorization")
+            : (rawHeaders as unknown as Record<string, string>)["Authorization"];
+          return authValue || null;
+        } catch (error) {
+          if (attempt === IDENTITY_TOKEN_MAX_RETRIES - 1) throw error;
+          await new Promise((r) => setTimeout(r, 100 * 2 ** attempt));
+        }
+      }
+      return null;
+    })().then(
+      (value) => { if (!settled) { settled = true; clearTimeout(timeoutId); resolve(value); } },
+      (error) => { if (!settled) { settled = true; clearTimeout(timeoutId); reject(error); } },
+    );
+  });
 }
 
 function getClient() {
