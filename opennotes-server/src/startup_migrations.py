@@ -3,12 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-import psycopg2
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine.url import make_url
-from sqlalchemy.pool import NullPool
 
-from src.common.connection_retry import sync_connect_with_retry
 from src.config import get_settings
 from src.monitoring import get_logger
 
@@ -33,24 +29,11 @@ def _parse_current_revision(stdout: str) -> list[str]:
 
 def _run_migrations_sync(is_worker: bool) -> None:
     db_url = _get_sync_db_url()
-    cfg = get_settings()
     server_dir = Path(__file__).parent.parent
-    url = make_url(db_url)
-
-    def _raw_connect():
-        return psycopg2.connect(url.render_as_string(hide_password=False))
-
-    creator = sync_connect_with_retry(
-        _raw_connect,
-        max_retries=cfg.DB_CONNECT_MAX_RETRIES,
-        backoff_base=cfg.DB_CONNECT_BACKOFF_BASE_SECONDS,
-    )
 
     engine = create_engine(
         db_url,
         isolation_level="AUTOCOMMIT",
-        poolclass=NullPool,
-        creator=creator,
     )
     try:
         with engine.connect() as conn:

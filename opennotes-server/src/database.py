@@ -4,11 +4,9 @@ import threading
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import asyncpg
 from cryptography.fernet import Fernet
 from sqlalchemy import TypeDecorator, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -16,9 +14,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.pool import NullPool
 
-from src.common.connection_retry import async_connect_with_retry
 from src.config import get_settings
 
 
@@ -91,43 +87,25 @@ _db_lock = threading.RLock()
 
 
 def _create_engine() -> AsyncEngine:
-    """Create the async engine with Supavisor-compatible settings.
+    """Create the async engine with two-tier pooling (app QueuePool -> Supavisor -> PG).
 
-    Uses NullPool to delegate connection pooling to Supavisor (external pooler).
-    Disables prepared statement caches at both layers:
-    - asyncpg native: statement_cache_size=0 (via _raw_connect)
-    - SQLAlchemy adapter: prepared_statement_cache_size=0 (via connect_args)
+    App-side QueuePool reuses connections to Supavisor, avoiding DNS/TLS overhead
+    per request. Supavisor multiplexes onto bounded PG backends.
 
-    Both are required because SQLAlchemy's AsyncAdapt_asyncpg_connection maintains
-    its own LRU cache (default 100) separate from asyncpg's native cache. With
-    Supavisor in transaction-mode pooling, prepared statements created on one
-    backend connection may not exist on another.
-
-    Connection creation is wrapped with retry logic to handle transient DNS
-    and connection failures (e.g., socket.gaierror in Cloud Run).
+    statement_cache_size=0 is required for Supavisor transaction-mode pooling
+    (prepared statements created on one backend may not exist on another).
     """
     cfg = get_settings()
-    url = make_url(cfg.DATABASE_URL)
-    dsn = url.render_as_string(hide_password=False).replace(
-        "postgresql+asyncpg://", "postgresql://"
-    )
-
-    async def _raw_connect():
-        return await asyncpg.connect(dsn=dsn, statement_cache_size=0)
-
-    creator = async_connect_with_retry(
-        _raw_connect,
-        max_retries=cfg.DB_CONNECT_MAX_RETRIES,
-        backoff_base=cfg.DB_CONNECT_BACKOFF_BASE_SECONDS,
-    )
-
     return create_async_engine(
         cfg.DATABASE_URL,
         echo=cfg.DEBUG,
         future=True,
-        poolclass=NullPool,
-        async_creator=creator,
-        connect_args={"prepared_statement_cache_size": 0},
+        pool_size=cfg.DB_POOL_SIZE,
+        max_overflow=cfg.DB_POOL_MAX_OVERFLOW,
+        pool_timeout=cfg.DB_POOL_TIMEOUT,
+        pool_recycle=cfg.DB_POOL_RECYCLE,
+        pool_pre_ping=True,
+        connect_args={"statement_cache_size": 0},
     )
 
 

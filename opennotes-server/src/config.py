@@ -195,36 +195,25 @@ class Settings(BaseSettings):
             )
         return v
 
-    DB_CONNECT_MAX_RETRIES: int = Field(
-        default=3,
-        ge=0,
-        description="Max retries for transient DB connection errors (DNS, refused). 0 disables retry.",
-    )
-    DB_CONNECT_BACKOFF_BASE_SECONDS: float = Field(
-        default=0.5,
-        gt=0,
-        description="Base delay in seconds for DB connection retry exponential backoff.",
-    )
-
     DB_POOL_SIZE: int = Field(
         default=5,
-        description="Deprecated: ignored with NullPool (Supavisor handles pooling). Kept for backward compatibility.",
-        deprecated="Supavisor-compatible config uses NullPool; this field is ignored.",
+        ge=1,
+        description="SQLAlchemy QueuePool size (number of persistent connections to Supavisor).",
     )
     DB_POOL_MAX_OVERFLOW: int = Field(
-        default=10,
-        description="Deprecated: ignored with NullPool (Supavisor handles pooling). Kept for backward compatibility.",
-        deprecated="Supavisor-compatible config uses NullPool; this field is ignored.",
+        default=5,
+        ge=0,
+        description="Max overflow connections beyond pool_size.",
     )
     DB_POOL_TIMEOUT: int = Field(
         default=30,
-        description="Deprecated: ignored with NullPool (Supavisor handles pooling). Kept for backward compatibility.",
-        deprecated="Supavisor-compatible config uses NullPool; this field is ignored.",
+        ge=1,
+        description="Seconds to wait for a connection from the pool before timing out.",
     )
     DB_POOL_RECYCLE: int = Field(
-        default=3600,
-        description="Deprecated: ignored with NullPool (Supavisor handles pooling). Kept for backward compatibility.",
-        deprecated="Supavisor-compatible config uses NullPool; this field is ignored.",
+        default=1800,
+        ge=-1,
+        description="Seconds after which a connection is recycled. -1 disables.",
     )
 
     REDIS_URL: str = Field(default="redis://localhost:6379/0")
