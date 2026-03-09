@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,7 +14,10 @@ from src.llm_config.models import CommunityServer
 from src.monitoring.metrics import notes_scored_total
 from src.notes import loaders as note_loaders
 from src.notes.models import Note, Rating, Request
+from src.notes.scoring.gcs_storage import upload_scoring_snapshot
+from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 from src.notes.scoring.scorer_factory import ScorerFactory
+from src.notes.scoring.snapshot_persistence import persist_scoring_snapshot
 from src.notes.scoring.tier_config import (
     ScoringTier,
     get_tier_for_note_count,
@@ -24,6 +28,12 @@ from src.simulation.models import SimulationRun
 logger = logging.getLogger(__name__)
 
 SCORING_BATCH_SIZE = 100
+
+
+def _log_gcs_upload_error(future: asyncio.Future) -> None:  # type: ignore[type-arg]
+    exc = future.exception()
+    if exc is not None:
+        logger.error("GCS scoring snapshot upload failed", exc_info=exc)
 
 
 @dataclass
@@ -61,6 +71,61 @@ class CommunityServerScoringResult:
     total_scores_computed: int
     tier_name: str
     scorer_type: str
+
+
+async def _maybe_persist_snapshot(
+    scorer: Any,
+    community_server_id: UUID,
+    tier_value: str,
+    scorer_type: str,
+    db: AsyncSession,
+) -> None:
+    if isinstance(scorer, MFCoreScorerAdapter):
+        factors = scorer.get_last_scoring_factors()
+        if factors:
+            metadata = {
+                "tier": tier_value,
+                "scorer_name": scorer_type,
+                "note_count": factors["note_count"],
+                "rater_count": factors["rater_count"],
+            }
+            await persist_scoring_snapshot(
+                community_server_id=community_server_id,
+                rater_factors=factors["rater_factors"],
+                note_factors=factors["note_factors"],
+                global_intercept=factors["global_intercept"],
+                metadata=metadata,
+                db=db,
+            )
+
+            try:
+                gcs_snapshot = {**factors, **metadata}
+                loop = asyncio.get_event_loop()
+                future = loop.run_in_executor(
+                    None, upload_scoring_snapshot, community_server_id, gcs_snapshot
+                )
+                future.add_done_callback(_log_gcs_upload_error)
+            except Exception:
+                logger.exception(
+                    "Failed to schedule GCS scoring snapshot upload",
+                    extra={"community_server_id": str(community_server_id)},
+                )
+
+
+async def _safe_persist_snapshot(
+    scorer: Any,
+    community_server_id: UUID,
+    tier_value: str,
+    scorer_type: str,
+    db: AsyncSession,
+) -> None:
+    try:
+        await _maybe_persist_snapshot(scorer, community_server_id, tier_value, scorer_type, db)
+    except Exception:
+        logger.exception(
+            "Snapshot persistence failed, continuing with scoring commit",
+            extra={"community_server_id": str(community_server_id)},
+        )
 
 
 async def _record_scoring_metrics(
@@ -247,6 +312,8 @@ async def score_community_server_notes(
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
 
+    await _safe_persist_snapshot(scorer, community_server_id, tier.value, scorer_type, db)
+
     await db.commit()
 
     platform = await _record_scoring_metrics(
@@ -396,6 +463,8 @@ async def trigger_scoring_for_simulation(
         )
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
+
+    await _safe_persist_snapshot(scorer, community_server_id, tier.value, scorer_type, db)
 
     result = ScoringRunResult(
         scores_computed=scores_computed,

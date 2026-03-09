@@ -260,6 +260,7 @@ from .note_create_attributes import NoteCreateAttributes
 from .note_create_data import NoteCreateData
 from .note_create_request import NoteCreateRequest
 from .note_data import NoteData
+from .note_factor_data import NoteFactorData
 from .note_jsonapi_attributes import NoteJSONAPIAttributes
 from .note_list_response import NoteListResponse
 from .note_list_response_jsonapi import NoteListResponseJsonapi
@@ -409,6 +410,7 @@ from .progress_attributes import ProgressAttributes
 from .progress_resource import ProgressResource
 from .progress_response import ProgressResponse
 from .progress_response_jsonapi import ProgressResponseJsonapi
+from .rater_factor_data import RaterFactorData
 from .rating_attributes import RatingAttributes
 from .rating_create_attributes import RatingCreateAttributes
 from .rating_create_data import RatingCreateData
@@ -472,12 +474,32 @@ from .scan_error_summary_schema import ScanErrorSummarySchema
 from .scan_error_summary_schema_error_types import ScanErrorSummarySchemaErrorTypes
 from .score_community_response import ScoreCommunityResponse
 from .score_confidence import ScoreConfidence
+from .scoring_analysis_attributes import ScoringAnalysisAttributes
+from .scoring_analysis_resource import ScoringAnalysisResource
+from .scoring_analysis_response import ScoringAnalysisResponse
+from .scoring_analysis_response_jsonapi import ScoringAnalysisResponseJsonapi
 from .scoring_coverage_data import ScoringCoverageData
 from .scoring_coverage_data_notes_by_status import ScoringCoverageDataNotesByStatus
 from .scoring_coverage_data_scorer_breakdown import ScoringCoverageDataScorerBreakdown
 from .scoring_coverage_data_tier_distribution import ScoringCoverageDataTierDistribution
 from .scoring_health_jsonapi_api_v2_scoring_health_get_response_scoring_health_jsonapi_api_v2_scoring_health_get import (
     ScoringHealthJsonapiApiV2ScoringHealthGetResponseScoringHealthJsonapiApiV2ScoringHealthGet,
+)
+from .scoring_history_entry_attributes import ScoringHistoryEntryAttributes
+from .scoring_history_entry_resource import ScoringHistoryEntryResource
+from .scoring_history_list_response import ScoringHistoryListResponse
+from .scoring_history_list_response_jsonapi import ScoringHistoryListResponseJsonapi
+from .scoring_history_list_response_meta_type_0 import (
+    ScoringHistoryListResponseMetaType0,
+)
+from .scoring_history_snapshot_attributes import ScoringHistorySnapshotAttributes
+from .scoring_history_snapshot_attributes_snapshot import (
+    ScoringHistorySnapshotAttributesSnapshot,
+)
+from .scoring_history_snapshot_resource import ScoringHistorySnapshotResource
+from .scoring_history_snapshot_response import ScoringHistorySnapshotResponse
+from .scoring_history_snapshot_response_jsonapi import (
+    ScoringHistorySnapshotResponseJsonapi,
 )
 from .scoring_result_attributes import ScoringResultAttributes
 from .scoring_result_attributes_auxiliary_info_item import (
@@ -795,6 +817,7 @@ __all__ = (
     "NoteCreateData",
     "NoteCreateRequest",
     "NoteData",
+    "NoteFactorData",
     "NoteJSONAPIAttributes",
     "NoteListResponse",
     "NoteListResponseJsonapi",
@@ -910,6 +933,7 @@ __all__ = (
     "ProgressResource",
     "ProgressResponse",
     "ProgressResponseJsonapi",
+    "RaterFactorData",
     "RatingAttributes",
     "RatingCreateAttributes",
     "RatingCreateData",
@@ -967,11 +991,25 @@ __all__ = (
     "ScanErrorSummarySchemaErrorTypes",
     "ScoreCommunityResponse",
     "ScoreConfidence",
+    "ScoringAnalysisAttributes",
+    "ScoringAnalysisResource",
+    "ScoringAnalysisResponse",
+    "ScoringAnalysisResponseJsonapi",
     "ScoringCoverageData",
     "ScoringCoverageDataNotesByStatus",
     "ScoringCoverageDataScorerBreakdown",
     "ScoringCoverageDataTierDistribution",
     "ScoringHealthJsonapiApiV2ScoringHealthGetResponseScoringHealthJsonapiApiV2ScoringHealthGet",
+    "ScoringHistoryEntryAttributes",
+    "ScoringHistoryEntryResource",
+    "ScoringHistoryListResponse",
+    "ScoringHistoryListResponseJsonapi",
+    "ScoringHistoryListResponseMetaType0",
+    "ScoringHistorySnapshotAttributes",
+    "ScoringHistorySnapshotAttributesSnapshot",
+    "ScoringHistorySnapshotResource",
+    "ScoringHistorySnapshotResponse",
+    "ScoringHistorySnapshotResponseJsonapi",
     "ScoringResultAttributes",
     "ScoringResultAttributesAuxiliaryInfoItem",
     "ScoringResultAttributesHelpfulScoresItem",
