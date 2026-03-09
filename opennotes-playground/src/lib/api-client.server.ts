@@ -36,7 +36,7 @@ function getAuthInstance(): GoogleAuth {
   return authInstance;
 }
 
-export async function getIdentityToken(targetAudience: string): Promise<string | null> {
+export async function getAuthorizationHeader(targetAudience: string): Promise<string | null> {
   if (process.env.NODE_ENV !== "production") return null;
 
   return new Promise<string | null>((resolve, reject) => {
@@ -57,11 +57,8 @@ export async function getIdentityToken(targetAudience: string): Promise<string |
             client = await auth.getIdTokenClient(targetAudience);
             idTokenClientCache.set(targetAudience, client);
           }
-          const rawHeaders = await client.getRequestHeaders();
-          const authValue = typeof rawHeaders.get === "function"
-            ? rawHeaders.get("Authorization")
-            : (rawHeaders as unknown as Record<string, string>)["Authorization"];
-          return authValue || null;
+          const headers = await client.getRequestHeaders();
+          return headers.get("Authorization") || null;
         } catch (error) {
           if (attempt === IDENTITY_TOKEN_MAX_RETRIES - 1) throw error;
           await new Promise((r) => setTimeout(r, 100 * 2 ** attempt));
@@ -93,15 +90,18 @@ function getClient() {
     headers: { "X-API-Key": apiKey! },
     fetch: async (request: Request) => {
       if (isProduction) {
-        const token = await getIdentityToken(baseUrl!);
-        if (token) {
-          const headers = new Headers(request.headers);
-          headers.set("Authorization", token);
-          request = new Request(request.url, {
-            method: request.method,
-            headers,
-            body: request.body,
-          });
+        try {
+          const token = await getAuthorizationHeader(baseUrl!);
+          if (token) {
+            const headers = new Headers(request.headers);
+            headers.set("Authorization", token);
+            request = new Request(request, { headers });
+          }
+        } catch (error) {
+          throw new PlaygroundApiError(
+            `Failed to fetch identity token: ${error instanceof Error ? error.message : String(error)}`,
+            503,
+          );
         }
       }
       return fetch(new Request(request, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }));

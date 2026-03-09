@@ -48,11 +48,11 @@ afterEach(() => {
   process.env = originalEnv;
 });
 
-describe("getIdentityToken", () => {
+describe("getAuthorizationHeader", () => {
   it("returns null in non-production", async () => {
     process.env.NODE_ENV = "development";
-    const { getIdentityToken } = await import("./api-client.server");
-    const token = await getIdentityToken("https://example.run.app");
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const token = await getAuthorizationHeader("https://example.run.app");
     expect(token).toBeNull();
     expect(mockGetIdTokenClient).not.toHaveBeenCalled();
   });
@@ -66,8 +66,8 @@ describe("getIdentityToken", () => {
       getRequestHeaders: mockGetRequestHeaders,
     });
 
-    const { getIdentityToken } = await import("./api-client.server");
-    const token = await getIdentityToken("https://example.run.app");
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const token = await getAuthorizationHeader("https://example.run.app");
     expect(token).toBe("Bearer id-token-123");
     expect(mockGetIdTokenClient).toHaveBeenCalledWith(
       "https://example.run.app",
@@ -84,8 +84,8 @@ describe("getIdentityToken", () => {
         ),
       });
 
-    const { getIdentityToken } = await import("./api-client.server");
-    const token = await getIdentityToken("https://example.run.app");
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const token = await getAuthorizationHeader("https://example.run.app");
     expect(token).toBe("Bearer retry-token");
     expect(mockGetIdTokenClient).toHaveBeenCalledTimes(2);
   });
@@ -94,9 +94,9 @@ describe("getIdentityToken", () => {
     process.env.NODE_ENV = "production";
     mockGetIdTokenClient.mockRejectedValue(new Error("persistent failure"));
 
-    const { getIdentityToken } = await import("./api-client.server");
+    const { getAuthorizationHeader } = await import("./api-client.server");
     await expect(
-      getIdentityToken("https://example.run.app"),
+      getAuthorizationHeader("https://example.run.app"),
     ).rejects.toThrow("persistent failure");
     expect(mockGetIdTokenClient).toHaveBeenCalledTimes(3);
   });
@@ -110,10 +110,10 @@ describe("getIdentityToken", () => {
       getRequestHeaders: mockGetRequestHeaders,
     });
 
-    const { getIdentityToken } = await import("./api-client.server");
-    await getIdentityToken("https://example.run.app");
-    await getIdentityToken("https://example.run.app");
-    await getIdentityToken("https://other.run.app");
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    await getAuthorizationHeader("https://example.run.app");
+    await getAuthorizationHeader("https://example.run.app");
+    await getAuthorizationHeader("https://other.run.app");
 
     expect(mockGoogleAuthConstructor).toHaveBeenCalledTimes(1);
   });
@@ -127,9 +127,9 @@ describe("getIdentityToken", () => {
       getRequestHeaders: mockGetRequestHeaders,
     });
 
-    const { getIdentityToken } = await import("./api-client.server");
-    await getIdentityToken("https://example.run.app");
-    await getIdentityToken("https://example.run.app");
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    await getAuthorizationHeader("https://example.run.app");
+    await getAuthorizationHeader("https://example.run.app");
 
     expect(mockGetIdTokenClient).toHaveBeenCalledTimes(1);
   });
@@ -143,9 +143,9 @@ describe("getIdentityToken", () => {
       getRequestHeaders: mockGetRequestHeaders,
     });
 
-    const { getIdentityToken } = await import("./api-client.server");
-    await getIdentityToken("https://a.run.app");
-    await getIdentityToken("https://b.run.app");
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    await getAuthorizationHeader("https://a.run.app");
+    await getAuthorizationHeader("https://b.run.app");
 
     expect(mockGetIdTokenClient).toHaveBeenCalledTimes(2);
     expect(mockGetIdTokenClient).toHaveBeenCalledWith("https://a.run.app");
@@ -159,8 +159,8 @@ describe("getIdentityToken", () => {
       () => new Promise(() => {}),
     );
 
-    const { getIdentityToken } = await import("./api-client.server");
-    const promise = getIdentityToken("https://example.run.app");
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const promise = getAuthorizationHeader("https://example.run.app");
     promise.catch(() => {});
 
     await vi.advanceTimersByTimeAsync(5000);
@@ -213,6 +213,28 @@ describe("getClient fetch interceptor", () => {
       "Bearer prod-id-token",
     );
     expect(calledRequest.headers.get("X-API-Key")).toBe("prod-key");
+    fetchSpy.mockRestore();
+  });
+
+  it("wraps getAuthorizationHeader errors in PlaygroundApiError", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.OPENNOTES_SERVER_URL = "https://server.run.app";
+    process.env.OPENNOTES_API_KEY = "prod-key";
+
+    mockGetIdTokenClient.mockRejectedValue(new Error("auth failure"));
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    );
+
+    const { listSimulations, PlaygroundApiError } = await import(
+      "./api-client.server"
+    );
+
+    await expect(listSimulations()).rejects.toThrow(PlaygroundApiError);
+    await expect(listSimulations()).rejects.toThrow(
+      /Failed to fetch identity token/,
+    );
     fetchSpy.mockRestore();
   });
 });
