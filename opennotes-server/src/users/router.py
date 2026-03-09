@@ -65,6 +65,7 @@ from src.users.crud import (
     get_refresh_token,
     get_user_audit_logs,
     get_user_by_email_for_update,
+    get_user_by_id,
     get_user_by_username_for_update,
     revoke_all_user_refresh_tokens,
     revoke_api_key,
@@ -222,6 +223,31 @@ async def refresh_access_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token not found or expired",
         )
+
+    user = await get_user_by_id(db, token_data.user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        )
+
+    if user.tokens_valid_after and token_data.iat is not None:
+        valid_after_int = int(user.tokens_valid_after.timestamp())
+        if token_data.iat < valid_after_int:
+            await create_audit_log(
+                db=db,
+                user_id=token_data.user_id,
+                action="TOKEN_REFRESH_FAILED",
+                resource="authentication",
+                resource_id=str(token_data.user_id),
+                details={"reason": "token_issued_before_validity_cutoff"},
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been invalidated",
+            )
 
     access_token_expires = pendulum.duration(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     new_access_token = create_access_token(

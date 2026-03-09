@@ -166,6 +166,8 @@ async def update_user(
         current_second = int(now.timestamp())
         user.tokens_valid_after = pendulum.from_timestamp(current_second + 1)
 
+        await revoke_all_user_refresh_tokens(db, user.id)
+
         await create_audit_log(
             db=db,
             user_id=user.id,
