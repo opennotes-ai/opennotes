@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from src.config import get_settings
 from src.database import get_session_maker, init_db
+from src.dbos_workflows.config import destroy_dbos, get_dbos
 from src.simulation.models import SimAgentInstance, SimulationRun
 
 GEN_PATTERN = re.compile(r"-gen(\d+)-")
@@ -31,6 +32,11 @@ GEN_PATTERN = re.compile(r"-gen(\d+)-")
 async def main(dry_run: bool) -> None:
     get_settings()
     await init_db()
+
+    dbos = get_dbos()
+    DBOS.listen_queues([])
+    dbos.launch()
+
     found = 0
     cancelled = 0
 
@@ -108,6 +114,8 @@ async def main(dry_run: bool) -> None:
         print(f"Would cancel: {found} workflow(s)")
     else:
         print(f"Cancelled: {cancelled} workflow(s)")
+
+    destroy_dbos()
 
 
 if __name__ == "__main__":

@@ -90,7 +90,7 @@ class TestWorkerWorkflowRegistration:
             patch("src.main.validate_dbos_connection"),
             patch("src.main.logger") as mock_logger,
             patch("src.main.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread,
-            patch("dbos.DBOS.listen_queues"),
+            patch("dbos.DBOS.listen_queues") as mock_listen_queues,
         ):
             mock_settings.TESTING = False
             mock_settings.DBOS_CONDUCTOR_KEY = None
@@ -99,6 +99,9 @@ class TestWorkerWorkflowRegistration:
             mock_to_thread.return_value = True
 
             await _init_dbos(is_dbos_worker=False)
+
+            mock_listen_queues.assert_called_once_with([])
+            mock_dbos.launch.assert_called_once()
 
             log_calls = [
                 call

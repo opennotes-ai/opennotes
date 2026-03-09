@@ -172,6 +172,11 @@ def reset_dbos() -> None:
     """Reset the DBOS instance. Used for testing."""
     global _dbos_instance
     with _dbos_lock:
+        if _dbos_instance is not None:
+            try:
+                _dbos_instance.destroy(destroy_registry=False)
+            except Exception:
+                pass
         _dbos_instance = None
 
 
