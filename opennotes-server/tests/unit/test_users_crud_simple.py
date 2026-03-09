@@ -192,6 +192,9 @@ async def test_update_user():
     from src.users import crud
 
     mock_db = AsyncMock()
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalars.return_value.all.return_value = []
+    mock_db.execute.return_value = mock_execute_result
 
     test_user_id = uuid4()
     user = User(
