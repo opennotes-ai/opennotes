@@ -449,6 +449,54 @@ class TestCloseDb:
             database._session_makers.clear()
             database._session_makers.update(original_session_makers)
 
+    @pytest.mark.asyncio
+    async def test_close_db_with_empty_engines(self):
+        from src import database
+
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
+
+        try:
+            database._engines.clear()
+            database._session_makers.clear()
+
+            await database.close_db()
+
+            assert len(database._engines) == 0
+            assert len(database._session_makers) == 0
+        finally:
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
+
+    @pytest.mark.asyncio
+    async def test_close_db_disposes_no_loop_key_entries(self):
+        from src import database
+
+        mock_engine = MagicMock()
+        mock_engine.dispose = AsyncMock()
+
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
+
+        try:
+            database._engines.clear()
+            database._session_makers.clear()
+            database._engines[0] = (mock_engine, None)
+            database._session_makers[0] = MagicMock()
+
+            await database.close_db()
+
+            mock_engine.dispose.assert_awaited_once()
+            assert len(database._engines) == 0
+            assert len(database._session_makers) == 0
+        finally:
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
+
 
 class TestPerLoopDictBehavior:
     """Tests for per-loop dictionary engine behavior."""
@@ -545,3 +593,60 @@ class TestPerLoopDictBehavior:
             database._engines.update(original_engines)
             database._session_makers.clear()
             database._session_makers.update(original_session_makers)
+
+
+class TestGetAttrCompat:
+    """Tests for __getattr__ backwards compatibility shim."""
+
+    def test_getattr_engine_returns_engine(self):
+        from src import database
+
+        mock_engine = MagicMock()
+
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
+
+        try:
+            database._engines.clear()
+            database._session_makers.clear()
+
+            with patch("src.database._create_engine", return_value=mock_engine):
+                result = database.engine
+
+            assert result is mock_engine
+
+        finally:
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
+
+    def test_getattr_async_session_maker_returns_maker(self):
+        from src import database
+
+        mock_engine = MagicMock()
+
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
+
+        try:
+            database._engines.clear()
+            database._session_makers.clear()
+
+            with patch("src.database._create_engine", return_value=mock_engine):
+                result = database.async_session_maker
+
+            assert result is not None
+            assert 0 in database._session_makers
+
+        finally:
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
+
+    def test_getattr_unknown_raises_attribute_error(self):
+        from src import database
+
+        with pytest.raises(AttributeError, match="has no attribute 'nonexistent_attr'"):
+            _ = database.nonexistent_attr
