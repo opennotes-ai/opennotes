@@ -88,6 +88,8 @@ def get_direct_sync_url() -> str:
         return url.replace("postgresql+asyncpg://", "postgresql://", 1)
     if url.startswith("postgresql://"):
         return url
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql://", 1)
     return f"postgresql://{url}"
 
 

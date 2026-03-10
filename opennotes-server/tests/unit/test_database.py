@@ -61,6 +61,24 @@ class TestGetDirectSyncUrl:
             with pytest.raises(ValueError, match="DATABASE_URL"):
                 get_direct_sync_url()
 
+    def test_converts_postgres_scheme_alias(self):
+        with patch("src.database.get_settings") as mock:
+            mock.return_value.DATABASE_DIRECT_URL = "postgres://user:pass@host:5432/db"
+            mock.return_value.DATABASE_URL = "postgresql+asyncpg://x:y@pooled/db"
+            from src.database import get_direct_sync_url
+
+            result = get_direct_sync_url()
+            assert result == "postgresql://user:pass@host:5432/db"
+
+    def test_empty_direct_url_falls_back(self):
+        with patch("src.database.get_settings") as mock:
+            mock.return_value.DATABASE_DIRECT_URL = ""
+            mock.return_value.DATABASE_URL = "postgresql+asyncpg://user:pass@pooled:6543/db"
+            from src.database import get_direct_sync_url
+
+            result = get_direct_sync_url()
+            assert result == "postgresql://user:pass@pooled:6543/db"
+
 
 class TestResetDatabaseForTestLoop:
     """Tests for _reset_database_for_test_loop function."""

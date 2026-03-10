@@ -141,8 +141,11 @@ class TestGetDbosConfig:
 
     def test_returns_valid_config_dict(self) -> None:
         """Config dict includes required DBOS fields."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+        with (
+            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = "Test Project"
             mock_settings.OTLP_ENDPOINT = None
@@ -179,8 +182,11 @@ class TestGetDbosConfig:
 
     def test_app_name_uses_dbos_app_name_setting(self) -> None:
         """Config uses DBOS_APP_NAME setting directly."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+        with (
+            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
             mock_settings.DBOS_APP_NAME = "custom-dbos-app"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.DBOS_CONDUCTOR_KEY = None
@@ -215,8 +221,11 @@ class TestGetDbosConfig:
 
     def test_includes_otlp_config_when_endpoint_set(self) -> None:
         """Config includes OTLP settings when OTLP_ENDPOINT is configured."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+        with (
+            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
             mock_settings.OTLP_ENDPOINT = "http://tempo:4317"
             mock_settings.OTEL_SERVICE_NAME = "opennotes-server"
             mock_settings.PROJECT_NAME = "Open Notes Server"
@@ -232,8 +241,11 @@ class TestGetDbosConfig:
 
     def test_disables_otlp_when_no_endpoint(self) -> None:
         """Config disables OTLP when OTLP_ENDPOINT is not set."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+        with (
+            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.OTEL_SERVICE_NAME = None
             mock_settings.PROJECT_NAME = "Open Notes Server"
@@ -248,8 +260,11 @@ class TestGetDbosConfig:
             assert "otlp_logs_endpoints" not in config
 
     def test_config_does_not_include_conductor_key(self) -> None:
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+        with (
+            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = "Test Project"
             mock_settings.OTLP_ENDPOINT = None
@@ -259,9 +274,7 @@ class TestGetDbosConfig:
 
             config: dict[str, Any] = dict(get_dbos_config())
 
-            assert (
-                "conductor_key" not in config
-            )  # conductor_key is set in create_dbos_instance, not get_dbos_config
+            assert "conductor_key" not in config
 
 
 class TestDbosInstance:
