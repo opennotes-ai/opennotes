@@ -209,10 +209,10 @@ class TestFetchTitleAsync:
 
         from src.notes.backfill_titles import fetch_title_async
 
-        async def slow_fetch(*args):  # pyright: ignore[reportUnusedParameter,reportUnknownParameterType]
+        async def slow_fetch(*_args):  # pyright: ignore[reportUnknownParameterType]
             await asyncio.sleep(100)
 
-        mock_fetch.side_effect = lambda *a: asyncio.get_event_loop().run_until_complete(
+        mock_fetch.side_effect = lambda *_a: asyncio.get_event_loop().run_until_complete(
             slow_fetch()
         )
 
@@ -303,7 +303,7 @@ class TestBackfill:
                     mock_result.all.return_value = []
                 return mock_session
 
-            async def __aexit__(self, *args):  # pyright: ignore[reportUnknownParameterType]
+            async def __aexit__(self, *_args):  # pyright: ignore[reportUnknownParameterType]
                 pass
 
         mock_gsm.return_value = FakeSessionMaker()
@@ -332,7 +332,7 @@ class TestBackfill:
             async def __aenter__(self):
                 return mock_session
 
-            async def __aexit__(self, *args):  # pyright: ignore[reportUnknownParameterType]
+            async def __aexit__(self, *_args):  # pyright: ignore[reportUnknownParameterType]
                 pass
 
         mock_gsm.return_value = FakeSessionMaker()
@@ -377,7 +377,7 @@ class TestBackfill:
                 mock_result.all.return_value = []
                 return mock_session_read
 
-            async def __aexit__(self, *args):  # pyright: ignore[reportUnknownParameterType]
+            async def __aexit__(self, *_args):  # pyright: ignore[reportUnknownParameterType]
                 pass
 
         mock_session_read.execute = AsyncMock(return_value=mock_result)
@@ -391,7 +391,7 @@ class TestBackfill:
     @patch("src.notes.backfill_titles.close_db", new_callable=AsyncMock)
     @patch("src.notes.backfill_titles.get_session_maker")
     @patch("src.notes.backfill_titles.fetch_title_async", new_callable=AsyncMock)
-    async def test_backfill_uses_json_dumps_for_title(self, mock_fetch, mock_gsm, mock_close):
+    async def test_backfill_uses_json_dumps_for_title(self, mock_fetch, mock_gsm, _mock_close):
         from src.notes.backfill_titles import backfill
 
         archive_id = uuid4()
@@ -419,7 +419,7 @@ class TestBackfill:
                     mock_result.all.return_value = []
                 return mock_session
 
-            async def __aexit__(self, *args):  # pyright: ignore[reportUnknownParameterType]
+            async def __aexit__(self, *_args):  # pyright: ignore[reportUnknownParameterType]
                 pass
 
         mock_session.execute = AsyncMock(return_value=mock_result)
