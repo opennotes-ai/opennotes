@@ -86,7 +86,7 @@ _engine_loop: asyncio.AbstractEventLoop | None = None
 _db_lock = threading.RLock()
 
 
-SUPAVISOR_CONNECT_ARGS: dict = {
+SUPAVISOR_CONNECT_ARGS: dict[str, object] = {
     "statement_cache_size": 0,
     "prepared_statement_cache_size": 0,
     "prepared_statement_name_func": lambda: "",
