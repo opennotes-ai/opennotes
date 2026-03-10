@@ -45,7 +45,7 @@ export default function MetricsDisplay(props: {
                   const tierInfo = () => TIER_DESCRIPTIONS[tier];
                   return (
                     <tr class="border-b border-border last:border-0">
-                      <td class="py-1 text-muted-foreground" title={tierInfo()?.description ?? ""} aria-label={`${humanizeLabel(tier)}: ${tierInfo()?.description ?? "No description"}`}>
+                      <td class="py-1 text-muted-foreground" tabindex="0" title={tierInfo()?.description ?? ""} aria-label={`${humanizeLabel(tier)}: ${tierInfo()?.description ?? "No description"}`}>
                         {humanizeLabel(tier)}
                       </td>
                       <td class="py-1 text-right font-medium">{count}</td>

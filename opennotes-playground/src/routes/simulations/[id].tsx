@@ -57,6 +57,7 @@ const fetchAnalysis = query(async (id: string) => {
     const data = await getSimulationAnalysis(id);
 
     const behaviors = data.data.attributes.agent_behaviors ?? [];
+    data.data.attributes.agent_behaviors = behaviors;
     const totalAgents = behaviors.length;
     let agentsTruncated = false;
     if (!isAuthenticated && totalAgents > UNAUTH_PAGE_SIZE) {

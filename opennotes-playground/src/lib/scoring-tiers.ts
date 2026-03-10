@@ -61,7 +61,10 @@ export const TIER_DESCRIPTIONS: Record<string, { label: string; description: str
   },
 };
 
-export function getHelpfulnessTooltip(score: number, tier: string): string {
+export function getHelpfulnessTooltip(score: number | null | undefined, tier: string): string {
+  if (score == null) {
+    return "Helpfulness: N/A";
+  }
   const tierInfo = TIER_DESCRIPTIONS[tier];
   const status = score >= 0.5 ? "Helpful" : "Not Helpful";
   const base = `Helpfulness: ${score.toFixed(2)} (${status})`;

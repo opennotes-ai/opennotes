@@ -1,4 +1,4 @@
-import { action, useSubmission, A } from "@solidjs/router";
+import { action, useSubmission, useSearchParams, A } from "@solidjs/router";
 import { Show } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import { createClient } from "~/lib/supabase-server";
@@ -36,6 +36,7 @@ const registerAction = action(async (formData: FormData) => {
 }, "register");
 
 export default function RegisterPage() {
+  const [searchParams] = useSearchParams();
   const submission = useSubmission(registerAction);
 
   const result = () => submission.result as
@@ -88,7 +89,12 @@ export default function RegisterPage() {
       </form>
       <p class="mt-4 text-center text-sm text-muted-foreground">
         Already have an account?{" "}
-        <A href="/login" class="text-primary hover:underline">Sign in</A>
+        <A
+          href={searchParams.returnTo ? `/login?returnTo=${encodeURIComponent(String(searchParams.returnTo))}` : "/login"}
+          class="text-primary hover:underline"
+        >
+          Sign in
+        </A>
       </p>
     </main>
   );
