@@ -134,7 +134,7 @@ async def run_migrations_online() -> None:
     connectable = create_async_engine(
         settings.DATABASE_URL,
         poolclass=pool.NullPool,
-        connect_args=SUPAVISOR_CONNECT_ARGS,
+        connect_args={**SUPAVISOR_CONNECT_ARGS, "server_settings": {"statement_timeout": "0"}},
     )
 
     async with connectable.connect() as connection:
