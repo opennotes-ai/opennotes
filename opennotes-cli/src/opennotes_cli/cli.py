@@ -31,6 +31,7 @@ class CliContext:
     verbose: bool
     env_name: str
     client: httpx.Client
+    use_huuid: bool = True
 
     @property
     def base_url(self) -> str:
@@ -63,6 +64,7 @@ def _read_api_key_from_env_file(env_file: Path, verbose: bool = False) -> str | 
 )
 @click.option("--json", "json_output", is_flag=True, help="Output raw JSON.")
 @click.option("-v", "--verbose", is_flag=True, help="Show verbose output.")
+@click.option("--uuid", "use_raw_uuid", is_flag=True, help="Display raw UUIDs instead of huuids.")
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -70,6 +72,7 @@ def cli(
     use_local: bool,
     json_output: bool,
     verbose: bool,
+    use_raw_uuid: bool,
 ) -> None:
     """OpenNotes CLI - Interact with opennotes-server endpoints."""
     ctx.ensure_object(dict)
@@ -104,6 +107,7 @@ def cli(
         verbose=verbose,
         env_name=env,
         client=client,
+        use_huuid=not use_raw_uuid,
     )
 
     ctx.call_on_close(client.close)

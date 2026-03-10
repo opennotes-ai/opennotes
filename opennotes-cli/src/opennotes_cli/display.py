@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from opennotes_cli.formatting import truncate_uuid
+from opennotes_cli.formatting import format_id
 
 console = Console()
 error_console = Console(stderr=True)
@@ -76,7 +76,9 @@ def display_search_results(results: dict[str, Any], query_text: str) -> None:
             console.print(f"  [dim]{i}.[/dim] {source_url}")
 
 
-def display_task_status(task: dict[str, Any], json_output: bool = False) -> None:
+def display_task_status(
+    task: dict[str, Any], json_output: bool = False, use_huuid: bool = True
+) -> None:
     if json_output:
         console.print(json.dumps(task, indent=2, default=str))
         return
@@ -91,8 +93,9 @@ def display_task_status(task: dict[str, Any], json_output: bool = False) -> None
     metadata = task.get("metadata", {}) or {}
     batch_size = metadata.get("batch_size", "N/A")
 
+    task_id = format_id(task.get("id", "N/A"), use_huuid)
     panel_content = (
-        f"[bold]Task ID:[/bold] {task.get('id', 'N/A')}\n"
+        f"[bold]Task ID:[/bold] {task_id}\n"
         f"[bold]Type:[/bold] {task.get('job_type', 'N/A')}\n"
         f"[bold]Status:[/bold] [{color}]{symbol} {status.upper()}[/{color}]\n"
         f"[bold]Progress:[/bold] {processed:,} / {total:,} ({progress_pct:.1f}%)\n"
@@ -109,12 +112,13 @@ def display_task_start(
     response: dict[str, Any],
     env_name: str,
     json_output: bool = False,
+    use_huuid: bool = True,
 ) -> None:
     if json_output:
         console.print(json.dumps(response, indent=2, default=str))
         return
 
-    task_id = response.get("task_id", "N/A")
+    task_id = format_id(response.get("task_id", "N/A"), use_huuid)
     total = response.get("total_items", 0)
     batch_size = response.get("batch_size", 100)
     message = response.get("message", "Task started")
@@ -137,6 +141,7 @@ def display_task_list(
     tasks: list[dict[str, Any]],
     env_name: str,
     json_output: bool = False,
+    use_huuid: bool = True,
 ) -> None:
     if json_output:
         console.print(json.dumps(tasks, indent=2, default=str))
@@ -147,13 +152,13 @@ def display_task_list(
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("Task ID", no_wrap=True, width=14)
+    table.add_column("Task ID", no_wrap=True)
     table.add_column("Type", width=20)
     table.add_column("Status", width=12)
     table.add_column("Progress", justify="right", width=20)
 
     for task in tasks:
-        task_id = truncate_uuid(task.get("id", "N/A"))
+        task_id = format_id(task.get("id", "N/A"), use_huuid)
         task_type = task.get("job_type", "N/A")
         status = task.get("status", "unknown")
         completed = task.get("completed_tasks", 0)
@@ -179,7 +184,9 @@ def display_task_list(
     console.print(f"[dim]Cancel a task:[/dim]    {cli_prefix} rechunk delete <task_id>")
 
 
-def display_batch_job_status(job: dict[str, Any], json_output: bool = False) -> None:
+def display_batch_job_status(
+    job: dict[str, Any], json_output: bool = False, use_huuid: bool = True
+) -> None:
     if json_output:
         console.print(json.dumps(job, indent=2, default=str))
         return
@@ -192,8 +199,9 @@ def display_batch_job_status(job: dict[str, Any], json_output: bool = False) -> 
     processed = completed + failed
     progress_pct = (processed / total * 100) if total > 0 else 0
 
+    job_id = format_id(job.get("id", "N/A"), use_huuid)
     panel_content = (
-        f"[bold]Job ID:[/bold] {job.get('id', 'N/A')}\n"
+        f"[bold]Job ID:[/bold] {job_id}\n"
         f"[bold]Type:[/bold] {job.get('job_type', 'N/A')}\n"
         f"[bold]Status:[/bold] [{color}]{symbol} {status.upper()}[/{color}]\n"
         f"[bold]Processed:[/bold] {processed:,} / {total:,} ({progress_pct:.1f}%)\n"
@@ -215,6 +223,7 @@ def display_batch_job_list(
     jobs: list[dict[str, Any]],
     env_name: str,
     json_output: bool = False,
+    use_huuid: bool = True,
 ) -> None:
     if json_output:
         console.print(json.dumps(jobs, indent=2, default=str))
@@ -225,13 +234,13 @@ def display_batch_job_list(
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("Job ID", no_wrap=True, width=14)
+    table.add_column("Job ID", no_wrap=True)
     table.add_column("Type", width=25)
     table.add_column("Status", width=12)
     table.add_column("Progress", justify="right", width=20)
 
     for job in jobs:
-        job_id = truncate_uuid(job.get("id", "N/A"))
+        job_id = format_id(job.get("id", "N/A"), use_huuid)
         job_type = job.get("job_type", "N/A")
         status = job.get("status", "unknown")
         completed = job.get("completed_tasks", 0)
@@ -263,12 +272,13 @@ def display_batch_job_start(
     job: dict[str, Any],
     env_name: str,
     json_output: bool = False,
+    use_huuid: bool = True,
 ) -> None:
     if json_output:
         console.print(json.dumps(job, indent=2, default=str))
         return
 
-    job_id = job.get("id", "N/A")
+    job_id = format_id(job.get("id", "N/A"), use_huuid)
     job_type = job.get("job_type", "unknown")
     status = job.get("status", "pending")
     color, symbol = get_status_style(status)
@@ -286,7 +296,9 @@ def display_batch_job_start(
     console.print(f"[dim]Cancel job:[/dim]     {cli_prefix} batch cancel {job_id}")
 
 
-def display_candidates_list(data: dict[str, Any], json_output: bool = False) -> None:
+def display_candidates_list(
+    data: dict[str, Any], json_output: bool = False, use_huuid: bool = True
+) -> None:
     if json_output:
         console.print(json.dumps(data, indent=2, default=str))
         return
@@ -300,7 +312,7 @@ def display_candidates_list(data: dict[str, Any], json_output: bool = False) -> 
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", no_wrap=True, width=14)
+    table.add_column("ID", no_wrap=True)
     table.add_column("Status", width=12)
     table.add_column("Rating", width=12)
     table.add_column("Dataset", width=20)
@@ -309,8 +321,7 @@ def display_candidates_list(data: dict[str, Any], json_output: bool = False) -> 
 
     for candidate in candidates:
         attrs = candidate.get("attributes", {})
-        candidate_id = candidate.get("id", "N/A")
-        id_truncated = truncate_uuid(candidate_id)
+        candidate_id = format_id(candidate.get("id", "N/A"), use_huuid)
 
         status_val = attrs.get("status", "unknown")
         status_color = {
@@ -329,7 +340,7 @@ def display_candidates_list(data: dict[str, Any], json_output: bool = False) -> 
             published = published[:10] if len(published) > 10 else published
 
         table.add_row(
-            id_truncated,
+            candidate_id,
             f"[{status_color}]{status_val}[/{status_color}]",
             rating,
             dataset,
@@ -341,7 +352,9 @@ def display_candidates_list(data: dict[str, Any], json_output: bool = False) -> 
     console.print(f"\n[dim]Total: {total} candidates[/dim]")
 
 
-def display_candidate_single(data: dict[str, Any], json_output: bool = False) -> None:
+def display_candidate_single(
+    data: dict[str, Any], json_output: bool = False, use_huuid: bool = True
+) -> None:
     if json_output:
         console.print(json.dumps(data, indent=2, default=str))
         return
@@ -349,8 +362,9 @@ def display_candidate_single(data: dict[str, Any], json_output: bool = False) ->
     candidate = data.get("data", {})
     attrs = candidate.get("attributes", {})
 
+    cid = format_id(candidate.get("id", "N/A"), use_huuid)
     panel_content = (
-        f"[bold]ID:[/bold] {candidate.get('id', 'N/A')}\n"
+        f"[bold]ID:[/bold] {cid}\n"
         f"[bold]Status:[/bold] {attrs.get('status', 'unknown')}\n"
         f"[bold]Rating:[/bold] {attrs.get('rating') or 'Not set'}\n"
         f"[bold]Dataset:[/bold] {attrs.get('dataset_name', 'N/A')}\n"

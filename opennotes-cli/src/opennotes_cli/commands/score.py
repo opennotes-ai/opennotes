@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 import sys
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 import click
 import httpx
 from rich.console import Console
 
+from opennotes_cli.formatting import format_id, resolve_id
 from opennotes_cli.http import add_csrf, get_csrf_token, handle_error_response
 
 if TYPE_CHECKING:
@@ -24,11 +24,9 @@ error_console = Console(stderr=True)
 def score(ctx: click.Context, community_server_id: str) -> None:
     """Trigger manual scoring for a community server."""
     try:
-        UUID(community_server_id)
-    except ValueError:
-        error_console.print(
-            f"[red]Error:[/red] Invalid community server ID: '{community_server_id}'. Expected a UUID."
-        )
+        community_server_id = resolve_id(community_server_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
 
     cli_ctx: CliContext = ctx.obj
@@ -75,7 +73,7 @@ def score(ctx: click.Context, community_server_id: str) -> None:
     handle_error_response(
         response,
         custom_handlers={
-            404: f"Community server {community_server_id} not found.",
+            404: f"Community server {format_id(community_server_id, cli_ctx.use_huuid)} not found.",
         },
     )
 
@@ -85,7 +83,7 @@ def score(ctx: click.Context, community_server_id: str) -> None:
         console.print(json.dumps(result, indent=2, default=str))
         return
 
-    workflow_id = result.get("workflow_id", "N/A")
+    workflow_id = format_id(result.get("workflow_id", "N/A"), cli_ctx.use_huuid)
     console.print(
         f"[green]\u2713[/green] Scoring dispatched: workflow [bold]{workflow_id}[/bold]"
     )

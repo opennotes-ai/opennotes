@@ -10,6 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from opennotes_cli.display import handle_jsonapi_error
+from opennotes_cli.formatting import format_id, resolve_id
 from opennotes_cli.http import add_csrf, get_csrf_token
 
 if TYPE_CHECKING:
@@ -17,6 +18,19 @@ if TYPE_CHECKING:
 
 console = Console()
 error_console = Console(stderr=True)
+
+
+def _resolve_agent_ids(agent_ids: str) -> str:
+    resolved = []
+    for aid in agent_ids.split(","):
+        aid = aid.strip()
+        if aid:
+            try:
+                resolved.append(resolve_id(aid))
+            except click.BadParameter as e:
+                error_console.print(f"[red]Error:[/red] {e}")
+                sys.exit(1)
+    return ",".join(resolved)
 
 
 @click.group()
@@ -71,7 +85,7 @@ def orchestrator_list(ctx: click.Context, page: int, page_size: int) -> None:
         created = (attrs.get("created_at") or "")[:19]
         active = "[green]Yes[/green]" if attrs.get("is_active") else "[red]No[/red]"
         table.add_row(
-            item.get("id", "N/A"),
+            format_id(item.get("id", "N/A"), cli_ctx.use_huuid),
             attrs.get("name", "N/A"),
             str(attrs.get("max_agents", "N/A")),
             str(attrs.get("turn_cadence_seconds", "N/A")),
@@ -94,6 +108,12 @@ def orchestrator_get(ctx: click.Context, orchestrator_id: str) -> None:
     base_url = cli_ctx.base_url
     client = cli_ctx.client
 
+    try:
+        orchestrator_id = resolve_id(orchestrator_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
     headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
 
@@ -111,8 +131,9 @@ def orchestrator_get(ctx: click.Context, orchestrator_id: str) -> None:
     attrs = result.get("data", {}).get("attributes", {})
     active = "[green]Yes[/green]" if attrs.get("is_active") else "[red]No[/red]"
 
+    raw_id = result.get("data", {}).get("id", "N/A")
     panel_content = (
-        f"[bold]ID:[/bold] {result.get('data', {}).get('id', 'N/A')}\n"
+        f"[bold]ID:[/bold] {format_id(raw_id, cli_ctx.use_huuid)}\n"
         f"[bold]Name:[/bold] {attrs.get('name', 'N/A')}\n"
         f"[bold]Active:[/bold] {active}\n"
         f"[bold]Max Agents:[/bold] {attrs.get('max_agents', 'N/A')}\n"
@@ -129,7 +150,7 @@ def orchestrator_get(ctx: click.Context, orchestrator_id: str) -> None:
     if agent_ids:
         panel_content += "\n[bold]Agent Profile IDs:[/bold]"
         for aid in agent_ids:
-            panel_content += f"\n  - {aid}"
+            panel_content += f"\n  - {format_id(aid, cli_ctx.use_huuid)}"
 
     scoring = attrs.get("scoring_config")
     if scoring:
@@ -137,7 +158,7 @@ def orchestrator_get(ctx: click.Context, orchestrator_id: str) -> None:
 
     cs_id = attrs.get("community_server_id")
     if cs_id:
-        panel_content += f"\n[bold]Community Server:[/bold] {cs_id}"
+        panel_content += f"\n[bold]Community Server:[/bold] {format_id(cs_id, cli_ctx.use_huuid)}"
 
     for ts_field in ("created_at", "updated_at"):
         val = attrs.get(ts_field)
@@ -174,6 +195,7 @@ def orchestrator_create(
     base_url = cli_ctx.base_url
     client = cli_ctx.client
 
+    agent_ids = _resolve_agent_ids(agent_ids)
     agent_id_list = [aid.strip() for aid in agent_ids.split(",") if aid.strip()]
 
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
@@ -211,7 +233,7 @@ def orchestrator_create(
     orch_id = result.get("data", {}).get("id", "N/A")
     orch_name = result.get("data", {}).get("attributes", {}).get("name", "N/A")
     console.print(
-        f"[green]\u2713[/green] Created orchestrator [bold]{orch_name}[/bold]: {orch_id}"
+        f"[green]\u2713[/green] Created orchestrator [bold]{orch_name}[/bold]: {format_id(orch_id, cli_ctx.use_huuid)}"
     )
 
 
@@ -277,6 +299,15 @@ def orchestrator_update(
     base_url = cli_ctx.base_url
     client = cli_ctx.client
 
+    try:
+        orchestrator_id = resolve_id(orchestrator_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    if agent_ids is not None:
+        agent_ids = _resolve_agent_ids(agent_ids)
+
     attributes = _build_update_attributes(
         name, description, max_agents, turn_cadence,
         removal_rate, max_turns, agent_ids, scoring_config,
@@ -311,7 +342,7 @@ def orchestrator_update(
         return
 
     attrs_resp = result.get("data", {}).get("attributes", {})
-    console.print(f"[green]\u2713[/green] Updated orchestrator [bold]{orchestrator_id}[/bold]")
+    console.print(f"[green]\u2713[/green] Updated orchestrator [bold]{format_id(orchestrator_id, cli_ctx.use_huuid)}[/bold]")
     for key, value in sorted(attributes.items()):
         console.print(f"  {key}: {attrs_resp.get(key, value)}")
 
@@ -345,6 +376,21 @@ def orchestrator_apply(
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
+
+    try:
+        orchestrator_id = resolve_id(orchestrator_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    try:
+        simulation_id = resolve_id(simulation_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    if agent_ids is not None:
+        agent_ids = _resolve_agent_ids(agent_ids)
 
     attributes = _build_update_attributes(
         name, description, max_agents, turn_cadence,
@@ -381,13 +427,15 @@ def orchestrator_apply(
     handle_jsonapi_error(sim_response)
     sim_status = sim_response.json().get("data", {}).get("attributes", {}).get("status")
 
+    fmt_sim_id = format_id(simulation_id, cli_ctx.use_huuid)
+
     if sim_status == "running":
         pause_response = client.post(
             f"{base_url}/api/v2/simulations/{simulation_id}/pause", headers=headers
         )
         handle_jsonapi_error(pause_response)
         if not cli_ctx.json_output:
-            console.print("[yellow]\u23f8[/yellow]  Paused simulation {simulation_id}".format(simulation_id=simulation_id))
+            console.print(f"[yellow]\u23f8[/yellow]  Paused simulation {fmt_sim_id}")
     elif sim_status == "paused":
         if not cli_ctx.json_output:
             console.print("[dim]Simulation already paused[/dim]")
@@ -403,5 +451,5 @@ def orchestrator_apply(
     if cli_ctx.json_output:
         console.print(json.dumps(resume_response.json(), indent=2, default=str))
     else:
-        console.print("[green]\u25b6[/green]  Resumed simulation {simulation_id}".format(simulation_id=simulation_id))
+        console.print(f"[green]\u25b6[/green]  Resumed simulation {fmt_sim_id}")
         console.print("[green]\u2713[/green] Config applied \u2014 orchestrator will use new settings")

@@ -154,7 +154,7 @@ def _make_page_response(
     resp.json.return_value = body
     return resp
 
-SIM_ID = "sim-detailed-001"
+SIM_ID = "019536b8-bdb2-7c81-8975-77f5c3dbdff8"
 
 
 def _make_single_page_client() -> MagicMock:
@@ -405,7 +405,7 @@ class TestExistingAnalysisUnchanged:
 
         with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
             result = runner.invoke(
-                cli, ["--local", "simulation", "analysis", "sim-abc-123"]
+                cli, ["--local", "simulation", "analysis", "019536b8-bdb2-7c81-8975-77f5c3dbdff8"]
             )
 
         assert result.exit_code == 0
@@ -416,6 +416,40 @@ class TestExistingAnalysisUnchanged:
         analysis_url = get_calls[1][0][0]
         assert "/analysis/detailed" not in analysis_url
         assert "/analysis" in analysis_url
+
+
+HUUID_SIM_ID = "Vudrotlab-Kuvkattor-Tevzelpim-Liksiksas"
+
+
+class TestDetailedHuuidInput:
+    def test_detailed_accepts_huuid(self, runner: CliRunner) -> None:
+        mock_client = _make_single_page_client()
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "--detailed", HUUID_SIM_ID]
+            )
+        assert result.exit_code == 0
+        assert "note-001" in result.output
+
+
+class TestDetailedUuidFlag:
+    def test_uuid_flag_shows_raw_uuid(self, runner: CliRunner) -> None:
+        mock_client = _make_single_page_client()
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "--uuid", "simulation", "analysis", "--detailed", "--format", "markdown", SIM_ID]
+            )
+        assert result.exit_code == 0
+        assert SIM_ID in result.output
+
+    def test_default_shows_huuid(self, runner: CliRunner) -> None:
+        mock_client = _make_single_page_client()
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli, ["--local", "simulation", "analysis", "--detailed", "--format", "markdown", SIM_ID]
+            )
+        assert result.exit_code == 0
+        assert HUUID_SIM_ID in result.output
 
 
 class TestEscapeMdHelper:
