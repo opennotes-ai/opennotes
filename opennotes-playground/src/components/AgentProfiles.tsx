@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel, truncateId } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
@@ -12,6 +12,29 @@ const STATE_VARIANT: Record<string, BadgeVariant> = {
   error: "danger",
 };
 
+function PersonalityCell(props: { text: string }) {
+  const [expanded, setExpanded] = createSignal(false);
+  const shouldTruncate = () => props.text.length > 120;
+
+  return (
+    <div class="max-w-xs text-sm text-muted-foreground">
+      <Show when={props.text} fallback={<span class="italic text-xs">No persona</span>}>
+        <p class={expanded() ? "whitespace-pre-line" : "line-clamp-2 whitespace-pre-line"}>
+          {props.text}
+        </p>
+        <Show when={shouldTruncate()}>
+          <button
+            class="text-xs text-primary hover:underline mt-1"
+            onClick={() => setExpanded(!expanded())}
+          >
+            {expanded() ? "Show less" : "Show more"}
+          </button>
+        </Show>
+      </Show>
+    </div>
+  );
+}
+
 export default function AgentProfiles(props: { agents: AgentBehaviorData[] }) {
   return (
     <section>
@@ -21,6 +44,7 @@ export default function AgentProfiles(props: { agents: AgentBehaviorData[] }) {
           <thead>
             <tr class="border-b-2 border-border bg-muted/50">
               <th class="px-4 py-2.5 text-left font-medium">Agent</th>
+              <th class="px-4 py-2.5 text-left font-medium">Persona</th>
               <th class="px-4 py-2.5 text-right font-medium">Notes</th>
               <th class="px-4 py-2.5 text-right font-medium">Ratings</th>
               <th class="px-4 py-2.5 text-right font-medium">Turns</th>
@@ -37,6 +61,9 @@ export default function AgentProfiles(props: { agents: AgentBehaviorData[] }) {
                     <div class="text-xs text-muted-foreground">
                       {truncateId(agent.agent_instance_id)}
                     </div>
+                  </td>
+                  <td class="px-4 py-2.5">
+                    <PersonalityCell text={agent.personality} />
                   </td>
                   <td class="px-4 py-2.5 text-right tabular-nums">{agent.notes_written}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums">{agent.ratings_given}</td>
