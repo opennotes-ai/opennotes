@@ -12292,6 +12292,11 @@
             "type": "string",
             "title": "Agent Name"
           },
+          "personality": {
+            "type": "string",
+            "title": "Personality",
+            "default": ""
+          },
           "notes_written": {
             "type": "integer",
             "title": "Notes Written"
@@ -15005,6 +15010,18 @@
               }
             ],
             "title": "Request Id"
+          },
+          "message_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Metadata"
           },
           "created_at": {
             "anyOf": [

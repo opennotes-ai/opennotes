@@ -143,6 +143,9 @@ from .detailed_analysis_meta import DetailedAnalysisMeta
 from .detailed_analysis_response import DetailedAnalysisResponse
 from .detailed_analysis_response_jsonapi import DetailedAnalysisResponseJsonapi
 from .detailed_note_data import DetailedNoteData
+from .detailed_note_data_message_metadata_type_0 import (
+    DetailedNoteDataMessageMetadataType0,
+)
 from .detailed_note_resource import DetailedNoteResource
 from .detailed_rating_data import DetailedRatingData
 from .detailed_request_data import DetailedRequestData
@@ -722,6 +725,7 @@ __all__ = (
     "DetailedAnalysisResponse",
     "DetailedAnalysisResponseJsonapi",
     "DetailedNoteData",
+    "DetailedNoteDataMessageMetadataType0",
     "DetailedNoteResource",
     "DetailedRatingData",
     "DetailedRequestData",

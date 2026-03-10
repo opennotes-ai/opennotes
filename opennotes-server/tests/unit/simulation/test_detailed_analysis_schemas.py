@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from src.simulation.schemas import (
+    AgentBehaviorData,
     DetailedAnalysisMeta,
     DetailedAnalysisResponse,
     DetailedNoteData,
@@ -133,6 +134,35 @@ class TestDetailedNoteData:
             author_agent_instance_id="inst-001",
         )
         assert isinstance(note.helpfulness_score, float)
+
+    def test_message_metadata_with_source_url(self):
+        metadata = {"source_url": "https://example.com/article", "platform": "discord"}
+        note = DetailedNoteData(
+            note_id="note-meta",
+            summary="Note with metadata",
+            classification="NOT_MISLEADING",
+            status="NEEDS_MORE_RATINGS",
+            helpfulness_score=0,
+            author_agent_name="Agent",
+            author_agent_instance_id="inst-001",
+            message_metadata=metadata,
+        )
+        assert note.message_metadata == metadata
+        assert note.message_metadata["source_url"] == "https://example.com/article"
+        dumped = note.model_dump(mode="json")
+        assert dumped["message_metadata"]["source_url"] == "https://example.com/article"
+
+    def test_message_metadata_defaults_to_none(self):
+        note = DetailedNoteData(
+            note_id="note-no-meta",
+            summary="Note without metadata",
+            classification="NOT_MISLEADING",
+            status="NEEDS_MORE_RATINGS",
+            helpfulness_score=0,
+            author_agent_name="Agent",
+            author_agent_instance_id="inst-001",
+        )
+        assert note.message_metadata is None
 
 
 @pytest.mark.unit
@@ -343,3 +373,35 @@ class TestDetailedAnalysisResponse:
         assert len(dumped["data"]) == 1
         assert dumped["data"][0]["type"] == "simulation-detailed-notes"
         assert dumped["data"][0]["attributes"]["ratings"][0]["rater_agent_name"] == "Agent Beta"
+
+
+@pytest.mark.unit
+class TestAgentBehaviorDataPersonality:
+    def test_personality_field(self):
+        behavior = AgentBehaviorData(
+            agent_instance_id="inst-001",
+            agent_name="Skeptic Agent",
+            notes_written=5,
+            ratings_given=3,
+            turn_count=10,
+            state="active",
+            helpfulness_trend=["HELPFUL", "NOT_HELPFUL"],
+            action_distribution={"write_note": 5, "rate_note": 3},
+            personality="A skeptical fact-checker.",
+        )
+        assert behavior.personality == "A skeptical fact-checker."
+        dumped = behavior.model_dump(mode="json")
+        assert dumped["personality"] == "A skeptical fact-checker."
+
+    def test_personality_defaults_to_empty_string(self):
+        behavior = AgentBehaviorData(
+            agent_instance_id="inst-002",
+            agent_name="Agent",
+            notes_written=0,
+            ratings_given=0,
+            turn_count=0,
+            state="active",
+            helpfulness_trend=[],
+            action_distribution={},
+        )
+        assert behavior.personality == ""

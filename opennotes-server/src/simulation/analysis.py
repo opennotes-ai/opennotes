@@ -322,6 +322,7 @@ async def compute_agent_behavior_metrics(
             AgentBehaviorData(
                 agent_instance_id=str(inst.id),
                 agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
+                personality=inst.agent_profile.personality if inst.agent_profile else "",
                 notes_written=notes_by_author.get(inst.user_profile_id, 0),
                 ratings_given=ratings_by_rater.get(inst.user_profile_id, 0),
                 turn_count=inst.turn_count,
@@ -479,6 +480,10 @@ async def compute_detailed_notes(
                 )
             )
 
+        msg_metadata = None
+        if note.request and note.request.message_archive:
+            msg_metadata = note.request.message_archive.message_metadata
+
         detailed_notes.append(
             DetailedNoteData(
                 note_id=str(note.id),
@@ -489,6 +494,7 @@ async def compute_detailed_notes(
                 author_agent_name=author_agent_name,
                 author_agent_instance_id=author_agent_instance_id,
                 request_id=note.request_id,
+                message_metadata=msg_metadata,
                 created_at=note.created_at,
                 ratings=rating_data_list,
             )
