@@ -37,6 +37,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
 from src.config import settings
+from src.database import SUPAVISOR_CONNECT_ARGS
 from src.notes.models import Note, Rating
 from src.users.models import User
 from src.users.profile_models import UserIdentity, UserProfile
@@ -266,7 +267,7 @@ async def migrate_all_users(
         echo=False,
         future=True,
         poolclass=NullPool,
-        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+        connect_args=SUPAVISOR_CONNECT_ARGS,
     )
 
     async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

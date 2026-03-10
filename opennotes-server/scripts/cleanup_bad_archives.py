@@ -25,6 +25,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from src.database import SUPAVISOR_CONNECT_ARGS
+
 FIND_BAD_ARCHIVES_SQL = text("""
     SELECT
         ma.id AS archive_id,
@@ -95,7 +97,7 @@ def _make_session(database_url: str) -> async_sessionmaker[AsyncSession]:
         echo=False,
         future=True,
         poolclass=NullPool,
-        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+        connect_args=SUPAVISOR_CONNECT_ARGS,
     )
     return async_sessionmaker(engine, expire_on_commit=False)
 
