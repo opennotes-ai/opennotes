@@ -138,24 +138,23 @@ export default function SimulationDetailPage() {
                         <span class="text-muted-foreground">Notes</span>
                         <div class="font-medium">{getMetric(attrs.metrics, "note_count")}</div>
                       </div>
-                      <div>
-                        <span class="text-muted-foreground">Turns</span>
-                        <div class="font-medium">{attrs.cumulative_turns}</div>
-                      </div>
-                      <div>
-                        <span class="text-muted-foreground">Restarts</span>
-                        <div class="font-medium">{attrs.restart_count}</div>
-                      </div>
                     </div>
                     <Show when={attrs.error_message}>
                       <div class="mt-3 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
                         Error: {attrs.error_message}
                       </div>
                     </Show>
-                    <div class="mt-3 text-xs text-muted-foreground">
-                      Orchestrator: {truncateId(attrs.orchestrator_id)} | Community Server: {truncateId(attrs.community_server_id)}
-                    </div>
                   </section>
+
+                  <details class="mt-4 rounded-lg border border-border p-3">
+                    <summary class="cursor-pointer text-sm font-medium">Simulation Mechanics</summary>
+                    <div class="mt-3 grid grid-cols-2 gap-2 text-sm text-muted-foreground">
+                      <div>Turns: <strong class="text-foreground">{attrs.cumulative_turns}</strong></div>
+                      <div>Restarts: <strong class="text-foreground">{attrs.restart_count}</strong></div>
+                      <div>Orchestrator: <strong class="text-foreground">{truncateId(attrs.orchestrator_id)}</strong></div>
+                      <div>Community Server: <strong class="text-foreground">{truncateId(attrs.community_server_id)}</strong></div>
+                    </div>
+                  </details>
 
                   <Suspense fallback={<p class="mt-6 text-muted-foreground">Loading analysis...</p>}>
                     <Show
@@ -197,7 +196,10 @@ export default function SimulationDetailPage() {
                               </p>
                             )}
                           </Show>
-                          <NoteDetails notes={detailedResponse.data} />
+                          <NoteDetails
+                            notes={detailedResponse.data}
+                            currentTier={analysis()?.data?.attributes?.scoring_coverage?.current_tier ?? ""}
+                          />
                         </div>
                       )}
                     </Show>

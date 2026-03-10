@@ -2,6 +2,7 @@ import { For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { formatDate, humanizeLabel, truncateId } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
+import { getHelpfulnessTooltip } from "~/lib/scoring-tiers";
 
 type DetailedNoteResource = components["schemas"]["DetailedNoteResource"];
 
@@ -22,7 +23,7 @@ const HELPFULNESS_VARIANT: Record<string, BadgeVariant> = {
   NOT_HELPFUL: "danger",
 };
 
-export default function NoteDetails(props: { notes: DetailedNoteResource[] }) {
+export default function NoteDetails(props: { notes: DetailedNoteResource[]; currentTier: string }) {
   return (
     <section>
       <h2 class="mb-4 text-xl font-semibold">Per-Note Breakdown</h2>
@@ -54,7 +55,10 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[] }) {
                   </div>
 
                   <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                    <span>
+                    <span
+                      title={getHelpfulnessTooltip(attrs.helpfulness_score, props.currentTier)}
+                      aria-label={getHelpfulnessTooltip(attrs.helpfulness_score, props.currentTier)}
+                    >
                       Helpfulness: <strong class="text-foreground">{attrs.helpfulness_score.toFixed(2)}</strong>
                     </span>
                     <Show when={attrs.request_id}>

@@ -1,6 +1,7 @@
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
+import { TIER_DESCRIPTIONS } from "~/lib/scoring-tiers";
 
 type ConsensusMetricsData = components["schemas"]["ConsensusMetricsData"];
 type ScoringCoverageData = components["schemas"]["ScoringCoverageData"];
@@ -21,10 +22,18 @@ export default function MetricsDisplay(props: {
       </div>
 
       <h2 class="mb-4 text-xl font-semibold">Scoring Coverage</h2>
-      <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+      <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         <MetricCard label="Current Tier" value={humanizeLabel(props.scoring.current_tier)} />
         <MetricCard label="Scores Computed" value={String(props.scoring.total_scores_computed)} />
       </div>
+      <Show when={TIER_DESCRIPTIONS[props.scoring.current_tier]}>
+        {(tierInfo) => (
+          <p class="mb-6 text-sm text-muted-foreground">
+            <strong class="text-foreground">{tierInfo().label}</strong>: {tierInfo().description}{" "}
+            {tierInfo().helpfulnessNote}
+          </p>
+        )}
+      </Show>
 
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-lg border border-border bg-card p-4">
@@ -32,12 +41,17 @@ export default function MetricsDisplay(props: {
           <table class="w-full text-sm">
             <tbody>
               <For each={Object.entries(props.scoring.tier_distribution)}>
-                {([tier, count]) => (
-                  <tr class="border-b border-border last:border-0">
-                    <td class="py-1 text-muted-foreground">{humanizeLabel(tier)}</td>
-                    <td class="py-1 text-right font-medium">{count}</td>
-                  </tr>
-                )}
+                {([tier, count]) => {
+                  const tierInfo = () => TIER_DESCRIPTIONS[tier];
+                  return (
+                    <tr class="border-b border-border last:border-0">
+                      <td class="py-1 text-muted-foreground" title={tierInfo()?.description ?? ""}>
+                        {humanizeLabel(tier)}
+                      </td>
+                      <td class="py-1 text-right font-medium">{count}</td>
+                    </tr>
+                  );
+                }}
               </For>
             </tbody>
           </table>
