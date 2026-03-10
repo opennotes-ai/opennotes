@@ -603,14 +603,18 @@ def update_metrics_step(
             )
             turns_completed = completed_result.scalar() or 0
 
-            updated_metrics = {
-                "turns_dispatched": current_metrics.get("turns_dispatched", 0) + dispatched_count,
-                "turns_completed": turns_completed,
-                "total_turns": turns_completed,
-                "agents_spawned": current_metrics.get("agents_spawned", 0) + spawned_count,
-                "agents_removed": current_metrics.get("agents_removed", 0) + removed_count,
-                "iterations": current_metrics.get("iterations", 0) + 1,
-            }
+            updated_metrics = dict(current_metrics)
+            updated_metrics.update(
+                {
+                    "turns_dispatched": current_metrics.get("turns_dispatched", 0)
+                    + dispatched_count,
+                    "turns_completed": turns_completed,
+                    "total_turns": turns_completed,
+                    "agents_spawned": current_metrics.get("agents_spawned", 0) + spawned_count,
+                    "agents_removed": current_metrics.get("agents_removed", 0) + removed_count,
+                    "iterations": current_metrics.get("iterations", 0) + 1,
+                }
+            )
 
             await session.execute(
                 update(SimulationRun)
