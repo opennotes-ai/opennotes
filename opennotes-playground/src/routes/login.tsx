@@ -1,13 +1,15 @@
-import { action, redirect, useSubmission, A } from "@solidjs/router";
+import { action, redirect, useSubmission, useSearchParams, A } from "@solidjs/router";
 import { Show } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import { createClient } from "~/lib/supabase-server";
+import { safeRedirectPath } from "~/lib/safe-redirect";
 import { Button } from "~/components/ui/button";
 
 const loginAction = action(async (formData: FormData) => {
   "use server";
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
+  const returnTo = safeRedirectPath(formData.get("returnTo") as string | null);
 
   if (!email || !password) {
     return "Email and password are required.";
@@ -23,16 +25,18 @@ const loginAction = action(async (formData: FormData) => {
     return error.message;
   }
 
-  throw redirect("/");
+  throw redirect(returnTo, { revalidate: ["analysis", "detailed-analysis", "authUser"] });
 }, "login");
 
 export default function LoginPage() {
+  const [searchParams] = useSearchParams();
   const submission = useSubmission(loginAction);
 
   return (
     <main class="mx-auto max-w-sm px-4 py-12">
       <h1 class="text-2xl font-bold tracking-tight">Sign In</h1>
       <form action={loginAction} method="post" class="mt-6 space-y-4">
+        <input type="hidden" name="returnTo" value={searchParams.returnTo ?? ""} />
         <div class="space-y-1.5">
           <label for="email" class="text-sm font-medium">Email</label>
           <input
@@ -62,7 +66,12 @@ export default function LoginPage() {
       </form>
       <p class="mt-4 text-center text-sm text-muted-foreground">
         Don't have an account?{" "}
-        <A href="/register" class="text-primary hover:underline">Sign up</A>
+        <A
+          href={searchParams.returnTo ? `/register?returnTo=${encodeURIComponent(String(searchParams.returnTo))}` : "/register"}
+          class="text-primary hover:underline"
+        >
+          Sign up
+        </A>
       </p>
     </main>
   );

@@ -1,4 +1,4 @@
-import { query, createAsync, useParams, A } from "@solidjs/router";
+import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
 import { Show, Switch, Match, Suspense } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import {
@@ -112,17 +112,20 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
 };
 
 function AuthGateCTA(props: { shown: number; total: number; label: string }) {
+  const location = useLocation();
+  const returnTo = () => encodeURIComponent(location.pathname);
+
   return (
     <div class="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-4 text-center">
       <p class="text-sm text-muted-foreground">
         Showing {props.shown} of {props.total} {props.label}.
       </p>
       <p class="mt-1 text-sm">
-        <A href="/login" class="font-medium text-primary hover:underline">
+        <A href={`/login?returnTo=${returnTo()}`} class="font-medium text-primary hover:underline">
           Sign in
         </A>
         <span class="text-muted-foreground"> or </span>
-        <A href="/register" class="font-medium text-primary hover:underline">
+        <A href={`/register?returnTo=${returnTo()}`} class="font-medium text-primary hover:underline">
           sign up
         </A>
         <span class="text-muted-foreground"> to see all {props.label}.</span>
