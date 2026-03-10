@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from src.config import settings
+from src.database import SUPAVISOR_CONNECT_ARGS
 from src.notes.message_archive_models import ContentType, MessageArchive
 from src.notes.models import Request
 
@@ -179,7 +180,7 @@ async def migrate_all(
         echo=False,
         future=True,
         poolclass=NullPool,
-        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+        connect_args=SUPAVISOR_CONNECT_ARGS,
     )
 
     async_session_maker = async_sessionmaker(

@@ -21,6 +21,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
+from src.database import SUPAVISOR_CONNECT_ARGS
+
 P99_THRESHOLD_MS = 200.0
 
 
@@ -41,10 +43,7 @@ async def run_benchmark(database_url: str, num_queries: int) -> list[float]:
     engine = create_async_engine(
         database_url,
         poolclass=NullPool,
-        connect_args={
-            "prepared_statement_cache_size": 0,
-            "statement_cache_size": 0,
-        },
+        connect_args=SUPAVISOR_CONNECT_ARGS,
     )
 
     latencies: list[float] = []

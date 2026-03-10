@@ -19,7 +19,7 @@ from src.bulk_content_scan import models as bulk_content_scan_models  # noqa: F4
 from src.cache import models as cache_models  # noqa: F401
 from src.community_config import models as community_config_models  # noqa: F401
 from src.config import settings
-from src.database import Base
+from src.database import SUPAVISOR_CONNECT_ARGS, Base
 from src.dbos_workflows.token_bucket import models as token_bucket_models  # noqa: F401
 from src.fact_checking import (
     candidate_models,  # noqa: F401
@@ -134,10 +134,7 @@ async def run_migrations_online() -> None:
     connectable = create_async_engine(
         settings.DATABASE_URL,
         poolclass=pool.NullPool,
-        connect_args={
-            "prepared_statement_cache_size": 0,
-            "statement_cache_size": 0,
-        },
+        connect_args=SUPAVISOR_CONNECT_ARGS,
     )
 
     async with connectable.connect() as connection:

@@ -25,6 +25,7 @@ except ImportError:
 from uuid import UUID, uuid4
 
 from src.config import get_settings
+from src.database import SUPAVISOR_CONNECT_ARGS
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -199,7 +200,7 @@ async def load_snopes_dataset(csv_path: Path, clear_existing: bool = True) -> tu
         settings.DATABASE_URL,
         echo=False,
         poolclass=NullPool,
-        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+        connect_args=SUPAVISOR_CONNECT_ARGS,
     )
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -252,7 +253,7 @@ async def verify_load(expected_count: int) -> None:
         settings.DATABASE_URL,
         echo=False,
         poolclass=NullPool,
-        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
+        connect_args=SUPAVISOR_CONNECT_ARGS,
     )
     async_session = async_sessionmaker(engine, class_=AsyncSession)
 
