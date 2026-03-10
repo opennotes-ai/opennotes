@@ -57,16 +57,21 @@ const fetchAnalysis = query(async (id: string) => {
     const data = await getSimulationAnalysis(id);
 
     const behaviors = data.data.attributes.agent_behaviors ?? [];
-    data.data.attributes.agent_behaviors = behaviors;
     const totalAgents = behaviors.length;
-    let agentsTruncated = false;
-    if (!isAuthenticated && totalAgents > UNAUTH_PAGE_SIZE) {
-      data.data.attributes.agent_behaviors = behaviors.slice(0, UNAUTH_PAGE_SIZE);
-      agentsTruncated = true;
-    }
+    const agentsTruncated = !isAuthenticated && totalAgents > UNAUTH_PAGE_SIZE;
+    const visibleBehaviors = agentsTruncated
+      ? behaviors.slice(0, UNAUTH_PAGE_SIZE)
+      : behaviors;
 
     return {
       ...data,
+      data: {
+        ...data.data,
+        attributes: {
+          ...data.data.attributes,
+          agent_behaviors: visibleBehaviors,
+        },
+      },
       _authMeta: { isAuthenticated, totalAgents, agentsTruncated } as AuthMeta,
     };
   } catch (error) {
