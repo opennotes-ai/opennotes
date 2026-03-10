@@ -86,6 +86,13 @@ _engine_loop: asyncio.AbstractEventLoop | None = None
 _db_lock = threading.RLock()
 
 
+SUPAVISOR_CONNECT_ARGS: dict = {
+    "statement_cache_size": 0,
+    "prepared_statement_cache_size": 0,
+    "prepared_statement_name_func": lambda: "",
+}
+
+
 def _create_engine() -> AsyncEngine:
     """Create the async engine with two-tier pooling (app QueuePool -> Supavisor -> PG).
 
@@ -94,8 +101,9 @@ def _create_engine() -> AsyncEngine:
 
     statement_cache_size=0 disables asyncpg native prepared statement cache.
     prepared_statement_cache_size=0 disables SQLAlchemy asyncpg dialect cache (default 100).
-    Both are required for Supavisor transaction-mode pooling (prepared statements
-    created on one backend may not exist on another).
+    prepared_statement_name_func=lambda:'' forces anonymous prepared statements so
+    asyncpg never sends a named statement that collides across pooled backends.
+    All three are required for Supavisor transaction-mode pooling.
     """
     cfg = get_settings()
     return create_async_engine(
@@ -107,10 +115,7 @@ def _create_engine() -> AsyncEngine:
         pool_timeout=cfg.DB_POOL_TIMEOUT,
         pool_recycle=cfg.DB_POOL_RECYCLE,
         pool_pre_ping=True,
-        connect_args={
-            "statement_cache_size": 0,
-            "prepared_statement_cache_size": 0,
-        },
+        connect_args=SUPAVISOR_CONNECT_ARGS,
     )
 
 

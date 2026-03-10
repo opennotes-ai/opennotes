@@ -133,6 +133,53 @@ class TestNoAsyncCreatorOrRetry:
             assert "async_creator" not in call_kwargs
 
 
+class TestSupavisorConnectArgsConstant:
+    """Verify SUPAVISOR_CONNECT_ARGS constant contains all required keys."""
+
+    def test_constant_has_statement_cache_size(self) -> None:
+        from src.database import SUPAVISOR_CONNECT_ARGS
+
+        assert SUPAVISOR_CONNECT_ARGS["statement_cache_size"] == 0
+
+    def test_constant_has_prepared_statement_cache_size(self) -> None:
+        from src.database import SUPAVISOR_CONNECT_ARGS
+
+        assert SUPAVISOR_CONNECT_ARGS["prepared_statement_cache_size"] == 0
+
+    def test_constant_has_prepared_statement_name_func(self) -> None:
+        from src.database import SUPAVISOR_CONNECT_ARGS
+
+        func = SUPAVISOR_CONNECT_ARGS["prepared_statement_name_func"]
+        assert callable(func)
+        assert func() == ""
+
+
+class TestAnonymousPreparedStatements:
+    """Verify prepared_statement_name_func returns empty string (anonymous statements)."""
+
+    def test_connect_args_has_prepared_statement_name_func(self) -> None:
+        with patch("src.database.create_async_engine") as mock_create:
+            mock_create.return_value = MagicMock()
+
+            from src.database import _create_engine
+
+            with patch("src.database.get_settings") as mock_settings:
+                mock_settings.return_value = MagicMock(
+                    DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+                    DEBUG=False,
+                    DB_POOL_SIZE=5,
+                    DB_POOL_MAX_OVERFLOW=5,
+                    DB_POOL_TIMEOUT=30,
+                    DB_POOL_RECYCLE=1800,
+                )
+                _create_engine()
+
+            call_kwargs = mock_create.call_args[1]
+            func = call_kwargs["connect_args"]["prepared_statement_name_func"]
+            assert callable(func)
+            assert func() == ""
+
+
 class TestPoolConfigNotDeprecated:
     """AC#7: DB_POOL_* config fields un-deprecated and wired to QueuePool."""
 
