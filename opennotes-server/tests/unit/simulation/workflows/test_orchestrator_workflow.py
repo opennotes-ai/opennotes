@@ -1035,6 +1035,47 @@ class TestUpdateMetricsStep:
         assert result["total_turns"] == 42
         assert result["turns_dispatched"] == 55
 
+    def test_update_metrics_preserves_scoring_keys(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import update_metrics_step
+
+        mock_session = AsyncMock()
+        metrics_result = MagicMock()
+        metrics_result.scalar_one_or_none.return_value = {
+            "turns_dispatched": 10,
+            "agents_spawned": 3,
+            "agents_removed": 0,
+            "iterations": 2,
+            "scores_computed": 42,
+            "last_scoring_tier": "BASIC",
+            "tiers_reached": ["MINIMAL", "BASIC"],
+            "scorers_used": ["BayesianAverageScorer"],
+            "tier_distribution": {"MINIMAL": 10, "BASIC": 32},
+            "scorer_breakdown": {"BayesianAverageScorer": 42},
+        }
+        completed_result = MagicMock()
+        completed_result.scalar.return_value = 8
+        mock_session.execute = AsyncMock(side_effect=[metrics_result, completed_result, None])
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = update_metrics_step.__wrapped__(
+                str(uuid4()),
+                dispatched_count=2,
+                spawned_count=1,
+                removed_count=0,
+            )
+
+        assert result["turns_dispatched"] == 12
+        assert result["iterations"] == 3
+        assert result["scores_computed"] == 42
+        assert result["last_scoring_tier"] == "BASIC"
+        assert result["tiers_reached"] == ["MINIMAL", "BASIC"]
+        assert result["scorers_used"] == ["BayesianAverageScorer"]
+        assert result["tier_distribution"] == {"MINIMAL": 10, "BASIC": 32}
+        assert result["scorer_breakdown"] == {"BayesianAverageScorer": 42}
+
 
 class TestFinalizeRunStep:
     def test_finalize_run_sets_completed_status(self) -> None:

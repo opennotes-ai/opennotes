@@ -585,7 +585,7 @@ def process_scrape_batch_step(
                     domain_last_request[domain] = time.monotonic()
 
                     try:
-                        content = await asyncio.to_thread(scrape_url_content, source_url)
+                        scraped = await asyncio.to_thread(scrape_url_content, source_url)
                     except Exception as exc:
                         async with session_maker() as db:
                             await db.execute(
@@ -600,13 +600,13 @@ def process_scrape_batch_step(
                         return (False, f"Scrape exception: {exc}")
 
                     async with session_maker() as db:
-                        if content:
+                        if scraped:
                             await db.execute(
                                 sa_update(FactCheckedItemCandidate)
                                 .where(FactCheckedItemCandidate.id == candidate_id)
                                 .values(
                                     status=CandidateStatus.SCRAPED.value,
-                                    content=content,
+                                    content=scraped.text,
                                 )
                             )
                             await db.commit()

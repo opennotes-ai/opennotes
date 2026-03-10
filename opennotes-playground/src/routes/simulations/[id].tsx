@@ -57,16 +57,21 @@ const fetchAnalysis = query(async (id: string) => {
     const data = await getSimulationAnalysis(id);
 
     const behaviors = data.data.attributes.agent_behaviors ?? [];
-    data.data.attributes.agent_behaviors = behaviors;
     const totalAgents = behaviors.length;
-    let agentsTruncated = false;
-    if (!isAuthenticated && totalAgents > UNAUTH_PAGE_SIZE) {
-      data.data.attributes.agent_behaviors = behaviors.slice(0, UNAUTH_PAGE_SIZE);
-      agentsTruncated = true;
-    }
+    const agentsTruncated = !isAuthenticated && totalAgents > UNAUTH_PAGE_SIZE;
+    const visibleBehaviors = agentsTruncated
+      ? behaviors.slice(0, UNAUTH_PAGE_SIZE)
+      : behaviors;
 
     return {
       ...data,
+      data: {
+        ...data.data,
+        attributes: {
+          ...data.data.attributes,
+          agent_behaviors: visibleBehaviors,
+        },
+      },
       _authMeta: { isAuthenticated, totalAgents, agentsTruncated } as AuthMeta,
     };
   } catch (error) {
@@ -304,7 +309,7 @@ function NotFound() {
     <div class="mt-16 text-center">
       <h1 class="text-4xl font-bold">404</h1>
       <p class="mt-2 text-muted-foreground">Simulation not found.</p>
-      <a href="/simulations" class="mt-4 inline-block text-primary hover:underline">
+      <a href="/" class="mt-4 inline-block text-primary hover:underline">
         Back to simulations
       </a>
     </div>
@@ -318,7 +323,7 @@ function ServerError() {
       <p class="mt-2 text-muted-foreground">
         Something went wrong while loading this simulation. The API may be unreachable.
       </p>
-      <a href="/simulations" class="mt-4 inline-block text-primary hover:underline">
+      <a href="/" class="mt-4 inline-block text-primary hover:underline">
         Back to simulations
       </a>
     </div>
