@@ -14,6 +14,7 @@ def _register_simulation_models():
         SimAgentInstance,
         SimAgentMemory,
         SimAgentRunLog,
+        SimChannelMessage,
         SimulationOrchestrator,
         SimulationRun,
         SimulationRunConfig,

@@ -115,7 +115,6 @@ class SimChannelMessage(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("simulation_runs.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     agent_instance_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

@@ -124,6 +124,41 @@ class TestPostToChannel:
         assert "Error" in result
         assert "database error" in result
 
+    @pytest.mark.asyncio
+    async def test_rejects_empty_message(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message="")
+
+        assert "Error" in result
+        assert "empty" in result
+        sample_deps.db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rejects_whitespace_only_message(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message="   \n\t  ")
+
+        assert "Error" in result
+        assert "empty" in result
+        sample_deps.db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rolls_back_session_on_db_error(self, sample_deps):
+        from sqlalchemy.exc import SQLAlchemyError
+
+        sample_deps.db.flush = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
+        sample_deps.db.rollback = AsyncMock()
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        await post_to_channel(ctx, message="Hello")
+
+        sample_deps.db.rollback.assert_awaited_once()
+
 
 class TestReadChannel:
     @pytest.mark.asyncio
@@ -152,6 +187,9 @@ class TestReadChannel:
         assert f"[Agent {short_id}]" in result
         assert "Found something interesting" in result
         assert "Confirming pattern" in result
+        interesting_pos = result.index("Found something interesting")
+        confirming_pos = result.index("Confirming pattern")
+        assert interesting_pos < confirming_pos
 
     @pytest.mark.asyncio
     async def test_returns_not_available_when_no_simulation_run_id(self, mock_db):
@@ -173,6 +211,19 @@ class TestReadChannel:
 
         assert result == "Channel not available."
         mock_db.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handles_db_error(self, sample_deps):
+        from sqlalchemy.exc import SQLAlchemyError
+
+        sample_deps.db.execute = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await read_channel(ctx)
+
+        assert "Error" in result
+        assert "database error" in result
 
     @pytest.mark.asyncio
     async def test_returns_no_messages_when_empty(self, sample_deps):

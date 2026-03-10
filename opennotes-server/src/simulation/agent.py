@@ -118,6 +118,14 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "requests and notes. Always explain your reasoning."
     )
 
+    if ctx.deps.simulation_run_id is not None:
+        base += (
+            "\n\nChannel tools:\n"
+            "- post_to_channel: Share research findings, flag patterns, "
+            "express uncertainty, or coordinate with other agents\n"
+            "- read_channel: Read recent messages from the shared agent channel"
+        )
+
     if _is_research_available(ctx.deps):
         base += (
             "\n\nResearch tools:\n"
@@ -167,9 +175,11 @@ async def write_note(
     try:
         await ctx.deps.db.flush()
     except IntegrityError:
+        await ctx.deps.db.rollback()
         logger.exception("Integrity error creating note for request %s", request_id)
         return "Error: could not create note due to a constraint violation."
     except SQLAlchemyError:
+        await ctx.deps.db.rollback()
         logger.exception("Database error creating note for request %s", request_id)
         return "Error: could not create note due to a database error."
 
@@ -220,9 +230,11 @@ async def rate_note(
         await ctx.deps.db.execute(stmt)
         await ctx.deps.db.flush()
     except IntegrityError:
+        await ctx.deps.db.rollback()
         logger.exception("Integrity error creating rating for note %s", note_id)
         return "Error: could not create rating due to a constraint violation."
     except SQLAlchemyError:
+        await ctx.deps.db.rollback()
         logger.exception("Database error creating rating for note %s", note_id)
         return "Error: could not create rating due to a database error."
 
@@ -246,6 +258,9 @@ async def post_to_channel(
     if ctx.deps.simulation_run_id is None:
         return "Error: channel not available (no simulation_run_id)."
 
+    if not message or not message.strip():
+        return "Error: message cannot be empty or whitespace-only."
+
     if len(message) > MAX_CHANNEL_MESSAGE_LENGTH:
         return (
             f"Error: message too long ({len(message)} chars). "
@@ -261,6 +276,7 @@ async def post_to_channel(
     try:
         await ctx.deps.db.flush()
     except SQLAlchemyError:
+        await ctx.deps.db.rollback()
         logger.exception("Database error posting to channel")
         return "Error: could not post to channel due to a database error."
     return "Posted to channel."
@@ -280,7 +296,11 @@ async def read_channel(
         .order_by(SimChannelMessage.created_at.desc())
         .limit(20)
     )
-    result = await ctx.deps.db.execute(query)
+    try:
+        result = await ctx.deps.db.execute(query)
+    except SQLAlchemyError:
+        logger.exception("Database error reading channel")
+        return "Error: could not read channel due to a database error."
     messages = result.scalars().all()
 
     if not messages:
