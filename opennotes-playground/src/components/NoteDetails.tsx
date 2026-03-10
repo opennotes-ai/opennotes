@@ -85,6 +85,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                   "px-3 py-1.5 text-xs font-medium transition-colors",
                   sortBy() === "count" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
                 )}
+                aria-pressed={sortBy() === "count"}
                 onClick={() => setSortBy("count")}
               >
                 Note Count
@@ -94,6 +95,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                   "border-l border-input px-3 py-1.5 text-xs font-medium transition-colors",
                   sortBy() === "disagreement" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
                 )}
+                aria-pressed={sortBy() === "disagreement"}
                 onClick={() => setSortBy("disagreement")}
               >
                 Disagreement
@@ -160,6 +162,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
 
                           <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                             <span
+                              tabindex="0"
                               title={getHelpfulnessTooltip(attrs.helpfulness_score, props.currentTier)}
                               aria-label={getHelpfulnessTooltip(attrs.helpfulness_score, props.currentTier)}
                             >

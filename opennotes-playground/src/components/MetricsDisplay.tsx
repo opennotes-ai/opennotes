@@ -38,14 +38,14 @@ export default function MetricsDisplay(props: {
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-lg border border-border bg-card p-4">
           <h3 class="mb-2 text-sm font-semibold">Tier Distribution</h3>
-          <table class="w-full text-sm">
+          <table class="w-full text-sm" aria-label="Tier distribution">
             <tbody>
               <For each={Object.entries(props.scoring.tier_distribution)}>
                 {([tier, count]) => {
                   const tierInfo = () => TIER_DESCRIPTIONS[tier];
                   return (
                     <tr class="border-b border-border last:border-0">
-                      <td class="py-1 text-muted-foreground" title={tierInfo()?.description ?? ""}>
+                      <td class="py-1 text-muted-foreground" title={tierInfo()?.description ?? ""} aria-label={`${humanizeLabel(tier)}: ${tierInfo()?.description ?? "No description"}`}>
                         {humanizeLabel(tier)}
                       </td>
                       <td class="py-1 text-right font-medium">{count}</td>
@@ -58,7 +58,7 @@ export default function MetricsDisplay(props: {
         </div>
         <div class="rounded-lg border border-border bg-card p-4">
           <h3 class="mb-2 text-sm font-semibold">Scorer Breakdown</h3>
-          <table class="w-full text-sm">
+          <table class="w-full text-sm" aria-label="Scorer breakdown">
             <tbody>
               <For each={Object.entries(props.scoring.scorer_breakdown)}>
                 {([scorer, count]) => (

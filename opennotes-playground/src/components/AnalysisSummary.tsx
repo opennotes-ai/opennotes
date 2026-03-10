@@ -21,7 +21,7 @@ export default function AnalysisSummary(props: {
         </div>
         <div class="rounded-lg border border-border bg-card p-4">
           <h3 class="mb-2 text-sm font-semibold">Notes by Status</h3>
-          <table class="w-full text-sm">
+          <table class="w-full text-sm" aria-label="Notes by status">
             <tbody>
               <For each={Object.entries(props.noteQuality.notes_by_status)}>
                 {([status, count]) => (
@@ -36,7 +36,7 @@ export default function AnalysisSummary(props: {
         </div>
         <div class="rounded-lg border border-border bg-card p-4">
           <h3 class="mb-2 text-sm font-semibold">Notes by Classification</h3>
-          <table class="w-full text-sm">
+          <table class="w-full text-sm" aria-label="Notes by classification">
             <tbody>
               <For each={Object.entries(props.noteQuality.notes_by_classification)}>
                 {([classification, count]) => (
@@ -58,7 +58,7 @@ export default function AnalysisSummary(props: {
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="rounded-lg border border-border bg-card p-4">
           <h3 class="mb-2 text-sm font-semibold">Overall</h3>
-          <table class="w-full text-sm">
+          <table class="w-full text-sm" aria-label="Overall rating distribution">
             <tbody>
               <For each={Object.entries(props.ratingDistribution.overall)}>
                 {([level, count]) => (
@@ -75,7 +75,7 @@ export default function AnalysisSummary(props: {
           <div class="rounded-lg border border-border bg-card p-4">
             <h3 class="mb-2 text-sm font-semibold">Per Agent</h3>
             <div class="overflow-x-auto">
-              <table class="w-full text-sm">
+              <table class="w-full text-sm" aria-label="Per agent rating distribution">
                 <thead>
                   <tr class="border-b-2 border-border">
                     <th class="py-1.5 text-left font-medium text-muted-foreground">Agent</th>

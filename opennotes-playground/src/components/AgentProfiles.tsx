@@ -40,7 +40,7 @@ export default function AgentProfiles(props: { agents: AgentBehaviorData[] }) {
     <section>
       <h2 class="mb-4 text-xl font-semibold">Agent Behaviors</h2>
       <div class="overflow-x-auto rounded-lg border border-border">
-        <table class="w-full text-sm">
+        <table class="w-full text-sm" aria-label="Agent behaviors">
           <thead>
             <tr class="border-b-2 border-border bg-muted/50">
               <th class="px-4 py-2.5 text-left font-medium">Agent</th>
