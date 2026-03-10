@@ -1,8 +1,8 @@
 export default function Index() {
   return (
-    <main>
-      <h1>Hello, OpenNotes Playground!</h1>
-      <p>SolidStart with SSR is running.</p>
+    <main class="mx-auto max-w-3xl px-4 py-12">
+      <h1 class="text-2xl font-bold tracking-tight">Hello, OpenNotes Playground!</h1>
+      <p class="mt-2 text-muted-foreground">SolidStart with SSR is running.</p>
     </main>
   );
 }

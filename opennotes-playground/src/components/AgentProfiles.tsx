@@ -1,43 +1,54 @@
 import { For } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import { humanizeLabel, truncateId } from "~/lib/format";
+import { Badge, type BadgeVariant } from "~/components/ui/badge";
 
 type AgentBehaviorData = components["schemas"]["AgentBehaviorData"];
+
+const STATE_VARIANT: Record<string, BadgeVariant> = {
+  active: "success",
+  idle: "muted",
+  completed: "info",
+  error: "danger",
+};
 
 export default function AgentProfiles(props: { agents: AgentBehaviorData[] }) {
   return (
     <section>
-      <h2>Agent Behaviors</h2>
-      <div style={{ "overflow-x": "auto" }}>
-        <table style={{ width: "100%", "border-collapse": "collapse" }}>
+      <h2 class="mb-4 text-xl font-semibold">Agent Behaviors</h2>
+      <div class="overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-sm">
           <thead>
-            <tr style={{ "border-bottom": "2px solid #ddd" }}>
-              <th style={{ padding: "0.5rem", "text-align": "left" }}>Agent</th>
-              <th style={{ padding: "0.5rem", "text-align": "right" }}>Notes Written</th>
-              <th style={{ padding: "0.5rem", "text-align": "right" }}>Ratings Given</th>
-              <th style={{ padding: "0.5rem", "text-align": "right" }}>Turns</th>
-              <th style={{ padding: "0.5rem", "text-align": "left" }}>State</th>
-              <th style={{ padding: "0.5rem", "text-align": "left" }}>Actions</th>
+            <tr class="border-b-2 border-border bg-muted/50">
+              <th class="px-4 py-2.5 text-left font-medium">Agent</th>
+              <th class="px-4 py-2.5 text-right font-medium">Notes</th>
+              <th class="px-4 py-2.5 text-right font-medium">Ratings</th>
+              <th class="px-4 py-2.5 text-right font-medium">Turns</th>
+              <th class="px-4 py-2.5 text-left font-medium">State</th>
+              <th class="px-4 py-2.5 text-left font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             <For each={props.agents}>
               {(agent) => (
-                <tr style={{ "border-bottom": "1px solid #eee" }}>
-                  <td style={{ padding: "0.5rem" }}>
-                    <strong>{agent.agent_name}</strong>
-                    <div style={{ "font-size": "0.75rem", color: "#999" }}>
-                      {agent.agent_instance_id.slice(0, 8)}
+                <tr class="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td class="px-4 py-2.5">
+                    <div class="font-medium">{agent.agent_name}</div>
+                    <div class="text-xs text-muted-foreground">
+                      {truncateId(agent.agent_instance_id)}
                     </div>
                   </td>
-                  <td style={{ padding: "0.5rem", "text-align": "right" }}>{agent.notes_written}</td>
-                  <td style={{ padding: "0.5rem", "text-align": "right" }}>{agent.ratings_given}</td>
-                  <td style={{ padding: "0.5rem", "text-align": "right" }}>{agent.turn_count}</td>
-                  <td style={{ padding: "0.5rem" }}>
-                    <StateBadge state={agent.state} />
+                  <td class="px-4 py-2.5 text-right tabular-nums">{agent.notes_written}</td>
+                  <td class="px-4 py-2.5 text-right tabular-nums">{agent.ratings_given}</td>
+                  <td class="px-4 py-2.5 text-right tabular-nums">{agent.turn_count}</td>
+                  <td class="px-4 py-2.5">
+                    <Badge variant={STATE_VARIANT[agent.state] ?? "muted"}>
+                      {humanizeLabel(agent.state)}
+                    </Badge>
                   </td>
-                  <td style={{ padding: "0.5rem", "font-size": "0.85rem", color: "#555" }}>
+                  <td class="px-4 py-2.5 text-muted-foreground">
                     {Object.entries(agent.action_distribution)
-                      .map(([action, count]) => `${action}: ${count}`)
+                      .map(([action, count]) => `${humanizeLabel(action)}: ${count}`)
                       .join(", ")}
                   </td>
                 </tr>
@@ -47,31 +58,5 @@ export default function AgentProfiles(props: { agents: AgentBehaviorData[] }) {
         </table>
       </div>
     </section>
-  );
-}
-
-function StateBadge(props: { state: string }) {
-  const colors: Record<string, { bg: string; fg: string }> = {
-    active: { bg: "#d4edda", fg: "#155724" },
-    idle: { bg: "#e2e3e5", fg: "#383d41" },
-    completed: { bg: "#cce5ff", fg: "#004085" },
-    error: { bg: "#f8d7da", fg: "#721c24" },
-  };
-  const style = () => colors[props.state] ?? { bg: "#e2e3e5", fg: "#383d41" };
-
-  return (
-    <span
-      style={{
-        "background-color": style().bg,
-        color: style().fg,
-        padding: "0.15rem 0.4rem",
-        "border-radius": "3px",
-        "font-size": "0.75rem",
-        "font-weight": "600",
-        "text-transform": "uppercase",
-      }}
-    >
-      {props.state}
-    </span>
   );
 }

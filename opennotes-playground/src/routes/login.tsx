@@ -2,6 +2,7 @@ import { action, redirect, useSubmission, A } from "@solidjs/router";
 import { Show } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import { createClient } from "~/lib/supabase-server";
+import { Button } from "~/components/ui/button";
 
 const loginAction = action(async (formData: FormData) => {
   "use server";
@@ -29,26 +30,39 @@ export default function LoginPage() {
   const submission = useSubmission(loginAction);
 
   return (
-    <main>
-      <h1>Sign In</h1>
-      <form action={loginAction} method="post">
-        <div>
-          <label for="email">Email</label>
-          <input id="email" name="email" type="email" required />
+    <main class="mx-auto max-w-sm px-4 py-12">
+      <h1 class="text-2xl font-bold tracking-tight">Sign In</h1>
+      <form action={loginAction} method="post" class="mt-6 space-y-4">
+        <div class="space-y-1.5">
+          <label for="email" class="text-sm font-medium">Email</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            required
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+          />
         </div>
-        <div>
-          <label for="password">Password</label>
-          <input id="password" name="password" type="password" required />
+        <div class="space-y-1.5">
+          <label for="password" class="text-sm font-medium">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+          />
         </div>
         <Show when={submission.result}>
-          <p style={{ color: "red" }}>{submission.result}</p>
+          <p class="text-sm text-red-600 dark:text-red-400">{submission.result}</p>
         </Show>
-        <button type="submit" disabled={submission.pending}>
+        <Button type="submit" class="w-full" disabled={submission.pending}>
           {submission.pending ? "Signing in..." : "Sign In"}
-        </button>
+        </Button>
       </form>
-      <p>
-        Don't have an account? <A href="/register">Sign up</A>
+      <p class="mt-4 text-center text-sm text-muted-foreground">
+        Don't have an account?{" "}
+        <A href="/register" class="text-primary hover:underline">Sign up</A>
       </p>
     </main>
   );

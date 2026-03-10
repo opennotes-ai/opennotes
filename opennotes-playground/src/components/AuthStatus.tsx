@@ -2,6 +2,7 @@ import { action, query, createAsync, redirect, useSubmission, A } from "@solidjs
 import { Show, Suspense } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import { createClient } from "~/lib/supabase-server";
+import { Button } from "~/components/ui/button";
 
 const getAuthUser = query(async () => {
   "use server";
@@ -32,15 +33,19 @@ export default function AuthStatus() {
     <Suspense>
       <Show
         when={user()}
-        fallback={<A href="/login">Sign in</A>}
+        fallback={
+          <Button variant="ghost" size="sm" as={A} href="/login">
+            Sign in
+          </Button>
+        }
       >
         {(u) => (
-          <span>
-            {u().email}{" "}
-            <form action={signOutAction} method="post" style={{ display: "inline" }}>
-              <button type="submit" disabled={signOut.pending}>
+          <span class="flex items-center gap-2 text-sm">
+            <span class="text-muted-foreground">{u().email}</span>
+            <form action={signOutAction} method="post" class="inline">
+              <Button variant="ghost" size="sm" type="submit" disabled={signOut.pending}>
                 Sign out
-              </button>
+              </Button>
             </form>
           </span>
         )}

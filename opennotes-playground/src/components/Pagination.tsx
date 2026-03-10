@@ -1,5 +1,6 @@
 import { A } from "@solidjs/router";
 import { Show } from "solid-js";
+import { Button } from "~/components/ui/button";
 
 interface PaginationProps {
   currentPage: number;
@@ -11,15 +12,33 @@ export default function Pagination(props: PaginationProps) {
   const hasNext = () => props.currentPage < props.totalPages;
 
   return (
-    <nav aria-label="Pagination" style={{ display: "flex", gap: "1rem", "align-items": "center", "margin-top": "2rem" }}>
-      <Show when={hasPrev()} fallback={<span aria-disabled="true">Previous</span>}>
-        <A href={`/simulations?page=${props.currentPage - 1}`}>Previous</A>
+    <nav aria-label="Pagination" class="mt-6 flex items-center gap-3">
+      <Show
+        when={hasPrev()}
+        fallback={
+          <Button variant="outline" size="sm" disabled aria-disabled="true">
+            Previous
+          </Button>
+        }
+      >
+        <Button variant="outline" size="sm" as={A} href={`/simulations?page=${props.currentPage - 1}`}>
+          Previous
+        </Button>
       </Show>
-      <span>
+      <span class="text-sm text-muted-foreground">
         Page {props.currentPage} of {props.totalPages}
       </span>
-      <Show when={hasNext()} fallback={<span aria-disabled="true">Next</span>}>
-        <A href={`/simulations?page=${props.currentPage + 1}`}>Next</A>
+      <Show
+        when={hasNext()}
+        fallback={
+          <Button variant="outline" size="sm" disabled aria-disabled="true">
+            Next
+          </Button>
+        }
+      >
+        <Button variant="outline" size="sm" as={A} href={`/simulations?page=${props.currentPage + 1}`}>
+          Next
+        </Button>
       </Show>
     </nav>
   );
