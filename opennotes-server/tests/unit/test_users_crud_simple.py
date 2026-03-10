@@ -192,6 +192,9 @@ async def test_update_user():
     from src.users import crud
 
     mock_db = AsyncMock()
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalars.return_value.all.return_value = []
+    mock_db.execute.return_value = mock_execute_result
 
     test_user_id = uuid4()
     user = User(
@@ -217,9 +220,10 @@ async def test_update_user():
     # Test updating password
     update = UserUpdate(password="NewPassword123!")
     result = await crud.update_user(mock_db, user, update)
-    # Check that password was hashed
     is_valid, _ = verify_password("NewPassword123!", result.hashed_password)
     assert is_valid
+    assert result.tokens_valid_after is not None
+    assert mock_db.execute.called
 
     # Test updating multiple fields
     update = UserUpdate(
@@ -298,3 +302,109 @@ async def test_revoke_all_user_refresh_tokens():
         assert token.is_revoked is True
 
     mock_db.flush.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_refresh_token_filters_by_user_id():
+    """Test that get_refresh_token filters by user_id when provided."""
+    from src.auth.password import get_password_hash
+    from src.users import crud
+    from src.users.models import RefreshToken
+
+    mock_db = AsyncMock()
+
+    user_a_id = uuid4()
+    user_b_id = uuid4()
+    raw_token = "shared_token_value"
+
+    token_a = RefreshToken(
+        id=uuid4(),
+        user_id=user_a_id,
+        token_hash=get_password_hash(raw_token),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+        is_revoked=False,
+    )
+    token_b = RefreshToken(
+        id=uuid4(),
+        user_id=user_b_id,
+        token_hash=get_password_hash(raw_token),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+        is_revoked=False,
+    )
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [token_a]
+    mock_db.execute.return_value = mock_result
+
+    result = await crud.get_refresh_token(mock_db, raw_token, user_id=user_a_id)
+    assert result is not None
+    assert result.user_id == user_a_id
+
+    mock_result.scalars.return_value.all.return_value = [token_b]
+    mock_db.reset_mock()
+    mock_db.execute.return_value = mock_result
+
+    result = await crud.get_refresh_token(mock_db, raw_token, user_id=user_b_id)
+    assert result is not None
+    assert result.user_id == user_b_id
+
+    mock_result.scalars.return_value.all.return_value = []
+    mock_db.reset_mock()
+    mock_db.execute.return_value = mock_result
+
+    result = await crud.get_refresh_token(mock_db, raw_token, user_id=user_a_id)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_refresh_token_without_user_id():
+    """Test that get_refresh_token works without user_id (backward compat)."""
+    from src.auth.password import get_password_hash
+    from src.users import crud
+    from src.users.models import RefreshToken
+
+    mock_db = AsyncMock()
+    raw_token = "test_token_value"
+
+    token = RefreshToken(
+        id=uuid4(),
+        user_id=uuid4(),
+        token_hash=get_password_hash(raw_token),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+        is_revoked=False,
+    )
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [token]
+    mock_db.execute.return_value = mock_result
+
+    result = await crud.get_refresh_token(mock_db, raw_token)
+    assert result is not None
+    assert result == token
+
+
+@pytest.mark.asyncio
+async def test_get_refresh_token_with_plain_token():
+    """Test that get_refresh_token works with unhashed tokens."""
+    from src.users import crud
+    from src.users.models import RefreshToken
+
+    mock_db = AsyncMock()
+    raw_token = "plain_token_123"
+
+    token = RefreshToken(
+        id=uuid4(),
+        user_id=uuid4(),
+        token=raw_token,
+        token_hash=None,
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+        is_revoked=False,
+    )
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [token]
+    mock_db.execute.return_value = mock_result
+
+    result = await crud.get_refresh_token(mock_db, raw_token)
+    assert result is not None
+    assert result == token

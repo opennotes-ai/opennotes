@@ -65,6 +65,7 @@ from src.users.crud import (
     get_refresh_token,
     get_user_audit_logs,
     get_user_by_email_for_update,
+    get_user_by_id,
     get_user_by_username_for_update,
     revoke_all_user_refresh_tokens,
     revoke_api_key,
@@ -188,68 +189,117 @@ async def refresh_access_token(
     """
     ip_address, user_agent = extract_request_context(http_request)
 
-    token_data = await verify_refresh_token(request.refresh_token)
+    try:
+        token_data = await verify_refresh_token(request.refresh_token)
 
-    if token_data is None:
-        await create_audit_log(
-            db=db,
-            user_id=None,
-            action="TOKEN_REFRESH_FAILED",
-            resource="authentication",
-            details={"reason": "invalid_refresh_token"},
-            ip_address=ip_address,
-            user_agent=user_agent,
+        if token_data is None:
+            await create_audit_log(
+                db=db,
+                user_id=None,
+                action="TOKEN_REFRESH_FAILED",
+                resource="authentication",
+                details={"reason": "invalid_refresh_token"},
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+            )
+
+        db_refresh_token = await get_refresh_token(
+            db, request.refresh_token, user_id=token_data.user_id
         )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
+
+        if db_refresh_token is None:
+            await create_audit_log(
+                db=db,
+                user_id=token_data.user_id,
+                action="TOKEN_REFRESH_FAILED",
+                resource="authentication",
+                resource_id=str(token_data.user_id),
+                details={"reason": "refresh_token_not_found"},
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token not found or expired",
+            )
+
+        user = await get_user_by_id(db, token_data.user_id)
+        if user is None or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive",
+            )
+
+        if user.tokens_valid_after is not None:
+            if token_data.iat is None:
+                await create_audit_log(
+                    db=db,
+                    user_id=token_data.user_id,
+                    action="TOKEN_REFRESH_FAILED",
+                    resource="authentication",
+                    resource_id=str(token_data.user_id),
+                    details={"reason": "missing_iat_with_tokens_valid_after"},
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been invalidated",
+                )
+            valid_after_int = int(user.tokens_valid_after.timestamp())
+            if token_data.iat < valid_after_int:
+                await create_audit_log(
+                    db=db,
+                    user_id=token_data.user_id,
+                    action="TOKEN_REFRESH_FAILED",
+                    resource="authentication",
+                    resource_id=str(token_data.user_id),
+                    details={"reason": "token_issued_before_validity_cutoff"},
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been invalidated",
+                )
+
+        access_token_expires = pendulum.duration(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        new_access_token = create_access_token(
+            data={
+                "sub": str(token_data.user_id),
+                "username": token_data.username,
+                "role": token_data.role,
+            },
+            expires_delta=access_token_expires,
         )
 
-    db_refresh_token = await get_refresh_token(db, request.refresh_token)
-
-    if db_refresh_token is None:
         await create_audit_log(
             db=db,
             user_id=token_data.user_id,
-            action="TOKEN_REFRESH_FAILED",
+            action="TOKEN_REFRESH_SUCCESS",
             resource="authentication",
             resource_id=str(token_data.user_id),
-            details={"reason": "refresh_token_not_found"},
+            details={"username": token_data.username},
             ip_address=ip_address,
             user_agent=user_agent,
         )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token not found or expired",
+        await db.commit()
+
+        return Token(
+            access_token=new_access_token,
+            token_type="bearer",
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
-
-    access_token_expires = pendulum.duration(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    new_access_token = create_access_token(
-        data={
-            "sub": str(token_data.user_id),
-            "username": token_data.username,
-            "role": token_data.role,
-        },
-        expires_delta=access_token_expires,
-    )
-
-    await create_audit_log(
-        db=db,
-        user_id=token_data.user_id,
-        action="TOKEN_REFRESH_SUCCESS",
-        resource="authentication",
-        resource_id=str(token_data.user_id),
-        details={"username": token_data.username},
-        ip_address=ip_address,
-        user_agent=user_agent,
-    )
-    await db.commit()
-
-    return Token(
-        access_token=new_access_token,
-        token_type="bearer",
-        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    )
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception:
+        await db.rollback()
+        raise
 
 
 @router.post(

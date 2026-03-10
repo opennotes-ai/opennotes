@@ -38,12 +38,9 @@ async def get_current_user(
         raise credentials_exception
 
     # Validate tokens_valid_after using already-decoded token data (no re-decode)
-    if user.tokens_valid_after and token_data.iat is not None:
-        # Compare token iat (integer seconds) with tokens_valid_after (datetime).
-        # Convert tokens_valid_after to integer seconds for comparison.
-        # Reject only tokens issued strictly before tokens_valid_after.
-        # This allows tokens issued in the same second as revoke to be accepted
-        # if they were created after the revoke call.
+    if user.tokens_valid_after is not None:
+        if token_data.iat is None:
+            raise credentials_exception
         valid_after_int = int(user.tokens_valid_after.timestamp())
         if token_data.iat < valid_after_int:
             raise credentials_exception
@@ -92,6 +89,20 @@ async def get_current_user_or_api_key(
     if token_data:
         user = await get_user_by_id(db, token_data.user_id)
         if user and user.is_active:
+            if user.tokens_valid_after is not None:
+                if token_data.iat is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid authentication credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                valid_after_int = int(user.tokens_valid_after.timestamp())
+                if token_data.iat < valid_after_int:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid authentication credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
             return user
 
     # Try API key in Authorization header (legacy support)
