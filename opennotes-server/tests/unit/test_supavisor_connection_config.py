@@ -32,11 +32,10 @@ class TestDatabaseEngineQueuePool:
                 DB_POOL_RECYCLE=1800,
             )
             engine = _create_engine()
-
-        try:
-            assert isinstance(engine.sync_engine.pool, QueuePool)
-        finally:
-            await engine.dispose()
+            try:
+                assert isinstance(engine.sync_engine.pool, QueuePool)
+            finally:
+                await engine.dispose()
 
     def test_create_engine_passes_pool_kwargs(self) -> None:
         with patch("src.database.create_async_engine") as mock_create:
@@ -152,6 +151,17 @@ class TestSupavisorConnectArgsConstant:
         func = SUPAVISOR_CONNECT_ARGS["prepared_statement_name_func"]
         assert callable(func)
         assert func() == ""
+
+    def test_constant_has_exactly_three_keys(self) -> None:
+        from src.database import SUPAVISOR_CONNECT_ARGS
+
+        assert len(SUPAVISOR_CONNECT_ARGS) == 3
+
+    def test_constant_is_immutable(self) -> None:
+        from src.database import SUPAVISOR_CONNECT_ARGS
+
+        with pytest.raises(TypeError):
+            SUPAVISOR_CONNECT_ARGS["new_key"] = "value"  # type: ignore[index]
 
 
 class TestAnonymousPreparedStatements:

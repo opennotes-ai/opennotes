@@ -2,6 +2,7 @@ import asyncio
 import json
 import threading
 from collections.abc import AsyncGenerator
+from types import MappingProxyType
 from typing import Any
 
 from cryptography.fernet import Fernet
@@ -86,11 +87,13 @@ _engine_loop: asyncio.AbstractEventLoop | None = None
 _db_lock = threading.RLock()
 
 
-SUPAVISOR_CONNECT_ARGS: dict[str, object] = {
-    "statement_cache_size": 0,
-    "prepared_statement_cache_size": 0,
-    "prepared_statement_name_func": lambda: "",
-}
+SUPAVISOR_CONNECT_ARGS: MappingProxyType[str, object] = MappingProxyType(
+    {
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+        "prepared_statement_name_func": lambda: "",
+    }
+)
 
 
 def _create_engine() -> AsyncEngine:
