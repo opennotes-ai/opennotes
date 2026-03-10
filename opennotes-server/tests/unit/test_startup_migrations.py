@@ -15,18 +15,32 @@ def _make_subprocess_result(returncode=0, stdout="", stderr=""):
     return result
 
 
-def _make_mock_engine():
+def _make_mock_engine(lock_acquired=True):
     mock_conn = MagicMock()
     mock_engine = MagicMock()
     mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
     mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+    lock_result = MagicMock()
+    lock_result.scalar.return_value = lock_acquired
+
+    original_execute = mock_conn.execute
+
+    def execute_side_effect(stmt):
+        stmt_str = str(stmt) if not isinstance(stmt, str) else stmt
+        if "pg_try_advisory_lock" in str(stmt_str):
+            return lock_result
+        return original_execute(stmt)
+
+    mock_conn.execute = MagicMock(side_effect=execute_side_effect)
     return mock_engine, mock_conn
 
 
-def _make_mock_settings(db_url="postgresql+asyncpg://user:pass@host/db"):
+def _make_mock_settings(db_url="postgresql+asyncpg://user:pass@host/db", direct_url=None):
     mock_settings = MagicMock()
     mock_settings.SKIP_MIGRATIONS = False
     mock_settings.DATABASE_URL = db_url
+    mock_settings.DATABASE_DIRECT_URL = direct_url
     return mock_settings
 
 
@@ -53,12 +67,10 @@ class TestRunStartupMigrationsServerSuccess:
             await run_startup_migrations("full")
 
         sql_calls = _execute_call_strings(mock_conn)
-        assert any("pg_advisory_lock" in s for s in sql_calls)
+        assert any("pg_try_advisory_lock" in s for s in sql_calls)
         assert any("pg_advisory_unlock" in s for s in sql_calls)
 
-        lock_idx = next(
-            i for i, s in enumerate(sql_calls) if "pg_advisory_lock(" in s and "unlock" not in s
-        )
+        lock_idx = next(i for i, s in enumerate(sql_calls) if "pg_try_advisory_lock" in s)
         unlock_idx = next(i for i, s in enumerate(sql_calls) if "pg_advisory_unlock" in s)
         assert lock_idx < unlock_idx
 
@@ -250,7 +262,7 @@ class TestRunStartupMigrationsWorker:
         mock_run.assert_not_called()
 
         sql_calls = _execute_call_strings(mock_conn)
-        assert any("pg_advisory_lock(" in s and "unlock" not in s for s in sql_calls)
+        assert any("pg_try_advisory_lock" in s for s in sql_calls)
         assert any("pg_advisory_unlock" in s for s in sql_calls)
 
     async def test_worker_does_not_run_alembic_commands(self):
@@ -272,7 +284,7 @@ class TestRunStartupMigrationsWorker:
 
 @pytest.mark.asyncio
 class TestRunStartupMigrationsExceptionHandling:
-    async def test_unexpected_exception_logs_critical(self):
+    async def test_unexpected_exception_logs_critical_and_reraises(self):
         mock_engine = MagicMock()
         mock_engine.connect.return_value.__enter__ = MagicMock(
             side_effect=RuntimeError("connection failed")
@@ -281,13 +293,14 @@ class TestRunStartupMigrationsExceptionHandling:
 
         mock_settings = _make_mock_settings()
 
+        from src.startup_migrations import run_startup_migrations
+
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.logger") as mock_logger,
+            pytest.raises(RuntimeError, match="connection failed"),
         ):
-            from src.startup_migrations import run_startup_migrations
-
             await run_startup_migrations("full")
 
         mock_logger.critical.assert_called()
@@ -300,13 +313,14 @@ class TestRunStartupMigrationsExceptionHandling:
 
         mock_settings = _make_mock_settings()
 
+        from src.startup_migrations import run_startup_migrations
+
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.logger") as mock_logger,
+            pytest.raises(RuntimeError, match="db error"),
         ):
-            from src.startup_migrations import run_startup_migrations
-
             await run_startup_migrations("full")
 
         mock_logger.critical.assert_called()
@@ -335,6 +349,74 @@ class TestDatabaseUrlConversion:
         db_url_arg = mock_ce.call_args.args[0]
         assert db_url_arg == "postgresql://user:pass@host:5432/mydb"
         assert "asyncpg" not in db_url_arg
+
+    async def test_uses_direct_url_when_set(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(stdout="")
+
+        mock_settings = _make_mock_settings(
+            db_url="postgresql+asyncpg://user:pass@pooler:6543/mydb",
+            direct_url="postgresql://user:pass@direct:5432/mydb",
+        )
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine) as mock_ce,
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        db_url_arg = mock_ce.call_args.args[0]
+        assert db_url_arg == "postgresql://user:pass@direct:5432/mydb"
+
+    async def test_direct_url_asyncpg_prefix_stripped(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(stdout="")
+
+        mock_settings = _make_mock_settings(
+            direct_url="postgresql+asyncpg://user:pass@direct:5432/mydb",
+        )
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine) as mock_ce,
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        db_url_arg = mock_ce.call_args.args[0]
+        assert db_url_arg == "postgresql://user:pass@direct:5432/mydb"
+        assert "asyncpg" not in db_url_arg
+
+    async def test_subprocess_env_has_asyncpg_database_url(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(stdout="")
+
+        mock_settings = _make_mock_settings(
+            direct_url="postgresql://user:pass@direct:5432/mydb",
+        )
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]
+            ) as mock_run,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        for c in mock_run.call_args_list:
+            env = c.kwargs.get("env", {})
+            assert env.get("DATABASE_URL") == "postgresql+asyncpg://user:pass@direct:5432/mydb"
 
 
 @pytest.mark.asyncio
@@ -426,8 +508,8 @@ class TestSubprocessTimeout:
 
             await run_startup_migrations("full")
 
-        for call in mock_run.call_args_list:
-            assert call.kwargs.get("timeout") == 300
+        for c in mock_run.call_args_list:
+            assert c.kwargs.get("timeout") == 60
 
     async def test_alembic_current_timeout_logs_critical_and_releases_lock(self):
         mock_engine, mock_conn = _make_mock_engine()
@@ -439,7 +521,7 @@ class TestSubprocessTimeout:
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
                 f"{MODULE}.subprocess.run",
-                side_effect=subprocess.TimeoutExpired(cmd="alembic current", timeout=300),
+                side_effect=subprocess.TimeoutExpired(cmd="alembic current", timeout=60),
             ),
             patch(f"{MODULE}.logger") as mock_logger,
         ):
@@ -468,7 +550,7 @@ class TestSubprocessTimeout:
                 side_effect=[
                     current_result,
                     upgrade_result,
-                    subprocess.TimeoutExpired(cmd="alembic downgrade", timeout=300),
+                    subprocess.TimeoutExpired(cmd="alembic downgrade", timeout=60),
                 ],
             ),
             patch(f"{MODULE}.logger") as mock_logger,
@@ -499,7 +581,7 @@ class TestSubprocessTimeout:
                 f"{MODULE}.subprocess.run",
                 side_effect=[
                     current_result,
-                    subprocess.TimeoutExpired(cmd="alembic upgrade", timeout=300),
+                    subprocess.TimeoutExpired(cmd="alembic upgrade", timeout=60),
                 ],
             ),
             patch(f"{MODULE}.logger") as mock_logger,
@@ -593,3 +675,119 @@ class TestMultiHeadParsing:
 
         result = _parse_current_revision("   \n  \n")
         assert result == []
+
+
+@pytest.mark.asyncio
+class TestTryLockRetry:
+    async def test_retries_when_lock_not_acquired(self):
+        mock_conn = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        lock_false = MagicMock()
+        lock_false.scalar.return_value = False
+        lock_true = MagicMock()
+        lock_true.scalar.return_value = True
+
+        call_count = 0
+
+        def execute_side_effect(stmt):
+            nonlocal call_count
+            stmt_str = str(stmt)
+            if "pg_try_advisory_lock" in stmt_str:
+                call_count += 1
+                return lock_true if call_count >= 3 else lock_false
+            return MagicMock()
+
+        mock_conn.execute = MagicMock(side_effect=execute_side_effect)
+
+        mock_settings = _make_mock_settings()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(stdout="")
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
+            patch(f"{MODULE}.time.sleep") as mock_sleep,
+            patch(f"{MODULE}.logger"),
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        assert call_count == 3
+        assert mock_sleep.call_count == 2
+
+    async def test_fail_open_when_lock_unavailable_but_at_head(self):
+        mock_conn = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        lock_false = MagicMock()
+        lock_false.scalar.return_value = False
+        mock_conn.execute = MagicMock(return_value=lock_false)
+
+        mock_settings = _make_mock_settings()
+        check_result = _make_subprocess_result(returncode=0)
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(f"{MODULE}.subprocess.run", return_value=check_result),
+            patch(f"{MODULE}.time.sleep"),
+            patch(f"{MODULE}.logger") as mock_logger,
+            patch(f"{MODULE}.LOCK_MAX_RETRIES", 2),
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        warning_msgs = [str(c) for c in mock_logger.warning.call_args_list]
+        assert any("at head" in m.lower() for m in warning_msgs)
+
+    async def test_raises_when_lock_unavailable_and_not_at_head(self):
+        mock_conn = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        lock_false = MagicMock()
+        lock_false.scalar.return_value = False
+        mock_conn.execute = MagicMock(return_value=lock_false)
+
+        mock_settings = _make_mock_settings()
+        check_result = _make_subprocess_result(returncode=1, stderr="not at head")
+
+        from src.startup_migrations import run_startup_migrations
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(f"{MODULE}.subprocess.run", return_value=check_result),
+            patch(f"{MODULE}.time.sleep"),
+            patch(f"{MODULE}.logger"),
+            patch(f"{MODULE}.LOCK_MAX_RETRIES", 2),
+            pytest.raises(RuntimeError, match="Migration lock unavailable"),
+        ):
+            await run_startup_migrations("full")
+
+
+@pytest.mark.asyncio
+class TestSkipMigrations:
+    async def test_skip_migrations_returns_early(self):
+        mock_settings = MagicMock()
+        mock_settings.SKIP_MIGRATIONS = True
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(f"{MODULE}.logger") as mock_logger,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        info_messages = [str(c) for c in mock_logger.info.call_args_list]
+        assert any("skip" in m.lower() for m in info_messages)

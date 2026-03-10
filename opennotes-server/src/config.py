@@ -185,6 +185,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(
         default="postgresql+asyncpg://opennotes:opennotes@localhost:5432/opennotes"
     )
+    DATABASE_DIRECT_URL: str | None = Field(
+        default=None,
+        description="Direct (non-pooled) Postgres connection for advisory locks and migrations. "
+        "Falls back to DATABASE_URL if not set.",
+    )
 
     @field_validator("DATABASE_URL")
     @classmethod
