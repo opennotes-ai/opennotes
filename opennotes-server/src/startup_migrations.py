@@ -12,7 +12,7 @@ from src.monitoring import get_logger
 
 logger = get_logger(__name__)
 MIGRATION_LOCK_ID = 1847334512
-SUBPROCESS_TIMEOUT = 60
+SUBPROCESS_TIMEOUT = 300
 LOCK_RETRY_INTERVAL = 2
 LOCK_MAX_RETRIES = 30
 
@@ -208,6 +208,7 @@ def _run_migrations_sync(is_worker: bool) -> None:
     engine = create_engine(
         direct_url,
         isolation_level="AUTOCOMMIT",
+        connect_args={"options": "-c statement_timeout=0", "connect_timeout": 10},
     )
     try:
         with engine.connect() as conn:

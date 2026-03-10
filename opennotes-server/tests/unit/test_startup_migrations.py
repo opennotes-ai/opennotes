@@ -509,7 +509,7 @@ class TestSubprocessTimeout:
             await run_startup_migrations("full")
 
         for c in mock_run.call_args_list:
-            assert c.kwargs.get("timeout") == 60
+            assert c.kwargs.get("timeout") == 300
 
     async def test_alembic_current_timeout_logs_critical_and_releases_lock(self):
         mock_engine, mock_conn = _make_mock_engine()
@@ -521,7 +521,7 @@ class TestSubprocessTimeout:
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
                 f"{MODULE}.subprocess.run",
-                side_effect=subprocess.TimeoutExpired(cmd="alembic current", timeout=60),
+                side_effect=subprocess.TimeoutExpired(cmd="alembic current", timeout=300),
             ),
             patch(f"{MODULE}.logger") as mock_logger,
         ):
@@ -550,7 +550,7 @@ class TestSubprocessTimeout:
                 side_effect=[
                     current_result,
                     upgrade_result,
-                    subprocess.TimeoutExpired(cmd="alembic downgrade", timeout=60),
+                    subprocess.TimeoutExpired(cmd="alembic downgrade", timeout=300),
                 ],
             ),
             patch(f"{MODULE}.logger") as mock_logger,
@@ -581,7 +581,7 @@ class TestSubprocessTimeout:
                 f"{MODULE}.subprocess.run",
                 side_effect=[
                     current_result,
-                    subprocess.TimeoutExpired(cmd="alembic upgrade", timeout=60),
+                    subprocess.TimeoutExpired(cmd="alembic upgrade", timeout=300),
                 ],
             ),
             patch(f"{MODULE}.logger") as mock_logger,
@@ -773,6 +773,32 @@ class TestTryLockRetry:
             pytest.raises(RuntimeError, match="Migration lock unavailable"),
         ):
             await run_startup_migrations("full")
+
+
+@pytest.mark.asyncio
+class TestSyncEngineConnectArgs:
+    async def test_create_engine_called_with_connect_args(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(stdout="")
+
+        mock_settings = _make_mock_settings()
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine) as mock_ce,
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        connect_args = mock_ce.call_args.kwargs.get("connect_args")
+        assert connect_args is not None
+        assert connect_args == {
+            "options": "-c statement_timeout=0",
+            "connect_timeout": 10,
+        }
 
 
 @pytest.mark.asyncio
