@@ -35,20 +35,28 @@ async def cleanup_database_after_test():
     Runs in the fixture teardown phase, after the test and all its fixtures
     have completed. Properly disposes the async engine to ensure all async
     connection cancellations are awaited, preventing unawaited coroutine warnings.
+
+    Checks _engines dict directly instead of calling get_engine() which would
+    always create a new engine if none exists for the current loop.
     """
     yield
 
     import asyncio
 
-    from src.database import get_engine
+    from src.database import _db_lock, _engines
 
-    engine = get_engine()
-    if engine is not None:
+    with _db_lock:
         try:
             loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop_key = id(loop)
+        entry = _engines.get(loop_key)
+
+    if entry is not None:
+        engine, _ = entry
+        try:
             if not loop.is_closed() and loop.is_running():
                 await engine.dispose()
-            else:
-                print("   Event loop is closed or not running, skipping engine.dispose()")
         except RuntimeError:
             print("   No running event loop, skipping engine.dispose()")

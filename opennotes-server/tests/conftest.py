@@ -962,7 +962,6 @@ async def setup_database(request):
         yield
         return
 
-    import src.database
     from src.llm_config.models import CommunityServer  # noqa: F401
     from src.simulation.models import (  # noqa: F401
         SimAgent,
@@ -1054,17 +1053,10 @@ async def setup_database(request):
     settings.DATABASE_URL = test_db_url
     print(f"   settings.DATABASE_URL updated to: {test_db_url}")
 
-    # CRITICAL: Reset database module state immediately after updating settings
-    # This ensures the engine is in a clean state BEFORE any client initialization.
-    # Each test gets a fresh event loop, and async engines are bound to the event loop
-    # they were created in. Resetting here guarantees get_engine() will create a new
-    # one bound to the current event loop when clients try to use it.
-    src.database._engine = None
-    src.database._async_session_maker = None
-    src.database._engine_loop = None
-    print(
-        "   Database module state reset (_engine, _async_session_maker, _engine_loop set to None)"
-    )
+    from src.database import _reset_database_for_test_loop
+
+    _reset_database_for_test_loop()
+    print("   Database module state reset via _reset_database_for_test_loop()")
 
     # CRITICAL FIX: Update settings.REDIS_URL and settings.NATS_URL too!
     # Redis and NATS clients use settings, not os.environ
@@ -1175,10 +1167,9 @@ async def setup_database(request):
     # trying to cleanly close connections in a closing/closed event loop.
     # The database connections will be cleaned up by the OS when containers shut down.
 
-    # Reset to None - next test will create a new engine bound to its event loop
-    src.database._engine = None
-    src.database._async_session_maker = None
-    src.database._engine_loop = None
+    from src.database import _reset_database_for_test_loop
+
+    _reset_database_for_test_loop()
 
     # Additional cleanup: Force garbage collection to release any lingering async connections
     # NOTE: Disabled gc.collect() because it triggers engine cleanup in a closing event loop,
