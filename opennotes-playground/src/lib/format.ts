@@ -41,3 +41,13 @@ export function truncateId(id: string | null | undefined): string {
   if (!id) return "N/A";
   return id.slice(0, 8);
 }
+
+export function getMetric(
+  metrics: Record<string, unknown> | null | undefined,
+  key: string,
+): string {
+  if (!metrics || !(key in metrics)) return "N/A";
+  const val = metrics[key];
+  if (val == null) return "N/A";
+  return String(val);
+}

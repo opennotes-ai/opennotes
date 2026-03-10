@@ -48,9 +48,12 @@ function groupByRequest(notes: DetailedNoteResource[]): RequestGroup[] {
     const total = grouped.length;
     const ratio = total > 0 ? misleading / total : 0;
     const disagreementScore = 1 - Math.abs(2 * ratio - 1);
-    const meta = grouped[0]?.attributes.message_metadata;
-    const sourceUrl = meta && typeof meta === "object" && "source_url" in meta && typeof meta.source_url === "string"
-      ? meta.source_url
+    const noteWithSource = grouped.find((n) => {
+      const m = n.attributes.message_metadata;
+      return m && typeof m === "object" && "source_url" in m && typeof m.source_url === "string";
+    });
+    const sourceUrl = noteWithSource
+      ? (noteWithSource.attributes.message_metadata as { source_url: string }).source_url
       : null;
     return { requestId, sourceUrl, notes: grouped, noteCount: total, disagreementScore };
   });
@@ -166,7 +169,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                               title={getHelpfulnessTooltip(attrs.helpfulness_score, props.currentTier)}
                               aria-label={getHelpfulnessTooltip(attrs.helpfulness_score, props.currentTier)}
                             >
-                              Helpfulness: <strong class="text-foreground">{attrs.helpfulness_score.toFixed(2)}</strong>
+                              Helpfulness: <strong class="text-foreground">{attrs.helpfulness_score?.toFixed(2) ?? "N/A"}</strong>
                             </span>
                             <span>Created: {formatDate(attrs.created_at)}</span>
                           </div>

@@ -1,14 +1,9 @@
 import { A } from "@solidjs/router";
 import type { components } from "~/lib/generated-types";
-import { formatDate, humanizeLabel, truncateId } from "~/lib/format";
+import { formatDate, getMetric, humanizeLabel, truncateId } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 
 type SimulationResource = components["schemas"]["SimulationResource"];
-
-function getMetric(metrics: Record<string, unknown> | null | undefined, key: string): string {
-  if (!metrics || !(key in metrics)) return "N/A";
-  return String(metrics[key]);
-}
 
 const STATUS_VARIANT: Record<string, BadgeVariant> = {
   completed: "success",

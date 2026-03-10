@@ -7,7 +7,7 @@ import {
   getSimulationDetailedAnalysis,
 } from "~/lib/api-client.server";
 import { createClient } from "~/lib/supabase-server";
-import { formatDate, humanizeLabel, truncateId } from "~/lib/format";
+import { formatDate, getMetric, humanizeLabel, truncateId } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import AnalysisSummary from "~/components/AnalysisSummary";
 import AgentProfiles from "~/components/AgentProfiles";
@@ -56,11 +56,11 @@ const fetchAnalysis = query(async (id: string) => {
     const isAuthenticated = await checkAuth();
     const data = await getSimulationAnalysis(id);
 
-    const totalAgents = data.data.attributes.agent_behaviors.length;
+    const behaviors = data.data.attributes.agent_behaviors ?? [];
+    const totalAgents = behaviors.length;
     let agentsTruncated = false;
     if (!isAuthenticated && totalAgents > UNAUTH_PAGE_SIZE) {
-      data.data.attributes.agent_behaviors =
-        data.data.attributes.agent_behaviors.slice(0, UNAUTH_PAGE_SIZE);
+      data.data.attributes.agent_behaviors = behaviors.slice(0, UNAUTH_PAGE_SIZE);
       agentsTruncated = true;
     }
 
@@ -90,14 +90,6 @@ const fetchDetailedAnalysis = query(async (id: string) => {
     return null;
   }
 }, "detailed-analysis");
-
-function getMetric(
-  metrics: Record<string, unknown> | null | undefined,
-  key: string,
-): string {
-  if (!metrics || !(key in metrics)) return "N/A";
-  return String(metrics[key]);
-}
 
 function isError(result: unknown): result is SimulationError {
   return result != null && typeof result === "object" && "_error" in result;
