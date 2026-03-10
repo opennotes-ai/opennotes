@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 MODULE = "src.startup_migrations"
+TEST_SYNC_URL = "postgresql://test:test@testhost:5432/testdb"
 
 
 def _make_subprocess_result(returncode=0, stdout="", stderr=""):
@@ -36,11 +37,9 @@ def _make_mock_engine(lock_acquired=True):
     return mock_engine, mock_conn
 
 
-def _make_mock_settings(db_url="postgresql+asyncpg://user:pass@host/db", direct_url=None):
+def _make_mock_settings():
     mock_settings = MagicMock()
     mock_settings.SKIP_MIGRATIONS = False
-    mock_settings.DATABASE_URL = db_url
-    mock_settings.DATABASE_DIRECT_URL = direct_url
     return mock_settings
 
 
@@ -58,6 +57,7 @@ class TestRunStartupMigrationsServerSuccess:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
@@ -82,6 +82,7 @@ class TestRunStartupMigrationsServerSuccess:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -107,6 +108,7 @@ class TestRunStartupMigrationsServerSuccess:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -128,6 +130,7 @@ class TestRunStartupMigrationsServerSuccess:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
@@ -152,6 +155,7 @@ class TestRunStartupMigrationsServerFailure:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -176,6 +180,7 @@ class TestRunStartupMigrationsServerFailure:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -202,6 +207,7 @@ class TestRunStartupMigrationsServerFailure:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -225,6 +231,7 @@ class TestRunStartupMigrationsServerFailure:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -251,6 +258,7 @@ class TestRunStartupMigrationsWorker:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run") as mock_run,
@@ -271,6 +279,7 @@ class TestRunStartupMigrationsWorker:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run") as mock_run,
@@ -296,6 +305,7 @@ class TestRunStartupMigrationsExceptionHandling:
         from src.startup_migrations import run_startup_migrations
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.logger") as mock_logger,
@@ -316,6 +326,7 @@ class TestRunStartupMigrationsExceptionHandling:
         from src.startup_migrations import run_startup_migrations
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.logger") as mock_logger,
@@ -335,10 +346,14 @@ class TestDatabaseUrlConversion:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = _make_mock_settings("postgresql+asyncpg://user:pass@host:5432/mydb")
+        mock_settings = _make_mock_settings()
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine) as mock_ce,
+            patch(
+                f"{MODULE}._get_direct_sync_url",
+                return_value="postgresql://user:pass@host:5432/mydb",
+            ),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
         ):
@@ -355,14 +370,13 @@ class TestDatabaseUrlConversion:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = _make_mock_settings(
-            db_url="postgresql+asyncpg://user:pass@pooler:6543/mydb",
-            direct_url="postgresql://user:pass@direct:5432/mydb",
-        )
-
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine) as mock_ce,
-            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}._get_direct_sync_url",
+                return_value="postgresql://user:pass@direct:5432/mydb",
+            ),
+            patch(f"{MODULE}.get_settings", return_value=_make_mock_settings()),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
         ):
             from src.startup_migrations import run_startup_migrations
@@ -377,13 +391,13 @@ class TestDatabaseUrlConversion:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = _make_mock_settings(
-            direct_url="postgresql+asyncpg://user:pass@direct:5432/mydb",
-        )
-
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine) as mock_ce,
-            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}._get_direct_sync_url",
+                return_value="postgresql://user:pass@direct:5432/mydb",
+            ),
+            patch(f"{MODULE}.get_settings", return_value=_make_mock_settings()),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
         ):
             from src.startup_migrations import run_startup_migrations
@@ -399,13 +413,13 @@ class TestDatabaseUrlConversion:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = _make_mock_settings(
-            direct_url="postgresql://user:pass@direct:5432/mydb",
-        )
-
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
-            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}._get_direct_sync_url",
+                return_value="postgresql://user:pass@direct:5432/mydb",
+            ),
+            patch(f"{MODULE}.get_settings", return_value=_make_mock_settings()),
             patch(
                 f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]
             ) as mock_run,
@@ -427,6 +441,7 @@ class TestMigrationLockId:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run"),
@@ -449,6 +464,7 @@ class TestNoMigrationsPending:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
@@ -473,6 +489,7 @@ class TestBaseRevisionFallback:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -498,6 +515,7 @@ class TestSubprocessTimeout:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -517,6 +535,7 @@ class TestSubprocessTimeout:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -543,6 +562,7 @@ class TestSubprocessTimeout:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -575,6 +595,7 @@ class TestSubprocessTimeout:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -606,6 +627,7 @@ class TestAlembicCurrentReturncode:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", return_value=current_result) as mock_run,
@@ -634,6 +656,7 @@ class TestMultiHeadParsing:
         mock_settings = _make_mock_settings()
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(
@@ -721,6 +744,7 @@ class TestTryLockRetry:
         upgrade_result = _make_subprocess_result(stdout="")
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
@@ -827,6 +851,7 @@ class TestTryLockRetry:
         check_result = _make_subprocess_result(returncode=0)
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", return_value=check_result),
@@ -860,6 +885,7 @@ class TestTryLockRetry:
         from src.startup_migrations import run_startup_migrations
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", return_value=check_result),
@@ -907,6 +933,7 @@ class TestSkipMigrations:
         mock_settings.SKIP_MIGRATIONS = True
 
         with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.logger") as mock_logger,
         ):

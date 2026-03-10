@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 
 from src.config import get_settings
+from src.database import get_direct_sync_url as _get_direct_sync_url
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
@@ -16,18 +17,6 @@ SUBPROCESS_TIMEOUT = 300
 LOCK_RETRY_INTERVAL = 2
 LOCK_TIMEOUT_SECONDS = 1800
 LOCK_LOG_INTERVAL = 30
-
-
-def _get_direct_sync_url() -> str:
-    settings = get_settings()
-    if settings.DATABASE_DIRECT_URL:
-        url = settings.DATABASE_DIRECT_URL
-        if url.startswith("postgresql+asyncpg://"):
-            return url.replace("postgresql+asyncpg://", "postgresql://")
-        if url.startswith("postgresql://"):
-            return url
-        return f"postgresql://{url}"
-    return settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
 
 def _get_alembic_env(direct_url: str) -> dict[str, str]:
