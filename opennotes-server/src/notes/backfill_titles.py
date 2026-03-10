@@ -11,10 +11,12 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from uuid import UUID
 
 import trafilatura
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from trafilatura.metadata import extract_metadata
 
@@ -27,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 MAX_CONCURRENT = 5
 FETCH_TIMEOUT = 30
+BATCH_SIZE = 500
 
 
 def fetch_title(url: str) -> str | None:
@@ -51,67 +54,94 @@ async def fetch_title_async(url: str) -> str | None:
             asyncio.to_thread(fetch_title, url),
             timeout=FETCH_TIMEOUT,
         )
-    except (TimeoutError, Exception):
+    except Exception:
         return None
+
+
+def _build_candidates_query(last_id: UUID | None = None):  # pyright: ignore[reportUnknownParameterType]
+    stmt = select(MessageArchive.id, MessageArchive.message_metadata).where(
+        MessageArchive.deleted_at.is_(None),
+        MessageArchive.message_metadata.isnot(None),
+        MessageArchive.message_metadata.cast(JSONB)["source_url"].astext != "",
+        or_(
+            ~MessageArchive.message_metadata.cast(JSONB).has_key("title"),
+            MessageArchive.message_metadata.cast(JSONB)["title"].astext == "",
+        ),
+    )
+    if last_id is not None:
+        stmt = stmt.where(MessageArchive.id > last_id)
+    return stmt.order_by(MessageArchive.id).limit(BATCH_SIZE)
 
 
 async def backfill() -> None:
     session_maker = get_session_maker()
-
-    async with session_maker() as session:
-        stmt = select(MessageArchive.id, MessageArchive.message_metadata).where(
-            MessageArchive.deleted_at.is_(None),
-            MessageArchive.message_metadata.isnot(None),
-            MessageArchive.message_metadata.cast(JSONB)["source_url"].astext != "",
-        )
-        result = await session.execute(stmt)
-        rows = result.all()
-
-    candidates = []
-    for row in rows:
-        meta = row.message_metadata
-        if not isinstance(meta, dict):
-            continue
-        source_url = meta.get("source_url")
-        title = meta.get("title")
-        if source_url and (not title or title == ""):
-            candidates.append((row.id, source_url))
-
-    logger.info("Found %d records needing title backfill", len(candidates))
-    if not candidates:
-        return
-
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-    updated = 0
-    failed = 0
+    total_updated = 0
+    total_failed = 0
+    last_id: UUID | None = None
 
-    async def process(archive_id, url):  # pyright: ignore[reportMissingParameterType,reportUnknownParameterType]
-        nonlocal updated, failed
-        async with semaphore:
-            title = await fetch_title_async(url)
-            if not title:
-                failed += 1
-                logger.warning("No title for %s (archive %s)", url, archive_id)
-                return
+    while True:
+        async with session_maker() as session:
+            stmt = _build_candidates_query(last_id)
+            result = await session.execute(stmt)
+            rows = result.all()
 
-            async with session_maker() as session:
-                await session.execute(
-                    text(
-                        "UPDATE message_archive "
-                        "SET message_metadata = jsonb_set(message_metadata, '{title}', :title::jsonb), "
-                        "    updated_at = now() "
-                        "WHERE id = :id"
-                    ),
-                    {"id": archive_id, "title": f'"{title}"'},
-                )
-                await session.commit()
-            updated += 1
-            logger.info("Updated archive %s: %s", archive_id, title)
+        if not rows:
+            break
 
-    tasks = [process(aid, url) for aid, url in candidates]
-    await asyncio.gather(*tasks)
+        candidates: list[tuple[UUID, str]] = []
+        for row in rows:
+            meta = row.message_metadata
+            if not isinstance(meta, dict):
+                continue
+            source_url = meta.get("source_url")
+            if source_url:
+                candidates.append((row.id, source_url))
 
-    logger.info("Backfill complete: %d updated, %d failed", updated, failed)
+        last_id = rows[-1].id
+
+        if not candidates:
+            continue
+
+        logger.info("Processing batch of %d candidates", len(candidates))
+
+        batch_updated = 0
+        batch_failed = 0
+
+        async def process(archive_id: UUID, url: str) -> None:
+            nonlocal batch_updated, batch_failed
+            async with semaphore:
+                title = await fetch_title_async(url)
+                if not title:
+                    batch_failed += 1
+                    logger.warning("No title for %s (archive %s)", url, archive_id)
+                    return
+
+                try:
+                    async with session_maker() as session:
+                        await session.execute(
+                            text(
+                                "UPDATE message_archive "
+                                "SET message_metadata = jsonb_set(message_metadata, '{title}', :title::jsonb), "
+                                "    updated_at = now() "
+                                "WHERE id = :id"
+                            ),
+                            {"id": archive_id, "title": json.dumps(title)},
+                        )
+                        await session.commit()
+                    batch_updated += 1
+                    logger.info("Updated archive %s: %s", archive_id, title)
+                except Exception:
+                    batch_failed += 1
+                    logger.exception("Failed to update archive %s", archive_id)
+
+        tasks = [process(aid, url) for aid, url in candidates]
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        total_updated += batch_updated
+        total_failed += batch_failed
+
+    logger.info("Backfill complete: %d updated, %d failed", total_updated, total_failed)
     await close_db()
 
 
