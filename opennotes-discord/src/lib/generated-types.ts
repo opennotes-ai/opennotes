@@ -3941,6 +3941,11 @@ export interface components {
             agent_instance_id: string;
             /** Agent Name */
             agent_name: string;
+            /**
+             * Personality
+             * @default
+             */
+            personality: string;
             /** Notes Written */
             notes_written: number;
             /** Ratings Given */
@@ -5380,6 +5385,10 @@ export interface components {
             author_agent_instance_id: string;
             /** Request Id */
             request_id?: string | null;
+            /** Message Metadata */
+            message_metadata?: {
+                [key: string]: unknown;
+            } | null;
             /** Created At */
             created_at?: string | null;
             /** Ratings */

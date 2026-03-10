@@ -1,7 +1,8 @@
-import { action, useSubmission, A } from "@solidjs/router";
-import { Show, createSignal } from "solid-js";
+import { action, useSubmission, useSearchParams, A } from "@solidjs/router";
+import { Show } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import { createClient } from "~/lib/supabase-server";
+import { Button } from "~/components/ui/button";
 
 const registerAction = action(async (formData: FormData) => {
   "use server";
@@ -35,6 +36,7 @@ const registerAction = action(async (formData: FormData) => {
 }, "register");
 
 export default function RegisterPage() {
+  const [searchParams] = useSearchParams();
   const submission = useSubmission(registerAction);
 
   const result = () => submission.result as
@@ -42,38 +44,57 @@ export default function RegisterPage() {
     | undefined;
 
   return (
-    <main>
-      <h1>Sign Up</h1>
-      <form action={registerAction} method="post">
-        <div>
-          <label for="email">Email</label>
-          <input id="email" name="email" type="email" required />
+    <main class="mx-auto max-w-sm px-4 py-12">
+      <h1 class="text-2xl font-bold tracking-tight">Sign Up</h1>
+      <form action={registerAction} method="post" class="mt-6 space-y-4">
+        <div class="space-y-1.5">
+          <label for="email" class="text-sm font-medium">Email</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            required
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+          />
         </div>
-        <div>
-          <label for="password">Password</label>
-          <input id="password" name="password" type="password" required />
+        <div class="space-y-1.5">
+          <label for="password" class="text-sm font-medium">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+          />
         </div>
-        <div>
-          <label for="confirmPassword">Confirm Password</label>
+        <div class="space-y-1.5">
+          <label for="confirmPassword" class="text-sm font-medium">Confirm Password</label>
           <input
             id="confirmPassword"
             name="confirmPassword"
             type="password"
             required
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
           />
         </div>
         <Show when={result()?.error}>
-          <p style={{ color: "red" }}>{result()!.error}</p>
+          <p class="text-sm text-red-600 dark:text-red-400">{result()!.error}</p>
         </Show>
         <Show when={result()?.success}>
-          <p style={{ color: "green" }}>{result()!.success}</p>
+          <p class="text-sm text-emerald-600 dark:text-emerald-400">{result()!.success}</p>
         </Show>
-        <button type="submit" disabled={submission.pending}>
+        <Button type="submit" class="w-full" disabled={submission.pending}>
           {submission.pending ? "Signing up..." : "Sign Up"}
-        </button>
+        </Button>
       </form>
-      <p>
-        Already have an account? <A href="/login">Sign in</A>
+      <p class="mt-4 text-center text-sm text-muted-foreground">
+        Already have an account?{" "}
+        <A
+          href={searchParams.returnTo ? `/login?returnTo=${encodeURIComponent(String(searchParams.returnTo))}` : "/login"}
+          class="text-primary hover:underline"
+        >
+          Sign in
+        </A>
       </p>
     </main>
   );

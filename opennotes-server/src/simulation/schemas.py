@@ -252,6 +252,7 @@ class ScoringCoverageData(SQLAlchemySchema):
 class AgentBehaviorData(SQLAlchemySchema):
     agent_instance_id: str
     agent_name: str
+    personality: str = ""
     notes_written: int
     ratings_given: int
     turn_count: int
@@ -303,6 +304,7 @@ class DetailedNoteData(SQLAlchemySchema):
     author_agent_name: str
     author_agent_instance_id: str
     request_id: str | None = None
+    message_metadata: dict[str, Any] | None = None
     created_at: datetime | None = None
     ratings: list[DetailedRatingData] = Field(default_factory=list)
 

@@ -45,7 +45,7 @@ def _make_rating(helpfulness_level="HELPFUL"):
     return rating
 
 
-def _mock_db_for_trigger(run, note_count, notes):
+def _mock_db_for_trigger(run, note_count, notes, agent_count=3):
     db = AsyncMock()
     db.get = AsyncMock(return_value=run)
 
@@ -60,6 +60,12 @@ def _mock_db_for_trigger(run, note_count, notes):
     update_result = MagicMock()
     request_update_result = MagicMock()
 
+    agent_count_result = MagicMock()
+    agent_count_result.scalar.return_value = agent_count
+
+    note_count_result = MagicMock()
+    note_count_result.scalar.return_value = note_count
+
     platform_result = MagicMock()
     platform_result.scalar_one_or_none.return_value = "playground"
 
@@ -69,6 +75,8 @@ def _mock_db_for_trigger(run, note_count, notes):
             batch_result,
             update_result,
             request_update_result,
+            agent_count_result,
+            note_count_result,
             platform_result,
         ]
     )
@@ -85,7 +93,14 @@ async def test_trigger_scoring_with_no_notes():
 
     count_result = MagicMock()
     count_result.scalar.return_value = 0
-    db.execute = AsyncMock(return_value=count_result)
+
+    agent_count_result = MagicMock()
+    agent_count_result.scalar.return_value = 0
+
+    note_count_result = MagicMock()
+    note_count_result.scalar.return_value = 0
+
+    db.execute = AsyncMock(side_effect=[count_result, agent_count_result, note_count_result])
     db.commit = AsyncMock()
 
     result = await trigger_scoring_for_simulation(run.id, db)
@@ -195,6 +210,71 @@ async def test_trigger_scoring_updates_run_metrics():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_update_run_metrics_includes_agent_and_note_count():
+    cs_id = uuid4()
+    run = _make_run(community_server_id=cs_id, metrics={})
+    note = _make_note(community_server_id=cs_id, ratings=[_make_rating()])
+
+    score_response = NoteScoreResponse(
+        note_id=note.id,
+        score=0.7,
+        confidence=ScoreConfidence.PROVISIONAL,
+        algorithm="bayesian_average_tier0",
+        rating_count=1,
+        tier=0,
+        tier_name="Minimal",
+        calculated_at=None,
+        content=None,
+    )
+
+    db = _mock_db_for_trigger(run, 10, [note])
+
+    with (
+        patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
+        patch(
+            "src.simulation.scoring_integration.calculate_note_score",
+            new_callable=AsyncMock,
+            return_value=score_response,
+        ),
+    ):
+        mock_factory = MagicMock()
+        mock_factory.get_scorer.return_value = MagicMock(
+            __class__=type("BayesianAverageScorerAdapter", (), {})
+        )
+        mock_factory_cls.return_value = mock_factory
+
+        await trigger_scoring_for_simulation(run.id, db)
+
+    assert "agent_count" in run.metrics, f"metrics keys: {list(run.metrics.keys())}"
+    assert "note_count" in run.metrics, f"metrics keys: {list(run.metrics.keys())}"
+    assert isinstance(run.metrics["agent_count"], int)
+    assert isinstance(run.metrics["note_count"], int)
+    assert run.metrics["note_count"] == 10
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_run_metrics_zero_notes_includes_counts():
+    run = _make_run()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=run)
+
+    count_result = MagicMock()
+    count_result.scalar.return_value = 0
+    db.execute = AsyncMock(return_value=count_result)
+    db.commit = AsyncMock()
+
+    result = await trigger_scoring_for_simulation(run.id, db)
+
+    assert result.note_count == 0
+    assert "agent_count" in run.metrics, f"metrics keys: {list(run.metrics.keys())}"
+    assert "note_count" in run.metrics, f"metrics keys: {list(run.metrics.keys())}"
+    assert run.metrics["note_count"] == 0
+    assert run.metrics["agent_count"] == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_trigger_scoring_status_helpful():
     cs_id = uuid4()
     run = _make_run(community_server_id=cs_id)
@@ -230,7 +310,7 @@ async def test_trigger_scoring_status_helpful():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 5
+    assert db.execute.call_count == 7
 
 
 @pytest.mark.unit
@@ -596,7 +676,7 @@ async def test_trigger_scoring_batch_update_uses_case():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 2
-    assert db.execute.call_count == 5
+    assert db.execute.call_count == 7
 
 
 @pytest.mark.unit
@@ -679,6 +759,10 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    agent_count_result_a = MagicMock()
+    agent_count_result_a.scalar.return_value = 3
+    note_count_requery_a = MagicMock()
+    note_count_requery_a.scalar.return_value = 5
     platform_result = MagicMock()
     platform_result.scalar_one_or_none.return_value = "playground"
 
@@ -688,6 +772,8 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
             batch_result,
             note_update_result,
             request_update_result,
+            agent_count_result_a,
+            note_count_requery_a,
             platform_result,
         ]
     )
@@ -707,7 +793,7 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
 
         await trigger_scoring_for_simulation(run.id, db)
 
-    assert db.execute.call_count == 5
+    assert db.execute.call_count == 7
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
@@ -753,6 +839,10 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    agent_count_result_b = MagicMock()
+    agent_count_result_b.scalar.return_value = 2
+    note_count_requery_b = MagicMock()
+    note_count_requery_b.scalar.return_value = 3
     platform_result = MagicMock()
     platform_result.scalar_one_or_none.return_value = "playground"
 
@@ -762,6 +852,8 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
             batch_result,
             note_update_result,
             request_update_result,
+            agent_count_result_b,
+            note_count_requery_b,
             platform_result,
         ]
     )
@@ -782,7 +874,7 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 5
+    assert db.execute.call_count == 7
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
@@ -825,6 +917,10 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    agent_count_result_c = MagicMock()
+    agent_count_result_c.scalar.return_value = 1
+    note_count_requery_c = MagicMock()
+    note_count_requery_c.scalar.return_value = 2
     platform_result = MagicMock()
     platform_result.scalar_one_or_none.return_value = "playground"
 
@@ -834,6 +930,8 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
             batch_result,
             note_update_result,
             request_update_result,
+            agent_count_result_c,
+            note_count_requery_c,
             platform_result,
         ]
     )
@@ -854,7 +952,7 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 5
+    assert db.execute.call_count == 7
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})

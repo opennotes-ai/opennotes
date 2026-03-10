@@ -11,6 +11,9 @@ from dateutil.parser import isoparse
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.detailed_note_data_message_metadata_type_0 import (
+        DetailedNoteDataMessageMetadataType0,
+    )
     from ..models.detailed_rating_data import DetailedRatingData
 
 
@@ -29,6 +32,7 @@ class DetailedNoteData:
         author_agent_name (str):
         author_agent_instance_id (str):
         request_id (None | str | Unset):
+        message_metadata (DetailedNoteDataMessageMetadataType0 | None | Unset):
         created_at (datetime.datetime | None | Unset):
         ratings (list[DetailedRatingData] | Unset):
     """
@@ -41,11 +45,16 @@ class DetailedNoteData:
     author_agent_name: str
     author_agent_instance_id: str
     request_id: None | str | Unset = UNSET
+    message_metadata: DetailedNoteDataMessageMetadataType0 | None | Unset = UNSET
     created_at: datetime.datetime | None | Unset = UNSET
     ratings: list[DetailedRatingData] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.detailed_note_data_message_metadata_type_0 import (
+            DetailedNoteDataMessageMetadataType0,
+        )
+
         note_id = self.note_id
 
         summary = self.summary
@@ -65,6 +74,14 @@ class DetailedNoteData:
             request_id = UNSET
         else:
             request_id = self.request_id
+
+        message_metadata: dict[str, Any] | None | Unset
+        if isinstance(self.message_metadata, Unset):
+            message_metadata = UNSET
+        elif isinstance(self.message_metadata, DetailedNoteDataMessageMetadataType0):
+            message_metadata = self.message_metadata.to_dict()
+        else:
+            message_metadata = self.message_metadata
 
         created_at: None | str | Unset
         if isinstance(self.created_at, Unset):
@@ -96,6 +113,8 @@ class DetailedNoteData:
         )
         if request_id is not UNSET:
             field_dict["request_id"] = request_id
+        if message_metadata is not UNSET:
+            field_dict["message_metadata"] = message_metadata
         if created_at is not UNSET:
             field_dict["created_at"] = created_at
         if ratings is not UNSET:
@@ -105,6 +124,9 @@ class DetailedNoteData:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.detailed_note_data_message_metadata_type_0 import (
+            DetailedNoteDataMessageMetadataType0,
+        )
         from ..models.detailed_rating_data import DetailedRatingData
 
         d = dict(src_dict)
@@ -130,6 +152,27 @@ class DetailedNoteData:
             return cast(None | str | Unset, data)
 
         request_id = _parse_request_id(d.pop("request_id", UNSET))
+
+        def _parse_message_metadata(
+            data: object,
+        ) -> DetailedNoteDataMessageMetadataType0 | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                message_metadata_type_0 = (
+                    DetailedNoteDataMessageMetadataType0.from_dict(data)
+                )
+
+                return message_metadata_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(DetailedNoteDataMessageMetadataType0 | None | Unset, data)
+
+        message_metadata = _parse_message_metadata(d.pop("message_metadata", UNSET))
 
         def _parse_created_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
@@ -166,6 +209,7 @@ class DetailedNoteData:
             author_agent_name=author_agent_name,
             author_agent_instance_id=author_agent_instance_id,
             request_id=request_id,
+            message_metadata=message_metadata,
             created_at=created_at,
             ratings=ratings,
         )

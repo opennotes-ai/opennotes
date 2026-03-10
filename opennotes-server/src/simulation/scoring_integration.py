@@ -23,7 +23,7 @@ from src.notes.scoring.tier_config import (
     get_tier_for_note_count,
 )
 from src.notes.scoring_utils import calculate_note_score
-from src.simulation.models import SimulationRun
+from src.simulation.models import SimAgentInstance, SimulationRun
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ async def _maybe_persist_snapshot(
 
             try:
                 gcs_snapshot = {**factors, **metadata}
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 future = loop.run_in_executor(
                     None, upload_scoring_snapshot, community_server_id, gcs_snapshot
                 )
@@ -146,6 +146,51 @@ async def _record_scoring_metrics(
             {"platform": platform, "tier": tier_value},
         )
     return platform
+
+
+def _compute_offset_advance(
+    pass_label: str,
+    score_mapping: dict[UUID, int],
+    status_mapping: dict[UUID, str],
+    batch_size: int,
+    community_server_id: UUID,
+    offset: int,
+) -> int:
+    """Return the new offset after processing a full batch.
+
+    Handles two infinite-loop scenarios in the unscored pass:
+    1. All notes failed scoring (score_mapping empty) - advance offset.
+    2. Rating count divergence: all notes scored but none changed status
+       away from NEEDS_MORE_RATINGS - advance offset.
+    """
+    if not score_mapping:
+        logger.warning(
+            "All notes in batch failed scoring, advancing offset to prevent infinite loop",
+            extra={
+                "community_server_id": str(community_server_id),
+                "pass": pass_label,
+                "offset": offset,
+                "batch_size": batch_size,
+            },
+        )
+        return offset + batch_size
+
+    if pass_label == "unscored":
+        notes_leaving_query = sum(1 for s in status_mapping.values() if s != "NEEDS_MORE_RATINGS")
+        if notes_leaving_query == 0:
+            logger.warning(
+                "Rating count divergence: %d notes scored but none left NEEDS_MORE_RATINGS status, "
+                "advancing offset to prevent infinite loop",
+                len(score_mapping),
+                extra={
+                    "community_server_id": str(community_server_id),
+                    "offset": offset,
+                },
+            )
+            return offset + batch_size
+        return offset
+
+    return offset + batch_size
 
 
 async def score_community_server_notes(
@@ -253,7 +298,7 @@ async def score_community_server_notes(
                             else "CURRENTLY_RATED_NOT_HELPFUL"
                         )
 
-                    score_mapping[note.id] = int(score_response.score * 100)
+                    score_mapping[note.id] = round(score_response.score * 100)
                     status_mapping[note.id] = status_update
                     pass_count += 1
                     total_scores_computed += 1
@@ -281,8 +326,14 @@ async def score_community_server_notes(
             if len(batch) < SCORING_BATCH_SIZE:
                 break
 
-            if pass_label == "rescore":
-                offset += SCORING_BATCH_SIZE
+            offset = _compute_offset_advance(
+                pass_label,
+                score_mapping,
+                status_mapping,
+                SCORING_BATCH_SIZE,
+                community_server_id,
+                offset,
+            )
 
         if pass_label == "unscored":
             unscored_notes_processed = pass_count
@@ -370,6 +421,7 @@ async def trigger_scoring_for_simulation(
             note_count=0,
         )
         _update_run_metrics(run, _empty_result)
+        await _add_count_metrics(run, simulation_run_id, db)
         await db.commit()
         return _empty_result
 
@@ -413,7 +465,7 @@ async def trigger_scoring_for_simulation(
                         else "CURRENTLY_RATED_NOT_HELPFUL"
                     )
 
-                score_mapping[note.id] = int(score_response.score * 100)
+                score_mapping[note.id] = round(score_response.score * 100)
                 status_mapping[note.id] = status_update
                 scores_computed += 1
             except Exception:
@@ -475,6 +527,7 @@ async def trigger_scoring_for_simulation(
     )
 
     _update_run_metrics(run, result)
+    await _add_count_metrics(run, simulation_run_id, db)
     await db.commit()
 
     await _record_scoring_metrics(db, community_server_id, scores_computed, tier.value)
@@ -491,6 +544,24 @@ async def trigger_scoring_for_simulation(
     )
 
     return result
+
+
+async def _add_count_metrics(run: SimulationRun, simulation_run_id: UUID, db: AsyncSession) -> None:
+    agent_count_result = await db.execute(
+        select(func.count(SimAgentInstance.id)).where(
+            SimAgentInstance.simulation_run_id == simulation_run_id
+        )
+    )
+    note_count_result = await db.execute(
+        select(func.count(Note.id)).where(
+            Note.community_server_id == run.community_server_id,
+            Note.deleted_at.is_(None),
+        )
+    )
+    metrics = dict(run.metrics) if run.metrics else {}
+    metrics["agent_count"] = agent_count_result.scalar() or 0
+    metrics["note_count"] = note_count_result.scalar() or 0
+    run.metrics = metrics
 
 
 def _update_run_metrics(run: SimulationRun, result: ScoringRunResult) -> None:

@@ -574,3 +574,154 @@ class TestScoreCommunityServerNotes:
 
         assert "CURRENTLY_RATED_HELPFUL" in param_values
         assert "CURRENTLY_RATED_NOT_HELPFUL" in param_values
+
+    @pytest.mark.asyncio
+    async def test_all_notes_fail_scoring_does_not_loop_forever(self) -> None:
+        """When every note in a full batch raises, the loop must still terminate.
+
+        The mock DB returns a full batch of notes indefinitely. Without the
+        infinite-loop guard the while-loop would never break because:
+        - score_mapping stays empty (all notes raise)
+        - offset is never incremented (unscored pass)
+        - the same batch is re-fetched forever
+
+        With the guard, offset advances past the failing batch and the next
+        SELECT returns an empty result, terminating the loop.
+        """
+        cs_id = uuid4()
+        batch_notes = [
+            _make_note(
+                community_server_id=cs_id,
+                status="NEEDS_MORE_RATINGS",
+                ratings=[_make_rating() for _ in range(5)],
+            )
+            for _ in range(SCORING_BATCH_SIZE)
+        ]
+
+        batch_select_offsets: list[int] = []
+
+        def _execute_side_effect(stmt: object, *_a: object, **_kw: object) -> MagicMock:
+            is_update = hasattr(stmt, "is_dml") and stmt.is_dml
+            if is_update:
+                return MagicMock()
+
+            has_limit = hasattr(stmt, "_limit_clause") and stmt._limit_clause is not None
+
+            if has_limit:
+                offset_val = 0
+                if hasattr(stmt, "_offset_clause") and stmt._offset_clause is not None:
+                    try:
+                        offset_val = int(stmt._offset_clause.value)
+                    except Exception:
+                        pass
+
+                batch_select_offsets.append(offset_val)
+
+                res = MagicMock()
+                if offset_val == 0:
+                    res.scalars.return_value.all.return_value = batch_notes
+                else:
+                    res.scalars.return_value.all.return_value = []
+                return res
+
+            res = MagicMock()
+            res.scalar.return_value = len(batch_notes)
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_execute_side_effect)
+        db.commit = AsyncMock()
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+            patch("src.simulation.scoring_integration.logger"),
+        ):
+            mock_calc.side_effect = RuntimeError("scoring always fails")
+
+            result = await score_community_server_notes(cs_id, db)
+
+        assert result.total_scores_computed == 0
+
+        unscored_offsets = batch_select_offsets[:2]
+        assert unscored_offsets[0] == 0, "First SELECT at offset 0"
+        assert unscored_offsets[1] == SCORING_BATCH_SIZE, (
+            "Second SELECT must advance offset after all-fail batch"
+        )
+
+    @pytest.mark.asyncio
+    async def test_rating_count_divergence_does_not_loop_forever(self) -> None:
+        """When scorer returns rating_count < MIN_RATINGS_NEEDED for all notes
+        in a full batch (despite SQL filter admitting them), the status stays
+        NEEDS_MORE_RATINGS and the same notes would be re-fetched forever.
+
+        The guard detects that no notes left the query result set and advances
+        offset to prevent an infinite loop.
+        """
+        cs_id = uuid4()
+        batch_notes = [
+            _make_note(
+                community_server_id=cs_id,
+                status="NEEDS_MORE_RATINGS",
+                ratings=[_make_rating() for _ in range(5)],
+            )
+            for _ in range(SCORING_BATCH_SIZE)
+        ]
+
+        batch_select_offsets: list[int] = []
+
+        def _execute_side_effect(stmt: object, *_a: object, **_kw: object) -> MagicMock:
+            is_update = hasattr(stmt, "is_dml") and stmt.is_dml
+            if is_update:
+                return MagicMock()
+
+            has_limit = hasattr(stmt, "_limit_clause") and stmt._limit_clause is not None
+
+            if has_limit:
+                offset_val = 0
+                if hasattr(stmt, "_offset_clause") and stmt._offset_clause is not None:
+                    try:
+                        offset_val = int(stmt._offset_clause.value)
+                    except Exception:
+                        pass
+
+                batch_select_offsets.append(offset_val)
+
+                res = MagicMock()
+                if offset_val == 0:
+                    res.scalars.return_value.all.return_value = batch_notes
+                else:
+                    res.scalars.return_value.all.return_value = []
+                return res
+
+            res = MagicMock()
+            res.scalar.return_value = len(batch_notes)
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_execute_side_effect)
+        db.commit = AsyncMock()
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+            patch("src.simulation.scoring_integration.settings") as mock_settings,
+        ):
+            mock_settings.MIN_RATINGS_NEEDED = 5
+            mock_calc.side_effect = lambda note, *_a, **_kw: _make_score_response(
+                note.id, score=0.7, rating_count=2
+            )
+
+            await score_community_server_notes(cs_id, db)
+
+        unscored_offsets = batch_select_offsets[:2]
+        assert unscored_offsets[0] == 0, "First SELECT at offset 0"
+        assert unscored_offsets[1] == SCORING_BATCH_SIZE, (
+            "Second SELECT must advance offset when all notes stay NEEDS_MORE_RATINGS"
+        )

@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import { humanizeLabel } from "~/lib/format";
 
 type NoteQualityData = components["schemas"]["NoteQualityData"];
 type RatingDistributionData = components["schemas"]["RatingDistributionData"];
@@ -10,38 +11,38 @@ export default function AnalysisSummary(props: {
 }) {
   return (
     <section>
-      <h2>Note Quality</h2>
-      <div style={{ display: "flex", gap: "2rem", "flex-wrap": "wrap" }}>
-        <div>
-          <strong>Avg Helpfulness Score</strong>
-          <div style={{ "font-size": "1.5rem", "margin-top": "0.25rem" }}>
+      <h2 class="mb-4 text-xl font-semibold">Note Quality</h2>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <div class="rounded-lg border border-border bg-card p-4">
+          <h3 class="text-sm font-semibold">Avg Helpfulness Score</h3>
+          <div class="mt-2 text-3xl font-bold">
             {props.noteQuality.avg_helpfulness_score?.toFixed(2) ?? "N/A"}
           </div>
         </div>
-        <div>
-          <strong>Notes by Status</strong>
-          <table style={{ "margin-top": "0.25rem", "border-collapse": "collapse" }}>
+        <div class="rounded-lg border border-border bg-card p-4">
+          <h3 class="mb-2 text-sm font-semibold">Notes by Status</h3>
+          <table class="w-full text-sm" aria-label="Notes by status">
             <tbody>
               <For each={Object.entries(props.noteQuality.notes_by_status)}>
                 {([status, count]) => (
-                  <tr>
-                    <td style={{ padding: "0.15rem 0.75rem 0.15rem 0", color: "#555" }}>{status}</td>
-                    <td style={{ padding: "0.15rem 0", "font-weight": "600" }}>{count}</td>
+                  <tr class="border-b border-border last:border-0">
+                    <td class="py-1 text-muted-foreground">{humanizeLabel(status)}</td>
+                    <td class="py-1 text-right font-medium">{count}</td>
                   </tr>
                 )}
               </For>
             </tbody>
           </table>
         </div>
-        <div>
-          <strong>Notes by Classification</strong>
-          <table style={{ "margin-top": "0.25rem", "border-collapse": "collapse" }}>
+        <div class="rounded-lg border border-border bg-card p-4">
+          <h3 class="mb-2 text-sm font-semibold">Notes by Classification</h3>
+          <table class="w-full text-sm" aria-label="Notes by classification">
             <tbody>
               <For each={Object.entries(props.noteQuality.notes_by_classification)}>
                 {([classification, count]) => (
-                  <tr>
-                    <td style={{ padding: "0.15rem 0.75rem 0.15rem 0", color: "#555" }}>{classification}</td>
-                    <td style={{ padding: "0.15rem 0", "font-weight": "600" }}>{count}</td>
+                  <tr class="border-b border-border last:border-0">
+                    <td class="py-1 text-muted-foreground">{humanizeLabel(classification)}</td>
+                    <td class="py-1 text-right font-medium">{count}</td>
                   </tr>
                 )}
               </For>
@@ -50,18 +51,20 @@ export default function AnalysisSummary(props: {
         </div>
       </div>
 
-      <h2 style={{ "margin-top": "1.5rem" }}>Rating Distribution</h2>
-      <p style={{ color: "#666" }}>Total ratings: {props.ratingDistribution.total_ratings}</p>
-      <div style={{ display: "flex", gap: "2rem", "flex-wrap": "wrap" }}>
-        <div>
-          <strong>Overall</strong>
-          <table style={{ "margin-top": "0.25rem", "border-collapse": "collapse" }}>
+      <h2 class="mb-4 mt-8 text-xl font-semibold">Rating Distribution</h2>
+      <p class="mb-3 text-sm text-muted-foreground">
+        Total ratings: {props.ratingDistribution.total_ratings}
+      </p>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="rounded-lg border border-border bg-card p-4">
+          <h3 class="mb-2 text-sm font-semibold">Overall</h3>
+          <table class="w-full text-sm" aria-label="Overall rating distribution">
             <tbody>
               <For each={Object.entries(props.ratingDistribution.overall)}>
                 {([level, count]) => (
-                  <tr>
-                    <td style={{ padding: "0.15rem 0.75rem 0.15rem 0", color: "#555" }}>{level}</td>
-                    <td style={{ padding: "0.15rem 0", "font-weight": "600" }}>{count}</td>
+                  <tr class="border-b border-border last:border-0">
+                    <td class="py-1 text-muted-foreground">{humanizeLabel(level)}</td>
+                    <td class="py-1 text-right font-medium">{count}</td>
                   </tr>
                 )}
               </For>
@@ -69,34 +72,34 @@ export default function AnalysisSummary(props: {
           </table>
         </div>
         <Show when={props.ratingDistribution.per_agent.length > 0}>
-          <div>
-            <strong>Per Agent</strong>
-            <table style={{ "margin-top": "0.25rem", "border-collapse": "collapse" }}>
-              <thead>
-                <tr>
-                  <th style={{ padding: "0.25rem 0.75rem 0.25rem 0", "text-align": "left" }}>Agent</th>
-                  <th style={{ padding: "0.25rem 0.75rem", "text-align": "left" }}>Distribution</th>
-                  <th style={{ padding: "0.25rem 0", "text-align": "right" }}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={props.ratingDistribution.per_agent}>
-                  {(agent) => (
-                    <tr>
-                      <td style={{ padding: "0.25rem 0.75rem 0.25rem 0" }}>{agent.agent_name}</td>
-                      <td style={{ padding: "0.25rem 0.75rem", color: "#555", "font-size": "0.85rem" }}>
-                        {Object.entries(agent.distribution)
-                          .map(([k, v]) => `${k}: ${v}`)
-                          .join(", ")}
-                      </td>
-                      <td style={{ padding: "0.25rem 0", "text-align": "right", "font-weight": "600" }}>
-                        {agent.total}
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
+          <div class="rounded-lg border border-border bg-card p-4">
+            <h3 class="mb-2 text-sm font-semibold">Per Agent</h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm" aria-label="Per agent rating distribution">
+                <thead>
+                  <tr class="border-b-2 border-border">
+                    <th class="py-1.5 text-left font-medium text-muted-foreground">Agent</th>
+                    <th class="py-1.5 text-left font-medium text-muted-foreground">Distribution</th>
+                    <th class="py-1.5 text-right font-medium text-muted-foreground">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={props.ratingDistribution.per_agent}>
+                    {(agent) => (
+                      <tr class="border-b border-border last:border-0">
+                        <td class="py-1.5">{agent.agent_name}</td>
+                        <td class="py-1.5 text-muted-foreground">
+                          {Object.entries(agent.distribution)
+                            .map(([k, v]) => `${humanizeLabel(k)}: ${v}`)
+                            .join(", ")}
+                        </td>
+                        <td class="py-1.5 text-right font-medium">{agent.total}</td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
           </div>
         </Show>
       </div>

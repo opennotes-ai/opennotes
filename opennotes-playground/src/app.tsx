@@ -1,26 +1,37 @@
+import "./app.css";
 import { Router, A } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { ErrorBoundary, Suspense } from "solid-js";
+import { MetaProvider } from "@solidjs/meta";
 import AuthStatus from "~/components/AuthStatus";
+import ModeToggle from "~/components/ModeToggle";
 
 export default function App() {
   return (
     <Router
       root={(props) => (
-        <>
-          <nav style={{ display: "flex", gap: "1rem", padding: "1rem", "align-items": "center" }}>
-            <A href="/">Home</A>
-            <A href="/simulations">Simulations</A>
-            <span style={{ "margin-left": "auto" }}>
+        <MetaProvider>
+          <nav class="flex items-center gap-4 border-b border-border px-4 py-3">
+            <A href="/" class="text-sm font-medium hover:text-primary">
+              Home
+            </A>
+            <A href="/simulations" class="text-sm font-medium hover:text-primary">
+              Simulations
+            </A>
+            <span class="ml-auto flex items-center gap-2">
               <AuthStatus />
+              <ModeToggle />
             </span>
           </nav>
           <ErrorBoundary
             fallback={(err, reset) => (
-              <div style={{ padding: "2rem", "text-align": "center" }}>
-                <h1>Something went wrong</h1>
-                <p style={{ color: "#666" }}>{err.message}</p>
-                <button onClick={reset} style={{ "margin-top": "1rem", padding: "0.5rem 1rem", cursor: "pointer" }}>
+              <div class="p-8 text-center">
+                <h1 class="text-xl font-bold">Something went wrong</h1>
+                <p class="mt-2 text-muted-foreground">{err.message}</p>
+                <button
+                  onClick={reset}
+                  class="mt-4 rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
+                >
                   Try again
                 </button>
               </div>
@@ -28,7 +39,7 @@ export default function App() {
           >
             <Suspense>{props.children}</Suspense>
           </ErrorBoundary>
-        </>
+        </MetaProvider>
       )}
     >
       <FileRoutes />

@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.agent_behavior_data_action_distribution import (
         AgentBehaviorDataActionDistribution,
@@ -27,6 +29,7 @@ class AgentBehaviorData:
         state (str):
         helpfulness_trend (list[str]):
         action_distribution (AgentBehaviorDataActionDistribution):
+        personality (str | Unset):  Default: ''.
     """
 
     agent_instance_id: str
@@ -37,6 +40,7 @@ class AgentBehaviorData:
     state: str
     helpfulness_trend: list[str]
     action_distribution: AgentBehaviorDataActionDistribution
+    personality: str | Unset = ""
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,6 +60,8 @@ class AgentBehaviorData:
 
         action_distribution = self.action_distribution.to_dict()
 
+        personality = self.personality
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -70,6 +76,8 @@ class AgentBehaviorData:
                 "action_distribution": action_distribution,
             }
         )
+        if personality is not UNSET:
+            field_dict["personality"] = personality
 
         return field_dict
 
@@ -98,6 +106,8 @@ class AgentBehaviorData:
             d.pop("action_distribution")
         )
 
+        personality = d.pop("personality", UNSET)
+
         agent_behavior_data = cls(
             agent_instance_id=agent_instance_id,
             agent_name=agent_name,
@@ -107,6 +117,7 @@ class AgentBehaviorData:
             state=state,
             helpfulness_trend=helpfulness_trend,
             action_distribution=action_distribution,
+            personality=personality,
         )
 
         agent_behavior_data.additional_properties = d
