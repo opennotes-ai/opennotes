@@ -16,6 +16,7 @@ import sqlalchemy as sa
 from dbos import DBOS, DBOSClient, DBOSConfig
 
 from src.config import settings
+from src.database import get_direct_sync_url
 from src.dbos_workflows.serializer import SafeJsonSerializer
 
 _dbos_instance: DBOS | None = None
@@ -81,11 +82,7 @@ def get_dbos_config() -> DBOSConfig:
     Note: DBOS uses synchronous psycopg internally, so we convert
     the async DATABASE_URL (postgresql+asyncpg://) to sync format.
     """
-    database_url = settings.DATABASE_URL
-    if not database_url:
-        raise ValueError("DATABASE_URL environment variable required for DBOS")
-
-    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
+    sync_url = get_direct_sync_url()
 
     config: DBOSConfig = {
         "name": settings.DBOS_APP_NAME,
@@ -165,18 +162,6 @@ def destroy_dbos(workflow_completion_timeout_sec: int = 5) -> None:
             _dbos_instance = None
 
 
-def _get_sync_database_url() -> str:
-    """Get the sync PostgreSQL URL for DBOS.
-
-    DBOS uses synchronous psycopg internally, so we convert
-    the async DATABASE_URL (postgresql+asyncpg://) to sync format.
-    """
-    database_url = settings.DATABASE_URL
-    if not database_url:
-        raise ValueError("DATABASE_URL environment variable required for DBOS")
-    return database_url.replace("postgresql+asyncpg://", "postgresql://")
-
-
 def get_dbos_client() -> DBOSClient:
     """Get DBOSClient for enqueueing workflows (server mode).
 
@@ -196,7 +181,7 @@ def get_dbos_client() -> DBOSClient:
         with _dbos_client_lock:
             client = _dbos_client
             if client is None:
-                sync_url = _get_sync_database_url()
+                sync_url = get_direct_sync_url()
 
                 engine = sa.create_engine(
                     sync_url,

@@ -5,6 +5,62 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.config import get_settings
+
+
+@pytest.fixture(autouse=True)
+def _reset_settings_cache():
+    get_settings.cache_clear()  # type: ignore[attr-defined]
+    yield
+    get_settings.cache_clear()  # type: ignore[attr-defined]
+
+
+class TestGetDirectSyncUrl:
+    def test_prefers_direct_url(self):
+        with patch("src.database.get_settings") as mock:
+            mock.return_value.DATABASE_DIRECT_URL = "postgresql://user:pass@direct:5432/db"
+            mock.return_value.DATABASE_URL = "postgresql+asyncpg://user:pass@pooled:6543/db"
+            from src.database import get_direct_sync_url
+
+            result = get_direct_sync_url()
+            assert result == "postgresql://user:pass@direct:5432/db"
+
+    def test_falls_back_to_database_url(self):
+        with patch("src.database.get_settings") as mock:
+            mock.return_value.DATABASE_DIRECT_URL = None
+            mock.return_value.DATABASE_URL = "postgresql+asyncpg://user:pass@pooled:6543/db"
+            from src.database import get_direct_sync_url
+
+            result = get_direct_sync_url()
+            assert result == "postgresql://user:pass@pooled:6543/db"
+
+    def test_converts_asyncpg_prefix_on_direct_url(self):
+        with patch("src.database.get_settings") as mock:
+            mock.return_value.DATABASE_DIRECT_URL = "postgresql+asyncpg://user:pass@direct:5432/db"
+            mock.return_value.DATABASE_URL = "postgresql+asyncpg://user:pass@pooled:6543/db"
+            from src.database import get_direct_sync_url
+
+            result = get_direct_sync_url()
+            assert result == "postgresql://user:pass@direct:5432/db"
+
+    def test_handles_bare_url(self):
+        with patch("src.database.get_settings") as mock:
+            mock.return_value.DATABASE_DIRECT_URL = "user:pass@direct:5432/db"
+            mock.return_value.DATABASE_URL = "postgresql+asyncpg://x:y@pooled/db"
+            from src.database import get_direct_sync_url
+
+            result = get_direct_sync_url()
+            assert result == "postgresql://user:pass@direct:5432/db"
+
+    def test_raises_when_no_url(self):
+        with patch("src.database.get_settings") as mock:
+            mock.return_value.DATABASE_DIRECT_URL = None
+            mock.return_value.DATABASE_URL = None
+            from src.database import get_direct_sync_url
+
+            with pytest.raises(ValueError, match="DATABASE_URL"):
+                get_direct_sync_url()
+
 
 class TestResetDatabaseForTestLoop:
     """Tests for _reset_database_for_test_loop function."""

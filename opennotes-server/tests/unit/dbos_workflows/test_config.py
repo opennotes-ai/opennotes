@@ -158,8 +158,11 @@ class TestGetDbosConfig:
 
     def test_converts_asyncpg_url_to_sync(self) -> None:
         """Async PostgreSQL URL is converted to sync format for DBOS."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host:5432/db"
+        with (
+            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_url.return_value = "postgresql://user:pass@host:5432/db"
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = None
             mock_settings.OTLP_ENDPOINT = None
@@ -190,19 +193,25 @@ class TestGetDbosConfig:
 
     def test_raises_if_database_url_missing(self) -> None:
         """Raises ValueError if DATABASE_URL is not configured."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = None
-
-            with pytest.raises(ValueError, match="DATABASE_URL"):
-                get_dbos_config()
+        with (
+            patch(
+                "src.dbos_workflows.config.get_direct_sync_url",
+                side_effect=ValueError("DATABASE_URL environment variable required"),
+            ),
+            pytest.raises(ValueError, match="DATABASE_URL"),
+        ):
+            get_dbos_config()
 
     def test_raises_if_database_url_empty(self) -> None:
         """Raises ValueError if DATABASE_URL is empty string."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = ""
-
-            with pytest.raises(ValueError, match="DATABASE_URL"):
-                get_dbos_config()
+        with (
+            patch(
+                "src.dbos_workflows.config.get_direct_sync_url",
+                side_effect=ValueError("DATABASE_URL environment variable required"),
+            ),
+            pytest.raises(ValueError, match="DATABASE_URL"),
+        ):
+            get_dbos_config()
 
     def test_includes_otlp_config_when_endpoint_set(self) -> None:
         """Config includes OTLP settings when OTLP_ENDPOINT is configured."""
@@ -562,9 +571,9 @@ class TestDbosClientEngineConfiguration:
         with (
             patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
             patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
-            patch("src.dbos_workflows.config.settings") as mock_settings,
+            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
         ):
-            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+            mock_url.return_value = "postgresql://user:pass@host/db"
             mock_engine = MagicMock()
             mock_create_engine.return_value = mock_engine
             mock_client = MagicMock()
@@ -583,9 +592,9 @@ class TestDbosClientEngineConfiguration:
         with (
             patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
             patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
-            patch("src.dbos_workflows.config.settings") as mock_settings,
+            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
         ):
-            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+            mock_url.return_value = "postgresql://user:pass@host/db"
             mock_client_class.return_value = MagicMock()
             mock_create_engine.return_value = MagicMock()
 
@@ -600,9 +609,9 @@ class TestDbosClientEngineConfiguration:
         with (
             patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
             patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
-            patch("src.dbos_workflows.config.settings") as mock_settings,
+            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
         ):
-            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+            mock_url.return_value = "postgresql://user:pass@host/db"
             mock_client_class.return_value = MagicMock()
             mock_create_engine.return_value = MagicMock()
 
@@ -618,9 +627,9 @@ class TestDbosClientEngineConfiguration:
         with (
             patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
             patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
-            patch("src.dbos_workflows.config.settings") as mock_settings,
+            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
         ):
-            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+            mock_url.return_value = "postgresql://user:pass@host/db"
             mock_client_class.return_value = MagicMock()
             mock_create_engine.return_value = MagicMock()
 

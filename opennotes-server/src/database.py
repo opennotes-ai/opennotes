@@ -79,6 +79,18 @@ class Base(DeclarativeBase):
     pass
 
 
+def get_direct_sync_url() -> str:
+    cfg = get_settings()
+    url = cfg.DATABASE_DIRECT_URL or cfg.DATABASE_URL
+    if not url:
+        raise ValueError("DATABASE_URL environment variable required")
+    if url.startswith("postgresql+asyncpg://"):
+        return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    if url.startswith("postgresql://"):
+        return url
+    return f"postgresql://{url}"
+
+
 _engines: dict[int, tuple[AsyncEngine, asyncio.AbstractEventLoop | None]] = {}
 _session_makers: dict[int, async_sessionmaker[AsyncSession]] = {}
 _db_lock = threading.RLock()

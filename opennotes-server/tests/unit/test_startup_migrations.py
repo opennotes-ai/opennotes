@@ -339,6 +339,10 @@ class TestDatabaseUrlConversion:
 
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine) as mock_ce,
+            patch(
+                f"{MODULE}._get_direct_sync_url",
+                return_value="postgresql://user:pass@host:5432/mydb",
+            ),
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
         ):
@@ -355,14 +359,13 @@ class TestDatabaseUrlConversion:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = _make_mock_settings(
-            db_url="postgresql+asyncpg://user:pass@pooler:6543/mydb",
-            direct_url="postgresql://user:pass@direct:5432/mydb",
-        )
-
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine) as mock_ce,
-            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}._get_direct_sync_url",
+                return_value="postgresql://user:pass@direct:5432/mydb",
+            ),
+            patch(f"{MODULE}.get_settings", return_value=_make_mock_settings()),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
         ):
             from src.startup_migrations import run_startup_migrations
@@ -377,13 +380,13 @@ class TestDatabaseUrlConversion:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = _make_mock_settings(
-            direct_url="postgresql+asyncpg://user:pass@direct:5432/mydb",
-        )
-
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine) as mock_ce,
-            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}._get_direct_sync_url",
+                return_value="postgresql://user:pass@direct:5432/mydb",
+            ),
+            patch(f"{MODULE}.get_settings", return_value=_make_mock_settings()),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
         ):
             from src.startup_migrations import run_startup_migrations
@@ -399,13 +402,13 @@ class TestDatabaseUrlConversion:
         current_result = _make_subprocess_result(stdout="abc123 (head)\n")
         upgrade_result = _make_subprocess_result(stdout="")
 
-        mock_settings = _make_mock_settings(
-            direct_url="postgresql://user:pass@direct:5432/mydb",
-        )
-
         with (
             patch(f"{MODULE}.create_engine", return_value=mock_engine),
-            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}._get_direct_sync_url",
+                return_value="postgresql://user:pass@direct:5432/mydb",
+            ),
+            patch(f"{MODULE}.get_settings", return_value=_make_mock_settings()),
             patch(
                 f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]
             ) as mock_run,
