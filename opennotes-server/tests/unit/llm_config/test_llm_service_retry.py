@@ -1,4 +1,4 @@
-"""Unit tests for LLMService retry behavior on generate_embedding and describe_image."""
+"""Unit tests for LLMService retry behavior on complete, generate_embedding and describe_image."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -6,8 +6,95 @@ from uuid import uuid4
 import pytest
 
 from src.llm_config.manager import LLMClientManager
-from src.llm_config.providers.base import LLMResponse
+from src.llm_config.providers.base import LLMMessage, LLMResponse
+from src.llm_config.providers.litellm_provider import EmptyLLMResponseError
 from src.llm_config.service import LLMService
+
+
+class TestLLMServiceCompleteRetry:
+    """Tests for LLMService.complete retry behavior."""
+
+    @pytest.fixture
+    def mock_client_manager(self) -> MagicMock:
+        return MagicMock(spec=LLMClientManager)
+
+    @pytest.fixture
+    def llm_service(self, mock_client_manager: MagicMock) -> LLMService:
+        return LLMService(client_manager=mock_client_manager)
+
+    @pytest.fixture
+    def mock_db(self) -> AsyncMock:
+        return AsyncMock()
+
+    @pytest.fixture
+    def mock_llm_provider(self) -> MagicMock:
+        provider = MagicMock()
+        provider.api_key = "test-api-key"
+        return provider
+
+    @pytest.mark.asyncio
+    async def test_complete_retries_on_empty_response_error(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
+        success = LLMResponse(
+            content='{"is_relevant": true}',
+            model="test",
+            tokens_used=10,
+            finish_reason="stop",
+            provider="openai",
+        )
+        call_count = 0
+
+        async def side_effect(*a, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise EmptyLLMResponseError("empty")
+            return success
+
+        mock_llm_provider.complete = AsyncMock(side_effect=side_effect)
+        result = await llm_service.complete(
+            db=mock_db, messages=[LLMMessage(role="user", content="test")]
+        )
+        assert call_count == 2
+        assert result.content == '{"is_relevant": true}'
+
+    @pytest.mark.asyncio
+    async def test_complete_gives_up_after_2_attempts(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
+        mock_llm_provider.complete = AsyncMock(side_effect=EmptyLLMResponseError("empty"))
+        with pytest.raises(EmptyLLMResponseError):
+            await llm_service.complete(
+                db=mock_db, messages=[LLMMessage(role="user", content="test")]
+            )
+        assert mock_llm_provider.complete.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_complete_does_not_retry_value_error(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
+        mock_llm_provider.complete = AsyncMock(side_effect=ValueError("bad input"))
+        with pytest.raises(ValueError, match="bad input"):
+            await llm_service.complete(
+                db=mock_db, messages=[LLMMessage(role="user", content="test")]
+            )
+        assert mock_llm_provider.complete.call_count == 1
 
 
 class TestLLMServiceGenerateEmbeddingRetry:
@@ -234,8 +321,16 @@ class TestRetryDecoratorConfiguration:
         method = LLMService.describe_image
         assert hasattr(method, "retry")
 
+    def test_complete_has_retry_decorator(self) -> None:
+        method = LLMService.complete
+        assert hasattr(method, "retry")
+
+    def test_complete_retry_uses_2_attempts(self) -> None:
+        method = LLMService.complete
+        assert method.retry.stop.max_attempt_number == 2
+
     def test_retry_configuration_matches(self) -> None:
-        """Verify both methods have matching retry configurations."""
+        """Verify embedding and image methods have matching retry configurations."""
         from src.llm_config.service import LLMService
 
         embed_method = LLMService.generate_embedding

@@ -30,6 +30,7 @@ from src.llm_config.manager import LLMClientManager
 from src.llm_config.model_id import ModelId
 from src.llm_config.providers import LiteLLMCompletionParams
 from src.llm_config.providers.base import LLMMessage, LLMResponse
+from src.llm_config.providers.litellm_provider import EmptyLLMResponseError
 from src.monitoring import get_logger
 
 TRANSIENT_EXCEPTIONS = (
@@ -40,6 +41,7 @@ TRANSIENT_EXCEPTIONS = (
     APIError,
     ConnectionError,
     TimeoutError,
+    EmptyLLMResponseError,
 )
 
 logger = get_logger(__name__)
@@ -65,6 +67,12 @@ class LLMService:
         """
         self.client_manager = client_manager
 
+    @retry(
+        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+        wait=wait_exponential(multiplier=1, min=1, max=60),
+        stop=stop_after_attempt(2),
+        reraise=True,
+    )
     async def complete(
         self,
         db: AsyncSession,
