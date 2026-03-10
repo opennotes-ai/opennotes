@@ -14,7 +14,8 @@ logger = get_logger(__name__)
 MIGRATION_LOCK_ID = 1847334512
 SUBPROCESS_TIMEOUT = 300
 LOCK_RETRY_INTERVAL = 2
-LOCK_MAX_RETRIES = 30
+LOCK_TIMEOUT_SECONDS = 1800
+LOCK_LOG_INTERVAL = 30
 
 
 def _get_direct_sync_url() -> str:
@@ -62,17 +63,20 @@ def _is_at_head(server_dir: Path, env: dict[str, str]) -> bool:
 
 
 def _acquire_lock(conn) -> bool:
-    for attempt in range(LOCK_MAX_RETRIES):
+    start = time.monotonic()
+    last_log = start
+    while True:
         result = conn.execute(text(f"SELECT pg_try_advisory_lock({MIGRATION_LOCK_ID})"))
-        locked = result.scalar()
-        if locked:
+        if result.scalar():
             return True
-        if attempt < LOCK_MAX_RETRIES - 1:
-            logger.info(
-                f"Migration lock held by another instance, retrying ({attempt + 1}/{LOCK_MAX_RETRIES})"
-            )
-            time.sleep(LOCK_RETRY_INTERVAL)
-    return False
+        elapsed = time.monotonic() - start
+        if elapsed >= LOCK_TIMEOUT_SECONDS:
+            return False
+        now = time.monotonic()
+        if now - last_log >= LOCK_LOG_INTERVAL:
+            logger.warning(f"Migration lock held by another instance ({int(elapsed)}s elapsed)")
+            last_log = now
+        time.sleep(LOCK_RETRY_INTERVAL)
 
 
 def _release_lock(conn) -> None:
@@ -218,14 +222,14 @@ def _run_migrations_sync(is_worker: bool) -> None:
                 at_head = _is_at_head(server_dir, alembic_env)
                 if at_head:
                     logger.warning(
-                        "Could not acquire migration lock after retries, but DB is at head — proceeding"
+                        "Migration lock timeout after retries, but DB is at head — proceeding"
                     )
                     return
                 logger.critical(
-                    "Could not acquire migration lock and DB is NOT at head — aborting",
+                    "Migration lock timeout and DB is NOT at head — aborting",
                     extra={"alert_type": "migration_failure"},
                 )
-                raise RuntimeError("Migration lock unavailable and database not at head")
+                raise RuntimeError("Migration lock timeout and database not at head")
 
             logger.info("Migration lock acquired")
 

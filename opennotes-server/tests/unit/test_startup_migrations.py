@@ -677,9 +677,23 @@ class TestMultiHeadParsing:
         assert result == []
 
 
+def _make_monotonic_mock(values):
+    """Create a monotonic mock that returns values in sequence, then repeats the last value."""
+    it = iter(values)
+    last = [values[-1]]
+
+    def monotonic():
+        try:
+            return next(it)
+        except StopIteration:
+            return last[0]
+
+    return monotonic
+
+
 @pytest.mark.asyncio
 class TestTryLockRetry:
-    async def test_retries_when_lock_not_acquired(self):
+    async def test_retries_until_lock_acquired(self):
         mock_conn = MagicMock()
         mock_engine = MagicMock()
         mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
@@ -711,6 +725,10 @@ class TestTryLockRetry:
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
             patch(f"{MODULE}.time.sleep") as mock_sleep,
+            patch(
+                f"{MODULE}.time.monotonic",
+                side_effect=_make_monotonic_mock([0, 2, 2, 4, 4]),
+            ),
             patch(f"{MODULE}.logger"),
         ):
             from src.startup_migrations import run_startup_migrations
@@ -719,6 +737,81 @@ class TestTryLockRetry:
 
         assert call_count == 3
         assert mock_sleep.call_count == 2
+
+    async def test_logs_warning_periodically(self):
+        mock_conn = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        lock_false = MagicMock()
+        lock_false.scalar.return_value = False
+        lock_true = MagicMock()
+        lock_true.scalar.return_value = True
+
+        attempt = 0
+
+        def execute_side_effect(stmt):
+            nonlocal attempt
+            stmt_str = str(stmt)
+            if "pg_try_advisory_lock" in stmt_str:
+                attempt += 1
+                return lock_true if attempt >= 4 else lock_false
+            return MagicMock()
+
+        mock_conn.execute = MagicMock(side_effect=execute_side_effect)
+
+        mock_settings = _make_mock_settings()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(stdout="")
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(f"{MODULE}.subprocess.run", side_effect=[current_result, upgrade_result]),
+            patch(f"{MODULE}.time.sleep"),
+            patch(
+                f"{MODULE}.time.monotonic",
+                side_effect=_make_monotonic_mock([0, 10, 10, 31, 31, 62, 62]),
+            ),
+            patch(f"{MODULE}.logger") as mock_logger,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
+        elapsed_warnings = [w for w in warning_calls if "elapsed" in w.lower()]
+        assert len(elapsed_warnings) >= 2
+
+    async def test_raises_after_30_minute_timeout(self):
+        mock_conn = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        lock_false = MagicMock()
+        lock_false.scalar.return_value = False
+        mock_conn.execute = MagicMock(return_value=lock_false)
+
+        mock_settings = _make_mock_settings()
+        check_result = _make_subprocess_result(returncode=1, stderr="not at head")
+
+        from src.startup_migrations import run_startup_migrations
+
+        with (
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(f"{MODULE}.subprocess.run", return_value=check_result),
+            patch(f"{MODULE}.time.sleep"),
+            patch(
+                f"{MODULE}.time.monotonic",
+                side_effect=_make_monotonic_mock([0, 1801]),
+            ),
+            patch(f"{MODULE}.logger"),
+            pytest.raises(RuntimeError, match="Migration lock timeout"),
+        ):
+            await run_startup_migrations("full")
 
     async def test_fail_open_when_lock_unavailable_but_at_head(self):
         mock_conn = MagicMock()
@@ -738,8 +831,11 @@ class TestTryLockRetry:
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", return_value=check_result),
             patch(f"{MODULE}.time.sleep"),
+            patch(
+                f"{MODULE}.time.monotonic",
+                side_effect=_make_monotonic_mock([0, 1801]),
+            ),
             patch(f"{MODULE}.logger") as mock_logger,
-            patch(f"{MODULE}.LOCK_MAX_RETRIES", 2),
         ):
             from src.startup_migrations import run_startup_migrations
 
@@ -768,9 +864,12 @@ class TestTryLockRetry:
             patch(f"{MODULE}.get_settings", return_value=mock_settings),
             patch(f"{MODULE}.subprocess.run", return_value=check_result),
             patch(f"{MODULE}.time.sleep"),
+            patch(
+                f"{MODULE}.time.monotonic",
+                side_effect=_make_monotonic_mock([0, 1801]),
+            ),
             patch(f"{MODULE}.logger"),
-            patch(f"{MODULE}.LOCK_MAX_RETRIES", 2),
-            pytest.raises(RuntimeError, match="Migration lock unavailable"),
+            pytest.raises(RuntimeError, match="Migration lock timeout"),
         ):
             await run_startup_migrations("full")
 
