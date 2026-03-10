@@ -1,16 +1,39 @@
-import { query, createAsync, useParams } from "@solidjs/router";
+import { query, createAsync, useParams, A } from "@solidjs/router";
 import { Show, Switch, Match, Suspense } from "solid-js";
+import { getRequestEvent } from "solid-js/web";
 import {
   getSimulation,
   getSimulationAnalysis,
   getSimulationDetailedAnalysis,
 } from "~/lib/api-client.server";
+import { createClient } from "~/lib/supabase-server";
 import { formatDate, humanizeLabel, truncateId } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import AnalysisSummary from "~/components/AnalysisSummary";
 import AgentProfiles from "~/components/AgentProfiles";
 import MetricsDisplay from "~/components/MetricsDisplay";
 import NoteDetails from "~/components/NoteDetails";
+
+const UNAUTH_PAGE_SIZE = 20;
+const AUTH_PAGE_SIZE = 50;
+
+type AuthMeta = {
+  isAuthenticated: boolean;
+  totalAgents?: number;
+  agentsTruncated?: boolean;
+};
+
+async function checkAuth(): Promise<boolean> {
+  try {
+    const event = getRequestEvent();
+    if (!event) return false;
+    const supabase = createClient(event.request, event.response.headers);
+    const { data: { user } } = await supabase.auth.getUser();
+    return !!user;
+  } catch {
+    return false;
+  }
+}
 
 type SimulationError = { _error: "not_found" | "server_error" };
 
@@ -30,7 +53,21 @@ const fetchSimulation = query(async (id: string) => {
 const fetchAnalysis = query(async (id: string) => {
   "use server";
   try {
-    return await getSimulationAnalysis(id);
+    const isAuthenticated = await checkAuth();
+    const data = await getSimulationAnalysis(id);
+
+    const totalAgents = data.data.attributes.agent_behaviors.length;
+    let agentsTruncated = false;
+    if (!isAuthenticated && totalAgents > UNAUTH_PAGE_SIZE) {
+      data.data.attributes.agent_behaviors =
+        data.data.attributes.agent_behaviors.slice(0, UNAUTH_PAGE_SIZE);
+      agentsTruncated = true;
+    }
+
+    return {
+      ...data,
+      _authMeta: { isAuthenticated, totalAgents, agentsTruncated } as AuthMeta,
+    };
   } catch (error) {
     console.error("Failed to fetch analysis:", error);
     return null;
@@ -40,7 +77,14 @@ const fetchAnalysis = query(async (id: string) => {
 const fetchDetailedAnalysis = query(async (id: string) => {
   "use server";
   try {
-    return await getSimulationDetailedAnalysis(id, 1, 50);
+    const isAuthenticated = await checkAuth();
+    const pageSize = isAuthenticated ? AUTH_PAGE_SIZE : UNAUTH_PAGE_SIZE;
+    const data = await getSimulationDetailedAnalysis(id, 1, pageSize);
+
+    return {
+      ...data,
+      _authMeta: { isAuthenticated } as AuthMeta,
+    };
   } catch (error) {
     console.error("Failed to fetch detailed analysis:", error);
     return null;
@@ -66,6 +110,26 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   failed: "danger",
   paused: "info",
 };
+
+function AuthGateCTA(props: { shown: number; total: number; label: string }) {
+  return (
+    <div class="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-4 text-center">
+      <p class="text-sm text-muted-foreground">
+        Showing {props.shown} of {props.total} {props.label}.
+      </p>
+      <p class="mt-1 text-sm">
+        <A href="/login" class="font-medium text-primary hover:underline">
+          Sign in
+        </A>
+        <span class="text-muted-foreground"> or </span>
+        <A href="/register" class="font-medium text-primary hover:underline">
+          sign up
+        </A>
+        <span class="text-muted-foreground"> to see all {props.label}.</span>
+      </p>
+    </div>
+  );
+}
 
 export default function SimulationDetailPage() {
   const params = useParams();
@@ -164,6 +228,7 @@ export default function SimulationDetailPage() {
                     >
                       {(analysisResponse) => {
                         const a = analysisResponse.data.attributes;
+                        const meta = analysisResponse._authMeta;
                         return (
                           <div class="mt-8 space-y-8">
                             <AnalysisSummary
@@ -174,7 +239,16 @@ export default function SimulationDetailPage() {
                               consensus={a.consensus_metrics}
                               scoring={a.scoring_coverage}
                             />
-                            <AgentProfiles agents={a.agent_behaviors} />
+                            <div>
+                              <AgentProfiles agents={a.agent_behaviors} />
+                              <Show when={meta?.agentsTruncated && meta.totalAgents}>
+                                <AuthGateCTA
+                                  shown={UNAUTH_PAGE_SIZE}
+                                  total={meta!.totalAgents!}
+                                  label="agents"
+                                />
+                              </Show>
+                            </div>
                           </div>
                         );
                       }}
@@ -187,21 +261,36 @@ export default function SimulationDetailPage() {
                       keyed
                       fallback={<p class="mt-6 italic text-muted-foreground">Detailed analysis unavailable.</p>}
                     >
-                      {(detailedResponse) => (
-                        <div class="mt-8">
-                          <Show when={detailedResponse.meta}>
-                            {(meta) => (
-                              <p class="mb-2 text-sm text-muted-foreground">
-                                {meta().count} note{meta().count !== 1 ? "s" : ""} in detailed analysis
-                              </p>
-                            )}
-                          </Show>
-                          <NoteDetails
-                            notes={detailedResponse.data}
-                            currentTier={analysis()?.data?.attributes?.scoring_coverage?.current_tier ?? ""}
-                          />
-                        </div>
-                      )}
+                      {(detailedResponse) => {
+                        const authMeta = detailedResponse._authMeta;
+                        const totalNotes = detailedResponse.meta?.count ?? 0;
+                        const notesTruncated = !authMeta?.isAuthenticated && totalNotes > UNAUTH_PAGE_SIZE;
+                        return (
+                          <div class="mt-8">
+                            <Show when={detailedResponse.meta}>
+                              {(meta) => (
+                                <p class="mb-2 text-sm text-muted-foreground">
+                                  {notesTruncated
+                                    ? `Showing ${UNAUTH_PAGE_SIZE} of ${meta().count}`
+                                    : meta().count}
+                                  {" "}note{meta().count !== 1 ? "s" : ""} in detailed analysis
+                                </p>
+                              )}
+                            </Show>
+                            <NoteDetails
+                              notes={detailedResponse.data}
+                              currentTier={analysis()?.data?.attributes?.scoring_coverage?.current_tier ?? ""}
+                            />
+                            <Show when={notesTruncated}>
+                              <AuthGateCTA
+                                shown={UNAUTH_PAGE_SIZE}
+                                total={totalNotes}
+                                label="notes"
+                              />
+                            </Show>
+                          </div>
+                        );
+                      }}
                     </Show>
                   </Suspense>
                 </>
