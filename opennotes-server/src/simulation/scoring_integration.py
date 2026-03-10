@@ -148,6 +148,51 @@ async def _record_scoring_metrics(
     return platform
 
 
+def _compute_offset_advance(
+    pass_label: str,
+    score_mapping: dict[UUID, int],
+    status_mapping: dict[UUID, str],
+    batch_size: int,
+    community_server_id: UUID,
+    offset: int,
+) -> int:
+    """Return the new offset after processing a full batch.
+
+    Handles two infinite-loop scenarios in the unscored pass:
+    1. All notes failed scoring (score_mapping empty) - advance offset.
+    2. Rating count divergence: all notes scored but none changed status
+       away from NEEDS_MORE_RATINGS - advance offset.
+    """
+    if not score_mapping:
+        logger.warning(
+            "All notes in batch failed scoring, advancing offset to prevent infinite loop",
+            extra={
+                "community_server_id": str(community_server_id),
+                "pass": pass_label,
+                "offset": offset,
+                "batch_size": batch_size,
+            },
+        )
+        return offset + batch_size
+
+    if pass_label == "unscored":
+        notes_leaving_query = sum(1 for s in status_mapping.values() if s != "NEEDS_MORE_RATINGS")
+        if notes_leaving_query == 0:
+            logger.warning(
+                "Rating count divergence: %d notes scored but none left NEEDS_MORE_RATINGS status, "
+                "advancing offset to prevent infinite loop",
+                len(score_mapping),
+                extra={
+                    "community_server_id": str(community_server_id),
+                    "offset": offset,
+                },
+            )
+            return offset + batch_size
+        return offset
+
+    return offset + batch_size
+
+
 async def score_community_server_notes(
     community_server_id: UUID,
     db: AsyncSession,
@@ -281,8 +326,14 @@ async def score_community_server_notes(
             if len(batch) < SCORING_BATCH_SIZE:
                 break
 
-            if pass_label == "rescore":
-                offset += SCORING_BATCH_SIZE
+            offset = _compute_offset_advance(
+                pass_label,
+                score_mapping,
+                status_mapping,
+                SCORING_BATCH_SIZE,
+                community_server_id,
+                offset,
+            )
 
         if pass_label == "unscored":
             unscored_notes_processed = pass_count
