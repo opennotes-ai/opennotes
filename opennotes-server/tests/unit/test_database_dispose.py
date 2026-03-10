@@ -19,6 +19,7 @@ class TestDisposeOnClosedLoop:
         closed_loop.close()
 
         current_loop = MagicMock()
+        current_loop.is_closed.return_value = False
 
         original_engines = dict(db_module._engines)
         original_session_makers = dict(db_module._session_makers)
@@ -56,6 +57,7 @@ class TestDisposeOnClosedLoop:
 
         alive_loop = asyncio.new_event_loop()
         different_loop = MagicMock()
+        different_loop.is_closed.return_value = False
 
         original_engines = dict(db_module._engines)
         original_session_makers = dict(db_module._session_makers)

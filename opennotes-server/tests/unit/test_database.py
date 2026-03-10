@@ -67,6 +67,7 @@ class TestGetEngineLoopLiveness:
         mock_old_engine = MagicMock()
         mock_new_engine = MagicMock()
         current_loop = MagicMock()
+        current_loop.is_closed.return_value = False
 
         original_engines = dict(database._engines)
         original_session_makers = dict(database._session_makers)
@@ -100,6 +101,7 @@ class TestGetEngineLoopLiveness:
 
         alive_loop = asyncio.new_event_loop()
         different_loop = MagicMock()
+        different_loop.is_closed.return_value = False
 
         mock_existing_engine = MagicMock()
         mock_new_engine = MagicMock()
@@ -178,6 +180,7 @@ class TestGetEngineFirstCreation:
 
         mock_new_engine = MagicMock()
         mock_loop = MagicMock()
+        mock_loop.is_closed.return_value = False
 
         original_engines = dict(database._engines)
         original_session_makers = dict(database._session_makers)
@@ -341,6 +344,7 @@ class TestGetSessionMaker:
         mock_new_engine = MagicMock()
         mock_old_session_maker = MagicMock()
         current_loop = MagicMock()
+        current_loop.is_closed.return_value = False
 
         original_engines = dict(database._engines)
         original_session_makers = dict(database._session_makers)
@@ -388,6 +392,7 @@ class TestGetSessionMaker:
             database._session_makers[alive_key] = mock_session_maker
 
             different_loop = MagicMock()
+            different_loop.is_closed.return_value = False
             with (
                 patch("src.database.asyncio.get_running_loop", return_value=different_loop),
                 patch("src.database._create_engine", return_value=mock_new_engine),
@@ -410,11 +415,13 @@ class TestCloseDb:
     """Tests for close_db() function."""
 
     @pytest.mark.asyncio
-    async def test_close_db_disposes_current_and_clears_all(self):
+    async def test_close_db_disposes_all_engines_and_clears(self):
         from src import database
 
-        mock_engine = MagicMock()
-        mock_engine.dispose = AsyncMock()
+        mock_engine_current = MagicMock()
+        mock_engine_current.dispose = AsyncMock()
+        mock_engine_other = MagicMock()
+        mock_engine_other.dispose = AsyncMock()
 
         original_engines = dict(database._engines)
         original_session_makers = dict(database._session_makers)
@@ -424,14 +431,15 @@ class TestCloseDb:
             loop_key = id(loop)
             database._engines.clear()
             database._session_makers.clear()
-            database._engines[loop_key] = (mock_engine, loop)
-            database._engines[999] = (MagicMock(), None)
+            database._engines[loop_key] = (mock_engine_current, loop)
+            database._engines[999] = (mock_engine_other, None)
             database._session_makers[loop_key] = MagicMock()
             database._session_makers[999] = MagicMock()
 
             await database.close_db()
 
-            mock_engine.dispose.assert_awaited_once()
+            mock_engine_current.dispose.assert_awaited_once()
+            mock_engine_other.dispose.assert_awaited_once()
             assert len(database._engines) == 0
             assert len(database._session_makers) == 0
 
@@ -450,6 +458,7 @@ class TestPerLoopDictBehavior:
 
         mock_engine = MagicMock()
         mock_loop = MagicMock()
+        mock_loop.is_closed.return_value = False
 
         original_engines = dict(database._engines)
         original_session_makers = dict(database._session_makers)
@@ -460,13 +469,16 @@ class TestPerLoopDictBehavior:
 
             with (
                 patch("src.database.asyncio.get_running_loop", return_value=mock_loop),
-                patch("src.database._create_engine", return_value=mock_engine),
+                patch(
+                    "src.database._create_engine", return_value=mock_engine
+                ) as mock_create_engine,
             ):
                 engine1 = database.get_engine()
                 engine2 = database.get_engine()
 
             assert engine1 is engine2
             assert engine1 is mock_engine
+            mock_create_engine.assert_called_once()
 
         finally:
             database._engines.clear()
@@ -482,6 +494,7 @@ class TestPerLoopDictBehavior:
         stale_engine = MagicMock()
 
         current_loop = MagicMock()
+        current_loop.is_closed.return_value = False
         new_engine = MagicMock()
 
         original_engines = dict(database._engines)

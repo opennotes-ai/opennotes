@@ -209,19 +209,12 @@ async def init_db() -> None:
 
 async def close_db() -> None:
     with _db_lock:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-        loop_key = id(loop) if loop is not None else 0
-
-        if loop_key in _engines:
-            engine, _ = _engines.pop(loop_key)
-            await engine.dispose()
-        _session_makers.pop(loop_key, None)
-
+        engines_to_dispose = list(_engines.values())
         _engines.clear()
         _session_makers.clear()
+
+    for engine, _ in engines_to_dispose:
+        await engine.dispose()
 
 
 def _reset_database_for_test_loop() -> None:  # pyright: ignore[reportUnusedFunction]
