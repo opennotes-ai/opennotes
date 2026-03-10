@@ -12,11 +12,17 @@ export default function App() {
       root={(props) => (
         <MetaProvider>
           <nav class="flex items-center gap-4 border-b border-border px-4 py-3">
-            <A href="/" class="text-sm font-medium hover:text-primary">
-              Home
-            </A>
-            <A href="/simulations" class="text-sm font-medium hover:text-primary">
-              Simulations
+            <A href="/" class="flex items-center">
+              <img
+                src="https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/document-uploads/Open-Notes-Logo-Light-1760550305591.png"
+                alt="OpenNotes"
+                class="h-6 dark:hidden"
+              />
+              <img
+                src="https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/document-uploads/Open-Notes-Logo-Dark-1760550305520.png"
+                alt="OpenNotes"
+                class="hidden h-6 dark:block"
+              />
             </A>
             <span class="ml-auto flex items-center gap-2">
               <AuthStatus />

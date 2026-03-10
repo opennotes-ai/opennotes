@@ -304,7 +304,7 @@ function NotFound() {
     <div class="mt-16 text-center">
       <h1 class="text-4xl font-bold">404</h1>
       <p class="mt-2 text-muted-foreground">Simulation not found.</p>
-      <a href="/simulations" class="mt-4 inline-block text-primary hover:underline">
+      <a href="/" class="mt-4 inline-block text-primary hover:underline">
         Back to simulations
       </a>
     </div>
@@ -318,7 +318,7 @@ function ServerError() {
       <p class="mt-2 text-muted-foreground">
         Something went wrong while loading this simulation. The API may be unreachable.
       </p>
-      <a href="/simulations" class="mt-4 inline-block text-primary hover:underline">
+      <a href="/" class="mt-4 inline-block text-primary hover:underline">
         Back to simulations
       </a>
     </div>

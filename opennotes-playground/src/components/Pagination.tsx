@@ -21,7 +21,7 @@ export default function Pagination(props: PaginationProps) {
           </Button>
         }
       >
-        <Button variant="outline" size="sm" as={A} href={`/simulations?page=${props.currentPage - 1}`}>
+        <Button variant="outline" size="sm" as={A} href={`/?page=${props.currentPage - 1}`}>
           Previous
         </Button>
       </Show>
@@ -36,7 +36,7 @@ export default function Pagination(props: PaginationProps) {
           </Button>
         }
       >
-        <Button variant="outline" size="sm" as={A} href={`/simulations?page=${props.currentPage + 1}`}>
+        <Button variant="outline" size="sm" as={A} href={`/?page=${props.currentPage + 1}`}>
           Next
         </Button>
       </Show>
