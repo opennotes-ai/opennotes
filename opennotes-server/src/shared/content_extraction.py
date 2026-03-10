@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import pendulum
 import trafilatura
+from trafilatura.metadata import extract_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -77,11 +78,17 @@ def get_random_user_agent() -> str:
     return random.choice(USER_AGENTS)
 
 
+@dataclass(frozen=True)
+class ScrapedContent:
+    text: str
+    title: str | None = None
+
+
 def scrape_url_content(
     url: str,
     user_agent: str | None = None,
     extraction_config: ExtractionConfig | None = None,
-) -> str | None:
+) -> ScrapedContent | None:
     try:
         if user_agent is None:
             user_agent = get_random_user_agent()
@@ -109,7 +116,15 @@ def scrape_url_content(
             logger.warning(f"No content extracted from URL: {url}")
             return None
 
-        return content.strip()
+        title: str | None = None
+        try:
+            meta = extract_metadata(downloaded, default_url=url)
+            if meta and meta.title:
+                title = meta.title
+        except Exception:
+            logger.debug("Could not extract title metadata from %s", url)
+
+        return ScrapedContent(text=content.strip(), title=title)
 
     except Exception as e:
         logger.exception(f"Error scraping URL {url}: {e}")
@@ -132,19 +147,20 @@ async def extract_content_from_url(
     await asyncio.sleep(total_delay)
 
     try:
-        content = await asyncio.wait_for(
+        scraped = await asyncio.wait_for(
             asyncio.to_thread(scrape_url_content, url, user_agent, config),
             timeout=timeout,
         )
     except TimeoutError:
         raise ContentExtractionError(f"Timeout after {timeout}s extracting content from URL: {url}")
 
-    if not content:
+    if not scraped:
         raise ContentExtractionError(f"Failed to extract content from URL: {url}")
 
     return ExtractedContent(
-        text=content,
+        text=scraped.text,
         url=url,
         domain=domain,
         extracted_at=pendulum.now("UTC"),
+        title=scraped.title,
     )

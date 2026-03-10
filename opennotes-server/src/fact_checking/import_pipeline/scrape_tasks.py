@@ -192,18 +192,18 @@ async def fetch_url_content(
     await asyncio.sleep(total_delay)
 
     user_agent = get_random_user_agent()
-    content = await asyncio.to_thread(scrape_url_content, url, user_agent)
+    scraped = await asyncio.to_thread(scrape_url_content, url, user_agent)
 
-    if content:
+    if scraped:
         logger.info(
             "Successfully fetched URL content",
             extra={
                 "url": url,
                 "domain": domain,
-                "content_length": len(content),
+                "content_length": len(scraped.text),
             },
         )
-        return {"content": content}
+        return {"content": scraped.text}
 
     logger.warning(
         "Failed to fetch URL content",

@@ -29,6 +29,7 @@ type SortMode = "count" | "disagreement";
 type RequestGroup = {
   requestId: string;
   sourceUrl: string | null;
+  sourceTitle: string | null;
   notes: DetailedNoteResource[];
   noteCount: number;
   disagreementScore: number;
@@ -55,7 +56,10 @@ function groupByRequest(notes: DetailedNoteResource[]): RequestGroup[] {
     const sourceUrl = noteWithSource
       ? (noteWithSource.attributes.message_metadata as { source_url: string }).source_url
       : null;
-    return { requestId, sourceUrl, notes: grouped, noteCount: total, disagreementScore };
+    const sourceTitle = noteWithSource
+      ? (noteWithSource.attributes.message_metadata as { title?: string }).title ?? null
+      : null;
+    return { requestId, sourceUrl, sourceTitle, notes: grouped, noteCount: total, disagreementScore };
   });
 }
 
@@ -118,7 +122,9 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
               <details class="rounded-lg border border-border" open>
                 <summary class="flex cursor-pointer items-center justify-between gap-2 rounded-t-lg p-3 hover:bg-muted/50">
                   <span class="min-w-0 text-sm font-medium">
-                    Request {truncateId(group.requestId)}
+                    {group.sourceTitle
+                      ? <>Notes responding to: {group.sourceTitle}</>
+                      : <>Request {truncateId(group.requestId)}</>}
                     <Show when={group.sourceUrl}>
                       {(url) => (
                         <a
@@ -128,7 +134,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                           class="ml-2 text-xs text-primary hover:underline"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          Source ↗
+                          Read what they're annotating ↗
                         </a>
                       )}
                     </Show>
@@ -148,7 +154,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                         <div class="rounded-lg border border-border bg-card p-4">
                           <div class="flex flex-wrap items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
-                              <div class="font-medium leading-snug">{attrs.summary}</div>
+                              <div class="font-normal leading-snug">{attrs.summary}</div>
                               <div class="mt-0.5 text-xs text-muted-foreground">
                                 Note {truncateId(attrs.note_id)} by {attrs.author_agent_name}
                               </div>

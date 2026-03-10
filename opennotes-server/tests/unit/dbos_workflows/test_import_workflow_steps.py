@@ -20,6 +20,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from src.shared.content_extraction import ScrapedContent
+
 pytestmark = pytest.mark.unit
 
 
@@ -874,9 +876,11 @@ class TestProcessScrapeBatchStepParallelScraping:
             execute_side_effect=self._make_batch_execute_fn([candidates, []])
         )
 
-        def mock_scrape(url: str) -> str | None:
+        def mock_scrape(url: str):  # pyright: ignore[reportMissingParameterType]
+            from src.shared.content_extraction import ScrapedContent
+
             if "success" in url:
-                return "Scraped content"
+                return ScrapedContent(text="Scraped content")
             if "fail" in url:
                 return None
             raise ConnectionError("Connection reset")
@@ -922,7 +926,7 @@ class TestProcessScrapeBatchStepParallelScraping:
             patch("src.database.get_session_maker", return_value=mock_session_maker),
             patch(
                 "src.shared.content_extraction.scrape_url_content",
-                return_value="Good content",
+                return_value=ScrapedContent(text="Good content"),
             ),
             patch(
                 "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
@@ -1014,7 +1018,7 @@ class TestProcessScrapeBatchStepParallelScraping:
             execute_side_effect=self._make_batch_execute_fn([candidates, []])
         )
 
-        def _crash_scrape(url: str) -> str | None:
+        def _crash_scrape(url: str) -> ScrapedContent | None:
             raise RuntimeError("Segfault-like crash")
 
         with (
@@ -1080,7 +1084,7 @@ class TestProcessScrapeBatchStepParallelScraping:
             patch("src.database.get_session_maker", return_value=mock_session_maker),
             patch(
                 "src.shared.content_extraction.scrape_url_content",
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ),
             patch(
                 "src.dbos_workflows.import_workflow._update_batch_job_progress_async",

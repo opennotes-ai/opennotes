@@ -25,6 +25,7 @@ from src.fact_checking.import_pipeline.scrape_tasks import (
     fetch_url_content,
     get_random_user_agent,
 )
+from src.shared.content_extraction import ScrapedContent
 
 pytestmark = pytest.mark.unit
 
@@ -209,12 +210,12 @@ class TestFetchUrlContentDelayBehavior:
             ) as mock_uniform,
             patch(
                 "src.fact_checking.import_pipeline.scrape_tasks.scrape_url_content",
-                return_value="test content",
+                return_value=ScrapedContent(text="test content"),
             ),
             patch(
                 "src.fact_checking.import_pipeline.scrape_tasks.asyncio.to_thread",
                 new_callable=AsyncMock,
-                return_value="test content",
+                return_value=ScrapedContent(text="test content"),
             ),
         ):
             await fetch_url_content(
@@ -244,7 +245,7 @@ class TestFetchUrlContentDelayBehavior:
             patch(
                 "src.fact_checking.import_pipeline.scrape_tasks.asyncio.to_thread",
                 new_callable=AsyncMock,
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ),
         ):
             await fetch_url_content(
@@ -271,7 +272,7 @@ class TestFetchUrlContentDelayBehavior:
             patch(
                 "src.fact_checking.import_pipeline.scrape_tasks.asyncio.to_thread",
                 new_callable=AsyncMock,
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ),
         ):
             await fetch_url_content(
@@ -299,7 +300,7 @@ class TestFetchUrlContentDelayBehavior:
             patch(
                 "src.fact_checking.import_pipeline.scrape_tasks.asyncio.to_thread",
                 new_callable=AsyncMock,
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ),
         ):
             await fetch_url_content(
@@ -317,7 +318,7 @@ class TestFetchUrlContentErrorHandling:
     @pytest.mark.asyncio
     async def test_returns_content_on_success(self):
         """Returns dict with content key on successful extraction."""
-        expected_content = "This is the extracted article content."
+        expected_text = "This is the extracted article content."
 
         with (
             patch(
@@ -331,7 +332,7 @@ class TestFetchUrlContentErrorHandling:
             patch(
                 "src.fact_checking.import_pipeline.scrape_tasks.asyncio.to_thread",
                 new_callable=AsyncMock,
-                return_value=expected_content,
+                return_value=ScrapedContent(text=expected_text),
             ),
         ):
             result = await fetch_url_content(
@@ -340,7 +341,7 @@ class TestFetchUrlContentErrorHandling:
                 base_delay=0.1,
             )
 
-            assert result == {"content": expected_content}
+            assert result == {"content": expected_text}
 
     @pytest.mark.asyncio
     async def test_returns_error_when_scrape_returns_none(self):
@@ -370,8 +371,8 @@ class TestFetchUrlContentErrorHandling:
             assert "Failed to extract content" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_returns_error_when_scrape_returns_empty_string(self):
-        """Returns error when scrape_url_content returns empty string (falsy)."""
+    async def test_returns_error_when_scrape_returns_none_for_empty(self):
+        """Returns error when scrape_url_content returns None (no content extracted)."""
         with (
             patch(
                 "src.fact_checking.import_pipeline.scrape_tasks.asyncio.sleep",
@@ -384,7 +385,7 @@ class TestFetchUrlContentErrorHandling:
             patch(
                 "src.fact_checking.import_pipeline.scrape_tasks.asyncio.to_thread",
                 new_callable=AsyncMock,
-                return_value="",
+                return_value=None,
             ),
         ):
             result = await fetch_url_content(
@@ -414,7 +415,7 @@ class TestFetchUrlContentErrorHandling:
             patch(
                 "src.fact_checking.import_pipeline.scrape_tasks.asyncio.to_thread",
                 new_callable=AsyncMock,
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ) as mock_thread,
         ):
             await fetch_url_content(

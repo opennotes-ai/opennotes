@@ -11,6 +11,7 @@ from src.shared.content_extraction import (
     ContentExtractionError,
     ExtractedContent,
     ExtractionConfig,
+    ScrapedContent,
     extract_content_from_url,
     extract_domain,
     get_random_user_agent,
@@ -164,7 +165,8 @@ class TestScrapeUrlContent:
             mock_config.return_value.set = lambda *a: None
             result = scrape_url_content("https://example.com", user_agent="TestAgent")
 
-        assert result == "Extracted text"
+        assert isinstance(result, ScrapedContent)
+        assert result.text == "Extracted text"
 
     def test_returns_none_when_fetch_fails(self):
         with (
@@ -298,13 +300,14 @@ class TestExtractContentFromUrl:
             patch(
                 "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
-                return_value="Extracted article text",
+                return_value=ScrapedContent(text="Extracted article text", title="Article Title"),
             ),
         ):
             result = await extract_content_from_url("https://example.com/article")
 
         assert isinstance(result, ExtractedContent)
         assert result.text == "Extracted article text"
+        assert result.title == "Article Title"
         assert result.url == "https://example.com/article"
         assert result.domain == "example.com"
         assert isinstance(result.extracted_at, pendulum.DateTime)
@@ -343,7 +346,7 @@ class TestExtractContentFromUrl:
             patch(
                 "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ),
         ):
             await extract_content_from_url("https://example.com")
@@ -365,7 +368,7 @@ class TestExtractContentFromUrl:
             patch(
                 "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ),
         ):
             await extract_content_from_url("https://example.com", config=config)
@@ -390,7 +393,7 @@ class TestExtractContentFromUrl:
             patch(
                 "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ) as mock_wait_for,
         ):
             await extract_content_from_url("https://example.com")
@@ -411,7 +414,7 @@ class TestExtractContentFromUrl:
             patch(
                 "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
-                return_value="",
+                return_value=None,
             ),
             pytest.raises(ContentExtractionError),
         ):
@@ -451,7 +454,7 @@ class TestExtractContentFromUrl:
             patch(
                 "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ) as mock_wait_for,
         ):
             await extract_content_from_url("https://example.com", timeout=30.0)
@@ -472,7 +475,7 @@ class TestExtractContentFromUrl:
             patch(
                 "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ) as mock_wait_for,
         ):
             await extract_content_from_url("https://example.com")
@@ -488,6 +491,9 @@ class TestExtractContentFromUrl:
             favor_precision=False,
         )
 
+        async def passthrough_wait_for(coro, **kw):  # pyright: ignore[reportMissingParameterType,reportUnknownParameterType]
+            return await coro
+
         with (
             patch(
                 "src.shared.content_extraction.asyncio.sleep",
@@ -500,11 +506,11 @@ class TestExtractContentFromUrl:
             patch(
                 "src.shared.content_extraction.asyncio.to_thread",
                 new_callable=AsyncMock,
-                return_value="content",
+                return_value=ScrapedContent(text="content"),
             ) as mock_to_thread,
             patch(
                 "src.shared.content_extraction.asyncio.wait_for",
-                wraps=lambda coro, **kw: coro,
+                side_effect=passthrough_wait_for,
             ),
         ):
             await extract_content_from_url("https://example.com", config=config)
