@@ -12,8 +12,6 @@ import pytest
 from src.utils.async_compat import (
     _bg_state,
     _ensure_background_loop,
-    _thread_local_loops,
-    cleanup_event_loops,
     run_sync,
     shutdown,
 )
@@ -23,8 +21,6 @@ class TestRunSync:
     """Tests for the run_sync utility function."""
 
     def test_run_sync_from_sync_context(self) -> None:
-        """Test run_sync works from a synchronous context with no running loop."""
-
         async def async_add(a: int, b: int) -> int:
             return a + b
 
@@ -32,8 +28,6 @@ class TestRunSync:
         assert result == 5
 
     def test_run_sync_from_async_context(self) -> None:
-        """Test run_sync works from within an async context (running loop)."""
-
         async def async_multiply(a: int, b: int) -> int:
             return a * b
 
@@ -43,8 +37,7 @@ class TestRunSync:
         result = asyncio.run(outer())
         assert result == 20
 
-    def test_run_sync_reuses_event_loop(self) -> None:
-        """Test that run_sync reuses the thread-local event loop for efficiency."""
+    def test_run_sync_reuses_background_loop(self) -> None:
         loop_ids: list[int] = []
 
         async def capture_loop_id() -> int:
@@ -55,11 +48,9 @@ class TestRunSync:
         loop_ids.append(run_sync(capture_loop_id()))
         loop_ids.append(run_sync(capture_loop_id()))
 
-        assert len(set(loop_ids)) == 1, "Loop should be reused across calls"
+        assert len(set(loop_ids)) == 1, "Background loop should be reused across calls"
 
     def test_run_sync_handles_exceptions(self) -> None:
-        """Test that exceptions from coroutines are properly propagated."""
-
         async def async_fail() -> None:
             raise ValueError("Expected test error")
 
@@ -67,8 +58,6 @@ class TestRunSync:
             run_sync(async_fail())
 
     def test_run_sync_handles_exceptions_in_async_context(self) -> None:
-        """Test exceptions propagate when called from async context."""
-
         async def async_fail() -> None:
             raise RuntimeError("Expected runtime error")
 
@@ -79,8 +68,6 @@ class TestRunSync:
             asyncio.run(outer())
 
     def test_run_sync_returns_complex_types(self) -> None:
-        """Test run_sync works with complex return types."""
-
         async def async_complex() -> dict[str, Any]:
             return {"nested": {"list": [1, 2, 3], "value": "test"}}
 
@@ -88,7 +75,6 @@ class TestRunSync:
         assert result == {"nested": {"list": [1, 2, 3], "value": "test"}}
 
     def test_run_sync_in_multiple_threads(self) -> None:
-        """Test run_sync works correctly in multiple threads."""
         results: list[int] = []
         errors: list[Exception] = []
 
@@ -113,7 +99,6 @@ class TestRunSync:
         assert sorted(results) == [0, 2, 4, 6, 8]
 
     def test_run_sync_awaits_properly(self) -> None:
-        """Test that run_sync properly awaits the coroutine."""
         call_order: list[str] = []
 
         async def async_track() -> str:
@@ -190,25 +175,20 @@ class TestRunSync:
         asyncio.run(outer())
         assert not errors, f"Concurrent run_sync errors: {errors}"
 
+    def test_sync_and_async_contexts_use_same_background_loop(self) -> None:
+        loop_ids: list[int] = []
 
-class TestCleanupRuntimeError:
-    def test_cleanup_handles_runtime_error_on_close(self) -> None:
-        from unittest.mock import MagicMock
+        async def capture_loop() -> int:
+            return id(asyncio.get_running_loop())
 
-        mock_loop = MagicMock()
-        mock_loop.is_closed.return_value = False
-        mock_loop.is_running.return_value = False
-        mock_loop.close.side_effect = RuntimeError("loop already closed by another thread")
+        loop_ids.append(run_sync(capture_loop()))
 
-        from src.utils.async_compat import _loops_lock
+        async def outer() -> None:
+            loop_ids.append(run_sync(capture_loop()))
 
-        with _loops_lock:
-            _thread_local_loops.append(mock_loop)
+        asyncio.run(outer())
 
-        cleanup_event_loops()
-
-        assert len(_thread_local_loops) == 0
-        mock_loop.close.assert_called_once()
+        assert len(set(loop_ids)) == 1, "Both sync and async contexts should use the same bg loop"
 
 
 class TestEnsureBackgroundLoopDoubleCheck:
@@ -255,42 +235,6 @@ class TestEnsureBackgroundLoopDoubleCheck:
         shutdown()
 
 
-class TestCleanup:
-    def test_cleanup_event_loops_closes_registered_loops(self) -> None:
-        loops_before = len(_thread_local_loops)
-
-        async def noop() -> None:
-            pass
-
-        def worker() -> None:
-            run_sync(noop())
-
-        t = threading.Thread(target=worker)
-        t.start()
-        t.join()
-
-        assert len(_thread_local_loops) > loops_before
-
-        cleanup_event_loops()
-
-        assert len(_thread_local_loops) == 0
-
-    def test_shutdown_cleans_up(self) -> None:
-        async def noop() -> None:
-            pass
-
-        def worker() -> None:
-            run_sync(noop())
-
-        t = threading.Thread(target=worker)
-        t.start()
-        t.join()
-
-        shutdown()
-
-        assert len(_thread_local_loops) == 0
-
-
 class TestShutdownLocking:
     def test_shutdown_acquires_bg_lock(self) -> None:
         async def noop() -> None:
@@ -321,6 +265,14 @@ class TestRunSyncTimeout:
                 run_sync(slow_coro(), timeout=0.1)
 
         asyncio.run(outer())
+
+    def test_run_sync_timeout_from_sync_context(self) -> None:
+        async def slow_coro() -> str:
+            await asyncio.sleep(60)
+            return "never"
+
+        with pytest.raises(TimeoutError):
+            run_sync(slow_coro(), timeout=0.1)
 
 
 class TestEnsureBackgroundLoopDeadThread:
