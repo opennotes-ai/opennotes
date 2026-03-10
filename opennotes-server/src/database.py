@@ -79,10 +79,8 @@ class Base(DeclarativeBase):
     pass
 
 
-# Module-level variables for lazy initialization
-_engine: AsyncEngine | None = None
-_async_session_maker: async_sessionmaker[AsyncSession] | None = None
-_engine_loop: asyncio.AbstractEventLoop | None = None
+_engines: dict[int, tuple[AsyncEngine, asyncio.AbstractEventLoop | None]] = {}
+_session_makers: dict[int, async_sessionmaker[AsyncSession]] = {}
 _db_lock = threading.RLock()
 
 
@@ -115,41 +113,59 @@ def _create_engine() -> AsyncEngine:
 
 
 def get_engine() -> AsyncEngine:
-    """Get or create the async engine.
+    """Get or create an async engine for the current event loop.
 
-    Only recreates the engine when the tracked event loop is closed (e.g., between
-    pytest test functions with asyncio_default_fixture_loop_scope=function).
-    A different-but-alive loop (as seen from DBOS worker threads) does NOT trigger
-    recreation, preventing MissingGreenlet errors from synchronous pool disposal.
+    Each event loop gets its own AsyncEngine, keyed by ``id(loop)``.  When no
+    loop is running the key is ``0``.  Entries whose tracked loop has closed
+    are lazily pruned on every access so the dict does not grow unboundedly.
     """
-    global _engine  # noqa: PLW0603 - Module-level lazy-loaded singleton for async engine, necessary for event loop awareness in test suite
-    global _engine_loop  # noqa: PLW0603 - Tracks current event loop to detect loop changes between tests
-
     with _db_lock:
-        if _engine is None or (_engine_loop is not None and _engine_loop.is_closed()):
-            _engine = _create_engine()
-            try:
-                _engine_loop = asyncio.get_running_loop()
-            except RuntimeError:
-                _engine_loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        loop_key = id(loop) if loop is not None else 0
 
-        return _engine
+        if loop_key in _engines:
+            engine, tracked_loop = _engines[loop_key]
+            if tracked_loop is None or not tracked_loop.is_closed():
+                return engine
+            del _engines[loop_key]
+            _session_makers.pop(loop_key, None)
+
+        stale = [k for k, (_, lp) in _engines.items() if lp is not None and lp.is_closed()]
+        for k in stale:
+            del _engines[k]
+            _session_makers.pop(k, None)
+
+        engine = _create_engine()
+        _engines[loop_key] = (engine, loop)
+        return engine
 
 
 def get_session_maker() -> async_sessionmaker[AsyncSession]:
-    """Get or create the async session maker."""
-    global _async_session_maker  # noqa: PLW0603 - Module-level lazy-loaded singleton, recreated when event loop changes
-
+    """Get or create an async session maker for the current event loop."""
     with _db_lock:
-        if _async_session_maker is None or (_engine_loop is not None and _engine_loop.is_closed()):
-            _async_session_maker = async_sessionmaker(
-                get_engine(),
-                class_=AsyncSession,
-                expire_on_commit=False,
-                autocommit=False,
-                autoflush=False,
-            )
-        return _async_session_maker
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        loop_key = id(loop) if loop is not None else 0
+
+        engine = get_engine()
+
+        if loop_key in _session_makers:
+            return _session_makers[loop_key]
+
+        maker = async_sessionmaker(
+            engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autocommit=False,
+            autoflush=False,
+        )
+        _session_makers[loop_key] = maker
+        return maker
 
 
 # Make engine and async_session_maker available as module attributes for backwards compatibility
@@ -192,27 +208,32 @@ async def init_db() -> None:
 
 
 async def close_db() -> None:
-    global _engine, _async_session_maker, _engine_loop  # noqa: PLW0603 - Cleanup module-level singletons on shutdown
     with _db_lock:
-        if _engine is not None:
-            await _engine.dispose()
-            _engine = None
-        _async_session_maker = None
-        _engine_loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        loop_key = id(loop) if loop is not None else 0
+
+        if loop_key in _engines:
+            engine, _ = _engines.pop(loop_key)
+            await engine.dispose()
+        _session_makers.pop(loop_key, None)
+
+        _engines.clear()
+        _session_makers.clear()
 
 
 def _reset_database_for_test_loop() -> None:  # pyright: ignore[reportUnusedFunction]
     """
-    Reset database engine and session maker for a new test event loop.
+    Reset all per-loop engines and session makers for a new test event loop.
 
     When using asyncio_default_fixture_loop_scope=function in pytest.ini,
-    each test gets a fresh event loop. This resets the module-level
-    singletons so the next call to get_engine() or get_session_maker()
-    creates new ones bound to the current event loop. The old engine is
-    left for GC (no synchronous dispose to avoid MissingGreenlet).
+    each test gets a fresh event loop. This clears all entries so the next
+    call to get_engine() or get_session_maker() creates fresh instances.
+    Old engines are left for GC (no synchronous dispose to avoid
+    MissingGreenlet).
     """
-    global _engine, _async_session_maker, _engine_loop  # noqa: PLW0603 - Reset singletons for fresh event loop in tests
     with _db_lock:
-        _engine = None
-        _async_session_maker = None
-        _engine_loop = None
+        _engines.clear()
+        _session_makers.clear()

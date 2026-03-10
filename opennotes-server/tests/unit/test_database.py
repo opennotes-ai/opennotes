@@ -9,58 +9,54 @@ import pytest
 class TestResetDatabaseForTestLoop:
     """Tests for _reset_database_for_test_loop function."""
 
-    def test_nulls_engine_without_disposing(self):
+    def test_clears_all_entries_without_disposing(self):
         from src import database
 
         mock_engine = MagicMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = mock_engine
-            database._async_session_maker = MagicMock()
-            database._engine_loop = MagicMock()
+            database._engines[0] = (mock_engine, None)
+            database._session_makers[0] = MagicMock()
 
             database._reset_database_for_test_loop()
 
             mock_engine.sync_engine.dispose.assert_not_called()
-            assert database._engine is None
-            assert database._async_session_maker is None
-            assert database._engine_loop is None
+            assert len(database._engines) == 0
+            assert len(database._session_makers) == 0
 
         finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
-    def test_handles_none_engine_gracefully(self):
+    def test_handles_empty_dicts_gracefully(self):
         from src import database
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = None
-            database._async_session_maker = None
-            database._engine_loop = None
+            database._engines.clear()
+            database._session_makers.clear()
 
             database._reset_database_for_test_loop()
 
-            assert database._engine is None
-            assert database._async_session_maker is None
-            assert database._engine_loop is None
+            assert len(database._engines) == 0
+            assert len(database._session_makers) == 0
 
         finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
 
 class TestGetEngineLoopLiveness:
-    """Tests for get_engine() behavior based on loop liveness (not identity)."""
+    """Tests for get_engine() behavior based on loop liveness."""
 
     def test_recreates_engine_when_tracked_loop_is_closed(self):
         from src import database
@@ -72,13 +68,15 @@ class TestGetEngineLoopLiveness:
         mock_new_engine = MagicMock()
         current_loop = MagicMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = mock_old_engine
-            database._engine_loop = closed_loop
+            loop_key = id(current_loop)
+            old_key = id(closed_loop)
+            database._engines.clear()
+            database._session_makers.clear()
+            database._engines[old_key] = (mock_old_engine, closed_loop)
 
             with (
                 patch("src.database.asyncio.get_running_loop", return_value=current_loop),
@@ -87,40 +85,51 @@ class TestGetEngineLoopLiveness:
                 result = database.get_engine()
 
             assert result is mock_new_engine
-            assert database._engine is mock_new_engine
-            assert database._engine_loop is current_loop
+            assert loop_key in database._engines
+            assert database._engines[loop_key] == (mock_new_engine, current_loop)
+            assert old_key not in database._engines
 
         finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
-    def test_keeps_engine_when_loop_differs_but_alive(self):
+    def test_different_loop_gets_different_engine(self):
         from src import database
 
         alive_loop = asyncio.new_event_loop()
         different_loop = MagicMock()
 
-        mock_engine = MagicMock()
+        mock_existing_engine = MagicMock()
+        mock_new_engine = MagicMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = mock_engine
-            database._engine_loop = alive_loop
+            database._engines.clear()
+            database._session_makers.clear()
+            alive_key = id(alive_loop)
+            database._engines[alive_key] = (mock_existing_engine, alive_loop)
 
-            with patch("src.database.asyncio.get_running_loop", return_value=different_loop):
+            with (
+                patch("src.database.asyncio.get_running_loop", return_value=different_loop),
+                patch("src.database._create_engine", return_value=mock_new_engine),
+            ):
                 result = database.get_engine()
 
-            assert result is mock_engine
+            assert result is mock_new_engine
+            assert database._engines[alive_key] == (mock_existing_engine, alive_loop)
+            diff_key = id(different_loop)
+            assert database._engines[diff_key] == (mock_new_engine, different_loop)
 
         finally:
             alive_loop.close()
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
     def test_gc_module_not_imported(self):
         from src import database
@@ -136,13 +145,12 @@ class TestGetEngineFirstCreation:
 
         mock_new_engine = MagicMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = None
-            database._engine_loop = None
+            database._engines.clear()
+            database._session_makers.clear()
 
             with (
                 patch(
@@ -154,13 +162,16 @@ class TestGetEngineFirstCreation:
                 result = database.get_engine()
 
             assert result is mock_new_engine
-            assert database._engine is mock_new_engine
-            assert database._engine_loop is None
+            assert 0 in database._engines
+            engine, tracked_loop = database._engines[0]
+            assert engine is mock_new_engine
+            assert tracked_loop is None
 
         finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
     def test_creates_engine_when_none_exists_with_running_loop(self):
         from src import database
@@ -168,13 +179,12 @@ class TestGetEngineFirstCreation:
         mock_new_engine = MagicMock()
         mock_loop = MagicMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = None
-            database._engine_loop = None
+            database._engines.clear()
+            database._session_makers.clear()
 
             with (
                 patch(
@@ -186,13 +196,17 @@ class TestGetEngineFirstCreation:
                 result = database.get_engine()
 
             assert result is mock_new_engine
-            assert database._engine is mock_new_engine
-            assert database._engine_loop is mock_loop
+            loop_key = id(mock_loop)
+            assert loop_key in database._engines
+            engine, tracked_loop = database._engines[loop_key]
+            assert engine is mock_new_engine
+            assert tracked_loop is mock_loop
 
         finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
 
 class TestGetEngineExistingNoLoopChange:
@@ -204,13 +218,14 @@ class TestGetEngineExistingNoLoopChange:
         alive_loop = asyncio.new_event_loop()
         mock_engine = MagicMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = mock_engine
-            database._engine_loop = alive_loop
+            database._engines.clear()
+            database._session_makers.clear()
+            loop_key = id(alive_loop)
+            database._engines[loop_key] = (mock_engine, alive_loop)
 
             with patch(
                 "src.database.asyncio.get_running_loop",
@@ -222,23 +237,23 @@ class TestGetEngineExistingNoLoopChange:
 
         finally:
             alive_loop.close()
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
     def test_returns_existing_engine_when_no_running_loop(self):
         from src import database
 
         mock_engine = MagicMock()
-        alive_loop = asyncio.new_event_loop()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = mock_engine
-            database._engine_loop = alive_loop
+            database._engines.clear()
+            database._session_makers.clear()
+            database._engines[0] = (mock_engine, None)
 
             with patch(
                 "src.database.asyncio.get_running_loop",
@@ -249,10 +264,10 @@ class TestGetEngineExistingNoLoopChange:
             assert result is mock_engine
 
         finally:
-            alive_loop.close()
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
 
 class TestGetSessionMaker:
@@ -263,14 +278,13 @@ class TestGetSessionMaker:
 
         mock_engine = MagicMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = mock_engine
-            database._async_session_maker = None
-            database._engine_loop = None
+            database._engines.clear()
+            database._session_makers.clear()
+            database._engines[0] = (mock_engine, None)
 
             with patch(
                 "src.database.asyncio.get_running_loop",
@@ -279,26 +293,29 @@ class TestGetSessionMaker:
                 result = database.get_session_maker()
 
             assert result is not None
-            assert database._async_session_maker is result
+            assert 0 in database._session_makers
+            assert database._session_makers[0] is result
 
         finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
     def test_returns_existing_session_maker_from_sync_context(self):
         from src import database
 
         mock_session_maker = MagicMock()
+        mock_engine = MagicMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = MagicMock()
-            database._async_session_maker = mock_session_maker
-            database._engine_loop = None
+            database._engines.clear()
+            database._session_makers.clear()
+            database._engines[0] = (mock_engine, None)
+            database._session_makers[0] = mock_session_maker
 
             with patch(
                 "src.database.asyncio.get_running_loop",
@@ -309,9 +326,10 @@ class TestGetSessionMaker:
             assert result is mock_session_maker
 
         finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
     def test_recreates_session_maker_when_tracked_loop_is_closed(self):
         from src import database
@@ -320,82 +338,197 @@ class TestGetSessionMaker:
         closed_loop.close()
 
         mock_engine = MagicMock()
+        mock_new_engine = MagicMock()
         mock_old_session_maker = MagicMock()
+        current_loop = MagicMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = mock_engine
-            database._async_session_maker = mock_old_session_maker
-            database._engine_loop = closed_loop
+            database._engines.clear()
+            database._session_makers.clear()
+            old_key = id(closed_loop)
+            database._engines[old_key] = (mock_engine, closed_loop)
+            database._session_makers[old_key] = mock_old_session_maker
 
-            result = database.get_session_maker()
+            with (
+                patch("src.database.asyncio.get_running_loop", return_value=current_loop),
+                patch("src.database._create_engine", return_value=mock_new_engine),
+            ):
+                result = database.get_session_maker()
 
             assert result is not mock_old_session_maker
-            assert database._async_session_maker is result
+            new_key = id(current_loop)
+            assert new_key in database._session_makers
+            assert database._session_makers[new_key] is result
 
         finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
-    def test_keeps_session_maker_when_loop_differs_but_alive(self):
+    def test_different_loop_gets_different_session_maker(self):
         from src import database
 
         alive_loop = asyncio.new_event_loop()
         mock_engine = MagicMock()
         mock_session_maker = MagicMock()
+        mock_new_engine = MagicMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = mock_engine
-            database._async_session_maker = mock_session_maker
-            database._engine_loop = alive_loop
+            database._engines.clear()
+            database._session_makers.clear()
+            alive_key = id(alive_loop)
+            database._engines[alive_key] = (mock_engine, alive_loop)
+            database._session_makers[alive_key] = mock_session_maker
 
             different_loop = MagicMock()
-            with patch("src.database.asyncio.get_running_loop", return_value=different_loop):
+            with (
+                patch("src.database.asyncio.get_running_loop", return_value=different_loop),
+                patch("src.database._create_engine", return_value=mock_new_engine),
+            ):
                 result = database.get_session_maker()
 
-            assert result is mock_session_maker
+            assert result is not mock_session_maker
+            diff_key = id(different_loop)
+            assert diff_key in database._session_makers
 
         finally:
             alive_loop.close()
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
 
 
 class TestCloseDb:
     """Tests for close_db() function."""
 
     @pytest.mark.asyncio
-    async def test_close_db_resets_engine_loop(self):
+    async def test_close_db_disposes_current_and_clears_all(self):
         from src import database
 
         mock_engine = MagicMock()
         mock_engine.dispose = AsyncMock()
 
-        original_engine = database._engine
-        original_session_maker = database._async_session_maker
-        original_loop = database._engine_loop
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
 
         try:
-            database._engine = mock_engine
-            database._async_session_maker = MagicMock()
-            database._engine_loop = MagicMock()
+            loop = asyncio.get_running_loop()
+            loop_key = id(loop)
+            database._engines.clear()
+            database._session_makers.clear()
+            database._engines[loop_key] = (mock_engine, loop)
+            database._engines[999] = (MagicMock(), None)
+            database._session_makers[loop_key] = MagicMock()
+            database._session_makers[999] = MagicMock()
 
             await database.close_db()
 
-            assert database._engine is None
-            assert database._async_session_maker is None
-            assert database._engine_loop is None
+            mock_engine.dispose.assert_awaited_once()
+            assert len(database._engines) == 0
+            assert len(database._session_makers) == 0
 
         finally:
-            database._engine = original_engine
-            database._async_session_maker = original_session_maker
-            database._engine_loop = original_loop
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
+
+
+class TestPerLoopDictBehavior:
+    """Tests for per-loop dictionary engine behavior."""
+
+    def test_same_loop_returns_same_engine(self):
+        from src import database
+
+        mock_engine = MagicMock()
+        mock_loop = MagicMock()
+
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
+
+        try:
+            database._engines.clear()
+            database._session_makers.clear()
+
+            with (
+                patch("src.database.asyncio.get_running_loop", return_value=mock_loop),
+                patch("src.database._create_engine", return_value=mock_engine),
+            ):
+                engine1 = database.get_engine()
+                engine2 = database.get_engine()
+
+            assert engine1 is engine2
+            assert engine1 is mock_engine
+
+        finally:
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
+
+    def test_lazy_cleanup_removes_closed_loop_entries(self):
+        from src import database
+
+        closed_loop = asyncio.new_event_loop()
+        closed_loop.close()
+        stale_engine = MagicMock()
+
+        current_loop = MagicMock()
+        new_engine = MagicMock()
+
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
+
+        try:
+            database._engines.clear()
+            database._session_makers.clear()
+            stale_key = id(closed_loop)
+            database._engines[stale_key] = (stale_engine, closed_loop)
+            database._session_makers[stale_key] = MagicMock()
+
+            with (
+                patch("src.database.asyncio.get_running_loop", return_value=current_loop),
+                patch("src.database._create_engine", return_value=new_engine),
+            ):
+                result = database.get_engine()
+
+            assert result is new_engine
+            assert stale_key not in database._engines
+            assert stale_key not in database._session_makers
+
+        finally:
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
+
+    def test_reset_clears_all_dicts(self):
+        from src import database
+
+        original_engines = dict(database._engines)
+        original_session_makers = dict(database._session_makers)
+
+        try:
+            database._engines[1] = (MagicMock(), None)
+            database._engines[2] = (MagicMock(), None)
+            database._session_makers[1] = MagicMock()
+            database._session_makers[2] = MagicMock()
+
+            database._reset_database_for_test_loop()
+
+            assert len(database._engines) == 0
+            assert len(database._session_makers) == 0
+
+        finally:
+            database._engines.clear()
+            database._engines.update(original_engines)
+            database._session_makers.clear()
+            database._session_makers.update(original_session_makers)
