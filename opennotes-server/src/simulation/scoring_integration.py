@@ -100,7 +100,7 @@ async def _maybe_persist_snapshot(
 
             try:
                 gcs_snapshot = {**factors, **metadata}
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 future = loop.run_in_executor(
                     None, upload_scoring_snapshot, community_server_id, gcs_snapshot
                 )
@@ -298,7 +298,7 @@ async def score_community_server_notes(
                             else "CURRENTLY_RATED_NOT_HELPFUL"
                         )
 
-                    score_mapping[note.id] = int(score_response.score * 100)
+                    score_mapping[note.id] = round(score_response.score * 100)
                     status_mapping[note.id] = status_update
                     pass_count += 1
                     total_scores_computed += 1
@@ -465,7 +465,7 @@ async def trigger_scoring_for_simulation(
                         else "CURRENTLY_RATED_NOT_HELPFUL"
                     )
 
-                score_mapping[note.id] = int(score_response.score * 100)
+                score_mapping[note.id] = round(score_response.score * 100)
                 status_mapping[note.id] = status_update
                 scores_computed += 1
             except Exception:

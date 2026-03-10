@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import Counter, defaultdict
 from uuid import UUID
 
@@ -391,11 +392,19 @@ async def compute_full_analysis(
 ) -> AnalysisAttributes:
     instances = await _get_agent_instances(simulation_run_id, db)
 
-    rating_distribution = await compute_rating_distribution(simulation_run_id, instances, db)
-    consensus_metrics = await compute_consensus_metrics(instances, db)
-    scoring_coverage = await compute_scoring_coverage(simulation_run_id, db)
-    agent_behaviors = await compute_agent_behavior_metrics(instances, db)
-    note_quality = await compute_note_quality(instances, db)
+    (
+        rating_distribution,
+        consensus_metrics,
+        scoring_coverage,
+        agent_behaviors,
+        note_quality,
+    ) = await asyncio.gather(
+        compute_rating_distribution(simulation_run_id, instances, db),
+        compute_consensus_metrics(instances, db),
+        compute_scoring_coverage(simulation_run_id, db),
+        compute_agent_behavior_metrics(instances, db),
+        compute_note_quality(instances, db),
+    )
 
     return AnalysisAttributes(
         rating_distribution=rating_distribution,
