@@ -191,6 +191,12 @@ class TestSnapshotPersistenceResilience:
         platform_result = MagicMock()
         platform_result.scalar_one_or_none.return_value = "discord"
 
+        agent_count_result = MagicMock()
+        agent_count_result.scalar.return_value = 3
+
+        note_count_result = MagicMock()
+        note_count_result.scalar.return_value = 10
+
         db.get = AsyncMock(return_value=run)
         db.execute = AsyncMock(
             side_effect=[
@@ -200,6 +206,8 @@ class TestSnapshotPersistenceResilience:
                 empty_batch,
                 request_update_result,
                 platform_result,
+                agent_count_result,
+                note_count_result,
             ]
         )
         db.commit = AsyncMock()
