@@ -1,0 +1,299 @@
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+
+const mockGoogleAuthConstructor = vi.fn();
+const mockGetIdTokenClient = vi.fn();
+const mockGetRequestHeaders = vi.fn();
+
+vi.mock("google-auth-library", () => ({
+  GoogleAuth: vi.fn().mockImplementation(function () {
+    mockGoogleAuthConstructor();
+    return { getIdTokenClient: mockGetIdTokenClient };
+  }),
+}));
+
+let capturedFetchInterceptor: ((req: Request) => Promise<Response>) | null =
+  null;
+
+vi.mock("openapi-fetch", () => ({
+  default: vi.fn().mockImplementation((opts: any) => {
+    const capturedFetch = opts.fetch;
+    capturedFetchInterceptor = capturedFetch;
+    const capturedHeaders = opts.headers;
+    return {
+      _opts: opts,
+      _capturedFetch: capturedFetch,
+      _capturedHeaders: capturedHeaders,
+      GET: vi.fn().mockImplementation(async (path: string, _config?: any) => {
+        const request = new Request(`${opts.baseUrl}${path}`, {
+          headers: capturedHeaders,
+        });
+        const response = await capturedFetch(request);
+        return { data: await response.json(), error: null, response };
+      }),
+    };
+  }),
+}));
+
+function mockHeaders(init?: Record<string, string>): Headers {
+  return new Headers(init);
+}
+
+const originalEnv = { ...process.env };
+
+beforeEach(() => {
+  vi.resetModules();
+  mockGoogleAuthConstructor.mockReset();
+  mockGetIdTokenClient.mockReset();
+  mockGetRequestHeaders.mockReset();
+  capturedFetchInterceptor = null;
+  process.env = { ...originalEnv };
+});
+
+afterEach(() => {
+  process.env = originalEnv;
+});
+
+describe("getAuthorizationHeader", () => {
+  it("returns null in non-production", async () => {
+    process.env.NODE_ENV = "development";
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const token = await getAuthorizationHeader("https://example.run.app");
+    expect(token).toBeNull();
+    expect(mockGetIdTokenClient).not.toHaveBeenCalled();
+  });
+
+  it("fetches identity token in production", async () => {
+    process.env.NODE_ENV = "production";
+    mockGetRequestHeaders.mockResolvedValue(
+      mockHeaders({ Authorization: "Bearer id-token-123" }),
+    );
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const token = await getAuthorizationHeader("https://example.run.app");
+    expect(token).toBe("Bearer id-token-123");
+    expect(mockGetIdTokenClient).toHaveBeenCalledWith(
+      "https://example.run.app",
+    );
+  });
+
+  it("retries on transient failure then succeeds", async () => {
+    process.env.NODE_ENV = "production";
+    mockGetIdTokenClient
+      .mockRejectedValueOnce(new Error("transient"))
+      .mockResolvedValueOnce({
+        getRequestHeaders: mockGetRequestHeaders.mockResolvedValue(
+          mockHeaders({ Authorization: "Bearer retry-token" }),
+        ),
+      });
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const token = await getAuthorizationHeader("https://example.run.app");
+    expect(token).toBe("Bearer retry-token");
+    expect(mockGetIdTokenClient).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws after 3 failed attempts", async () => {
+    process.env.NODE_ENV = "production";
+    mockGetIdTokenClient.mockRejectedValue(new Error("persistent failure"));
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    await expect(
+      getAuthorizationHeader("https://example.run.app"),
+    ).rejects.toThrow("persistent failure");
+    expect(mockGetIdTokenClient).toHaveBeenCalledTimes(3);
+  });
+
+  it("caches GoogleAuth as a singleton across calls", async () => {
+    process.env.NODE_ENV = "production";
+    mockGetRequestHeaders.mockResolvedValue(
+      mockHeaders({ Authorization: "Bearer token-1" }),
+    );
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    await getAuthorizationHeader("https://example.run.app");
+    await getAuthorizationHeader("https://example.run.app");
+    await getAuthorizationHeader("https://other.run.app");
+
+    expect(mockGoogleAuthConstructor).toHaveBeenCalledTimes(1);
+  });
+
+  it("caches IdTokenClient per audience", async () => {
+    process.env.NODE_ENV = "production";
+    mockGetRequestHeaders.mockResolvedValue(
+      mockHeaders({ Authorization: "Bearer cached-token" }),
+    );
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    await getAuthorizationHeader("https://example.run.app");
+    await getAuthorizationHeader("https://example.run.app");
+
+    expect(mockGetIdTokenClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates separate IdTokenClient for different audiences", async () => {
+    process.env.NODE_ENV = "production";
+    mockGetRequestHeaders.mockResolvedValue(
+      mockHeaders({ Authorization: "Bearer token" }),
+    );
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    await getAuthorizationHeader("https://a.run.app");
+    await getAuthorizationHeader("https://b.run.app");
+
+    expect(mockGetIdTokenClient).toHaveBeenCalledTimes(2);
+    expect(mockGetIdTokenClient).toHaveBeenCalledWith("https://a.run.app");
+    expect(mockGetIdTokenClient).toHaveBeenCalledWith("https://b.run.app");
+  });
+
+  it("times out after 5 seconds", async () => {
+    vi.useFakeTimers();
+    process.env.NODE_ENV = "production";
+    mockGetIdTokenClient.mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const promise = getAuthorizationHeader("https://example.run.app");
+    promise.catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(5000);
+
+    await expect(promise).rejects.toThrow(/timed out/i);
+    vi.useRealTimers();
+  });
+
+  it("returns null when getRequestHeaders has no Authorization key", async () => {
+    process.env.NODE_ENV = "production";
+    mockGetRequestHeaders.mockResolvedValue(mockHeaders());
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const result = await getAuthorizationHeader("https://example.run.app");
+    expect(result).toBeNull();
+  });
+});
+
+describe("getClient fetch interceptor", () => {
+  it("does not add Authorization header in development", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.OPENNOTES_SERVER_URL = "http://localhost:8000";
+    process.env.OPENNOTES_API_KEY = "test-key";
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    );
+
+    const { listSimulations } = await import("./api-client.server");
+    await listSimulations();
+
+    const calledRequest = fetchSpy.mock.calls[0][0] as Request;
+    expect(calledRequest.headers.get("Authorization")).toBeNull();
+    expect(calledRequest.headers.get("X-API-Key")).toBe("test-key");
+    fetchSpy.mockRestore();
+  });
+
+  it("adds Authorization header in production", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.OPENNOTES_SERVER_URL = "https://server.run.app";
+    process.env.OPENNOTES_API_KEY = "prod-key";
+
+    mockGetRequestHeaders.mockResolvedValue(
+      mockHeaders({ Authorization: "Bearer prod-id-token" }),
+    );
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    );
+
+    const { listSimulations } = await import("./api-client.server");
+    await listSimulations();
+
+    const calledRequest = fetchSpy.mock.calls[0][0] as Request;
+    expect(calledRequest.headers.get("Authorization")).toBe(
+      "Bearer prod-id-token",
+    );
+    expect(calledRequest.headers.get("X-API-Key")).toBe("prod-key");
+    fetchSpy.mockRestore();
+  });
+
+  it("wraps getAuthorizationHeader errors in PlaygroundApiError", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.OPENNOTES_SERVER_URL = "https://server.run.app";
+    process.env.OPENNOTES_API_KEY = "prod-key";
+
+    mockGetIdTokenClient.mockRejectedValue(new Error("auth failure"));
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    );
+
+    const { listSimulations, PlaygroundApiError } = await import(
+      "./api-client.server"
+    );
+
+    await expect(listSimulations()).rejects.toThrow(PlaygroundApiError);
+    await expect(listSimulations()).rejects.toThrow(
+      /Failed to fetch identity token/,
+    );
+    fetchSpy.mockRestore();
+  });
+
+  it("preserves POST request body through interceptor", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.OPENNOTES_SERVER_URL = "https://server.run.app";
+    process.env.OPENNOTES_API_KEY = "prod-key";
+
+    mockGetRequestHeaders.mockResolvedValue(
+      mockHeaders({ Authorization: "Bearer token" }),
+    );
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    const { listSimulations } = await import("./api-client.server");
+    await listSimulations();
+
+    expect(capturedFetchInterceptor).not.toBeNull();
+
+    const postBody = JSON.stringify({ content: "test note" });
+    const postRequest = new Request("https://server.run.app/api/v2/test", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": "prod-key",
+      },
+      body: postBody,
+    });
+
+    await capturedFetchInterceptor!(postRequest);
+
+    const calledRequest = fetchSpy.mock.calls[1][0] as Request;
+    expect(calledRequest.method).toBe("POST");
+    const body = await calledRequest.text();
+    expect(JSON.parse(body)).toEqual({ content: "test note" });
+    expect(calledRequest.headers.get("Authorization")).toBe("Bearer token");
+
+    fetchSpy.mockRestore();
+  });
+});

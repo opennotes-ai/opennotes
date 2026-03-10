@@ -1,4 +1,6 @@
 import createClient from "openapi-fetch";
+import { GoogleAuth } from "google-auth-library";
+import type { IdTokenClient } from "google-auth-library";
 import type { paths, components } from "./generated-types";
 
 export type SimulationListResponse =
@@ -11,6 +13,8 @@ export type DetailedAnalysisResponse =
 export type ResultsListResponse = components["schemas"]["ResultsListResponse"];
 
 const FETCH_TIMEOUT_MS = 10_000;
+const IDENTITY_TOKEN_MAX_RETRIES = 3;
+const TOKEN_FETCH_TIMEOUT_MS = 5_000;
 
 export class PlaygroundApiError extends Error {
   constructor(
@@ -20,6 +24,52 @@ export class PlaygroundApiError extends Error {
     super(message);
     this.name = "PlaygroundApiError";
   }
+}
+
+let authInstance: GoogleAuth | null = null;
+const idTokenClientCache = new Map<string, IdTokenClient>();
+
+function getAuthInstance(): GoogleAuth {
+  if (!authInstance) {
+    authInstance = new GoogleAuth();
+  }
+  return authInstance;
+}
+
+export async function getAuthorizationHeader(targetAudience: string): Promise<string | null> {
+  if (process.env.NODE_ENV !== "production") return null;
+
+  return new Promise<string | null>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error("Identity token fetch timed out after 5s"));
+      }
+    }, TOKEN_FETCH_TIMEOUT_MS);
+
+    (async () => {
+      for (let attempt = 0; attempt < IDENTITY_TOKEN_MAX_RETRIES; attempt++) {
+        try {
+          const auth = getAuthInstance();
+          let client = idTokenClientCache.get(targetAudience);
+          if (!client) {
+            client = await auth.getIdTokenClient(targetAudience);
+            idTokenClientCache.set(targetAudience, client);
+          }
+          const headers = await client.getRequestHeaders();
+          return headers.get("Authorization") || null;
+        } catch (error) {
+          if (attempt === IDENTITY_TOKEN_MAX_RETRIES - 1) throw error;
+          await new Promise((r) => setTimeout(r, 100 * 2 ** attempt));
+        }
+      }
+      return null;
+    })().then(
+      (value) => { if (!settled) { settled = true; clearTimeout(timeoutId); resolve(value); } },
+      (error) => { if (!settled) { settled = true; clearTimeout(timeoutId); reject(error); } },
+    );
+  });
 }
 
 function getClient() {
@@ -38,8 +88,24 @@ function getClient() {
   return createClient<paths>({
     baseUrl: baseUrl!,
     headers: { "X-API-Key": apiKey! },
-    fetch: (request: Request) =>
-      fetch(new Request(request, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })),
+    fetch: async (request: Request) => {
+      if (isProduction) {
+        try {
+          const token = await getAuthorizationHeader(baseUrl!);
+          if (token) {
+            const headers = new Headers(request.headers);
+            headers.set("Authorization", token);
+            request = new Request(request, { headers });
+          }
+        } catch (error) {
+          throw new PlaygroundApiError(
+            `Failed to fetch identity token: ${error instanceof Error ? error.message : String(error)}`,
+            503,
+          );
+        }
+      }
+      return fetch(new Request(request, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }));
+    },
   });
 }
 
