@@ -42,8 +42,6 @@ class SimAgentDeps:
     model_name: ModelId
     tool_config: dict[str, Any] | None = field(default=None)
     simulation_run_id: UUID | None = None
-    channel_window_size: int = 20
-    recent_channel_messages: list[dict] = field(default_factory=list)
 
 
 WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "google", "groq"})
@@ -128,24 +126,6 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
             "You can also spend a turn purely researching — search for information "
             "and then pass your turn. Research results persist in your memory "
             "and will be available in future turns."
-        )
-
-    if ctx.deps.recent_channel_messages:
-        base += (
-            "\n\nShared channel:\n"
-            "Recent messages from other agents are shown below. "
-            "You can post to the channel using post_to_channel "
-            "or read more with read_channel.\n\n"
-        )
-        for msg in ctx.deps.recent_channel_messages:
-            short_id = str(msg["agent_instance_id"])[:8]
-            base += f"[Agent {short_id}]: {msg['message_text']}\n"
-    elif ctx.deps.simulation_run_id is not None:
-        base += (
-            "\n\nShared channel:\n"
-            "A shared communication channel is available. "
-            "Use post_to_channel to share findings or coordinate with other agents, "
-            "and read_channel to read recent messages."
         )
 
     return base
@@ -298,7 +278,7 @@ async def read_channel(
         select(SimChannelMessage)
         .where(SimChannelMessage.simulation_run_id == ctx.deps.simulation_run_id)
         .order_by(SimChannelMessage.created_at.desc())
-        .limit(ctx.deps.channel_window_size)
+        .limit(20)
     )
     result = await ctx.deps.db.execute(query)
     messages = result.scalars().all()

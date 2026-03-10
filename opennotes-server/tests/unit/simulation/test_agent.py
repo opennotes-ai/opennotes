@@ -75,8 +75,6 @@ def sample_deps(mock_db):
         model_name=_TEST_MODEL_ID,
         tool_config=None,
         simulation_run_id=uuid4(),
-        channel_window_size=20,
-        recent_channel_messages=[],
     )
 
 
@@ -488,8 +486,6 @@ class TestDeps:
         assert "agent_personality" in field_names
         assert "model_name" in field_names
         assert "simulation_run_id" in field_names
-        assert "channel_window_size" in field_names
-        assert "recent_channel_messages" in field_names
 
     def test_deps_model_name_is_model_id(self, sample_deps):
         assert isinstance(sample_deps.model_name, ModelId)
