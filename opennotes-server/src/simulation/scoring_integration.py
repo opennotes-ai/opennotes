@@ -23,7 +23,7 @@ from src.notes.scoring.tier_config import (
     get_tier_for_note_count,
 )
 from src.notes.scoring_utils import calculate_note_score
-from src.simulation.models import SimulationRun
+from src.simulation.models import SimAgentInstance, SimulationRun
 
 logger = logging.getLogger(__name__)
 
@@ -370,6 +370,7 @@ async def trigger_scoring_for_simulation(
             note_count=0,
         )
         _update_run_metrics(run, _empty_result)
+        await _add_count_metrics(run, simulation_run_id, db)
         await db.commit()
         return _empty_result
 
@@ -475,6 +476,7 @@ async def trigger_scoring_for_simulation(
     )
 
     _update_run_metrics(run, result)
+    await _add_count_metrics(run, simulation_run_id, db)
     await db.commit()
 
     await _record_scoring_metrics(db, community_server_id, scores_computed, tier.value)
@@ -491,6 +493,24 @@ async def trigger_scoring_for_simulation(
     )
 
     return result
+
+
+async def _add_count_metrics(run: SimulationRun, simulation_run_id: UUID, db: AsyncSession) -> None:
+    agent_count_result = await db.execute(
+        select(func.count(SimAgentInstance.id)).where(
+            SimAgentInstance.simulation_run_id == simulation_run_id
+        )
+    )
+    note_count_result = await db.execute(
+        select(func.count(Note.id)).where(
+            Note.community_server_id == run.community_server_id,
+            Note.deleted_at.is_(None),
+        )
+    )
+    metrics = dict(run.metrics) if run.metrics else {}
+    metrics["agent_count"] = agent_count_result.scalar() or 0
+    metrics["note_count"] = note_count_result.scalar() or 0
+    run.metrics = metrics
 
 
 def _update_run_metrics(run: SimulationRun, result: ScoringRunResult) -> None:
