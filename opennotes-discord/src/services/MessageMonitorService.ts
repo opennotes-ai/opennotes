@@ -144,7 +144,18 @@ export class MessageMonitorService {
     const token = generateShortId();
     const customId = buildViewFullCustomId(token);
     try {
-      await cache.set(customId, preview.original, MessageMonitorService.VIEW_FULL_TTL_SECONDS);
+      const stored = await cache.set(
+        customId,
+        preview.original,
+        MessageMonitorService.VIEW_FULL_TTL_SECONDS
+      );
+      if (!stored) {
+        logger.warn('Failed to store auto-publish view_full state in cache', {
+          custom_id: customId,
+          error: 'cache.set returned false',
+        });
+        return payload;
+      }
       payload.components = [
         new ActionRowBuilder<ButtonBuilder>().addComponents(
           new ButtonBuilder()

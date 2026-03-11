@@ -314,5 +314,6 @@ describe('list notes filtering', () => {
       expect(items[0].summary.endsWith('...')).toBe(true);
       expect(items[0].viewFullButton).toBeUndefined();
     }, 10000);
+
   });
 });

@@ -229,7 +229,19 @@ describe('list command - Button Handlers', () => {
   describe('handleForcePublishButton', () => {
     it('should force publish note successfully', async () => {
       const interaction = createMockButtonInteraction('force_publish:note-uuid-123');
-      mockApiClient.forcePublishNote.mockResolvedValue({});
+      mockApiClient.forcePublishNote.mockResolvedValue({
+        data: {
+          type: 'notes',
+          id: 'note-uuid-123',
+          attributes: {
+            summary: 'Short summary',
+            status: 'PUBLISHED',
+            force_published_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            updated_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            created_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+          },
+        },
+      });
 
       await handleForcePublishButton(interaction as any);
 
@@ -240,9 +252,64 @@ describe('list command - Button Handlers', () => {
           userId: 'user123',
         })
       );
-      expect(interaction.editReply).toHaveBeenCalledWith({
-        content: expect.stringContaining('Note Force Published'),
+      expect(interaction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Note #note-uuid-123 has been force-published'),
+        })
+      );
+    });
+
+    it('should reuse the note force-publish summary preview for long summaries', async () => {
+      const interaction = createMockButtonInteraction('force_publish:note-uuid-123');
+      const longSummary = 'S'.repeat(260);
+      mockApiClient.forcePublishNote.mockResolvedValue({
+        data: {
+          type: 'notes',
+          id: 'note-uuid-123',
+          attributes: {
+            summary: longSummary,
+            status: 'PUBLISHED',
+            force_published_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            updated_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            created_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+          },
+        },
       });
+
+      await handleForcePublishButton(interaction as any);
+
+      const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
+      expect(editReplyCall.content).toContain('Note #note-uuid-123 has been force-published');
+      expect(editReplyCall.content).toContain('Admin Published');
+      expect(editReplyCall.content).toContain('**Note Summary:**');
+      expect(editReplyCall.content).toContain('...');
+      expect(editReplyCall.components).toBeDefined();
+    });
+
+    it('should fall back to the truncated summary preview when cache.set resolves false', async () => {
+      const interaction = createMockButtonInteraction('force_publish:note-uuid-123');
+      const longSummary = 'T'.repeat(260);
+      mockCache.set.mockResolvedValueOnce(false);
+      mockApiClient.forcePublishNote.mockResolvedValue({
+        data: {
+          type: 'notes',
+          id: 'note-uuid-123',
+          attributes: {
+            summary: longSummary,
+            status: 'PUBLISHED',
+            force_published_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            updated_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            created_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+          },
+        },
+      });
+
+      await handleForcePublishButton(interaction as any);
+
+      const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
+      expect(editReplyCall.content).toContain('**Note Summary:**');
+      expect(editReplyCall.content).toContain('...');
+      expect(editReplyCall.components).toBeUndefined();
     });
 
     it('should handle invalid customId format', async () => {
@@ -462,6 +529,32 @@ describe('list command - Button Handlers', () => {
 
       const interaction = createMockButtonInteraction('ai_write_note:cachefail1');
       mockCache.set.mockRejectedValueOnce(new Error('redis unavailable'));
+
+      mockApiClient.generateAiNote.mockResolvedValue({
+        data: {
+          id: 'note-generated',
+          attributes: {
+            summary: longSummary,
+          },
+        },
+      });
+
+      await handleAiWriteNoteButton(interaction as any);
+
+      expect(interaction.editReply).toHaveBeenCalledWith({
+        content: expect.stringContaining('AI Note Generated'),
+      });
+      const editReplyCall = (interaction.editReply as any).mock.calls.at(-1) as any[] | undefined;
+      expect(editReplyCall?.[0]?.components).toBeUndefined();
+    });
+
+    it('should fall back to the truncated preview when cache.set resolves false', async () => {
+      const requestId = 'request-uuid-cache-false';
+      const longSummary = 'z'.repeat(260);
+      cacheStore.set('write_note_state:cachefalse', requestId);
+
+      const interaction = createMockButtonInteraction('ai_write_note:cachefalse');
+      mockCache.set.mockResolvedValueOnce(false);
 
       mockApiClient.generateAiNote.mockResolvedValue({
         data: {

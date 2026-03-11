@@ -19,6 +19,7 @@ import { DISCORD_LIMITS } from '../lib/constants.js';
 import { cache } from '../cache.js';
 import { generateShortId } from '../lib/validation.js';
 import { logger } from '../logger.js';
+import { storeViewFullContent } from '../lib/view-full-cache.js';
 import { extractPlatformMessageId } from '../lib/discord-utils.js';
 import {
   V2_COLORS,
@@ -77,7 +78,19 @@ export class DiscordFormatter {
     const customId = buildViewFullCustomId(token);
 
     try {
-      await cache.set(customId, truncatedPreview.original, this.VIEW_FULL_TTL_SECONDS);
+      const stored = await storeViewFullContent(
+        customId,
+        request.content ?? truncatedPreview.original,
+        this.VIEW_FULL_TTL_SECONDS,
+        { request_id: request.request_id },
+        'Failed to store request preview view_full state in cache'
+      );
+      if (!stored) {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(renderedContent)
+        );
+        return;
+      }
       container.addSectionComponents(
         createTextWithButton(
           renderedContent,
@@ -87,12 +100,7 @@ export class DiscordFormatter {
             .setStyle(ButtonStyle.Secondary)
         )
       );
-    } catch (error) {
-      logger.warn('Failed to store request preview view_full state in cache', {
-        custom_id: customId,
-        request_id: request.request_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    } catch {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent(renderedContent)
       );

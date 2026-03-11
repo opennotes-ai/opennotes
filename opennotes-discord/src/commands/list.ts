@@ -48,6 +48,8 @@ import { suppressExpectedDiscordErrors, extractPlatformMessageId } from '../lib/
 import { resolveUserProfileId } from '../lib/user-profile-resolver.js';
 import { cache } from '../cache.js';
 import { TextPaginator } from '../lib/text-paginator.js';
+import { storeViewFullContent } from '../lib/view-full-cache.js';
+import { buildForcePublishSuccessReply } from '../lib/force-publish-response.js';
 
 const configCache = new ConfigCache(apiClient);
 const lastUsage = new Map<string, number>();
@@ -61,25 +63,6 @@ interface QueueState {
   currentPage: number;
   thresholds: { min_ratings_needed: number; min_raters_per_note: number };
   isAdmin: boolean;
-}
-
-async function storeViewFullContent(
-  customId: string,
-  fullText: string,
-  ttlSeconds: number,
-  context: Record<string, unknown>
-): Promise<boolean> {
-  try {
-    await cache.set(customId, fullText, ttlSeconds);
-    return true;
-  } catch (error) {
-    logger.warn('Failed to store view_full state in cache', {
-      ...context,
-      custom_id: customId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return false;
-  }
 }
 
 async function replyWithPaginatedEphemeralContent(
@@ -167,7 +150,8 @@ async function createNoteItemV2(
       customId,
       truncatedSummary.original,
       LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS,
-      { note_id: note.id, surface: 'list_notes_queue' }
+      { note_id: note.id, surface: 'list_notes_queue' },
+      'Failed to store view_full state in cache'
     );
     if (stored) {
       viewFullButton = new ButtonBuilder()
@@ -968,7 +952,8 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
         customId,
         notePreview.original,
         LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS,
-        { note_id: noteId, request_id: requestId, surface: 'ai_write_note' }
+        { note_id: noteId, request_id: requestId, surface: 'ai_write_note' },
+        'Failed to store view_full state in cache'
       );
       if (stored) {
         components = [
@@ -1538,11 +1523,9 @@ export async function handleForcePublishButton(interaction: ButtonInteraction): 
       channelId: interaction.channelId || undefined,
     };
 
-    await apiClient.forcePublishNote(noteId, userContext);
-
-    await interaction.editReply({
-      content: `✅ **Note Force Published**\n\nNote \`${noteId}\` has been force published successfully.`,
-    });
+    const note = await apiClient.forcePublishNote(noteId, userContext);
+    const reply = await buildForcePublishSuccessReply(noteId, note, 'list_force_publish');
+    await interaction.editReply(reply);
 
     logger.info('Note force published successfully', {
       error_id: errorId,

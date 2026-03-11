@@ -168,6 +168,7 @@ describe('MessageMonitorService - Platform ID Handling', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCache.set.mockResolvedValue(true);
     mockApiClient.requestNote.mockResolvedValue(undefined);
     mockApiClient.similaritySearch.mockResolvedValue({
       jsonapi: { version: '1.1' },
@@ -503,50 +504,28 @@ describe('MessageMonitorService - Platform ID Handling', () => {
 
   describe('autoPublishPreviousNote', () => {
     it('should fall back to a bounded preview with View Full for long note summaries', async () => {
-      const mockChannel = {
-        send: jest.fn<() => Promise<any>>().mockResolvedValue({}),
-      };
-      (mockClient.channels.cache.get as jest.Mock).mockReturnValue(mockChannel);
-      mockApiClient.getNote.mockResolvedValue({
-        data: {
-          type: 'notes',
-          id: 'note-1',
-          attributes: {
-            summary: 'A'.repeat(2500),
-          },
-        },
-      });
-
-      await (service as any).autoPublishPreviousNote(testMessageContent, {
-        data: {
-          type: 'previously-seen-check-results',
-          id: 'check-125',
-          attributes: {
-            should_auto_publish: true,
-            should_auto_request: false,
-            autopublish_threshold: 0.9,
-            autorequest_threshold: 0.75,
-            matches: [],
-            top_match: {
-              id: 'prev-1',
-              community_server_id: 'some-uuid',
-              original_message_id: 'orig-msg-1',
-              published_note_id: 'note-1',
-              created_at: new Date().toISOString(),
-              similarity_score: 0.95,
-            },
-          },
-        },
-        jsonapi: { version: '1.1' },
-      });
-
-      expect(mockChannel.send).toHaveBeenCalled();
-      const payload = (mockChannel.send as jest.Mock).mock.calls[0][0] as {
+      const payload = await (service as any).buildAutoPublishPayload(
+        0.95,
+        'A'.repeat(2500)
+      ) as {
         content: string;
         components?: unknown[];
       };
       expect(payload.content.length).toBeLessThanOrEqual(2000);
       expect(JSON.stringify(payload.components)).toContain('View Full');
+    });
+
+    it('should omit the View Full button when cache.set resolves false', async () => {
+      mockCache.set.mockResolvedValueOnce(false);
+      const payload = await (service as any).buildAutoPublishPayload(
+        0.95,
+        'B'.repeat(2500)
+      ) as {
+        content: string;
+        components?: unknown[];
+      };
+      expect(payload.content.length).toBeLessThanOrEqual(2000);
+      expect(payload.components).toBeUndefined();
     });
   });
 });

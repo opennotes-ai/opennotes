@@ -5,8 +5,6 @@ import {
   TextInputBuilder,
   TextInputStyle,
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   ModalActionRowComponentBuilder,
   MessageFlags,
   ModalSubmitInteraction,
@@ -22,34 +20,14 @@ import { DiscordFormatter } from '../services/DiscordFormatter.js';
 import { ConfigKey } from '../lib/config-schema.js';
 import { logger } from '../logger.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
-import { validateMessageId, parseCustomId, validateNoteId, generateShortId } from '../lib/validation.js';
+import { validateMessageId, parseCustomId, validateNoteId } from '../lib/validation.js';
 import { extractAndSanitizeImageUrl } from '../lib/url-validation.js';
 import { handleEphemeralError } from '../lib/interaction-utils.js';
 import { modalSubmissionRateLimiter } from '../lib/interaction-rate-limiter.js';
 import { suppressExpectedDiscordErrors } from '../lib/discord-utils.js';
 import { apiClient } from '../api-client.js';
 import { extractUserContext } from '../lib/user-context.js';
-import { cache } from '../cache.js';
-import { truncateWithMeta, buildViewFullCustomId } from '../utils/v2-components.js';
-
-async function storeViewFullContent(
-  customId: string,
-  fullText: string,
-  ttlSeconds: number,
-  context: Record<string, unknown>
-): Promise<boolean> {
-  try {
-    await cache.set(customId, fullText, ttlSeconds);
-    return true;
-  } catch (error) {
-    logger.warn('Failed to store view_full state in cache', {
-      ...context,
-      custom_id: customId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return false;
-  }
-}
+import { buildForcePublishSuccessReply } from '../lib/force-publish-response.js';
 
 export const data = new SlashCommandBuilder()
   .setName('note')
@@ -983,35 +961,8 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
       force_published_at: attrs.force_published_at,
     });
 
-    const summaryPreview = truncateWithMeta(attrs.summary ?? '', 200);
-    let components: ActionRowBuilder<ButtonBuilder>[] | undefined;
-    if (summaryPreview.isTruncated) {
-      const token = generateShortId();
-      const customId = buildViewFullCustomId(token);
-      const stored = await storeViewFullContent(customId, summaryPreview.original, 300, {
-        note_id: noteIdStr,
-        surface: 'note_force_publish',
-      });
-      if (stored) {
-        components = [
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setCustomId(customId)
-              .setLabel('View Full')
-              .setStyle(ButtonStyle.Secondary)
-          ),
-        ];
-      }
-    }
-
-    await interaction.editReply({
-      content: `✅ **Note #${noteIdStr} has been force-published**\n\n` +
-               `⚠️ This note was manually published by an admin and will be marked as "Admin Published" when displayed.\n\n` +
-               `**Note Summary:** ${summaryPreview.text}\n` +
-               `**Status:** ${attrs.status}\n` +
-               `**Published At:** <t:${Math.floor(new Date(attrs.force_published_at ?? attrs.updated_at ?? attrs.created_at ?? new Date().toISOString()).getTime() / 1000)}:F>`,
-      ...(components ? { components } : {}),
-    });
+    const reply = await buildForcePublishSuccessReply(noteIdStr, note, 'note_force_publish');
+    await interaction.editReply(reply);
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
 
