@@ -123,6 +123,7 @@ const {
   handleRequestQueuePageButton,
   handleWriteNoteButton,
   handleAiWriteNoteButton,
+  handleViewFullButton,
 } = await import('../../src/commands/list.js');
 
 function createMockButtonInteraction(customId: string, overrides: Record<string, any> = {}) {
@@ -461,6 +462,42 @@ describe('list command - Button Handlers', () => {
 
       expect(interaction.editReply).toHaveBeenCalledWith({
         content: expect.stringContaining('Failed to generate AI note'),
+      });
+    });
+  });
+
+  describe('handleViewFullButton', () => {
+    it('should reply with cached full note text', async () => {
+      cacheStore.set('view_full:abc123', 'Full note text for expansion');
+      const interaction = createMockButtonInteraction('view_full:abc123');
+
+      await handleViewFullButton(interaction as any);
+
+      expect(interaction.reply).toHaveBeenCalledWith({
+        content: 'Full note text for expansion',
+        flags: MessageFlags.Ephemeral,
+      });
+    });
+
+    it('should handle expired cache state', async () => {
+      const interaction = createMockButtonInteraction('view_full:expired1');
+
+      await handleViewFullButton(interaction as any);
+
+      expect(interaction.reply).toHaveBeenCalledWith({
+        content: 'Expanded content expired. Please run the command again.',
+        flags: MessageFlags.Ephemeral,
+      });
+    });
+
+    it('should handle invalid customId format', async () => {
+      const interaction = createMockButtonInteraction('view_full');
+
+      await handleViewFullButton(interaction as any);
+
+      expect(interaction.reply).toHaveBeenCalledWith({
+        content: 'Invalid button data. Please try again.',
+        flags: MessageFlags.Ephemeral,
       });
     });
   });

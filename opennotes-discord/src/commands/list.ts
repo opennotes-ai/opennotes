@@ -19,7 +19,6 @@ import { logger } from '../logger.js';
 import { getBotChannelOrRedirect } from '../lib/bot-channel-helper.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { PermissionModeService } from '../services/PermissionModeService.js';
-import { v2MessageFlags } from '../utils/v2-components.js';
 import { LIST_COMMAND_LIMITS } from '../lib/constants.js';
 import {
   classifyApiError,
@@ -37,7 +36,13 @@ import {
   QueueSummaryV2,
   PaginationConfig,
 } from '../lib/queue-renderer.js';
-import { V2_ICONS, calculateUrgency } from '../utils/v2-components.js';
+import {
+  V2_ICONS,
+  v2MessageFlags,
+  calculateUrgency,
+  truncateWithMeta,
+  buildViewFullCustomId,
+} from '../utils/v2-components.js';
 import type { ScoreConfidence } from '../services/ScoringService.js';
 import { suppressExpectedDiscordErrors, extractPlatformMessageId } from '../lib/discord-utils.js';
 import { resolveUserProfileId } from '../lib/user-profile-resolver.js';
@@ -80,11 +85,11 @@ function createSummaryV2(
   };
 }
 
-function createNoteItemV2(
+async function createNoteItemV2(
   note: JSONAPIResource<NoteAttributes>,
   thresholds: { min_ratings_needed: number; min_raters_per_note: number },
   userMember?: GuildMember | null
-): QueueItemV2 {
+): Promise<QueueItemV2> {
   const urgency = calculateUrgency(note.attributes.ratings_count, thresholds.min_ratings_needed);
 
   const helpfulButton = new ButtonBuilder()
@@ -110,16 +115,29 @@ function createNoteItemV2(
 
   const ratingButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
 
-  const truncatedSummary = note.attributes.summary.length > 200
-    ? note.attributes.summary.substring(0, 197) + '...'
-    : note.attributes.summary;
+  const truncatedSummary = truncateWithMeta(note.attributes.summary, 200);
+  let viewFullButton: ButtonBuilder | undefined;
+  if (truncatedSummary.isTruncated) {
+    const token = generateShortId();
+    const customId = buildViewFullCustomId(token);
+    await cache.set(
+      customId,
+      truncatedSummary.original,
+      LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS
+    );
+    viewFullButton = new ButtonBuilder()
+      .setCustomId(customId)
+      .setLabel('View Full')
+      .setStyle(ButtonStyle.Secondary);
+  }
 
   return {
     id: note.id,
     title: `Note #${note.id}`,
-    summary: truncatedSummary,
+    summary: truncatedSummary.text,
     urgencyEmoji: urgency.urgencyEmoji,
     ratingButtons,
+    viewFullButton,
   };
 }
 
@@ -310,8 +328,10 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
 
     const member = interaction.guild?.members.cache.get(userId) || null;
 
-    const itemsV2: QueueItemV2[] = notesResponse.data.map((note) =>
-      createNoteItemV2(note, thresholds, member)
+    const itemsV2: QueueItemV2[] = await Promise.all(
+      notesResponse.data.map((note) =>
+        createNoteItemV2(note, thresholds, member)
+      )
     );
 
     const queueStateId = generateShortId();
@@ -927,6 +947,61 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
   }
 }
 
+export async function handleViewFullButton(interaction: ButtonInteraction): Promise<void> {
+  const errorId = generateErrorId();
+
+  try {
+    const parseResult = parseCustomId(interaction.customId, 2);
+    if (!parseResult.success || !parseResult.parts) {
+      logger.error('Failed to parse view_full customId', {
+        error_id: errorId,
+        customId: interaction.customId,
+        error: parseResult.error,
+      });
+      await interaction.reply({
+        content: 'Invalid button data. Please try again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const [, token] = parseResult.parts;
+    const cacheKey = buildViewFullCustomId(token);
+    const fullText = await cache.get<string>(cacheKey);
+
+    if (!fullText) {
+      await interaction.reply({
+        content: 'Expanded content expired. Please run the command again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    await interaction.reply({
+      content: fullText,
+      flags: MessageFlags.Ephemeral,
+    });
+  } catch (error) {
+    const errorDetails = extractErrorDetails(error);
+
+    logger.error('Error handling view_full button', {
+      error_id: errorId,
+      customId: interaction.customId,
+      user_id: interaction.user.id,
+      error: errorDetails.message,
+      error_type: errorDetails.type,
+      stack: errorDetails.stack,
+    });
+
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: formatErrorForUser(errorId, 'Failed to expand content.'),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  }
+}
+
 export async function handleRateNoteButton(interaction: ButtonInteraction): Promise<void> {
   const errorId = generateErrorId();
 
@@ -1114,8 +1189,10 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
 
       const member = interaction.guild?.members.cache.get(userId) || null;
 
-      const itemsV2: QueueItemV2[] = notesResponse.data.map((note) =>
-        createNoteItemV2(note, thresholds, member)
+      const itemsV2: QueueItemV2[] = await Promise.all(
+        notesResponse.data.map((note) =>
+          createNoteItemV2(note, thresholds, member)
+        )
       );
 
       const queueStateId = generateShortId();
@@ -1280,8 +1357,10 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
     const summaryV2 = createSummaryV2(newPage, totalNotes, notesPerPage);
     const member = interaction.guild?.members.cache.get(state.userId) || null;
 
-    const itemsV2: QueueItemV2[] = newNotesResponse.data.map((note) =>
-      createNoteItemV2(note, state.thresholds, member)
+    const itemsV2: QueueItemV2[] = await Promise.all(
+      newNotesResponse.data.map((note) =>
+        createNoteItemV2(note, state.thresholds, member)
+      )
     );
 
     const pagination: PaginationConfig = {
