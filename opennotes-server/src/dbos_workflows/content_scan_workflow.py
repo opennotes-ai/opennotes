@@ -76,6 +76,13 @@ BATCH_RECV_TIMEOUT_SECONDS = 600
 POST_ALL_TRANSMITTED_TIMEOUT_SECONDS = 60
 SCAN_RECV_TIMEOUT_SECONDS = 30
 ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS = 1800
+ADAPTIVE_TIMEOUT_SECONDS_PER_MESSAGE = 5
+ADAPTIVE_TIMEOUT_MIN_SECONDS = 120
+
+
+def compute_adaptive_timeout_cap(messages_scanned: int) -> float:
+    cap = max(ADAPTIVE_TIMEOUT_MIN_SECONDS, messages_scanned * ADAPTIVE_TIMEOUT_SECONDS_PER_MESSAGE)
+    return min(float(cap), float(ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS))
 
 
 def get_batch_redis_key(scan_id: str, batch_number: int, suffix: str) -> str:
@@ -118,7 +125,7 @@ def _checkpoint_wall_clock_step() -> float:
 
 
 @DBOS.workflow()
-def content_scan_orchestration_workflow(
+def content_scan_orchestration_workflow(  # noqa: PLR0912
     scan_id: str,
     community_server_id: str,
     scan_types_json: str,
@@ -163,6 +170,7 @@ def content_scan_orchestration_workflow(
         error_count = 0
         flagged_count = 0
         all_transmitted = False
+        all_transmitted_at: float | None = None
         messages_scanned = 0
         batches_completed = 0
         wall_clock_start = _checkpoint_wall_clock_step()
@@ -170,6 +178,7 @@ def content_scan_orchestration_workflow(
         tx_signal = DBOS.recv("all_transmitted", timeout_seconds=SCAN_RECV_TIMEOUT_SECONDS)
         if tx_signal is not None:
             all_transmitted = True
+            all_transmitted_at = time.time()
             messages_scanned = tx_signal.get("messages_scanned", 0)
             logger.info(
                 "Orchestrator received all_transmitted",
@@ -206,6 +215,7 @@ def content_scan_orchestration_workflow(
                     tx_signal = DBOS.recv("all_transmitted", timeout_seconds=0)
                     if tx_signal is not None:
                         all_transmitted = True
+                        all_transmitted_at = time.time()
                         messages_scanned = tx_signal.get("messages_scanned", 0)
                         logger.info(
                             "Orchestrator received all_transmitted",
@@ -276,20 +286,37 @@ def content_scan_orchestration_workflow(
                     )
                     break
 
-                logger.warning(
-                    "Orchestrator detected count mismatch after all_transmitted - proceeding to finalization",
+                adaptive_cap = compute_adaptive_timeout_cap(messages_scanned)
+                time_since_tx = time.time() - (all_transmitted_at or wall_clock_start)
+                if time_since_tx >= adaptive_cap:
+                    logger.warning(
+                        "Orchestrator exceeded adaptive timeout cap after all_transmitted",
+                        extra={
+                            "scan_id": scan_id,
+                            "messages_scanned": messages_scanned,
+                            "processed_count": processed_count,
+                            "skipped_count": skipped_count,
+                            "error_count": error_count,
+                            "actual_total": processed_count + skipped_count + error_count,
+                            "missing_count": messages_scanned
+                            - (processed_count + skipped_count + error_count),
+                            "adaptive_cap_seconds": adaptive_cap,
+                            "time_since_all_transmitted_seconds": time_since_tx,
+                        },
+                    )
+                    break
+
+                logger.info(
+                    "Post-all_transmitted batch_complete recv timed out, continuing to poll",
                     extra={
                         "scan_id": scan_id,
                         "messages_scanned": messages_scanned,
-                        "processed_count": processed_count,
-                        "skipped_count": skipped_count,
-                        "error_count": error_count,
                         "actual_total": processed_count + skipped_count + error_count,
-                        "missing_count": messages_scanned
-                        - (processed_count + skipped_count + error_count),
+                        "time_since_all_transmitted_seconds": time_since_tx,
+                        "adaptive_cap_seconds": adaptive_cap,
                     },
                 )
-                break
+                continue
 
         result = finalize_scan_step(
             scan_id=scan_id,

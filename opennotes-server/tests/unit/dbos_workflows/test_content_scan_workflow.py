@@ -506,6 +506,137 @@ class TestContentScanOrchestrationWorkflow:
         assert len(batch_calls) >= 1
         assert batch_calls[0][1]["timeout_seconds"] == POST_ALL_TRANSMITTED_TIMEOUT_SECONDS
 
+    def test_batch_complete_arrives_after_post_tx_timeout_retries(self) -> None:
+        """When batch_complete times out once but arrives on retry, orchestrator succeeds."""
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        scan_types_json = json.dumps(["similarity"])
+
+        recv_fn = _make_recv_dispatcher(
+            batch_responses=[
+                None,
+                self._make_batch_result(processed=10, flagged_count=2),
+            ],
+            tx_responses=[
+                {"messages_scanned": 10},
+            ],
+        )
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = time.time()
+            mock_finalize.return_value = {
+                "status": "completed",
+                "messages_scanned": 10,
+                "messages_flagged": 2,
+                "messages_skipped": 0,
+                "total_errors": 0,
+            }
+
+            result = content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=scan_types_json,
+            )
+
+        assert result["status"] == "completed"
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["processed_count"] == 10
+        assert finalize_kwargs["messages_scanned"] == 10
+
+    def test_adaptive_timeout_cap_exceeded_breaks_loop(self) -> None:
+        """When adaptive cap is exceeded, orchestrator breaks and finalizes."""
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        scan_types_json = json.dumps(["similarity"])
+
+        recv_fn = _make_recv_dispatcher(
+            batch_responses=[None, None, None],
+            tx_responses=[{"messages_scanned": 10}],
+        )
+
+        start = 1000000.0
+        time_values = iter(
+            [
+                start,
+                start + 200,
+                start + 200,
+            ]
+        )
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+            patch("src.dbos_workflows.content_scan_workflow.time") as mock_time,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = start
+            mock_time.time.side_effect = time_values
+
+            mock_finalize.return_value = {
+                "status": "completed",
+                "messages_scanned": 10,
+                "messages_flagged": 0,
+                "messages_skipped": 0,
+                "total_errors": 0,
+            }
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=scan_types_json,
+            )
+
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["processed_count"] == 0
+        assert finalize_kwargs["messages_scanned"] == 10
+
+
+class TestAdaptiveTimeoutCap:
+    """Tests for compute_adaptive_timeout_cap helper."""
+
+    def test_minimum_cap_is_120(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import compute_adaptive_timeout_cap
+
+        assert compute_adaptive_timeout_cap(1) == 120
+
+    def test_scales_with_message_count(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import compute_adaptive_timeout_cap
+
+        assert compute_adaptive_timeout_cap(100) == 500
+
+    def test_capped_by_wall_clock_max(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS,
+            compute_adaptive_timeout_cap,
+        )
+
+        assert compute_adaptive_timeout_cap(100000) == ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS
+
 
 class TestRedisHelpers:
     """Tests for Redis helper functions used by per-strategy steps."""
@@ -1431,9 +1562,10 @@ class TestSignalCoordination:
 
 
 class TestCountMismatchBreakCondition:
-    """Tests for the count mismatch break condition."""
+    """Tests for the count mismatch adaptive timeout condition."""
 
-    def test_breaks_on_count_mismatch_after_all_transmitted(self) -> None:
+    def test_polls_then_breaks_on_adaptive_cap_after_count_mismatch(self) -> None:
+        """After mismatch, orchestrator continues polling then breaks when adaptive cap exceeded."""
         from src.dbos_workflows.content_scan_workflow import (
             content_scan_orchestration_workflow,
         )
@@ -1451,6 +1583,16 @@ class TestCountMismatchBreakCondition:
             ],
         )
 
+        start = 1000000.0
+        time_values = iter(
+            [
+                start,
+                start + 10,
+                start + 200,
+                start + 200,
+            ]
+        )
+
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
             patch(
@@ -1459,10 +1601,12 @@ class TestCountMismatchBreakCondition:
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+            patch("src.dbos_workflows.content_scan_workflow.time") as mock_time,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
-            mock_clock.return_value = time.time()
+            mock_clock.return_value = start
+            mock_time.time.side_effect = time_values
             mock_finalize.return_value = {"status": "completed"}
 
             content_scan_orchestration_workflow.__wrapped__(
