@@ -578,8 +578,7 @@ async def hybrid_search_with_chunks(
     try:
         if statement_timeout_ms is not None:
             await session.execute(
-                text("SET LOCAL statement_timeout = :statement_timeout"),
-                {"statement_timeout": int(statement_timeout_ms)},
+                text(f"SET LOCAL statement_timeout = {int(statement_timeout_ms)}")
             )
         result = await session.execute(cc_query, params)
         rows = result.fetchall()

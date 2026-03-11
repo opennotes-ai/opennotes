@@ -15,6 +15,7 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.exc import OperationalError
 
 from src.main import app
 
@@ -621,14 +622,66 @@ class TestSimilaritySearchJSONAPIWithMockedService:
 
         with (
             patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
+                new_callable=AsyncMock,
+                return_value=(True, None),
+            ),
+            patch(
                 "src.llm_config.usage_tracker.LLMUsageTracker.check_and_reserve_limits",
+                new_callable=AsyncMock,
+                side_effect=AssertionError("similarity-searches should not reserve quota"),
+            ),
+            patch(
+                "src.fact_checking.embeddings_jsonapi_router.EmbeddingService.similarity_search",
+                new_callable=AsyncMock,
+                side_effect=TimeoutError(),
+            ),
+        ):
+            response = await embeddings_jsonapi_auth_client.post(
+                "/api/v2/similarity-searches", json=request_body
+            )
+
+        assert response.status_code == 504
+        assert "errors" in response.json()
+
+    @pytest.mark.asyncio
+    async def test_similarity_search_statement_timeout_returns_504(
+        self,
+        embeddings_jsonapi_auth_client,
+        embeddings_jsonapi_community_server,
+    ):
+        """Database statement timeouts should map to the same graceful 504 response."""
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
+
+        request_body = {
+            "data": {
+                "type": "similarity-searches",
+                "attributes": {
+                    "text": "This query should exercise statement-timeout handling.",
+                    "community_server_id": platform_id,
+                    "dataset_tags": ["snopes"],
+                    "similarity_threshold": 0.6,
+                    "limit": 5,
+                },
+            }
+        }
+
+        statement_timeout_error = OperationalError(
+            statement="SELECT 1",
+            params={},
+            orig=Exception("canceling statement due to statement timeout"),
+        )
+
+        with (
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
                 new_callable=AsyncMock,
                 return_value=(True, None),
             ),
             patch(
                 "src.fact_checking.embeddings_jsonapi_router.EmbeddingService.similarity_search",
                 new_callable=AsyncMock,
-                side_effect=TimeoutError(),
+                side_effect=statement_timeout_error,
             ),
         ):
             response = await embeddings_jsonapi_auth_client.post(

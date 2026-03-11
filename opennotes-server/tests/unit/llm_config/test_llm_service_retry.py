@@ -268,6 +268,37 @@ class TestLLMServiceGenerateEmbeddingRetry:
             call_kwargs = mock_litellm.aembedding.call_args.kwargs
             assert call_kwargs["timeout"] == settings.EMBEDDING_TIMEOUT_SECONDS
 
+    @pytest.mark.asyncio
+    async def test_generate_embeddings_batch_passes_configured_timeout(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        """Batch embedding requests should pass EMBEDDING_TIMEOUT_SECONDS to LiteLLM."""
+        mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
+        community_server_id = uuid4()
+
+        mock_embedding_response = MagicMock()
+        mock_embedding_response.data = [
+            {"index": 0, "embedding": [0.3] * 1536},
+            {"index": 1, "embedding": [0.4] * 1536},
+        ]
+        mock_embedding_response.usage = MagicMock(total_tokens=6)
+
+        with patch("src.llm_config.service.litellm") as mock_litellm:
+            mock_litellm.aembedding = AsyncMock(return_value=mock_embedding_response)
+
+            await llm_service.generate_embeddings_batch(
+                db=mock_db,
+                texts=["First text", "Second text"],
+                community_server_id=community_server_id,
+            )
+
+            call_kwargs = mock_litellm.aembedding.call_args.kwargs
+            assert call_kwargs["timeout"] == settings.EMBEDDING_TIMEOUT_SECONDS
+
 
 class TestLLMServiceDescribeImageRetry:
     """Tests for LLMService.describe_image retry behavior."""

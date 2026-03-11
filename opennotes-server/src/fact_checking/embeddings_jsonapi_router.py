@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import verify_community_membership
@@ -80,6 +81,20 @@ def get_embedding_service(
 def get_usage_tracker(db: Annotated[AsyncSession, Depends(get_db)]) -> LLMUsageTracker:
     """Get LLM usage tracker instance."""
     return LLMUsageTracker(db)
+
+
+def _is_statement_timeout_error(exc: OperationalError) -> bool:
+    """Detect PostgreSQL statement timeout errors surfaced through SQLAlchemy."""
+    return "statement timeout" in str(exc).lower()
+
+
+def _similarity_search_timeout_response() -> JSONResponse:
+    """Build the shared graceful timeout response for similarity searches."""
+    return create_error_response(
+        status.HTTP_504_GATEWAY_TIMEOUT,
+        "Gateway Timeout",
+        "Similarity search timed out. Please retry shortly.",
+    )
 
 
 async def get_community_server_uuid(
@@ -316,7 +331,7 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
         community_server_uuid = await get_community_server_uuid(db, attrs.community_server_id)
 
         if community_server_uuid:
-            allowed, reason = await usage_tracker.check_and_reserve_limits(
+            allowed, reason = await usage_tracker.check_limits(
                 community_server_id=community_server_uuid,
                 provider="openai",
                 estimated_tokens=estimated_tokens,
@@ -360,11 +375,18 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
                     "timeout_seconds": HOT_PATH_ENDPOINT_TIMEOUT_SECONDS,
                 },
             )
-            return create_error_response(
-                status.HTTP_504_GATEWAY_TIMEOUT,
-                "Gateway Timeout",
-                "Similarity search timed out. Please retry shortly.",
-            )
+            return _similarity_search_timeout_response()
+        except OperationalError as e:
+            if _is_statement_timeout_error(e):
+                logger.warning(
+                    "Similarity search query hit PostgreSQL statement timeout",
+                    extra={
+                        "community_server_id": attrs.community_server_id,
+                        "statement_timeout_ms": HOT_PATH_DB_STATEMENT_TIMEOUT_MS,
+                    },
+                )
+                return _similarity_search_timeout_response()
+            raise
 
         match_resources = [
             FactCheckMatchResource(

@@ -367,6 +367,7 @@ class LLMService:
             input=texts,
             api_key=llm_provider.api_key,
             encoding_format="float",
+            timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
         )
 
         if len(response.data) != len(texts):
