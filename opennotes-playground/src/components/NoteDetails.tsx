@@ -1,7 +1,8 @@
 import { For, Show, createSignal, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
-import { formatDate, humanizeLabel, truncateId } from "~/lib/format";
+import { formatDate, humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
+import IdBadge from "~/components/ui/id-badge";
 import { getHelpfulnessTooltip } from "~/lib/scoring-tiers";
 import { cn } from "~/lib/cn";
 
@@ -124,7 +125,10 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                   <span class="min-w-0 text-sm font-medium">
                     {group.sourceTitle
                       ? <>Notes responding to: {group.sourceTitle}</>
-                      : <>Request {truncateId(group.requestId)}</>}
+                      : <>
+                          Request{" "}
+                          <IdBadge idValue={group.requestId} variant="muted" />
+                        </>}
                     <Show when={group.sourceUrl}>
                       {(url) => {
                         const isSafe = () => /^https?:\/\//i.test(url());
@@ -166,7 +170,9 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                             <div class="min-w-0 flex-1">
                               <div class="font-normal leading-snug">{attrs.summary}</div>
                               <div class="mt-0.5 text-xs text-muted-foreground">
-                                Note {truncateId(attrs.note_id)} by {attrs.author_agent_name}
+                                Note{" "}
+                                <IdBadge idValue={attrs.note_id} variant="muted" class="mx-1" />
+                                by {attrs.author_agent_name}
                               </div>
                             </div>
                             <div class="flex shrink-0 items-center gap-1.5">

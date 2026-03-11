@@ -1,7 +1,8 @@
 import { A } from "@solidjs/router";
 import type { components } from "~/lib/generated-types";
-import { formatDate, getMetric, humanizeLabel, truncateId } from "~/lib/format";
+import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
+import IdBadge from "~/components/ui/id-badge";
 
 type SimulationResource = components["schemas"]["SimulationResource"];
 
@@ -23,7 +24,9 @@ export default function SimulationCard(props: { simulation: SimulationResource }
       class="block rounded-lg border border-border bg-card p-4 no-underline transition-colors hover:border-primary/40 hover:bg-muted/50"
     >
       <div class="flex items-center justify-between">
-        <span class="text-base font-semibold">Simulation {truncateId(sim().id)}</span>
+        <span class="text-base font-semibold">
+          Simulation <IdBadge idValue={sim().id} variant="muted" />
+        </span>
         <Badge variant={STATUS_VARIANT[attrs().status] ?? "muted"}>
           {humanizeLabel(attrs().status)}
         </Badge>
