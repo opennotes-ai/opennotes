@@ -233,6 +233,18 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       errorId,
       excludeChannelIds,
       progressCallback: async (progress) => {
+        const isAnalysisPhase = progress.currentChannel?.startsWith('Analyzing')
+          || (progress.totalChannels > 0 && progress.channelsProcessed >= progress.totalChannels);
+
+        if (isAnalysisPhase) {
+          await interaction.editReply({
+            content: `Analyzing scan results...\n` +
+              `Messages processed: ${progress.messagesProcessed}\n` +
+              (progress.currentChannel ? `${progress.currentChannel}` : 'Waiting for analysis updates...'),
+          });
+          return;
+        }
+
         const percent = progress.totalChannels > 0
           ? Math.round((progress.channelsProcessed / progress.totalChannels) * 100)
           : 0;
@@ -258,7 +270,16 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         `**Scan ID:** \`${result.scanId}\``,
     });
 
-    if (result.status === 'failed' || result.status === 'timeout') {
+    if (result.status === 'timeout') {
+      await interaction.editReply({
+        content: `Scan analysis is taking longer than expected and may still be running.\n\n` +
+          `Use \`/vibecheck status\` to check completion.\n\n` +
+          `**Scan ID:** \`${result.scanId}\``,
+      });
+      return;
+    }
+
+    if (result.status === 'failed') {
       await interaction.editReply({
         content: `Scan analysis failed. Please try again later.\n\n` +
           `**Scan ID:** \`${result.scanId}\``,

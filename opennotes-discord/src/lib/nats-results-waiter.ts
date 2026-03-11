@@ -128,30 +128,54 @@ export class NatsResultsWaiter {
       NATS_SUBJECTS.BULK_SCAN_PROGRESS,
     ];
 
-    for (const subject of subjects) {
-      try {
+    const setupResults = await Promise.allSettled(
+      subjects.map(async (subject) => {
         const opts = consumerOpts();
         opts.deliverTo(`discord-bot-${this.scanId}-${subject.replace(/\./g, '-')}`);
         opts.manualAck();
         opts.ackExplicit();
 
         const sub = await js.subscribe(subject, opts);
-        this.subscriptions.push(sub);
+        return { subject, sub };
+      })
+    );
 
-        this.processMessages(sub, resolve, reject).catch((err: unknown) => {
-          logger.error('Error processing NATS messages', {
-            error: err instanceof Error ? err.message : String(err),
-            subject,
-            scanId: this.scanId,
-          });
-        });
-      } catch (subErr) {
-        logger.warn('Failed to subscribe to NATS subject', {
-          error: subErr instanceof Error ? subErr.message : String(subErr),
+    const failedSetups = setupResults.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    );
+
+    if (failedSetups.length > 0) {
+      logger.warn('Failed to subscribe to required NATS subjects', {
+        scanId: this.scanId,
+        failed_count: failedSetups.length,
+        required_count: subjects.length,
+      });
+      this.cleanup();
+      reject(
+        new Error(
+          `Failed to subscribe to ${failedSetups.length}/${subjects.length} required NATS subjects`
+        )
+      );
+      return;
+    }
+
+    const successfulSetups = setupResults.filter(
+      (
+        result
+      ): result is PromiseFulfilledResult<{ subject: typeof subjects[number]; sub: JetStreamSubscription }> =>
+        result.status === 'fulfilled'
+    );
+
+    for (const result of successfulSetups) {
+      const { subject, sub } = result.value;
+      this.subscriptions.push(sub);
+      this.processMessages(sub, resolve, reject).catch((err: unknown) => {
+        logger.error('Error processing NATS messages', {
+          error: err instanceof Error ? err.message : String(err),
           subject,
           scanId: this.scanId,
         });
-      }
+      });
     }
   }
 
