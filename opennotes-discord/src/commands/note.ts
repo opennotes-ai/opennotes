@@ -5,6 +5,8 @@ import {
   TextInputBuilder,
   TextInputStyle,
   ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ModalActionRowComponentBuilder,
   MessageFlags,
   ModalSubmitInteraction,
@@ -20,13 +22,15 @@ import { DiscordFormatter } from '../services/DiscordFormatter.js';
 import { ConfigKey } from '../lib/config-schema.js';
 import { logger } from '../logger.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
-import { validateMessageId, parseCustomId, validateNoteId } from '../lib/validation.js';
+import { validateMessageId, parseCustomId, validateNoteId, generateShortId } from '../lib/validation.js';
 import { extractAndSanitizeImageUrl } from '../lib/url-validation.js';
 import { handleEphemeralError } from '../lib/interaction-utils.js';
 import { modalSubmissionRateLimiter } from '../lib/interaction-rate-limiter.js';
 import { suppressExpectedDiscordErrors } from '../lib/discord-utils.js';
 import { apiClient } from '../api-client.js';
 import { extractUserContext } from '../lib/user-context.js';
+import { cache } from '../cache.js';
+import { truncateWithMeta, buildViewFullCustomId } from '../utils/v2-components.js';
 
 export const data = new SlashCommandBuilder()
   .setName('note')
@@ -960,12 +964,29 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
       force_published_at: attrs.force_published_at,
     });
 
+    const summaryPreview = truncateWithMeta(attrs.summary ?? '', 200);
+    let components: ActionRowBuilder<ButtonBuilder>[] | undefined;
+    if (summaryPreview.isTruncated) {
+      const token = generateShortId();
+      const customId = buildViewFullCustomId(token);
+      await cache.set(customId, summaryPreview.original, 300);
+      components = [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(customId)
+            .setLabel('View Full')
+            .setStyle(ButtonStyle.Secondary)
+        ),
+      ];
+    }
+
     await interaction.editReply({
       content: `✅ **Note #${noteIdStr} has been force-published**\n\n` +
                `⚠️ This note was manually published by an admin and will be marked as "Admin Published" when displayed.\n\n` +
-               `**Note Summary:** ${attrs.summary.substring(0, 200)}${attrs.summary.length > 200 ? '...' : ''}\n` +
+               `**Note Summary:** ${summaryPreview.text}\n` +
                `**Status:** ${attrs.status}\n` +
                `**Published At:** <t:${Math.floor(new Date(attrs.force_published_at ?? attrs.updated_at ?? attrs.created_at ?? new Date().toISOString()).getTime() / 1000)}:F>`,
+      ...(components ? { components } : {}),
     });
   } catch (error) {
     const errorDetails = extractErrorDetails(error);

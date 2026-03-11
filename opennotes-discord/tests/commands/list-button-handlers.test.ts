@@ -425,6 +425,36 @@ describe('list command - Button Handlers', () => {
       });
     });
 
+    it('should add a View Full button when AI note summary is truncated', async () => {
+      const requestId = 'request-uuid-789';
+      const longSummary = 'x'.repeat(260);
+      cacheStore.set('write_note_state:ai12345', requestId);
+
+      const interaction = createMockButtonInteraction('ai_write_note:ai12345');
+
+      mockApiClient.generateAiNote.mockResolvedValue({
+        data: {
+          id: 'note-generated',
+          attributes: {
+            summary: longSummary,
+          },
+        },
+      });
+
+      await handleAiWriteNoteButton(interaction as any);
+
+      expect(mockCache.set).toHaveBeenCalledWith(
+        'view_full:test1234',
+        longSummary,
+        300
+      );
+      expect(interaction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          components: expect.any(Array),
+        })
+      );
+    });
+
     it('should handle expired cache state', async () => {
       const interaction = createMockButtonInteraction('ai_write_note:expired1');
 

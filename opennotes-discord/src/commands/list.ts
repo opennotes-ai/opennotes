@@ -912,9 +912,30 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
 
     const noteId = result.data.id;
     const noteContent = result.data.attributes.summary || 'AI-generated note created.';
+    const notePreview = truncateWithMeta(noteContent, 200);
+
+    let components: ActionRowBuilder<ButtonBuilder>[] | undefined;
+    if (notePreview.isTruncated) {
+      const token = generateShortId();
+      const customId = buildViewFullCustomId(token);
+      await cache.set(
+        customId,
+        notePreview.original,
+        LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS
+      );
+      components = [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(customId)
+            .setLabel('View Full')
+            .setStyle(ButtonStyle.Secondary)
+        ),
+      ];
+    }
 
     await interaction.editReply({
-      content: `✅ **AI Note Generated**\n\nNote ID: \`${noteId}\`\n\n> ${noteContent.slice(0, 200)}${noteContent.length > 200 ? '...' : ''}\n\nThe note has been created and will enter the rating queue.`,
+      content: `✅ **AI Note Generated**\n\nNote ID: \`${noteId}\`\n\n> ${notePreview.text}\n\nThe note has been created and will enter the rating queue.`,
+      ...(components ? { components } : {}),
     });
 
     logger.info('AI note generated successfully', {

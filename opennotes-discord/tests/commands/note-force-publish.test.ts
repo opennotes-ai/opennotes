@@ -193,6 +193,31 @@ describe('note-force-publish command', () => {
       expect(editReplyCall.content).toContain(`Note #${TEST_UUID} has been force-published`);
       expect(editReplyCall.content).toContain('Admin Published');
     });
+
+    it('should add a View Full fallback button for long summaries', async () => {
+      const longSummary = 'A'.repeat(260);
+      const mockNote = createMockNoteJSONAPIResponse({
+        id: TEST_UUID,
+        summary: longSummary,
+        status: 'PUBLISHED',
+        forcePublished: true,
+        forcePublishedAt: new Date().toISOString(),
+      });
+
+      mockApiClient.forcePublishNote.mockResolvedValue(mockNote);
+
+      await execute(mockInteraction);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.components).toBeDefined();
+
+      const viewFullCacheCall = mockCache.set.mock.calls.find(
+        (call) => typeof call[0] === 'string' && call[0].startsWith('view_full:')
+      );
+      expect(viewFullCacheCall).toBeDefined();
+      expect(viewFullCacheCall?.[1]).toBe(longSummary);
+      expect(viewFullCacheCall?.[2]).toBe(300);
+    });
   });
 
   describe('validation', () => {
