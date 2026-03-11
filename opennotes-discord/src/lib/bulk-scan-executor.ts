@@ -6,6 +6,7 @@ import {
   Message,
 } from 'discord.js';
 import { DiscordSnowflake } from '@sapphire/snowflake';
+import { connect, type NatsConnection } from 'nats';
 import { logger } from '../logger.js';
 import {
   apiClient,
@@ -13,6 +14,7 @@ import {
   type FlaggedMessageResource,
 } from '../api-client.js';
 import { natsPublisher } from '../events/NatsPublisher.js';
+import { waitForNatsResults, NatsResultsWaiter } from './nats-results-waiter.js';
 import {
   BULK_SCAN_BATCH_SIZE,
   NATS_SUBJECTS,
@@ -20,6 +22,7 @@ import {
   type BulkScanBatch,
   type BulkScanAllBatchesTransmitted,
   type ScanProgress,
+  type BulkScanProgressEvent,
 } from '../types/bulk-scan.js';
 
 export const POLL_TIMEOUT_MS = 60000;
@@ -31,7 +34,7 @@ export const NATS_STALL_WARNING_MS = 30000;
 export const NATS_SILENCE_TIMEOUT_MS = 60000;
 export const NATS_MAX_WAIT_MS = 300000;
 
-export { waitForNatsResults, NatsResultsWaiter } from './nats-results-waiter.js';
+export { waitForNatsResults, NatsResultsWaiter };
 
 export interface BulkScanOptions {
   guild: Guild;
@@ -321,7 +324,55 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     };
   }
 
-  const results = await pollForResults(scanId, errorId);
+  let results: BulkScanResultsResponse | null = null;
+  let waitConnection: NatsConnection | undefined;
+
+  const onAnalysisProgress = (event: BulkScanProgressEvent): void => {
+    if (!progressCallback) {
+      return;
+    }
+
+    progressCallback({
+      channelsProcessed: totalChannels,
+      totalChannels,
+      messagesProcessed: Math.max(messagesProcessed, event.messages_processed),
+      currentChannel: `Analyzing batch ${event.batch_number}...`,
+    }).catch((error) => {
+      logger.warn('Progress callback failed', {
+        error: error instanceof Error ? error.message : String(error),
+        scanId,
+        channelsProcessed: totalChannels,
+        totalChannels,
+      });
+    });
+  };
+
+  const onStallWarning = (): void => {
+    logger.warn('NATS results wait is stalled, continuing to wait', {
+      error_id: errorId,
+      scan_id: scanId,
+      timeout_ms: NATS_STALL_WARNING_MS,
+    });
+  };
+
+  try {
+    waitConnection = await createTemporaryNatsConnection();
+    results = await waitForNatsResults(scanId, waitConnection, {
+      onProgress: onAnalysisProgress,
+      onStallWarning,
+    });
+  } catch (natsError) {
+    logger.warn('NATS wait unavailable, falling back to HTTP polling', {
+      error_id: errorId,
+      scan_id: scanId,
+      error: natsError instanceof Error ? natsError.message : String(natsError),
+    });
+    results = await pollForResults(scanId, errorId);
+  } finally {
+    if (waitConnection) {
+      await waitConnection.close();
+    }
+  }
 
   if (!results || results.data.attributes.status === 'failed') {
     return {
@@ -357,6 +408,27 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     status: 'completed',
     flaggedMessages: results.included || [],
   };
+}
+
+async function createTemporaryNatsConnection(): Promise<NatsConnection> {
+  const natsUrl = process.env.NATS_URL || 'nats://localhost:4222';
+  const natsUsername = process.env.NATS_USERNAME;
+  const natsPassword = process.env.NATS_PASSWORD;
+  const hasAuth = Boolean(natsUsername && natsPassword);
+
+  const connectOptions: Parameters<typeof connect>[0] = {
+    servers: natsUrl,
+    maxReconnectAttempts: 2,
+    reconnectTimeWait: 2000,
+    name: 'opennotes-discord-bulk-scan-waiter',
+  };
+
+  if (hasAuth) {
+    connectOptions.user = natsUsername;
+    connectOptions.pass = natsPassword;
+  }
+
+  return connect(connectOptions);
 }
 
 function calculateBackoffDelay(attempt: number): number {

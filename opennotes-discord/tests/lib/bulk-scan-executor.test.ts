@@ -33,6 +33,12 @@ const mockGetCommunityServerByPlatformId = jest.fn<(platformId: string, platform
 
 const mockPublishBulkScanBatch = jest.fn<(subject: string, batch: any) => Promise<void>>();
 const mockPublishAllBatchesTransmitted = jest.fn<(transmittedData: any) => Promise<void>>();
+const mockNatsClose = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockNatsConnection = {
+  close: mockNatsClose,
+} as any;
+const mockNatsConnect = jest.fn<() => Promise<any>>().mockResolvedValue(mockNatsConnection);
+const mockWaitForNatsResults = jest.fn<(...args: any[]) => Promise<any>>();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
@@ -51,6 +57,19 @@ jest.unstable_mockModule('../../src/events/NatsPublisher.js', () => ({
     publishBulkScanBatch: mockPublishBulkScanBatch,
     publishAllBatchesTransmitted: mockPublishAllBatchesTransmitted,
   },
+}));
+
+jest.unstable_mockModule('nats', async () => {
+  const actual = await jest.requireActual<typeof import('nats')>('nats');
+  return {
+    ...actual,
+    connect: mockNatsConnect,
+  };
+});
+
+jest.unstable_mockModule('../../src/lib/nats-results-waiter.js', () => ({
+  waitForNatsResults: mockWaitForNatsResults,
+  NatsResultsWaiter: class {},
 }));
 
 const {
@@ -192,6 +211,11 @@ describe('bulk-scan-executor', () => {
     });
     mockPublishBulkScanBatch.mockResolvedValue(undefined);
     mockPublishAllBatchesTransmitted.mockResolvedValue(undefined);
+    mockNatsConnect.mockResolvedValue(mockNatsConnection);
+    mockNatsClose.mockResolvedValue(undefined);
+    mockWaitForNatsResults.mockResolvedValue(
+      createBulkScanResultsResponse('test-scan-123', 'completed', 100)
+    );
   });
 
   afterEach(() => {
@@ -199,6 +223,55 @@ describe('bulk-scan-executor', () => {
   });
 
   describe('executeBulkScan - NATS failure handling', () => {
+    it('falls back to HTTP polling when NATS wait setup fails', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      mockWaitForNatsResults.mockRejectedValueOnce(new Error('subscribe failed'));
+      mockGetBulkScanResults.mockResolvedValueOnce(
+        createBulkScanResultsResponse('test-scan-123', 'completed', 50)
+      );
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockWaitForNatsResults).toHaveBeenCalled();
+      expect(mockGetBulkScanResults).toHaveBeenCalled();
+      expect(result.status).toBe('completed');
+      expect(mockNatsClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes temporary NATS connection on successful NATS wait', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockWaitForNatsResults).toHaveBeenCalled();
+      expect(mockNatsClose).toHaveBeenCalledTimes(1);
+    });
+
     it('should track failed batches when NATS publish fails for some batches', async () => {
       const messages = new Map();
       for (let i = 0; i < 50; i++) {
@@ -398,6 +471,50 @@ describe('bulk-scan-executor', () => {
   });
 
   describe('executeBulkScan - progress callback behavior', () => {
+    it('forwards analysis progress events from NATS waiter to progressCallback', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      const progressCallback = jest.fn<(progress: any) => Promise<void>>().mockResolvedValue(undefined);
+      mockWaitForNatsResults.mockImplementationOnce(async (_scanId, _nc, opts) => {
+        opts.onProgress({
+          event_type: 'bulk_scan.progress',
+          scan_id: 'test-scan-123',
+          community_server_id: 'community-uuid-123',
+          platform_community_server_id: 'guild-123',
+          batch_number: 1,
+          messages_in_batch: 10,
+          messages_processed: 10,
+          channel_ids: ['ch-1'],
+          message_scores: [],
+          threshold_used: 0.7,
+        });
+        return createBulkScanResultsResponse('test-scan-123', 'completed', 10);
+      });
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        progressCallback,
+      });
+
+      expect(progressCallback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          currentChannel: 'Analyzing batch 1...',
+          channelsProcessed: 1,
+          totalChannels: 1,
+        })
+      );
+    });
+
     it('should not block scan execution when progress callback is slow', async () => {
       const messages = new Map();
       for (let i = 0; i < 10; i++) {
@@ -985,7 +1102,7 @@ describe('bulk-scan-executor', () => {
       });
     });
 
-    it('should call publishAllBatchesTransmitted before polling for results', async () => {
+    it('should call publishAllBatchesTransmitted before waiting for results', async () => {
       const messages = new Map();
       for (let i = 0; i < 10; i++) {
         const id = generateRecentSnowflake(i * 1000);
@@ -1001,8 +1118,8 @@ describe('bulk-scan-executor', () => {
         callOrder.push('publishAllBatchesTransmitted');
       });
 
-      mockGetBulkScanResults.mockImplementation(async () => {
-        callOrder.push('getBulkScanResults');
+      mockWaitForNatsResults.mockImplementation(async () => {
+        callOrder.push('waitForNatsResults');
         return createBulkScanResultsResponse('test-scan-123', 'completed', 10);
       });
 
@@ -1014,7 +1131,7 @@ describe('bulk-scan-executor', () => {
       });
 
       expect(callOrder.indexOf('publishAllBatchesTransmitted')).toBeLessThan(
-        callOrder.indexOf('getBulkScanResults')
+        callOrder.indexOf('waitForNatsResults')
       );
     });
 

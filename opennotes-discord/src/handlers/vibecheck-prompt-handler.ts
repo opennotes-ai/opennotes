@@ -247,7 +247,14 @@ async function handleStart(
       content: `Scan complete! Analyzing ${result.messagesScanned} messages for potential misinformation...\n\n**Scan ID:** \`${result.scanId}\``,
     });
 
-    if (result.status === 'failed' || result.status === 'timeout') {
+    if (result.status === 'timeout') {
+      await interaction.message.edit({
+        content: `Scan analysis is taking longer than expected and may still be running.\n\nUse \`/vibecheck status\` to check completion.\n\n**Scan ID:** \`${result.scanId}\``,
+      });
+      return;
+    }
+
+    if (result.status === 'failed') {
       await interaction.message.edit({
         content: `Scan analysis failed. Please try again later.\n\n**Scan ID:** \`${result.scanId}\``,
       });

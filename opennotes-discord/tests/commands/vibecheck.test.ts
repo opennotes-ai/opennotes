@@ -2434,4 +2434,76 @@ describe('vibecheck command', () => {
       expect(lastEditReplyCall.components).toEqual([]);
     });
   });
+
+  describe('analysis phase UX and timeout guidance', () => {
+    function createScanInteraction() {
+      return {
+        user: { id: 'admin123' },
+        member: {
+          permissions: {
+            has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+          },
+        },
+        guildId: 'guild789',
+        guild: {
+          id: 'guild789',
+          name: 'Test Guild',
+          channels: { cache: new Map() },
+        },
+        options: {
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+        },
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+    }
+
+    it('shows timeout guidance when scan status is timeout', async () => {
+      const interaction = createScanInteraction();
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-timeout-123',
+        messagesScanned: 100,
+        channelsScanned: 3,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'timeout',
+        flaggedMessages: [],
+      });
+
+      await execute(interaction as any);
+
+      const lastEditReply = interaction.editReply.mock.calls.at(-1)?.[0];
+      expect(lastEditReply.content).toContain('may still be running');
+      expect(lastEditReply.content).toContain('/vibecheck status');
+      expect(lastEditReply.content).toContain('scan-timeout-123');
+    });
+
+    it('transitions to analysis interstitial text during analysis progress', async () => {
+      const interaction = createScanInteraction();
+      mockExecuteBulkScan.mockImplementationOnce(async ({ progressCallback }) => {
+        await progressCallback({
+          channelsProcessed: 1,
+          totalChannels: 1,
+          messagesProcessed: 42,
+          currentChannel: 'Analyzing batch 1...',
+        });
+        return {
+          scanId: 'scan-analysis-123',
+          messagesScanned: 42,
+          channelsScanned: 1,
+          batchesPublished: 1,
+          failedBatches: 0,
+          status: 'completed',
+          flaggedMessages: [],
+        };
+      });
+
+      await execute(interaction as any);
+
+      const editContents = interaction.editReply.mock.calls.map(([arg]: any[]) => String(arg.content ?? ''));
+      expect(editContents.some((content: string) => content.includes('Analyzing scan results'))).toBe(true);
+    });
+  });
 });

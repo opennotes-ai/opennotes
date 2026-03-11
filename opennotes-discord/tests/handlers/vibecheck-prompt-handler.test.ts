@@ -422,7 +422,7 @@ describe('vibecheck-prompt-handler', () => {
         await handleVibecheckPromptInteraction(interaction as any);
 
         expect(interaction.message.edit).toHaveBeenLastCalledWith({
-          content: expect.stringContaining('Scan analysis failed'),
+          content: expect.stringContaining('may still be running'),
         });
       });
 
