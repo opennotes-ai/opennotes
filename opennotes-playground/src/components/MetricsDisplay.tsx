@@ -12,7 +12,7 @@ export default function MetricsDisplay(props: {
 }) {
   return (
     <section>
-      <h2 class="mb-4 text-xl font-semibold">Consensus Metrics</h2>
+      <h2 id="consensus-metrics" class="mb-4 text-xl font-semibold">Consensus Metrics</h2>
       <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
         <MetricCard label="Mean Agreement" value={props.consensus.mean_agreement.toFixed(3)} />
         <MetricCard label="Polarization Index" value={props.consensus.polarization_index.toFixed(3)} />
@@ -21,7 +21,7 @@ export default function MetricsDisplay(props: {
         <MetricCard label="Total Rated" value={String(props.consensus.total_notes_rated)} />
       </div>
 
-      <h2 class="mb-4 text-xl font-semibold">Scoring Coverage</h2>
+      <h2 id="scoring-coverage" class="mb-4 text-xl font-semibold">Scoring Coverage</h2>
       <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         <MetricCard label="Current Tier" value={humanizeLabel(props.scoring.current_tier)} />
         <MetricCard label="Scores Computed" value={String(props.scoring.total_scores_computed)} />
