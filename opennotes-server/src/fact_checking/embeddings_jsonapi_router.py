@@ -52,6 +52,7 @@ logger = get_logger(__name__)
 HOT_PATH_EMBEDDING_RETRY_ATTEMPTS = 2
 HOT_PATH_ENDPOINT_TIMEOUT_SECONDS = 10
 HOT_PATH_DB_STATEMENT_TIMEOUT_MS = 10_000
+EMBEDDING_USAGE_MODEL = settings.EMBEDDING_MODEL.to_litellm()
 
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
@@ -278,7 +279,7 @@ def _build_empty_matches_response(
     response_model=SimilaritySearchResultResponse,
 )
 @limiter.limit("100/minute")
-async def similarity_search_jsonapi(  # noqa: PLR0911
+async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
     request: HTTPRequest,
     body: SimilaritySearchJSONAPIRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -303,6 +304,9 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
     - Per-community rate limits: Based on configured LLM usage limits
     - OpenAI API rate limits: Automatic detection with retry guidance
     """
+    community_server_uuid: UUID | None = None
+    estimated_tokens = 0
+    reserved_usage = False
     try:
         attrs = body.data.attributes
 
@@ -331,10 +335,11 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
         community_server_uuid = await get_community_server_uuid(db, attrs.community_server_id)
 
         if community_server_uuid:
-            allowed, reason = await usage_tracker.check_limits(
+            allowed, reason = await usage_tracker.check_and_reserve_limits(
                 community_server_id=community_server_uuid,
                 provider="openai",
                 estimated_tokens=estimated_tokens,
+                model=EMBEDDING_USAGE_MODEL,
             )
 
             if not allowed:
@@ -352,6 +357,7 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
                     "Rate Limit Exceeded",
                     reason or "LLM usage limit exceeded",
                 )
+            reserved_usage = True
 
         try:
             async with asyncio.timeout(HOT_PATH_ENDPOINT_TIMEOUT_SECONDS):
@@ -368,6 +374,13 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
                     statement_timeout_ms=HOT_PATH_DB_STATEMENT_TIMEOUT_MS,
                 )
         except TimeoutError:
+            if community_server_uuid and reserved_usage:
+                await usage_tracker.release_reserved_usage(
+                    community_server_id=community_server_uuid,
+                    provider="openai",
+                    reserved_tokens=estimated_tokens,
+                    model=EMBEDDING_USAGE_MODEL,
+                )
             logger.warning(
                 "Similarity search timed out",
                 extra={
@@ -378,6 +391,13 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
             return _similarity_search_timeout_response()
         except OperationalError as e:
             if _is_statement_timeout_error(e):
+                if community_server_uuid and reserved_usage:
+                    await usage_tracker.release_reserved_usage(
+                        community_server_id=community_server_uuid,
+                        provider="openai",
+                        reserved_tokens=estimated_tokens,
+                        model=EMBEDDING_USAGE_MODEL,
+                    )
                 logger.warning(
                     "Similarity search query hit PostgreSQL statement timeout",
                     extra={
@@ -387,6 +407,14 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
                 )
                 return _similarity_search_timeout_response()
             raise
+
+        if community_server_uuid and reserved_usage:
+            await usage_tracker.finalize_reserved_usage(
+                community_server_id=community_server_uuid,
+                provider="openai",
+                tokens_used=estimated_tokens,
+                model=EMBEDDING_USAGE_MODEL,
+            )
 
         match_resources = [
             FactCheckMatchResource(
@@ -442,6 +470,13 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
         )
 
     except RateLimitError as e:
+        if community_server_uuid and reserved_usage:
+            await usage_tracker.release_reserved_usage(
+                community_server_id=community_server_uuid,
+                provider="openai",
+                reserved_tokens=estimated_tokens,
+                model=EMBEDDING_USAGE_MODEL,
+            )
         logger.error(
             "OpenAI API rate limit exceeded",
             extra={
@@ -456,6 +491,13 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
             "OpenAI API rate limit exceeded. Please try again later.",
         )
     except HTTPException as e:
+        if community_server_uuid and reserved_usage:
+            await usage_tracker.release_reserved_usage(
+                community_server_id=community_server_uuid,
+                provider="openai",
+                reserved_tokens=estimated_tokens,
+                model=EMBEDDING_USAGE_MODEL,
+            )
         logger.warning(
             "Similarity search authorization error (JSON:API)",
             extra={
@@ -471,6 +513,13 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
             e.detail,
         )
     except ValueError as e:
+        if community_server_uuid and reserved_usage:
+            await usage_tracker.release_reserved_usage(
+                community_server_id=community_server_uuid,
+                provider="openai",
+                reserved_tokens=estimated_tokens,
+                model=EMBEDDING_USAGE_MODEL,
+            )
         logger.warning(
             "Similarity search validation error (JSON:API)",
             extra={
@@ -485,6 +534,13 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
             str(e),
         )
     except Exception as e:
+        if community_server_uuid and reserved_usage:
+            await usage_tracker.release_reserved_usage(
+                community_server_id=community_server_uuid,
+                provider="openai",
+                reserved_tokens=estimated_tokens,
+                model=EMBEDDING_USAGE_MODEL,
+            )
         logger.error(
             "Similarity search failed (JSON:API)",
             extra={

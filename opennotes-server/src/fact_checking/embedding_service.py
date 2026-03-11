@@ -358,6 +358,7 @@ class EmbeddingService:
         community_server_id: UUID,
         similarity_threshold: float,
         limit: int = 5,
+        statement_timeout_ms: int | None = None,
     ) -> list[PreviouslySeenMessageMatch]:
         """
         Search for previously seen messages using pgvector cosine similarity.
@@ -380,6 +381,11 @@ class EmbeddingService:
                 "limit": limit,
             },
         )
+
+        if statement_timeout_ms is not None and statement_timeout_ms <= 0:
+            raise ValueError(
+                f"statement_timeout_ms must be > 0 when provided, got {statement_timeout_ms}"
+            )
 
         max_distance = 1.0 - similarity_threshold
 
@@ -404,6 +410,9 @@ class EmbeddingService:
             ORDER BY embedding <=> CAST(:embedding AS vector)
             LIMIT :result_limit
         """)
+
+        if statement_timeout_ms is not None:
+            await db.execute(text(f"SET LOCAL statement_timeout = {int(statement_timeout_ms)}"))
 
         result = await db.execute(
             query,

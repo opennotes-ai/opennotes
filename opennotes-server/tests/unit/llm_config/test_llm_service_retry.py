@@ -213,6 +213,35 @@ class TestLLMServiceGenerateEmbeddingRetry:
             assert mock_litellm.aembedding.call_count == 2
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("retry_attempts", [0, -1])
+    async def test_generate_embedding_rejects_non_positive_retry_override(
+        self,
+        retry_attempts: int,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        """Explicit non-positive retry overrides should fail fast."""
+        mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
+        community_server_id = uuid4()
+
+        with patch("src.llm_config.service.litellm") as mock_litellm:
+            mock_litellm.aembedding = AsyncMock()
+
+            with pytest.raises(
+                ValueError, match=f"retry_attempts must be >= 1, got {retry_attempts}"
+            ):
+                await llm_service.generate_embedding(
+                    db=mock_db,
+                    text="Test text for embedding",
+                    community_server_id=community_server_id,
+                    retry_attempts=retry_attempts,
+                )
+
+            assert mock_litellm.aembedding.call_count == 0
+
+    @pytest.mark.asyncio
     async def test_generate_embedding_succeeds_without_retry_when_no_error(
         self,
         llm_service: LLMService,

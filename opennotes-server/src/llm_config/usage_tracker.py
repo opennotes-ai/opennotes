@@ -287,6 +287,126 @@ class LLMUsageTracker:
 
         return False, "Failed to reserve usage after multiple attempts due to version conflicts"
 
+    async def finalize_reserved_usage(
+        self,
+        community_server_id: UUID,
+        provider: str,
+        tokens_used: int,
+        model: str,
+        success: bool = True,
+        error_message: str | None = None,
+        cost_usd: Decimal | None = None,
+    ) -> None:
+        """Record the log entry for already-reserved usage without incrementing counters again."""
+        config = await self._get_config(community_server_id, provider)
+        if not config:
+            return
+
+        if cost_usd is None:
+            try:
+                cost_usd = await LLMCostCalculator.calculate_cost_from_total_tokens_async(
+                    _make_model_id(provider, model), tokens_used
+                )
+            except ValueError:
+                cost_usd = Decimal("0.000000")
+
+        usage_log = LLMUsageLog(
+            community_server_id=community_server_id,
+            provider=provider,
+            model=model,
+            tokens_used=tokens_used,
+            cost_usd=float(cost_usd),
+            success=success,
+            error_message=error_message,
+            timestamp=pendulum.now("UTC"),
+        )
+        self.db.add(usage_log)
+        await self.db.commit()
+
+    async def release_reserved_usage(
+        self,
+        community_server_id: UUID,
+        provider: str,
+        reserved_tokens: int,
+        model: str | None = None,
+        reserved_cost: Decimal | None = None,
+    ) -> None:
+        """Release counters previously reserved by check_and_reserve_limits."""
+        max_retries = 3
+        for _attempt in range(max_retries):
+            transaction = self.db.begin_nested() if self.db.in_transaction() else self.db.begin()
+
+            async with transaction:
+                stmt = (
+                    select(CommunityServerLLMConfig)
+                    .where(
+                        CommunityServerLLMConfig.community_server_id == community_server_id,
+                        CommunityServerLLMConfig.provider == provider,
+                    )
+                    .with_for_update()
+                )
+                result = await self.db.execute(stmt)
+                config = result.scalar_one_or_none()
+
+                if not config or not config.enabled:
+                    return
+
+                await self._reset_counters_if_needed_in_transaction(config)
+                await self.db.refresh(config)
+
+                if reserved_cost is None and model:
+                    try:
+                        reserved_cost = (
+                            await LLMCostCalculator.calculate_cost_from_total_tokens_async(
+                                _make_model_id(provider, model), reserved_tokens
+                            )
+                        )
+                    except ValueError:
+                        reserved_cost = Decimal("0.000000")
+                elif reserved_cost is None:
+                    reserved_cost = Decimal("0.000000")
+
+                new_daily_requests = max(config.current_daily_requests - 1, 0)
+                new_monthly_requests = max(config.current_monthly_requests - 1, 0)
+                new_daily_tokens = max(config.current_daily_tokens - reserved_tokens, 0)
+                new_monthly_tokens = max(config.current_monthly_tokens - reserved_tokens, 0)
+                new_daily_spend = max(
+                    Decimal(str(config.current_daily_spend)) - reserved_cost,
+                    Decimal("0"),
+                )
+                new_monthly_spend = max(
+                    Decimal(str(config.current_monthly_spend)) - reserved_cost,
+                    Decimal("0"),
+                )
+
+                update_stmt = (
+                    update(CommunityServerLLMConfig)
+                    .where(
+                        CommunityServerLLMConfig.id == config.id,
+                        CommunityServerLLMConfig.version == config.version,
+                    )
+                    .values(
+                        current_daily_requests=new_daily_requests,
+                        current_monthly_requests=new_monthly_requests,
+                        current_daily_tokens=new_daily_tokens,
+                        current_monthly_tokens=new_monthly_tokens,
+                        current_daily_spend=float(new_daily_spend),
+                        current_monthly_spend=float(new_monthly_spend),
+                        version=CommunityServerLLMConfig.version + 1,
+                    )
+                )
+                update_result = await self.db.execute(update_stmt)
+
+                if update_result.rowcount == 0:  # pyright: ignore[reportAttributeAccessIssue]
+                    continue
+
+            await self.db.commit()
+            return
+
+        raise RuntimeError(
+            f"Failed to release usage after {max_retries} attempts due to version conflicts"
+        )
+
     async def record_usage(
         self,
         community_server_id: UUID,

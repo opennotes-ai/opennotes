@@ -10,7 +10,7 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -622,14 +622,18 @@ class TestSimilaritySearchJSONAPIWithMockedService:
 
         with (
             patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
+                "src.llm_config.usage_tracker.LLMUsageTracker.check_and_reserve_limits",
                 new_callable=AsyncMock,
                 return_value=(True, None),
             ),
             patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_and_reserve_limits",
+                "src.llm_config.usage_tracker.LLMUsageTracker.finalize_reserved_usage",
                 new_callable=AsyncMock,
-                side_effect=AssertionError("similarity-searches should not reserve quota"),
+                side_effect=AssertionError("timed out requests should not finalize quota"),
+            ),
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.release_reserved_usage",
+                new_callable=AsyncMock,
             ),
             patch(
                 "src.fact_checking.embeddings_jsonapi_router.EmbeddingService.similarity_search",
@@ -674,9 +678,18 @@ class TestSimilaritySearchJSONAPIWithMockedService:
 
         with (
             patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
+                "src.llm_config.usage_tracker.LLMUsageTracker.check_and_reserve_limits",
                 new_callable=AsyncMock,
                 return_value=(True, None),
+            ),
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.finalize_reserved_usage",
+                new_callable=AsyncMock,
+                side_effect=AssertionError("statement timeouts should not finalize quota"),
+            ),
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.release_reserved_usage",
+                new_callable=AsyncMock,
             ),
             patch(
                 "src.fact_checking.embeddings_jsonapi_router.EmbeddingService.similarity_search",
@@ -690,3 +703,61 @@ class TestSimilaritySearchJSONAPIWithMockedService:
 
         assert response.status_code == 504
         assert "errors" in response.json()
+
+    @pytest.mark.asyncio
+    async def test_similarity_search_success_finalizes_reserved_usage(
+        self,
+        embeddings_jsonapi_auth_client,
+        embeddings_jsonapi_community_server,
+    ):
+        """Successful similarity search should finalize reserved quota once."""
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
+        request_body = {
+            "data": {
+                "type": "similarity-searches",
+                "attributes": {
+                    "text": "This query should exercise successful quota finalization behavior.",
+                    "community_server_id": platform_id,
+                    "dataset_tags": ["snopes"],
+                    "similarity_threshold": 0.6,
+                    "limit": 5,
+                },
+            }
+        }
+
+        mock_response = MagicMock(
+            matches=[],
+            query_text=request_body["data"]["attributes"]["text"],
+            dataset_tags=["snopes"],
+            similarity_threshold=0.6,
+            score_threshold=0.1,
+            total_matches=0,
+        )
+
+        with (
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.check_and_reserve_limits",
+                new_callable=AsyncMock,
+                return_value=(True, None),
+            ),
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.finalize_reserved_usage",
+                new_callable=AsyncMock,
+            ) as mock_finalize,
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.release_reserved_usage",
+                new_callable=AsyncMock,
+                side_effect=AssertionError("successful requests should not release quota"),
+            ),
+            patch(
+                "src.fact_checking.embeddings_jsonapi_router.EmbeddingService.similarity_search",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+        ):
+            response = await embeddings_jsonapi_auth_client.post(
+                "/api/v2/similarity-searches", json=request_body
+            )
+
+        assert response.status_code == 200
+        mock_finalize.assert_awaited_once()

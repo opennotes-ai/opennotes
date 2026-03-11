@@ -239,7 +239,7 @@ class LLMService:
             ValueError: If no OpenAI configuration found
             Exception: If API call fails after retries
         """
-        max_attempts = retry_attempts or 3
+        max_attempts = 3 if retry_attempts is None else retry_attempts
         if max_attempts < 1:
             raise ValueError(f"retry_attempts must be >= 1, got {max_attempts}")
 

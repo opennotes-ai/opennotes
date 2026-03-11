@@ -93,6 +93,7 @@ async def hybrid_search(
     semantic_similarity_threshold: float = 0.0,
     keyword_relevance_threshold: float = 0.0,
     alpha: float = DEFAULT_ALPHA,
+    statement_timeout_ms: int | None = None,
 ) -> list[HybridSearchResult]:
     """
     Perform hybrid search combining FTS and vector similarity using Convex Combination.
@@ -133,6 +134,8 @@ async def hybrid_search(
             alpha = 1.0 means pure semantic search
             alpha = 0.0 means pure keyword search
             Default 0.7 (semantic-weighted, based on research)
+        statement_timeout_ms: Optional PostgreSQL statement timeout in milliseconds
+            applied via `SET LOCAL statement_timeout` for this query execution.
 
     Returns:
         List of HybridSearchResult containing FactCheckItem and CC score,
@@ -148,6 +151,10 @@ async def hybrid_search(
 
     if not (0.0 <= alpha <= 1.0):
         raise ValueError(f"Alpha must be between 0.0 and 1.0, got {alpha}")
+    if statement_timeout_ms is not None and statement_timeout_ms <= 0:
+        raise ValueError(
+            f"statement_timeout_ms must be > 0 when provided, got {statement_timeout_ms}"
+        )
 
     query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
 
@@ -253,6 +260,10 @@ async def hybrid_search(
 
     query_start = time.perf_counter()
     try:
+        if statement_timeout_ms is not None:
+            await session.execute(
+                text(f"SET LOCAL statement_timeout = {int(statement_timeout_ms)}")
+            )
         result = await session.execute(cc_query, params)
         rows = result.fetchall()
         query_duration_ms = (time.perf_counter() - query_start) * 1000
