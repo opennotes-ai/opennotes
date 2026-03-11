@@ -53,6 +53,7 @@ from uuid import UUID
 import orjson
 from dbos import DBOS, EnqueueOptions, Queue
 
+from src.bulk_content_scan.schemas import BulkScanStatus
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
@@ -1124,11 +1125,11 @@ def _determine_scan_status(
     processed_count: int,
     error_count: int,
     total_errors: int,
-) -> tuple[Any, str | None]:
-    from src.bulk_content_scan.schemas import BulkScanStatus
-
+) -> tuple[BulkScanStatus, str | None]:
     if messages_scanned > 0 and processed_count == 0 and total_errors > 0:
         return BulkScanStatus.FAILED, "100% of messages had errors"
+    if messages_scanned > 0 and processed_count == 0 and error_count > 0:
+        return BulkScanStatus.FAILED, "all messages had batch errors"
     if messages_scanned > 0 and processed_count == 0 and error_count == 0 and total_errors == 0:
         return (
             BulkScanStatus.FAILED,

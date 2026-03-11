@@ -526,6 +526,14 @@ class TestContentScanOrchestrationWorkflow:
             ],
         )
 
+        start = 1000000.0
+        call_count = 0
+
+        def stateful_time() -> float:
+            nonlocal call_count
+            call_count += 1
+            return start + (call_count * 10)
+
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
             patch(
@@ -534,10 +542,12 @@ class TestContentScanOrchestrationWorkflow:
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+            patch("src.dbos_workflows.content_scan_workflow.time") as mock_time,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
-            mock_clock.return_value = time.time()
+            mock_clock.return_value = start
+            mock_time.time.side_effect = stateful_time
             mock_finalize.return_value = {
                 "status": "completed",
                 "messages_scanned": 10,
@@ -573,13 +583,12 @@ class TestContentScanOrchestrationWorkflow:
         )
 
         start = 1000000.0
-        time_values = iter(
-            [
-                start,
-                start + 200,
-                start + 200,
-            ]
-        )
+        call_count = 0
+
+        def stateful_time() -> float:
+            nonlocal call_count
+            call_count += 1
+            return start + (call_count * 100)
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
@@ -594,7 +603,7 @@ class TestContentScanOrchestrationWorkflow:
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
             mock_clock.return_value = start
-            mock_time.time.side_effect = time_values
+            mock_time.time.side_effect = stateful_time
 
             mock_finalize.return_value = {
                 "status": "completed",
@@ -628,6 +637,11 @@ class TestAdaptiveTimeoutCap:
         from src.dbos_workflows.content_scan_workflow import compute_adaptive_timeout_cap
 
         assert compute_adaptive_timeout_cap(100) == 500
+
+    def test_zero_messages_returns_minimum(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import compute_adaptive_timeout_cap
+
+        assert compute_adaptive_timeout_cap(0) == 120
 
     def test_capped_by_wall_clock_max(self) -> None:
         from src.dbos_workflows.content_scan_workflow import (
@@ -1196,6 +1210,19 @@ class TestDetermineScanStatus:
         assert status.value == "completed"
         assert reason is None
 
+    def test_error_count_with_zero_total_errors_returns_failed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=10,
+            processed_count=0,
+            error_count=5,
+            total_errors=0,
+        )
+        assert status.value == "failed"
+        assert reason is not None
+        assert "batch errors" in reason
+
     def test_partial_processing_returns_completed(self) -> None:
         from src.dbos_workflows.content_scan_workflow import _determine_scan_status
 
@@ -1207,6 +1234,30 @@ class TestDetermineScanStatus:
         )
         assert status.value == "completed"
         assert reason is None
+
+
+class TestAdaptiveTimeoutProducesFailed:
+    """Integration-level test: adaptive cap exceeded → _determine_scan_status → FAILED."""
+
+    def test_adaptive_cap_exceeded_produces_failed_via_determine_status(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            _determine_scan_status,
+            compute_adaptive_timeout_cap,
+        )
+
+        messages_scanned = 10
+        cap = compute_adaptive_timeout_cap(messages_scanned)
+        assert cap == 120
+
+        status, reason = _determine_scan_status(
+            messages_scanned=messages_scanned,
+            processed_count=0,
+            error_count=0,
+            total_errors=0,
+        )
+        assert status.value == "failed"
+        assert reason is not None
+        assert "timed out" in reason
 
 
 class TestDispatchContentScanWorkflow:
