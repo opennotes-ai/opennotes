@@ -329,6 +329,7 @@ async def hybrid_search_with_chunks(
     keyword_relevance_threshold: float = 0.05,
     common_chunk_weight_factor: float = DEFAULT_COMMON_CHUNK_WEIGHT_FACTOR,
     alpha: float = DEFAULT_ALPHA,
+    statement_timeout_ms: int | None = None,
 ) -> list[HybridSearchResult]:
     """
     Perform hybrid search using chunk embeddings with Convex Combination fusion.
@@ -369,6 +370,8 @@ async def hybrid_search_with_chunks(
             alpha = 1.0 means pure semantic search
             alpha = 0.0 means pure keyword search
             Default 0.7 (semantic-weighted, based on research)
+        statement_timeout_ms: Optional PostgreSQL statement timeout in milliseconds
+            applied via `SET LOCAL statement_timeout` for this query execution.
 
     Returns:
         List of HybridSearchResult containing FactCheckItem and CC score,
@@ -389,6 +392,10 @@ async def hybrid_search_with_chunks(
 
     if not (0.0 <= alpha <= 1.0):
         raise ValueError(f"Alpha must be between 0.0 and 1.0, got {alpha}")
+    if statement_timeout_ms is not None and statement_timeout_ms <= 0:
+        raise ValueError(
+            f"statement_timeout_ms must be > 0 when provided, got {statement_timeout_ms}"
+        )
 
     query_text = strip_discord_markdown(query_text)
 
@@ -569,6 +576,11 @@ async def hybrid_search_with_chunks(
 
     query_start = time.perf_counter()
     try:
+        if statement_timeout_ms is not None:
+            await session.execute(
+                text("SET LOCAL statement_timeout = :statement_timeout"),
+                {"statement_timeout": int(statement_timeout_ms)},
+            )
         result = await session.execute(cc_query, params)
         rows = result.fetchall()
         query_duration_ms = (time.perf_counter() - query_start) * 1000

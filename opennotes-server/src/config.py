@@ -144,6 +144,9 @@ class Settings(BaseSettings):
     REQUEST_TIMEOUT: float = Field(
         default=30.0, description="Request timeout in seconds for API endpoints"
     )
+    EMBEDDING_TIMEOUT_SECONDS: float = Field(
+        default=8.0, description="Timeout in seconds for embedding API requests"
+    )
     HEALTH_CHECK_TIMEOUT: int = Field(default=5, description="Health check timeout in seconds")
     CACHE_HIT_RATE_THRESHOLD: float = Field(
         default=0.5, description="Minimum cache hit rate (0.0-1.0) before marking cache as DEGRADED"

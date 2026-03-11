@@ -107,7 +107,12 @@ class EmbeddingService:
         )
 
     async def generate_embedding(
-        self, db: AsyncSession, text: str, community_server_id: str
+        self,
+        db: AsyncSession,
+        text: str,
+        community_server_id: str,
+        community_server_uuid: UUID | None = None,
+        retry_attempts: int | None = None,
     ) -> list[float]:
         """
         Generate OpenAI embedding for text using community-server API key.
@@ -118,6 +123,8 @@ class EmbeddingService:
             db: Database session
             text: Text to embed
             community_server_id: Community server (guild) ID
+            community_server_uuid: Optional UUID to bypass lookup by platform ID
+            retry_attempts: Optional embedding retry override for hot-path callers
 
         Returns:
             Embedding vector (1536 dimensions)
@@ -142,16 +149,18 @@ class EmbeddingService:
 
                 span.set_attribute("embedding.cache_hit", False)
 
-                # Convert guild ID string to UUID for LLMService
-                # Get CommunityServer UUID from platform_community_server_id (Discord guild ID)
-                result = await db.execute(
-                    select(CommunityServer.id).where(
-                        CommunityServer.platform_community_server_id == community_server_id
+                resolved_community_server_uuid = community_server_uuid
+                if resolved_community_server_uuid is None:
+                    # Convert guild ID string to UUID for LLMService
+                    # Get CommunityServer UUID from platform_community_server_id (Discord guild ID)
+                    result = await db.execute(
+                        select(CommunityServer.id).where(
+                            CommunityServer.platform_community_server_id == community_server_id
+                        )
                     )
-                )
-                community_server_uuid = result.scalar_one_or_none()
+                    resolved_community_server_uuid = result.scalar_one_or_none()
 
-                if not community_server_uuid:
+                if not resolved_community_server_uuid:
                     raise ValueError(
                         f"Community server not found for platform_community_server_id: {community_server_id}"
                     )
@@ -159,7 +168,10 @@ class EmbeddingService:
                 # Generate embedding via LLMService (handles retries internally)
                 # LLMService returns tuple of (embedding, provider, model)
                 embedding, _, _ = await self.llm_service.generate_embedding(
-                    db, text, community_server_uuid
+                    db,
+                    text,
+                    resolved_community_server_uuid,
+                    retry_attempts=retry_attempts,
                 )
 
                 self.embedding_cache[cache_key] = embedding
@@ -179,6 +191,9 @@ class EmbeddingService:
         similarity_threshold: float | None = None,
         score_threshold: float = 0.1,
         limit: int = 5,
+        community_server_uuid: UUID | None = None,
+        retry_attempts: int | None = None,
+        statement_timeout_ms: int | None = None,
     ) -> SimilaritySearchResponse:
         """
         Search for similar fact-check items using hybrid search (FTS + vector similarity).
@@ -240,7 +255,13 @@ class EmbeddingService:
                     },
                 )
 
-                query_embedding = await self.generate_embedding(db, query_text, community_server_id)
+                query_embedding = await self.generate_embedding(
+                    db,
+                    query_text,
+                    community_server_id,
+                    community_server_uuid=community_server_uuid,
+                    retry_attempts=retry_attempts,
+                )
 
                 hybrid_results = await hybrid_search_with_chunks(
                     session=db,
@@ -249,6 +270,7 @@ class EmbeddingService:
                     limit=limit,
                     dataset_tags=dataset_tags if dataset_tags else None,
                     semantic_similarity_threshold=threshold,
+                    statement_timeout_ms=statement_timeout_ms,
                 )
 
                 matches = [

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from src.config import settings
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.providers.base import LLMMessage, LLMResponse
 from src.llm_config.providers.litellm_provider import EmptyLLMResponseError
@@ -184,7 +185,32 @@ class TestLLMServiceGenerateEmbeddingRetry:
                     community_server_id=community_server_id,
                 )
 
-            assert mock_litellm.aembedding.call_count == 5
+            assert mock_litellm.aembedding.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_generate_embedding_hot_path_override_uses_2_attempts(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        """Hot-path callers should be able to reduce retry attempts to 2."""
+        mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
+        community_server_id = uuid4()
+
+        with patch("src.llm_config.service.litellm") as mock_litellm:
+            mock_litellm.aembedding = AsyncMock(side_effect=ConnectionError("still failing"))
+
+            with pytest.raises(ConnectionError, match="still failing"):
+                await llm_service.generate_embedding(
+                    db=mock_db,
+                    text="Test text for embedding",
+                    community_server_id=community_server_id,
+                    retry_attempts=2,
+                )
+
+            assert mock_litellm.aembedding.call_count == 2
 
     @pytest.mark.asyncio
     async def test_generate_embedding_succeeds_without_retry_when_no_error(
@@ -213,6 +239,34 @@ class TestLLMServiceGenerateEmbeddingRetry:
 
             assert mock_litellm.aembedding.call_count == 1
             assert embedding == [0.5] * 1536
+
+    @pytest.mark.asyncio
+    async def test_generate_embedding_passes_configured_timeout(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_db: AsyncMock,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        """Embedding requests should pass EMBEDDING_TIMEOUT_SECONDS to LiteLLM."""
+        mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
+        community_server_id = uuid4()
+
+        mock_embedding_response = MagicMock()
+        mock_embedding_response.data = [{"embedding": [0.2] * 1536}]
+        mock_embedding_response.usage = MagicMock(total_tokens=3)
+
+        with patch("src.llm_config.service.litellm") as mock_litellm:
+            mock_litellm.aembedding = AsyncMock(return_value=mock_embedding_response)
+
+            await llm_service.generate_embedding(
+                db=mock_db,
+                text="Test text",
+                community_server_id=community_server_id,
+            )
+
+            call_kwargs = mock_litellm.aembedding.call_args.kwargs
+            assert call_kwargs["timeout"] == settings.EMBEDDING_TIMEOUT_SECONDS
 
 
 class TestLLMServiceDescribeImageRetry:
@@ -305,14 +359,7 @@ class TestLLMServiceDescribeImageRetry:
 
 
 class TestRetryDecoratorConfiguration:
-    """Tests to verify retry decorator configuration matches between methods."""
-
-    def test_generate_embedding_has_retry_decorator(self) -> None:
-        """Verify generate_embedding has the @retry decorator applied."""
-        from src.llm_config.service import LLMService
-
-        method = LLMService.generate_embedding
-        assert hasattr(method, "retry")
+    """Tests to verify retry decorator configuration on static retry methods."""
 
     def test_describe_image_has_retry_decorator(self) -> None:
         """Verify describe_image has the @retry decorator applied."""
@@ -328,18 +375,3 @@ class TestRetryDecoratorConfiguration:
     def test_complete_retry_uses_2_attempts(self) -> None:
         method = LLMService.complete
         assert method.retry.stop.max_attempt_number == 2
-
-    def test_retry_configuration_matches(self) -> None:
-        """Verify embedding and image methods have matching retry configurations."""
-        from src.llm_config.service import LLMService
-
-        embed_method = LLMService.generate_embedding
-        image_method = LLMService.describe_image
-
-        embed_retry = embed_method.retry
-        image_retry = image_method.retry
-
-        assert embed_retry.stop.max_attempt_number == image_retry.stop.max_attempt_number
-        assert embed_retry.wait.multiplier == image_retry.wait.multiplier
-        assert embed_retry.wait.min == image_retry.wait.min
-        assert embed_retry.wait.max == image_retry.wait.max

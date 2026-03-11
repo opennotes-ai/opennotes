@@ -12,6 +12,7 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -571,3 +572,35 @@ class TestPreviouslySeenJSONAPICheck:
         )
 
         assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_check_previously_seen_message_timeout_returns_503_with_retry_after(
+        self,
+        previously_seen_jsonapi_auth_client,
+        previously_seen_jsonapi_community_server,
+    ):
+        """Timeout on check endpoint should return JSON:API 503 with Retry-After header."""
+        platform_id = previously_seen_jsonapi_community_server["platform_community_server_id"]
+        request_body = {
+            "data": {
+                "type": "previously-seen-check",
+                "attributes": {
+                    "message_text": "This message triggers timeout handling in check endpoint.",
+                    "platform_community_server_id": platform_id,
+                    "channel_id": "timeout-test-channel",
+                },
+            }
+        }
+
+        with patch(
+            "src.fact_checking.previously_seen_jsonapi_router.EmbeddingService.generate_embedding",
+            new_callable=AsyncMock,
+            side_effect=TimeoutError(),
+        ):
+            response = await previously_seen_jsonapi_auth_client.post(
+                "/api/v2/previously-seen-messages/check", json=request_body
+            )
+
+        assert response.status_code == 503
+        assert response.headers.get("Retry-After") is not None
+        assert "errors" in response.json()

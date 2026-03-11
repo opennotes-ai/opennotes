@@ -52,6 +52,7 @@ from src.monitoring import get_logger
 from src.users.models import User
 
 logger = get_logger(__name__)
+HOT_PATH_EMBEDDING_RETRY_ATTEMPTS = 2
 
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
@@ -299,6 +300,8 @@ async def hybrid_search_jsonapi(
             db=db,
             text=attrs.text,
             community_server_id=attrs.community_server_id,
+            community_server_uuid=community_server_uuid,
+            retry_attempts=HOT_PATH_EMBEDDING_RETRY_ATTEMPTS,
         )
         embedding_duration_ms = (time.perf_counter() - embedding_start) * 1000
 

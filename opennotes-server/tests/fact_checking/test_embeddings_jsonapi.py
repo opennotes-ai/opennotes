@@ -10,6 +10,7 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -595,3 +596,44 @@ class TestSimilaritySearchJSONAPIWithMockedService:
             assert "content" in match
             assert "similarity_score" in match
             assert 0.0 <= match["similarity_score"] <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_similarity_search_timeout_returns_504(
+        self,
+        embeddings_jsonapi_auth_client,
+        embeddings_jsonapi_community_server,
+    ):
+        """Timeout on similarity endpoint should return graceful JSON:API 504 response."""
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
+
+        request_body = {
+            "data": {
+                "type": "similarity-searches",
+                "attributes": {
+                    "text": "This query should exercise timeout handling for similarity search.",
+                    "community_server_id": platform_id,
+                    "dataset_tags": ["snopes"],
+                    "similarity_threshold": 0.6,
+                    "limit": 5,
+                },
+            }
+        }
+
+        with (
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.check_and_reserve_limits",
+                new_callable=AsyncMock,
+                return_value=(True, None),
+            ),
+            patch(
+                "src.fact_checking.embeddings_jsonapi_router.EmbeddingService.similarity_search",
+                new_callable=AsyncMock,
+                side_effect=TimeoutError(),
+            ),
+        ):
+            response = await embeddings_jsonapi_auth_client.post(
+                "/api/v2/similarity-searches", json=request_body
+            )
+
+        assert response.status_code == 504
+        assert "errors" in response.json()

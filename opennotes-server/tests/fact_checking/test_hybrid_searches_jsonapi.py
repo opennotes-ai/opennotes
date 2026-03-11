@@ -643,6 +643,12 @@ class TestHybridSearchJSONAPIWithMockedService:
             assert response.status_code == 200, (
                 f"Expected 200, got {response.status_code}: {response.text}"
             )
+            call_kwargs = mock_generate.call_args.kwargs
+            assert call_kwargs["retry_attempts"] == 2
+            assert (
+                call_kwargs["community_server_uuid"]
+                == hybrid_search_jsonapi_community_server["uuid"]
+            )
 
             data = response.json()
 

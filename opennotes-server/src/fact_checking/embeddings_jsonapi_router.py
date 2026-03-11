@@ -9,6 +9,7 @@ It provides:
 Reference: https://jsonapi.org/format/
 """
 
+import asyncio
 import uuid
 from datetime import datetime
 from functools import lru_cache
@@ -47,6 +48,9 @@ from src.monitoring import get_logger
 from src.users.models import User
 
 logger = get_logger(__name__)
+HOT_PATH_EMBEDDING_RETRY_ATTEMPTS = 2
+HOT_PATH_ENDPOINT_TIMEOUT_SECONDS = 10
+HOT_PATH_DB_STATEMENT_TIMEOUT_MS = 10_000
 
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
@@ -334,15 +338,33 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
                     reason or "LLM usage limit exceeded",
                 )
 
-        response = await embedding_service.similarity_search(
-            db=db,
-            query_text=attrs.text,
-            community_server_id=attrs.community_server_id,
-            dataset_tags=attrs.dataset_tags,
-            similarity_threshold=attrs.similarity_threshold,
-            score_threshold=attrs.score_threshold,
-            limit=attrs.limit,
-        )
+        try:
+            async with asyncio.timeout(HOT_PATH_ENDPOINT_TIMEOUT_SECONDS):
+                response = await embedding_service.similarity_search(
+                    db=db,
+                    query_text=attrs.text,
+                    community_server_id=attrs.community_server_id,
+                    dataset_tags=attrs.dataset_tags,
+                    similarity_threshold=attrs.similarity_threshold,
+                    score_threshold=attrs.score_threshold,
+                    limit=attrs.limit,
+                    community_server_uuid=community_server_uuid,
+                    retry_attempts=HOT_PATH_EMBEDDING_RETRY_ATTEMPTS,
+                    statement_timeout_ms=HOT_PATH_DB_STATEMENT_TIMEOUT_MS,
+                )
+        except TimeoutError:
+            logger.warning(
+                "Similarity search timed out",
+                extra={
+                    "community_server_id": attrs.community_server_id,
+                    "timeout_seconds": HOT_PATH_ENDPOINT_TIMEOUT_SECONDS,
+                },
+            )
+            return create_error_response(
+                status.HTTP_504_GATEWAY_TIMEOUT,
+                "Gateway Timeout",
+                "Similarity search timed out. Please retry shortly.",
+            )
 
         match_resources = [
             FactCheckMatchResource(
