@@ -98,6 +98,28 @@ def _similarity_search_timeout_response() -> JSONResponse:
     )
 
 
+async def _release_reserved_similarity_usage(
+    db: AsyncSession,
+    usage_tracker: LLMUsageTracker,
+    community_server_uuid: UUID | None,
+    reserved_usage: bool,
+    estimated_tokens: int,
+) -> None:
+    """Release reserved quota after clearing any failed request transaction state."""
+    if not (community_server_uuid and reserved_usage):
+        return
+
+    # Statement timeouts and cancelled requests can leave the session transaction aborted.
+    # Clear that state before opening the release_reserved_usage transaction.
+    await db.rollback()
+    await usage_tracker.release_reserved_usage(
+        community_server_id=community_server_uuid,
+        provider="openai",
+        reserved_tokens=estimated_tokens,
+        model=EMBEDDING_USAGE_MODEL,
+    )
+
+
 async def get_community_server_uuid(
     db: AsyncSession, platform_id: str, platform: str = "discord"
 ) -> UUID | None:
@@ -279,7 +301,7 @@ def _build_empty_matches_response(
     response_model=SimilaritySearchResultResponse,
 )
 @limiter.limit("100/minute")
-async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
+async def similarity_search_jsonapi(  # noqa: PLR0911
     request: HTTPRequest,
     body: SimilaritySearchJSONAPIRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -307,22 +329,23 @@ async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
     community_server_uuid: UUID | None = None
     estimated_tokens = 0
     reserved_usage = False
+    attrs = body.data.attributes
+    community_server_id = attrs.community_server_id
+    user_id = str(current_user.id)
     try:
-        attrs = body.data.attributes
-
         if len(attrs.text.strip()) < 10:
             return _build_empty_matches_response(attrs, str(request.url))
 
         membership = await verify_community_membership(
-            attrs.community_server_id, current_user, db, request
+            community_server_id, current_user, db, request
         )
 
         logger.info(
-            f"User {current_user.id} performing similarity search via JSON:API",
+            f"User {user_id} performing similarity search via JSON:API",
             extra={
-                "user_id": str(current_user.id),
+                "user_id": user_id,
                 "profile_id": str(membership.profile_id),
-                "community_server_id": attrs.community_server_id,
+                "community_server_id": community_server_id,
                 "community_role": membership.role,
                 "text_length": len(attrs.text),
                 "dataset_tags": attrs.dataset_tags,
@@ -332,7 +355,7 @@ async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
 
         estimated_tokens = len(attrs.text) // 4
 
-        community_server_uuid = await get_community_server_uuid(db, attrs.community_server_id)
+        community_server_uuid = await get_community_server_uuid(db, community_server_id)
 
         if community_server_uuid:
             allowed, reason = await usage_tracker.check_and_reserve_limits(
@@ -346,8 +369,8 @@ async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
                 logger.warning(
                     "Community LLM usage limit exceeded",
                     extra={
-                        "user_id": str(current_user.id),
-                        "community_server_id": attrs.community_server_id,
+                        "user_id": user_id,
+                        "community_server_id": community_server_id,
                         "community_server_uuid": str(community_server_uuid),
                         "reason": reason,
                     },
@@ -364,7 +387,7 @@ async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
                 response = await embedding_service.similarity_search(
                     db=db,
                     query_text=attrs.text,
-                    community_server_id=attrs.community_server_id,
+                    community_server_id=community_server_id,
                     dataset_tags=attrs.dataset_tags,
                     similarity_threshold=attrs.similarity_threshold,
                     score_threshold=attrs.score_threshold,
@@ -374,34 +397,34 @@ async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
                     statement_timeout_ms=HOT_PATH_DB_STATEMENT_TIMEOUT_MS,
                 )
         except TimeoutError:
-            if community_server_uuid and reserved_usage:
-                await usage_tracker.release_reserved_usage(
-                    community_server_id=community_server_uuid,
-                    provider="openai",
-                    reserved_tokens=estimated_tokens,
-                    model=EMBEDDING_USAGE_MODEL,
-                )
+            await _release_reserved_similarity_usage(
+                db=db,
+                usage_tracker=usage_tracker,
+                community_server_uuid=community_server_uuid,
+                reserved_usage=reserved_usage,
+                estimated_tokens=estimated_tokens,
+            )
             logger.warning(
                 "Similarity search timed out",
                 extra={
-                    "community_server_id": attrs.community_server_id,
+                    "community_server_id": community_server_id,
                     "timeout_seconds": HOT_PATH_ENDPOINT_TIMEOUT_SECONDS,
                 },
             )
             return _similarity_search_timeout_response()
         except OperationalError as e:
             if _is_statement_timeout_error(e):
-                if community_server_uuid and reserved_usage:
-                    await usage_tracker.release_reserved_usage(
-                        community_server_id=community_server_uuid,
-                        provider="openai",
-                        reserved_tokens=estimated_tokens,
-                        model=EMBEDDING_USAGE_MODEL,
-                    )
+                await _release_reserved_similarity_usage(
+                    db=db,
+                    usage_tracker=usage_tracker,
+                    community_server_uuid=community_server_uuid,
+                    reserved_usage=reserved_usage,
+                    estimated_tokens=estimated_tokens,
+                )
                 logger.warning(
                     "Similarity search query hit PostgreSQL statement timeout",
                     extra={
-                        "community_server_id": attrs.community_server_id,
+                        "community_server_id": community_server_id,
                         "statement_timeout_ms": HOT_PATH_DB_STATEMENT_TIMEOUT_MS,
                     },
                 )
@@ -452,8 +475,8 @@ async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
         logger.info(
             "Similarity search completed successfully via JSON:API",
             extra={
-                "user_id": str(current_user.id),
-                "community_server_id": attrs.community_server_id,
+                "user_id": user_id,
+                "community_server_id": community_server_id,
                 "matches_found": response.total_matches,
                 "top_score": response.matches[0].similarity_score if response.matches else None,
             },
@@ -470,18 +493,18 @@ async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
         )
 
     except RateLimitError as e:
-        if community_server_uuid and reserved_usage:
-            await usage_tracker.release_reserved_usage(
-                community_server_id=community_server_uuid,
-                provider="openai",
-                reserved_tokens=estimated_tokens,
-                model=EMBEDDING_USAGE_MODEL,
-            )
+        await _release_reserved_similarity_usage(
+            db=db,
+            usage_tracker=usage_tracker,
+            community_server_uuid=community_server_uuid,
+            reserved_usage=reserved_usage,
+            estimated_tokens=estimated_tokens,
+        )
         logger.error(
             "OpenAI API rate limit exceeded",
             extra={
-                "user_id": str(current_user.id),
-                "community_server_id": body.data.attributes.community_server_id,
+                "user_id": user_id,
+                "community_server_id": community_server_id,
                 "error": str(e),
             },
         )
@@ -491,18 +514,18 @@ async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
             "OpenAI API rate limit exceeded. Please try again later.",
         )
     except HTTPException as e:
-        if community_server_uuid and reserved_usage:
-            await usage_tracker.release_reserved_usage(
-                community_server_id=community_server_uuid,
-                provider="openai",
-                reserved_tokens=estimated_tokens,
-                model=EMBEDDING_USAGE_MODEL,
-            )
+        await _release_reserved_similarity_usage(
+            db=db,
+            usage_tracker=usage_tracker,
+            community_server_uuid=community_server_uuid,
+            reserved_usage=reserved_usage,
+            estimated_tokens=estimated_tokens,
+        )
         logger.warning(
             "Similarity search authorization error (JSON:API)",
             extra={
-                "user_id": str(current_user.id),
-                "community_server_id": body.data.attributes.community_server_id,
+                "user_id": user_id,
+                "community_server_id": community_server_id,
                 "status_code": e.status_code,
                 "detail": e.detail,
             },
@@ -513,18 +536,18 @@ async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
             e.detail,
         )
     except ValueError as e:
-        if community_server_uuid and reserved_usage:
-            await usage_tracker.release_reserved_usage(
-                community_server_id=community_server_uuid,
-                provider="openai",
-                reserved_tokens=estimated_tokens,
-                model=EMBEDDING_USAGE_MODEL,
-            )
+        await _release_reserved_similarity_usage(
+            db=db,
+            usage_tracker=usage_tracker,
+            community_server_uuid=community_server_uuid,
+            reserved_usage=reserved_usage,
+            estimated_tokens=estimated_tokens,
+        )
         logger.warning(
             "Similarity search validation error (JSON:API)",
             extra={
-                "user_id": str(current_user.id),
-                "community_server_id": body.data.attributes.community_server_id,
+                "user_id": user_id,
+                "community_server_id": community_server_id,
                 "error": str(e),
             },
         )
@@ -534,18 +557,18 @@ async def similarity_search_jsonapi(  # noqa: PLR0911, PLR0912
             str(e),
         )
     except Exception as e:
-        if community_server_uuid and reserved_usage:
-            await usage_tracker.release_reserved_usage(
-                community_server_id=community_server_uuid,
-                provider="openai",
-                reserved_tokens=estimated_tokens,
-                model=EMBEDDING_USAGE_MODEL,
-            )
+        await _release_reserved_similarity_usage(
+            db=db,
+            usage_tracker=usage_tracker,
+            community_server_uuid=community_server_uuid,
+            reserved_usage=reserved_usage,
+            estimated_tokens=estimated_tokens,
+        )
         logger.error(
             "Similarity search failed (JSON:API)",
             extra={
-                "user_id": str(current_user.id),
-                "community_server_id": body.data.attributes.community_server_id,
+                "user_id": user_id,
+                "community_server_id": community_server_id,
                 "error": str(e),
                 "error_type": type(e).__name__,
             },

@@ -634,7 +634,11 @@ class TestSimilaritySearchJSONAPIWithMockedService:
             patch(
                 "src.llm_config.usage_tracker.LLMUsageTracker.release_reserved_usage",
                 new_callable=AsyncMock,
-            ),
+            ) as mock_release,
+            patch(
+                "src.fact_checking.embeddings_jsonapi_router.AsyncSession.rollback",
+                new_callable=AsyncMock,
+            ) as mock_rollback,
             patch(
                 "src.fact_checking.embeddings_jsonapi_router.EmbeddingService.similarity_search",
                 new_callable=AsyncMock,
@@ -647,6 +651,8 @@ class TestSimilaritySearchJSONAPIWithMockedService:
 
         assert response.status_code == 504
         assert "errors" in response.json()
+        mock_rollback.assert_awaited_once()
+        mock_release.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_similarity_search_statement_timeout_returns_504(
@@ -690,7 +696,11 @@ class TestSimilaritySearchJSONAPIWithMockedService:
             patch(
                 "src.llm_config.usage_tracker.LLMUsageTracker.release_reserved_usage",
                 new_callable=AsyncMock,
-            ),
+            ) as mock_release,
+            patch(
+                "src.fact_checking.embeddings_jsonapi_router.AsyncSession.rollback",
+                new_callable=AsyncMock,
+            ) as mock_rollback,
             patch(
                 "src.fact_checking.embeddings_jsonapi_router.EmbeddingService.similarity_search",
                 new_callable=AsyncMock,
@@ -703,6 +713,8 @@ class TestSimilaritySearchJSONAPIWithMockedService:
 
         assert response.status_code == 504
         assert "errors" in response.json()
+        mock_rollback.assert_awaited_once()
+        mock_release.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_similarity_search_success_finalizes_reserved_usage(
