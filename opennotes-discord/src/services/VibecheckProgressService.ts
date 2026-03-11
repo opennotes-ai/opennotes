@@ -4,6 +4,7 @@ import { BotChannelService } from './BotChannelService.js';
 import { GuildConfigService } from './GuildConfigService.js';
 import { ConfigKey } from '../lib/config-schema.js';
 import { apiClient } from '../api-client.js';
+import { formatMessageLink, truncateContentWithMeta } from '../lib/bulk-scan-executor.js';
 import type { BulkScanProgressEvent, MessageScoreInfo } from '../types/bulk-scan.js';
 
 export class VibecheckProgressService {
@@ -107,7 +108,7 @@ export class VibecheckProgressService {
       .setFooter({ text: `Scan ID: ${shortScanId}` })
       .setTimestamp();
 
-    const scoreLines = this.formatScoreLines(message_scores, threshold_used);
+    const scoreLines = this.formatScoreLines(message_scores, threshold_used, guild.id);
     if (scoreLines.length > 0) {
       const truncated = scoreLines.slice(0, 10);
       const remaining = scoreLines.length - truncated.length;
@@ -127,7 +128,7 @@ export class VibecheckProgressService {
     return embed;
   }
 
-  private formatScoreLines(scores: MessageScoreInfo[], threshold: number): string[] {
+  private formatScoreLines(scores: MessageScoreInfo[], threshold: number, guildId: string): string[] {
     return scores.map((score) => {
       const percentage = (score.similarity_score * 100).toFixed(1);
       const thresholdPct = (threshold * 100).toFixed(0);
@@ -137,8 +138,11 @@ export class VibecheckProgressService {
       let line = `\`${shortMsgId}\`: ${percentage}% (thresh: ${thresholdPct}%) ${flag}`;
 
       if (score.is_flagged && score.matched_claim) {
-        const claim = score.matched_claim.substring(0, 50);
-        line += `\n  └─ *"${claim}${score.matched_claim.length > 50 ? '...' : ''}"*`;
+        const claim = truncateContentWithMeta(score.matched_claim, 50);
+        line += `\n  └─ *"${claim.text}"*`;
+        if (claim.isTruncated) {
+          line += `\n  └─ [View Original Message](${formatMessageLink(guildId, score.channel_id, score.message_id)})`;
+        }
       }
 
       return line;
