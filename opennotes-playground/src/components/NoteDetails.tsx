@@ -126,17 +126,27 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                       ? <>Notes responding to: {group.sourceTitle}</>
                       : <>Request {truncateId(group.requestId)}</>}
                     <Show when={group.sourceUrl}>
-                      {(url) => (
-                        <a
-                          href={url()}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="ml-2 text-xs text-primary hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Read what they're annotating ↗
-                        </a>
-                      )}
+                      {(url) => {
+                        const isSafe = () => /^https?:\/\//i.test(url());
+                        return (
+                          <Show
+                            when={isSafe()}
+                            fallback={
+                              <span class="ml-2 text-xs text-muted-foreground">{url()}</span>
+                            }
+                          >
+                            <a
+                              href={url()}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="ml-2 text-xs text-primary hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Read what they're annotating ↗
+                            </a>
+                          </Show>
+                        );
+                      }}
                     </Show>
                   </span>
                   <span class="shrink-0 text-xs text-muted-foreground">

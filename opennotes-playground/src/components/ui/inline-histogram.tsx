@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, createMemo } from "solid-js";
 import { humanizeLabel } from "~/lib/format";
 
 export const CHART_COLORS = [
@@ -10,8 +10,8 @@ export const CHART_COLORS = [
 ];
 
 export default function InlineHistogram(props: { data: Record<string, number> }) {
-  const entries = () => Object.entries(props.data);
-  const max = () => Math.max(...entries().map(([, v]) => v), 1);
+  const entries = createMemo(() => Object.entries(props.data));
+  const max = createMemo(() => Math.max(...entries().map(([, v]) => v), 1));
 
   return (
     <div class="flex flex-col gap-0.5 min-w-[100px]">

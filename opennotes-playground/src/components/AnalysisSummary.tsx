@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
 import InlineHistogram from "~/components/ui/inline-histogram";
@@ -10,6 +10,10 @@ export default function AnalysisSummary(props: {
   noteQuality: NoteQualityData;
   ratingDistribution: RatingDistributionData;
 }) {
+  const notesByStatus = createMemo(() => Object.entries(props.noteQuality.notes_by_status));
+  const notesByClassification = createMemo(() => Object.entries(props.noteQuality.notes_by_classification));
+  const overallRatings = createMemo(() => Object.entries(props.ratingDistribution.overall));
+
   return (
     <section>
       <h2 id="note-quality" class="mb-4 text-xl font-semibold">Note Quality</h2>
@@ -24,7 +28,7 @@ export default function AnalysisSummary(props: {
           <h3 class="mb-2 text-sm font-semibold">Notes by Status</h3>
           <table class="w-full text-sm" aria-label="Notes by status">
             <tbody>
-              <For each={Object.entries(props.noteQuality.notes_by_status)}>
+              <For each={notesByStatus()}>
                 {([status, count]) => (
                   <tr class="border-b border-border last:border-0">
                     <td class="py-1 text-muted-foreground">{humanizeLabel(status)}</td>
@@ -39,7 +43,7 @@ export default function AnalysisSummary(props: {
           <h3 class="mb-2 text-sm font-semibold">Notes by Classification</h3>
           <table class="w-full text-sm" aria-label="Notes by classification">
             <tbody>
-              <For each={Object.entries(props.noteQuality.notes_by_classification)}>
+              <For each={notesByClassification()}>
                 {([classification, count]) => (
                   <tr class="border-b border-border last:border-0">
                     <td class="py-1 text-muted-foreground">{humanizeLabel(classification)}</td>
@@ -61,7 +65,7 @@ export default function AnalysisSummary(props: {
           <h3 class="mb-2 text-sm font-semibold">Overall</h3>
           <table class="w-full text-sm" aria-label="Overall rating distribution">
             <tbody>
-              <For each={Object.entries(props.ratingDistribution.overall)}>
+              <For each={overallRatings()}>
                 {([level, count]) => (
                   <tr class="border-b border-border last:border-0">
                     <td class="py-1 text-muted-foreground">{humanizeLabel(level)}</td>

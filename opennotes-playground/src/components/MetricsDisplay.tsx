@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
 import { TIER_DESCRIPTIONS } from "~/lib/scoring-tiers";
@@ -10,6 +10,9 @@ export default function MetricsDisplay(props: {
   consensus: ConsensusMetricsData;
   scoring: ScoringCoverageData;
 }) {
+  const tierDistribution = createMemo(() => Object.entries(props.scoring.tier_distribution));
+  const scorerBreakdown = createMemo(() => Object.entries(props.scoring.scorer_breakdown));
+
   return (
     <section>
       <h2 id="consensus-metrics" class="mb-4 text-xl font-semibold">Consensus Metrics</h2>
@@ -40,7 +43,7 @@ export default function MetricsDisplay(props: {
           <h3 class="mb-2 text-sm font-semibold">Tier Distribution</h3>
           <table class="w-full text-sm" aria-label="Tier distribution">
             <tbody>
-              <For each={Object.entries(props.scoring.tier_distribution)}>
+              <For each={tierDistribution()}>
                 {([tier, count]) => {
                   const tierInfo = () => TIER_DESCRIPTIONS[tier];
                   return (
@@ -60,7 +63,7 @@ export default function MetricsDisplay(props: {
           <h3 class="mb-2 text-sm font-semibold">Scorer Breakdown</h3>
           <table class="w-full text-sm" aria-label="Scorer breakdown">
             <tbody>
-              <For each={Object.entries(props.scoring.scorer_breakdown)}>
+              <For each={scorerBreakdown()}>
                 {([scorer, count]) => (
                   <tr class="border-b border-border last:border-0">
                     <td class="py-1 text-muted-foreground">{scorer}</td>

@@ -1,5 +1,5 @@
 import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
-import { Show, Switch, Match, Suspense, createSignal } from "solid-js";
+import { Show, Switch, Match, Suspense, createSignal, createEffect, on } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import {
   getSimulation,
@@ -142,6 +142,7 @@ export default function SimulationDetailPage() {
   const simulation = createAsync(() => fetchSimulation(params.id!));
   const analysis = createAsync(() => fetchAnalysis(params.id!));
   const [notesPage, setNotesPage] = createSignal(1);
+  createEffect(on(() => params.id, () => setNotesPage(1)));
   const detailed = createAsync(() => fetchDetailedAnalysis(params.id!, notesPage()));
 
   const simError = () => {
@@ -298,6 +299,7 @@ export default function SimulationDetailPage() {
                                 currentPage={notesPage()}
                                 totalPages={totalPages}
                                 onPageChange={setNotesPage}
+                                label="Notes pagination"
                               />
                             </Show>
                             <Show when={notesTruncated}>

@@ -1,4 +1,4 @@
-import { createSignal, createMemo, For, Show } from "solid-js";
+import { createSignal, createMemo, createEffect, For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel, truncateId } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
@@ -42,6 +42,9 @@ function PersonalityCell(props: { text: string }) {
 export default function AgentProfiles(props: { agents: AgentBehaviorData[] }) {
   const [page, setPage] = createSignal(1);
   const totalPages = createMemo(() => Math.max(1, Math.ceil(props.agents.length / PAGE_SIZE)));
+  createEffect(() => {
+    if (page() > totalPages()) setPage(totalPages());
+  });
   const visibleAgents = createMemo(() => {
     const start = (page() - 1) * PAGE_SIZE;
     return props.agents.slice(start, start + PAGE_SIZE);
@@ -107,6 +110,7 @@ export default function AgentProfiles(props: { agents: AgentBehaviorData[] }) {
           currentPage={page()}
           totalPages={totalPages()}
           onPageChange={setPage}
+          label="Agent table pagination"
         />
       </Show>
     </section>

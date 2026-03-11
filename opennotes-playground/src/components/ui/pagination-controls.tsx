@@ -4,6 +4,7 @@ interface PaginationControlsProps {
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
+  label?: string;
 }
 
 export default function PaginationControls(props: PaginationControlsProps) {
@@ -11,7 +12,7 @@ export default function PaginationControls(props: PaginationControlsProps) {
   const hasNext = () => props.currentPage < props.totalPages;
 
   return (
-    <nav aria-label="Pagination" class="mt-4 flex items-center justify-center gap-3">
+    <nav aria-label={props.label ?? "Pagination"} class="mt-4 flex items-center justify-center gap-3">
       <Button
         variant="outline"
         size="sm"
