@@ -287,17 +287,21 @@ class LLMService:
 
                 embedding = response.data[0]["embedding"]
 
-        logger.info(
-            "Embedding generated successfully",
-            extra={
-                "text_length": len(text),
-                "community_server_id": str(community_server_id) if community_server_id else None,
-                "tokens_used": response.usage.total_tokens if response.usage else 0,
-                "embedding_dimensions": len(embedding),
-            },
-        )
+                logger.info(
+                    "Embedding generated successfully",
+                    extra={
+                        "text_length": len(text),
+                        "community_server_id": str(community_server_id)
+                        if community_server_id
+                        else None,
+                        "tokens_used": response.usage.total_tokens if response.usage else 0,
+                        "embedding_dimensions": len(embedding),
+                    },
+                )
 
-        return embedding, "litellm", embedding_model_str
+                return embedding, "litellm", embedding_model_str
+
+        raise RuntimeError("Embedding generation failed unexpectedly after retries")
 
     @retry(
         retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
