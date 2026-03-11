@@ -299,6 +299,7 @@ async def read_channel(
     try:
         result = await ctx.deps.db.execute(query)
     except SQLAlchemyError:
+        await ctx.deps.db.rollback()
         logger.exception("Database error reading channel")
         return "Error: could not read channel due to a database error."
     messages = result.scalars().all()

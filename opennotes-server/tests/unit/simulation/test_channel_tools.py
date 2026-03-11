@@ -217,6 +217,7 @@ class TestReadChannel:
         from sqlalchemy.exc import SQLAlchemyError
 
         sample_deps.db.execute = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
+        sample_deps.db.rollback = AsyncMock()
         ctx = MagicMock()
         ctx.deps = sample_deps
 
@@ -224,6 +225,7 @@ class TestReadChannel:
 
         assert "Error" in result
         assert "database error" in result
+        sample_deps.db.rollback.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_returns_no_messages_when_empty(self, sample_deps):
