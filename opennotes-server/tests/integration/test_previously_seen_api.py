@@ -41,6 +41,21 @@ def _create_previously_seen_check_request(
     }
 
 
+async def _delete_monitored_channel(channel_id):
+    """Best-effort cleanup for monitored channels created inside tests."""
+    if not channel_id:
+        return
+
+    async with get_session_maker()() as session:
+        result = await session.execute(
+            select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+        )
+        channel = result.scalar_one_or_none()
+        if channel:
+            await session.delete(channel)
+            await session.commit()
+
+
 @pytest.fixture
 async def test_community_server():
     """Create a test community server with OpenAI LLM configuration for previously-seen tests."""
@@ -275,9 +290,7 @@ async def previously_seen_record(test_community_server, test_note):
 @pytest.fixture(autouse=True)
 def mock_embedding_generation():
     """Mock embedding generation to avoid calling actual OpenAI API."""
-    mock_generate = AsyncMock(
-        side_effect=lambda db, text, community_server_id: [0.1] * 1536 + [0.2] * 0
-    )
+    mock_generate = AsyncMock(return_value=[0.1] * 1536)
 
     with patch(
         "src.fact_checking.embedding_service.EmbeddingService.generate_embedding",
@@ -399,34 +412,27 @@ class TestPreviouslySeenThresholdConfiguration:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            request_body = _create_previously_seen_check_request(
-                message_text="test message",
-                platform_community_server_id=test_user_with_auth[
-                    "community"
-                ].platform_community_server_id,
-                channel_id="test_channel_override_123",
-            )
-            response = await client.post(
-                "/api/v2/previously-seen-messages/check",
-                headers=test_user_with_auth["headers"],
-                json=request_body,
-            )
-
-            assert response.status_code == 200
-            data = response.json()
-            attrs = data["data"]["attributes"]
-            assert attrs["autopublish_threshold"] == 0.95
-            assert attrs["autorequest_threshold"] == 0.75
-
-        if channel_id:
-            async with get_session_maker()() as session:
-                result = await session.execute(
-                    select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+            try:
+                request_body = _create_previously_seen_check_request(
+                    message_text="test message",
+                    platform_community_server_id=test_user_with_auth[
+                        "community"
+                    ].platform_community_server_id,
+                    channel_id="test_channel_override_123",
                 )
-                channel = result.scalar_one_or_none()
-                if channel:
-                    await session.delete(channel)
-                    await session.commit()
+                response = await client.post(
+                    "/api/v2/previously-seen-messages/check",
+                    headers=test_user_with_auth["headers"],
+                    json=request_body,
+                )
+
+                assert response.status_code == 200
+                data = response.json()
+                attrs = data["data"]["attributes"]
+                assert attrs["autopublish_threshold"] == 0.95
+                assert attrs["autorequest_threshold"] == 0.75
+            finally:
+                await _delete_monitored_channel(channel_id)
 
     async def test_channel_override_autorequest_threshold(
         self, test_user_with_auth, previously_seen_record
@@ -448,34 +454,27 @@ class TestPreviouslySeenThresholdConfiguration:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            request_body = _create_previously_seen_check_request(
-                message_text="test message",
-                platform_community_server_id=test_user_with_auth[
-                    "community"
-                ].platform_community_server_id,
-                channel_id="test_channel_autoreq_456",
-            )
-            response = await client.post(
-                "/api/v2/previously-seen-messages/check",
-                headers=test_user_with_auth["headers"],
-                json=request_body,
-            )
-
-            assert response.status_code == 200
-            data = response.json()
-            attrs = data["data"]["attributes"]
-            assert attrs["autopublish_threshold"] == 0.9
-            assert attrs["autorequest_threshold"] == 0.8
-
-        if channel_id:
-            async with get_session_maker()() as session:
-                result = await session.execute(
-                    select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+            try:
+                request_body = _create_previously_seen_check_request(
+                    message_text="test message",
+                    platform_community_server_id=test_user_with_auth[
+                        "community"
+                    ].platform_community_server_id,
+                    channel_id="test_channel_autoreq_456",
                 )
-                channel = result.scalar_one_or_none()
-                if channel:
-                    await session.delete(channel)
-                    await session.commit()
+                response = await client.post(
+                    "/api/v2/previously-seen-messages/check",
+                    headers=test_user_with_auth["headers"],
+                    json=request_body,
+                )
+
+                assert response.status_code == 200
+                data = response.json()
+                attrs = data["data"]["attributes"]
+                assert attrs["autopublish_threshold"] == 0.9
+                assert attrs["autorequest_threshold"] == 0.8
+            finally:
+                await _delete_monitored_channel(channel_id)
 
     async def test_channel_override_both_thresholds(
         self, test_user_with_auth, previously_seen_record
@@ -497,34 +496,27 @@ class TestPreviouslySeenThresholdConfiguration:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            request_body = _create_previously_seen_check_request(
-                message_text="test message",
-                platform_community_server_id=test_user_with_auth[
-                    "community"
-                ].platform_community_server_id,
-                channel_id="test_channel_both_789",
-            )
-            response = await client.post(
-                "/api/v2/previously-seen-messages/check",
-                headers=test_user_with_auth["headers"],
-                json=request_body,
-            )
-
-            assert response.status_code == 200
-            data = response.json()
-            attrs = data["data"]["attributes"]
-            assert attrs["autopublish_threshold"] == 0.88
-            assert attrs["autorequest_threshold"] == 0.72
-
-        if channel_id:
-            async with get_session_maker()() as session:
-                result = await session.execute(
-                    select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+            try:
+                request_body = _create_previously_seen_check_request(
+                    message_text="test message",
+                    platform_community_server_id=test_user_with_auth[
+                        "community"
+                    ].platform_community_server_id,
+                    channel_id="test_channel_both_789",
                 )
-                channel = result.scalar_one_or_none()
-                if channel:
-                    await session.delete(channel)
-                    await session.commit()
+                response = await client.post(
+                    "/api/v2/previously-seen-messages/check",
+                    headers=test_user_with_auth["headers"],
+                    json=request_body,
+                )
+
+                assert response.status_code == 200
+                data = response.json()
+                attrs = data["data"]["attributes"]
+                assert attrs["autopublish_threshold"] == 0.88
+                assert attrs["autorequest_threshold"] == 0.72
+            finally:
+                await _delete_monitored_channel(channel_id)
 
 
 class TestCommunityServerScoping:
