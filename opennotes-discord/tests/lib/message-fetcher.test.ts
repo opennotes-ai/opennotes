@@ -48,6 +48,27 @@ describe('MessageFetcher', () => {
       expect(mockChannel.messages.fetch).toHaveBeenCalledTimes(1);
     });
 
+    it('should return full fetched message content without pre-truncation', async () => {
+      const longContent = 'x'.repeat(300);
+      const mockChannel = {
+        isTextBased: () => true,
+        messages: {
+          fetch: jest.fn<() => Promise<any>>().mockResolvedValue({
+            content: longContent,
+            author: { username: 'TestUser' },
+            url: 'https://discord.com/test',
+          }),
+        },
+      } as any as TextChannel;
+
+      (mockClient.channels.fetch as jest.Mock<() => Promise<any>>).mockResolvedValue(mockChannel);
+
+      const result = await messageFetcher.fetchMessage('123456', 'channel123');
+
+      expect(result?.content).toBe(longContent);
+      expect(result?.content.endsWith('...')).toBe(false);
+    });
+
     it('should track cache hits and misses', async () => {
       const mockChannel = {
         isTextBased: () => true,

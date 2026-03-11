@@ -248,6 +248,40 @@ describe('MessageMonitorService - Platform ID Handling', () => {
         })
       );
     });
+
+    it('should include View Original Message link when matched message preview is clipped', async () => {
+      const longMessage = {
+        ...testMessageContent,
+        content: 'x'.repeat(600),
+      };
+
+      const similarityResponse = {
+        jsonapi: { version: '1.1' },
+        data: {
+          type: 'similarity-search-results',
+          id: 'search-124',
+          attributes: {
+            matches: [testSimilarityMatch],
+            query_text: 'test',
+            dataset_tags: ['snopes'],
+            similarity_threshold: 0.7,
+            score_threshold: 0,
+            total_matches: 1,
+          },
+        },
+      };
+
+      await (service as any).createNoteRequestForMatch(longMessage, similarityResponse);
+
+      const requestNoteMock = mockApiClient.requestNote as unknown as jest.Mock;
+      const payload = (requestNoteMock.mock.calls[0]?.[0] ?? {}) as {
+        originalMessageContent?: string;
+      };
+      expect(payload.originalMessageContent).toContain('View Original Message');
+      expect(payload.originalMessageContent).toContain(
+        `https://discord.com/channels/${testGuildId}/${testMessageContent.channelId}/${testMessageContent.messageId}`
+      );
+    });
   });
 
   describe('createAutoRequestForSimilarContent - Platform ID handling', () => {
@@ -336,6 +370,56 @@ describe('MessageMonitorService - Platform ID Handling', () => {
         expect.objectContaining({
           messageId: testMessageContent.messageId,
         })
+      );
+    });
+
+    it('should include View Original Message link when current message preview is clipped', async () => {
+      const longMessage = {
+        ...testMessageContent,
+        content: 'y'.repeat(600),
+      };
+
+      const previouslySeenResult = {
+        data: {
+          type: 'previously-seen-check-results',
+          id: 'check-124',
+          attributes: {
+            should_auto_publish: false,
+            should_auto_request: true,
+            autopublish_threshold: 0.9,
+            autorequest_threshold: 0.75,
+            matches: [
+              {
+                id: 'prev-1',
+                community_server_id: 'some-uuid',
+                original_message_id: 'orig-msg-1',
+                published_note_id: 'note-1',
+                created_at: new Date().toISOString(),
+                similarity_score: 0.8,
+              },
+            ],
+            top_match: {
+              id: 'prev-1',
+              community_server_id: 'some-uuid',
+              original_message_id: 'orig-msg-1',
+              published_note_id: 'note-1',
+              created_at: new Date().toISOString(),
+              similarity_score: 0.8,
+            },
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      await (service as any).createAutoRequestForSimilarContent(longMessage, previouslySeenResult);
+
+      const requestNoteMock = mockApiClient.requestNote as unknown as jest.Mock;
+      const payload = (requestNoteMock.mock.calls[0]?.[0] ?? {}) as {
+        originalMessageContent?: string;
+      };
+      expect(payload.originalMessageContent).toContain('View Original Message');
+      expect(payload.originalMessageContent).toContain(
+        `https://discord.com/channels/${testGuildId}/${testMessageContent.channelId}/${testMessageContent.messageId}`
       );
     });
   });

@@ -745,18 +745,11 @@ export class DiscordFormatter {
       return null;
     }
 
-    const MAX_PREVIEW_LENGTH = 150;
-
     // Clean up whitespace and newlines
     const cleanedContent = content.trim().replace(/\s+/g, ' ');
 
     if (cleanedContent.length === 0) {
       return null;
-    }
-
-    // Truncate if needed
-    if (cleanedContent.length > MAX_PREVIEW_LENGTH) {
-      return `${cleanedContent.substring(0, MAX_PREVIEW_LENGTH)}...`;
     }
 
     return cleanedContent;

@@ -87,6 +87,23 @@ export class MessageMonitorService {
     }, 1000);
   }
 
+  private static buildDiscordMessageUrl(messageContent: MessageContent): string {
+    return `https://discord.com/channels/${messageContent.guildId}/${messageContent.channelId}/${messageContent.messageId}`;
+  }
+
+  private static formatMessagePreviewLines(messageContent: MessageContent): string[] {
+    const wasTruncated = messageContent.content.length > CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH;
+    const preview = wasTruncated
+      ? `${messageContent.content.substring(0, CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH)}...`
+      : messageContent.content;
+
+    const lines = [`> ${preview}`];
+    if (wasTruncated) {
+      lines.push(`[View Original Message](${this.buildDiscordMessageUrl(messageContent)})`);
+    }
+    return lines;
+  }
+
   async handleMessage(message: Message): Promise<void> {
     if (!this.shouldProcessMessage(message)) {
       return;
@@ -324,7 +341,7 @@ export class MessageMonitorService {
         `**Source URL:** ${topMatch.source_url || 'N/A'}`,
         '',
         `**Matched Message:**`,
-        `> ${messageContent.content.substring(0, CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH)}${messageContent.content.length > CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH ? '...' : ''}`,
+        ...MessageMonitorService.formatMessagePreviewLines(messageContent),
         '',
         `**Match Metadata:**`,
         `- Dataset Item ID: ${topMatch.id}`,
@@ -590,7 +607,7 @@ export class MessageMonitorService {
         `**Community Server:** ${topMatch.community_server_id}`,
         '',
         `**Current Message:**`,
-        `> ${messageContent.content.substring(0, CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH)}${messageContent.content.length > CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH ? '...' : ''}`,
+        ...MessageMonitorService.formatMessagePreviewLines(messageContent),
         '',
         `**Match Metadata:**`,
         `- Previously Seen ID: ${topMatch.id}`,
