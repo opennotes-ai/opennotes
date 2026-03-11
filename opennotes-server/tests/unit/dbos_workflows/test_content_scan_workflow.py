@@ -506,6 +506,151 @@ class TestContentScanOrchestrationWorkflow:
         assert len(batch_calls) >= 1
         assert batch_calls[0][1]["timeout_seconds"] == POST_ALL_TRANSMITTED_TIMEOUT_SECONDS
 
+    def test_batch_complete_arrives_after_post_tx_timeout_retries(self) -> None:
+        """When batch_complete times out once but arrives on retry, orchestrator succeeds."""
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        scan_types_json = json.dumps(["similarity"])
+
+        recv_fn = _make_recv_dispatcher(
+            batch_responses=[
+                None,
+                self._make_batch_result(processed=10, flagged_count=2),
+            ],
+            tx_responses=[
+                {"messages_scanned": 10},
+            ],
+        )
+
+        start = 1000000.0
+        call_count = 0
+
+        def stateful_time() -> float:
+            nonlocal call_count
+            call_count += 1
+            return start + (call_count * 10)
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+            patch("src.dbos_workflows.content_scan_workflow.time") as mock_time,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = start
+            mock_time.time.side_effect = stateful_time
+            mock_finalize.return_value = {
+                "status": "completed",
+                "messages_scanned": 10,
+                "messages_flagged": 2,
+                "messages_skipped": 0,
+                "total_errors": 0,
+            }
+
+            result = content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=scan_types_json,
+            )
+
+        assert result["status"] == "completed"
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["processed_count"] == 10
+        assert finalize_kwargs["messages_scanned"] == 10
+
+    def test_adaptive_timeout_cap_exceeded_breaks_loop(self) -> None:
+        """When adaptive cap is exceeded, orchestrator breaks and finalizes."""
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        scan_types_json = json.dumps(["similarity"])
+
+        recv_fn = _make_recv_dispatcher(
+            batch_responses=[None, None, None],
+            tx_responses=[{"messages_scanned": 10}],
+        )
+
+        start = 1000000.0
+        call_count = 0
+
+        def stateful_time() -> float:
+            nonlocal call_count
+            call_count += 1
+            return start + (call_count * 100)
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+            patch("src.dbos_workflows.content_scan_workflow.time") as mock_time,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = start
+            mock_time.time.side_effect = stateful_time
+
+            mock_finalize.return_value = {
+                "status": "completed",
+                "messages_scanned": 10,
+                "messages_flagged": 0,
+                "messages_skipped": 0,
+                "total_errors": 0,
+            }
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=scan_types_json,
+            )
+
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["processed_count"] == 0
+        assert finalize_kwargs["messages_scanned"] == 10
+
+
+class TestAdaptiveTimeoutCap:
+    """Tests for compute_adaptive_timeout_cap helper."""
+
+    def test_minimum_cap_is_120(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import compute_adaptive_timeout_cap
+
+        assert compute_adaptive_timeout_cap(1) == 120
+
+    def test_scales_with_message_count(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import compute_adaptive_timeout_cap
+
+        assert compute_adaptive_timeout_cap(100) == 500
+
+    def test_zero_messages_returns_minimum(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import compute_adaptive_timeout_cap
+
+        assert compute_adaptive_timeout_cap(0) == 120
+
+    def test_capped_by_wall_clock_max(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS,
+            compute_adaptive_timeout_cap,
+        )
+
+        assert compute_adaptive_timeout_cap(100000) == ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS
+
 
 class TestRedisHelpers:
     """Tests for Redis helper functions used by per-strategy steps."""
@@ -1012,6 +1157,109 @@ class TestFinalizeScanStep:
         assert result["total_errors"] == 10
 
 
+class TestDetermineScanStatus:
+    """Tests for _determine_scan_status helper."""
+
+    def test_timeout_with_zero_processed_returns_failed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=91,
+            processed_count=0,
+            error_count=0,
+            total_errors=0,
+        )
+        assert status.value == "failed"
+        assert reason is not None
+        assert "timed out" in reason
+
+    def test_all_errors_returns_failed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=10,
+            processed_count=0,
+            error_count=0,
+            total_errors=10,
+        )
+        assert status.value == "failed"
+        assert reason is not None
+        assert "errors" in reason
+
+    def test_normal_completion_returns_completed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=10,
+            processed_count=10,
+            error_count=0,
+            total_errors=0,
+        )
+        assert status.value == "completed"
+        assert reason is None
+
+    def test_zero_messages_returns_completed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=0,
+            processed_count=0,
+            error_count=0,
+            total_errors=0,
+        )
+        assert status.value == "completed"
+        assert reason is None
+
+    def test_error_count_with_zero_total_errors_returns_failed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=10,
+            processed_count=0,
+            error_count=5,
+            total_errors=0,
+        )
+        assert status.value == "failed"
+        assert reason is not None
+        assert "batch errors" in reason
+
+    def test_partial_processing_returns_completed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=10,
+            processed_count=5,
+            error_count=5,
+            total_errors=5,
+        )
+        assert status.value == "completed"
+        assert reason is None
+
+
+class TestAdaptiveTimeoutProducesFailed:
+    """Integration-level test: adaptive cap exceeded → _determine_scan_status → FAILED."""
+
+    def test_adaptive_cap_exceeded_produces_failed_via_determine_status(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            _determine_scan_status,
+            compute_adaptive_timeout_cap,
+        )
+
+        messages_scanned = 10
+        cap = compute_adaptive_timeout_cap(messages_scanned)
+        assert cap == 120
+
+        status, reason = _determine_scan_status(
+            messages_scanned=messages_scanned,
+            processed_count=0,
+            error_count=0,
+            total_errors=0,
+        )
+        assert status.value == "failed"
+        assert reason is not None
+        assert "timed out" in reason
+
+
 class TestDispatchContentScanWorkflow:
     """Tests for dispatch_content_scan_workflow async helper."""
 
@@ -1431,9 +1679,10 @@ class TestSignalCoordination:
 
 
 class TestCountMismatchBreakCondition:
-    """Tests for the count mismatch break condition."""
+    """Tests for the count mismatch adaptive timeout condition."""
 
-    def test_breaks_on_count_mismatch_after_all_transmitted(self) -> None:
+    def test_polls_then_breaks_on_adaptive_cap_after_count_mismatch(self) -> None:
+        """After mismatch, orchestrator continues polling then breaks when adaptive cap exceeded."""
         from src.dbos_workflows.content_scan_workflow import (
             content_scan_orchestration_workflow,
         )
@@ -1451,6 +1700,16 @@ class TestCountMismatchBreakCondition:
             ],
         )
 
+        start = 1000000.0
+        time_values = iter(
+            [
+                start,
+                start + 10,
+                start + 200,
+                start + 200,
+            ]
+        )
+
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
             patch(
@@ -1459,10 +1718,12 @@ class TestCountMismatchBreakCondition:
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+            patch("src.dbos_workflows.content_scan_workflow.time") as mock_time,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
-            mock_clock.return_value = time.time()
+            mock_clock.return_value = start
+            mock_time.time.side_effect = time_values
             mock_finalize.return_value = {"status": "completed"}
 
             content_scan_orchestration_workflow.__wrapped__(
