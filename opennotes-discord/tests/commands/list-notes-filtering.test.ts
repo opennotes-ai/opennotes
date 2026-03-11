@@ -284,5 +284,35 @@ describe('list notes filtering', () => {
         'profile-uuid-user-456'
       );
     }, 10000);
+
+    it('should fall back to note previews without View Full buttons when cache writes fail', async () => {
+      setupDefaultMocks();
+      mockCache.set.mockRejectedValueOnce(new Error('redis unavailable'));
+      mockApiClient.listNotesWithStatus.mockResolvedValue({
+        data: [
+          {
+            id: 'note-1',
+            type: 'notes',
+            attributes: {
+              summary: 'L'.repeat(260),
+              ratings_count: 0,
+            },
+          },
+        ],
+        total: 1,
+      });
+
+      const mockInteraction = createMockInteraction('user-789', 'guild-456');
+
+      await execute(mockInteraction as any);
+
+      expect(mockQueueRendererModule.QueueRendererV2.buildContainers).toHaveBeenCalledTimes(1);
+      const buildContainersCall = (mockQueueRendererModule.QueueRendererV2.buildContainers as any).mock.calls[0];
+      const items = buildContainersCall[1];
+
+      expect(items).toHaveLength(1);
+      expect(items[0].summary.endsWith('...')).toBe(true);
+      expect(items[0].viewFullButton).toBeUndefined();
+    }, 10000);
   });
 });

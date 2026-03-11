@@ -32,6 +32,25 @@ import { extractUserContext } from '../lib/user-context.js';
 import { cache } from '../cache.js';
 import { truncateWithMeta, buildViewFullCustomId } from '../utils/v2-components.js';
 
+async function storeViewFullContent(
+  customId: string,
+  fullText: string,
+  ttlSeconds: number,
+  context: Record<string, unknown>
+): Promise<boolean> {
+  try {
+    await cache.set(customId, fullText, ttlSeconds);
+    return true;
+  } catch (error) {
+    logger.warn('Failed to store view_full state in cache', {
+      ...context,
+      custom_id: customId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
 export const data = new SlashCommandBuilder()
   .setName('note')
   .setDescription('Community notes commands')
@@ -969,15 +988,20 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
     if (summaryPreview.isTruncated) {
       const token = generateShortId();
       const customId = buildViewFullCustomId(token);
-      await cache.set(customId, summaryPreview.original, 300);
-      components = [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setCustomId(customId)
-            .setLabel('View Full')
-            .setStyle(ButtonStyle.Secondary)
-        ),
-      ];
+      const stored = await storeViewFullContent(customId, summaryPreview.original, 300, {
+        note_id: noteIdStr,
+        surface: 'note_force_publish',
+      });
+      if (stored) {
+        components = [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId(customId)
+              .setLabel('View Full')
+              .setStyle(ButtonStyle.Secondary)
+          ),
+        ];
+      }
     }
 
     await interaction.editReply({

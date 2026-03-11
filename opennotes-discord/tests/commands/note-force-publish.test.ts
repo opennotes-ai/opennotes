@@ -218,6 +218,28 @@ describe('note-force-publish command', () => {
       expect(viewFullCacheCall?.[1]).toBe(longSummary);
       expect(viewFullCacheCall?.[2]).toBe(300);
     });
+
+    it('should fall back to the truncated preview when storing View Full state fails', async () => {
+      const longSummary = 'B'.repeat(260);
+      const mockNote = createMockNoteJSONAPIResponse({
+        id: TEST_UUID,
+        summary: longSummary,
+        status: 'PUBLISHED',
+        forcePublished: true,
+        forcePublishedAt: new Date().toISOString(),
+      });
+
+      mockCache.set.mockImplementation(() => {
+        throw new Error('redis unavailable');
+      });
+      mockApiClient.forcePublishNote.mockResolvedValue(mockNote);
+
+      await execute(mockInteraction);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.content).toContain(`Note #${TEST_UUID} has been force-published`);
+      expect(editReplyCall.components).toBeUndefined();
+    });
   });
 
   describe('validation', () => {

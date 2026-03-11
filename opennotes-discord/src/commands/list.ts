@@ -47,9 +47,11 @@ import type { ScoreConfidence } from '../services/ScoringService.js';
 import { suppressExpectedDiscordErrors, extractPlatformMessageId } from '../lib/discord-utils.js';
 import { resolveUserProfileId } from '../lib/user-profile-resolver.js';
 import { cache } from '../cache.js';
+import { TextPaginator } from '../lib/text-paginator.js';
 
 const configCache = new ConfigCache(apiClient);
 const lastUsage = new Map<string, number>();
+const DISCORD_MESSAGE_CONTENT_LIMIT = 2000;
 
 interface QueueState {
   userId: string;
@@ -59,6 +61,47 @@ interface QueueState {
   currentPage: number;
   thresholds: { min_ratings_needed: number; min_raters_per_note: number };
   isAdmin: boolean;
+}
+
+async function storeViewFullContent(
+  customId: string,
+  fullText: string,
+  ttlSeconds: number,
+  context: Record<string, unknown>
+): Promise<boolean> {
+  try {
+    await cache.set(customId, fullText, ttlSeconds);
+    return true;
+  } catch (error) {
+    logger.warn('Failed to store view_full state in cache', {
+      ...context,
+      custom_id: customId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+async function replyWithPaginatedEphemeralContent(
+  interaction: ButtonInteraction,
+  content: string
+): Promise<void> {
+  const { pages } = TextPaginator.paginate(content, {
+    maxCharsPerPage: DISCORD_MESSAGE_CONTENT_LIMIT,
+  });
+
+  const [firstPage = '', ...remainingPages] = pages;
+  await interaction.reply({
+    content: firstPage,
+    flags: MessageFlags.Ephemeral,
+  });
+
+  for (const page of remainingPages) {
+    await interaction.followUp({
+      content: page,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
 }
 
 function createSummaryV2(
@@ -120,15 +163,18 @@ async function createNoteItemV2(
   if (truncatedSummary.isTruncated) {
     const token = generateShortId();
     const customId = buildViewFullCustomId(token);
-    await cache.set(
+    const stored = await storeViewFullContent(
       customId,
       truncatedSummary.original,
-      LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS
+      LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS,
+      { note_id: note.id, surface: 'list_notes_queue' }
     );
-    viewFullButton = new ButtonBuilder()
-      .setCustomId(customId)
-      .setLabel('View Full')
-      .setStyle(ButtonStyle.Secondary);
+    if (stored) {
+      viewFullButton = new ButtonBuilder()
+        .setCustomId(customId)
+        .setLabel('View Full')
+        .setStyle(ButtonStyle.Secondary);
+    }
   }
 
   return {
@@ -918,19 +964,22 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
     if (notePreview.isTruncated) {
       const token = generateShortId();
       const customId = buildViewFullCustomId(token);
-      await cache.set(
+      const stored = await storeViewFullContent(
         customId,
         notePreview.original,
-        LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS
+        LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS,
+        { note_id: noteId, request_id: requestId, surface: 'ai_write_note' }
       );
-      components = [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setCustomId(customId)
-            .setLabel('View Full')
-            .setStyle(ButtonStyle.Secondary)
-        ),
-      ];
+      if (stored) {
+        components = [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId(customId)
+              .setLabel('View Full')
+              .setStyle(ButtonStyle.Secondary)
+          ),
+        ];
+      }
     }
 
     await interaction.editReply({
@@ -998,10 +1047,7 @@ export async function handleViewFullButton(interaction: ButtonInteraction): Prom
       return;
     }
 
-    await interaction.reply({
-      content: fullText,
-      flags: MessageFlags.Ephemeral,
-    });
+    await replyWithPaginatedEphemeralContent(interaction, fullText);
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
 

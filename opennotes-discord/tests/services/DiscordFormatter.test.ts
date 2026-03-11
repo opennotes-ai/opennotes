@@ -846,18 +846,17 @@ describe('DiscordFormatter', () => {
       expect(allContent).toContain('This is a test message content');
     });
 
-    it('should preserve full request content without formatter truncation', async () => {
+    it('should truncate oversized request content and add a View Full affordance', async () => {
       const result = createMockListRequestsResult(1);
-      const longContent = `${'A'.repeat(180)}END`;
+      const longContent = `${'A'.repeat(4500)}ENDMARKER`;
       result.requests[0].content = longContent;
       const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
 
       const container = formatted.container.toJSON();
-      const textComponents = container.components.filter((c) => c.type === 10);
-      const allContent = textComponents.map((c) => (c as { content?: string }).content).join(' ');
+      const containerJson = JSON.stringify(container);
 
-      expect(allContent).toContain(longContent);
-      expect(allContent).not.toContain(`${longContent.substring(0, 150)}...`);
+      expect(containerJson).toContain('View Full');
+      expect(containerJson).not.toContain('ENDMARKER');
     });
 
     it('should include media gallery for image URLs', async () => {

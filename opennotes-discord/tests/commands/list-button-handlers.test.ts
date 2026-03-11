@@ -455,6 +455,32 @@ describe('list command - Button Handlers', () => {
       );
     });
 
+    it('should fall back to the truncated preview when storing View Full state fails', async () => {
+      const requestId = 'request-uuid-cache-fail';
+      const longSummary = 'y'.repeat(260);
+      cacheStore.set('write_note_state:cachefail1', requestId);
+
+      const interaction = createMockButtonInteraction('ai_write_note:cachefail1');
+      mockCache.set.mockRejectedValueOnce(new Error('redis unavailable'));
+
+      mockApiClient.generateAiNote.mockResolvedValue({
+        data: {
+          id: 'note-generated',
+          attributes: {
+            summary: longSummary,
+          },
+        },
+      });
+
+      await handleAiWriteNoteButton(interaction as any);
+
+      expect(interaction.editReply).toHaveBeenCalledWith({
+        content: expect.stringContaining('AI Note Generated'),
+      });
+      const editReplyCall = (interaction.editReply as any).mock.calls.at(-1) as any[] | undefined;
+      expect(editReplyCall?.[0]?.components).toBeUndefined();
+    });
+
     it('should handle expired cache state', async () => {
       const interaction = createMockButtonInteraction('ai_write_note:expired1');
 
@@ -505,6 +531,27 @@ describe('list command - Button Handlers', () => {
 
       expect(interaction.reply).toHaveBeenCalledWith({
         content: 'Full note text for expansion',
+        flags: MessageFlags.Ephemeral,
+      });
+    });
+
+    it('should split cached full note text across multiple ephemeral messages when over 2000 characters', async () => {
+      const longFullText = 'A'.repeat(4500);
+      cacheStore.set('view_full:chunked1', longFullText);
+      const interaction = createMockButtonInteraction('view_full:chunked1');
+
+      await handleViewFullButton(interaction as any);
+
+      expect(interaction.reply).toHaveBeenCalledWith({
+        content: 'A'.repeat(2000),
+        flags: MessageFlags.Ephemeral,
+      });
+      expect(interaction.followUp).toHaveBeenNthCalledWith(1, {
+        content: 'A'.repeat(2000),
+        flags: MessageFlags.Ephemeral,
+      });
+      expect(interaction.followUp).toHaveBeenNthCalledWith(2, {
+        content: 'A'.repeat(500),
         flags: MessageFlags.Ephemeral,
       });
     });

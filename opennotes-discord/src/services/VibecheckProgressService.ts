@@ -8,6 +8,7 @@ import { formatMessageLink, truncateContentWithMeta } from '../lib/bulk-scan-exe
 import type { BulkScanProgressEvent, MessageScoreInfo } from '../types/bulk-scan.js';
 
 export class VibecheckProgressService {
+  private static readonly MAX_EMBED_FIELD_LENGTH = 1024;
   private readonly client: Client;
   private readonly guildConfigService: GuildConfigService;
   private readonly botChannelService: BotChannelService;
@@ -112,17 +113,7 @@ export class VibecheckProgressService {
     if (scoreLines.length > 0) {
       const truncated = scoreLines.slice(0, 10);
       const remaining = scoreLines.length - truncated.length;
-
-      let scoreText = truncated.join('\n');
-      if (remaining > 0) {
-        scoreText += `\n... and ${remaining} more`;
-      }
-
-      embed.addFields({
-        name: `Message Scores (${flaggedCount} flagged)`,
-        value: scoreText || 'No messages processed',
-        inline: false,
-      });
+      embed.addFields(...this.buildScoreFields(truncated, remaining, flaggedCount));
     }
 
     return embed;
@@ -147,5 +138,58 @@ export class VibecheckProgressService {
 
       return line;
     });
+  }
+
+  private buildScoreFields(
+    scoreLines: string[],
+    remainingCount: number,
+    flaggedCount: number
+  ): Array<{ name: string; value: string; inline: false }> {
+    const fields: Array<{ name: string; value: string; inline: false }> = [];
+    let currentLines: string[] = [];
+    let currentLength = 0;
+
+    const flushField = (): void => {
+      if (currentLines.length === 0) {
+        return;
+      }
+      fields.push({
+        name: fields.length === 0
+          ? `Message Scores (${flaggedCount} flagged)`
+          : 'Message Scores (continued)',
+        value: currentLines.join('\n'),
+        inline: false,
+      });
+      currentLines = [];
+      currentLength = 0;
+    };
+
+    for (const line of scoreLines) {
+      const lineLength = line.length + (currentLines.length > 0 ? 1 : 0);
+      if (
+        currentLines.length > 0 &&
+        currentLength + lineLength > VibecheckProgressService.MAX_EMBED_FIELD_LENGTH
+      ) {
+        flushField();
+      }
+
+      currentLines.push(line);
+      currentLength += line.length + (currentLines.length > 1 ? 1 : 0);
+    }
+
+    if (remainingCount > 0) {
+      const remainderLine = `... and ${remainingCount} more`;
+      const remainderLength = remainderLine.length + (currentLines.length > 0 ? 1 : 0);
+      if (
+        currentLines.length > 0 &&
+        currentLength + remainderLength > VibecheckProgressService.MAX_EMBED_FIELD_LENGTH
+      ) {
+        flushField();
+      }
+      currentLines.push(remainderLine);
+    }
+
+    flushField();
+    return fields;
   }
 }
