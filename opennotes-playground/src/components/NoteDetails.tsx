@@ -82,7 +82,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
   return (
     <section>
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-xl font-semibold">Per-Note Breakdown</h2>
+        <h2 id="per-note-breakdown" class="text-xl font-semibold">Per-Note Breakdown</h2>
         <Show when={props.notes.length > 1}>
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium text-muted-foreground">Sort by:</span>
@@ -126,17 +126,27 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                       ? <>Notes responding to: {group.sourceTitle}</>
                       : <>Request {truncateId(group.requestId)}</>}
                     <Show when={group.sourceUrl}>
-                      {(url) => (
-                        <a
-                          href={url()}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="ml-2 text-xs text-primary hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Read what they're annotating ↗
-                        </a>
-                      )}
+                      {(url) => {
+                        const isSafe = () => /^https?:\/\//i.test(url());
+                        return (
+                          <Show
+                            when={isSafe()}
+                            fallback={
+                              <span class="ml-2 text-xs text-muted-foreground">{url()}</span>
+                            }
+                          >
+                            <a
+                              href={url()}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="ml-2 text-xs text-primary hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Read what they're annotating ↗
+                            </a>
+                          </Show>
+                        );
+                      }}
                     </Show>
                   </span>
                   <span class="shrink-0 text-xs text-muted-foreground">
@@ -177,6 +187,22 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                             >
                               Helpfulness: <strong class="text-foreground">{attrs.helpfulness_score?.toFixed(2) ?? "N/A"}</strong>
                             </span>
+                            <Show when={attrs.ratings && attrs.ratings.length > 0}>
+                              <span class="flex items-center gap-1">
+                                <For each={Object.entries(
+                                  (attrs.ratings ?? []).reduce<Record<string, number>>((acc, r) => {
+                                    acc[r.helpfulness_level] = (acc[r.helpfulness_level] || 0) + 1;
+                                    return acc;
+                                  }, {})
+                                )}>
+                                  {([level, count]) => (
+                                    <Badge variant={HELPFULNESS_VARIANT[level] ?? "muted"} class="text-xs">
+                                      {humanizeLabel(level)}: {count}
+                                    </Badge>
+                                  )}
+                                </For>
+                              </span>
+                            </Show>
                             <span>Created: {formatDate(attrs.created_at)}</span>
                           </div>
 

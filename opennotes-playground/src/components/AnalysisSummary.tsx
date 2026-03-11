@@ -1,6 +1,7 @@
-import { For, Show } from "solid-js";
+import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
+import InlineHistogram from "~/components/ui/inline-histogram";
 
 type NoteQualityData = components["schemas"]["NoteQualityData"];
 type RatingDistributionData = components["schemas"]["RatingDistributionData"];
@@ -9,9 +10,13 @@ export default function AnalysisSummary(props: {
   noteQuality: NoteQualityData;
   ratingDistribution: RatingDistributionData;
 }) {
+  const notesByStatus = createMemo(() => Object.entries(props.noteQuality.notes_by_status));
+  const notesByClassification = createMemo(() => Object.entries(props.noteQuality.notes_by_classification));
+  const overallRatings = createMemo(() => Object.entries(props.ratingDistribution.overall));
+
   return (
     <section>
-      <h2 class="mb-4 text-xl font-semibold">Note Quality</h2>
+      <h2 id="note-quality" class="mb-4 text-xl font-semibold">Note Quality</h2>
       <div class="grid gap-4 sm:grid-cols-3">
         <div class="rounded-lg border border-border bg-card p-4">
           <h3 class="text-sm font-semibold">Avg Helpfulness Score</h3>
@@ -23,7 +28,7 @@ export default function AnalysisSummary(props: {
           <h3 class="mb-2 text-sm font-semibold">Notes by Status</h3>
           <table class="w-full text-sm" aria-label="Notes by status">
             <tbody>
-              <For each={Object.entries(props.noteQuality.notes_by_status)}>
+              <For each={notesByStatus()}>
                 {([status, count]) => (
                   <tr class="border-b border-border last:border-0">
                     <td class="py-1 text-muted-foreground">{humanizeLabel(status)}</td>
@@ -38,7 +43,7 @@ export default function AnalysisSummary(props: {
           <h3 class="mb-2 text-sm font-semibold">Notes by Classification</h3>
           <table class="w-full text-sm" aria-label="Notes by classification">
             <tbody>
-              <For each={Object.entries(props.noteQuality.notes_by_classification)}>
+              <For each={notesByClassification()}>
                 {([classification, count]) => (
                   <tr class="border-b border-border last:border-0">
                     <td class="py-1 text-muted-foreground">{humanizeLabel(classification)}</td>
@@ -51,7 +56,7 @@ export default function AnalysisSummary(props: {
         </div>
       </div>
 
-      <h2 class="mb-4 mt-8 text-xl font-semibold">Rating Distribution</h2>
+      <h2 id="rating-distribution" class="mb-4 mt-8 text-xl font-semibold">Rating Distribution</h2>
       <p class="mb-3 text-sm text-muted-foreground">
         Total ratings: {props.ratingDistribution.total_ratings}
       </p>
@@ -60,7 +65,7 @@ export default function AnalysisSummary(props: {
           <h3 class="mb-2 text-sm font-semibold">Overall</h3>
           <table class="w-full text-sm" aria-label="Overall rating distribution">
             <tbody>
-              <For each={Object.entries(props.ratingDistribution.overall)}>
+              <For each={overallRatings()}>
                 {([level, count]) => (
                   <tr class="border-b border-border last:border-0">
                     <td class="py-1 text-muted-foreground">{humanizeLabel(level)}</td>
@@ -88,10 +93,13 @@ export default function AnalysisSummary(props: {
                     {(agent) => (
                       <tr class="border-b border-border last:border-0">
                         <td class="py-1.5">{agent.agent_name}</td>
-                        <td class="py-1.5 text-muted-foreground">
-                          {Object.entries(agent.distribution)
-                            .map(([k, v]) => `${humanizeLabel(k)}: ${v}`)
-                            .join(", ")}
+                        <td class="py-1.5">
+                          <Show
+                            when={Object.keys(agent.distribution).length > 0}
+                            fallback={<span class="text-xs text-muted-foreground italic">No ratings</span>}
+                          >
+                            <InlineHistogram data={agent.distribution} />
+                          </Show>
                         </td>
                         <td class="py-1.5 text-right font-medium">{agent.total}</td>
                       </tr>

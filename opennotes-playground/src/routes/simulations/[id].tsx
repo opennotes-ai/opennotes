@@ -1,5 +1,5 @@
 import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
-import { Show, Switch, Match, Suspense } from "solid-js";
+import { Show, Switch, Match, Suspense, createSignal, createEffect, on } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import {
   getSimulation,
@@ -13,6 +13,8 @@ import AnalysisSummary from "~/components/AnalysisSummary";
 import AgentProfiles from "~/components/AgentProfiles";
 import MetricsDisplay from "~/components/MetricsDisplay";
 import NoteDetails from "~/components/NoteDetails";
+import SimulationSidebar from "~/components/SimulationSidebar";
+import PaginationControls from "~/components/ui/pagination-controls";
 
 const UNAUTH_PAGE_SIZE = 20;
 const AUTH_PAGE_SIZE = 50;
@@ -80,16 +82,19 @@ const fetchAnalysis = query(async (id: string) => {
   }
 }, "analysis");
 
-const fetchDetailedAnalysis = query(async (id: string) => {
+const fetchDetailedAnalysis = query(async (id: string, page: number) => {
   "use server";
   try {
     const isAuthenticated = await checkAuth();
     const pageSize = isAuthenticated ? AUTH_PAGE_SIZE : UNAUTH_PAGE_SIZE;
-    const data = await getSimulationDetailedAnalysis(id, 1, pageSize);
+    const effectivePage = isAuthenticated ? page : 1;
+    const data = await getSimulationDetailedAnalysis(id, effectivePage, pageSize);
+    const totalCount = data.meta?.count ?? 0;
 
     return {
       ...data,
       _authMeta: { isAuthenticated } as AuthMeta,
+      _totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
     };
   } catch (error) {
     console.error("Failed to fetch detailed analysis:", error);
@@ -136,7 +141,9 @@ export default function SimulationDetailPage() {
   const params = useParams();
   const simulation = createAsync(() => fetchSimulation(params.id!));
   const analysis = createAsync(() => fetchAnalysis(params.id!));
-  const detailed = createAsync(() => fetchDetailedAnalysis(params.id!));
+  const [notesPage, setNotesPage] = createSignal(1);
+  createEffect(on(() => params.id, () => setNotesPage(1)));
+  const detailed = createAsync(() => fetchDetailedAnalysis(params.id!, notesPage()));
 
   const simError = () => {
     const r = simulation();
@@ -149,7 +156,7 @@ export default function SimulationDetailPage() {
   };
 
   return (
-    <main class="mx-auto max-w-[960px] px-4 py-8">
+    <div class="mx-auto max-w-[1100px] px-4 py-8">
       <Suspense fallback={<p class="text-muted-foreground">Loading simulation...</p>}>
         <Switch>
           <Match when={simError() === "not_found"}>
@@ -162,7 +169,11 @@ export default function SimulationDetailPage() {
             {(simResponse) => {
               const attrs = simResponse.data.attributes;
               return (
-                <>
+                <div class="flex gap-8">
+                  <aside class="hidden w-48 shrink-0 lg:block">
+                    <SimulationSidebar />
+                  </aside>
+                  <main class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <h1 class="text-2xl font-bold tracking-tight">
                       Simulation {truncateId(simResponse.data.id)}
@@ -172,7 +183,7 @@ export default function SimulationDetailPage() {
                     </Badge>
                   </div>
 
-                  <section class="mt-6 rounded-lg border border-border bg-card p-5">
+                  <section id="metadata" class="mt-6 rounded-lg border border-border bg-card p-5">
                     <h2 class="mb-3 text-lg font-semibold">Metadata</h2>
                     <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3 md:grid-cols-4">
                       <div>
@@ -231,7 +242,7 @@ export default function SimulationDetailPage() {
                         const a = analysisResponse.data.attributes;
                         const meta = analysisResponse._authMeta;
                         return (
-                          <div class="mt-8 space-y-8">
+                          <div class="mt-8 space-y-8 divide-y divide-border [&>*]:pt-8 first:[&>*]:pt-0">
                             <AnalysisSummary
                               noteQuality={a.note_quality}
                               ratingDistribution={a.rating_distribution}
@@ -266,8 +277,9 @@ export default function SimulationDetailPage() {
                         const authMeta = detailedResponse._authMeta;
                         const totalNotes = detailedResponse.meta?.count ?? 0;
                         const notesTruncated = !authMeta?.isAuthenticated && totalNotes > UNAUTH_PAGE_SIZE;
+                        const totalPages = detailedResponse._totalPages ?? 1;
                         return (
-                          <div class="mt-8">
+                          <div class="mt-8 border-t border-border pt-8">
                             <Show when={detailedResponse.meta}>
                               {(meta) => (
                                 <p class="mb-2 text-sm text-muted-foreground">
@@ -282,6 +294,14 @@ export default function SimulationDetailPage() {
                               notes={detailedResponse.data}
                               currentTier={analysis()?.data?.attributes?.scoring_coverage?.current_tier ?? ""}
                             />
+                            <Show when={authMeta?.isAuthenticated && totalPages > 1}>
+                              <PaginationControls
+                                currentPage={notesPage()}
+                                totalPages={totalPages}
+                                onPageChange={setNotesPage}
+                                label="Notes pagination"
+                              />
+                            </Show>
                             <Show when={notesTruncated}>
                               <AuthGateCTA
                                 shown={UNAUTH_PAGE_SIZE}
@@ -294,13 +314,14 @@ export default function SimulationDetailPage() {
                       }}
                     </Show>
                   </Suspense>
-                </>
+                  </main>
+                </div>
               );
             }}
           </Match>
         </Switch>
       </Suspense>
-    </main>
+    </div>
   );
 }
 
