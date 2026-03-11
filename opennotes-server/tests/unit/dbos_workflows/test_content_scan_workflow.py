@@ -1143,6 +1143,72 @@ class TestFinalizeScanStep:
         assert result["total_errors"] == 10
 
 
+class TestDetermineScanStatus:
+    """Tests for _determine_scan_status helper."""
+
+    def test_timeout_with_zero_processed_returns_failed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=91,
+            processed_count=0,
+            error_count=0,
+            total_errors=0,
+        )
+        assert status.value == "failed"
+        assert reason is not None
+        assert "timed out" in reason
+
+    def test_all_errors_returns_failed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=10,
+            processed_count=0,
+            error_count=0,
+            total_errors=10,
+        )
+        assert status.value == "failed"
+        assert reason is not None
+        assert "errors" in reason
+
+    def test_normal_completion_returns_completed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=10,
+            processed_count=10,
+            error_count=0,
+            total_errors=0,
+        )
+        assert status.value == "completed"
+        assert reason is None
+
+    def test_zero_messages_returns_completed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=0,
+            processed_count=0,
+            error_count=0,
+            total_errors=0,
+        )
+        assert status.value == "completed"
+        assert reason is None
+
+    def test_partial_processing_returns_completed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=10,
+            processed_count=5,
+            error_count=5,
+            total_errors=5,
+        )
+        assert status.value == "completed"
+        assert reason is None
+
+
 class TestDispatchContentScanWorkflow:
     """Tests for dispatch_content_scan_workflow async helper."""
 

@@ -1119,6 +1119,24 @@ def relevance_filter_step(
     return run_sync(_relevance_filter())
 
 
+def _determine_scan_status(
+    messages_scanned: int,
+    processed_count: int,
+    error_count: int,
+    total_errors: int,
+) -> tuple[Any, str | None]:
+    from src.bulk_content_scan.schemas import BulkScanStatus
+
+    if messages_scanned > 0 and processed_count == 0 and total_errors > 0:
+        return BulkScanStatus.FAILED, "100% of messages had errors"
+    if messages_scanned > 0 and processed_count == 0 and error_count == 0 and total_errors == 0:
+        return (
+            BulkScanStatus.FAILED,
+            "orchestrator timed out with zero messages processed",
+        )
+    return BulkScanStatus.COMPLETED, None
+
+
 @DBOS.step()
 def finalize_scan_step(
     scan_id: str,
@@ -1203,15 +1221,22 @@ def finalize_scan_step(
                     ],
                 )
 
-            status = BulkScanStatus.COMPLETED
-            if messages_scanned > 0 and processed_count == 0 and total_errors > 0:
-                status = BulkScanStatus.FAILED
+            status, failure_reason = _determine_scan_status(
+                messages_scanned=messages_scanned,
+                processed_count=processed_count,
+                error_count=error_count,
+                total_errors=total_errors,
+            )
+            if status == BulkScanStatus.FAILED:
                 logger.warning(
-                    "Scan marked as failed - 100% of messages had errors",
+                    "Scan marked as failed: %s",
+                    failure_reason,
                     extra={
                         "scan_id": scan_id,
                         "messages_scanned": messages_scanned,
+                        "processed_count": processed_count,
                         "total_errors": total_errors,
+                        "failure_reason": failure_reason,
                     },
                 )
 
