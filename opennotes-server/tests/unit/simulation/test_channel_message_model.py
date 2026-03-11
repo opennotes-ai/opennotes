@@ -19,3 +19,26 @@ class TestSimChannelMessageModel:
         column_names = {c.name for c in SimChannelMessage.__table__.columns}
         assert "created_at" in column_names
         assert "updated_at" in column_names
+
+    def test_has_composite_index_on_run_created(self):
+        indexes = {idx.name: idx for idx in SimChannelMessage.__table__.indexes}
+        idx = indexes.get("idx_sim_channel_messages_run_created")
+        assert idx is not None, "Composite index idx_sim_channel_messages_run_created missing"
+        col_names = [c.name for c in idx.columns]
+        assert col_names == ["simulation_run_id", "created_at"]
+
+    def test_simulation_run_id_fk_cascades(self):
+        col = SimChannelMessage.__table__.c.simulation_run_id
+        fks = list(col.foreign_keys)
+        assert len(fks) == 1
+        fk = fks[0]
+        assert fk.target_fullname == "simulation_runs.id"
+        assert fk.ondelete == "CASCADE"
+
+    def test_agent_instance_id_fk_cascades(self):
+        col = SimChannelMessage.__table__.c.agent_instance_id
+        fks = list(col.foreign_keys)
+        assert len(fks) == 1
+        fk = fks[0]
+        assert fk.target_fullname == "sim_agent_instances.id"
+        assert fk.ondelete == "CASCADE"
