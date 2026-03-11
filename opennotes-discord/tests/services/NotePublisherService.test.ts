@@ -971,6 +971,99 @@ describe('NotePublisherService', () => {
         expect(messageJson).toContain('TestAdmin');
       });
     });
+
+    describe('force-publish bypasses guards (task-1281)', () => {
+      const createForcePublishEvent = (): ScoreUpdateEvent => ({
+        note_id: 1,
+        score: TEST_SCORE_BELOW_THRESHOLD,
+        confidence: 'provisional',
+        algorithm: 'MFCoreScorer',
+        rating_count: 2,
+        tier: 0,
+        tier_name: 'Tier 0',
+        timestamp: new Date().toISOString(),
+        original_message_id: 'msg-123',
+        channel_id: 'channel-456',
+        community_server_id: 'guild-123',
+        metadata: {
+          force_published: true,
+          admin_username: 'TestAdmin',
+          force_published_at: new Date().toISOString(),
+        },
+      });
+
+      beforeEach(() => {
+        mockClient.channels.cache.set('channel-456', mockChannel as any);
+        mockChannel.permissionsFor.mockReturnValue(
+          new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+        );
+        (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+        mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Force published note' }));
+        mockChannel.send.mockResolvedValue({ id: 'reply-789' });
+        mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+      });
+
+      it('should bypass isDuplicate check when force-published (AC #1)', async () => {
+        const event = createForcePublishEvent();
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockApiClient.checkNoteDuplicate).not.toHaveBeenCalled();
+        expect(mockChannel.send).toHaveBeenCalled();
+      });
+
+      it('should bypass isOnCooldown check when force-published (AC #2)', async () => {
+        const event = createForcePublishEvent();
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockApiClient.getLastNotePost).not.toHaveBeenCalled();
+        expect(mockChannel.send).toHaveBeenCalled();
+      });
+
+      it('should bypass auto-posting disabled config check when force-published (AC #3)', async () => {
+        const event = createForcePublishEvent();
+
+        mockConfigService.getConfig.mockResolvedValue({
+          guildId: 'guild-123',
+          enabled: false,
+          threshold: TEST_SCORE_THRESHOLD,
+        });
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockConfigService.getConfig).not.toHaveBeenCalled();
+        expect(mockChannel.send).toHaveBeenCalled();
+      });
+
+      it('should log when guards are bypassed due to force-publish (AC #4)', async () => {
+        const event = createForcePublishEvent();
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          expect.stringContaining('bypassing'),
+          expect.objectContaining({ noteId: event.note_id })
+        );
+      });
+
+      it('should still post even when duplicate exists, channel on cooldown, and config disabled (AC #5)', async () => {
+        const event = createForcePublishEvent();
+
+        mockConfigService.getConfig.mockResolvedValue({
+          guildId: 'guild-123',
+          enabled: false,
+          threshold: TEST_SCORE_THRESHOLD,
+        });
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockApiClient.checkNoteDuplicate).not.toHaveBeenCalled();
+        expect(mockApiClient.getLastNotePost).not.toHaveBeenCalled();
+        expect(mockConfigService.getConfig).not.toHaveBeenCalled();
+        expect(mockChannel.send).toHaveBeenCalled();
+      });
+    });
   });
 
   describe('recordNotePublisher sends platform ID directly (task-1178)', () => {

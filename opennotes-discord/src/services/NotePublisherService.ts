@@ -147,35 +147,43 @@ export class NotePublisherService {
         return;
       }
 
-      const [isDuplicate, isOnCooldown, config] = await Promise.all([
-        this.isDuplicate(context.originalMessageId, context.guildId),
-        this.isOnCooldown(context.channelId, context.guildId),
-        this.configService.getConfig(context.guildId, context.channelId),
-      ]);
-
-      if (isDuplicate) {
-        logger.info('Skipping score update - auto-post already exists for this message', {
+      if (isForcePublished) {
+        logger.info('Force-published note - bypassing duplicate, cooldown, and config checks', {
           noteId: event.note_id,
+          channelId: context.channelId,
           originalMessageId: context.originalMessageId,
         });
-        return;
-      }
+      } else {
+        const [isDuplicate, isOnCooldown, config] = await Promise.all([
+          this.isDuplicate(context.originalMessageId, context.guildId),
+          this.isOnCooldown(context.channelId, context.guildId),
+          this.configService.getConfig(context.guildId, context.channelId),
+        ]);
 
-      if (isOnCooldown) {
-        logger.info('Skipping score update - channel is on cooldown', {
-          noteId: event.note_id,
-          channelId: context.channelId,
-        });
-        return;
-      }
+        if (isDuplicate) {
+          logger.info('Skipping score update - auto-post already exists for this message', {
+            noteId: event.note_id,
+            originalMessageId: context.originalMessageId,
+          });
+          return;
+        }
 
-      if (!config.enabled) {
-        logger.info('Skipping score update - auto-posting is disabled', {
-          noteId: event.note_id,
-          guildId: context.guildId,
-          channelId: context.channelId,
-        });
-        return;
+        if (isOnCooldown) {
+          logger.info('Skipping score update - channel is on cooldown', {
+            noteId: event.note_id,
+            channelId: context.channelId,
+          });
+          return;
+        }
+
+        if (!config.enabled) {
+          logger.info('Skipping score update - auto-posting is disabled', {
+            noteId: event.note_id,
+            guildId: context.guildId,
+            channelId: context.channelId,
+          });
+          return;
+        }
       }
 
       logger.info('All checks passed - fetching note content and posting', {
