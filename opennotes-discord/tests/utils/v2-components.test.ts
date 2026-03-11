@@ -321,6 +321,36 @@ describe('V2 Components Utilities', () => {
     });
   });
 
+  describe('truncateWithMeta', () => {
+    it('should return truncation metadata when content is clipped', async () => {
+      const { truncateWithMeta } = await import('../../src/utils/v2-components.js');
+
+      expect(truncateWithMeta('abcdef', 5)).toEqual({
+        text: 'ab...',
+        original: 'abcdef',
+        isTruncated: true,
+      });
+    });
+
+    it('should return original text metadata when content is not clipped', async () => {
+      const { truncateWithMeta } = await import('../../src/utils/v2-components.js');
+
+      expect(truncateWithMeta('abc', 5)).toEqual({
+        text: 'abc',
+        original: 'abc',
+        isTruncated: false,
+      });
+    });
+  });
+
+  describe('buildViewFullCustomId', () => {
+    it('should build deterministic view_full button custom IDs', async () => {
+      const { buildViewFullCustomId } = await import('../../src/utils/v2-components.js');
+
+      expect(buildViewFullCustomId('abc123')).toBe('view_full:abc123');
+    });
+  });
+
   describe('v2MessageFlags', () => {
     it('should return flags with IsComponentsV2 flag set', async () => {
       const { v2MessageFlags } = await import('../../src/utils/v2-components.js');

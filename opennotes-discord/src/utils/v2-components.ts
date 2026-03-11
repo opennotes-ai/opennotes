@@ -308,6 +308,38 @@ export function truncate(text: string, maxLength: number): string {
 }
 
 /**
+ * Truncation result metadata for callers that need both preview and full text.
+ */
+export interface TruncateResult {
+  text: string;
+  original: string;
+  isTruncated: boolean;
+}
+
+/**
+ * Truncates text and returns metadata used by View Full interaction flows.
+ *
+ * @param text - Text to truncate
+ * @param maxLength - Maximum length of result (must be >= 3 to accommodate ellipsis)
+ * @returns Truncated text metadata (preview, original text, and truncation flag)
+ */
+export function truncateWithMeta(text: string, maxLength: number): TruncateResult {
+  const truncated = truncate(text, maxLength);
+  return {
+    text: truncated,
+    original: text,
+    isTruncated: truncated !== text,
+  };
+}
+
+/**
+ * Builds a deterministic custom ID for "View Full" button interactions.
+ */
+export function buildViewFullCustomId(token: string): string {
+  return `view_full:${token}`;
+}
+
+/**
  * Options for v2MessageFlags helper.
  */
 export interface V2MessageFlagsOptions {
