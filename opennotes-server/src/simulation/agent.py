@@ -7,13 +7,14 @@ from uuid import UUID
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import UsageLimits
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.llm_config.model_id import ModelId
 from src.notes.models import Note, Rating
+from src.simulation.models import SimChannelMessage
 from src.simulation.schemas import ActionSelectionResult, SimActionType, SimAgentAction
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ MAX_PERSONALITY_CHARS: int = 500
 MAX_CONTEXT_REQUESTS: int = 5
 MAX_CONTEXT_NOTES: int = 5
 MAX_LINKED_NOTES_PER_REQUEST: int = 10
+MAX_CHANNEL_MESSAGE_LENGTH: int = 2000
 TOKEN_BUDGET: int = 4000
 
 
@@ -39,6 +41,7 @@ class SimAgentDeps:
     agent_personality: str
     model_name: ModelId
     tool_config: dict[str, Any] | None = field(default=None)
+    simulation_run_id: UUID | None = None
 
 
 WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "google", "groq"})
@@ -115,6 +118,14 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "requests and notes. Always explain your reasoning."
     )
 
+    if ctx.deps.simulation_run_id is not None:
+        base += (
+            "\n\nChannel tools:\n"
+            "- post_to_channel: Share research findings, flag patterns, "
+            "express uncertainty, or coordinate with other agents\n"
+            "- read_channel: Read recent messages from the shared agent channel"
+        )
+
     if _is_research_available(ctx.deps):
         base += (
             "\n\nResearch tools:\n"
@@ -164,9 +175,11 @@ async def write_note(
     try:
         await ctx.deps.db.flush()
     except IntegrityError:
+        await ctx.deps.db.rollback()
         logger.exception("Integrity error creating note for request %s", request_id)
         return "Error: could not create note due to a constraint violation."
     except SQLAlchemyError:
+        await ctx.deps.db.rollback()
         logger.exception("Database error creating note for request %s", request_id)
         return "Error: could not create note due to a database error."
 
@@ -217,9 +230,11 @@ async def rate_note(
         await ctx.deps.db.execute(stmt)
         await ctx.deps.db.flush()
     except IntegrityError:
+        await ctx.deps.db.rollback()
         logger.exception("Integrity error creating rating for note %s", note_id)
         return "Error: could not create rating due to a constraint violation."
     except SQLAlchemyError:
+        await ctx.deps.db.rollback()
         logger.exception("Database error creating rating for note %s", note_id)
         return "Error: could not create rating due to a database error."
 
@@ -231,6 +246,72 @@ def pass_turn() -> str:
     """Do nothing this turn. Use this when no action seems appropriate
     given the current context."""
     return "Turn passed. No action taken."
+
+
+@sim_agent.tool
+async def post_to_channel(
+    ctx: RunContext[SimAgentDeps],
+    message: str,
+) -> str:
+    """Post a message to the shared agent channel. Use this to share research
+    findings, flag patterns, express uncertainty, or coordinate with other agents."""
+    if ctx.deps.simulation_run_id is None:
+        return "Error: channel not available (no simulation_run_id)."
+
+    if not message or not message.strip():
+        return "Error: message cannot be empty or whitespace-only."
+
+    if len(message) > MAX_CHANNEL_MESSAGE_LENGTH:
+        return (
+            f"Error: message too long ({len(message)} chars). "
+            f"Maximum is {MAX_CHANNEL_MESSAGE_LENGTH} characters."
+        )
+
+    msg = SimChannelMessage(
+        simulation_run_id=ctx.deps.simulation_run_id,
+        agent_instance_id=ctx.deps.agent_instance_id,
+        message_text=message,
+    )
+    ctx.deps.db.add(msg)
+    try:
+        await ctx.deps.db.flush()
+    except SQLAlchemyError:
+        await ctx.deps.db.rollback()
+        logger.exception("Database error posting to channel")
+        return "Error: could not post to channel due to a database error."
+    return "Posted to channel."
+
+
+@sim_agent.tool
+async def read_channel(
+    ctx: RunContext[SimAgentDeps],
+) -> str:
+    """Read recent messages from the shared agent channel."""
+    if ctx.deps.simulation_run_id is None:
+        return "Channel not available."
+
+    query = (
+        select(SimChannelMessage)
+        .where(SimChannelMessage.simulation_run_id == ctx.deps.simulation_run_id)
+        .order_by(SimChannelMessage.created_at.desc())
+        .limit(20)
+    )
+    try:
+        result = await ctx.deps.db.execute(query)
+    except SQLAlchemyError:
+        await ctx.deps.db.rollback()
+        logger.exception("Database error reading channel")
+        return "Error: could not read channel due to a database error."
+    messages = result.scalars().all()
+
+    if not messages:
+        return "No channel messages yet."
+
+    lines = []
+    for msg in reversed(messages):
+        short_id = str(msg.agent_instance_id)[:8]
+        lines.append(f"[Agent {short_id}]: {msg.message_text}")
+    return "\n".join(lines)
 
 
 BRIEF_MAX_TITLES = 3
@@ -545,6 +626,7 @@ class OpenNotesSimAgent:
 
 
 __all__ = [
+    "MAX_CHANNEL_MESSAGE_LENGTH",
     "MAX_CONTEXT_NOTES",
     "MAX_CONTEXT_REQUESTS",
     "MAX_LINKED_NOTES_PER_REQUEST",
@@ -559,5 +641,7 @@ __all__ = [
     "build_action_selector_instructions",
     "build_queue_summary",
     "estimate_tokens",
+    "post_to_channel",
+    "read_channel",
     "sim_agent",
 ]

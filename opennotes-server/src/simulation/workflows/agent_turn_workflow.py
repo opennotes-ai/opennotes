@@ -291,6 +291,9 @@ def select_action_step(
             agent_personality=context["personality"],
             model_name=model_id,
             tool_config=context.get("tool_config"),
+            simulation_run_id=UUID(context["simulation_run_id"])
+            if context.get("simulation_run_id")
+            else None,
         )
 
         selection, phase1_messages = await agent.select_action(
@@ -376,6 +379,9 @@ def execute_agent_turn_step(
                 agent_personality=context["personality"],
                 model_name=model_id,
                 tool_config=context.get("tool_config"),
+                simulation_run_id=UUID(context["simulation_run_id"])
+                if context.get("simulation_run_id")
+                else None,
             )
 
             try:

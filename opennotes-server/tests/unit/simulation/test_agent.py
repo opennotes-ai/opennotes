@@ -38,7 +38,9 @@ def mock_db():
     db = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
-    db.execute = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(return_value=mock_result)
     return db
 
 
@@ -72,6 +74,7 @@ def sample_deps(mock_db):
         agent_personality="You are a skeptical fact-checker who values evidence.",
         model_name=_TEST_MODEL_ID,
         tool_config=None,
+        simulation_run_id=uuid4(),
     )
 
 
@@ -115,8 +118,8 @@ class TestToolsRegistered:
     def test_pass_turn_tool_registered(self):
         assert "pass_turn" in self._get_tool_names()
 
-    def test_three_tools_total(self):
-        assert len(sim_agent._function_toolset.tools) == 3
+    def test_five_tools_total(self):
+        assert len(sim_agent._function_toolset.tools) == 5
 
 
 class TestWriteNoteTool:
@@ -256,6 +259,30 @@ class TestWriteNoteTool:
         )
 
         assert "ix_notes_author_request" not in result
+
+    @pytest.mark.asyncio
+    async def test_write_note_rolls_back_on_integrity_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.db.flush = AsyncMock(side_effect=IntegrityError("duplicate", {}, None))
+        sample_deps.db.rollback = AsyncMock()
+
+        req_id = sample_deps.available_requests[0]["request_id"]
+        await write_note(ctx, request_id=req_id, summary="test", classification="NOT_MISLEADING")
+
+        sample_deps.db.rollback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_write_note_rolls_back_on_sqlalchemy_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.db.flush = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
+        sample_deps.db.rollback = AsyncMock()
+
+        req_id = sample_deps.available_requests[0]["request_id"]
+        await write_note(ctx, request_id=req_id, summary="test", classification="NOT_MISLEADING")
+
+        sample_deps.db.rollback.assert_awaited_once()
 
 
 class TestRateNoteTool:
@@ -409,6 +436,30 @@ class TestRateNoteTool:
 
         assert "ix_ratings_note_rater" not in result
 
+    @pytest.mark.asyncio
+    async def test_rate_note_rolls_back_on_integrity_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.db.execute = AsyncMock(side_effect=IntegrityError("fk violation", {}, None))
+        sample_deps.db.rollback = AsyncMock()
+
+        note_id = sample_deps.available_notes[0]["note_id"]
+        await rate_note(ctx, note_id=note_id, helpfulness_level="HELPFUL")
+
+        sample_deps.db.rollback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_rate_note_rolls_back_on_sqlalchemy_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.db.execute = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
+        sample_deps.db.rollback = AsyncMock()
+
+        note_id = sample_deps.available_notes[0]["note_id"]
+        await rate_note(ctx, note_id=note_id, helpfulness_level="HELPFUL")
+
+        sample_deps.db.rollback.assert_awaited_once()
+
 
 class TestPassTurnTool:
     def test_pass_turn_returns_message(self):
@@ -470,6 +521,35 @@ class TestInstructions:
         assert "optimistic contributor" in instructions_a
         assert "harsh critic" in instructions_b
 
+    def test_instructions_include_channel_tools_when_simulation_run_id_set(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        instructions = build_instructions(ctx)
+
+        assert "post_to_channel" in instructions
+        assert "read_channel" in instructions
+
+    def test_instructions_omit_channel_tools_when_no_simulation_run_id(self, mock_db):
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=_TEST_MODEL_ID,
+            simulation_run_id=None,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        instructions = build_instructions(ctx)
+
+        assert "post_to_channel" not in instructions
+        assert "read_channel" not in instructions
+
 
 class TestDeps:
     def test_deps_dataclass_fields(self):
@@ -482,6 +562,7 @@ class TestDeps:
         assert "available_notes" in field_names
         assert "agent_personality" in field_names
         assert "model_name" in field_names
+        assert "simulation_run_id" in field_names
 
     def test_deps_model_name_is_model_id(self, sample_deps):
         assert isinstance(sample_deps.model_name, ModelId)

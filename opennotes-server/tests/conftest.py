@@ -230,8 +230,11 @@ def test_sqlalchemy_relationships():
             SimAgent,
             SimAgentInstance,
             SimAgentMemory,
+            SimAgentRunLog,
+            SimChannelMessage,
             SimulationOrchestrator,
             SimulationRun,
+            SimulationRunConfig,
         )
         from src.users.models import User  # noqa: F401
         from src.users.profile_models import (  # noqa: F401
@@ -772,8 +775,11 @@ def template_database(test_services):
         SimAgent,
         SimAgentInstance,
         SimAgentMemory,
+        SimAgentRunLog,
+        SimChannelMessage,
         SimulationOrchestrator,
         SimulationRun,
+        SimulationRunConfig,
     )
     from src.users.models import User  # noqa: F401
     from src.users.profile_models import (  # noqa: F401
@@ -967,8 +973,11 @@ async def setup_database(request):
         SimAgent,
         SimAgentInstance,
         SimAgentMemory,
+        SimAgentRunLog,
+        SimChannelMessage,
         SimulationOrchestrator,
         SimulationRun,
+        SimulationRunConfig,
     )
     from src.users.profile_models import UserProfile  # noqa: F401
 

@@ -103,6 +103,32 @@ class SimAgentMemory(Base, TimestampMixin):
     )
 
 
+class SimChannelMessage(Base, TimestampMixin):
+    __tablename__ = "sim_channel_messages"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("uuidv7()"),
+    )
+    simulation_run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("simulation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    agent_instance_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("sim_agent_instances.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    __table_args__ = (
+        Index("idx_sim_channel_messages_run_created", "simulation_run_id", "created_at"),
+    )
+
+
 class SimulationOrchestrator(Base, TimestampMixin):
     __tablename__ = "simulation_orchestrators"
 
