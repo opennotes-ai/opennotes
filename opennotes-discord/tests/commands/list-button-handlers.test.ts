@@ -689,19 +689,18 @@ describe('list command - Button Handlers', () => {
       expect(renderedContent).toContain('Follow-up context after the code block.');
     });
 
-    it('should preserve quoted fenced markdown and indented fence-like literals in View Full replies', async () => {
+    it('should preserve normalized quoted fenced markdown and blockquoted indented fence-like literals in View Full replies', async () => {
       const quotedFenceBody = Array.from(
         { length: 80 },
-        (_, index) => `> const quotedLine${index} = ${index};`
+        (_, index) => `   > const quotedLine${index} = ${index};`
       ).join('\n');
       const longFullText = [
         '> Request details:',
-        '>',
-        '> ```ts',
-        quotedFenceBody,
         '>     ````',
-        '> const afterLiteral = true;',
-        '> ```',
+        '>',
+        '   > ```ts',
+        quotedFenceBody,
+        '>``` ',
         '>',
         '> Follow-up context after the quoted block.',
       ].join('\n');
@@ -716,9 +715,10 @@ describe('list command - Button Handlers', () => {
       const renderedContent = renderedPages.join('\n');
 
       expect(renderedPages.length).toBeGreaterThan(1);
-      expect(renderedPages[0].trimEnd().endsWith('> ```')).toBe(true);
-      expect(renderedPages[1].startsWith('> ```ts\n')).toBe(true);
+      expect(renderedPages[0].trimEnd().endsWith('   > ```')).toBe(true);
+      expect(renderedPages[1].startsWith('   > ```ts\n')).toBe(true);
       expect(renderedContent).toContain('>     ````');
+      expect(renderedContent).toContain('quotedLine79 = 79;');
       expect(renderedContent).toContain('> Follow-up context after the quoted block.');
     });
 

@@ -135,6 +135,32 @@ describe('TextPaginator', () => {
       expect(result.pages.at(-1)).toContain('> Follow-up context after the quoted block.');
     });
 
+    it('keeps quoted fences balanced when fence lines use equivalent blockquote spacing variants', () => {
+      const quotedFenceBody = Array.from(
+        { length: 10 },
+        (_, index) => `   > const mixedLine${index} = ${index};`
+      ).join('\n');
+      const content = [
+        '> Request details:',
+        '>     ````',
+        '>',
+        '   > ```ts',
+        quotedFenceBody,
+        '>``` ',
+        '>',
+        '> Follow-up context after the quoted block.',
+      ].join('\n');
+
+      const result = TextPaginator.paginate(content, { maxCharsPerPage: 120 });
+
+      expect(result.totalPages).toBeGreaterThan(1);
+      expect(result.pages[0].trimEnd().endsWith('   > ```')).toBe(true);
+      expect(result.pages[1].startsWith('   > ```ts\n')).toBe(true);
+      expect(result.pages.join('\n')).toContain('>     ````');
+      expect(result.pages.join('\n')).toContain('mixedLine9 = 9;');
+      expect(result.pages.at(-1)).toContain('> Follow-up context after the quoted block.');
+    });
+
     it('does not emit an empty reopened fence page when a split lands before the original closer', () => {
       const content = [
         '```ts',
@@ -172,6 +198,26 @@ describe('TextPaginator', () => {
       ].join('\n');
 
       expect(paginatorInternals.findUnclosedFence(content)).not.toBeNull();
+    });
+
+    it('matches quoted fence closers by normalized blockquote depth instead of literal whitespace', () => {
+      const content = [
+        '> ```ts',
+        '> const value = 1;',
+        '>``` ',
+      ].join('\n');
+
+      expect(paginatorInternals.findUnclosedFence(content)).toBeNull();
+    });
+
+    it('does not treat blockquoted indented fence-like literals as real fences', () => {
+      const content = [
+        '> Request details:',
+        '>     ````',
+        '> still plain text',
+      ].join('\n');
+
+      expect(paginatorInternals.findUnclosedFence(content)).toBeNull();
     });
 
     it('accepts closing fences that use a longer run than the opener', () => {

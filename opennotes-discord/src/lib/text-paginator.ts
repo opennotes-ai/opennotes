@@ -32,12 +32,13 @@ interface FenceState {
   closingLine: string;
   marker: '`' | '~';
   markerLength: number;
-  quotePrefix: string;
+  quoteDepth: number;
 }
 
 interface ParsedFenceLine {
   rawLine: string;
-  quotePrefix: string;
+  linePrefix: string;
+  quoteDepth: number;
   marker: '`' | '~';
   markerRun: string;
   rest: string;
@@ -196,15 +197,27 @@ export class TextPaginator {
 
   private static parseFenceLine(line: string): ParsedFenceLine | null {
     const rawLine = line.trimEnd();
-    const match = rawLine.match(/^(?<quotePrefix>(?:>\s*)*)(?: {0,3})(?<marker>`{3,}|~{3,})(?<rest>.*)$/);
+    const match = rawLine.match(
+      /^(?<leading> {0,3})(?<quotePrefix>(?:> ?)*)(?<fenceIndent> {0,3})(?<marker>`{3,}|~{3,})(?<rest>.*)$/
+    );
     if (!match?.groups) {
       return null;
     }
 
     const markerRun = match.groups.marker;
+    const leading = match.groups.leading ?? '';
+    const quotePrefix = match.groups.quotePrefix ?? '';
+    const fenceIndent = match.groups.fenceIndent ?? '';
+    const quoteDepth = quotePrefix.split('>').length - 1;
+
+    if (quoteDepth === 0 && leading.length + fenceIndent.length > 3) {
+      return null;
+    }
+
     return {
       rawLine,
-      quotePrefix: match.groups.quotePrefix ?? '',
+      linePrefix: `${leading}${quotePrefix}${fenceIndent}`,
+      quoteDepth,
       marker: markerRun[0] as '`' | '~',
       markerRun,
       rest: match.groups.rest ?? '',
@@ -219,10 +232,10 @@ export class TextPaginator {
 
     return {
       openerLine: parsed.rawLine,
-      closingLine: `${parsed.quotePrefix}${parsed.markerRun}`,
+      closingLine: `${parsed.linePrefix}${parsed.markerRun}`,
       marker: parsed.marker,
       markerLength: parsed.markerRun.length,
-      quotePrefix: parsed.quotePrefix,
+      quoteDepth: parsed.quoteDepth,
     };
   }
 
@@ -232,7 +245,7 @@ export class TextPaginator {
       return false;
     }
 
-    return parsed.quotePrefix === openFence.quotePrefix
+    return parsed.quoteDepth === openFence.quoteDepth
       && parsed.marker === openFence.marker
       && parsed.markerRun.length >= openFence.markerLength
       && parsed.rest.trim() === '';
