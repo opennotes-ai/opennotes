@@ -221,8 +221,22 @@ describe('ScoringService', () => {
       expect(result.success).toBe(true);
       expect(result.data?.data.length).toBe(2);
       expect(result.data?.meta?.total_found).toBe(2);
-      expect(mockApiClient.getBatchNoteScores).toHaveBeenCalledWith([TEST_UUID_1, TEST_UUID_2]);
+      expect(mockApiClient.getBatchNoteScores).toHaveBeenCalledWith([TEST_UUID_1, TEST_UUID_2], undefined);
       expect(mockCache.set).toHaveBeenCalledTimes(2);
+    });
+
+    it('should forward user context when fetching uncached batch scores', async () => {
+      mockCache.get.mockReturnValue(null);
+      mockApiClient.getBatchNoteScores.mockResolvedValue(mockBatchResponse);
+
+      const context = {
+        userId: 'discord-user-123',
+        guildId: 'guild-456',
+      };
+
+      await scoringService.getBatchNoteScores([TEST_UUID_1, TEST_UUID_2], context);
+
+      expect(mockApiClient.getBatchNoteScores).toHaveBeenCalledWith([TEST_UUID_1, TEST_UUID_2], context);
     });
 
     it('should use cached scores and only fetch uncached ones', async () => {
@@ -248,7 +262,7 @@ describe('ScoringService', () => {
 
       expect(result.success).toBe(true);
       expect(result.data?.data.length).toBe(2);
-      expect(mockApiClient.getBatchNoteScores).toHaveBeenCalledWith([TEST_UUID_2]);
+      expect(mockApiClient.getBatchNoteScores).toHaveBeenCalledWith([TEST_UUID_2], undefined);
     });
 
     it('should handle not found notes', async () => {

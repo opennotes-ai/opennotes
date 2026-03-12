@@ -120,6 +120,11 @@ const mockServiceProvider = {
   getGuildConfigService: jest.fn(() => mockGuildConfigService),
 };
 
+const mockExtractUserContext = jest.fn((user: { id: string }, guildId?: string | null) => ({
+  userId: user.id,
+  guildId: guildId ?? undefined,
+}));
+
 jest.unstable_mockModule('../../src/types/bulk-scan.js', () => ({
   VIBE_CHECK_DAYS_OPTIONS: VIBE_CHECK_DAYS_OPTIONS,
   BULK_SCAN_BATCH_SIZE: 100,
@@ -217,6 +222,10 @@ jest.unstable_mockModule('../../src/services/index.js', () => ({
   serviceProvider: mockServiceProvider,
 }));
 
+jest.unstable_mockModule('../../src/lib/user-context.js', () => ({
+  extractUserContext: mockExtractUserContext,
+}));
+
 jest.unstable_mockModule('../../src/lib/errors.js', () => ({
   generateErrorId: () => 'test-error-id',
   extractErrorDetails: (error: any) => ({
@@ -254,6 +263,10 @@ const { data, execute, VIBECHECK_COOLDOWN_MS, getVibecheckCooldownKey } = await 
 describe('vibecheck command', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockExtractUserContext.mockImplementation((user: { id: string }, guildId?: string | null) => ({
+      userId: user.id,
+      guildId: guildId ?? undefined,
+    }));
 
     // Set up cache mock to return null (no cooldown)
     mockCache.get.mockResolvedValue(null);
@@ -1579,7 +1592,10 @@ describe('vibecheck command', () => {
       await execute(mockInteraction as any);
 
       expect(mockApiClient.getCommunityServerByPlatformId).toHaveBeenCalledWith('guild789');
-      expect(mockApiClient.getLatestScan).toHaveBeenCalledWith('community-server-uuid-123');
+      expect(mockApiClient.getLatestScan).toHaveBeenCalledWith(
+        'community-server-uuid-123',
+        expect.objectContaining({ userId: 'admin123', guildId: 'guild789' })
+      );
     });
 
     it('should display completed scan status', async () => {
@@ -2123,11 +2139,15 @@ describe('vibecheck command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockApiClient.getBulkScanResults).toHaveBeenCalledWith('scan-123');
+      expect(mockApiClient.getBulkScanResults).toHaveBeenCalledWith(
+        'scan-123',
+        expect.objectContaining({ userId: 'admin123', guildId: 'guild789' })
+      );
       expect(mockApiClient.createNoteRequestsFromScan).toHaveBeenCalledWith(
         'scan-123',
         ['msg-1', 'msg-2'],
-        false
+        false,
+        expect.objectContaining({ userId: 'admin123', guildId: 'guild789' })
       );
 
       expect(mockInteraction.editReply).toHaveBeenCalledWith(

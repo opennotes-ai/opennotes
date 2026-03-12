@@ -625,6 +625,12 @@ async function handleViewSubcommand(interaction: ChatInputCommandInteraction): P
 
     const viewNotesService = serviceProvider.getViewNotesService();
     const scoringService = serviceProvider.getScoringService();
+    const userContext = extractUserContext(
+      interaction.user,
+      guildId,
+      interaction.member as GuildMember | null,
+      interaction.channelId
+    );
 
     const result = await viewNotesService.execute({ messageId }, userId);
 
@@ -643,7 +649,7 @@ async function handleViewSubcommand(interaction: ChatInputCommandInteraction): P
     }
 
     const noteIds = result.data!.notes.data.map(note => note.id);
-    const batchScoresResult = await scoringService.getBatchNoteScores(noteIds);
+    const batchScoresResult = await scoringService.getBatchNoteScores(noteIds, userContext);
 
     const scoresMap = new Map();
     if (batchScoresResult.success && batchScoresResult.data) {

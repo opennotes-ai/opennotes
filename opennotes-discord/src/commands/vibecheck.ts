@@ -21,6 +21,7 @@ import { VIBE_CHECK_DAYS_OPTIONS } from '../types/bulk-scan.js';
 import { executeBulkScan } from '../lib/bulk-scan-executor.js';
 import { formatScanStatusPaginated } from '../lib/scan-status-formatter.js';
 import { TextPaginator } from '../lib/text-paginator.js';
+import { extractUserContext } from '../lib/user-context.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { serviceProvider } from '../services/index.js';
 import { ConfigKey } from '../lib/config-schema.js';
@@ -165,14 +166,15 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   }
 
   const subcommand = interaction.options.getSubcommand();
+  const userContext = extractUserContext(interaction.user, guildId, member, interaction.channelId);
 
   if (subcommand === 'status') {
-    await handleStatusSubcommand(interaction, guildId, errorId);
+    await handleStatusSubcommand(interaction, guildId, errorId, userContext);
     return;
   }
 
   if (subcommand === 'create-requests') {
-    await handleCreateRequestsSubcommand(interaction, guildId, errorId);
+    await handleCreateRequestsSubcommand(interaction, guildId, errorId, userContext);
     return;
   }
 
@@ -594,7 +596,8 @@ async function showAiGenerationPrompt(
 async function handleStatusSubcommand(
   interaction: ChatInputCommandInteraction,
   guildId: string,
-  errorId: string
+  errorId: string,
+  userContext: ReturnType<typeof extractUserContext>
 ): Promise<void> {
   await interaction.deferReply({
     flags: MessageFlags.Ephemeral,
@@ -610,7 +613,7 @@ async function handleStatusSubcommand(
   try {
     const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
 
-    const latestScan = await apiClient.getLatestScan(communityServer.data.id);
+    const latestScan = await apiClient.getLatestScan(communityServer.data.id, userContext);
     const flaggedMessages = latestScan.included || [];
 
     const cachedExplanations = await cache.get<Record<string, string>>(
@@ -754,7 +757,8 @@ async function handleStatusPaginationButton(
 async function handleCreateRequestsSubcommand(
   interaction: ChatInputCommandInteraction,
   guildId: string,
-  errorId: string
+  errorId: string,
+  userContext: ReturnType<typeof extractUserContext>
 ): Promise<void> {
   await interaction.deferReply({
     flags: MessageFlags.Ephemeral,
@@ -771,7 +775,7 @@ async function handleCreateRequestsSubcommand(
   });
 
   try {
-    const scanResults = await apiClient.getBulkScanResults(scanId);
+    const scanResults = await apiClient.getBulkScanResults(scanId, userContext);
     const flaggedMessages = scanResults.included || [];
 
     if (flaggedMessages.length === 0) {
@@ -785,7 +789,8 @@ async function handleCreateRequestsSubcommand(
     const result = await apiClient.createNoteRequestsFromScan(
       scanId,
       messageIds,
-      false
+      false,
+      userContext
     );
 
     const createdCount = result.data.attributes.created_count;

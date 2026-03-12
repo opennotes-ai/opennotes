@@ -630,7 +630,11 @@ describe('bulk-scan-executor', () => {
 
       expect(mockGetCommunityServerByPlatformId).toHaveBeenCalledWith('guild-123');
 
-      expect(mockInitiateBulkScan).toHaveBeenCalledWith('community-uuid-123', 7);
+      expect(mockInitiateBulkScan).toHaveBeenCalledWith(
+        'community-uuid-123',
+        7,
+        expect.objectContaining({ userId: 'user-123' })
+      );
     });
 
     it('should use community server UUID in BulkScanBatch', async () => {

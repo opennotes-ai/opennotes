@@ -57,6 +57,7 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
   const { guild, days, initiatorId, errorId, progressCallback, excludeChannelIds = [] } = options;
   const guildId = guild.id;
   const excludeSet = new Set(excludeChannelIds);
+  const initiatorContext = { userId: initiatorId };
 
   const cutoffTimestamp = Date.now() - days * 24 * 60 * 60 * 1000;
   const cutoffSnowflake = DiscordSnowflake.generate({ timestamp: BigInt(cutoffTimestamp) });
@@ -97,7 +98,7 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
   const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
   const communityServerUuid = communityServer.data.id;
 
-  const scanResponse = await apiClient.initiateBulkScan(communityServerUuid, days);
+  const scanResponse = await apiClient.initiateBulkScan(communityServerUuid, days, initiatorContext);
   const scanId = scanResponse.data.id;
 
   logger.info('Initiated bulk scan', {
@@ -321,7 +322,7 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     };
   }
 
-  const results = await pollForResults(scanId, errorId);
+  const results = await pollForResults(scanId, errorId, initiatorContext);
 
   if (!results || results.data.attributes.status === 'failed') {
     return {
@@ -366,14 +367,15 @@ function calculateBackoffDelay(attempt: number): number {
 
 export async function pollForResults(
   scanId: string,
-  errorId: string
+  errorId: string,
+  context?: { userId: string }
 ): Promise<BulkScanResultsResponse | null> {
   const startTime = Date.now();
   let attempt = 0;
 
   while (Date.now() - startTime < POLL_TIMEOUT_MS) {
     try {
-      const results = await apiClient.getBulkScanResults(scanId);
+      const results = await apiClient.getBulkScanResults(scanId, context);
 
       if (results.data.attributes.status === 'completed' || results.data.attributes.status === 'failed') {
         return results;

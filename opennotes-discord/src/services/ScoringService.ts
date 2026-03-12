@@ -6,6 +6,7 @@ import {
   BatchScoreJSONAPIResponse,
   ScoreConfidence,
   NoteScoreAttributes,
+  type UserContext,
 } from '../lib/api-client.js';
 import { cache } from '../cache.js';
 import { logger } from '../logger.js';
@@ -120,7 +121,10 @@ export class ScoringService {
     }
   }
 
-  async getBatchNoteScores(noteIds: string[]): Promise<ScoringServiceResult<BatchScoreJSONAPIResponse>> {
+  async getBatchNoteScores(
+    noteIds: string[],
+    context?: UserContext
+  ): Promise<ScoringServiceResult<BatchScoreJSONAPIResponse>> {
     const validatedIds = this.validateBatchNoteIds(noteIds);
     if (!validatedIds.success) {
       return validatedIds;
@@ -146,7 +150,7 @@ export class ScoringService {
       let apiResponse: BatchScoreJSONAPIResponse | null = null;
 
       if (uncachedNoteIds.length > 0) {
-        apiResponse = await this.apiClient.getBatchNoteScores(uncachedNoteIds);
+        apiResponse = await this.apiClient.getBatchNoteScores(uncachedNoteIds, context);
 
         for (const resource of apiResponse.data) {
           const cacheKey = `score:${resource.id}`;

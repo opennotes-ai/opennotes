@@ -63,6 +63,11 @@ const mockServiceProvider = {
   getGuildConfigService: jest.fn<(...args: any[]) => any>(),
 };
 
+const mockExtractUserContext = jest.fn(() => ({
+  userId: 'user123',
+  guildId: 'guild456',
+}));
+
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
 }));
@@ -81,6 +86,10 @@ jest.unstable_mockModule('../../src/services/index.js', () => ({
 
 jest.unstable_mockModule('../../src/services/DiscordFormatter.js', () => ({
   DiscordFormatter: mockDiscordFormatter,
+}));
+
+jest.unstable_mockModule('../../src/lib/user-context.js', () => ({
+  extractUserContext: mockExtractUserContext,
 }));
 
 jest.unstable_mockModule('../../src/lib/errors.js', () => ({
@@ -103,6 +112,10 @@ const { execute } = await import('../../src/commands/note.js');
 describe('note-view command', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockExtractUserContext.mockReturnValue({
+      userId: 'user123',
+      guildId: 'guild456',
+    });
     mockServiceProvider.getViewNotesService.mockReturnValue(mockViewNotesService);
     mockServiceProvider.getScoringService.mockReturnValue(mockScoringService);
     mockDiscordFormatter.formatViewNotesSuccessV2.mockReturnValue({
@@ -158,7 +171,10 @@ describe('note-view command', () => {
         { messageId: '12345678901234567' },
         'user123'
       );
-      expect(mockScoringService.getBatchNoteScores).toHaveBeenCalledWith(['1', '2']);
+      expect(mockScoringService.getBatchNoteScores).toHaveBeenCalledWith(
+        ['1', '2'],
+        expect.objectContaining({ userId: 'user123', guildId: 'guild456' })
+      );
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 

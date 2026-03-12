@@ -1801,6 +1801,11 @@ describe('ApiClient Wrapper', () => {
   describe('getLatestScan', () => {
     const TEST_COMMUNITY_SERVER_UUID = '11111111-1111-1111-1111-111111111111';
     const TEST_SCAN_ID = '22222222-2222-2222-2222-222222222222';
+    const TEST_USER_CONTEXT = {
+      userId: '123456789012345678',
+      guildId: '987654321098765432',
+      hasManageServer: true,
+    };
 
     it('should fetch the latest scan for a community server', async () => {
       const client = new ApiClient({
@@ -1901,6 +1906,44 @@ describe('ApiClient Wrapper', () => {
       expect(req.url).toContain(`/api/v2/bulk-scans/communities/${TEST_COMMUNITY_SERVER_UUID}/latest`);
     });
 
+    it('should send profile headers when user context is provided', async () => {
+      const client = new ApiClient({
+        serverUrl: 'http://localhost:8000',
+        environment: 'development',
+      });
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'bulk-scans',
+          id: TEST_SCAN_ID,
+          attributes: {
+            status: 'pending',
+            initiated_at: '2024-01-15T10:00:00Z',
+            completed_at: null,
+            messages_scanned: 0,
+            messages_flagged: 0,
+            scan_window_days: 7,
+          },
+        },
+        included: [],
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+        })
+      );
+
+      await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID, TEST_USER_CONTEXT);
+
+      const req = getFetchRequestDetails();
+      expect(req.headers['x-discord-user-id']).toBe(TEST_USER_CONTEXT.userId);
+      expect(req.headers['x-guild-id']).toBe(TEST_USER_CONTEXT.guildId);
+      expect(req.headers['x-discord-has-manage-server']).toBe('true');
+    });
+
     it('should throw ApiError when no scans exist (404)', async () => {
       const client = new ApiClient({
         serverUrl: 'http://localhost:8000',
@@ -1997,6 +2040,43 @@ describe('ApiClient Wrapper', () => {
 
       expect(result.data.attributes.status).toBe('in_progress');
       expect(result.data.attributes.messages_scanned).toBe(50);
+    });
+
+    it('should send profile headers when creating note requests from a scan', async () => {
+      const client = new ApiClient({
+        serverUrl: 'http://localhost:8000',
+        environment: 'development',
+      });
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'note-request-batches',
+          id: 'batch-123',
+          attributes: {
+            created_count: 2,
+            request_ids: ['req-1', 'req-2'],
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+        })
+      );
+
+      await client.createNoteRequestsFromScan(
+        TEST_SCAN_ID,
+        ['msg-1', 'msg-2'],
+        false,
+        TEST_USER_CONTEXT
+      );
+
+      const req = getFetchRequestDetails();
+      expect(req.headers['x-discord-user-id']).toBe(TEST_USER_CONTEXT.userId);
+      expect(req.headers['x-guild-id']).toBe(TEST_USER_CONTEXT.guildId);
     });
   });
 });
