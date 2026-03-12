@@ -299,6 +299,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     );
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
+    const isRateLimitError = error instanceof ApiError && error.statusCode === 429;
 
     logger.error('Vibecheck scan failed', {
       error_id: errorId,
@@ -310,8 +311,12 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       stack: errorDetails.stack,
     });
 
+    const userMessage = isRateLimitError
+      ? 'You have reached the vibecheck scan rate limit of 5 scans per hour per user. Please wait and try again; the limit resets within an hour.'
+      : 'The scan encountered an error. Please try again later.';
+
     await interaction.editReply({
-      content: formatErrorForUser(errorId, 'The scan encountered an error. Please try again later.'),
+      content: formatErrorForUser(errorId, userMessage),
     });
   }
 }
