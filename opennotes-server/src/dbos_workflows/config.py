@@ -9,43 +9,13 @@ Provides DBOS singleton management for workflow execution:
 
 import re
 import threading
-from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from dbos import DBOS, DBOSConfig
 from sqlalchemy.pool import NullPool
 
-from src.common.connection_retry import sync_connect_with_retry
 from src.config import settings
 from src.dbos_workflows.serializer import SafeJsonSerializer
-
-_NULLPOOL_INCOMPATIBLE_KEYS = frozenset(
-    {"pool_timeout", "max_overflow", "pool_size", "pool_pre_ping"}
-)
-
-
-def _strip_nullpool_incompatible_kwargs(engine_kwargs: dict[str, Any]) -> None:
-    if engine_kwargs.get("poolclass") is NullPool:
-        for key in _NULLPOOL_INCOMPATIBLE_KEYS:
-            engine_kwargs.pop(key, None)
-
-
-def _install_nullpool_patch() -> None:
-    import dbos._dbos_config as _dbos_config_mod
-
-    _original = _dbos_config_mod.configure_db_engine_parameters
-
-    def _patched(data: Any, **kwargs: Any) -> None:
-        _original(data, **kwargs)
-        for key in ("db_engine_kwargs", "sys_db_engine_kwargs"):
-            engine_kwargs = data.get(key)
-            if engine_kwargs:
-                _strip_nullpool_incompatible_kwargs(engine_kwargs)
-
-    _dbos_config_mod.configure_db_engine_parameters = _patched
-
-
-_install_nullpool_patch()
 
 _dbos_instance: DBOS | None = None
 _dbos_lock = threading.Lock()
@@ -209,14 +179,8 @@ def validate_dbos_connection() -> bool:
     if not db_url:
         raise RuntimeError("system_database_url not configured in DBOS config")
 
-    connect = sync_connect_with_retry(
-        lambda: psycopg.connect(db_url, prepare_threshold=None),
-        max_retries=settings.DB_CONNECT_MAX_RETRIES,
-        backoff_base=settings.DB_CONNECT_BACKOFF_BASE_SECONDS,
-    )
-
     try:
-        with connect() as conn, conn.cursor() as cur:
+        with psycopg.connect(db_url, prepare_threshold=None) as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
                 "WHERE table_schema = 'dbos' AND table_name = 'workflow_status')"
