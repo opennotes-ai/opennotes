@@ -34,12 +34,21 @@ class TestGetUserIdentifier:
             algorithm=settings.JWT_ALGORITHM,
         )
 
-    def _create_mock_request(self, auth_header: str | None = None) -> MagicMock:
+    def _create_mock_request(
+        self,
+        auth_header: str | None = None,
+        discord_user_id: str | None = None,
+        api_key: str | None = None,
+    ) -> MagicMock:
         """Create a mock request object with optional auth header."""
         request = MagicMock()
         headers = {}
         if auth_header:
             headers["authorization"] = auth_header
+        if discord_user_id:
+            headers["x-discord-user-id"] = discord_user_id
+        if api_key:
+            headers["x-api-key"] = api_key
         request.headers.get = lambda key, default=None: headers.get(key, default)
         request.client = MagicMock()
         request.client.host = "127.0.0.1"
@@ -72,6 +81,58 @@ class TestGetUserIdentifier:
         result = get_user_identifier(request)
 
         assert result == f"user:{user_id}"
+
+    def test_prefers_jwt_user_id_over_discord_header(self):
+        """A valid JWT should take precedence over Discord profile headers."""
+        from src.middleware.rate_limiting import get_user_identifier
+
+        user_id = str(uuid4())
+        token = self._create_valid_token(user_id)
+        request = self._create_mock_request(
+            auth_header=f"Bearer {token}",
+            discord_user_id="discord-user-123",
+        )
+
+        result = get_user_identifier(request)
+
+        assert result == f"user:{user_id}"
+
+    def test_returns_discord_user_id_when_token_cannot_be_decoded(self):
+        """Discord user header should be used before falling back to IP."""
+        from src.middleware.rate_limiting import get_user_identifier
+
+        request = self._create_mock_request(
+            auth_header="Bearer invalid.token.here",
+            discord_user_id="discord-user-123",
+        )
+
+        result = get_user_identifier(request)
+
+        assert result == "discord:discord-user-123"
+
+    def test_returns_unique_discord_identifier_per_user(self):
+        """Different Discord users must not share the same rate-limit key."""
+        from src.middleware.rate_limiting import get_user_identifier
+
+        request_a = self._create_mock_request(discord_user_id="discord-user-a")
+        request_b = self._create_mock_request(discord_user_id="discord-user-b")
+
+        result_a = get_user_identifier(request_a)
+        result_b = get_user_identifier(request_b)
+
+        assert result_a == "discord:discord-user-a"
+        assert result_b == "discord:discord-user-b"
+        assert result_a != result_b
+
+    def test_returns_api_key_identifier_when_no_user_context_available(self):
+        """API key callers should get a stable non-IP rate-limit bucket."""
+        from src.middleware.rate_limiting import get_user_identifier
+
+        request = self._create_mock_request(api_key="pk_live_abcdefghijklmnopqrstuvwxyz")
+
+        result = get_user_identifier(request)
+
+        assert result == "apikey:pk_live_abcdefgh"
 
     def test_returns_ip_for_expired_token(self):
         """When token is expired, should fall back to IP-based identifier."""

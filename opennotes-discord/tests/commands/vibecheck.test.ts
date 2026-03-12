@@ -248,6 +248,7 @@ jest.unstable_mockModule('../../src/lib/config-schema.js', () => ({
   },
 }));
 
+const { ApiError } = await import('../../src/lib/errors.js');
 const { data, execute, VIBECHECK_COOLDOWN_MS, getVibecheckCooldownKey } = await import('../../src/commands/vibecheck.js');
 
 describe('vibecheck command', () => {
@@ -617,6 +618,49 @@ describe('vibecheck command', () => {
 
       const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
       expect(lastEditCall.content).toMatch(/complete|scan/i);
+    });
+
+    it('should show a rate-limit specific message when the server returns 429', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockExecuteBulkScan.mockRejectedValueOnce(
+        new ApiError('Too many requests', '/api/v2/bulk-scans', 429)
+      );
+
+      await execute(mockInteraction as any);
+
+      const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
+      expect(lastEditCall.content).toMatch(/rate limit|too many/i);
+      expect(lastEditCall.content).not.toMatch(/encountered an error/i);
     });
   });
 
