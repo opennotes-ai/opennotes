@@ -60,10 +60,16 @@ logger = logging.getLogger(__name__)
 
 
 def _is_expected_unique_constraint_violation(exc: IntegrityError, expected_constraint: str) -> bool:
-    constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    orig = exc.orig
+    constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", None)
     if constraint_name == expected_constraint:
         return True
-    return expected_constraint in str(exc.orig)
+
+    direct_constraint_name = getattr(orig, "constraint_name", None)
+    if direct_constraint_name == expected_constraint:
+        return True
+
+    return expected_constraint in str(orig)
 
 
 async def get_profile_id_from_user(db: AsyncSession, user: User) -> UUID | None:
