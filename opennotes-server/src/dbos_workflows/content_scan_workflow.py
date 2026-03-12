@@ -1160,7 +1160,9 @@ def finalize_scan_step(
     """Finalize the content scan: update DB record and publish NATS events.
 
     Uses SELECT...FOR UPDATE for the DB update to prevent race conditions.
-    Publishes BulkScanResultsEvent and BulkScanProcessingFinishedEvent.
+    Publishes bulk-scan terminal events after persisting the final DB status.
+    Completed scans publish results + processing finished. Failed scans publish
+    results + failed + processing finished.
 
     Args:
         scan_id: UUID string of the scan
@@ -1182,6 +1184,7 @@ def finalize_scan_step(
     from src.database import get_session_maker
     from src.events.publisher import create_worker_event_publisher
     from src.events.schemas import (
+        BulkScanFailedEvent,
         BulkScanProcessingFinishedEvent,
         ScanErrorInfo,
         ScanErrorSummary,
@@ -1268,6 +1271,15 @@ def finalize_scan_step(
                     flagged_messages=flagged,
                     error_summary=error_summary,
                 )
+
+                if status == BulkScanStatus.FAILED:
+                    failed_event = BulkScanFailedEvent(
+                        event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
+                        scan_id=scan_uuid,
+                        community_server_id=community_uuid,
+                        error_message=failure_reason or "bulk scan failed without a reason",
+                    )
+                    await worker_publisher.publish_event(failed_event)
 
                 processing_finished_event = BulkScanProcessingFinishedEvent(
                     event_id=f"evt_{uuid_module.uuid4().hex[:12]}",

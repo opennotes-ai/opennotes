@@ -10,6 +10,7 @@ mocked since these are unit tests for workflow logic.
 
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import json
 import time
@@ -1093,6 +1094,13 @@ class TestCreateScanRecordStep:
 class TestFinalizeScanStep:
     """Tests for finalize_scan_step."""
 
+    @staticmethod
+    def _make_session_context(mock_session: AsyncMock) -> MagicMock:
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        return MagicMock(return_value=mock_session_ctx)
+
     def test_finalizes_completed_scan(self) -> None:
         """Step returns finalization result for completed scan."""
         from src.dbos_workflows.content_scan_workflow import finalize_scan_step
@@ -1156,6 +1164,201 @@ class TestFinalizeScanStep:
 
         assert result["status"] == "failed"
         assert result["total_errors"] == 10
+
+    def test_failed_scan_publishes_failed_and_processing_finished_events(self) -> None:
+        """Failed scans publish failed + processing finished after persisting failed status."""
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.dbos_workflows.content_scan_workflow import finalize_scan_step
+        from src.events.schemas import BulkScanFailedEvent, BulkScanProcessingFinishedEvent
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        mock_session = AsyncMock()
+        mock_service = MagicMock()
+        mock_service.get_flagged_results = AsyncMock(return_value=[{"message_id": "msg-1"}])
+        mock_service.get_error_summary = AsyncMock(
+            return_value={
+                "total_errors": 4,
+                "error_types": {"RuntimeError": 4},
+                "sample_errors": [
+                    {
+                        "error_type": "RuntimeError",
+                        "message_id": "msg-1",
+                        "batch_number": 2,
+                        "error_message": "LLM request failed",
+                    }
+                ],
+            }
+        )
+        mock_service.get_skipped_count = AsyncMock(return_value=2)
+        mock_service.complete_scan = AsyncMock()
+
+        mock_worker_publisher = AsyncMock()
+        mock_worker_publisher.nats = MagicMock()
+
+        mock_worker_context = AsyncMock()
+        mock_worker_context.__aenter__ = AsyncMock(return_value=mock_worker_publisher)
+        mock_worker_context.__aexit__ = AsyncMock(return_value=False)
+
+        mock_results_publisher = MagicMock()
+        mock_results_publisher.publish = AsyncMock()
+
+        with (
+            patch(
+                "src.dbos_workflows.content_scan_workflow.run_sync",
+                side_effect=lambda coroutine: asyncio.run(coroutine),
+            ),
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch("src.config.get_settings", return_value=MagicMock(REDIS_URL="redis://test")),
+            patch(
+                "src.database.get_session_maker",
+                return_value=self._make_session_context(mock_session),
+            ),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.fact_checking.embedding_service.EmbeddingService",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service,
+            ),
+            patch(
+                "src.events.publisher.create_worker_event_publisher",
+                return_value=mock_worker_context,
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler.BulkScanResultsPublisher",
+                return_value=mock_results_publisher,
+            ),
+            patch("src.monitoring.metrics.bulk_scan_finalization_dispatch_total") as mock_metric,
+        ):
+            result = finalize_scan_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                messages_scanned=4,
+                processed_count=0,
+                skipped_count=2,
+                error_count=4,
+                flagged_count=1,
+            )
+
+        assert result["status"] == "failed"
+        mock_service.complete_scan.assert_awaited_once_with(
+            scan_id=mock_service.complete_scan.await_args.kwargs["scan_id"],
+            messages_scanned=4,
+            messages_flagged=1,
+            status=BulkScanStatus.FAILED,
+        )
+        mock_results_publisher.publish.assert_awaited_once()
+        published_events = [
+            call.args[0] for call in mock_worker_publisher.publish_event.await_args_list
+        ]
+        assert any(isinstance(event, BulkScanFailedEvent) for event in published_events)
+        assert any(isinstance(event, BulkScanProcessingFinishedEvent) for event in published_events)
+        failed_event = next(
+            event for event in published_events if isinstance(event, BulkScanFailedEvent)
+        )
+        assert failed_event.error_message == "100% of messages had errors"
+        mock_metric.add.assert_called_once_with(1, {"outcome": "success"})
+
+    def test_completed_scan_does_not_publish_failed_event(self) -> None:
+        """Completed scans publish processing finished without a failed event."""
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.dbos_workflows.content_scan_workflow import finalize_scan_step
+        from src.events.schemas import BulkScanFailedEvent, BulkScanProcessingFinishedEvent
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        mock_session = AsyncMock()
+        mock_service = MagicMock()
+        mock_service.get_flagged_results = AsyncMock(return_value=[])
+        mock_service.get_error_summary = AsyncMock(
+            return_value={"total_errors": 0, "error_types": {}, "sample_errors": []}
+        )
+        mock_service.get_skipped_count = AsyncMock(return_value=1)
+        mock_service.complete_scan = AsyncMock()
+
+        mock_worker_publisher = AsyncMock()
+        mock_worker_publisher.nats = MagicMock()
+
+        mock_worker_context = AsyncMock()
+        mock_worker_context.__aenter__ = AsyncMock(return_value=mock_worker_publisher)
+        mock_worker_context.__aexit__ = AsyncMock(return_value=False)
+
+        mock_results_publisher = MagicMock()
+        mock_results_publisher.publish = AsyncMock()
+
+        with (
+            patch(
+                "src.dbos_workflows.content_scan_workflow.run_sync",
+                side_effect=lambda coroutine: asyncio.run(coroutine),
+            ),
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch("src.config.get_settings", return_value=MagicMock(REDIS_URL="redis://test")),
+            patch(
+                "src.database.get_session_maker",
+                return_value=self._make_session_context(mock_session),
+            ),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.fact_checking.embedding_service.EmbeddingService",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service,
+            ),
+            patch(
+                "src.events.publisher.create_worker_event_publisher",
+                return_value=mock_worker_context,
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler.BulkScanResultsPublisher",
+                return_value=mock_results_publisher,
+            ),
+            patch("src.monitoring.metrics.bulk_scan_finalization_dispatch_total") as mock_metric,
+        ):
+            result = finalize_scan_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                messages_scanned=4,
+                processed_count=3,
+                skipped_count=1,
+                error_count=0,
+                flagged_count=0,
+            )
+
+        assert result["status"] == "completed"
+        mock_service.complete_scan.assert_awaited_once_with(
+            scan_id=mock_service.complete_scan.await_args.kwargs["scan_id"],
+            messages_scanned=4,
+            messages_flagged=0,
+            status=BulkScanStatus.COMPLETED,
+        )
+        mock_results_publisher.publish.assert_awaited_once()
+        published_events = [
+            call.args[0] for call in mock_worker_publisher.publish_event.await_args_list
+        ]
+        assert not any(isinstance(event, BulkScanFailedEvent) for event in published_events)
+        assert any(isinstance(event, BulkScanProcessingFinishedEvent) for event in published_events)
+        mock_metric.add.assert_called_once_with(1, {"outcome": "success"})
 
 
 class TestDetermineScanStatus:
