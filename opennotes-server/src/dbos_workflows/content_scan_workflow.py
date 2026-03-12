@@ -279,8 +279,6 @@ def content_scan_orchestration_workflow(  # noqa: PLR0912
                     if all_transmitted
                     else BATCH_RECV_TIMEOUT_SECONDS
                 )
-                if waiting_for_first_batch:
-                    batch_timeout = 0
                 batch_result = DBOS.recv("batch_complete", timeout_seconds=batch_timeout)
 
                 if batch_result is not None:

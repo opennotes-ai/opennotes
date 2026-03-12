@@ -569,7 +569,7 @@ describe('formatScanStatusPaginated', () => {
     });
   });
 
-  describe('failed status', () => {
+  describe('non-completed status', () => {
     it('renders the failed status header and failure message', () => {
       const scan = latestScanResponseFactory.build(
         {
@@ -645,6 +645,39 @@ describe('formatScanStatusPaginated', () => {
       expect(result.pages.pages[0]).toMatch(/scan failed due to processing errors/i);
       expect(result.pages.pages[0]).toContain('This vaccine causes autism');
       expect(result.pages.pages[0]).toMatch(/\(link to message\)/);
+    });
+    it('formats pending scan status in the header', () => {
+      const scan = latestScanResponseFactory.build(
+        { data: { type: 'bulk-scans', id: 'scan-123', attributes: { status: 'pending', initiated_at: new Date().toISOString(), messages_scanned: 0, messages_flagged: 0 } } },
+        { transient: { status: 'pending', messagesScanned: 0 } }
+      );
+
+      const result = formatScanStatusPaginated({
+        scan,
+        guildId: 'guild-456',
+        days: 7,
+      });
+
+      expect(result.header).toContain('Pending');
+      expect(result.header).toContain('scan-123');
+      expect(result.header).toContain('waiting to be processed');
+    });
+
+    it('formats in_progress scan status in the header', () => {
+      const scan = latestScanResponseFactory.build(
+        { data: { type: 'bulk-scans', id: 'scan-123', attributes: { status: 'in_progress', initiated_at: new Date().toISOString(), messages_scanned: 50, messages_flagged: 0 } } },
+        { transient: { status: 'in_progress', messagesScanned: 50 } }
+      );
+
+      const result = formatScanStatusPaginated({
+        scan,
+        guildId: 'guild-456',
+        days: 7,
+      });
+
+      expect(result.header).toContain('In Progress');
+      expect(result.header).toContain('50');
+      expect(result.header).toContain('currently in progress');
     });
   });
 });

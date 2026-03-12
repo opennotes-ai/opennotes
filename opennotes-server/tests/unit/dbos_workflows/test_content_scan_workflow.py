@@ -464,6 +464,74 @@ class TestContentScanOrchestrationWorkflow:
         finalize_kwargs = mock_finalize.call_args.kwargs
         assert finalize_kwargs["messages_scanned"] == 0
 
+    def test_delayed_first_batch_after_late_recheck_preserves_non_zero_wait_budget(
+        self,
+    ) -> None:
+        """A non-zero first batch still gets the long wait budget after the late tx recheck."""
+        from src.dbos_workflows.content_scan_workflow import (
+            BATCH_RECV_TIMEOUT_SECONDS,
+            POST_ALL_TRANSMITTED_TIMEOUT_SECONDS,
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        scan_types_json = json.dumps(["similarity"])
+
+        recv_calls: list[tuple[str, dict]] = []
+        batch_delivered = False
+
+        def tracking_recv(topic: str, **kwargs: object) -> dict | None:
+            nonlocal batch_delivered
+            recv_calls.append((topic, dict(kwargs)))
+            if topic == "all_transmitted":
+                if batch_delivered:
+                    return {"messages_scanned": 4}
+                return None
+            if (
+                topic == "batch_complete"
+                and not batch_delivered
+                and kwargs.get("timeout_seconds") == BATCH_RECV_TIMEOUT_SECONDS
+            ):
+                batch_delivered = True
+                return self._make_batch_result(processed=4, flagged_count=0, batch_number=1)
+            return None
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = tracking_recv
+            mock_clock.return_value = time.time()
+            mock_finalize.return_value = {"status": "completed"}
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=scan_types_json,
+            )
+
+        assert any(
+            topic == "all_transmitted"
+            and call["timeout_seconds"] == POST_ALL_TRANSMITTED_TIMEOUT_SECONDS
+            for topic, call in recv_calls
+        )
+        assert any(
+            topic == "batch_complete" and call["timeout_seconds"] == BATCH_RECV_TIMEOUT_SECONDS
+            for topic, call in recv_calls
+        )
+
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["processed_count"] == 4
+        assert finalize_kwargs["messages_scanned"] == 4
+
     def test_first_batch_complete_still_counts_before_all_transmitted(self) -> None:
         """A first batch_complete before all_transmitted still accumulates progress."""
         from src.dbos_workflows.content_scan_workflow import (

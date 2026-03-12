@@ -1627,7 +1627,11 @@ describe('vibecheck command', () => {
       );
     });
 
-    it('should display failed scan status', async () => {
+    it.each([
+      ['failed', 'Scan Status: Failed', 'The scan failed due to processing errors. Please try again later.'],
+      ['pending', 'Scan Status: Pending', 'The scan is pending and waiting to be processed.'],
+      ['in_progress', 'Scan Status: In Progress', 'The scan is currently in progress...'],
+    ])('should display %s scan status without a completed header', async (status, expectedHeader, bodyText) => {
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
@@ -1659,24 +1663,26 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      mockApiClient.getLatestScan.mockResolvedValueOnce(
-        createLatestScanResponse('failed-scan-456', 'failed', 0)
-      );
       mockFormatScanStatusPaginated.mockReturnValueOnce({
-        pages: {
-          pages: ['The scan failed due to processing errors. Please try again later.'],
-          totalPages: 1,
-        },
-        header: '**Scan Status: Failed**\n\n**Scan ID:** `failed-scan-456`\n',
+        pages: { pages: [bodyText], totalPages: 1 },
+        header: `**${expectedHeader}**\n\n**Scan ID:** \`test-scan-status\`\n`,
         actionButtons: undefined,
-        scanId: 'failed-scan-456',
+        scanId: 'test-scan-status',
       });
+      mockApiClient.getLatestScan.mockResolvedValueOnce(
+        createLatestScanResponse('test-scan-status', status, 12)
+      );
 
       await execute(mockInteraction as any);
 
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.stringContaining('Scan Status: Failed'),
+          content: expect.stringContaining(expectedHeader),
+        })
+      );
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.not.stringContaining('**Scan Complete**'),
         })
       );
     });
