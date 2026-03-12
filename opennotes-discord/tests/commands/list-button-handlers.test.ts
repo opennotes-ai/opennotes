@@ -689,6 +689,65 @@ describe('list command - Button Handlers', () => {
       expect(renderedContent).toContain('Follow-up context after the code block.');
     });
 
+    it('should preserve quoted fenced markdown and indented fence-like literals in View Full replies', async () => {
+      const quotedFenceBody = Array.from(
+        { length: 80 },
+        (_, index) => `> const quotedLine${index} = ${index};`
+      ).join('\n');
+      const longFullText = [
+        '> Request details:',
+        '>',
+        '> ```ts',
+        quotedFenceBody,
+        '>     ````',
+        '> const afterLiteral = true;',
+        '> ```',
+        '>',
+        '> Follow-up context after the quoted block.',
+      ].join('\n');
+      cacheStore.set('view_full:quotedfence1', longFullText);
+      const interaction = createMockButtonInteraction('view_full:quotedfence1');
+
+      await handleViewFullButton(interaction as any);
+
+      const replyCalls = interaction.reply.mock.calls as unknown as Array<[{ content: string }]>;
+      const followUpCalls = interaction.followUp.mock.calls as unknown as Array<[{ content: string }]>;
+      const renderedPages = [replyCalls[0][0].content, ...followUpCalls.map(([payload]) => payload.content)];
+      const renderedContent = renderedPages.join('\n');
+
+      expect(renderedPages.length).toBeGreaterThan(1);
+      expect(renderedPages[0].trimEnd().endsWith('> ```')).toBe(true);
+      expect(renderedPages[1].startsWith('> ```ts\n')).toBe(true);
+      expect(renderedContent).toContain('>     ````');
+      expect(renderedContent).toContain('> Follow-up context after the quoted block.');
+    });
+
+    it('should avoid emitting an empty reopened fence page in View Full replies when a split lands before the original closer', async () => {
+      const fenceBody = Array.from(
+        { length: 249 },
+        (_, index) => `line${index.toString().padStart(3, '0')}`
+      ).join('\n');
+      const longFullText = [
+        '```ts',
+        fenceBody,
+        '```',
+        'tail',
+      ].join('\n');
+      cacheStore.set('view_full:closingfence1', longFullText);
+      const interaction = createMockButtonInteraction('view_full:closingfence1');
+
+      await handleViewFullButton(interaction as any);
+
+      const replyCalls = interaction.reply.mock.calls as unknown as Array<[{ content: string }]>;
+      const followUpCalls = interaction.followUp.mock.calls as unknown as Array<[{ content: string }]>;
+      const renderedPages = [replyCalls[0][0].content, ...followUpCalls.map(([payload]) => payload.content)];
+
+      expect(renderedPages.length).toBeGreaterThan(1);
+      expect(renderedPages[1]).not.toContain('```ts\n```\n');
+      expect(renderedPages[1]).toContain('line248');
+      expect(renderedPages.join('\n')).toContain('tail');
+    });
+
     it('should handle expired cache state', async () => {
       const interaction = createMockButtonInteraction('view_full:expired1');
 

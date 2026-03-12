@@ -2,6 +2,11 @@ import { describe, it, expect } from '@jest/globals';
 import { TextPaginator } from '../../src/lib/text-paginator.js';
 
 describe('TextPaginator', () => {
+  const paginatorInternals = TextPaginator as unknown as {
+    findUnclosedFence(content: string): unknown;
+    splitPage(content: string, maxChars: number): { page: string; remainingContent: string };
+  };
+
   describe('paginate', () => {
     it('returns single page for content under limit', () => {
       const content = 'Short content that fits easily.';
@@ -103,6 +108,96 @@ describe('TextPaginator', () => {
       });
       expect(result.pages.join('\n')).toContain('const line39 = 39;');
       expect(result.pages.at(-1)).toContain('Done.');
+    });
+
+    it('keeps quoted fenced blocks balanced across paginated pages', () => {
+      const quotedFenceBody = Array.from(
+        { length: 10 },
+        (_, index) => `> const quotedLine${index} = ${index};`
+      ).join('\n');
+      const content = [
+        '> Request details:',
+        '>',
+        '> ```ts',
+        quotedFenceBody,
+        '> ```',
+        '>',
+        '> Follow-up context after the quoted block.',
+      ].join('\n');
+
+      const result = TextPaginator.paginate(content, { maxCharsPerPage: 120 });
+
+      expect(result.totalPages).toBeGreaterThan(1);
+      result.pages.forEach(page => {
+        expect((page.match(/```/g)?.length ?? 0) % 2).toBe(0);
+      });
+      expect(result.pages.join('\n')).toContain('> const quotedLine9 = 9;');
+      expect(result.pages.at(-1)).toContain('> Follow-up context after the quoted block.');
+    });
+
+    it('does not emit an empty reopened fence page when a split lands before the original closer', () => {
+      const content = [
+        '```ts',
+        'alpha',
+        'beta',
+        '```',
+        'tail',
+      ].join('\n');
+
+      const result = TextPaginator.paginate(content, { maxCharsPerPage: 20 });
+
+      expect(result.totalPages).toBeGreaterThan(1);
+      expect(result.pages[1]).not.toContain('```ts\n```\n');
+      expect(result.pages.join('\n')).toContain('tail');
+    });
+  });
+
+  describe('fence parsing', () => {
+    it('treats quoted fence openers as still-open fences before their closer', () => {
+      const content = [
+        '> ```ts',
+        '> const value = 1;',
+        '> const value = 2;',
+      ].join('\n');
+
+      expect(paginatorInternals.findUnclosedFence(content)).not.toBeNull();
+    });
+
+    it('does not treat four-space-indented fence-like text as a fence closer', () => {
+      const content = [
+        '````md',
+        'alpha',
+        '    ````',
+        'omega',
+      ].join('\n');
+
+      expect(paginatorInternals.findUnclosedFence(content)).not.toBeNull();
+    });
+
+    it('accepts closing fences that use a longer run than the opener', () => {
+      const content = [
+        '````md',
+        'alpha',
+        'beta',
+        '`````',
+      ].join('\n');
+
+      expect(paginatorInternals.findUnclosedFence(content)).toBeNull();
+    });
+
+    it('forces forward progress when the first fenced content line exceeds the page limit', () => {
+      const content = [
+        '```ts',
+        'const value = "this fenced line is intentionally much longer than the page limit";',
+        '```',
+        'tail',
+      ].join('\n');
+
+      const result = paginatorInternals.splitPage(content, 22);
+
+      expect(result.remainingContent.length).toBeLessThan(content.length);
+      expect(result.page).not.toBe('```ts\n```');
+      expect(result.page.length).toBeGreaterThan('```ts\n```'.length);
     });
   });
 
