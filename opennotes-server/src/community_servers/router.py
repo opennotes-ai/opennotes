@@ -28,6 +28,19 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["community-servers"], responses=AUTHENTICATED_RESPONSES)
 
 
+def _is_expected_unique_constraint_violation(exc: IntegrityError, expected_constraint: str) -> bool:
+    orig = exc.orig
+    constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", None)
+    if constraint_name == expected_constraint:
+        return True
+
+    direct_constraint_name = getattr(orig, "constraint_name", None)
+    if direct_constraint_name == expected_constraint:
+        return True
+
+    return expected_constraint in str(orig)
+
+
 class CommunityServerLookupResponse(SQLAlchemySchema):
     """Response model for community server lookup."""
 
@@ -215,9 +228,9 @@ async def create_community_server(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        orig = exc.orig
-        constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", None)
-        if constraint_name == COMMUNITY_SERVER_PLATFORM_ID_UNIQUE_CONSTRAINT:
+        if _is_expected_unique_constraint_violation(
+            exc, COMMUNITY_SERVER_PLATFORM_ID_UNIQUE_CONSTRAINT
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Community server already exists: {request_body.platform}:{request_body.platform_community_server_id}",

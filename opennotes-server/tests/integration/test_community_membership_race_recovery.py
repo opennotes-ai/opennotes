@@ -106,9 +106,9 @@ async def test_concurrent_membership_auto_create_recovers_duplicate(setup_databa
 
 
 @pytest.mark.asyncio
-async def test_concurrent_verify_membership_recovers_server_and_membership_duplicates(
-    setup_database,
-):
+async def test_concurrent_verify_membership_recovers_membership_duplicate(setup_database):
+    guild_id = f"guild-{uuid4().hex[:8]}"
+
     async with get_session_maker()() as session:
         profile_create = UserProfileCreate(
             display_name="Concurrent Service Account",
@@ -116,6 +116,14 @@ async def test_concurrent_verify_membership_recovers_server_and_membership_dupli
             bio="Service account seeded for verify_community_membership race test",
             is_human=False,
         )
+        community = CommunityServer(
+            platform="discord",
+            platform_community_server_id=guild_id,
+            name="Precreated Race Recovery Test Server",
+            is_active=True,
+            is_public=True,
+        )
+        session.add(community)
         profile, _identity = await create_profile_with_identity(
             db=session,
             profile_create=profile_create,
@@ -126,7 +134,6 @@ async def test_concurrent_verify_membership_recovers_server_and_membership_dupli
         await session.commit()
         profile_id = profile.id
 
-    guild_id = f"guild-{uuid4().hex[:8]}"
     user = User(
         id=1,
         username="verify-service",
@@ -169,9 +176,16 @@ async def test_concurrent_verify_membership_recovers_server_and_membership_dupli
             await session.commit()
             return membership.id
 
-        with patch(
-            "src.auth.community_dependencies.get_profile_id_from_user",
-            new=AsyncMock(return_value=profile_id),
+        patched_create_member = AsyncMock(side_effect=coordinated_create)
+        with (
+            patch(
+                "src.auth.community_dependencies.get_profile_id_from_user",
+                new=AsyncMock(return_value=profile_id),
+            ),
+            patch(
+                "src.auth.community_dependencies.create_community_member",
+                new=patched_create_member,
+            ),
         ):
             results = await asyncio.gather(
                 verify_membership(session_one),
@@ -182,6 +196,7 @@ async def test_concurrent_verify_membership_recovers_server_and_membership_dupli
     assert not [result for result in results if isinstance(result, Exception)], results
     membership_ids = results
     assert membership_ids[0] == membership_ids[1]
+    assert patched_create_member.await_count == 2
 
     async with get_session_maker()() as session:
         server_count_result = await session.execute(
