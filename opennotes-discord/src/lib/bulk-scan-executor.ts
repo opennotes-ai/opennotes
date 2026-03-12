@@ -386,6 +386,31 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     };
   }
 
+  if (
+    messagesProcessed > 0 &&
+    results.data.attributes.status === 'completed' &&
+    results.data.attributes.messages_scanned === 0
+  ) {
+    logger.warn('Bulk scan returned completed 0/0 after non-zero handoff, treating as incomplete', {
+      error_id: errorId,
+      scan_id: scanId,
+      handed_off_messages_scanned: messagesProcessed,
+      api_messages_scanned: results.data.attributes.messages_scanned,
+      api_status: results.data.attributes.status,
+    });
+
+    return {
+      scanId,
+      messagesScanned: messagesProcessed,
+      channelsScanned: channelsProcessed,
+      batchesPublished,
+      failedBatches,
+      status: 'timeout',
+      flaggedMessages: [],
+      warningMessage: 'Scan results are incomplete and may still be finalizing on the server.',
+    };
+  }
+
   if (failedBatches > 0) {
     return {
       scanId,

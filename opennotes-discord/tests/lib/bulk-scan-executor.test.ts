@@ -415,6 +415,33 @@ describe('bulk-scan-executor', () => {
       expect(result.warningMessage).toBeUndefined();
     });
 
+    it('should treat a completed 0/0 polling result after non-zero handoff as timeout', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      mockWaitForNatsResults.mockRejectedValue(new Error('NATS unavailable'));
+      mockGetBulkScanResults.mockResolvedValue(
+        createBulkScanResultsResponse('test-scan-123', 'completed', 0)
+      );
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(result.status).toBe('timeout');
+      expect(result.messagesScanned).toBe(50);
+      expect(result.warningMessage).toContain('incomplete');
+    });
+
     it('should return failed status when all NATS publish attempts fail', async () => {
       const messages = new Map();
       for (let i = 0; i < 50; i++) {

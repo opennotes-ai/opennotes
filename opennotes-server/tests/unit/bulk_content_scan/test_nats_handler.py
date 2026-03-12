@@ -271,6 +271,36 @@ class TestHandleAllBatchesTransmitted:
     """Tests for _handle_all_batches_transmitted signal forwarding."""
 
     @pytest.mark.asyncio
+    async def test_persists_non_zero_counts_before_signaling(self) -> None:
+        handler = _make_handler()
+        scan_id = uuid4()
+        event = BulkScanAllBatchesTransmittedEvent(
+            event_id=f"evt_{uuid4().hex[:12]}",
+            scan_id=scan_id,
+            community_server_id=uuid4(),
+            messages_scanned=42,
+        )
+
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.persist_transmitted_scan_handoff",
+                new_callable=AsyncMock,
+            ) as mock_persist,
+            patch(
+                "src.bulk_content_scan.nats_handler.send_all_transmitted_signal",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_signal,
+        ):
+            await handler._handle_all_batches_transmitted(event)
+
+        mock_persist.assert_awaited_once_with(scan_id=scan_id, messages_scanned=42)
+        mock_signal.assert_awaited_once_with(
+            orchestrator_workflow_id=str(scan_id),
+            messages_scanned=42,
+        )
+
+    @pytest.mark.asyncio
     async def test_sends_signal_to_orchestrator(self) -> None:
         handler = _make_handler()
         scan_id = uuid4()
@@ -281,11 +311,17 @@ class TestHandleAllBatchesTransmitted:
             messages_scanned=42,
         )
 
-        with patch(
-            "src.bulk_content_scan.nats_handler.send_all_transmitted_signal",
-            new_callable=AsyncMock,
-            return_value=True,
-        ) as mock_signal:
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.persist_transmitted_scan_handoff",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler.send_all_transmitted_signal",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_signal,
+        ):
             await handler._handle_all_batches_transmitted(event)
 
         mock_signal.assert_called_once_with(
@@ -304,15 +340,87 @@ class TestHandleAllBatchesTransmitted:
             messages_scanned=10,
         )
 
-        with patch(
-            "src.bulk_content_scan.nats_handler.send_all_transmitted_signal",
-            new_callable=AsyncMock,
-            return_value=True,
-        ) as mock_signal:
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.persist_transmitted_scan_handoff",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler.send_all_transmitted_signal",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_signal,
+        ):
             await handler._handle_all_batches_transmitted(event)
 
         call_kwargs = mock_signal.call_args.kwargs
         assert call_kwargs["orchestrator_workflow_id"] == str(scan_id)
+
+
+class TestPersistTransmittedScanHandoff:
+    """Tests for persisting non-zero handoff counts before finalization."""
+
+    @pytest.mark.asyncio
+    async def test_persists_non_zero_messages_scanned_on_in_progress_scan(self) -> None:
+        from src.bulk_content_scan.nats_handler import persist_transmitted_scan_handoff
+
+        scan_id = uuid4()
+        mock_scan_log = MagicMock()
+        mock_scan_log.id = scan_id
+        mock_scan_log.messages_scanned = 0
+        mock_scan_log.status = "in_progress"
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_scan_log
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            await persist_transmitted_scan_handoff(scan_id=scan_id, messages_scanned=42)
+
+        assert mock_scan_log.messages_scanned == 42
+        mock_session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_does_not_lower_existing_messages_scanned_count(self) -> None:
+        from src.bulk_content_scan.nats_handler import persist_transmitted_scan_handoff
+
+        scan_id = uuid4()
+        mock_scan_log = MagicMock()
+        mock_scan_log.id = scan_id
+        mock_scan_log.messages_scanned = 623
+        mock_scan_log.status = "in_progress"
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_scan_log
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            await persist_transmitted_scan_handoff(scan_id=scan_id, messages_scanned=17)
+
+        assert mock_scan_log.messages_scanned == 623
+        mock_session.commit.assert_not_awaited()
 
 
 class TestGetScanTypesForCommunity:
