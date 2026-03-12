@@ -1221,7 +1221,20 @@ def finalize_scan_step(
 
             flagged = await service.get_flagged_results(scan_uuid)
             error_summary_data = await service.get_error_summary(scan_uuid)
-            actual_skipped = await service.get_skipped_count(scan_uuid)
+            redis_skipped_count = await service.get_skipped_count(scan_uuid)
+            effective_skipped_count = (
+                skipped_count if redis_skipped_count != skipped_count else redis_skipped_count
+            )
+
+            if redis_skipped_count != skipped_count:
+                logger.warning(
+                    "Skipped count drift detected during finalization; using workflow count",
+                    extra={
+                        "scan_id": scan_id,
+                        "workflow_skipped_count": skipped_count,
+                        "redis_skipped_count": redis_skipped_count,
+                    },
+                )
 
             total_errors = error_summary_data.get("total_errors", 0)
             error_types = error_summary_data.get("error_types", {})
@@ -1246,7 +1259,7 @@ def finalize_scan_step(
             status, failure_reason = _determine_scan_status(
                 messages_scanned=messages_scanned,
                 processed_count=processed_count,
-                skipped_count=actual_skipped,
+                skipped_count=effective_skipped_count,
                 error_count=error_count,
                 total_errors=total_errors,
                 finalization_incomplete=finalization_incomplete,
@@ -1277,7 +1290,7 @@ def finalize_scan_step(
                     scan_id=scan_uuid,
                     messages_scanned=messages_scanned,
                     messages_flagged=len(flagged),
-                    messages_skipped=actual_skipped,
+                    messages_skipped=effective_skipped_count,
                     flagged_messages=flagged,
                     error_summary=error_summary,
                 )
@@ -1297,7 +1310,7 @@ def finalize_scan_step(
                     community_server_id=community_uuid,
                     messages_scanned=messages_scanned,
                     messages_flagged=len(flagged),
-                    messages_skipped=actual_skipped,
+                    messages_skipped=effective_skipped_count,
                 )
                 await worker_publisher.publish_event(processing_finished_event)
 
@@ -1309,7 +1322,7 @@ def finalize_scan_step(
                     "processed_count": processed_count,
                     "error_count": error_count,
                     "messages_flagged": len(flagged),
-                    "messages_skipped": actual_skipped,
+                    "messages_skipped": effective_skipped_count,
                     "status": status.value,
                     "total_errors": total_errors,
                 },
@@ -1319,7 +1332,7 @@ def finalize_scan_step(
                 "status": status.value,
                 "messages_scanned": messages_scanned,
                 "messages_flagged": len(flagged),
-                "messages_skipped": actual_skipped,
+                "messages_skipped": effective_skipped_count,
                 "total_errors": total_errors,
             }
 
