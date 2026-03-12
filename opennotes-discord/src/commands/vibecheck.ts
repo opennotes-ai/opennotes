@@ -21,6 +21,7 @@ import { VIBE_CHECK_DAYS_OPTIONS } from '../types/bulk-scan.js';
 import { executeBulkScan } from '../lib/bulk-scan-executor.js';
 import { formatScanStatusPaginated } from '../lib/scan-status-formatter.js';
 import { TextPaginator } from '../lib/text-paginator.js';
+import { recordStalledScan } from '../lib/vibecheck-stalled-scan.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { serviceProvider } from '../services/index.js';
 import { ConfigKey } from '../lib/config-schema.js';
@@ -126,6 +127,12 @@ export const data = new SlashCommandBuilder()
     subcommand
       .setName('status')
       .setDescription('View the status of the most recent scan')
+      .addStringOption(option =>
+        option
+          .setName('scan_id')
+          .setDescription('Optional scan ID to inspect directly')
+          .setRequired(false)
+      )
   )
   .addSubcommand(subcommand =>
     subcommand
@@ -226,6 +233,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       });
     }
 
+    let stalled = false;
     const result = await executeBulkScan({
       guild,
       days,
@@ -233,6 +241,10 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       errorId,
       excludeChannelIds,
       progressCallback: async (progress) => {
+        if (stalled) {
+          return;
+        }
+
         const isAnalysisPhase = progress.currentChannel?.startsWith('Analyzing')
           || (progress.totalChannels > 0 && progress.channelsProcessed >= progress.totalChannels);
 
@@ -256,12 +268,31 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
             (progress.currentChannel ? `Current channel: #${progress.currentChannel}` : ''),
         });
       },
+      stallWarningCallback: async (scanId) => {
+        stalled = true;
+        await recordStalledScan({
+          scanId,
+          initiatorId: userId,
+          guildId,
+          days,
+          source: 'slash_command',
+        });
+        await interaction.editReply({
+          content: `Scan is taking longer than we can keep updated.\n\n` +
+            `Use \`/vibecheck status scan_id:${scanId}\` to check later.\n\n` +
+            `**Scan ID:** \`${scanId}\``,
+        });
+      },
     });
 
     if (result.channelsScanned === 0) {
       await interaction.editReply({
         content: 'No accessible text channels found to scan.',
       });
+      return;
+    }
+
+    if (stalled) {
       return;
     }
 
@@ -630,19 +661,21 @@ async function handleStatusSubcommand(
 
   try {
     const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-
-    const latestScan = await apiClient.getLatestScan(communityServer.data.id);
-    const flaggedMessages = latestScan.included || [];
+    const requestedScanId = interaction.options.getString?.('scan_id') ?? null;
+    const scan = requestedScanId
+      ? await apiClient.getBulkScanResults(requestedScanId)
+      : await apiClient.getLatestScan(communityServer.data.id);
+    const flaggedMessages = scan.included || [];
 
     const cachedExplanations = await cache.get<Record<string, string>>(
-      getExplanationsCacheKey(latestScan.data.id)
+      getExplanationsCacheKey(scan.data.id)
     );
     const explanations = cachedExplanations
       ? new Map(Object.entries(cachedExplanations))
       : undefined;
 
     const paginatedResult = formatScanStatusPaginated({
-      scan: latestScan,
+      scan,
       guildId,
       includeButtons: false,
       explanations,
@@ -652,10 +685,10 @@ async function handleStatusSubcommand(
     const currentPage = 1;
 
     const state: VibecheckPaginationState = {
-      scanId: latestScan.data.id,
+      scanId: scan.data.id,
       guildId,
       days: 0,
-      messagesScanned: latestScan.data.attributes.messages_scanned,
+      messagesScanned: scan.data.attributes.messages_scanned,
       flaggedMessages,
     };
     await cache.set(`vibecheck:pagination:${stateId}`, state, PAGINATION_STATE_TTL);
@@ -700,7 +733,7 @@ async function handleStatusSubcommand(
       collector.on('end', (_collected, reason) => {
         if (reason === 'time') {
           interaction.editReply({
-            content: `Session expired.\n\n**Scan ID:** \`${latestScan.data.id}\``,
+            content: `Session expired.\n\n**Scan ID:** \`${scan.data.id}\``,
             components: [],
           }).catch(() => {
             /* Silently ignore - interaction may have expired */

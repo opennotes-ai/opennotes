@@ -427,6 +427,60 @@ describe('vibecheck-prompt-handler', () => {
         });
       });
 
+      it('freezes the prompt message after a stall warning and records cache metadata', async () => {
+        mockCacheGet.mockResolvedValue({
+          guildId: 'guild-123',
+          adminId: 'admin-123',
+          botChannelId: 'channel-123',
+          selectedDays: 7,
+        });
+
+        mockExecuteBulkScan.mockImplementationOnce(async ({ stallWarningCallback }) => {
+          expect(stallWarningCallback).toBeDefined();
+          await stallWarningCallback?.('scan-prompt-123');
+          return {
+            scanId: 'scan-prompt-123',
+            messagesScanned: 100,
+            channelsScanned: 5,
+            batchesPublished: 1,
+            status: 'completed',
+            flaggedMessages: [],
+          };
+        });
+
+        const mockGuild = { id: 'guild-123', name: 'Test Guild' };
+        const mockChannel = Object.assign(Object.create(TextChannel.prototype), {
+          guild: mockGuild,
+          id: 'channel-123',
+          name: 'open-notes',
+        });
+        const interaction = createMockInteraction({
+          customId: 'vibecheck_prompt_start',
+          isButton: () => true,
+          channel: mockChannel,
+        });
+
+        await handleVibecheckPromptInteraction(interaction as any);
+
+        expect(interaction.message.edit).toHaveBeenLastCalledWith({
+          content: expect.stringContaining('scan-prompt-123'),
+        });
+        const lastEditCall = interaction.message.edit.mock.calls.at(-1)?.[0];
+        expect(lastEditCall.content).toContain('taking longer than we can keep updated');
+        expect(lastEditCall.content).toContain('scan_id:scan-prompt-123');
+        expect(mockCacheSet).toHaveBeenCalledWith(
+          'vibecheck:stalled:scan-prompt-123',
+          expect.objectContaining({
+            scanId: 'scan-prompt-123',
+            initiatorId: 'admin-123',
+            guildId: 'guild-123',
+            days: 7,
+            source: 'prompt',
+          }),
+          expect.any(Number)
+        );
+      });
+
       it('should display flagged messages count when issues found', async () => {
         mockCacheGet.mockResolvedValue({
           guildId: 'guild-123',

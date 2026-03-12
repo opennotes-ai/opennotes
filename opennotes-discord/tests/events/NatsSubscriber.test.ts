@@ -454,6 +454,28 @@ describe('NatsSubscriber', () => {
     });
   });
 
+  describe('subscribeToBulkScanTerminalUpdates', () => {
+    beforeEach(async () => {
+      await subscriber.connect();
+      jest.clearAllMocks();
+    });
+
+    it('subscribes to bulk scan processing finished and failed subjects', async () => {
+      const handler = jest.fn<(event: any) => Promise<void>>().mockResolvedValue(undefined);
+
+      await subscriber.subscribeToBulkScanTerminalUpdates(handler);
+
+      expect(mockJetStream.subscribe).toHaveBeenCalledWith(
+        'OPENNOTES.bulk_scan_processing_finished',
+        expect.any(Object)
+      );
+      expect(mockJetStream.subscribe).toHaveBeenCalledWith(
+        'OPENNOTES.bulk_scan_failed',
+        expect.any(Object)
+      );
+    });
+  });
+
   describe('close', () => {
     it('should close subscription and connection', async () => {
       await subscriber.connect();

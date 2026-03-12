@@ -7,6 +7,13 @@ const mockCache = cacheFactory.build();
 
 const mockCloseRedisClient = jest.fn<() => void>();
 const mockGetRedisClient = jest.fn(() => null);
+const mockConnectNats = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockSubscribeToScoreUpdates = jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined);
+const mockSubscribeToProgressUpdates = jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined);
+const mockSubscribeToBulkScanTerminalUpdates = jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined);
+const mockHandleScoreUpdate = jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined);
+const mockHandleProgressEvent = jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined);
+const mockHandleTerminalEvent = jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined);
 
 const mockApiClient = {
   getCommunityServerByPlatformId: jest.fn<(...args: any[]) => Promise<any>>(),
@@ -39,6 +46,35 @@ jest.unstable_mockModule('../src/logger.js', () => ({
 
 jest.unstable_mockModule('../src/cache.js', () => ({
   cache: mockCache,
+}));
+
+jest.unstable_mockModule('../src/events/NatsSubscriber.js', () => ({
+  NatsSubscriber: class {
+    connect = mockConnectNats;
+    subscribeToScoreUpdates = mockSubscribeToScoreUpdates;
+    subscribeToProgressUpdates = mockSubscribeToProgressUpdates;
+    subscribeToBulkScanTerminalUpdates = mockSubscribeToBulkScanTerminalUpdates;
+    close = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    isConnected = jest.fn<() => boolean>().mockReturnValue(true);
+  },
+}));
+
+jest.unstable_mockModule('../src/services/NotePublisherService.js', () => ({
+  NotePublisherService: class {
+    handleScoreUpdate = mockHandleScoreUpdate;
+  },
+}));
+
+jest.unstable_mockModule('../src/services/VibecheckProgressService.js', () => ({
+  VibecheckProgressService: class {
+    handleProgressEvent = mockHandleProgressEvent;
+  },
+}));
+
+jest.unstable_mockModule('../src/services/VibecheckStalledScanNotificationService.js', () => ({
+  VibecheckStalledScanNotificationService: class {
+    handleTerminalEvent = mockHandleTerminalEvent;
+  },
 }));
 
 jest.unstable_mockModule('../src/config.js', () => ({
@@ -145,6 +181,14 @@ describe('Bot', () => {
 
       expect(mockCloseRedisClient).toHaveBeenCalled();
       expect(mockLogger.info).toHaveBeenCalledWith('Redis client closed');
+    });
+  });
+
+  describe('initializeNotePublisher', () => {
+    it('registers stalled scan notification handling during note publisher init', async () => {
+      await (bot as any).initializeNotePublisher();
+
+      expect(mockSubscribeToBulkScanTerminalUpdates).toHaveBeenCalledWith(expect.any(Function));
     });
   });
 

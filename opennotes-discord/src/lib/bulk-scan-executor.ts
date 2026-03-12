@@ -42,6 +42,7 @@ export interface BulkScanOptions {
   initiatorId: string;
   errorId: string;
   progressCallback?: (progress: ScanProgress) => Promise<void>;
+  stallWarningCallback?: (scanId: string) => Promise<void> | void;
   excludeChannelIds?: string[];
 }
 
@@ -57,7 +58,7 @@ export interface BulkScanResult {
 }
 
 export async function executeBulkScan(options: BulkScanOptions): Promise<BulkScanResult> {
-  const { guild, days, initiatorId, errorId, progressCallback, excludeChannelIds = [] } = options;
+  const { guild, days, initiatorId, errorId, progressCallback, stallWarningCallback, excludeChannelIds = [] } = options;
   const guildId = guild.id;
   const excludeSet = new Set(excludeChannelIds);
 
@@ -352,6 +353,17 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
       error_id: errorId,
       scan_id: scanId,
       timeout_ms: NATS_STALL_WARNING_MS,
+    });
+
+    if (!stallWarningCallback) {
+      return;
+    }
+
+    Promise.resolve(stallWarningCallback(scanId)).catch((error) => {
+      logger.warn('Stall warning callback failed', {
+        error: error instanceof Error ? error.message : String(error),
+        scanId,
+      });
     });
   };
 

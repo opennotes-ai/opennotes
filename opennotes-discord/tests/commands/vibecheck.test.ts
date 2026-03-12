@@ -347,6 +347,17 @@ describe('vibecheck command', () => {
       expect(scanIdOption.required).toBe(true);
     });
 
+    it('should expose an optional scan_id parameter on the status subcommand', () => {
+      const options = data.options;
+      const statusSubcommand = options.find((opt: any) => opt.name === 'status') as any;
+
+      expect(statusSubcommand).toBeDefined();
+
+      const scanIdOption = statusSubcommand.options?.find((opt: any) => opt.name === 'scan_id') as any;
+      expect(scanIdOption).toBeDefined();
+      expect(scanIdOption.required).toBe(false);
+    });
+
     it('should have days parameter on scan subcommand with correct choices', () => {
       const options = data.options;
       const scanSubcommand = options.find((opt: any) => opt.name === 'scan') as any;
@@ -1627,11 +1638,15 @@ describe('vibecheck command', () => {
       );
     });
 
+<<<<<<< HEAD
     it.each([
       ['failed', 'Scan Status: Failed', 'The scan failed due to processing errors. Please try again later.'],
       ['pending', 'Scan Status: Pending', 'The scan is pending and waiting to be processed.'],
       ['in_progress', 'Scan Status: In Progress', 'The scan is currently in progress...'],
     ])('should display %s scan status without a completed header', async (status, expectedHeader, bodyText) => {
+=======
+    it('should fetch a specific scan when status scan_id is provided', async () => {
+>>>>>>> 1640e2f (feat(task-1284): wire stalled vibecheck follow-up flow)
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
@@ -1654,6 +1669,12 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+<<<<<<< HEAD
+=======
+          getString: jest.fn<(name: string) => string | null>().mockImplementation((name) =>
+            name === 'scan_id' ? 'scan-specific-123' : null
+          ),
+>>>>>>> 1640e2f (feat(task-1284): wire stalled vibecheck follow-up flow)
           getSubcommand: jest.fn().mockReturnValue('status'),
           getSubcommandGroup: jest.fn().mockReturnValue(null),
           getChannel: jest.fn().mockReturnValue(null),
@@ -1663,6 +1684,7 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
+<<<<<<< HEAD
       mockFormatScanStatusPaginated.mockReturnValueOnce({
         pages: { pages: [bodyText], totalPages: 1 },
         header: `**${expectedHeader}**\n\n**Scan ID:** \`test-scan-status\`\n`,
@@ -1671,10 +1693,15 @@ describe('vibecheck command', () => {
       });
       mockApiClient.getLatestScan.mockResolvedValueOnce(
         createLatestScanResponse('test-scan-status', status, 12)
+=======
+      mockApiClient.getBulkScanResults.mockResolvedValueOnce(
+        createLatestScanResponse('scan-specific-123', 'in_progress', 42)
+>>>>>>> 1640e2f (feat(task-1284): wire stalled vibecheck follow-up flow)
       );
 
       await execute(mockInteraction as any);
 
+<<<<<<< HEAD
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
           content: expect.stringContaining(expectedHeader),
@@ -1685,6 +1712,10 @@ describe('vibecheck command', () => {
           content: expect.not.stringContaining('**Scan Complete**'),
         })
       );
+=======
+      expect(mockApiClient.getBulkScanResults).toHaveBeenCalledWith('scan-specific-123');
+      expect(mockApiClient.getLatestScan).not.toHaveBeenCalled();
+>>>>>>> 1640e2f (feat(task-1284): wire stalled vibecheck follow-up flow)
     });
 
     it('should show message when no scans exist', async () => {
@@ -2627,6 +2658,43 @@ describe('vibecheck command', () => {
 
       const editContents = interaction.editReply.mock.calls.map(([arg]: any[]) => String(arg.content ?? ''));
       expect(editContents.some((content: string) => content.includes('Analyzing scan results'))).toBe(true);
+    });
+
+    it('freezes the slash-command reply after a stall warning and records cache metadata', async () => {
+      const interaction = createScanInteraction();
+
+      mockExecuteBulkScan.mockImplementationOnce(async ({ stallWarningCallback }) => {
+        expect(stallWarningCallback).toBeDefined();
+        await stallWarningCallback?.('scan-stalled-123');
+        return {
+          scanId: 'scan-stalled-123',
+          messagesScanned: 100,
+          channelsScanned: 5,
+          batchesPublished: 1,
+          failedBatches: 0,
+          status: 'completed',
+          flaggedMessages: [],
+        };
+      });
+
+      await execute(interaction as any);
+
+      const lastEditReply = interaction.editReply.mock.calls.at(-1)?.[0];
+      expect(lastEditReply.content).toContain('taking longer than we can keep updated');
+      expect(lastEditReply.content).toContain('scan-stalled-123');
+      expect(lastEditReply.content).toContain('scan_id:scan-stalled-123');
+      expect(lastEditReply.content).not.toContain('Scan complete!');
+      expect(mockCache.set).toHaveBeenCalledWith(
+        'vibecheck:stalled:scan-stalled-123',
+        expect.objectContaining({
+          scanId: 'scan-stalled-123',
+          initiatorId: 'admin123',
+          guildId: 'guild789',
+          days: 7,
+          source: 'slash_command',
+        }),
+        expect.any(Number)
+      );
     });
   });
 });

@@ -15,6 +15,7 @@ import {
   createPromptButtons,
 } from '../lib/vibecheck-prompt.js';
 import { executeBulkScan } from '../lib/bulk-scan-executor.js';
+import { recordStalledScan } from '../lib/vibecheck-stalled-scan.js';
 
 const VIBECHECK_PROMPT_TTL_SECONDS = 300;
 
@@ -205,6 +206,8 @@ async function handleStart(
     return;
   }
 
+  const selectedDays = state.selectedDays;
+
   await deleteVibecheckPromptState(messageId);
 
   await interaction.update({
@@ -229,17 +232,37 @@ async function handleStart(
   }
 
   try {
+    let stalled = false;
     const result = await executeBulkScan({
       guild,
-      days: state.selectedDays,
+      days: selectedDays,
       initiatorId: interaction.user.id,
       errorId,
+      stallWarningCallback: async (scanId) => {
+        stalled = true;
+        await recordStalledScan({
+          scanId,
+          initiatorId: interaction.user.id,
+          guildId: state.guildId,
+          days: selectedDays,
+          source: 'prompt',
+        });
+        await interaction.message.edit({
+          content: `Scan is taking longer than we can keep updated.\n\n` +
+            `Use \`/vibecheck status scan_id:${scanId}\` to check later.\n\n` +
+          `**Scan ID:** \`${scanId}\``,
+        });
+      },
     });
 
     if (result.channelsScanned === 0) {
       await interaction.message.edit({
         content: 'No accessible text channels found to scan.',
       });
+      return;
+    }
+
+    if (stalled) {
       return;
     }
 
@@ -265,11 +288,11 @@ async function handleStart(
 
     if (result.flaggedMessages.length === 0) {
       await interaction.message.edit({
-        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Period:** Last ${state.selectedDays} day${state.selectedDays !== 1 ? 's' : ''}\n\nNo flashpoints or potential misinformation were detected. Your community looks healthy!${warningText}`,
+        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Period:** Last ${selectedDays} day${selectedDays !== 1 ? 's' : ''}\n\nNo flashpoints or potential misinformation were detected. Your community looks healthy!${warningText}`,
       });
     } else {
       await interaction.message.edit({
-        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Flagged:** ${result.flaggedMessages.length}\n\nUse \`/vibecheck ${state.selectedDays}\` for detailed results and to create note requests.${warningText}`,
+        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Flagged:** ${result.flaggedMessages.length}\n\nUse \`/vibecheck ${selectedDays}\` for detailed results and to create note requests.${warningText}`,
       });
     }
   } catch (error) {

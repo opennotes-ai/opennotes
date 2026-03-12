@@ -7,10 +7,12 @@ import type { FlaggedMessageResource } from '../../src/lib/api-client.js';
 
 describe('formatScanStatus', () => {
   let formatScanStatus: typeof import('../../src/lib/scan-status-formatter.js').formatScanStatus;
+  let formatScanStatusPaginated: typeof import('../../src/lib/scan-status-formatter.js').formatScanStatusPaginated;
 
   beforeEach(async () => {
     const module = await import('../../src/lib/scan-status-formatter.js');
     formatScanStatus = module.formatScanStatus;
+    formatScanStatusPaginated = module.formatScanStatusPaginated;
   });
 
   describe('pending status', () => {
@@ -488,6 +490,7 @@ describe('formatScanStatusPaginated', () => {
     formatScanStatusPaginated = module.formatScanStatusPaginated;
   });
 
+<<<<<<< HEAD
   describe('completed status', () => {
     it('renders the completed empty-state summary when no flagged messages are included', () => {
       const scan = latestScanResponseFactory.build(
@@ -679,5 +682,89 @@ describe('formatScanStatusPaginated', () => {
       expect(result.header).toContain('50');
       expect(result.header).toContain('currently in progress');
     });
+=======
+  it('should paginate pending scan status without using the completed header', () => {
+    const scan = latestScanResponseFactory.build(
+      {
+        data: {
+          type: 'bulk-scans',
+          id: 'scan-pending-123',
+          attributes: {
+            status: 'pending',
+            initiated_at: new Date().toISOString(),
+            messages_scanned: 0,
+            messages_flagged: 0,
+          },
+        },
+      },
+      { transient: { status: 'pending', messagesScanned: 0 } }
+    );
+
+    const result = formatScanStatusPaginated({
+      scan,
+      guildId: 'guild-456',
+      days: 7,
+    });
+
+    expect(result.header).toContain('Pending');
+    expect(result.header).not.toContain('Scan Complete');
+    expect(result.pages.pages[0]).toContain('waiting to be processed');
+  });
+
+  it('should paginate in-progress scan status without flagged summary text', () => {
+    const scan = latestScanResponseFactory.build(
+      {
+        data: {
+          type: 'bulk-scans',
+          id: 'scan-progress-123',
+          attributes: {
+            status: 'in_progress',
+            initiated_at: new Date().toISOString(),
+            messages_scanned: 42,
+            messages_flagged: 0,
+          },
+        },
+      },
+      { transient: { status: 'in_progress', messagesScanned: 42 } }
+    );
+
+    const result = formatScanStatusPaginated({
+      scan,
+      guildId: 'guild-456',
+      days: 7,
+    });
+
+    expect(result.header).toContain('In Progress');
+    expect(result.header).not.toContain('Flagged');
+    expect(result.pages.pages[0]).toContain('Messages scanned so far');
+  });
+
+  it('should paginate failed scan status without using the completed header', () => {
+    const scan = latestScanResponseFactory.build(
+      {
+        data: {
+          type: 'bulk-scans',
+          id: 'scan-failed-123',
+          attributes: {
+            status: 'failed',
+            initiated_at: new Date().toISOString(),
+            messages_scanned: 17,
+            messages_flagged: 0,
+          },
+        },
+      },
+      { transient: { status: 'failed', messagesScanned: 17 } }
+    );
+
+    const result = formatScanStatusPaginated({
+      scan,
+      guildId: 'guild-456',
+      days: 7,
+    });
+
+    expect(result.header).toContain('Failed');
+    expect(result.header).not.toContain('Scan Complete');
+    expect(result.pages.pages[0]).toContain('failed due to processing errors');
+>>>>>>> 1640e2f (feat(task-1284): wire stalled vibecheck follow-up flow)
   });
 });

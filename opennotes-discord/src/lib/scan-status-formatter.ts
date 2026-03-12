@@ -5,6 +5,7 @@ import {
 } from 'discord.js';
 import type {
   LatestScanResponse,
+  BulkScanResultsResponse,
   FlaggedMessageResource,
 } from './api-client.js';
 import {
@@ -14,8 +15,10 @@ import {
 } from './bulk-scan-executor.js';
 import { TextPaginator, type PaginatedContent } from './text-paginator.js';
 
+type ScanStatusResponse = LatestScanResponse | BulkScanResultsResponse;
+
 export interface FormatScanStatusOptions {
-  scan: LatestScanResponse;
+  scan: ScanStatusResponse;
   guildId: string;
   days?: number;
   warningMessage?: string;
@@ -173,6 +176,7 @@ export function formatScanStatusPaginated(options: FormatScanStatusOptions): For
     ? formatErrorSummary(errorSummary)
     : '';
 
+<<<<<<< HEAD
   if (status === 'pending' || status === 'in_progress') {
     return {
       pages: TextPaginator.paginate(''),
@@ -187,6 +191,31 @@ export function formatScanStatusPaginated(options: FormatScanStatusOptions): For
       scanId,
     };
   }
+=======
+  if (status === 'pending' || status === 'in_progress' || status === 'failed') {
+    const nonTerminalContent = status === 'pending'
+      ? `The scan is pending and waiting to be processed.${warningText}`
+      : status === 'in_progress'
+        ? `**Messages scanned so far:** ${messagesScanned}\n\nThe scan is currently in progress...${warningText}`
+        : `The scan failed due to processing errors. Please try again later.${errorText}${warningText}`;
+
+    const header = `${status === 'failed' ? '**Scan Status: Failed**' : status === 'in_progress' ? '**Scan Status: In Progress**' : '**Scan Status: Pending**'}\n\n` +
+      `**Scan ID:** \`${scanId}\`\n` +
+      daysText;
+
+    return {
+      pages: TextPaginator.paginate(nonTerminalContent, { maxCharsPerPage: 1800 }),
+      header,
+      scanId,
+    };
+  }
+
+  const header = `**Scan Complete**\n\n` +
+    `**Scan ID:** \`${scanId}\`\n` +
+    daysText +
+    `**Messages scanned:** ${messagesScanned}\n` +
+    `**Flagged:** ${flaggedMessages.length}\n`;
+>>>>>>> 1640e2f (feat(task-1284): wire stalled vibecheck follow-up flow)
 
   if (status === 'failed') {
     const header = `**Scan Status: Failed**\n\n**Scan ID:** \`${scanId}\`\n${daysText}`;
