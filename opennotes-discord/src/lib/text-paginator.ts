@@ -50,10 +50,9 @@ export class TextPaginator {
         break;
       }
 
-      const splitIndex = this.findSplitIndex(remaining, maxChars);
-      const page = remaining.slice(0, splitIndex);
+      const { page, remainingContent } = this.splitPage(remaining, maxChars);
       pages.push(page);
-      remaining = remaining.slice(splitIndex);
+      remaining = remainingContent;
     }
 
     if (addIndicator) {
@@ -70,6 +69,40 @@ export class TextPaginator {
     };
   }
 
+  private static splitPage(content: string, maxChars: number): { page: string; remainingContent: string } {
+    let splitIndex = this.findSplitIndex(content, maxChars);
+    let page = content.slice(0, splitIndex);
+    let remainingContent = content.slice(splitIndex);
+    let openFence = this.findUnclosedFence(page);
+
+    while (openFence) {
+      const closedPage = this.closeFence(page, openFence);
+      if (closedPage.length <= maxChars) {
+        return {
+          page: closedPage,
+          remainingContent: this.reopenFence(remainingContent, openFence),
+        };
+      }
+
+      const adjustedMaxChars = Math.max(1, maxChars - this.getFenceClosureOverhead(page, openFence));
+      const adjustedSplitIndex = this.findSplitIndex(content, adjustedMaxChars);
+
+      if (adjustedSplitIndex >= splitIndex) {
+        break;
+      }
+
+      splitIndex = adjustedSplitIndex;
+      page = content.slice(0, splitIndex);
+      remainingContent = content.slice(splitIndex);
+      openFence = this.findUnclosedFence(page);
+    }
+
+    return {
+      page,
+      remainingContent,
+    };
+  }
+
   private static findSplitIndex(content: string, maxChars: number): number {
     const searchStart = Math.max(0, maxChars - 200);
     const searchEnd = maxChars;
@@ -81,6 +114,58 @@ export class TextPaginator {
     }
 
     return maxChars;
+  }
+
+  private static findUnclosedFence(content: string): string | null {
+    const lines = content.split('\n');
+    let openFence: string | null = null;
+    let closingFence: string | null = null;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (!openFence) {
+        const match = trimmed.match(/^(```+|~~~+)(.*)$/);
+        if (match) {
+          openFence = trimmed;
+          closingFence = match[1];
+        }
+        continue;
+      }
+
+      if (trimmed === closingFence) {
+        openFence = null;
+        closingFence = null;
+      }
+    }
+
+    return openFence;
+  }
+
+  private static getFenceClosureOverhead(page: string, openFence: string): number {
+    return this.closeFence('', openFence).length + (page.endsWith('\n') ? 0 : 1);
+  }
+
+  private static closeFence(page: string, openFence: string): string {
+    const closingFence = this.getClosingFence(openFence);
+
+    if (!page) {
+      return closingFence;
+    }
+
+    return page.endsWith('\n') ? `${page}${closingFence}` : `${page}\n${closingFence}`;
+  }
+
+  private static reopenFence(content: string, openFence: string): string {
+    if (!content) {
+      return content;
+    }
+
+    return `${openFence}\n${content}`;
+  }
+
+  private static getClosingFence(openFence: string): string {
+    return openFence.match(/^(```+|~~~+)/)?.[1] ?? '```';
   }
 
   static getPage(paginated: PaginatedContent, page: number): string {

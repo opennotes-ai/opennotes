@@ -649,6 +649,46 @@ describe('list command - Button Handlers', () => {
       });
     });
 
+    it('should preserve fenced markdown integrity when paginating cached request previews', async () => {
+      const fencedBody = Array.from(
+        { length: 220 },
+        (_, index) => `const line${index} = ${index};`
+      ).join('\n');
+      const longFullText = [
+        'Request details:',
+        '',
+        '```ts',
+        fencedBody,
+        '```',
+        '',
+        'Follow-up context after the code block.',
+      ].join('\n');
+      cacheStore.set('view_full:fenced1', longFullText);
+      const interaction = createMockButtonInteraction('view_full:fenced1');
+
+      await handleViewFullButton(interaction as any);
+
+      const replyCalls = interaction.reply.mock.calls as unknown as Array<[{ content: string }]>;
+      const followUpCalls = interaction.followUp.mock.calls as unknown as Array<[{ content: string }]>;
+
+      expect(replyCalls).toHaveLength(1);
+      expect(followUpCalls.length).toBeGreaterThanOrEqual(1);
+
+      const replyPayload = replyCalls[0][0];
+      const followUpPayload = followUpCalls[0][0];
+      const renderedPages = [replyPayload.content, ...followUpCalls.map(([payload]) => payload.content)];
+      const renderedContent = renderedPages.join('\n');
+
+      expect(replyPayload.content.match(/```/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+      expect((replyPayload.content.match(/```/g)?.length ?? 0) % 2).toBe(0);
+      expect((followUpPayload.content.match(/```/g)?.length ?? 0) % 2).toBe(0);
+      renderedPages.forEach(page => {
+        expect((page.match(/```/g)?.length ?? 0) % 2).toBe(0);
+      });
+      expect(renderedContent).toContain('const line219 = 219;');
+      expect(renderedContent).toContain('Follow-up context after the code block.');
+    });
+
     it('should handle expired cache state', async () => {
       const interaction = createMockButtonInteraction('view_full:expired1');
 

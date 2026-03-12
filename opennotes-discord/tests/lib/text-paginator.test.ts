@@ -87,6 +87,23 @@ describe('TextPaginator', () => {
       expect(result.pages[0]).toContain('(1/');
       expect(result.pages[1]).toContain('(2/');
     });
+
+    it('preserves fenced markdown integrity across paginated pages', () => {
+      const fencedBody = Array.from(
+        { length: 40 },
+        (_, index) => `const line${index} = ${index};`
+      ).join('\n');
+      const content = ['Request details:', '', '```ts', fencedBody, '```', '', 'Done.'].join('\n');
+
+      const result = TextPaginator.paginate(content, { maxCharsPerPage: 180 });
+
+      expect(result.totalPages).toBeGreaterThan(1);
+      result.pages.forEach(page => {
+        expect((page.match(/```/g)?.length ?? 0) % 2).toBe(0);
+      });
+      expect(result.pages.join('\n')).toContain('const line39 = 39;');
+      expect(result.pages.at(-1)).toContain('Done.');
+    });
   });
 
   describe('getPage', () => {
