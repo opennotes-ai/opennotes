@@ -85,6 +85,30 @@ class TestEmbeddingServiceSpanAttributes:
             assert status_call[0][0] == StatusCode.ERROR
 
     @pytest.mark.asyncio
+    async def test_generate_embedding_uses_provided_uuid_without_lookup(self):
+        """Provided community_server_uuid should bypass CommunityServer DB lookup."""
+        from src.fact_checking.embedding_service import EmbeddingService
+
+        mock_llm_service = MagicMock()
+        mock_llm_service.generate_embedding = AsyncMock(
+            return_value=([0.1] * 1536, "openai", "text-embedding-3-small")
+        )
+        service = EmbeddingService(mock_llm_service)
+
+        mock_db = AsyncMock()
+        provided_uuid = uuid4()
+
+        await service.generate_embedding(
+            mock_db,
+            "test text",
+            "123456789",
+            community_server_uuid=provided_uuid,
+        )
+
+        mock_db.execute.assert_not_called()
+        mock_llm_service.generate_embedding.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_similarity_search_creates_span_with_correct_attributes(self):
         """Verify similarity_search creates span with search-related attributes."""
         mock_span = MagicMock()

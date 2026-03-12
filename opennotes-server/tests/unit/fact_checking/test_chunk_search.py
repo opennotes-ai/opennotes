@@ -238,6 +238,54 @@ class TestInputValidation:
 
         assert results == []
 
+    @pytest.mark.asyncio
+    async def test_statement_timeout_uses_literal_sql(self):
+        """statement_timeout should be applied with a PostgreSQL-safe literal statement."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from src.fact_checking.repository import hybrid_search_with_chunks
+
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = []
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        valid_embedding = [0.1] * settings.EMBEDDING_DIMENSIONS
+
+        await hybrid_search_with_chunks(
+            session=mock_session,
+            query_text="test query",
+            query_embedding=valid_embedding,
+            statement_timeout_ms=10000,
+        )
+
+        timeout_stmt = mock_session.execute.call_args_list[0].args[0]
+        assert str(timeout_stmt) == "SET LOCAL statement_timeout = 10000"
+
+    @pytest.mark.asyncio
+    async def test_legacy_hybrid_search_statement_timeout_uses_literal_sql(self):
+        """Legacy hybrid_search should also apply a PostgreSQL-safe statement_timeout."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from src.fact_checking.repository import hybrid_search
+
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = []
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        valid_embedding = [0.1] * settings.EMBEDDING_DIMENSIONS
+
+        await hybrid_search(
+            session=mock_session,
+            query_text="test query",
+            query_embedding=valid_embedding,
+            statement_timeout_ms=10000,
+        )
+
+        timeout_stmt = mock_session.execute.call_args_list[0].args[0]
+        assert str(timeout_stmt) == "SET LOCAL statement_timeout = 10000"
+
 
 class TestWeightFactorBoundaries:
     """Test weight factor parameter boundaries."""

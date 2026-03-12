@@ -19,6 +19,7 @@ from litellm.exceptions import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
+    AsyncRetrying,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -208,18 +209,13 @@ class LLMService:
         async for chunk in llm_provider.stream_complete(messages, params):
             yield chunk
 
-    @retry(
-        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
-        wait=wait_exponential(multiplier=1, min=1, max=60),
-        stop=stop_after_attempt(5),
-        reraise=True,
-    )
     async def generate_embedding(
         self,
         db: AsyncSession,
         text: str,
         community_server_id: UUID | None = None,
         model: ModelId | None = None,
+        retry_attempts: int | None = None,
     ) -> tuple[list[float], str, str]:
         """
         Generate embedding for text using LiteLLM.
@@ -233,6 +229,8 @@ class LLMService:
             text: Text to embed
             community_server_id: Community server UUID, or None for global fallback
             model: Embedding model (uses settings.EMBEDDING_MODEL if None)
+            retry_attempts: Optional retry override. Defaults to 3 attempts.
+                Hot-path HTTP callers should pass 2.
 
         Returns:
             Tuple of (embedding vector, provider name, model name)
@@ -241,44 +239,69 @@ class LLMService:
             ValueError: If no OpenAI configuration found
             Exception: If API call fails after retries
         """
-        llm_provider = await self.client_manager.get_client(db, community_server_id, "openai")
+        max_attempts = 3 if retry_attempts is None else retry_attempts
+        if max_attempts < 1:
+            raise ValueError(f"retry_attempts must be >= 1, got {max_attempts}")
 
-        if not llm_provider:
-            context = f"community server {community_server_id}" if community_server_id else "global"
-            raise ValueError(f"No OpenAI configuration found for {context}")
+        async for attempt in AsyncRetrying(
+            retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+            wait=wait_exponential(multiplier=1, min=1, max=60),
+            stop=stop_after_attempt(max_attempts),
+            reraise=True,
+        ):
+            with attempt:
+                llm_provider = await self.client_manager.get_client(
+                    db, community_server_id, "openai"
+                )
 
-        embedding_model = model or settings.EMBEDDING_MODEL
-        embedding_model_str = embedding_model.to_litellm()
+                if not llm_provider:
+                    context = (
+                        f"community server {community_server_id}"
+                        if community_server_id
+                        else "global"
+                    )
+                    raise ValueError(f"No OpenAI configuration found for {context}")
 
-        logger.debug(
-            "Generating embedding",
-            extra={
-                "text_length": len(text),
-                "community_server_id": str(community_server_id) if community_server_id else None,
-                "model": embedding_model_str,
-            },
-        )
+                embedding_model = model or settings.EMBEDDING_MODEL
+                embedding_model_str = embedding_model.to_litellm()
 
-        response = await litellm.aembedding(
-            model=embedding_model_str,
-            input=[text],
-            api_key=llm_provider.api_key,
-            encoding_format="float",
-        )
+                logger.debug(
+                    "Generating embedding",
+                    extra={
+                        "text_length": len(text),
+                        "community_server_id": str(community_server_id)
+                        if community_server_id
+                        else None,
+                        "model": embedding_model_str,
+                        "retry_attempts": max_attempts,
+                    },
+                )
 
-        embedding = response.data[0]["embedding"]
+                response = await litellm.aembedding(
+                    model=embedding_model_str,
+                    input=[text],
+                    api_key=llm_provider.api_key,
+                    encoding_format="float",
+                    timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
+                )
 
-        logger.info(
-            "Embedding generated successfully",
-            extra={
-                "text_length": len(text),
-                "community_server_id": str(community_server_id) if community_server_id else None,
-                "tokens_used": response.usage.total_tokens if response.usage else 0,
-                "embedding_dimensions": len(embedding),
-            },
-        )
+                embedding = response.data[0]["embedding"]
 
-        return embedding, "litellm", embedding_model_str
+                logger.info(
+                    "Embedding generated successfully",
+                    extra={
+                        "text_length": len(text),
+                        "community_server_id": str(community_server_id)
+                        if community_server_id
+                        else None,
+                        "tokens_used": response.usage.total_tokens if response.usage else 0,
+                        "embedding_dimensions": len(embedding),
+                    },
+                )
+
+                return embedding, "litellm", embedding_model_str
+
+        raise RuntimeError("Embedding generation failed unexpectedly after retries")
 
     @retry(
         retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
@@ -344,6 +367,7 @@ class LLMService:
             input=texts,
             api_key=llm_provider.api_key,
             encoding_format="float",
+            timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
         )
 
         if len(response.data) != len(texts):

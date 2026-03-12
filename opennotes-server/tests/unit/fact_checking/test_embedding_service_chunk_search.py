@@ -131,6 +131,35 @@ class TestEmbeddingServiceUsesChunkSearch:
             call_kwargs = mock_chunk_search.call_args.kwargs
             assert call_kwargs["dataset_tags"] is None
 
+    async def test_similarity_search_passes_statement_timeout_when_provided(self):
+        """HTTP callers can pass statement_timeout through to chunk search."""
+        from src.fact_checking.embedding_service import EmbeddingService
+
+        mock_llm_service = MagicMock()
+        service = EmbeddingService(mock_llm_service)
+
+        mock_db = AsyncMock()
+        mock_embedding = [0.1] * 1536
+
+        with (
+            patch.object(service, "generate_embedding", return_value=mock_embedding),
+            patch(
+                "src.fact_checking.embedding_service.hybrid_search_with_chunks"
+            ) as mock_chunk_search,
+        ):
+            mock_chunk_search.return_value = []
+
+            await service.similarity_search(
+                db=mock_db,
+                query_text="test query",
+                community_server_id="123456789",
+                dataset_tags=["snopes"],
+                statement_timeout_ms=10000,
+            )
+
+            call_kwargs = mock_chunk_search.call_args.kwargs
+            assert call_kwargs["statement_timeout_ms"] == 10000
+
 
 class TestEmbeddingServiceChunkSearchImport:
     """Test that hybrid_search_with_chunks is properly imported."""
@@ -240,3 +269,33 @@ class TestFactCheckMatchCosineSimilarity:
         item = _make_mock_fact_check_item()
         result = HybridSearchResult(item=item, cc_score=0.5)
         assert result.semantic_score is None
+
+
+@pytest.mark.asyncio
+class TestPreviouslySeenSearchStatementTimeout:
+    """Tests for statement-timeout handling in EmbeddingService.search_previously_seen."""
+
+    async def test_search_previously_seen_applies_statement_timeout_when_provided(self):
+        """Previously-seen DB search should apply a local statement timeout when requested."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from src.fact_checking.embedding_service import EmbeddingService
+
+        mock_llm_service = MagicMock()
+        service = EmbeddingService(mock_llm_service)
+
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = []
+        mock_db = AsyncMock()
+        mock_db.execute.return_value = mock_result
+
+        await service.search_previously_seen(
+            db=mock_db,
+            embedding=[0.1] * 1536,
+            community_server_id=uuid4(),
+            similarity_threshold=0.8,
+            statement_timeout_ms=10000,
+        )
+
+        timeout_stmt = mock_db.execute.await_args_list[0].args[0]
+        assert str(timeout_stmt) == "SET LOCAL statement_timeout = 10000"

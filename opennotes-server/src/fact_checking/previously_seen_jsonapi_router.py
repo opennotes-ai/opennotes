@@ -12,6 +12,7 @@ It provides:
 Reference: https://jsonapi.org/format/
 """
 
+import asyncio
 import uuid
 from datetime import datetime
 from functools import lru_cache
@@ -23,6 +24,7 @@ from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import verify_community_membership
@@ -56,6 +58,9 @@ from src.monitoring import get_logger
 from src.users.models import User
 
 logger = get_logger(__name__)
+HOT_PATH_EMBEDDING_RETRY_ATTEMPTS = 2
+HOT_PATH_ENDPOINT_TIMEOUT_SECONDS = 10
+HOT_PATH_DB_STATEMENT_TIMEOUT_MS = 10_000
 
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
@@ -301,6 +306,22 @@ def create_error_response(
         content=error_response.model_dump(by_alias=True),
         media_type=JSONAPI_CONTENT_TYPE,
     )
+
+
+def _is_statement_timeout_error(exc: OperationalError) -> bool:
+    """Detect PostgreSQL statement timeout errors surfaced through SQLAlchemy."""
+    return "statement timeout" in str(exc).lower()
+
+
+def _previously_seen_timeout_response() -> JSONResponse:
+    """Build the shared graceful timeout response for previously-seen checks."""
+    timeout_response = create_error_response(
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "Service Unavailable",
+        "Previously seen check timed out. Please retry shortly.",
+    )
+    timeout_response.headers["Retry-After"] = "5"
+    return timeout_response
 
 
 @router.get(
@@ -628,17 +649,38 @@ async def check_previously_seen_jsonapi(
             },
         )
 
-        embedding = await embedding_service.generate_embedding(
-            db=db, text=attrs.message_text, community_server_id=attrs.platform_community_server_id
-        )
+        try:
+            async with asyncio.timeout(HOT_PATH_ENDPOINT_TIMEOUT_SECONDS):
+                embedding = await embedding_service.generate_embedding(
+                    db=db,
+                    text=attrs.message_text,
+                    community_server_id=attrs.platform_community_server_id,
+                    community_server_uuid=community_server_uuid,
+                    retry_attempts=HOT_PATH_EMBEDDING_RETRY_ATTEMPTS,
+                )
 
-        matches = await embedding_service.search_previously_seen(
-            db=db,
-            embedding=embedding,
-            community_server_id=community_server_uuid,
-            similarity_threshold=autorequest_threshold,
-            limit=5,
-        )
+                matches = await embedding_service.search_previously_seen(
+                    db=db,
+                    embedding=embedding,
+                    community_server_id=community_server_uuid,
+                    similarity_threshold=autorequest_threshold,
+                    limit=5,
+                    statement_timeout_ms=HOT_PATH_DB_STATEMENT_TIMEOUT_MS,
+                )
+        except TimeoutError:
+            return _previously_seen_timeout_response()
+        except OperationalError as e:
+            if _is_statement_timeout_error(e):
+                logger.warning(
+                    "Previously seen DB query hit statement timeout",
+                    extra={
+                        "platform_community_server_id": attrs.platform_community_server_id,
+                        "channel_id": attrs.channel_id,
+                        "statement_timeout_ms": HOT_PATH_DB_STATEMENT_TIMEOUT_MS,
+                    },
+                )
+                return _previously_seen_timeout_response()
+            raise
 
         should_auto_publish = False
         should_auto_request = False

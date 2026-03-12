@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import verify_community_membership
@@ -52,6 +53,8 @@ from src.monitoring import get_logger
 from src.users.models import User
 
 logger = get_logger(__name__)
+HOT_PATH_EMBEDDING_RETRY_ATTEMPTS = 2
+HOT_PATH_DB_STATEMENT_TIMEOUT_MS = 10_000
 
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
@@ -81,6 +84,11 @@ def get_embedding_service(
 def get_usage_tracker(db: Annotated[AsyncSession, Depends(get_db)]) -> LLMUsageTracker:
     """Get LLM usage tracker instance."""
     return LLMUsageTracker(db)
+
+
+def _is_statement_timeout_error(exc: OperationalError) -> bool:
+    """Detect PostgreSQL statement timeout errors surfaced through SQLAlchemy."""
+    return "statement timeout" in str(exc).lower()
 
 
 async def get_community_server_uuid(
@@ -217,7 +225,7 @@ def create_error_response(
     response_model=HybridSearchResultResponse,
 )
 @limiter.limit("100/hour")
-async def hybrid_search_jsonapi(
+async def hybrid_search_jsonapi(  # noqa: PLR0911
     request: HTTPRequest,
     body: HybridSearchRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -299,6 +307,8 @@ async def hybrid_search_jsonapi(
             db=db,
             text=attrs.text,
             community_server_id=attrs.community_server_id,
+            community_server_uuid=community_server_uuid,
+            retry_attempts=HOT_PATH_EMBEDDING_RETRY_ATTEMPTS,
         )
         embedding_duration_ms = (time.perf_counter() - embedding_start) * 1000
 
@@ -308,6 +318,7 @@ async def hybrid_search_jsonapi(
             query_text=attrs.text,
             query_embedding=query_embedding,
             limit=attrs.limit,
+            statement_timeout_ms=HOT_PATH_DB_STATEMENT_TIMEOUT_MS,
         )
         search_duration_ms = (time.perf_counter() - search_start) * 1000
 
@@ -404,6 +415,22 @@ async def hybrid_search_jsonapi(
             "Not Found",
             str(e),
         )
+    except OperationalError as e:
+        if _is_statement_timeout_error(e):
+            logger.warning(
+                "Hybrid search database statement timeout (JSON:API)",
+                extra={
+                    "user_id": str(current_user.id),
+                    "community_server_id": body.data.attributes.community_server_id,
+                    "statement_timeout_ms": HOT_PATH_DB_STATEMENT_TIMEOUT_MS,
+                },
+            )
+            return create_error_response(
+                status.HTTP_504_GATEWAY_TIMEOUT,
+                "Gateway Timeout",
+                "Hybrid search timed out. Please retry shortly.",
+            )
+        raise
     except Exception as e:
         logger.error(
             "Hybrid search failed (JSON:API)",

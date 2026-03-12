@@ -12,10 +12,12 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.exc import OperationalError
 
 from src.main import app
 
@@ -571,3 +573,80 @@ class TestPreviouslySeenJSONAPICheck:
         )
 
         assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_check_previously_seen_message_timeout_returns_503_with_retry_after(
+        self,
+        previously_seen_jsonapi_auth_client,
+        previously_seen_jsonapi_community_server,
+    ):
+        """Timeout on check endpoint should return JSON:API 503 with Retry-After header."""
+        platform_id = previously_seen_jsonapi_community_server["platform_community_server_id"]
+        request_body = {
+            "data": {
+                "type": "previously-seen-check",
+                "attributes": {
+                    "message_text": "This message triggers timeout handling in check endpoint.",
+                    "platform_community_server_id": platform_id,
+                    "channel_id": "timeout-test-channel",
+                },
+            }
+        }
+
+        with patch(
+            "src.fact_checking.previously_seen_jsonapi_router.EmbeddingService.generate_embedding",
+            new_callable=AsyncMock,
+            side_effect=TimeoutError(),
+        ):
+            response = await previously_seen_jsonapi_auth_client.post(
+                "/api/v2/previously-seen-messages/check", json=request_body
+            )
+
+        assert response.status_code == 503
+        assert response.headers.get("Retry-After") is not None
+        assert "errors" in response.json()
+
+    @pytest.mark.asyncio
+    async def test_check_previously_seen_message_statement_timeout_returns_503_with_retry_after(
+        self,
+        previously_seen_jsonapi_auth_client,
+        previously_seen_jsonapi_community_server,
+    ):
+        """DB statement timeout on check endpoint should return JSON:API 503 with Retry-After."""
+        platform_id = previously_seen_jsonapi_community_server["platform_community_server_id"]
+        request_body = {
+            "data": {
+                "type": "previously-seen-check",
+                "attributes": {
+                    "message_text": "This message triggers DB timeout handling in check endpoint.",
+                    "platform_community_server_id": platform_id,
+                    "channel_id": "statement-timeout-test-channel",
+                },
+            }
+        }
+        statement_timeout_error = OperationalError(
+            statement="SELECT 1",
+            params={},
+            orig=Exception("canceling statement due to statement timeout"),
+        )
+
+        with (
+            patch(
+                "src.fact_checking.previously_seen_jsonapi_router.EmbeddingService.generate_embedding",
+                new_callable=AsyncMock,
+                return_value=[0.1] * 1536,
+            ),
+            patch(
+                "src.fact_checking.previously_seen_jsonapi_router.EmbeddingService.search_previously_seen",
+                new_callable=AsyncMock,
+                side_effect=statement_timeout_error,
+            ) as mock_search_previously_seen,
+        ):
+            response = await previously_seen_jsonapi_auth_client.post(
+                "/api/v2/previously-seen-messages/check", json=request_body
+            )
+
+        assert response.status_code == 503
+        assert response.headers.get("Retry-After") is not None
+        assert "errors" in response.json()
+        assert mock_search_previously_seen.call_args.kwargs["statement_timeout_ms"] == 10000

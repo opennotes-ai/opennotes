@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.exc import OperationalError
 
 from src.main import app
 
@@ -643,6 +644,13 @@ class TestHybridSearchJSONAPIWithMockedService:
             assert response.status_code == 200, (
                 f"Expected 200, got {response.status_code}: {response.text}"
             )
+            call_kwargs = mock_generate.call_args.kwargs
+            assert call_kwargs["retry_attempts"] == 2
+            assert (
+                call_kwargs["community_server_uuid"]
+                == hybrid_search_jsonapi_community_server["uuid"]
+            )
+            assert mock_search.call_args.kwargs["statement_timeout_ms"] == 10000
 
             data = response.json()
 
@@ -683,6 +691,99 @@ class TestHybridSearchJSONAPIWithMockedService:
 
             content_type = response.headers.get("content-type", "")
             assert "application/vnd.api+json" in content_type
+
+    @pytest.mark.asyncio
+    async def test_hybrid_search_jsonapi_passes_statement_timeout_to_legacy_search(
+        self,
+        hybrid_search_jsonapi_auth_client,
+        hybrid_search_jsonapi_community_server,
+    ):
+        """Legacy hybrid search should bound the DB query with statement_timeout."""
+        mock_embedding = [0.1] * 1536
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
+
+        with (
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
+                new_callable=AsyncMock,
+            ) as mock_check_limits,
+            patch(
+                "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
+                new_callable=AsyncMock,
+            ) as mock_generate,
+            patch(
+                "src.fact_checking.hybrid_searches_jsonapi_router.hybrid_search",
+                new_callable=AsyncMock,
+                return_value=[],
+            ) as mock_search,
+        ):
+            mock_check_limits.return_value = (True, None)
+            mock_generate.return_value = mock_embedding
+
+            response = await hybrid_search_jsonapi_auth_client.post(
+                "/api/v2/hybrid-searches",
+                json={
+                    "data": {
+                        "type": "hybrid-searches",
+                        "attributes": {
+                            "text": "Bound this legacy hybrid SQL query",
+                            "community_server_id": platform_id,
+                            "limit": 10,
+                        },
+                    }
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        assert mock_search.call_args.kwargs["statement_timeout_ms"] == 10000
+
+    @pytest.mark.asyncio
+    async def test_hybrid_search_jsonapi_statement_timeout_returns_504(
+        self,
+        hybrid_search_jsonapi_auth_client,
+        hybrid_search_jsonapi_community_server,
+    ):
+        """Database statement timeouts should map to a graceful JSON:API 504 response."""
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
+        statement_timeout_error = OperationalError(
+            statement="SELECT 1",
+            params={},
+            orig=Exception("canceling statement due to statement timeout"),
+        )
+
+        with (
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
+                new_callable=AsyncMock,
+                return_value=(True, None),
+            ),
+            patch(
+                "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
+                new_callable=AsyncMock,
+                return_value=[0.1] * 1536,
+            ),
+            patch(
+                "src.fact_checking.hybrid_searches_jsonapi_router.hybrid_search",
+                new_callable=AsyncMock,
+                side_effect=statement_timeout_error,
+            ),
+        ):
+            response = await hybrid_search_jsonapi_auth_client.post(
+                "/api/v2/hybrid-searches",
+                json={
+                    "data": {
+                        "type": "hybrid-searches",
+                        "attributes": {
+                            "text": "Trigger statement timeout mapping",
+                            "community_server_id": platform_id,
+                            "limit": 10,
+                        },
+                    }
+                },
+            )
+
+        assert response.status_code == 504
+        assert "errors" in response.json()
 
     @pytest.mark.asyncio
     async def test_hybrid_search_jsonapi_empty_results(
