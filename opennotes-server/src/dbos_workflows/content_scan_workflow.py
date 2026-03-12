@@ -327,6 +327,8 @@ def content_scan_orchestration_workflow(  # noqa: PLR0912
             skipped_count=skipped_count,
             error_count=error_count,
             flagged_count=flagged_count,
+            finalization_incomplete=all_transmitted
+            and (processed_count + skipped_count + error_count) < messages_scanned,
         )
 
         logger.info(
@@ -1125,7 +1127,13 @@ def _determine_scan_status(
     processed_count: int,
     error_count: int,
     total_errors: int,
+    finalization_incomplete: bool = False,
 ) -> tuple[BulkScanStatus, str | None]:
+    if messages_scanned > 0 and finalization_incomplete:
+        return (
+            BulkScanStatus.FAILED,
+            "finalization incomplete after all_transmitted handoff",
+        )
     if messages_scanned > 0 and processed_count == 0 and total_errors > 0:
         return BulkScanStatus.FAILED, "100% of messages had errors"
     if messages_scanned > 0 and processed_count == 0 and error_count > 0:
@@ -1147,6 +1155,7 @@ def finalize_scan_step(
     skipped_count: int,
     error_count: int,
     flagged_count: int,
+    finalization_incomplete: bool = False,
 ) -> dict[str, Any]:
     """Finalize the content scan: update DB record and publish NATS events.
 
@@ -1227,6 +1236,7 @@ def finalize_scan_step(
                 processed_count=processed_count,
                 error_count=error_count,
                 total_errors=total_errors,
+                finalization_incomplete=finalization_incomplete,
             )
             if status == BulkScanStatus.FAILED:
                 logger.warning(
@@ -1274,6 +1284,8 @@ def finalize_scan_step(
                 extra={
                     "scan_id": scan_id,
                     "messages_scanned": messages_scanned,
+                    "processed_count": processed_count,
+                    "error_count": error_count,
                     "messages_flagged": len(flagged),
                     "messages_skipped": actual_skipped,
                     "status": status.value,

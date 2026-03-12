@@ -623,6 +623,7 @@ class TestContentScanOrchestrationWorkflow:
         finalize_kwargs = mock_finalize.call_args.kwargs
         assert finalize_kwargs["processed_count"] == 0
         assert finalize_kwargs["messages_scanned"] == 10
+        assert finalize_kwargs["finalization_incomplete"] is True
 
 
 class TestAdaptiveTimeoutCap:
@@ -1234,6 +1235,20 @@ class TestDetermineScanStatus:
         )
         assert status.value == "completed"
         assert reason is None
+
+    def test_incomplete_finalization_returns_failed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=10,
+            processed_count=5,
+            error_count=0,
+            total_errors=0,
+            finalization_incomplete=True,
+        )
+        assert status.value == "failed"
+        assert reason is not None
+        assert "incomplete" in reason
 
 
 class TestAdaptiveTimeoutProducesFailed:

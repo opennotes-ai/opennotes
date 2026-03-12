@@ -8,8 +8,9 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
-from src.bulk_content_scan.schemas import FlaggedMessage
+from src.bulk_content_scan.schemas import BulkScanStatus, FlaggedMessage
 from src.community_config.models import CommunityConfig
 from src.config import settings
 from src.database import get_session_maker
@@ -33,6 +34,51 @@ from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
+
+
+async def persist_transmitted_scan_handoff(scan_id: UUID, messages_scanned: int) -> None:
+    """Persist non-zero handoff counts before DBOS finalization runs."""
+    if messages_scanned <= 0:
+        return
+
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        stmt = select(BulkContentScanLog).where(BulkContentScanLog.id == scan_id).with_for_update()
+        result = await session.execute(stmt)
+        scan_log = result.scalar_one_or_none()
+
+        if scan_log is None:
+            logger.warning(
+                "Bulk scan handoff received for missing scan",
+                extra={"scan_id": str(scan_id), "messages_scanned": messages_scanned},
+            )
+            return
+
+        previous_messages_scanned = scan_log.messages_scanned or 0
+        persisted_messages_scanned = max(previous_messages_scanned, messages_scanned)
+
+        if (
+            persisted_messages_scanned == previous_messages_scanned
+            and scan_log.status != BulkScanStatus.PENDING
+        ):
+            return
+
+        scan_log.messages_scanned = persisted_messages_scanned
+        if scan_log.status == BulkScanStatus.PENDING:
+            scan_log.status = BulkScanStatus.IN_PROGRESS
+
+        await session.commit()
+
+        logger.info(
+            "Persisted bulk scan handoff counts",
+            extra={
+                "scan_id": str(scan_id),
+                "messages_scanned": messages_scanned,
+                "previous_messages_scanned": previous_messages_scanned,
+                "persisted_messages_scanned": persisted_messages_scanned,
+                "status": scan_log.status,
+            },
+        )
 
 
 async def get_vibecheck_debug_mode(
@@ -260,6 +306,11 @@ class BulkScanEventHandler:
                 "scan_id": str(event.scan_id),
                 "messages_scanned": event.messages_scanned,
             },
+        )
+
+        await persist_transmitted_scan_handoff(
+            scan_id=event.scan_id,
+            messages_scanned=event.messages_scanned,
         )
 
         orchestrator_workflow_id = str(event.scan_id)
