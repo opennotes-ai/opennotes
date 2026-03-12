@@ -7,13 +7,14 @@ import {
   getSimulationDetailedAnalysis,
 } from "~/lib/api-client.server";
 import { createClient } from "~/lib/supabase-server";
-import { formatDate, getMetric, humanizeLabel, truncateId } from "~/lib/format";
+import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import AnalysisSummary from "~/components/AnalysisSummary";
 import AgentProfiles from "~/components/AgentProfiles";
 import MetricsDisplay from "~/components/MetricsDisplay";
 import NoteDetails from "~/components/NoteDetails";
 import SimulationSidebar from "~/components/SimulationSidebar";
+import IdBadge from "~/components/ui/id-badge";
 import PaginationControls from "~/components/ui/pagination-controls";
 
 const UNAUTH_PAGE_SIZE = 20;
@@ -176,7 +177,7 @@ export default function SimulationDetailPage() {
                   <main class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <h1 class="text-2xl font-bold tracking-tight">
-                      Simulation {truncateId(simResponse.data.id)}
+                      Simulation <IdBadge idValue={simResponse.data.id} variant="muted" />
                     </h1>
                     <Badge variant={STATUS_VARIANT[attrs.status] ?? "muted"}>
                       {humanizeLabel(attrs.status)}
@@ -227,8 +228,12 @@ export default function SimulationDetailPage() {
                     <div class="mt-3 grid grid-cols-2 gap-2 text-sm text-muted-foreground">
                       <div>Turns: <strong class="text-foreground">{attrs.cumulative_turns}</strong></div>
                       <div>Restarts: <strong class="text-foreground">{attrs.restart_count}</strong></div>
-                      <div>Orchestrator: <strong class="text-foreground">{truncateId(attrs.orchestrator_id)}</strong></div>
-                      <div>Community Server: <strong class="text-foreground">{truncateId(attrs.community_server_id)}</strong></div>
+                      <div>
+                        Orchestrator: <IdBadge idValue={attrs.orchestrator_id} variant="muted" />
+                      </div>
+                      <div>
+                        Community Server: <IdBadge idValue={attrs.community_server_id} variant="muted" />
+                      </div>
                     </div>
                   </details>
 

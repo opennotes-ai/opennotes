@@ -1,8 +1,9 @@
 import { createSignal, createMemo, createEffect, For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
-import { humanizeLabel, truncateId } from "~/lib/format";
+import { humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import InlineHistogram from "~/components/ui/inline-histogram";
+import IdBadge from "~/components/ui/id-badge";
 import PaginationControls from "~/components/ui/pagination-controls";
 
 const PAGE_SIZE = 20;
@@ -73,7 +74,7 @@ export default function AgentProfiles(props: { agents: AgentBehaviorData[] }) {
                   <td class="px-4 py-2.5">
                     <div class="font-medium">{agent.agent_name}</div>
                     <div class="text-xs text-muted-foreground">
-                      {truncateId(agent.agent_instance_id)}
+                      <IdBadge idValue={agent.agent_instance_id} variant="muted" />
                     </div>
                   </td>
                   <td class="px-4 py-2.5">
