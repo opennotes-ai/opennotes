@@ -31,7 +31,10 @@ from src.auth.permissions import (
     is_service_account,
 )
 from src.database import get_db
-from src.llm_config.models import CommunityServer
+from src.llm_config.models import (
+    COMMUNITY_SERVER_PLATFORM_ID_UNIQUE_CONSTRAINT,
+    CommunityServer,
+)
 from src.users.models import User
 from src.users.profile_crud import (
     create_community_member,
@@ -40,7 +43,12 @@ from src.users.profile_crud import (
     get_identity_by_provider,
     get_profile_by_id,
 )
-from src.users.profile_models import CommunityMember, UserProfile
+from src.users.profile_models import (
+    COMMUNITY_MEMBER_COMMUNITY_PROFILE_UNIQUE_CONSTRAINT,
+    USER_IDENTITY_PROVIDER_USER_UNIQUE_CONSTRAINT,
+    CommunityMember,
+    UserProfile,
+)
 from src.users.profile_schemas import (
     AuthProvider,
     CommunityMemberCreate,
@@ -49,9 +57,6 @@ from src.users.profile_schemas import (
 )
 
 logger = logging.getLogger(__name__)
-
-_COMMUNITY_SERVER_UNIQUE_CONSTRAINT = "idx_community_servers_platform_community_server_id"
-_COMMUNITY_MEMBER_UNIQUE_CONSTRAINT = "idx_community_members_community_profile"
 
 
 def _is_expected_unique_constraint_violation(exc: IntegrityError, expected_constraint: str) -> bool:
@@ -102,13 +107,34 @@ async def get_profile_id_from_user(db: AsyncSession, user: User) -> UUID | None:
             banned_at=None,
             banned_reason=None,
         )
-        profile, identity = await create_profile_with_identity(
-            db=db,
-            profile_create=profile_create,
-            provider=provider,
-            provider_user_id=provider_user_id,
-            credentials=None,
-        )
+        try:
+            async with db.begin_nested():
+                profile, _identity = await create_profile_with_identity(
+                    db=db,
+                    profile_create=profile_create,
+                    provider=provider,
+                    provider_user_id=provider_user_id,
+                    credentials=None,
+                )
+        except IntegrityError as exc:
+            if not _is_expected_unique_constraint_violation(
+                exc, USER_IDENTITY_PROVIDER_USER_UNIQUE_CONSTRAINT
+            ):
+                raise
+
+            logger.info(
+                "Race condition detected during service-account profile bootstrap, retrying lookup",
+                extra={
+                    "provider": provider.value if hasattr(provider, "value") else provider,
+                    "provider_user_id": provider_user_id,
+                    "error": str(exc),
+                },
+            )
+            identity = await get_identity_by_provider(db, provider, provider_user_id)
+            if identity is None:
+                raise
+            return identity.profile_id
+
         return profile.id
 
     return None
@@ -193,7 +219,7 @@ async def get_community_server_by_platform_id(
                 await db.refresh(server)
         except IntegrityError as exc:
             if not _is_expected_unique_constraint_violation(
-                exc, _COMMUNITY_SERVER_UNIQUE_CONSTRAINT
+                exc, COMMUNITY_SERVER_PLATFORM_ID_UNIQUE_CONSTRAINT
             ):
                 raise
 
@@ -264,7 +290,7 @@ async def _ensure_membership_with_permissions(
                     membership = await create_community_member(db, member_create)
             except IntegrityError as exc:
                 if not _is_expected_unique_constraint_violation(
-                    exc, _COMMUNITY_MEMBER_UNIQUE_CONSTRAINT
+                    exc, COMMUNITY_MEMBER_COMMUNITY_PROFILE_UNIQUE_CONSTRAINT
                 ):
                     raise
 

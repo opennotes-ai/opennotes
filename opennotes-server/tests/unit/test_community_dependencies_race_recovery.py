@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from src.users.models import User
 from src.users.profile_models import CommunityMember, UserProfile
 
 
@@ -74,6 +75,67 @@ class TestCommunityDependencyRaceRecovery:
         mock_db.begin_nested.assert_called_once()
         assert get_member.await_count == 2
         logger.info.assert_called_once()
+
+    async def test_duplicate_service_account_profile_create_recovers_existing_identity(self):
+        from src.auth.community_dependencies import get_profile_id_from_user
+
+        recovered_profile_id = uuid4()
+        identity = MagicMock()
+        identity.profile_id = recovered_profile_id
+        mock_db = MagicMock()
+        mock_db.begin_nested = MagicMock(return_value=_make_savepoint())
+        user = User(
+            id=1,
+            username="discord-bot-service",
+            email="discord-bot@opennotes.local",
+            hashed_password="unused",
+            role="admin",
+        )
+
+        get_identity = AsyncMock(side_effect=[None, identity])
+        create_profile = AsyncMock(
+            side_effect=_make_integrity_error("idx_user_identities_provider_user")
+        )
+
+        with (
+            patch("src.auth.community_dependencies.get_identity_by_provider", new=get_identity),
+            patch(
+                "src.auth.community_dependencies.create_profile_with_identity", new=create_profile
+            ),
+            patch("src.auth.community_dependencies.logger") as logger,
+        ):
+            profile_id = await get_profile_id_from_user(mock_db, user)
+
+        assert profile_id == recovered_profile_id
+        mock_db.begin_nested.assert_called_once()
+        assert get_identity.await_count == 2
+        logger.info.assert_called_once()
+
+    async def test_unexpected_service_account_profile_integrity_error_is_reraised(self):
+        from src.auth.community_dependencies import get_profile_id_from_user
+
+        mock_db = MagicMock()
+        mock_db.begin_nested = MagicMock(return_value=_make_savepoint())
+        user = User(
+            id=1,
+            username="discord-bot-service",
+            email="discord-bot@opennotes.local",
+            hashed_password="unused",
+            role="admin",
+        )
+
+        get_identity = AsyncMock(return_value=None)
+        unexpected_error = _make_integrity_error("some_other_constraint")
+        create_profile = AsyncMock(side_effect=unexpected_error)
+
+        with (
+            patch("src.auth.community_dependencies.get_identity_by_provider", new=get_identity),
+            patch(
+                "src.auth.community_dependencies.create_profile_with_identity", new=create_profile
+            ),
+            pytest.raises(IntegrityError),
+        ):
+            await get_profile_id_from_user(mock_db, user)
 
     async def test_unexpected_membership_integrity_error_is_reraised(self):
         from src.auth.community_dependencies import _ensure_membership_with_permissions
