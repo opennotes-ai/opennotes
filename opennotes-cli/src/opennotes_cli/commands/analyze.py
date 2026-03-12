@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
 
 import click
 import httpx
@@ -12,6 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from opennotes_cli.display import handle_jsonapi_error
+from opennotes_cli.formatting import format_id, resolve_id
 from opennotes_cli.http import add_csrf, get_csrf_token, handle_error_response
 
 if TYPE_CHECKING:
@@ -19,6 +20,9 @@ if TYPE_CHECKING:
 
 console = Console()
 error_console = Console(stderr=True)
+
+ANALYSIS_POLL_INTERVAL = 2.0
+ANALYSIS_POLL_MAX_RETRIES = 30
 
 
 def _fetch_analysis(
@@ -31,7 +35,9 @@ def _fetch_analysis(
     try:
         response = client.get(url, headers=headers)
     except httpx.ConnectError:
-        error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+        error_console.print(
+            f"[red]Error:[/red] Could not connect to server at {base_url}"
+        )
         sys.exit(1)
     except httpx.TimeoutException:
         error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
@@ -54,7 +60,9 @@ def _trigger_rescore(
     try:
         response = client.post(url, headers=score_headers)
     except httpx.ConnectError:
-        error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+        error_console.print(
+            f"[red]Error:[/red] Could not connect to server at {base_url}"
+        )
         sys.exit(1)
     except httpx.TimeoutException:
         error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
@@ -76,14 +84,48 @@ def _trigger_rescore(
     console.print("[dim]Scoring is running in the background.[/dim]")
 
 
+def _wait_for_analysis(
+    client: httpx.Client,
+    base_url: str,
+    headers: dict[str, str],
+    community_server_id: str,
+    display_community_server_id: str,
+    interval: float | None = None,
+    max_retries: int | None = None,
+) -> dict[str, Any]:
+    interval = ANALYSIS_POLL_INTERVAL if interval is None else interval
+    max_retries = ANALYSIS_POLL_MAX_RETRIES if max_retries is None else max_retries
+
+    for attempt in range(max_retries):
+        data = _fetch_analysis(client, base_url, headers, community_server_id)
+        if data is not None:
+            return data
+        if attempt < max_retries - 1:
+            time.sleep(interval)
+
+    error_console.print(
+        "[red]Error:[/red] Timed out waiting for a scoring snapshot "
+        f"for community server {display_community_server_id}."
+    )
+    error_console.print(
+        "[dim]Scoring may still be running. Re-run `mise run cli -- analyze mf "
+        f"{display_community_server_id}` in a few moments.[/dim]"
+    )
+    sys.exit(1)
+
+
 def _render_rater_table(rater_factors: list[dict[str, Any]], fmt: str) -> str | None:
     if fmt == "md":
         lines = ["## Rater Factor Matrix", ""]
         lines.append("| Agent | Intercept | Factor1 |")
         lines.append("|-------|-----------|---------|")
-        for rf in sorted(rater_factors, key=lambda x: x.get("factor1", 0), reverse=True):
+        for rf in sorted(
+            rater_factors, key=lambda x: x.get("factor1", 0), reverse=True
+        ):
             name = rf.get("agent_name") or rf.get("rater_id", "?")
-            lines.append(f"| {name} | {rf.get('intercept', 0):.4f} | {rf.get('factor1', 0):.4f} |")
+            lines.append(
+                f"| {name} | {rf.get('intercept', 0):.4f} | {rf.get('factor1', 0):.4f} |"
+            )
         return "\n".join(lines)
 
     table = Table(title="Rater Factor Matrix", show_header=True, header_style="bold")
@@ -110,7 +152,9 @@ def _render_note_table(note_factors: list[dict[str, Any]], fmt: str) -> str | No
         lines = ["## Note Factor Matrix", ""]
         lines.append("| Note ID | Author | Intercept | Factor1 | Status |")
         lines.append("|---------|--------|-----------|---------|--------|")
-        for nf in sorted(note_factors, key=lambda x: x.get("intercept", 0), reverse=True):
+        for nf in sorted(
+            note_factors, key=lambda x: x.get("intercept", 0), reverse=True
+        ):
             nid = (nf.get("note_id") or "?")[:8]
             author = nf.get("author_agent_name") or "-"
             status = nf.get("status") or "-"
@@ -149,7 +193,7 @@ def _render_correlation(rater_factors: list[dict[str, Any]], fmt: str) -> str | 
 
     if fmt == "md":
         lines = ["## Rater Correlation Matrix (Cosine Similarity)", ""]
-        header = "| |" + "|".join(f" {l[:6]} " for l in result.labels) + "|"
+        header = "| |" + "|".join(f" {label[:6]} " for label in result.labels) + "|"
         sep = "|---|" + "|".join("---:" for _ in result.labels) + "|"
         lines.extend([header, sep])
         for i, label in enumerate(result.labels):
@@ -160,7 +204,9 @@ def _render_correlation(rater_factors: list[dict[str, Any]], fmt: str) -> str | 
 
         lines.extend(["", "## Agent Clusters", ""])
         for c in result.clusters:
-            lines.append(f"**Cluster {c.cluster_id}** (mean sim: {c.mean_similarity:.3f}): {', '.join(c.members)}")
+            lines.append(
+                f"**Cluster {c.cluster_id}** (mean sim: {c.mean_similarity:.3f}): {', '.join(c.members)}"
+            )
 
         lines.extend(["", "## Most Similar Pairs", ""])
         for a, b, s in result.most_similar_pairs:
@@ -174,7 +220,11 @@ def _render_correlation(rater_factors: list[dict[str, Any]], fmt: str) -> str | 
 
     n = len(result.labels)
     if n <= 12:
-        table = Table(title="Rater Correlation Matrix (Cosine Similarity)", show_header=True, header_style="bold")
+        table = Table(
+            title="Rater Correlation Matrix (Cosine Similarity)",
+            show_header=True,
+            header_style="bold",
+        )
         table.add_column("", no_wrap=True, width=8)
         for label in result.labels:
             table.add_column(label[:6], justify="right", width=7)
@@ -199,7 +249,9 @@ def _render_correlation(rater_factors: list[dict[str, Any]], fmt: str) -> str | 
     cluster_table.add_column("Members")
     cluster_table.add_column("Mean Sim", justify="right", width=10)
     for c in result.clusters:
-        cluster_table.add_row(str(c.cluster_id), ", ".join(c.members), f"{c.mean_similarity:.3f}")
+        cluster_table.add_row(
+            str(c.cluster_id), ", ".join(c.members), f"{c.mean_similarity:.3f}"
+        )
     console.print(cluster_table)
 
     console.print()
@@ -216,7 +268,9 @@ def _render_correlation(rater_factors: list[dict[str, Any]], fmt: str) -> str | 
     return None
 
 
-def _render_profile_recovery(rater_factors: list[dict[str, Any]], fmt: str) -> str | None:
+def _render_profile_recovery(
+    rater_factors: list[dict[str, Any]], fmt: str
+) -> str | None:
     from opennotes_cli.analysis.profile_recovery import compute_profile_recovery
 
     result = compute_profile_recovery(rater_factors)
@@ -230,13 +284,23 @@ def _render_profile_recovery(rater_factors: list[dict[str, Any]], fmt: str) -> s
 
     if fmt == "md":
         lines = ["## Profile Recovery: Intended vs Revealed Persona", ""]
-        lines.append(f"Matched {result.n_agents_matched}/{result.n_agents_total} agents to archetype assignments.")
+        lines.append(
+            f"Matched {result.n_agents_matched}/{result.n_agents_total} agents to archetype assignments."
+        )
         lines.append("")
-        lines.append(f"**Pearson r:** {result.archetype_factor_correlation:.4f} (p={result.archetype_factor_p_value:.4f})")
-        lines.append(f"**Spearman rho:** {result.archetype_factor_spearman:.4f} (p={result.archetype_factor_spearman_p:.4f})")
+        lines.append(
+            f"**Pearson r:** {result.archetype_factor_correlation:.4f} (p={result.archetype_factor_p_value:.4f})"
+        )
+        lines.append(
+            f"**Spearman rho:** {result.archetype_factor_spearman:.4f} (p={result.archetype_factor_spearman_p:.4f})"
+        )
         lines.append("")
-        lines.append("| Agent | D-I | D-II.A | E-II | Intercept | Factor1 | Closest (archetype) | Closest (factors) | Match |")
-        lines.append("|-------|-----|--------|------|-----------|---------|---------------------|--------------------|----|")
+        lines.append(
+            "| Agent | D-I | D-II.A | E-II | Intercept | Factor1 | Closest (archetype) | Closest (factors) | Match |"
+        )
+        lines.append(
+            "|-------|-----|--------|------|-----------|---------|---------------------|--------------------|----|"
+        )
         for ac in result.agent_comparisons:
             dims = ac["dimensions"]
             match_sym = "Y" if ac["match"] else "N"
@@ -300,17 +364,16 @@ def _fetch_history(
     try:
         response = client.get(url, headers=headers)
     except httpx.ConnectError:
-        error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+        error_console.print(
+            f"[red]Error:[/red] Could not connect to server at {base_url}"
+        )
         sys.exit(1)
     except httpx.TimeoutException:
         error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
         sys.exit(1)
     handle_jsonapi_error(response)
     data = response.json()
-    return [
-        resource.get("attributes", {})
-        for resource in data.get("data", [])
-    ]
+    return [resource.get("attributes", {}) for resource in data.get("data", [])]
 
 
 def _fetch_history_snapshot(
@@ -324,7 +387,9 @@ def _fetch_history_snapshot(
     try:
         response = client.get(url, headers=headers)
     except httpx.ConnectError:
-        error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+        error_console.print(
+            f"[red]Error:[/red] Could not connect to server at {base_url}"
+        )
         sys.exit(1)
     except httpx.TimeoutException:
         error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
@@ -339,7 +404,9 @@ def _fetch_history_snapshot(
 @analyze.command("mf")
 @click.argument("community_server_id")
 @click.option("--rescore", is_flag=True, help="Trigger fresh scoring before analysis")
-@click.option("--no-prompt", is_flag=True, help="Don't prompt for rescore if no snapshot exists")
+@click.option(
+    "--no-prompt", is_flag=True, help="Don't prompt for rescore if no snapshot exists"
+)
 @click.option(
     "--format",
     "fmt",
@@ -347,9 +414,21 @@ def _fetch_history_snapshot(
     default="table",
     help="Output format",
 )
-@click.option("--sections", type=str, default="all", help="Sections to show: factors,correlation,recovery or 'all'")
-@click.option("--history", is_flag=True, help="List available historical scoring snapshots")
-@click.option("--snapshot-date", type=str, default=None, help="Fetch and analyze a historical snapshot by timestamp")
+@click.option(
+    "--sections",
+    type=str,
+    default="all",
+    help="Sections to show: factors,correlation,recovery or 'all'",
+)
+@click.option(
+    "--history", is_flag=True, help="List available historical scoring snapshots"
+)
+@click.option(
+    "--snapshot-date",
+    type=str,
+    default=None,
+    help="Fetch and analyze a historical snapshot by timestamp",
+)
 @click.pass_context
 def mf_analysis(
     ctx: click.Context,
@@ -363,15 +442,16 @@ def mf_analysis(
 ) -> None:
     """Analyze MF scoring factors for a community server."""
     try:
-        UUID(community_server_id)
-    except ValueError:
-        error_console.print(f"[red]Error:[/red] Invalid UUID: '{community_server_id}'")
+        community_server_id = resolve_id(community_server_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
 
     cli_ctx: CliContext = ctx.obj
     base_url = cli_ctx.base_url
     client = cli_ctx.client
     headers = cli_ctx.auth.get_headers()
+    display_community_server_id = format_id(community_server_id, cli_ctx.use_huuid)
 
     if cli_ctx.json_output:
         fmt = "json"
@@ -400,7 +480,9 @@ def mf_analysis(
             client, base_url, headers, community_server_id, snapshot_date
         )
         if snapshot is None:
-            error_console.print(f"[red]Error:[/red] No snapshot found for timestamp '{snapshot_date}'")
+            error_console.print(
+                f"[red]Error:[/red] No snapshot found for timestamp '{snapshot_date}'"
+            )
             sys.exit(1)
 
         if fmt == "json":
@@ -430,30 +512,53 @@ def mf_analysis(
         try:
             csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
         except httpx.ConnectError:
-            error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+            error_console.print(
+                f"[red]Error:[/red] Could not connect to server at {base_url}"
+            )
             sys.exit(1)
         except httpx.TimeoutException:
             error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
             sys.exit(1)
         _trigger_rescore(client, base_url, headers, csrf_token, community_server_id)
-
-    data = _fetch_analysis(client, base_url, headers, community_server_id)
+        data = _wait_for_analysis(
+            client,
+            base_url,
+            headers,
+            community_server_id,
+            display_community_server_id,
+        )
+    else:
+        data = _fetch_analysis(client, base_url, headers, community_server_id)
 
     if data is None and not no_prompt and not rescore:
         if click.confirm("No scoring snapshot found. Trigger a scoring run?"):
             try:
-                csrf_token = csrf_token or get_csrf_token(client, base_url, cli_ctx.auth)
+                csrf_token = csrf_token or get_csrf_token(
+                    client, base_url, cli_ctx.auth
+                )
             except httpx.ConnectError:
-                error_console.print(f"[red]Error:[/red] Could not connect to server at {base_url}")
+                error_console.print(
+                    f"[red]Error:[/red] Could not connect to server at {base_url}"
+                )
                 sys.exit(1)
             except httpx.TimeoutException:
-                error_console.print(f"[red]Error:[/red] Connection to {base_url} timed out")
+                error_console.print(
+                    f"[red]Error:[/red] Connection to {base_url} timed out"
+                )
                 sys.exit(1)
             _trigger_rescore(client, base_url, headers, csrf_token, community_server_id)
-            data = _fetch_analysis(client, base_url, headers, community_server_id)
+            data = _wait_for_analysis(
+                client,
+                base_url,
+                headers,
+                community_server_id,
+                display_community_server_id,
+            )
 
     if data is None:
-        error_console.print("[yellow]No scoring snapshot available for this community server.[/yellow]")
+        error_console.print(
+            "[yellow]No scoring snapshot available for this community server.[/yellow]"
+        )
         sys.exit(1)
 
     if fmt == "json":
@@ -464,11 +569,15 @@ def mf_analysis(
     rater_factors = attrs.get("rater_factors", [])
     note_factors = attrs.get("note_factors", [])
 
-    show_sections = set(sections.split(",")) if sections != "all" else {"factors", "correlation", "recovery"}
+    show_sections = (
+        set(sections.split(","))
+        if sections != "all"
+        else {"factors", "correlation", "recovery"}
+    )
 
     if fmt == "md":
         md_parts = [
-            f"# MF Scoring Analysis: {community_server_id[:8]}...",
+            f"# MF Scoring Analysis: {display_community_server_id}",
             "",
             f"**Scored at:** {attrs.get('scored_at', 'N/A')}",
             f"**Tier:** {attrs.get('tier', 'N/A')}",
