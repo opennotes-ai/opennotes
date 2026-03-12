@@ -21,6 +21,7 @@ from uuid import UUID
 import pendulum
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
@@ -48,6 +49,16 @@ from src.users.profile_schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+_COMMUNITY_SERVER_UNIQUE_CONSTRAINT = "idx_community_servers_platform_community_server_id"
+_COMMUNITY_MEMBER_UNIQUE_CONSTRAINT = "idx_community_members_community_profile"
+
+
+def _is_expected_unique_constraint_violation(exc: IntegrityError, expected_constraint: str) -> bool:
+    constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    if constraint_name == expected_constraint:
+        return True
+    return expected_constraint in str(exc.orig)
 
 
 async def get_profile_id_from_user(db: AsyncSession, user: User) -> UUID | None:
@@ -175,9 +186,29 @@ async def get_community_server_by_platform_id(
             is_active=True,
             is_public=True,
         )
-        db.add(server)
-        await db.flush()
-        await db.refresh(server)
+        try:
+            async with db.begin_nested():
+                db.add(server)
+                await db.flush()
+                await db.refresh(server)
+        except IntegrityError as exc:
+            if not _is_expected_unique_constraint_violation(
+                exc, _COMMUNITY_SERVER_UNIQUE_CONSTRAINT
+            ):
+                raise
+
+            logger.info(
+                "Race condition detected during community server auto-create, retrying lookup",
+                extra={
+                    "platform": platform,
+                    "platform_community_server_id": community_server_id,
+                    "error": str(exc),
+                },
+            )
+            result = await db.execute(select(CommunityServer).where(*filters))
+            server = result.scalar_one_or_none()
+            if server is None:
+                raise
 
     return server
 
@@ -228,8 +259,26 @@ async def _ensure_membership_with_permissions(
                 invited_by=None,
                 invitation_reason=invitation_reason,
             )
-            membership = await create_community_member(db, member_create)
-            await db.flush()
+            try:
+                async with db.begin_nested():
+                    membership = await create_community_member(db, member_create)
+            except IntegrityError as exc:
+                if not _is_expected_unique_constraint_violation(
+                    exc, _COMMUNITY_MEMBER_UNIQUE_CONSTRAINT
+                ):
+                    raise
+
+                logger.info(
+                    "Race condition detected during community membership auto-create, retrying lookup",
+                    extra={
+                        "community_id": str(community.id),
+                        "profile_id": str(profile.id),
+                        "error": str(exc),
+                    },
+                )
+                membership = await get_community_member(db, community.id, profile.id)
+                if membership is None:
+                    raise
 
     if not membership or not membership.is_active:
         raise HTTPException(
