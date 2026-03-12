@@ -113,6 +113,14 @@ export class NatsResultsWaiter {
       this.terminalResultsPromise = (async (): Promise<void> => {
         try {
           const results = await apiClient.getBulkScanResults(this.scanId);
+          const status = results.data.attributes.status;
+
+          if (status !== 'completed' && status !== 'failed') {
+            throw new Error(
+              `Fetched scan results were not terminal after receiving a terminal NATS event (status=${status})`
+            );
+          }
+
           if (!this.resolved) {
             this.cleanup();
             resolve(results);

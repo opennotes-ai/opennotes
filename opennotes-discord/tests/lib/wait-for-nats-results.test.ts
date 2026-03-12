@@ -305,6 +305,44 @@ describe('NatsResultsWaiter', () => {
     expect(result.data.attributes.status).toBe('failed');
   });
 
+  test('rejects when terminal NATS signal is followed by a non-terminal API payload', async () => {
+    mockGetBulkScanResults.mockResolvedValue({
+      data: {
+        id: 'scan-123',
+        type: 'bulk-scan',
+        attributes: {
+          status: 'in_progress',
+          messages_scanned: 10,
+          messages_flagged: 0,
+        },
+      },
+      included: [],
+      jsonapi: { version: '1.0' },
+    });
+
+    const failedMessage = createMockMessage({
+      event_type: 'bulk_scan.failed',
+      scan_id: 'scan-123',
+      community_server_id: 'community-1',
+      error_message: 'batch processing failed',
+    });
+
+    mockSubscribe
+      .mockResolvedValueOnce(createMockSub([]))
+      .mockResolvedValueOnce(createMockSub([]))
+      .mockResolvedValueOnce(createMockSub([failedMessage]))
+      .mockResolvedValueOnce(createMockSub([]));
+
+    await expect(
+      waitForNatsResults('scan-123', {
+        jetstream: () => ({ subscribe: mockSubscribe }),
+      } as any)
+    ).rejects.toThrow(/not terminal/i);
+
+    expect(failedMessage.ack).toHaveBeenCalledTimes(1);
+    expect(mockGetBulkScanResults).toHaveBeenCalledTimes(1);
+  });
+
   test('fetches terminal status only once when failed and processing_finished both arrive', async () => {
     const processingFinishedSub = createControlledSub();
     const failedSub = createControlledSub();
