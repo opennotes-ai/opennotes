@@ -475,6 +475,27 @@ describe('bulk-scan-executor', () => {
       expect(result.messagesScanned).toBe(50);
     });
 
+    it('returns failed for a zero-message scan when polling resolves to failed', async () => {
+      const emptyChannel = createMockChannel('channel-1', new Map());
+      const guild = createMockGuild(new Map([[emptyChannel.id, emptyChannel]]));
+
+      mockWaitForNatsResults.mockRejectedValueOnce(new Error('NATS unavailable'));
+      mockGetBulkScanResults.mockResolvedValueOnce(
+        createBulkScanResultsResponse('test-scan-123', 'failed', 0)
+      );
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(result.status).toBe('failed');
+      expect(result.messagesScanned).toBe(0);
+      expect(result.flaggedMessages).toEqual([]);
+    });
+
     it('should return failed status when all NATS publish attempts fail', async () => {
       const messages = new Map();
       for (let i = 0; i < 50; i++) {

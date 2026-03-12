@@ -402,6 +402,113 @@ class TestContentScanOrchestrationWorkflow:
         assert len(batch_calls) == 0
         mock_finalize.assert_called_once()
 
+    def test_late_zero_message_all_transmitted_rechecks_without_long_batch_wait(
+        self,
+    ) -> None:
+        """Late zero-message handoff is awaited before any long batch_complete wait."""
+        from src.dbos_workflows.content_scan_workflow import (
+            BATCH_RECV_TIMEOUT_SECONDS,
+            POST_ALL_TRANSMITTED_TIMEOUT_SECONDS,
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        scan_types_json = json.dumps(["similarity"])
+
+        recv_calls: list[tuple[str, dict]] = []
+        all_transmitted_attempts = 0
+
+        def tracking_recv(topic: str, **kwargs: object) -> dict | None:
+            nonlocal all_transmitted_attempts
+            recv_calls.append((topic, dict(kwargs)))
+            if topic == "all_transmitted":
+                all_transmitted_attempts += 1
+                if all_transmitted_attempts == 2:
+                    return {"messages_scanned": 0}
+            return None
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = tracking_recv
+            mock_clock.return_value = time.time()
+            mock_finalize.return_value = {"status": "completed"}
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=scan_types_json,
+            )
+
+        follow_up_all_transmitted_calls = [
+            call for topic, call in recv_calls[1:] if topic == "all_transmitted"
+        ]
+        assert any(
+            call["timeout_seconds"] == POST_ALL_TRANSMITTED_TIMEOUT_SECONDS
+            for call in follow_up_all_transmitted_calls
+        )
+        assert not any(
+            topic == "batch_complete" and call["timeout_seconds"] == BATCH_RECV_TIMEOUT_SECONDS
+            for topic, call in recv_calls
+        )
+
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["messages_scanned"] == 0
+
+    def test_first_batch_complete_still_counts_before_all_transmitted(self) -> None:
+        """A first batch_complete before all_transmitted still accumulates progress."""
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        scan_types_json = json.dumps(["similarity"])
+
+        recv_order: list[str] = []
+
+        def tracking_recv(topic: str, **kwargs: object) -> dict | None:
+            recv_order.append(topic)
+            if topic == "batch_complete" and recv_order.count("batch_complete") == 1:
+                return self._make_batch_result(processed=3, flagged_count=0, batch_number=1)
+            if topic == "all_transmitted" and recv_order.count("all_transmitted") >= 2:
+                return {"messages_scanned": 3}
+            return None
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = tracking_recv
+            mock_clock.return_value = time.time()
+            mock_finalize.return_value = {"status": "completed"}
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=scan_types_json,
+            )
+
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["processed_count"] == 3
+        assert finalize_kwargs["messages_scanned"] == 3
+
     def test_all_transmitted_received_on_first_wait(self) -> None:
         """When all_transmitted arrives within initial 30s, it is consumed before batch loop."""
         from src.dbos_workflows.content_scan_workflow import (
@@ -1587,7 +1694,7 @@ class TestDetermineScanStatus:
         assert status.value == "completed"
         assert reason is None
 
-    def test_zero_messages_returns_completed(self) -> None:
+    def test_zero_messages_without_all_transmitted_returns_failed(self) -> None:
         from src.dbos_workflows.content_scan_workflow import _determine_scan_status
 
         status, reason = _determine_scan_status(
@@ -1595,6 +1702,21 @@ class TestDetermineScanStatus:
             processed_count=0,
             error_count=0,
             total_errors=0,
+            all_transmitted_observed=False,
+        )
+        assert status.value == "failed"
+        assert reason is not None
+        assert "all_transmitted" in reason
+
+    def test_zero_messages_with_all_transmitted_returns_completed(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _determine_scan_status
+
+        status, reason = _determine_scan_status(
+            messages_scanned=0,
+            processed_count=0,
+            error_count=0,
+            total_errors=0,
+            all_transmitted_observed=True,
         )
         assert status.value == "completed"
         assert reason is None

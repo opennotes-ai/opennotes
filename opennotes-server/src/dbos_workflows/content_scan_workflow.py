@@ -212,7 +212,7 @@ def content_scan_orchestration_workflow(  # noqa: PLR0912
                     )
                     break
 
-                if not all_transmitted:
+                if not all_transmitted and batches_completed > 0:
                     tx_signal = DBOS.recv("all_transmitted", timeout_seconds=0)
                     if tx_signal is not None:
                         all_transmitted = True
@@ -249,11 +249,38 @@ def content_scan_orchestration_workflow(  # noqa: PLR0912
                     )
                     break
 
+                waiting_for_first_batch = not all_transmitted and batches_completed == 0
+                if waiting_for_first_batch:
+                    tx_signal = DBOS.recv(
+                        "all_transmitted",
+                        timeout_seconds=POST_ALL_TRANSMITTED_TIMEOUT_SECONDS,
+                    )
+                    if tx_signal is not None:
+                        all_transmitted = True
+                        all_transmitted_at = time.time()
+                        messages_scanned = tx_signal.get("messages_scanned", 0)
+                        logger.info(
+                            "Orchestrator received all_transmitted",
+                            extra={
+                                "scan_id": scan_id,
+                                "messages_scanned": messages_scanned,
+                            },
+                        )
+                        if messages_scanned == 0:
+                            logger.info(
+                                "Late zero-message scan, skipping to finalization",
+                                extra={"scan_id": scan_id},
+                            )
+                            break
+                        continue
+
                 batch_timeout = (
                     POST_ALL_TRANSMITTED_TIMEOUT_SECONDS
                     if all_transmitted
                     else BATCH_RECV_TIMEOUT_SECONDS
                 )
+                if waiting_for_first_batch:
+                    batch_timeout = 0
                 batch_result = DBOS.recv("batch_complete", timeout_seconds=batch_timeout)
 
                 if batch_result is not None:
@@ -274,6 +301,18 @@ def content_scan_orchestration_workflow(  # noqa: PLR0912
                         },
                     )
                     continue
+
+                if waiting_for_first_batch:
+                    logger.warning(
+                        "Orchestrator timed out waiting for initial all_transmitted or first batch_complete",
+                        extra={
+                            "scan_id": scan_id,
+                            "processed_count": processed_count,
+                            "all_transmitted": all_transmitted,
+                            "timeout_seconds": POST_ALL_TRANSMITTED_TIMEOUT_SECONDS,
+                        },
+                    )
+                    break
 
                 if not all_transmitted:
                     logger.warning(
@@ -327,6 +366,7 @@ def content_scan_orchestration_workflow(  # noqa: PLR0912
             skipped_count=skipped_count,
             error_count=error_count,
             flagged_count=flagged_count,
+            all_transmitted_observed=all_transmitted,
             finalization_incomplete=all_transmitted
             and (processed_count + skipped_count + error_count) < messages_scanned,
         )
@@ -1128,8 +1168,17 @@ def _determine_scan_status(
     error_count: int,
     total_errors: int,
     skipped_count: int = 0,
+    all_transmitted_observed: bool = True,
     finalization_incomplete: bool = False,
 ) -> tuple[BulkScanStatus, str | None]:
+    if (
+        not all_transmitted_observed
+        and messages_scanned == 0
+        and processed_count == 0
+        and error_count == 0
+        and total_errors == 0
+    ):
+        return BulkScanStatus.FAILED, "zero-message scan never observed all_transmitted"
     if messages_scanned > 0 and finalization_incomplete:
         return (
             BulkScanStatus.FAILED,
@@ -1164,6 +1213,7 @@ def finalize_scan_step(
     skipped_count: int,
     error_count: int,
     flagged_count: int,
+    all_transmitted_observed: bool = True,
     finalization_incomplete: bool = False,
 ) -> dict[str, Any]:
     """Finalize the content scan: update DB record and publish NATS events.
@@ -1262,6 +1312,7 @@ def finalize_scan_step(
                 skipped_count=effective_skipped_count,
                 error_count=error_count,
                 total_errors=total_errors,
+                all_transmitted_observed=all_transmitted_observed,
                 finalization_incomplete=finalization_incomplete,
             )
             if status == BulkScanStatus.FAILED:

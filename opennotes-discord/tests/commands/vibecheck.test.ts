@@ -2578,6 +2578,25 @@ describe('vibecheck command', () => {
       expect(lastEditReply.content).toContain('scan-timeout-123');
     });
 
+    it('shows failed guidance when a zero-message scan status is failed', async () => {
+      const interaction = createScanInteraction();
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-failed-123',
+        messagesScanned: 0,
+        channelsScanned: 3,
+        batchesPublished: 0,
+        failedBatches: 0,
+        status: 'failed',
+        flaggedMessages: [],
+      });
+
+      await execute(interaction as any);
+
+      const lastEditReply = interaction.editReply.mock.calls.at(-1)?.[0];
+      expect(lastEditReply.content).toContain('Scan analysis failed');
+      expect(lastEditReply.content).toContain('scan-failed-123');
+    });
+
     it('transitions to analysis interstitial text during analysis progress', async () => {
       const interaction = createScanInteraction();
       mockExecuteBulkScan.mockImplementationOnce(async ({ progressCallback }) => {

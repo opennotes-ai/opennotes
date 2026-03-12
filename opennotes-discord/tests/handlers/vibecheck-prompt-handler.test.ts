@@ -354,7 +354,7 @@ describe('vibecheck-prompt-handler', () => {
         });
       });
 
-      it('should handle scan with failed status', async () => {
+      it('should handle zero-message scan with failed status', async () => {
         mockCacheGet.mockResolvedValue({
           guildId: 'guild-123',
           adminId: 'admin-123',
@@ -364,9 +364,10 @@ describe('vibecheck-prompt-handler', () => {
 
         mockExecuteBulkScan.mockResolvedValue({
           scanId: 'scan-456',
-          messagesScanned: 100,
+          messagesScanned: 0,
           channelsScanned: 5,
           batchesPublished: 1,
+          failedBatches: 0,
           status: 'failed',
           flaggedMessages: [],
         });
