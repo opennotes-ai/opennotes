@@ -1,28 +1,24 @@
 """DBOS configuration and initialization.
 
-Provides two modes of operation:
-- Server mode (full): Uses DBOSClient for lightweight enqueueing only (no polling)
-- Worker mode (dbos_worker): Uses DBOS.launch() for queue polling and execution
-
-This separation ensures that only workers compete for queued workflows,
-while the server can enqueue work without starting its own executor.
+Provides DBOS singleton management for workflow execution:
+- get_dbos_config(): Build DBOSConfig from environment settings
+- get_dbos() / reset_dbos() / destroy_dbos(): DBOS singleton lifecycle
+- create_dbos_instance(): Factory for DBOS instances
+- validate_dbos_connection(): Health check for DBOS system database
 """
 
 import re
 import threading
 from urllib.parse import urlparse, urlunparse
 
-import sqlalchemy as sa
-from dbos import DBOS, DBOSClient, DBOSConfig
+from dbos import DBOS, DBOSConfig
+from sqlalchemy.pool import NullPool
 
 from src.config import settings
-from src.database import get_direct_sync_url
 from src.dbos_workflows.serializer import SafeJsonSerializer
 
 _dbos_instance: DBOS | None = None
-_dbos_client: DBOSClient | None = None
 _dbos_lock = threading.Lock()
-_dbos_client_lock = threading.Lock()
 
 
 def _derive_http_otlp_endpoint(grpc_endpoint: str | None) -> str | None:
@@ -82,7 +78,11 @@ def get_dbos_config() -> DBOSConfig:
     Note: DBOS uses synchronous psycopg internally, so we convert
     the async DATABASE_URL (postgresql+asyncpg://) to sync format.
     """
-    sync_url = get_direct_sync_url()
+    database_url = settings.DATABASE_URL
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable required for DBOS")
+
+    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
 
     config: DBOSConfig = {
         "name": settings.DBOS_APP_NAME,
@@ -91,8 +91,12 @@ def get_dbos_config() -> DBOSConfig:
     }
 
     config["db_engine_kwargs"] = {
+        "poolclass": NullPool,
         "connect_args": {"prepare_threshold": None},
     }
+
+    config["admin_port"] = settings.DBOS_ADMIN_PORT
+    config["run_admin_server"] = settings.DBOS_RUN_ADMIN_SERVER
 
     config["otlp_attributes"] = {
         "service.version": settings.VERSION,
@@ -138,6 +142,11 @@ def reset_dbos() -> None:
     """Reset the DBOS instance. Used for testing."""
     global _dbos_instance
     with _dbos_lock:
+        if _dbos_instance is not None:
+            try:
+                _dbos_instance.destroy(destroy_registry=False)
+            except Exception:
+                pass
         _dbos_instance = None
 
 
@@ -160,62 +169,6 @@ def destroy_dbos(workflow_completion_timeout_sec: int = 5) -> None:
                 destroy_registry=False,
             )
             _dbos_instance = None
-
-
-def get_dbos_client() -> DBOSClient:
-    """Get DBOSClient for enqueueing workflows (server mode).
-
-    Use this in the API server to enqueue workflows without starting
-    queue polling. The client connects directly to the DBOS system
-    database to manage queue operations.
-
-    Uses double-checked locking to ensure thread-safe singleton creation
-    without unnecessary lock contention.
-
-    Returns:
-        DBOSClient instance for enqueueing workflows
-    """
-    global _dbos_client
-    client = _dbos_client
-    if client is None:
-        with _dbos_client_lock:
-            client = _dbos_client
-            if client is None:
-                sync_url = get_direct_sync_url()
-
-                engine = sa.create_engine(
-                    sync_url,
-                    connect_args={"prepare_threshold": None},
-                )
-                client = DBOSClient(
-                    system_database_engine=engine,
-                    serializer=SafeJsonSerializer(),
-                )
-                _dbos_client = client
-    return client
-
-
-def destroy_dbos_client() -> None:
-    """Gracefully destroy the DBOSClient singleton.
-
-    Calls destroy() on the client and clears the cache. The cache is
-    cleared even if destroy() raises an exception, ensuring a fresh
-    client can be created on the next get_dbos_client() call.
-    """
-    global _dbos_client
-    with _dbos_client_lock:
-        if _dbos_client is not None:
-            client = _dbos_client
-            _dbos_client = None
-            client.destroy()
-
-
-def reset_dbos_client() -> None:
-    global _dbos_client
-    with _dbos_client_lock:
-        if _dbos_client is not None:
-            _dbos_client.destroy()
-        _dbos_client = None
 
 
 def validate_dbos_connection() -> bool:

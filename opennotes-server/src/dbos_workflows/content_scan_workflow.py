@@ -51,7 +51,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import orjson
-from dbos import DBOS, EnqueueOptions, Queue
+from dbos import DBOS, Queue, SetEnqueueOptions, SetWorkflowID
 
 from src.bulk_content_scan.schemas import BulkScanStatus
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
@@ -1362,25 +1362,19 @@ async def dispatch_content_scan_workflow(
     Returns:
         The DBOS workflow_id if successfully started, None on failure
     """
-    from src.dbos_workflows.config import get_dbos_client
-
     try:
-        client = get_dbos_client()
         scan_types_json = orjson.dumps(scan_types).decode()
 
-        options: EnqueueOptions = {
-            "queue_name": "content_scan",
-            "workflow_name": CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
-            "workflow_id": str(scan_id),
-            "deduplication_id": str(scan_id),
-        }
-        handle = await asyncio.to_thread(
-            client.enqueue,
-            options,
-            str(scan_id),
-            str(community_server_id),
-            scan_types_json,
-        )
+        def _enqueue():
+            with SetWorkflowID(str(scan_id)), SetEnqueueOptions(deduplication_id=str(scan_id)):
+                return content_scan_queue.enqueue(
+                    content_scan_orchestration_workflow,
+                    str(scan_id),
+                    str(community_server_id),
+                    scan_types_json,
+                )
+
+        handle = await asyncio.to_thread(_enqueue)
 
         logger.info(
             "Content scan DBOS workflow dispatched",
@@ -1432,20 +1426,12 @@ async def enqueue_content_scan_batch(
         The DBOS workflow_id if successfully enqueued, None on failure
     """
 
-    from src.dbos_workflows.config import get_dbos_client
-
     try:
-        client = get_dbos_client()
         scan_types_json = orjson.dumps(scan_types).decode()
 
-        options: EnqueueOptions = {
-            "queue_name": "content_scan",
-            "workflow_name": PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME,
-        }
-
         handle = await asyncio.to_thread(
-            client.enqueue,
-            options,
+            content_scan_queue.enqueue,
+            process_content_scan_batch,
             orchestrator_workflow_id,
             str(scan_id),
             str(community_server_id),
@@ -1492,13 +1478,9 @@ async def send_all_transmitted_signal(
     Returns:
         True if signal sent successfully, False on failure
     """
-    from src.dbos_workflows.config import get_dbos_client
-
     try:
-        client = get_dbos_client()
-
         await asyncio.to_thread(
-            client.send,
+            DBOS.send,
             orchestrator_workflow_id,
             {"messages_scanned": messages_scanned},
             "all_transmitted",

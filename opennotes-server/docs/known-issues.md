@@ -84,3 +84,23 @@ DBOS(
 3. Impact is limited to brief (~1s) notification delays every ~20 minutes
 
 If log verbosity becomes a concern, consider adding a log filter to suppress these specific warnings in production monitoring dashboards.
+
+## DBOS 2.15.0 Upgrade Validation
+
+**Status:** Upgraded in task-1300
+**Impact:** Latest stable DBOS baseline without changing the known sqlstate classification failure mode
+**Validated on:** 2026-03-12
+
+### Observed Benefits
+
+1. DBOS 2.15.0 includes upstream NullPool support, so the local `configure_db_engine_parameters()` monkey-patch is no longer needed in `src/dbos_workflows/config.py`.
+2. Targeted regression coverage still passes for DBOS worker startup, `/health/dbos`, manual scoring dispatch conflict handling, and the content-scan send/recv signaling path.
+3. Direct imports used by the app remain compatible on 2.15.0, including `dbos._error` and `dbos._serialization`.
+
+### Known Limitation Still Present
+
+Source inspection of `dbos/_sys_db_postgres.py` in DBOS 2.15.0 shows `_is_unique_constraint_violation()` and `_is_foreign_key_violation()` still dereference `dbapi_error.orig.sqlstate` without a guard. That means the EOF/`OperationalError` failure mode tracked in TASK-1299 and TASK-1308 should still be treated as unresolved after this upgrade.
+
+### Recommendation
+
+Treat the 2.15.0 bump as a stability and feature-baseline upgrade, not as a fix for the transient DBOS enqueue failures tracked in TASK-1299 and TASK-1308.

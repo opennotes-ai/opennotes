@@ -12,6 +12,7 @@ Task: task-849.01
 """
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -522,23 +523,27 @@ class TestBulkScanCreationSuccess(TestBulkScanAuthorizationFixtures):
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v2/bulk-scans",
-                headers={
-                    **admin_a_headers,
-                    "Content-Type": "application/vnd.api+json",
-                },
-                json={
-                    "data": {
-                        "type": "bulk-scans",
-                        "attributes": {
-                            "community_server_id": str(community_a.id),
-                            "scan_window_days": 7,
-                            "channel_ids": [],
-                        },
-                    }
-                },
-            )
+            with patch(
+                "src.bulk_content_scan.jsonapi_router.dispatch_content_scan_workflow",
+                new=AsyncMock(return_value="mock-workflow-id"),
+            ):
+                response = await client.post(
+                    "/api/v2/bulk-scans",
+                    headers={
+                        **admin_a_headers,
+                        "Content-Type": "application/vnd.api+json",
+                    },
+                    json={
+                        "data": {
+                            "type": "bulk-scans",
+                            "attributes": {
+                                "community_server_id": str(community_a.id),
+                                "scan_window_days": 7,
+                                "channel_ids": [],
+                            },
+                        }
+                    },
+                )
 
             assert response.status_code == 201, (
                 f"Expected 201 Created but got {response.status_code}. Response: {response.text}"

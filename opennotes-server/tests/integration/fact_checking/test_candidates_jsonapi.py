@@ -426,15 +426,6 @@ class TestSetRatingJSONAPI:
         assert response.status_code == 404
 
 
-def _mock_dbos_client():
-    """Create a mock DBOS client whose enqueue returns a handle with workflow_id."""
-    mock_handle = MagicMock()
-    mock_handle.workflow_id = "mock-workflow-id"
-    mock_client = MagicMock()
-    mock_client.enqueue.return_value = mock_handle
-    return mock_client
-
-
 class TestBulkApproveJSONAPI:
     """Tests for POST /api/v1/fact-checking/candidates/approve-predicted endpoint.
 
@@ -447,11 +438,12 @@ class TestBulkApproveJSONAPI:
         self, api_key_headers, test_candidates, db_session
     ):
         """Bulk approve endpoint creates a BatchJob and returns 201."""
-        mock_client = _mock_dbos_client()
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "mock-workflow-id"
         with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.dbos_workflows.approval_workflow.approval_queue.enqueue",
+            return_value=mock_handle,
+        ) as mock_enqueue:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -469,18 +461,19 @@ class TestBulkApproveJSONAPI:
             assert "id" in data
             assert data["job_type"] == "approve:candidates"
             assert data["status"] == "pending"
-            mock_client.enqueue.assert_called_once()
+            mock_enqueue.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_bulk_approve_with_filters_passes_to_workflow(
         self, api_key_headers, test_candidates, db_session
     ):
         """Bulk approve respects filter parameters and passes them to the DBOS workflow."""
-        mock_client = _mock_dbos_client()
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "mock-workflow-id"
         with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.dbos_workflows.approval_workflow.approval_queue.enqueue",
+            return_value=mock_handle,
+        ) as mock_enqueue:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -497,11 +490,10 @@ class TestBulkApproveJSONAPI:
 
             assert response.status_code == 201
             data = response.json()
-            mock_client.enqueue.assert_called_once()
-            enqueue_args = mock_client.enqueue.call_args[0]
-            options = enqueue_args[0]
-            assert options["queue_name"] == "approval"
+            mock_enqueue.assert_called_once()
+            enqueue_args = mock_enqueue.call_args[0]
             (
+                _workflow_fn,
                 batch_job_id,
                 threshold,
                 auto_promote,
@@ -509,7 +501,7 @@ class TestBulkApproveJSONAPI:
                 status,
                 dataset_name,
                 *_rest,
-            ) = enqueue_args[1:]
+            ) = enqueue_args
             assert batch_job_id == data["id"]
             assert threshold == 0.9
             assert auto_promote is True
@@ -520,10 +512,11 @@ class TestBulkApproveJSONAPI:
     @pytest.mark.asyncio
     async def test_bulk_approve_returns_batch_job_response(self, api_key_headers, test_candidates):
         """Bulk approve returns a valid BatchJob response structure."""
-        mock_client = _mock_dbos_client()
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "mock-workflow-id"
         with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
+            "src.dbos_workflows.approval_workflow.approval_queue.enqueue",
+            return_value=mock_handle,
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
@@ -567,10 +560,11 @@ class TestBulkApproveJSONAPI:
     @pytest.mark.asyncio
     async def test_bulk_approve_stores_metadata_in_job(self, api_key_headers, test_candidates):
         """Bulk approve stores request parameters in job metadata."""
-        mock_client = _mock_dbos_client()
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "mock-workflow-id"
         with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
+            "src.dbos_workflows.approval_workflow.approval_queue.enqueue",
+            return_value=mock_handle,
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
@@ -680,11 +674,12 @@ class TestAutoPromoteFeature:
         self, api_key_headers, promotable_candidates, db_session
     ):
         """Bulk approve with auto_promote=True passes flag to DBOS workflow."""
-        mock_client = _mock_dbos_client()
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "mock-workflow-id"
         with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.dbos_workflows.approval_workflow.approval_queue.enqueue",
+            return_value=mock_handle,
+        ) as mock_enqueue:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -702,9 +697,10 @@ class TestAutoPromoteFeature:
             data = response.json()
             assert data["job_type"] == "approve:candidates"
             assert data["metadata"]["auto_promote"] is True
-            mock_client.enqueue.assert_called_once()
-            enqueue_args = mock_client.enqueue.call_args[0]
+            mock_enqueue.assert_called_once()
+            enqueue_args = mock_enqueue.call_args[0]
             (
+                _workflow_fn,
                 _batch_job_id,
                 _threshold,
                 auto_promote,
@@ -712,6 +708,6 @@ class TestAutoPromoteFeature:
                 _status,
                 dataset_name,
                 *_rest,
-            ) = enqueue_args[1:]
+            ) = enqueue_args
             assert auto_promote is True
             assert dataset_name == "promotable_dataset"

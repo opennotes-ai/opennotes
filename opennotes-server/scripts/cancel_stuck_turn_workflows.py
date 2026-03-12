@@ -18,11 +18,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from dbos import DBOS
 from sqlalchemy import select
 
 from src.config import get_settings
 from src.database import get_session_maker, init_db
-from src.dbos_workflows.config import get_dbos_client
+from src.dbos_workflows.config import destroy_dbos, get_dbos
 from src.simulation.models import SimAgentInstance, SimulationRun
 
 GEN_PATTERN = re.compile(r"-gen(\d+)-")
@@ -31,7 +32,10 @@ GEN_PATTERN = re.compile(r"-gen(\d+)-")
 async def main(dry_run: bool) -> None:
     get_settings()
     await init_db()
-    client = get_dbos_client()
+
+    dbos = get_dbos()
+    DBOS.listen_queues([])
+    dbos.launch()
 
     found = 0
     cancelled = 0
@@ -66,7 +70,7 @@ async def main(dry_run: bool) -> None:
 
             for agent_id in agent_ids:
                 workflows = await asyncio.to_thread(
-                    client.list_workflows,
+                    DBOS.list_workflows,
                     workflow_id_prefix=f"turn-{agent_id}-",
                     status=["ENQUEUED", "PENDING"],
                     load_input=False,
@@ -98,7 +102,7 @@ async def main(dry_run: bool) -> None:
 
                     if not dry_run:
                         try:
-                            await asyncio.to_thread(client.cancel_workflow, wf.workflow_id)
+                            await asyncio.to_thread(DBOS.cancel_workflow, wf.workflow_id)
                             cancelled += 1
                         except Exception as e:
                             print(f"  ERROR: Failed to cancel {wf.workflow_id}: {e}")
@@ -110,6 +114,8 @@ async def main(dry_run: bool) -> None:
         print(f"Would cancel: {found} workflow(s)")
     else:
         print(f"Cancelled: {cancelled} workflow(s)")
+
+    destroy_dbos()
 
 
 if __name__ == "__main__":

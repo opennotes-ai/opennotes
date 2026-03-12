@@ -1689,13 +1689,13 @@ class TestDispatchContentScanWorkflow:
         community_server_id = uuid4()
         scan_types = ["similarity", "openai_moderation"]
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "dispatched-wf-123"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "dispatched-wf-123"
 
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.content_scan_queue.enqueue",
+            return_value=mock_handle,
+        ):
             result = await dispatch_content_scan_workflow(
                 scan_id=scan_id,
                 community_server_id=community_server_id,
@@ -1705,14 +1705,13 @@ class TestDispatchContentScanWorkflow:
         assert result == "dispatched-wf-123"
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_client_error(self) -> None:
+    async def test_returns_none_on_enqueue_error(self) -> None:
         from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.enqueue.side_effect = RuntimeError("Connection refused")
-            mock_get_client.return_value = mock_client
-
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.content_scan_queue.enqueue",
+            side_effect=RuntimeError("Connection refused"),
+        ):
             result = await dispatch_content_scan_workflow(
                 scan_id=uuid4(),
                 community_server_id=uuid4(),
@@ -1727,12 +1726,20 @@ class TestDispatchContentScanWorkflow:
 
         scan_id = uuid4()
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "wf-idempotent"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "wf-idempotent"
+
+        with (
+            patch(
+                "src.dbos_workflows.content_scan_workflow.content_scan_queue.enqueue",
+                return_value=mock_handle,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.SetEnqueueOptions",
+            ) as mock_set_options,
+        ):
+            mock_set_options.return_value.__enter__ = MagicMock(return_value=None)
+            mock_set_options.return_value.__exit__ = MagicMock(return_value=False)
 
             await dispatch_content_scan_workflow(
                 scan_id=scan_id,
@@ -1740,8 +1747,7 @@ class TestDispatchContentScanWorkflow:
                 scan_types=["similarity"],
             )
 
-        options = mock_client.enqueue.call_args.args[0]
-        assert options["deduplication_id"] == str(scan_id)
+        mock_set_options.assert_called_once_with(deduplication_id=str(scan_id))
 
     @pytest.mark.asyncio
     async def test_uses_scan_id_as_workflow_id(self) -> None:
@@ -1749,12 +1755,20 @@ class TestDispatchContentScanWorkflow:
 
         scan_id = uuid4()
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = str(scan_id)
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = str(scan_id)
+
+        with (
+            patch(
+                "src.dbos_workflows.content_scan_workflow.content_scan_queue.enqueue",
+                return_value=mock_handle,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.SetWorkflowID",
+            ) as mock_set_wf_id,
+        ):
+            mock_set_wf_id.return_value.__enter__ = MagicMock(return_value=None)
+            mock_set_wf_id.return_value.__exit__ = MagicMock(return_value=False)
 
             await dispatch_content_scan_workflow(
                 scan_id=scan_id,
@@ -1762,8 +1776,7 @@ class TestDispatchContentScanWorkflow:
                 scan_types=["similarity"],
             )
 
-        options = mock_client.enqueue.call_args.args[0]
-        assert options["workflow_id"] == str(scan_id)
+        mock_set_wf_id.assert_called_once_with(str(scan_id))
 
 
 class TestEnqueueContentScanBatch:
@@ -1776,13 +1789,13 @@ class TestEnqueueContentScanBatch:
         scan_id = uuid4()
         community_server_id = uuid4()
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "batch-wf-456"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "batch-wf-456"
 
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.content_scan_queue.enqueue",
+            return_value=mock_handle,
+        ):
             result = await enqueue_content_scan_batch(
                 orchestrator_workflow_id="orchestrator-wf-123",
                 scan_id=scan_id,
@@ -1798,11 +1811,10 @@ class TestEnqueueContentScanBatch:
     async def test_returns_none_on_enqueue_failure(self) -> None:
         from src.dbos_workflows.content_scan_workflow import enqueue_content_scan_batch
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.enqueue.side_effect = RuntimeError("Queue full")
-            mock_get_client.return_value = mock_client
-
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.content_scan_queue.enqueue",
+            side_effect=RuntimeError("Queue full"),
+        ):
             result = await enqueue_content_scan_batch(
                 orchestrator_workflow_id="wf-123",
                 scan_id=uuid4(),
@@ -1815,16 +1827,19 @@ class TestEnqueueContentScanBatch:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_enqueue_options_use_correct_queue(self) -> None:
-        from src.dbos_workflows.content_scan_workflow import enqueue_content_scan_batch
+    async def test_enqueues_correct_workflow_function(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            enqueue_content_scan_batch,
+            process_content_scan_batch,
+        )
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "wf-789"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "wf-789"
 
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.content_scan_queue.enqueue",
+            return_value=mock_handle,
+        ) as mock_enqueue:
             await enqueue_content_scan_batch(
                 orchestrator_workflow_id="wf-123",
                 scan_id=uuid4(),
@@ -1834,10 +1849,8 @@ class TestEnqueueContentScanBatch:
                 scan_types=["similarity"],
             )
 
-        call_args = mock_client.enqueue.call_args.args
-        options = call_args[0]
-        assert options["queue_name"] == "content_scan"
-        assert "process_content_scan_batch" in options["workflow_name"]
+        call_args = mock_enqueue.call_args.args
+        assert call_args[0] is process_content_scan_batch
 
 
 class TestSendAllTransmittedSignal:
@@ -1847,17 +1860,16 @@ class TestSendAllTransmittedSignal:
     async def test_sends_signal_and_returns_true(self) -> None:
         from src.dbos_workflows.content_scan_workflow import send_all_transmitted_signal
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_get_client.return_value = mock_client
-
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.DBOS.send",
+        ) as mock_send:
             result = await send_all_transmitted_signal(
                 orchestrator_workflow_id="wf-123",
                 messages_scanned=50,
             )
 
         assert result is True
-        mock_client.send.assert_called_once_with(
+        mock_send.assert_called_once_with(
             "wf-123",
             {"messages_scanned": 50},
             "all_transmitted",
@@ -1867,11 +1879,10 @@ class TestSendAllTransmittedSignal:
     async def test_returns_false_on_failure(self) -> None:
         from src.dbos_workflows.content_scan_workflow import send_all_transmitted_signal
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.send.side_effect = RuntimeError("Connection lost")
-            mock_get_client.return_value = mock_client
-
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.DBOS.send",
+            side_effect=RuntimeError("Connection lost"),
+        ):
             result = await send_all_transmitted_signal(
                 orchestrator_workflow_id="wf-123",
                 messages_scanned=50,
@@ -2510,13 +2521,12 @@ class TestEnqueueContentScanBatchRedisKey:
         community_server_id = uuid4()
         redis_key = "test:bulk_scan:messages:scan:1"
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "batch-wf-789"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "batch-wf-789"
 
+        with patch(
+            "asyncio.to_thread", new_callable=AsyncMock, return_value=mock_handle
+        ) as mock_to_thread:
             result = await enqueue_content_scan_batch(
                 orchestrator_workflow_id="orchestrator-wf-123",
                 scan_id=scan_id,
@@ -2527,21 +2537,20 @@ class TestEnqueueContentScanBatchRedisKey:
             )
 
         assert result == "batch-wf-789"
-        enqueue_args = mock_client.enqueue.call_args.args
-        assert enqueue_args[4] == 1
-        assert enqueue_args[5] == redis_key
+        enqueue_args = mock_to_thread.call_args.args
+        assert enqueue_args[5] == 1
+        assert enqueue_args[6] == redis_key
 
     @pytest.mark.asyncio
     async def test_messages_redis_key_is_required(self) -> None:
         from src.dbos_workflows.content_scan_workflow import enqueue_content_scan_batch
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "batch-wf-required"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "batch-wf-required"
 
+        with patch(
+            "asyncio.to_thread", new_callable=AsyncMock, return_value=mock_handle
+        ) as mock_to_thread:
             result = await enqueue_content_scan_batch(
                 orchestrator_workflow_id="orch",
                 scan_id=uuid4(),
@@ -2552,8 +2561,8 @@ class TestEnqueueContentScanBatchRedisKey:
             )
 
         assert result == "batch-wf-required"
-        enqueue_args = mock_client.enqueue.call_args.args
-        assert enqueue_args[5] == "test:required:key"
+        enqueue_args = mock_to_thread.call_args.args
+        assert enqueue_args[6] == "test:required:key"
 
 
 def _make_test_message(message_id: str = "msg_1", channel_id: str = "ch_1") -> dict:

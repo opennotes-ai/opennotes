@@ -1082,12 +1082,12 @@ async def setup_database(request):
         print(f"   settings.NATS_URL updated to: {settings.NATS_URL}")
         print(f"   [DEBUG] db_session: id(settings)={id(settings)}, NATS_URL={settings.NATS_URL}")
 
-    # Reset DBOS client to reconnect with updated DATABASE_URL
+    # Reset DBOS singleton to reconnect with updated DATABASE_URL
     import src.dbos_workflows.config as dbos_config_module
 
     dbos_config_module.settings = settings
-    dbos_config_module.reset_dbos_client()
-    print("   DBOS client reset for reconnection with updated DATABASE_URL")
+    dbos_config_module.reset_dbos()
+    print("   DBOS singleton reset for reconnection with updated DATABASE_URL")
 
     # Reset redis_client to reconnect with updated REDIS_URL
     # redis_client is initialized at module import with old REDIS_URL

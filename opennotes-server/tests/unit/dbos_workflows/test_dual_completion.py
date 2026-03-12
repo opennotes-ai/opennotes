@@ -186,12 +186,21 @@ class TestDualWorkflowIsolation:
         scan_id_a = uuid4()
         scan_id_b = uuid4()
 
-        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "wf-1"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "wf-1"
+
+        async def run_enqueue_closure(fn, *args, **kwargs):
+            """Execute the _enqueue closure and return mock_handle."""
+            fn()
+            return mock_handle
+
+        with (
+            patch("asyncio.to_thread", side_effect=run_enqueue_closure),
+            patch("src.dbos_workflows.content_scan_workflow.SetWorkflowID") as mock_set_wf_id,
+            patch("src.dbos_workflows.content_scan_workflow.SetEnqueueOptions") as mock_set_opts,
+            patch("src.dbos_workflows.content_scan_workflow.content_scan_queue") as mock_queue,
+        ):
+            mock_queue.enqueue.return_value = mock_handle
 
             await dispatch_content_scan_workflow(
                 scan_id=scan_id_a,
@@ -199,8 +208,10 @@ class TestDualWorkflowIsolation:
                 scan_types=["similarity"],
             )
 
-            first_options = mock_client.enqueue.call_args.args[0]
-            assert first_options["deduplication_id"] == str(scan_id_a)
+            first_wf_id = mock_set_wf_id.call_args.args[0]
+            first_dedup = mock_set_opts.call_args[1]["deduplication_id"]
+            assert first_wf_id == str(scan_id_a)
+            assert first_dedup == str(scan_id_a)
 
             await dispatch_content_scan_workflow(
                 scan_id=scan_id_b,
@@ -208,8 +219,10 @@ class TestDualWorkflowIsolation:
                 scan_types=["similarity"],
             )
 
-            second_options = mock_client.enqueue.call_args.args[0]
-            assert second_options["deduplication_id"] == str(scan_id_b)
+            second_wf_id = mock_set_wf_id.call_args.args[0]
+            second_dedup = mock_set_opts.call_args[1]["deduplication_id"]
+            assert second_wf_id == str(scan_id_b)
+            assert second_dedup == str(scan_id_b)
             assert str(scan_id_a) != str(scan_id_b)
 
     def test_finalize_called_with_correct_scan_id(self) -> None:

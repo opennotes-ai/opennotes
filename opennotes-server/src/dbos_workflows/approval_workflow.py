@@ -5,7 +5,7 @@ Batch processing is checkpointed per-batch, enabling resume from the last
 completed batch on workflow restart.
 
 The dispatch function lives in src/batch_jobs/import_service.py, which
-creates the BatchJob record and enqueues this workflow via DBOSClient.
+creates the BatchJob record and enqueues this workflow via approval_queue.enqueue().
 
 ``limit`` semantics
 -------------------
@@ -614,11 +614,10 @@ async def dispatch_bulk_approval_workflow(
     published_date_from: str | None = None,
     published_date_to: str | None = None,
 ) -> str:
-    """Dispatch a DBOS bulk approval workflow via DBOSClient.enqueue().
+    """Dispatch a DBOS bulk approval workflow via approval_queue.enqueue().
 
-    Mirrors the dispatch pattern used by rechunk workflows
-    (dispatch_dbos_rechunk_workflow). Enqueues the workflow on the
-    approval queue for durable processing by a DBOS worker.
+    Enqueues the workflow on the approval queue for durable processing
+    by a DBOS worker.
 
     Args:
         batch_job_id: UUID of the BatchJob record
@@ -640,18 +639,9 @@ async def dispatch_bulk_approval_workflow(
     """
     import asyncio
 
-    from dbos import EnqueueOptions
-
-    from src.dbos_workflows.config import get_dbos_client
-
-    client = get_dbos_client()
-    options: EnqueueOptions = {
-        "queue_name": "approval",
-        "workflow_name": BULK_APPROVAL_WORKFLOW_NAME,
-    }
     handle = await asyncio.to_thread(
-        client.enqueue,
-        options,
+        approval_queue.enqueue,
+        bulk_approval_workflow,
         str(batch_job_id),
         threshold,
         auto_promote,

@@ -2,8 +2,8 @@
 
 Tests cover:
 - Deprecated TaskIQ stubs return {"status": "deprecated"}
-- start_ai_note_workflow calls DBOSClient.enqueue correctly
-- call_persist_audit_log calls DBOSClient.enqueue correctly
+- start_ai_note_workflow calls content_monitoring_queue.enqueue() correctly
+- call_persist_audit_log calls content_monitoring_queue.enqueue() correctly
 - Audit middleware calls call_persist_audit_log instead of NATS
 """
 
@@ -65,18 +65,15 @@ class TestDeprecatedTaskIQStubs:
 
 
 class TestStartAINoteWorkflow:
-    def test_calls_dbos_client_enqueue(self):
-        mock_client = MagicMock()
+    def test_calls_queue_enqueue(self):
+        from src.dbos_workflows.content_monitoring_workflows import (
+            ai_note_generation_workflow,
+            start_ai_note_workflow,
+        )
 
         with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
-        ):
-            from src.dbos_workflows.content_monitoring_workflows import (
-                AI_NOTE_GENERATION_WORKFLOW_NAME,
-                start_ai_note_workflow,
-            )
-
+            "src.dbos_workflows.content_monitoring_workflows.content_monitoring_queue"
+        ) as mock_queue:
             start_ai_note_workflow(
                 community_server_id="platform123",
                 request_id="req456",
@@ -86,13 +83,10 @@ class TestStartAINoteWorkflow:
                 similarity_score=0.85,
             )
 
-            mock_client.enqueue.assert_called_once()
-            call_args = mock_client.enqueue.call_args
-            options = call_args[0][0]
-            assert options["queue_name"] == "content_monitoring"
-            assert options["workflow_name"] == AI_NOTE_GENERATION_WORKFLOW_NAME
-            positional = call_args[0][1:]
-            assert positional == (
+            mock_queue.enqueue.assert_called_once()
+            call_args = mock_queue.enqueue.call_args
+            assert call_args.args[0] is ai_note_generation_workflow
+            assert call_args.args[1:] == (
                 "platform123",
                 "req456",
                 "test claim",
@@ -103,7 +97,10 @@ class TestStartAINoteWorkflow:
             )
 
     def test_serializes_moderation_metadata_to_json(self):
-        mock_client = MagicMock()
+        from src.dbos_workflows.content_monitoring_workflows import (
+            start_ai_note_workflow,
+        )
+
         moderation_metadata = {
             "categories": {"harassment": True},
             "scores": {"harassment": 0.92},
@@ -111,13 +108,8 @@ class TestStartAINoteWorkflow:
         }
 
         with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
-        ):
-            from src.dbos_workflows.content_monitoring_workflows import (
-                start_ai_note_workflow,
-            )
-
+            "src.dbos_workflows.content_monitoring_workflows.content_monitoring_queue"
+        ) as mock_queue:
             start_ai_note_workflow(
                 community_server_id="platform123",
                 request_id="req789",
@@ -126,25 +118,21 @@ class TestStartAINoteWorkflow:
                 moderation_metadata=moderation_metadata,
             )
 
-            call_args = mock_client.enqueue.call_args
-            positional = call_args[0][1:]
-            metadata_json = positional[6]
+            call_args = mock_queue.enqueue.call_args
+            metadata_json = call_args.args[7]
             assert json.loads(metadata_json) == moderation_metadata
 
 
 class TestCallPersistAuditLog:
-    def test_calls_dbos_client_enqueue(self):
-        mock_client = MagicMock()
+    def test_calls_queue_enqueue(self):
+        from src.dbos_workflows.content_monitoring_workflows import (
+            _audit_log_wrapper_workflow,
+            call_persist_audit_log,
+        )
 
         with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
-        ):
-            from src.dbos_workflows.content_monitoring_workflows import (
-                AUDIT_LOG_WORKFLOW_NAME,
-                call_persist_audit_log,
-            )
-
+            "src.dbos_workflows.content_monitoring_workflows.content_monitoring_queue"
+        ) as mock_queue:
             call_persist_audit_log(
                 user_id="user-123",
                 action="POST /api/notes",
@@ -156,13 +144,10 @@ class TestCallPersistAuditLog:
                 created_at_iso="2024-01-15T10:30:00+00:00",
             )
 
-            mock_client.enqueue.assert_called_once()
-            call_args = mock_client.enqueue.call_args
-            options = call_args[0][0]
-            assert options["queue_name"] == "content_monitoring"
-            assert options["workflow_name"] == AUDIT_LOG_WORKFLOW_NAME
-            positional = call_args[0][1:]
-            assert positional == (
+            mock_queue.enqueue.assert_called_once()
+            call_args = mock_queue.enqueue.call_args
+            assert call_args.args[0] is _audit_log_wrapper_workflow
+            assert call_args.args[1:] == (
                 "user-123",
                 "POST /api/notes",
                 "notes",
@@ -174,26 +159,24 @@ class TestCallPersistAuditLog:
             )
 
     def test_handles_none_optional_fields(self):
-        mock_client = MagicMock()
+        from src.dbos_workflows.content_monitoring_workflows import (
+            _audit_log_wrapper_workflow,
+            call_persist_audit_log,
+        )
 
         with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
-        ):
-            from src.dbos_workflows.content_monitoring_workflows import (
-                call_persist_audit_log,
-            )
-
+            "src.dbos_workflows.content_monitoring_workflows.content_monitoring_queue"
+        ) as mock_queue:
             call_persist_audit_log(
                 user_id=None,
                 action="system.startup",
                 resource="server",
             )
 
-            mock_client.enqueue.assert_called_once()
-            call_args = mock_client.enqueue.call_args
-            positional = call_args[0][1:]
-            assert positional == (
+            mock_queue.enqueue.assert_called_once()
+            call_args = mock_queue.enqueue.call_args
+            assert call_args.args[0] is _audit_log_wrapper_workflow
+            assert call_args.args[1:] == (
                 None,
                 "system.startup",
                 "server",

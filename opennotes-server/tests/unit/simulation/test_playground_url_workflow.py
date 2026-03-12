@@ -279,22 +279,26 @@ class TestRunPlaygroundUrlExtraction:
 @pytest.mark.unit
 class TestDispatchPlaygroundUrlExtraction:
     @pytest.mark.asyncio
-    async def test_enqueues_workflow_via_dbos_client(self):
+    async def test_enqueues_workflow_via_queue(self):
         from src.simulation.workflows.playground_url_workflow import (
             dispatch_playground_url_extraction,
+            run_playground_url_extraction,
         )
 
         mock_handle = MagicMock()
-        mock_handle.workflow_id = "playground-urls-fakeid"
-        mock_client = MagicMock()
-        mock_client.enqueue.return_value = mock_handle
+        mock_handle.get_workflow_id.return_value = "playground-urls-fakeid"
 
         cs_id = uuid4()
 
-        with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
+        with (
+            patch(
+                "src.simulation.workflows.playground_url_workflow.playground_url_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID"),
+            patch("dbos.SetEnqueueOptions"),
+            patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             wf_id = await dispatch_playground_url_extraction(
                 urls=["https://example.com/a"],
                 community_server_id=cs_id,
@@ -302,10 +306,9 @@ class TestDispatchPlaygroundUrlExtraction:
             )
 
         assert wf_id == "playground-urls-fakeid"
-        mock_client.enqueue.assert_called_once()
-        call_args = mock_client.enqueue.call_args
-        options = call_args[0][0]
-        assert options["queue_name"] == "playground_url_extraction"
+        mock_queue.enqueue.assert_called_once()
+        call_args = mock_queue.enqueue.call_args
+        assert call_args[0][0] is run_playground_url_extraction
 
     @pytest.mark.asyncio
     async def test_passes_serialized_urls(self):
@@ -316,22 +319,25 @@ class TestDispatchPlaygroundUrlExtraction:
         )
 
         mock_handle = MagicMock()
-        mock_handle.workflow_id = "wf-test"
-        mock_client = MagicMock()
-        mock_client.enqueue.return_value = mock_handle
+        mock_handle.get_workflow_id.return_value = "wf-test"
 
         urls = ["https://example.com/1", "https://example.com/2"]
 
-        with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
+        with (
+            patch(
+                "src.simulation.workflows.playground_url_workflow.playground_url_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID"),
+            patch("dbos.SetEnqueueOptions"),
+            patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             await dispatch_playground_url_extraction(
                 urls=urls,
                 community_server_id=uuid4(),
                 requested_by="test-user",
             )
 
-        call_args = mock_client.enqueue.call_args
+        call_args = mock_queue.enqueue.call_args
         urls_json_arg = call_args[0][1]
         assert json.loads(urls_json_arg) == urls

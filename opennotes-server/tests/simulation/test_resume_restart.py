@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pendulum
 import pytest
@@ -19,15 +19,13 @@ class TestResumeWithoutBody:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-resume"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("paused")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
 
         assert response.status_code == 200
@@ -46,15 +44,13 @@ class TestResumeWithResetTurns:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -84,16 +80,14 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agent = await agent_instance_factory(run["id"], state="completed", turn_count=15)
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -128,8 +122,6 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agent = await agent_instance_factory(
@@ -140,9 +132,9 @@ class TestResumeWithResetTurns:
         )
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -178,16 +170,14 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agent = await agent_instance_factory(run["id"], state="completed", turn_count=10)
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -222,8 +212,6 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         removed_agent = await agent_instance_factory(
@@ -232,9 +220,9 @@ class TestResumeWithResetTurns:
         active_agent = await agent_instance_factory(run["id"], state="completed", turn_count=10)
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -271,15 +259,13 @@ class TestResumeWithResetTurns:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed", restart_count=2)
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -310,8 +296,6 @@ class TestResumeWithResetTurns:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
 
@@ -335,14 +319,14 @@ class TestResumeWithResetTurns:
 
         with (
             patch(
-                "src.simulation.simulations_jsonapi_router.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.simulations_jsonapi_router.DBOS",
+            ) as mock_dbos,
             patch(
                 "src.simulation.simulations_jsonapi_router.snapshot_restart_state",
                 new_callable=AsyncMock,
             ) as mock_snapshot,
         ):
+            mock_dbos.list_workflows.return_value = []
             mock_snapshot.return_value = RestartSnapshot(config_id=config_id, log_ids=[])
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
@@ -388,17 +372,15 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed", cumulative_turns=50)
         await agent_instance_factory(run["id"], state="completed", turn_count=10)
         await agent_instance_factory(run["id"], state="completed", turn_count=5)
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -429,15 +411,13 @@ class TestResumeWithResetTurns:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed", generation=3)
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -468,15 +448,13 @@ class TestResumeWithResetTurns:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -507,15 +485,13 @@ class TestResumeWithResetTurns:
         self, mock_dispatch, admin_auth_client, simulation_run_factory
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -550,16 +526,14 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("paused")
         agent = await agent_instance_factory(run["id"], state="paused", turn_count=8)
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -606,16 +580,14 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("failed")
         agent = await agent_instance_factory(run["id"], state="active", turn_count=12)
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -663,8 +635,6 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agent = await agent_instance_factory(
@@ -672,9 +642,9 @@ class TestResumeWithResetTurns:
         )
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response1 = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -724,9 +694,9 @@ class TestResumeWithResetTurns:
             await session.commit()
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response2 = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -770,8 +740,6 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agent = await agent_instance_factory(
@@ -779,9 +747,9 @@ class TestResumeWithResetTurns:
         )
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -816,8 +784,6 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agent = await agent_instance_factory(
@@ -825,9 +791,9 @@ class TestResumeWithResetTurns:
         )
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={
@@ -862,8 +828,6 @@ class TestResumeWithResetTurns:
         agent_instance_factory,
     ):
         mock_dispatch.return_value = "wf-restart"
-        mock_client = MagicMock()
-        mock_client.list_workflows.return_value = []
 
         run = await simulation_run_factory("completed")
         agent = await agent_instance_factory(
@@ -871,9 +835,9 @@ class TestResumeWithResetTurns:
         )
 
         with patch(
-            "src.simulation.simulations_jsonapi_router.get_dbos_client",
-            return_value=mock_client,
-        ):
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.return_value = []
             response = await admin_auth_client.post(
                 f"/api/v2/simulations/{run['id']}/resume",
                 json={

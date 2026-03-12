@@ -504,26 +504,18 @@ class TestPromoteCandidatesWorkflow:
 
 class TestDispatchImportWorkflow:
     @pytest.mark.asyncio
-    async def test_dispatches_via_dbos_client(self) -> None:
+    async def test_dispatches_via_queue(self) -> None:
         from src.dbos_workflows.import_workflow import dispatch_import_workflow
 
         batch_job_id = uuid4()
         mock_handle = MagicMock()
         mock_handle.workflow_id = "wf-123"
-        mock_client = MagicMock()
-        mock_client.enqueue.return_value = mock_handle
 
         mock_to_thread = AsyncMock(return_value=mock_handle)
 
-        with (
-            patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
-            patch(
-                "src.dbos_workflows.import_workflow.asyncio.to_thread",
-                mock_to_thread,
-            ),
+        with patch(
+            "src.dbos_workflows.import_workflow.asyncio.to_thread",
+            mock_to_thread,
         ):
             result = await dispatch_import_workflow(
                 batch_job_id=batch_job_id,
@@ -543,7 +535,7 @@ class TestDispatchImportWorkflow:
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
+                "src.dbos_workflows.import_workflow.import_pipeline_queue.enqueue",
                 side_effect=ConnectionError("DBOS unavailable"),
             ),
             pytest.raises(ConnectionError, match="DBOS unavailable"),
@@ -558,26 +550,18 @@ class TestDispatchImportWorkflow:
 
 class TestDispatchScrapeWorkflow:
     @pytest.mark.asyncio
-    async def test_dispatches_via_dbos_client(self) -> None:
+    async def test_dispatches_via_queue(self) -> None:
         from src.dbos_workflows.import_workflow import dispatch_scrape_workflow
 
         batch_job_id = uuid4()
         mock_handle = MagicMock()
         mock_handle.workflow_id = "wf-456"
-        mock_client = MagicMock()
-        mock_client.enqueue.return_value = mock_handle
 
         mock_to_thread = AsyncMock(return_value=mock_handle)
 
-        with (
-            patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
-            patch(
-                "src.dbos_workflows.import_workflow.asyncio.to_thread",
-                mock_to_thread,
-            ),
+        with patch(
+            "src.dbos_workflows.import_workflow.asyncio.to_thread",
+            mock_to_thread,
         ):
             result = await dispatch_scrape_workflow(
                 batch_job_id=batch_job_id,
@@ -597,7 +581,7 @@ class TestDispatchScrapeWorkflow:
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
+                "src.dbos_workflows.import_workflow.import_pipeline_queue.enqueue",
                 side_effect=RuntimeError("Connection refused"),
             ),
             pytest.raises(RuntimeError, match="Connection refused"),
@@ -611,26 +595,18 @@ class TestDispatchScrapeWorkflow:
 
 class TestDispatchPromoteWorkflow:
     @pytest.mark.asyncio
-    async def test_dispatches_via_dbos_client(self) -> None:
+    async def test_dispatches_via_queue(self) -> None:
         from src.dbos_workflows.import_workflow import dispatch_promote_workflow
 
         batch_job_id = uuid4()
         mock_handle = MagicMock()
         mock_handle.workflow_id = "wf-789"
-        mock_client = MagicMock()
-        mock_client.enqueue.return_value = mock_handle
 
         mock_to_thread = AsyncMock(return_value=mock_handle)
 
-        with (
-            patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
-            patch(
-                "src.dbos_workflows.import_workflow.asyncio.to_thread",
-                mock_to_thread,
-            ),
+        with patch(
+            "src.dbos_workflows.import_workflow.asyncio.to_thread",
+            mock_to_thread,
         ):
             result = await dispatch_promote_workflow(
                 batch_job_id=batch_job_id,
@@ -648,7 +624,7 @@ class TestDispatchPromoteWorkflow:
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
+                "src.dbos_workflows.import_workflow.import_pipeline_queue.enqueue",
                 side_effect=TimeoutError("DBOS timeout"),
             ),
             pytest.raises(TimeoutError, match="DBOS timeout"),

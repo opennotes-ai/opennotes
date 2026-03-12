@@ -12,18 +12,16 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy.pool import NullPool
 
 from src.config import get_settings
 from src.dbos_workflows.config import (
     _derive_http_otlp_endpoint,
     create_dbos_instance,
     destroy_dbos,
-    destroy_dbos_client,
     get_dbos,
-    get_dbos_client,
     get_dbos_config,
     reset_dbos,
-    reset_dbos_client,
     validate_dbos_connection,
 )
 
@@ -141,11 +139,8 @@ class TestGetDbosConfig:
 
     def test_returns_valid_config_dict(self) -> None:
         """Config dict includes required DBOS fields."""
-        with (
-            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
-            patch("src.dbos_workflows.config.settings") as mock_settings,
-        ):
-            mock_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = "Test Project"
             mock_settings.OTLP_ENDPOINT = None
@@ -161,11 +156,8 @@ class TestGetDbosConfig:
 
     def test_converts_asyncpg_url_to_sync(self) -> None:
         """Async PostgreSQL URL is converted to sync format for DBOS."""
-        with (
-            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
-            patch("src.dbos_workflows.config.settings") as mock_settings,
-        ):
-            mock_url.return_value = "postgresql://user:pass@host:5432/db"
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host:5432/db"
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = None
             mock_settings.OTLP_ENDPOINT = None
@@ -182,11 +174,8 @@ class TestGetDbosConfig:
 
     def test_app_name_uses_dbos_app_name_setting(self) -> None:
         """Config uses DBOS_APP_NAME setting directly."""
-        with (
-            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
-            patch("src.dbos_workflows.config.settings") as mock_settings,
-        ):
-            mock_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
             mock_settings.DBOS_APP_NAME = "custom-dbos-app"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.DBOS_CONDUCTOR_KEY = None
@@ -199,33 +188,24 @@ class TestGetDbosConfig:
 
     def test_raises_if_database_url_missing(self) -> None:
         """Raises ValueError if DATABASE_URL is not configured."""
-        with (
-            patch(
-                "src.dbos_workflows.config.get_direct_sync_url",
-                side_effect=ValueError("DATABASE_URL environment variable required"),
-            ),
-            pytest.raises(ValueError, match="DATABASE_URL"),
-        ):
-            get_dbos_config()
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = None
+
+            with pytest.raises(ValueError, match="DATABASE_URL"):
+                get_dbos_config()
 
     def test_raises_if_database_url_empty(self) -> None:
         """Raises ValueError if DATABASE_URL is empty string."""
-        with (
-            patch(
-                "src.dbos_workflows.config.get_direct_sync_url",
-                side_effect=ValueError("DATABASE_URL environment variable required"),
-            ),
-            pytest.raises(ValueError, match="DATABASE_URL"),
-        ):
-            get_dbos_config()
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = ""
+
+            with pytest.raises(ValueError, match="DATABASE_URL"):
+                get_dbos_config()
 
     def test_includes_otlp_config_when_endpoint_set(self) -> None:
         """Config includes OTLP settings when OTLP_ENDPOINT is configured."""
-        with (
-            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
-            patch("src.dbos_workflows.config.settings") as mock_settings,
-        ):
-            mock_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
             mock_settings.OTLP_ENDPOINT = "http://tempo:4317"
             mock_settings.OTEL_SERVICE_NAME = "opennotes-server"
             mock_settings.PROJECT_NAME = "Open Notes Server"
@@ -241,11 +221,8 @@ class TestGetDbosConfig:
 
     def test_disables_otlp_when_no_endpoint(self) -> None:
         """Config disables OTLP when OTLP_ENDPOINT is not set."""
-        with (
-            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
-            patch("src.dbos_workflows.config.settings") as mock_settings,
-        ):
-            mock_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.OTEL_SERVICE_NAME = None
             mock_settings.PROJECT_NAME = "Open Notes Server"
@@ -259,12 +236,58 @@ class TestGetDbosConfig:
             assert "otlp_traces_endpoints" not in config
             assert "otlp_logs_endpoints" not in config
 
+    def test_includes_admin_port_from_settings(self) -> None:
+        """Config includes admin_port from DBOS_ADMIN_PORT setting."""
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.DBOS_APP_NAME = "opennotes-server"
+            mock_settings.DBOS_ADMIN_PORT = 9999
+            mock_settings.DBOS_RUN_ADMIN_SERVER = True
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
+
+            config: dict[str, Any] = dict(get_dbos_config())
+
+            assert config["admin_port"] == 9999
+
+    def test_includes_run_admin_server_from_settings(self) -> None:
+        """Config includes run_admin_server from DBOS_RUN_ADMIN_SERVER setting."""
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.DBOS_APP_NAME = "opennotes-server"
+            mock_settings.DBOS_ADMIN_PORT = 3001
+            mock_settings.DBOS_RUN_ADMIN_SERVER = False
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
+
+            config: dict[str, Any] = dict(get_dbos_config())
+
+            assert config["run_admin_server"] is False
+
+    def test_admin_port_defaults(self) -> None:
+        """Config uses default admin_port and run_admin_server values."""
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.DBOS_APP_NAME = "opennotes-server"
+            mock_settings.DBOS_ADMIN_PORT = 3001
+            mock_settings.DBOS_RUN_ADMIN_SERVER = True
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
+
+            config: dict[str, Any] = dict(get_dbos_config())
+
+            assert config["admin_port"] == 3001
+            assert config["run_admin_server"] is True
+
     def test_config_does_not_include_conductor_key(self) -> None:
-        with (
-            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
-            patch("src.dbos_workflows.config.settings") as mock_settings,
-        ):
-            mock_url.return_value = "postgresql://user:pass@localhost:5432/testdb"
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = "Test Project"
             mock_settings.OTLP_ENDPOINT = None
@@ -274,7 +297,9 @@ class TestGetDbosConfig:
 
             config: dict[str, Any] = dict(get_dbos_config())
 
-            assert "conductor_key" not in config
+            assert (
+                "conductor_key" not in config
+            )  # conductor_key is set in create_dbos_instance, not get_dbos_config
 
 
 class TestDbosInstance:
@@ -413,107 +438,6 @@ class TestDbosInstance:
             mock_dbos_class.destroy.assert_not_called()
 
 
-class TestDbosClientSingleton:
-    """Tests for DBOSClient singleton management."""
-
-    def test_get_dbos_client_returns_client_instance(self) -> None:
-        """get_dbos_client() returns a DBOSClient instance."""
-        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
-            mock_client = MagicMock()
-            mock_client_class.return_value = mock_client
-
-            reset_dbos_client()
-            result = get_dbos_client()
-
-            assert result == mock_client
-            mock_client_class.assert_called_once()
-
-    def test_get_dbos_client_returns_same_instance(self) -> None:
-        """Subsequent calls return the same singleton instance."""
-        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
-            mock_client = MagicMock()
-            mock_client_class.return_value = mock_client
-
-            reset_dbos_client()
-            first = get_dbos_client()
-            second = get_dbos_client()
-
-            assert first is second
-            assert mock_client_class.call_count == 1
-
-    def test_reset_dbos_client_clears_instance(self) -> None:
-        """reset_dbos_client() clears the cached instance."""
-        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
-            mock_client_1 = MagicMock()
-            mock_client_2 = MagicMock()
-            mock_client_class.side_effect = [mock_client_1, mock_client_2]
-
-            reset_dbos_client()
-            first = get_dbos_client()
-            reset_dbos_client()
-            second = get_dbos_client()
-
-            assert first is not second
-            assert mock_client_class.call_count == 2
-
-    def test_destroy_dbos_client_calls_destroy(self) -> None:
-        """destroy_dbos_client() calls destroy() on the client."""
-        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
-            mock_client = MagicMock()
-            mock_client_class.return_value = mock_client
-
-            reset_dbos_client()
-            get_dbos_client()
-            destroy_dbos_client()
-
-            mock_client.destroy.assert_called_once()
-
-    def test_destroy_dbos_client_clears_instance(self) -> None:
-        """destroy_dbos_client() clears the cached instance after destroying."""
-        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
-            mock_client_1 = MagicMock()
-            mock_client_2 = MagicMock()
-            mock_client_class.side_effect = [mock_client_1, mock_client_2]
-
-            reset_dbos_client()
-            first = get_dbos_client()
-            assert first is mock_client_1
-            assert mock_client_class.call_count == 1
-
-            destroy_dbos_client()
-            second = get_dbos_client()
-
-            assert second is mock_client_2
-            assert first is not second
-            assert mock_client_class.call_count == 2
-
-    def test_destroy_dbos_client_clears_instance_even_on_exception(self) -> None:
-        """destroy_dbos_client() clears the cache even if destroy() raises."""
-        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
-            mock_client_1 = MagicMock()
-            mock_client_1.destroy.side_effect = RuntimeError("Connection lost")
-            mock_client_2 = MagicMock()
-            mock_client_class.side_effect = [mock_client_1, mock_client_2]
-
-            reset_dbos_client()
-            get_dbos_client()
-
-            with pytest.raises(RuntimeError, match="Connection lost"):
-                destroy_dbos_client()
-
-            second = get_dbos_client()
-            assert second is mock_client_2
-            assert mock_client_class.call_count == 2
-
-    def test_destroy_dbos_client_noop_when_no_instance(self) -> None:
-        """destroy_dbos_client() is a no-op when no instance exists."""
-        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
-            reset_dbos_client()
-            destroy_dbos_client()
-
-            mock_client_class.return_value.destroy.assert_not_called()
-
-
 class TestThreadSafety:
     """Tests for thread-safe singleton access."""
 
@@ -546,112 +470,67 @@ class TestThreadSafety:
             assert all(r is mock_instance for r in results)
             assert mock_dbos_class.call_count == 1
 
-    def test_get_dbos_client_thread_safe(self) -> None:
-        """get_dbos_client() is thread-safe under concurrent access."""
-        import threading
 
-        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
-            mock_client = MagicMock()
-            mock_client_class.return_value = mock_client
+class TestDbosNullPoolCompatibility:
+    """Tests for DBOS NullPool compatibility on supported upstream releases."""
 
-            reset_dbos_client()
-            results: list[Any] = []
-            errors: list[Exception] = []
+    def test_uses_upstream_configure_db_engine_parameters(self) -> None:
+        from dbos._dbos_config import configure_db_engine_parameters
 
-            def call_get_client() -> None:
-                try:
-                    results.append(get_dbos_client())
-                except Exception as e:
-                    errors.append(e)
+        assert configure_db_engine_parameters.__module__ == "dbos._dbos_config"
 
-            threads = [threading.Thread(target=call_get_client) for _ in range(10)]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join()
+    def test_strips_pool_kwargs_when_nullpool(self) -> None:
+        """DBOS strips pool-sizing kwargs after merging defaults for NullPool."""
+        from dbos._dbos_config import DatabaseConfig, configure_db_engine_parameters
 
-            assert len(errors) == 0
-            assert len(results) == 10
-            assert all(r is mock_client for r in results)
-            assert mock_client_class.call_count == 1
+        data: DatabaseConfig = {
+            "db_engine_kwargs": {
+                "poolclass": NullPool,
+                "connect_args": {"prepare_threshold": None},
+            },
+        }
+        configure_db_engine_parameters(data)
 
+        engine_kwargs = data["db_engine_kwargs"]
+        assert engine_kwargs is not None
+        assert engine_kwargs["poolclass"] is NullPool
+        for forbidden_key in ("pool_timeout", "max_overflow", "pool_size", "pool_pre_ping"):
+            assert forbidden_key not in engine_kwargs, (
+                f"{forbidden_key} must not be in db_engine_kwargs when NullPool is configured"
+            )
 
-class TestDbosClientEngineConfiguration:
-    """Tests for DBOSClient engine bypass fix (TASK-1213.01)."""
+    def test_preserves_pool_kwargs_without_nullpool(self) -> None:
+        """DBOS preserves pool kwargs for normal pool classes."""
+        from dbos._dbos_config import DatabaseConfig, configure_db_engine_parameters
 
-    def test_get_dbos_client_passes_system_database_engine(self) -> None:
-        """get_dbos_client() passes a pre-configured engine via system_database_engine."""
-        with (
-            patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
-            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
-            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
-        ):
-            mock_url.return_value = "postgresql://user:pass@host/db"
-            mock_engine = MagicMock()
-            mock_create_engine.return_value = mock_engine
-            mock_client = MagicMock()
-            mock_client_class.return_value = mock_client
+        data: DatabaseConfig = {
+            "db_engine_kwargs": {
+                "connect_args": {"prepare_threshold": None},
+            },
+        }
+        configure_db_engine_parameters(data)
 
-            reset_dbos_client()
-            get_dbos_client()
+        engine_kwargs = data["db_engine_kwargs"]
+        assert engine_kwargs is not None
+        assert "pool_timeout" in engine_kwargs
+        assert "pool_size" in engine_kwargs
 
-            call_kwargs = mock_client_class.call_args.kwargs
-            assert "system_database_engine" in call_kwargs
-            assert call_kwargs["system_database_engine"] is mock_engine
-            assert "system_database_url" not in call_kwargs
+    def test_strips_from_sys_db_engine_kwargs_too(self) -> None:
+        """DBOS also strips pool kwargs from sys_db_engine_kwargs."""
+        from dbos._dbos_config import DatabaseConfig, configure_db_engine_parameters
 
-    def test_get_dbos_client_engine_does_not_use_nullpool(self) -> None:
-        """Engine passed to DBOSClient uses default QueuePool (no NullPool)."""
-        with (
-            patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
-            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
-            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
-        ):
-            mock_url.return_value = "postgresql://user:pass@host/db"
-            mock_client_class.return_value = MagicMock()
-            mock_create_engine.return_value = MagicMock()
+        data: DatabaseConfig = {
+            "db_engine_kwargs": {
+                "poolclass": NullPool,
+                "connect_args": {"prepare_threshold": None},
+            },
+        }
+        configure_db_engine_parameters(data)
 
-            reset_dbos_client()
-            get_dbos_client()
-
-            create_engine_kwargs = mock_create_engine.call_args
-            assert "poolclass" not in create_engine_kwargs.kwargs
-
-    def test_get_dbos_client_engine_has_prepare_threshold_none(self) -> None:
-        """Engine passed to DBOSClient has prepare_threshold=None in connect_args."""
-        with (
-            patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
-            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
-            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
-        ):
-            mock_url.return_value = "postgresql://user:pass@host/db"
-            mock_client_class.return_value = MagicMock()
-            mock_create_engine.return_value = MagicMock()
-
-            reset_dbos_client()
-            get_dbos_client()
-
-            create_engine_kwargs = mock_create_engine.call_args
-            connect_args = create_engine_kwargs.kwargs.get("connect_args", {})
-            assert connect_args.get("prepare_threshold") is None
-
-    def test_get_dbos_client_engine_uses_sync_url(self) -> None:
-        """Engine is created with sync PostgreSQL URL (not asyncpg)."""
-        with (
-            patch("src.dbos_workflows.config.DBOSClient") as mock_client_class,
-            patch("src.dbos_workflows.config.sa.create_engine") as mock_create_engine,
-            patch("src.dbos_workflows.config.get_direct_sync_url") as mock_url,
-        ):
-            mock_url.return_value = "postgresql://user:pass@host/db"
-            mock_client_class.return_value = MagicMock()
-            mock_create_engine.return_value = MagicMock()
-
-            reset_dbos_client()
-            get_dbos_client()
-
-            url_arg = mock_create_engine.call_args.args[0]
-            assert "postgresql://" in url_arg
-            assert "asyncpg" not in url_arg
+        sys_kwargs = data.get("sys_db_engine_kwargs", {})
+        assert sys_kwargs is not None
+        for forbidden_key in ("pool_timeout", "max_overflow", "pool_size", "pool_pre_ping"):
+            assert forbidden_key not in sys_kwargs
 
 
 class TestValidateDbosConnection:

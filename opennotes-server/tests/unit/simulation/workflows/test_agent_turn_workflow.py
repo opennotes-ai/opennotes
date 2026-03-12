@@ -1230,90 +1230,116 @@ class TestRunAgentTurnWorkflow:
 
 class TestDispatchAgentTurn:
     @pytest.mark.asyncio
-    async def test_dispatch_agent_turn_enqueues_via_dbos_client(self) -> None:
-        from src.simulation.workflows.agent_turn_workflow import dispatch_agent_turn
-
-        mock_client = MagicMock()
-        mock_handle = MagicMock()
-        mock_handle.workflow_id = "turn-abc-gen1-5-retry0"
-        mock_client.enqueue.return_value = mock_handle
+    async def test_dispatch_agent_turn_enqueues_via_queue(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import (
+            dispatch_agent_turn,
+            run_agent_turn,
+        )
 
         agent_instance_id = uuid4()
         turn_number = 5
+        expected_wf_id = f"turn-{agent_instance_id}-gen1-{turn_number}-retry0"
+
+        mock_handle = MagicMock()
+        mock_handle.get_workflow_id.return_value = expected_wf_id
+
+        captured_wf_ids: list[str] = []
+        captured_dedup_ids: list[str] = []
+
+        def capture_set_wf_id(wf_id):
+            captured_wf_ids.append(wf_id)
+            return MagicMock()
+
+        def capture_set_enqueue_opts(*, deduplication_id):
+            captured_dedup_ids.append(deduplication_id)
+            return MagicMock()
 
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.workflows.agent_turn_workflow.simulation_turn_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID", side_effect=capture_set_wf_id),
+            patch("dbos.SetEnqueueOptions", side_effect=capture_set_enqueue_opts),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             workflow_id = await dispatch_agent_turn(agent_instance_id, turn_number)
 
-        assert workflow_id == "turn-abc-gen1-5-retry0"
-        mock_client.enqueue.assert_called_once()
-
-        enqueue_args = mock_client.enqueue.call_args
-        options = enqueue_args.args[0]
-        assert options["queue_name"] == "simulation_turn"
-        assert options["workflow_name"] == "run_agent_turn"
-        assert options["workflow_id"] == f"turn-{agent_instance_id}-gen1-{turn_number}-retry0"
-        assert options["deduplication_id"] == f"turn-{agent_instance_id}-gen1-{turn_number}-retry0"
-
-        assert enqueue_args.args[1] == str(agent_instance_id)
+        assert workflow_id == expected_wf_id
+        mock_queue.enqueue.assert_called_once_with(run_agent_turn, str(agent_instance_id))
+        assert captured_wf_ids[0] == expected_wf_id
+        assert captured_dedup_ids[0] == expected_wf_id
 
     @pytest.mark.asyncio
     async def test_dispatch_agent_turn_idempotent_id(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import dispatch_agent_turn
 
-        mock_client = MagicMock()
         mock_handle = MagicMock()
-        mock_handle.workflow_id = "test-wf"
-        mock_client.enqueue.return_value = mock_handle
+        mock_handle.get_workflow_id.return_value = "test-wf"
 
         agent_id = uuid4()
 
+        captured_wf_ids: list[str] = []
+        captured_dedup_ids: list[str] = []
+
+        def capture_set_wf_id(wf_id):
+            captured_wf_ids.append(wf_id)
+            return MagicMock()
+
+        def capture_set_enqueue_opts(*, deduplication_id):
+            captured_dedup_ids.append(deduplication_id)
+            return MagicMock()
+
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.workflows.agent_turn_workflow.simulation_turn_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID", side_effect=capture_set_wf_id),
+            patch("dbos.SetEnqueueOptions", side_effect=capture_set_enqueue_opts),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             await dispatch_agent_turn(agent_id, 7)
             await dispatch_agent_turn(agent_id, 7)
 
-        call1_options = mock_client.enqueue.call_args_list[0].args[0]
-        call2_options = mock_client.enqueue.call_args_list[1].args[0]
-        assert call1_options["workflow_id"] == call2_options["workflow_id"]
-        assert call1_options["deduplication_id"] == call2_options["deduplication_id"]
+        assert captured_wf_ids[0] == captured_wf_ids[1]
+        assert captured_dedup_ids[0] == captured_dedup_ids[1]
 
     @pytest.mark.asyncio
     async def test_dispatch_agent_turn_retry_count_changes_dedup_id(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import dispatch_agent_turn
 
-        mock_client = MagicMock()
         mock_handle = MagicMock()
-        mock_handle.workflow_id = "test-wf"
-        mock_client.enqueue.return_value = mock_handle
+        mock_handle.get_workflow_id.return_value = "test-wf"
 
         agent_id = uuid4()
 
+        captured_wf_ids: list[str] = []
+        captured_dedup_ids: list[str] = []
+
+        def capture_set_wf_id(wf_id):
+            captured_wf_ids.append(wf_id)
+            return MagicMock()
+
+        def capture_set_enqueue_opts(*, deduplication_id):
+            captured_dedup_ids.append(deduplication_id)
+            return MagicMock()
+
         with (
             patch(
-                "src.dbos_workflows.config.get_dbos_client",
-                return_value=mock_client,
-            ),
+                "src.simulation.workflows.agent_turn_workflow.simulation_turn_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID", side_effect=capture_set_wf_id),
+            patch("dbos.SetEnqueueOptions", side_effect=capture_set_enqueue_opts),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
+            mock_queue.enqueue.return_value = mock_handle
             await dispatch_agent_turn(agent_id, 1, retry_count=0)
             await dispatch_agent_turn(agent_id, 1, retry_count=2)
 
-        call1_options = mock_client.enqueue.call_args_list[0].args[0]
-        call2_options = mock_client.enqueue.call_args_list[1].args[0]
-        assert call1_options["workflow_id"] == f"turn-{agent_id}-gen1-1-retry0"
-        assert call2_options["workflow_id"] == f"turn-{agent_id}-gen1-1-retry2"
-        assert call1_options["deduplication_id"] != call2_options["deduplication_id"]
+        assert captured_wf_ids[0] == f"turn-{agent_id}-gen1-1-retry0"
+        assert captured_wf_ids[1] == f"turn-{agent_id}-gen1-1-retry2"
+        assert captured_dedup_ids[0] != captured_dedup_ids[1]
 
 
 class TestRecentActions:

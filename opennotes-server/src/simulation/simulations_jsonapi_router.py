@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 import pendulum
+from dbos import DBOS
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
@@ -27,7 +28,6 @@ from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
 from src.database import get_db
-from src.dbos_workflows.config import get_dbos_client
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.notes.models import Note, Rating
@@ -70,11 +70,9 @@ async def _cancel_turn_workflows(simulation_id: UUID, db: AsyncSession) -> int:
         if not agent_ids:
             return 0
 
-        client = get_dbos_client()
-
         list_tasks = [
             asyncio.to_thread(
-                client.list_workflows,
+                DBOS.list_workflows,
                 workflow_id_prefix=f"turn-{agent_id}-",
                 status=["ENQUEUED", "PENDING"],
                 load_input=False,
@@ -99,7 +97,7 @@ async def _cancel_turn_workflows(simulation_id: UUID, db: AsyncSession) -> int:
             return 0
 
         cancel_tasks = [
-            asyncio.to_thread(client.cancel_workflow, wf_id) for wf_id in all_workflow_ids
+            asyncio.to_thread(DBOS.cancel_workflow, wf_id) for wf_id in all_workflow_ids
         ]
         cancel_results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
 
@@ -633,10 +631,9 @@ async def resume_simulation(
         needs_redispatch = False
         dbos_check_failed = False
         try:
-            client = get_dbos_client()
             wf_prefix = f"orchestrator-{simulation_id}"
             active_workflows = await asyncio.to_thread(
-                client.list_workflows,
+                DBOS.list_workflows,
                 workflow_id_prefix=wf_prefix,
                 status=["ENQUEUED", "PENDING"],
                 load_input=False,
@@ -876,11 +873,9 @@ async def cancel_simulation_workflows(
             )
             return JSONResponse(status_code=200, content=resp.model_dump(mode="json"))
 
-        client = get_dbos_client()
-
         list_tasks = [
             asyncio.to_thread(
-                client.list_workflows,
+                DBOS.list_workflows,
                 workflow_id_prefix=(
                     f"turn-{agent_id}-gen{generation}-"
                     if generation is not None
@@ -909,7 +904,7 @@ async def cancel_simulation_workflows(
         errors: list[str] = []
         if not dry_run and workflow_ids:
             cancel_tasks = [
-                asyncio.to_thread(client.cancel_workflow, wf_id) for wf_id in workflow_ids
+                asyncio.to_thread(DBOS.cancel_workflow, wf_id) for wf_id in workflow_ids
             ]
             cancel_results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
             for wf_id, cr in zip(workflow_ids, cancel_results, strict=True):

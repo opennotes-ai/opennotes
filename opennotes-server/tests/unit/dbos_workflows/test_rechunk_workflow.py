@@ -402,45 +402,43 @@ class TestChunkSingleFactCheckWorkflow:
 class TestEnqueueSingleFactCheckChunkDBOS:
     """Tests for enqueue_single_fact_check_chunk DBOS function (task-1056.01).
 
-    Updated for task-1058.04: Now uses DBOSClient.enqueue() instead of
-    rechunk_queue.enqueue() for server-side enqueueing.
+    Uses rechunk_queue.enqueue() for server-side enqueueing.
     """
 
     @pytest.mark.asyncio
-    async def test_enqueues_via_dbos_client(self) -> None:
-        """Enqueues single item workflow via DBOSClient.enqueue()."""
+    async def test_enqueues_via_queue(self) -> None:
+        """Enqueues single item workflow via rechunk_queue.enqueue()."""
         from src.dbos_workflows.rechunk_workflow import enqueue_single_fact_check_chunk
 
         fact_check_id = uuid4()
         community_server_id = uuid4()
 
-        with patch("src.dbos_workflows.rechunk_workflow.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "test-workflow-id"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "test-workflow-id"
 
+        with patch(
+            "src.dbos_workflows.rechunk_workflow.rechunk_queue.enqueue",
+            return_value=mock_handle,
+        ) as mock_enqueue:
             result = await enqueue_single_fact_check_chunk(
                 fact_check_id=fact_check_id,
                 community_server_id=community_server_id,
             )
 
         assert result == "test-workflow-id"
-        mock_client.enqueue.assert_called_once()
+        mock_enqueue.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_returns_none_on_enqueue_failure(self) -> None:
-        """Returns None when client.enqueue fails."""
+        """Returns None when queue.enqueue fails."""
         from src.dbos_workflows.rechunk_workflow import enqueue_single_fact_check_chunk
 
         fact_check_id = uuid4()
 
-        with patch("src.dbos_workflows.rechunk_workflow.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.enqueue.side_effect = RuntimeError("Queue unavailable")
-            mock_get_client.return_value = mock_client
-
+        with patch(
+            "src.dbos_workflows.rechunk_workflow.rechunk_queue.enqueue",
+            side_effect=RuntimeError("Queue unavailable"),
+        ):
             result = await enqueue_single_fact_check_chunk(
                 fact_check_id=fact_check_id,
             )
@@ -454,44 +452,45 @@ class TestEnqueueSingleFactCheckChunkDBOS:
 
         fact_check_id = uuid4()
 
-        with patch("src.dbos_workflows.rechunk_workflow.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "test-workflow-id"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "test-workflow-id"
 
+        with patch(
+            "src.dbos_workflows.rechunk_workflow.rechunk_queue.enqueue",
+            return_value=mock_handle,
+        ) as mock_enqueue:
             await enqueue_single_fact_check_chunk(
                 fact_check_id=fact_check_id,
                 community_server_id=None,
             )
 
-        call_args = mock_client.enqueue.call_args
-        _options, _fact_check_id, community_server_id_arg = call_args.args
+        call_args = mock_enqueue.call_args
+        _func, _fact_check_id, community_server_id_arg = call_args.args
         assert community_server_id_arg is None
 
     @pytest.mark.asyncio
-    async def test_uses_correct_enqueue_options(self) -> None:
-        """Verifies EnqueueOptions has correct queue_name and workflow_name."""
-        from src.dbos_workflows.rechunk_workflow import enqueue_single_fact_check_chunk
+    async def test_enqueues_correct_workflow_function(self) -> None:
+        """Verifies rechunk_queue.enqueue is called with chunk_single_fact_check_workflow."""
+        from src.dbos_workflows.rechunk_workflow import (
+            chunk_single_fact_check_workflow,
+            enqueue_single_fact_check_chunk,
+        )
 
         fact_check_id = uuid4()
 
-        with patch("src.dbos_workflows.rechunk_workflow.get_dbos_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_handle = MagicMock()
-            mock_handle.workflow_id = "test-workflow-id"
-            mock_client.enqueue.return_value = mock_handle
-            mock_get_client.return_value = mock_client
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "test-workflow-id"
 
+        with patch(
+            "src.dbos_workflows.rechunk_workflow.rechunk_queue.enqueue",
+            return_value=mock_handle,
+        ) as mock_enqueue:
             await enqueue_single_fact_check_chunk(
                 fact_check_id=fact_check_id,
             )
 
-        call_args = mock_client.enqueue.call_args
-        options, _fact_check_id, _community_server_id = call_args.args
-        assert options["queue_name"] == "rechunk"
-        assert "chunk_single_fact_check_workflow" in options["workflow_name"]
+        call_args = mock_enqueue.call_args
+        assert call_args.args[0] is chunk_single_fact_check_workflow
 
 
 class TestCircuitBreakerIntegration:
