@@ -44,6 +44,7 @@ export class NatsResultsWaiter {
   private silenceTimeoutTimer?: ReturnType<typeof setTimeout>;
   private maxWaitTimer?: ReturnType<typeof setTimeout>;
   private subscriptions: JetStreamSubscription[] = [];
+  private terminalResultsPromise?: Promise<void>;
   private resolved = false;
 
   constructor(scanId: string, nc: NatsConnection) {
@@ -98,6 +99,46 @@ export class NatsResultsWaiter {
     for (const sub of this.subscriptions) {
       sub.unsubscribe();
     }
+  }
+
+  private async fetchTerminalResults(
+    resolve: (value: BulkScanResultsResponse) => void,
+    reject: (reason: Error) => void
+  ): Promise<void> {
+    if (this.resolved) {
+      return;
+    }
+
+    if (!this.terminalResultsPromise) {
+      this.terminalResultsPromise = (async (): Promise<void> => {
+        try {
+          const results = await apiClient.getBulkScanResults(this.scanId);
+          const status = results.data.attributes.status;
+
+          if (status !== 'completed' && status !== 'failed') {
+            throw new Error(
+              `Fetched scan results were not terminal after receiving a terminal NATS event (status=${status})`
+            );
+          }
+
+          if (!this.resolved) {
+            this.cleanup();
+            resolve(results);
+          }
+        } catch (fetchErr) {
+          if (!this.resolved) {
+            this.cleanup();
+            reject(
+              new Error(
+                `Failed to fetch results: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`
+              )
+            );
+          }
+        }
+      })();
+    }
+
+    await this.terminalResultsPromise;
   }
 
   async start(): Promise<BulkScanResultsResponse> {
@@ -203,46 +244,19 @@ export class NatsResultsWaiter {
         switch (event.event_type) {
           case EventType.BULK_SCAN_PROCESSING_FINISHED:
             msg.ack();
-            try {
-              const results = await apiClient.getBulkScanResults(this.scanId);
-              this.cleanup();
-              resolve(results);
-            } catch (fetchErr) {
-              this.cleanup();
-              reject(
-                new Error(
-                  `Failed to fetch results: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`
-                )
-              );
-            }
+            await this.fetchTerminalResults(resolve, reject);
             break;
 
           case EventType.BULK_SCAN_RESULTS:
             msg.ack();
-            this.cleanup();
-            resolve({
-              data: {
-                id: event.scan_id,
-                type: 'bulk_scan',
-                attributes: {
-                  status: 'completed',
-                  messages_scanned: event.messages_scanned ?? 0,
-                  messages_flagged: event.messages_flagged ?? 0,
-                },
-              },
-              included: (event.flagged_messages ?? []).map((fm) => ({
-                type: 'flagged_message',
-                id: fm.message_id,
-                attributes: fm,
-              })),
-              jsonapi: { version: '1.0' },
-            } as unknown as BulkScanResultsResponse);
+            logger.debug('Received bulk_scan.results; waiting for terminal event before fetching', {
+              scanId: this.scanId,
+            });
             break;
 
           case EventType.BULK_SCAN_FAILED:
             msg.ack();
-            this.cleanup();
-            reject(new Error(`Scan failed: ${event.error_message ?? 'Unknown error'}`));
+            await this.fetchTerminalResults(resolve, reject);
             break;
 
           case EventType.BULK_SCAN_PROGRESS:

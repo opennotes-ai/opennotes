@@ -156,6 +156,7 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
 export function formatScanStatusPaginated(options: FormatScanStatusOptions): FormatScanStatusPaginatedResult {
   const { scan, guildId, days, warningMessage, includeButtons = false, explanations } = options;
   const scanId = scan.data.id;
+  const status = scan.data.attributes.status;
   const messagesScanned = scan.data.attributes.messages_scanned;
   const flaggedMessages = scan.included || [];
   const errorSummary = (scan.data.attributes as Record<string, unknown>).error_summary as ErrorSummary | undefined;
@@ -172,14 +173,48 @@ export function formatScanStatusPaginated(options: FormatScanStatusOptions): For
     ? formatErrorSummary(errorSummary)
     : '';
 
-  const header = `**Scan Complete**\n\n` +
-    `**Scan ID:** \`${scanId}\`\n` +
-    daysText +
-    `**Messages scanned:** ${messagesScanned}\n` +
-    `**Flagged:** ${flaggedMessages.length}\n`;
+  if (status === 'pending' || status === 'in_progress' || status === 'failed') {
+    const headerBase = `**Scan ID:** \`${scanId}\`\n${daysText}`;
+    const header = status === 'pending'
+      ? `**Scan Status: Pending**\n\n${headerBase}`
+      : status === 'in_progress'
+        ? `**Scan Status: In Progress**\n\n${headerBase}**Messages scanned so far:** ${messagesScanned}\n`
+        : `**Scan Status: Failed**\n\n${headerBase}`;
 
-  const resultsContent = formatFlaggedMessagesListFull(flaggedMessages, guildId, explanations);
-  const fullContent = `${resultsContent}${errorText}${warningText}`;
+    const statusMessage = status === 'pending'
+      ? 'The scan is pending and waiting to be processed.'
+      : status === 'in_progress'
+        ? 'The scan is currently in progress...'
+        : 'The scan failed due to processing errors. Please try again later.';
+
+    const resultsContent = flaggedMessages.length > 0
+      ? `\n\n${formatFlaggedMessagesListFull(flaggedMessages, guildId, explanations)}`
+      : '';
+
+    return {
+      pages: TextPaginator.paginate(
+        `${statusMessage}${resultsContent}${errorText}${warningText}`,
+        { maxCharsPerPage: 1800 }
+      ),
+      header,
+      scanId,
+    };
+  }
+
+  const header = flaggedMessages.length === 0
+    ? `**Scan Complete**\n\n` +
+      `**Scan ID:** \`${scanId}\`\n` +
+      daysText +
+      `**Messages scanned:** ${messagesScanned}\n`
+    : `**Scan Complete**\n\n` +
+      `**Scan ID:** \`${scanId}\`\n` +
+      daysText +
+      `**Messages scanned:** ${messagesScanned}\n` +
+      `**Flagged:** ${flaggedMessages.length}\n`;
+
+  const fullContent = flaggedMessages.length === 0
+    ? `No flagged content found. No flashpoints or potential misinformation were detected.${errorText}${warningText}`
+    : `${formatFlaggedMessagesListFull(flaggedMessages, guildId, explanations)}${errorText}${warningText}`;
 
   const pages = TextPaginator.paginate(fullContent, { maxCharsPerPage: 1800 });
 

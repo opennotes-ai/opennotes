@@ -1127,6 +1127,7 @@ def _determine_scan_status(
     processed_count: int,
     error_count: int,
     total_errors: int,
+    skipped_count: int = 0,
     finalization_incomplete: bool = False,
 ) -> tuple[BulkScanStatus, str | None]:
     if messages_scanned > 0 and finalization_incomplete:
@@ -1138,6 +1139,14 @@ def _determine_scan_status(
         return BulkScanStatus.FAILED, "100% of messages had errors"
     if messages_scanned > 0 and processed_count == 0 and error_count > 0:
         return BulkScanStatus.FAILED, "all messages had batch errors"
+    if (
+        messages_scanned > 0
+        and processed_count == 0
+        and skipped_count == messages_scanned
+        and error_count == 0
+        and total_errors == 0
+    ):
+        return BulkScanStatus.COMPLETED, None
     if messages_scanned > 0 and processed_count == 0 and error_count == 0 and total_errors == 0:
         return (
             BulkScanStatus.FAILED,
@@ -1160,7 +1169,9 @@ def finalize_scan_step(
     """Finalize the content scan: update DB record and publish NATS events.
 
     Uses SELECT...FOR UPDATE for the DB update to prevent race conditions.
-    Publishes BulkScanResultsEvent and BulkScanProcessingFinishedEvent.
+    Publishes bulk-scan terminal events after persisting the final DB status.
+    Completed scans publish results + processing finished. Failed scans publish
+    results + failed + processing finished.
 
     Args:
         scan_id: UUID string of the scan
@@ -1182,6 +1193,7 @@ def finalize_scan_step(
     from src.database import get_session_maker
     from src.events.publisher import create_worker_event_publisher
     from src.events.schemas import (
+        BulkScanFailedEvent,
         BulkScanProcessingFinishedEvent,
         ScanErrorInfo,
         ScanErrorSummary,
@@ -1209,7 +1221,20 @@ def finalize_scan_step(
 
             flagged = await service.get_flagged_results(scan_uuid)
             error_summary_data = await service.get_error_summary(scan_uuid)
-            actual_skipped = await service.get_skipped_count(scan_uuid)
+            redis_skipped_count = await service.get_skipped_count(scan_uuid)
+            effective_skipped_count = (
+                skipped_count if redis_skipped_count != skipped_count else redis_skipped_count
+            )
+
+            if redis_skipped_count != skipped_count:
+                logger.warning(
+                    "Skipped count drift detected during finalization; using workflow count",
+                    extra={
+                        "scan_id": scan_id,
+                        "workflow_skipped_count": skipped_count,
+                        "redis_skipped_count": redis_skipped_count,
+                    },
+                )
 
             total_errors = error_summary_data.get("total_errors", 0)
             error_types = error_summary_data.get("error_types", {})
@@ -1234,6 +1259,7 @@ def finalize_scan_step(
             status, failure_reason = _determine_scan_status(
                 messages_scanned=messages_scanned,
                 processed_count=processed_count,
+                skipped_count=effective_skipped_count,
                 error_count=error_count,
                 total_errors=total_errors,
                 finalization_incomplete=finalization_incomplete,
@@ -1264,10 +1290,19 @@ def finalize_scan_step(
                     scan_id=scan_uuid,
                     messages_scanned=messages_scanned,
                     messages_flagged=len(flagged),
-                    messages_skipped=actual_skipped,
+                    messages_skipped=effective_skipped_count,
                     flagged_messages=flagged,
                     error_summary=error_summary,
                 )
+
+                if status == BulkScanStatus.FAILED:
+                    failed_event = BulkScanFailedEvent(
+                        event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
+                        scan_id=scan_uuid,
+                        community_server_id=community_uuid,
+                        error_message=failure_reason or "bulk scan failed without a reason",
+                    )
+                    await worker_publisher.publish_event(failed_event)
 
                 processing_finished_event = BulkScanProcessingFinishedEvent(
                     event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
@@ -1275,7 +1310,7 @@ def finalize_scan_step(
                     community_server_id=community_uuid,
                     messages_scanned=messages_scanned,
                     messages_flagged=len(flagged),
-                    messages_skipped=actual_skipped,
+                    messages_skipped=effective_skipped_count,
                 )
                 await worker_publisher.publish_event(processing_finished_event)
 
@@ -1287,7 +1322,7 @@ def finalize_scan_step(
                     "processed_count": processed_count,
                     "error_count": error_count,
                     "messages_flagged": len(flagged),
-                    "messages_skipped": actual_skipped,
+                    "messages_skipped": effective_skipped_count,
                     "status": status.value,
                     "total_errors": total_errors,
                 },
@@ -1297,7 +1332,7 @@ def finalize_scan_step(
                 "status": status.value,
                 "messages_scanned": messages_scanned,
                 "messages_flagged": len(flagged),
-                "messages_skipped": actual_skipped,
+                "messages_skipped": effective_skipped_count,
                 "total_errors": total_errors,
             }
 

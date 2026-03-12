@@ -1627,6 +1627,60 @@ describe('vibecheck command', () => {
       );
     });
 
+    it('should display failed scan status', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('status'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockApiClient.getLatestScan.mockResolvedValueOnce(
+        createLatestScanResponse('failed-scan-456', 'failed', 0)
+      );
+      mockFormatScanStatusPaginated.mockReturnValueOnce({
+        pages: {
+          pages: ['The scan failed due to processing errors. Please try again later.'],
+          totalPages: 1,
+        },
+        header: '**Scan Status: Failed**\n\n**Scan ID:** `failed-scan-456`\n',
+        actionButtons: undefined,
+        scanId: 'failed-scan-456',
+      });
+
+      await execute(mockInteraction as any);
+
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Scan Status: Failed'),
+        })
+      );
+    });
+
     it('should show message when no scans exist', async () => {
       const mockMember = {
         permissions: {

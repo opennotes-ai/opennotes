@@ -442,6 +442,39 @@ describe('bulk-scan-executor', () => {
       expect(result.warningMessage).toContain('incomplete');
     });
 
+    it('falls back to polling when terminal NATS fetch returns a non-terminal API payload', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      mockWaitForNatsResults.mockRejectedValueOnce(
+        new Error('Fetched scan results were not terminal after receiving a terminal NATS event')
+      );
+      mockGetBulkScanResults
+        .mockResolvedValueOnce(createBulkScanResultsResponse('test-scan-123', 'pending', 50))
+        .mockResolvedValueOnce(createBulkScanResultsResponse('test-scan-123', 'completed', 50));
+
+      const resultPromise = executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      await jest.runAllTimersAsync();
+      const result = await resultPromise;
+
+      expect(mockWaitForNatsResults).toHaveBeenCalled();
+      expect(mockGetBulkScanResults).toHaveBeenCalledTimes(2);
+      expect(result.status).toBe('completed');
+      expect(result.messagesScanned).toBe(50);
+    });
+
     it('should return failed status when all NATS publish attempts fail', async () => {
       const messages = new Map();
       for (let i = 0; i < 50; i++) {
