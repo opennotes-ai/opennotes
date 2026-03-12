@@ -13,6 +13,13 @@ import pytest
 from fastapi import HTTPException
 
 
+def _make_savepoint() -> MagicMock:
+    savepoint = MagicMock()
+    savepoint.__aenter__ = AsyncMock(return_value=savepoint)
+    savepoint.__aexit__ = AsyncMock(return_value=False)
+    return savepoint
+
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestCircularReferenceValidation:
@@ -134,10 +141,13 @@ class TestCircularReferenceValidation:
         """Valid Discord snowflake with auto_create=True should create new server."""
         from src.auth.community_dependencies import get_community_server_by_platform_id
 
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.flush = AsyncMock()
+        mock_db.refresh = AsyncMock()
+        mock_db.begin_nested = MagicMock(return_value=_make_savepoint())
 
         snowflake_id = "738146839441965267"
 
