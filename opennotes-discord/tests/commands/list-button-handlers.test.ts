@@ -123,6 +123,7 @@ const {
   handleRequestQueuePageButton,
   handleWriteNoteButton,
   handleAiWriteNoteButton,
+  handleViewFullButton,
 } = await import('../../src/commands/list.js');
 
 function createMockButtonInteraction(customId: string, overrides: Record<string, any> = {}) {
@@ -228,7 +229,19 @@ describe('list command - Button Handlers', () => {
   describe('handleForcePublishButton', () => {
     it('should force publish note successfully', async () => {
       const interaction = createMockButtonInteraction('force_publish:note-uuid-123');
-      mockApiClient.forcePublishNote.mockResolvedValue({});
+      mockApiClient.forcePublishNote.mockResolvedValue({
+        data: {
+          type: 'notes',
+          id: 'note-uuid-123',
+          attributes: {
+            summary: 'Short summary',
+            status: 'PUBLISHED',
+            force_published_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            updated_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            created_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+          },
+        },
+      });
 
       await handleForcePublishButton(interaction as any);
 
@@ -239,9 +252,64 @@ describe('list command - Button Handlers', () => {
           userId: 'user123',
         })
       );
-      expect(interaction.editReply).toHaveBeenCalledWith({
-        content: expect.stringContaining('Note Force Published'),
+      expect(interaction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Note #note-uuid-123 has been force-published'),
+        })
+      );
+    });
+
+    it('should reuse the note force-publish summary preview for long summaries', async () => {
+      const interaction = createMockButtonInteraction('force_publish:note-uuid-123');
+      const longSummary = 'S'.repeat(260);
+      mockApiClient.forcePublishNote.mockResolvedValue({
+        data: {
+          type: 'notes',
+          id: 'note-uuid-123',
+          attributes: {
+            summary: longSummary,
+            status: 'PUBLISHED',
+            force_published_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            updated_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            created_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+          },
+        },
       });
+
+      await handleForcePublishButton(interaction as any);
+
+      const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
+      expect(editReplyCall.content).toContain('Note #note-uuid-123 has been force-published');
+      expect(editReplyCall.content).toContain('Admin Published');
+      expect(editReplyCall.content).toContain('**Note Summary:**');
+      expect(editReplyCall.content).toContain('...');
+      expect(editReplyCall.components).toBeDefined();
+    });
+
+    it('should fall back to the truncated summary preview when cache.set resolves false', async () => {
+      const interaction = createMockButtonInteraction('force_publish:note-uuid-123');
+      const longSummary = 'T'.repeat(260);
+      mockCache.set.mockResolvedValueOnce(false);
+      mockApiClient.forcePublishNote.mockResolvedValue({
+        data: {
+          type: 'notes',
+          id: 'note-uuid-123',
+          attributes: {
+            summary: longSummary,
+            status: 'PUBLISHED',
+            force_published_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            updated_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+            created_at: new Date('2026-03-11T20:00:00Z').toISOString(),
+          },
+        },
+      });
+
+      await handleForcePublishButton(interaction as any);
+
+      const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
+      expect(editReplyCall.content).toContain('**Note Summary:**');
+      expect(editReplyCall.content).toContain('...');
+      expect(editReplyCall.components).toBeUndefined();
     });
 
     it('should handle invalid customId format', async () => {
@@ -424,6 +492,88 @@ describe('list command - Button Handlers', () => {
       });
     });
 
+    it('should add a View Full button when AI note summary is truncated', async () => {
+      const requestId = 'request-uuid-789';
+      const longSummary = 'x'.repeat(260);
+      cacheStore.set('write_note_state:ai12345', requestId);
+
+      const interaction = createMockButtonInteraction('ai_write_note:ai12345');
+
+      mockApiClient.generateAiNote.mockResolvedValue({
+        data: {
+          id: 'note-generated',
+          attributes: {
+            summary: longSummary,
+          },
+        },
+      });
+
+      await handleAiWriteNoteButton(interaction as any);
+
+      expect(mockCache.set).toHaveBeenCalledWith(
+        'view_full:test1234',
+        longSummary,
+        300
+      );
+      expect(interaction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          components: expect.any(Array),
+        })
+      );
+    });
+
+    it('should fall back to the truncated preview when storing View Full state fails', async () => {
+      const requestId = 'request-uuid-cache-fail';
+      const longSummary = 'y'.repeat(260);
+      cacheStore.set('write_note_state:cachefail1', requestId);
+
+      const interaction = createMockButtonInteraction('ai_write_note:cachefail1');
+      mockCache.set.mockRejectedValueOnce(new Error('redis unavailable'));
+
+      mockApiClient.generateAiNote.mockResolvedValue({
+        data: {
+          id: 'note-generated',
+          attributes: {
+            summary: longSummary,
+          },
+        },
+      });
+
+      await handleAiWriteNoteButton(interaction as any);
+
+      expect(interaction.editReply).toHaveBeenCalledWith({
+        content: expect.stringContaining('AI Note Generated'),
+      });
+      const editReplyCall = (interaction.editReply as any).mock.calls.at(-1) as any[] | undefined;
+      expect(editReplyCall?.[0]?.components).toBeUndefined();
+    });
+
+    it('should fall back to the truncated preview when cache.set resolves false', async () => {
+      const requestId = 'request-uuid-cache-false';
+      const longSummary = 'z'.repeat(260);
+      cacheStore.set('write_note_state:cachefalse', requestId);
+
+      const interaction = createMockButtonInteraction('ai_write_note:cachefalse');
+      mockCache.set.mockResolvedValueOnce(false);
+
+      mockApiClient.generateAiNote.mockResolvedValue({
+        data: {
+          id: 'note-generated',
+          attributes: {
+            summary: longSummary,
+          },
+        },
+      });
+
+      await handleAiWriteNoteButton(interaction as any);
+
+      expect(interaction.editReply).toHaveBeenCalledWith({
+        content: expect.stringContaining('AI Note Generated'),
+      });
+      const editReplyCall = (interaction.editReply as any).mock.calls.at(-1) as any[] | undefined;
+      expect(editReplyCall?.[0]?.components).toBeUndefined();
+    });
+
     it('should handle expired cache state', async () => {
       const interaction = createMockButtonInteraction('ai_write_note:expired1');
 
@@ -461,6 +611,162 @@ describe('list command - Button Handlers', () => {
 
       expect(interaction.editReply).toHaveBeenCalledWith({
         content: expect.stringContaining('Failed to generate AI note'),
+      });
+    });
+  });
+
+  describe('handleViewFullButton', () => {
+    it('should reply with cached full note text', async () => {
+      cacheStore.set('view_full:abc123', 'Full note text for expansion');
+      const interaction = createMockButtonInteraction('view_full:abc123');
+
+      await handleViewFullButton(interaction as any);
+
+      expect(interaction.reply).toHaveBeenCalledWith({
+        content: 'Full note text for expansion',
+        flags: MessageFlags.Ephemeral,
+      });
+    });
+
+    it('should split cached full note text across multiple ephemeral messages when over 2000 characters', async () => {
+      const longFullText = 'A'.repeat(4500);
+      cacheStore.set('view_full:chunked1', longFullText);
+      const interaction = createMockButtonInteraction('view_full:chunked1');
+
+      await handleViewFullButton(interaction as any);
+
+      expect(interaction.reply).toHaveBeenCalledWith({
+        content: 'A'.repeat(2000),
+        flags: MessageFlags.Ephemeral,
+      });
+      expect(interaction.followUp).toHaveBeenNthCalledWith(1, {
+        content: 'A'.repeat(2000),
+        flags: MessageFlags.Ephemeral,
+      });
+      expect(interaction.followUp).toHaveBeenNthCalledWith(2, {
+        content: 'A'.repeat(500),
+        flags: MessageFlags.Ephemeral,
+      });
+    });
+
+    it('should preserve fenced markdown integrity when paginating cached request previews', async () => {
+      const fencedBody = Array.from(
+        { length: 220 },
+        (_, index) => `const line${index} = ${index};`
+      ).join('\n');
+      const longFullText = [
+        'Request details:',
+        '',
+        '```ts',
+        fencedBody,
+        '```',
+        '',
+        'Follow-up context after the code block.',
+      ].join('\n');
+      cacheStore.set('view_full:fenced1', longFullText);
+      const interaction = createMockButtonInteraction('view_full:fenced1');
+
+      await handleViewFullButton(interaction as any);
+
+      const replyCalls = interaction.reply.mock.calls as unknown as Array<[{ content: string }]>;
+      const followUpCalls = interaction.followUp.mock.calls as unknown as Array<[{ content: string }]>;
+
+      expect(replyCalls).toHaveLength(1);
+      expect(followUpCalls.length).toBeGreaterThanOrEqual(1);
+
+      const replyPayload = replyCalls[0][0];
+      const followUpPayload = followUpCalls[0][0];
+      const renderedPages = [replyPayload.content, ...followUpCalls.map(([payload]) => payload.content)];
+      const renderedContent = renderedPages.join('\n');
+
+      expect(replyPayload.content.match(/```/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+      expect((replyPayload.content.match(/```/g)?.length ?? 0) % 2).toBe(0);
+      expect((followUpPayload.content.match(/```/g)?.length ?? 0) % 2).toBe(0);
+      renderedPages.forEach(page => {
+        expect((page.match(/```/g)?.length ?? 0) % 2).toBe(0);
+      });
+      expect(renderedContent).toContain('const line219 = 219;');
+      expect(renderedContent).toContain('Follow-up context after the code block.');
+    });
+
+    it('should preserve normalized quoted fenced markdown and blockquoted indented fence-like literals in View Full replies', async () => {
+      const quotedFenceBody = Array.from(
+        { length: 80 },
+        (_, index) => `   > const quotedLine${index} = ${index};`
+      ).join('\n');
+      const longFullText = [
+        '> Request details:',
+        '>     ````',
+        '>',
+        '   > ```ts',
+        quotedFenceBody,
+        '>``` ',
+        '>',
+        '> Follow-up context after the quoted block.',
+      ].join('\n');
+      cacheStore.set('view_full:quotedfence1', longFullText);
+      const interaction = createMockButtonInteraction('view_full:quotedfence1');
+
+      await handleViewFullButton(interaction as any);
+
+      const replyCalls = interaction.reply.mock.calls as unknown as Array<[{ content: string }]>;
+      const followUpCalls = interaction.followUp.mock.calls as unknown as Array<[{ content: string }]>;
+      const renderedPages = [replyCalls[0][0].content, ...followUpCalls.map(([payload]) => payload.content)];
+      const renderedContent = renderedPages.join('\n');
+
+      expect(renderedPages.length).toBeGreaterThan(1);
+      expect(renderedPages[0].trimEnd().endsWith('   > ```')).toBe(true);
+      expect(renderedPages[1].startsWith('   > ```ts\n')).toBe(true);
+      expect(renderedContent).toContain('>     ````');
+      expect(renderedContent).toContain('quotedLine79 = 79;');
+      expect(renderedContent).toContain('> Follow-up context after the quoted block.');
+    });
+
+    it('should avoid emitting an empty reopened fence page in View Full replies when a split lands before the original closer', async () => {
+      const fenceBody = Array.from(
+        { length: 249 },
+        (_, index) => `line${index.toString().padStart(3, '0')}`
+      ).join('\n');
+      const longFullText = [
+        '```ts',
+        fenceBody,
+        '```',
+        'tail',
+      ].join('\n');
+      cacheStore.set('view_full:closingfence1', longFullText);
+      const interaction = createMockButtonInteraction('view_full:closingfence1');
+
+      await handleViewFullButton(interaction as any);
+
+      const replyCalls = interaction.reply.mock.calls as unknown as Array<[{ content: string }]>;
+      const followUpCalls = interaction.followUp.mock.calls as unknown as Array<[{ content: string }]>;
+      const renderedPages = [replyCalls[0][0].content, ...followUpCalls.map(([payload]) => payload.content)];
+
+      expect(renderedPages.length).toBeGreaterThan(1);
+      expect(renderedPages[1]).not.toContain('```ts\n```\n');
+      expect(renderedPages[1]).toContain('line248');
+      expect(renderedPages.join('\n')).toContain('tail');
+    });
+
+    it('should handle expired cache state', async () => {
+      const interaction = createMockButtonInteraction('view_full:expired1');
+
+      await handleViewFullButton(interaction as any);
+
+      expect(interaction.reply).toHaveBeenCalledWith({
+        content: 'Expanded content expired. Please run the command again.',
+        flags: MessageFlags.Ephemeral,
+      });
+    });
+
+    it('should handle invalid customId format', async () => {
+      const interaction = createMockButtonInteraction('view_full');
+
+      await handleViewFullButton(interaction as any);
+
+      expect(interaction.reply).toHaveBeenCalledWith({
+        content: 'Invalid button data. Please try again.',
+        flags: MessageFlags.Ephemeral,
       });
     });
   });

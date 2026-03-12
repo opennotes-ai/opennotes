@@ -10,7 +10,7 @@ import type {
 import {
   formatMatchScore,
   formatMessageLink,
-  truncateContent,
+  truncateContentWithMeta,
 } from './bulk-scan-executor.js';
 import { TextPaginator, type PaginatedContent } from './text-paginator.js';
 
@@ -213,7 +213,7 @@ function formatFlaggedMessageEntry(
   explanations?: Map<string, string>
 ): string {
   const messageLink = formatMessageLink(guildId, msg.attributes.channel_id, msg.id);
-  const preview = truncateContent(msg.attributes.content);
+  const preview = truncateContentWithMeta(msg.attributes.content).text;
 
   const matches = msg.attributes.matches ?? [];
   const firstMatch = matches[0];

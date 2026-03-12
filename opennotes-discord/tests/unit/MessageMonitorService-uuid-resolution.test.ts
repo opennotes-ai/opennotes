@@ -14,6 +14,16 @@ const mockApiClient = {
   getCommunityServerByPlatformId: jest.fn<() => Promise<any>>(),
 };
 
+const mockCache = {
+  get: jest.fn<(key: string) => Promise<unknown>>(),
+  set: jest.fn<(key: string, value: unknown, ttl?: number) => Promise<boolean>>().mockResolvedValue(true),
+  delete: jest.fn<(key: string) => Promise<boolean>>(),
+  clear: jest.fn<() => Promise<number>>(),
+  start: jest.fn<() => void>(),
+  stop: jest.fn<() => void>(),
+  getMetrics: jest.fn(() => ({ size: 0 })),
+};
+
 const mockClient = {
   channels: {
     cache: {
@@ -109,6 +119,10 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
   apiClient: mockApiClient,
 }));
 
+jest.unstable_mockModule('../../src/cache.js', () => ({
+  cache: mockCache,
+}));
+
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
 }));
@@ -154,6 +168,7 @@ describe('MessageMonitorService - Platform ID Handling', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCache.set.mockResolvedValue(true);
     mockApiClient.requestNote.mockResolvedValue(undefined);
     mockApiClient.similaritySearch.mockResolvedValue({
       jsonapi: { version: '1.1' },
@@ -248,6 +263,40 @@ describe('MessageMonitorService - Platform ID Handling', () => {
         })
       );
     });
+
+    it('should include View Original Message link when matched message preview is clipped', async () => {
+      const longMessage = {
+        ...testMessageContent,
+        content: 'x'.repeat(600),
+      };
+
+      const similarityResponse = {
+        jsonapi: { version: '1.1' },
+        data: {
+          type: 'similarity-search-results',
+          id: 'search-124',
+          attributes: {
+            matches: [testSimilarityMatch],
+            query_text: 'test',
+            dataset_tags: ['snopes'],
+            similarity_threshold: 0.7,
+            score_threshold: 0,
+            total_matches: 1,
+          },
+        },
+      };
+
+      await (service as any).createNoteRequestForMatch(longMessage, similarityResponse);
+
+      const requestNoteMock = mockApiClient.requestNote as unknown as jest.Mock;
+      const payload = (requestNoteMock.mock.calls[0]?.[0] ?? {}) as {
+        originalMessageContent?: string;
+      };
+      expect(payload.originalMessageContent).toContain('View Original Message');
+      expect(payload.originalMessageContent).toContain(
+        `https://discord.com/channels/${testGuildId}/${testMessageContent.channelId}/${testMessageContent.messageId}`
+      );
+    });
   });
 
   describe('createAutoRequestForSimilarContent - Platform ID handling', () => {
@@ -338,6 +387,56 @@ describe('MessageMonitorService - Platform ID Handling', () => {
         })
       );
     });
+
+    it('should include View Original Message link when current message preview is clipped', async () => {
+      const longMessage = {
+        ...testMessageContent,
+        content: 'y'.repeat(600),
+      };
+
+      const previouslySeenResult = {
+        data: {
+          type: 'previously-seen-check-results',
+          id: 'check-124',
+          attributes: {
+            should_auto_publish: false,
+            should_auto_request: true,
+            autopublish_threshold: 0.9,
+            autorequest_threshold: 0.75,
+            matches: [
+              {
+                id: 'prev-1',
+                community_server_id: 'some-uuid',
+                original_message_id: 'orig-msg-1',
+                published_note_id: 'note-1',
+                created_at: new Date().toISOString(),
+                similarity_score: 0.8,
+              },
+            ],
+            top_match: {
+              id: 'prev-1',
+              community_server_id: 'some-uuid',
+              original_message_id: 'orig-msg-1',
+              published_note_id: 'note-1',
+              created_at: new Date().toISOString(),
+              similarity_score: 0.8,
+            },
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      await (service as any).createAutoRequestForSimilarContent(longMessage, previouslySeenResult);
+
+      const requestNoteMock = mockApiClient.requestNote as unknown as jest.Mock;
+      const payload = (requestNoteMock.mock.calls[0]?.[0] ?? {}) as {
+        originalMessageContent?: string;
+      };
+      expect(payload.originalMessageContent).toContain('View Original Message');
+      expect(payload.originalMessageContent).toContain(
+        `https://discord.com/channels/${testGuildId}/${testMessageContent.channelId}/${testMessageContent.messageId}`
+      );
+    });
   });
 
   describe('Both code paths use consistent platform ID handling', () => {
@@ -400,6 +499,33 @@ describe('MessageMonitorService - Platform ID Handling', () => {
 
       expect(firstCall?.community_server_id).toBe(testGuildId);
       expect(secondCall?.community_server_id).toBe(testGuildId);
+    });
+  });
+
+  describe('autoPublishPreviousNote', () => {
+    it('should fall back to a bounded preview with View Full for long note summaries', async () => {
+      const payload = await (service as any).buildAutoPublishPayload(
+        0.95,
+        'A'.repeat(2500)
+      ) as {
+        content: string;
+        components?: unknown[];
+      };
+      expect(payload.content.length).toBeLessThanOrEqual(2000);
+      expect(JSON.stringify(payload.components)).toContain('View Full');
+    });
+
+    it('should omit the View Full button when cache.set resolves false', async () => {
+      mockCache.set.mockResolvedValueOnce(false);
+      const payload = await (service as any).buildAutoPublishPayload(
+        0.95,
+        'B'.repeat(2500)
+      ) as {
+        content: string;
+        components?: unknown[];
+      };
+      expect(payload.content.length).toBeLessThanOrEqual(2000);
+      expect(payload.components).toBeUndefined();
     });
   });
 });

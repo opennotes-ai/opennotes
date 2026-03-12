@@ -415,6 +415,75 @@ describe('VibecheckProgressService', () => {
       expect(embed.data.description).toContain('...');
       expect(embed.data.description).not.toContain('#off-topic');
     });
+
+    it('should include View Original Message link for clipped flagged claims', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      mockGuild.channels.cache.set('ch-123', { id: 'ch-123', name: 'general' });
+
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({
+        message_scores: [
+          {
+            message_id: '123456789012345678',
+            channel_id: 'ch-123',
+            similarity_score: 0.92,
+            threshold: 0.75,
+            is_flagged: true,
+            matched_claim: 'x'.repeat(120),
+          },
+        ],
+      });
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
+      const embed = sendCall.embeds[0];
+      expect(embed.data.fields?.[0]?.value).toContain('View Original Message');
+      expect(embed.data.fields?.[0]?.value).toContain(
+        'https://discord.com/channels/guild-123/ch-123/123456789012345678'
+      );
+    });
+
+    it('should rebatch score lines so each embed field stays within Discord limits', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      mockGuild.channels.cache.set('ch-123', { id: 'ch-123', name: 'general' });
+
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({
+        message_scores: Array.from({ length: 8 }, (_, index) => ({
+          message_id: `12345678901234567${index}`,
+          channel_id: 'ch-123',
+          similarity_score: 0.92,
+          threshold: 0.75,
+          is_flagged: true,
+          matched_claim: `Claim ${index}: ${'x'.repeat(120)}`,
+        })),
+      });
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      expect(mockChannel.send).toHaveBeenCalled();
+      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
+      const embed = sendCall.embeds[0];
+      expect(embed.data.fields && embed.data.fields.length).toBeGreaterThan(1);
+      for (const field of embed.data.fields ?? []) {
+        expect(field.value.length).toBeLessThanOrEqual(1024);
+      }
+    });
   });
 
   describe('playground community server handling (task-1134)', () => {

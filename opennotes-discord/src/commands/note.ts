@@ -27,6 +27,7 @@ import { modalSubmissionRateLimiter } from '../lib/interaction-rate-limiter.js';
 import { suppressExpectedDiscordErrors } from '../lib/discord-utils.js';
 import { apiClient } from '../api-client.js';
 import { extractUserContext } from '../lib/user-context.js';
+import { buildForcePublishSuccessReply } from '../lib/force-publish-response.js';
 
 export const data = new SlashCommandBuilder()
   .setName('note')
@@ -960,13 +961,8 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
       force_published_at: attrs.force_published_at,
     });
 
-    await interaction.editReply({
-      content: `✅ **Note #${noteIdStr} has been force-published**\n\n` +
-               `⚠️ This note was manually published by an admin and will be marked as "Admin Published" when displayed.\n\n` +
-               `**Note Summary:** ${attrs.summary.substring(0, 200)}${attrs.summary.length > 200 ? '...' : ''}\n` +
-               `**Status:** ${attrs.status}\n` +
-               `**Published At:** <t:${Math.floor(new Date(attrs.force_published_at ?? attrs.updated_at ?? attrs.created_at ?? new Date().toISOString()).getTime() / 1000)}:F>`,
-    });
+    const reply = await buildForcePublishSuccessReply(noteIdStr, note, 'note_force_publish');
+    await interaction.editReply(reply);
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
 

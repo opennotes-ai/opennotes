@@ -508,3 +508,16 @@ export function truncateContent(content: string, maxLength: number = 100): strin
 
   return result + ellipsis;
 }
+
+export interface TruncateContentResult {
+  text: string;
+  isTruncated: boolean;
+}
+
+export function truncateContentWithMeta(content: string, maxLength: number = 100): TruncateContentResult {
+  const text = truncateContent(content, maxLength);
+  return {
+    text,
+    isTruncated: text !== content,
+  };
+}

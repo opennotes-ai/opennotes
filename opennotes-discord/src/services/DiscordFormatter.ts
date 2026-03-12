@@ -19,6 +19,7 @@ import { DISCORD_LIMITS } from '../lib/constants.js';
 import { cache } from '../cache.js';
 import { generateShortId } from '../lib/validation.js';
 import { logger } from '../logger.js';
+import { storeViewFullContent } from '../lib/view-full-cache.js';
 import { extractPlatformMessageId } from '../lib/discord-utils.js';
 import {
   V2_COLORS,
@@ -26,18 +27,84 @@ import {
   createContainer,
   createSmallSeparator,
   createDivider,
+  createTextWithButton,
   v2MessageFlags,
   formatStatusIndicator,
   createMediaGallery,
   isImageUrl as isImageUrlV2,
+  truncateWithMeta,
+  buildViewFullCustomId,
 } from '../utils/v2-components.js';
 
 export class DiscordFormatter {
+  private static readonly VIEW_FULL_TTL_SECONDS = 300;
+
   private static formatMessageIdLink(messageId: string, guildId?: string, channelId?: string): string {
     if (guildId && channelId) {
       return `[${messageId}](https://discord.com/channels/${guildId}/${channelId}/${messageId})`;
     }
     return messageId;
+  }
+
+  private static async addRequestPreviewComponent(
+    container: ContainerBuilder,
+    fieldLines: string[],
+    request: ListRequestsResult['requests'][number]
+  ): Promise<void> {
+    const contentPreview = this.formatMessagePreview(request.content);
+    if (!contentPreview) {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(fieldLines.join('\n'))
+      );
+      return;
+    }
+
+    const previewPrefix = '**Original message content:** ';
+    const maxPreviewLength = Math.max(
+      100,
+      DISCORD_LIMITS.MAX_TEXT_DISPLAY_LENGTH - `${fieldLines.join('\n')}\n${previewPrefix}`.length
+    );
+    const truncatedPreview = truncateWithMeta(contentPreview, maxPreviewLength);
+    const renderedContent = [...fieldLines, `${previewPrefix}${truncatedPreview.text}`].join('\n');
+
+    if (!truncatedPreview.isTruncated) {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(renderedContent)
+      );
+      return;
+    }
+
+    const token = generateShortId();
+    const customId = buildViewFullCustomId(token);
+
+    try {
+      const stored = await storeViewFullContent(
+        customId,
+        request.content ?? truncatedPreview.original,
+        this.VIEW_FULL_TTL_SECONDS,
+        { request_id: request.request_id },
+        'Failed to store request preview view_full state in cache'
+      );
+      if (!stored) {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(renderedContent)
+        );
+        return;
+      }
+      container.addSectionComponents(
+        createTextWithButton(
+          renderedContent,
+          new ButtonBuilder()
+            .setCustomId(customId)
+            .setLabel('View Full')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      );
+    } catch {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(renderedContent)
+      );
+    }
   }
 
   static formatStatusSuccessV2(result: StatusResult): {
@@ -559,8 +626,6 @@ export class DiscordFormatter {
       const effectiveMessageId = extractPlatformMessageId(request.platform_message_id ?? null, request.request_id);
       const messageIdDisplay = effectiveMessageId || 'No message ID';
 
-      const contentPreview = this.formatMessagePreview(request.content);
-
       container.addSeparatorComponents(createDivider());
 
       const fieldLines = [
@@ -572,13 +637,7 @@ export class DiscordFormatter {
         `**${noteInfo}**`,
       ];
 
-      if (contentPreview) {
-        fieldLines.push(`**Original message content:** ${contentPreview}`);
-      }
-
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(fieldLines.join('\n'))
-      );
+      await this.addRequestPreviewComponent(container, fieldLines, request);
 
       if (request.content && isImageUrlV2(request.content)) {
         const gallery = createMediaGallery([request.content]);
@@ -745,18 +804,11 @@ export class DiscordFormatter {
       return null;
     }
 
-    const MAX_PREVIEW_LENGTH = 150;
-
     // Clean up whitespace and newlines
     const cleanedContent = content.trim().replace(/\s+/g, ' ');
 
     if (cleanedContent.length === 0) {
       return null;
-    }
-
-    // Truncate if needed
-    if (cleanedContent.length > MAX_PREVIEW_LENGTH) {
-      return `${cleanedContent.substring(0, MAX_PREVIEW_LENGTH)}...`;
     }
 
     return cleanedContent;

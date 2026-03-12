@@ -1,4 +1,10 @@
-import type { Message, Client } from 'discord.js';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  type Message,
+  type Client,
+} from 'discord.js';
 import { logger } from '../logger.js';
 import { MonitoredChannelService, CachedMonitoredChannel } from './MonitoredChannelService.js';
 import { apiClient } from '../api-client.js';
@@ -10,6 +16,9 @@ import type {
 } from '../lib/api-client.js';
 import { CONTENT_LIMITS } from '../lib/constants.js';
 import type Redis from 'ioredis';
+import { cache } from '../cache.js';
+import { generateShortId } from '../lib/validation.js';
+import { buildViewFullCustomId, truncateWithMeta } from '../utils/v2-components.js';
 
 export interface MessageContent {
   messageId: string;
@@ -46,6 +55,8 @@ export interface MessageWithMatches extends MessageContent {
  * - Dead letter queues for failed messages
  */
 export class MessageMonitorService {
+  private static readonly DISCORD_MESSAGE_CONTENT_LIMIT = 2000;
+  private static readonly VIEW_FULL_TTL_SECONDS = 300;
   private monitoredChannelService: MonitoredChannelService;
   private redisQueue: RedisQueue<MessageContent>;
   private processingInterval?: NodeJS.Timeout;
@@ -85,6 +96,82 @@ export class MessageMonitorService {
     this.processingInterval = setInterval(() => {
       void this.processQueue();
     }, 1000);
+  }
+
+  private static buildDiscordMessageUrl(messageContent: MessageContent): string {
+    return `https://discord.com/channels/${messageContent.guildId}/${messageContent.channelId}/${messageContent.messageId}`;
+  }
+
+  private static formatMessagePreviewLines(messageContent: MessageContent): string[] {
+    const wasTruncated = messageContent.content.length > CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH;
+    const preview = wasTruncated
+      ? `${messageContent.content.substring(0, CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH)}...`
+      : messageContent.content;
+
+    const lines = [`> ${preview}`];
+    if (wasTruncated) {
+      lines.push(`[View Original Message](${this.buildDiscordMessageUrl(messageContent)})`);
+    }
+    return lines;
+  }
+
+  private async buildAutoPublishPayload(
+    similarityScore: number,
+    noteSummary: string
+  ): Promise<{
+    content: string;
+    components?: ActionRowBuilder<ButtonBuilder>[];
+  }> {
+    const header = `🔁 **Previously Published Note** (${(similarityScore * 100).toFixed(1)}% match)`;
+    const footer = '*This note was automatically republished because it closely matches a previously seen message.*';
+    const maxSummaryLength = Math.max(
+      100,
+      MessageMonitorService.DISCORD_MESSAGE_CONTENT_LIMIT - `${header}\n\n\n\n${footer}`.length
+    );
+    const preview = truncateWithMeta(noteSummary, maxSummaryLength);
+
+    const payload: {
+      content: string;
+      components?: ActionRowBuilder<ButtonBuilder>[];
+    } = {
+      content: [header, '', preview.text, '', footer].join('\n'),
+    };
+
+    if (!preview.isTruncated) {
+      return payload;
+    }
+
+    const token = generateShortId();
+    const customId = buildViewFullCustomId(token);
+    try {
+      const stored = await cache.set(
+        customId,
+        preview.original,
+        MessageMonitorService.VIEW_FULL_TTL_SECONDS
+      );
+      if (!stored) {
+        logger.warn('Failed to store auto-publish view_full state in cache', {
+          custom_id: customId,
+          error: 'cache.set returned false',
+        });
+        return payload;
+      }
+      payload.components = [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(customId)
+            .setLabel('View Full')
+            .setStyle(ButtonStyle.Secondary)
+        ),
+      ];
+    } catch (error) {
+      logger.warn('Failed to store auto-publish view_full state in cache', {
+        custom_id: customId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return payload;
   }
 
   async handleMessage(message: Message): Promise<void> {
@@ -324,7 +411,7 @@ export class MessageMonitorService {
         `**Source URL:** ${topMatch.source_url || 'N/A'}`,
         '',
         `**Matched Message:**`,
-        `> ${messageContent.content.substring(0, CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH)}${messageContent.content.length > CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH ? '...' : ''}`,
+        ...MessageMonitorService.formatMessagePreviewLines(messageContent),
         '',
         `**Match Metadata:**`,
         `- Dataset Item ID: ${topMatch.id}`,
@@ -542,16 +629,13 @@ export class MessageMonitorService {
         return;
       }
 
-      const replyContent = [
-        `🔁 **Previously Published Note** (${(topMatch.similarity_score * 100).toFixed(1)}% match)`,
-        '',
-        note.data.attributes.summary || 'No content available',
-        '',
-        `*This note was automatically republished because it closely matches a previously seen message.*`,
-      ].join('\n');
+      const payload = await this.buildAutoPublishPayload(
+        topMatch.similarity_score,
+        note.data.attributes.summary || 'No content available'
+      );
 
       await channel.send({
-        content: replyContent,
+        ...payload,
         reply: {
           messageReference: messageContent.messageId,
           failIfNotExists: false,
@@ -590,7 +674,7 @@ export class MessageMonitorService {
         `**Community Server:** ${topMatch.community_server_id}`,
         '',
         `**Current Message:**`,
-        `> ${messageContent.content.substring(0, CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH)}${messageContent.content.length > CONTENT_LIMITS.MAX_DESCRIPTION_PREVIEW_LENGTH ? '...' : ''}`,
+        ...MessageMonitorService.formatMessagePreviewLines(messageContent),
         '',
         `**Match Metadata:**`,
         `- Previously Seen ID: ${topMatch.id}`,

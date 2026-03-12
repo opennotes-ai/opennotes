@@ -1,4 +1,5 @@
 import { DiscordFormatter } from '../../src/services/DiscordFormatter.js';
+import { cache } from '../../src/cache.js';
 import { ErrorCode, ServiceResult, ListRequestsResult, StatusResult } from '../../src/services/types.js';
 import type { TopNotesJSONAPIResponse, ScoringStatusJSONAPIResponse, ScoreConfidence, NoteScoreAttributes, NoteScoreJSONAPIResponse } from '../../src/services/ScoringService.js';
 import { Colors, ButtonStyle, MessageFlags, type APIButtonComponentWithCustomId } from 'discord.js';
@@ -844,6 +845,37 @@ describe('DiscordFormatter', () => {
       const allContent = textComponents.map((c) => (c as { content?: string }).content).join(' ');
 
       expect(allContent).toContain('This is a test message content');
+    });
+
+    it('should truncate oversized request content and add a View Full affordance', async () => {
+      const result = createMockListRequestsResult(1);
+      const longContent = `${'A'.repeat(4500)}ENDMARKER`;
+      result.requests[0].content = longContent;
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const containerJson = JSON.stringify(container);
+
+      expect(containerJson).toContain('View Full');
+      expect(containerJson).not.toContain('ENDMARKER');
+    });
+
+    it('should cache canonical request text for View Full expansions', async () => {
+      const result = createMockListRequestsResult(1);
+      const canonicalContent = 'Line 1\n\n```ts\nconst x = 1;\n```\nLine 2';
+      result.requests[0].content = `${canonicalContent}\n${'Q'.repeat(4300)}`;
+
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+      const container = formatted.container.toJSON();
+      const containerJson = JSON.stringify(container);
+      const customId = containerJson.match(/"custom_id":"(view_full:[^"]+)"/)?.[1];
+
+      expect(customId).toBeTruthy();
+
+      const cachedContent = await cache.get<string>(customId!);
+      expect(cachedContent).toContain(canonicalContent);
+      expect(cachedContent).toContain('```ts');
+      expect(cachedContent).toContain('Line 1\n\n```ts');
     });
 
     it('should include media gallery for image URLs', async () => {

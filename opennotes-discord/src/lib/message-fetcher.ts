@@ -1,7 +1,6 @@
 import { Client, Message, TextChannel } from 'discord.js';
 import { LRUCache } from 'lru-cache';
 import { logger } from '../logger.js';
-import { CONTENT_LIMITS } from './constants.js';
 
 export interface MessageInfo {
   content: string;
@@ -106,7 +105,7 @@ export class MessageFetcher {
 
       if (message) {
         const info: MessageInfo = {
-          content: message.content.substring(0, CONTENT_LIMITS.MAX_NOTE_EXCERPT_LENGTH) + (message.content.length > CONTENT_LIMITS.MAX_NOTE_EXCERPT_LENGTH ? '...' : ''),
+          content: message.content,
           author: message.author.username,
           url: message.url,
         };

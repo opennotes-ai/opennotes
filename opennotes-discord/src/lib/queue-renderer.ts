@@ -14,6 +14,7 @@ import {
   v2MessageFlags,
   createDivider,
   createSmallSeparator,
+  createTextWithButton,
   V2_LIMITS,
 } from '../utils/v2-components.js';
 
@@ -38,6 +39,7 @@ export interface QueueItemV2 {
   summary: string;
   urgencyEmoji: string;
   ratingButtons: ActionRowBuilder<ButtonBuilder>;
+  viewFullButton?: ButtonBuilder;
   mediaUrls?: string[];
 }
 
@@ -277,12 +279,12 @@ export class QueueRendererV2 {
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `${item.urgencyEmoji} **${item.title}**\n${item.summary}`
-        )
-      );
+      const content = `${item.urgencyEmoji} **${item.title}**\n${item.summary}`;
+      if (item.viewFullButton) {
+        container.addSectionComponents(createTextWithButton(content, item.viewFullButton));
+      } else {
+        container.addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
+      }
 
       container.addActionRowComponents(item.ratingButtons);
 

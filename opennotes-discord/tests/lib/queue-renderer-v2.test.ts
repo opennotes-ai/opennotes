@@ -152,6 +152,23 @@ describe('QueueRendererV2 - Components v2 Migration', () => {
       expect(json).toContain('\u{1F534}');
       expect(json).toContain('Note #42');
     });
+
+    it('should render a section accessory when queue item has viewFullButton', async () => {
+      const summary = createTestSummary();
+      const item = createTestItem('1');
+      item.viewFullButton = new ButtonBuilder()
+        .setCustomId('view_full:abc123')
+        .setLabel('View Full')
+        .setStyle(ButtonStyle.Secondary);
+
+      await QueueRendererV2.render(mockThread, summary, [item]);
+
+      const sendCall = getSendCall(mockThread.send as jest.Mock);
+      const container = sendCall.components![0];
+      const json = JSON.stringify(container.toJSON());
+
+      expect(json).toContain('view_full:abc123');
+    });
   });
 
   describe('AC #3: SeparatorBuilder between queue items', () => {

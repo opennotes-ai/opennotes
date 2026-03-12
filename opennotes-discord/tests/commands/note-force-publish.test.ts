@@ -14,7 +14,7 @@ const mockApiClient = {
 
 const mockCache = {
   get: jest.fn<(key: string) => unknown>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
+  set: jest.fn<(key: string, value: unknown, ttl?: number) => Promise<boolean>>(),
   delete: jest.fn<(key: string) => void>(),
   start: jest.fn<() => void>(),
   stop: jest.fn<() => void>(),
@@ -150,6 +150,7 @@ describe('note-force-publish command', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCache.set.mockResolvedValue(true);
 
     mockInteraction = {
       options: {
@@ -192,6 +193,75 @@ describe('note-force-publish command', () => {
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
       expect(editReplyCall.content).toContain(`Note #${TEST_UUID} has been force-published`);
       expect(editReplyCall.content).toContain('Admin Published');
+    });
+
+    it('should add a View Full fallback button for long summaries', async () => {
+      const longSummary = 'A'.repeat(260);
+      const mockNote = createMockNoteJSONAPIResponse({
+        id: TEST_UUID,
+        summary: longSummary,
+        status: 'PUBLISHED',
+        forcePublished: true,
+        forcePublishedAt: new Date().toISOString(),
+      });
+
+      mockApiClient.forcePublishNote.mockResolvedValue(mockNote);
+
+      await execute(mockInteraction);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.components).toBeDefined();
+
+      const viewFullCacheCall = mockCache.set.mock.calls.find(
+        (call) => typeof call[0] === 'string' && call[0].startsWith('view_full:')
+      );
+      expect(viewFullCacheCall).toBeDefined();
+      expect(viewFullCacheCall?.[1]).toBe(longSummary);
+      expect(viewFullCacheCall?.[2]).toBe(300);
+    });
+
+    it('should fall back to the truncated preview when storing View Full state fails', async () => {
+      const longSummary = 'B'.repeat(260);
+      const mockNote = createMockNoteJSONAPIResponse({
+        id: TEST_UUID,
+        summary: longSummary,
+        status: 'PUBLISHED',
+        forcePublished: true,
+        forcePublishedAt: new Date().toISOString(),
+      });
+
+      mockCache.set.mockImplementation(() => {
+        throw new Error('redis unavailable');
+      });
+      mockApiClient.forcePublishNote.mockResolvedValue(mockNote);
+
+      await execute(mockInteraction);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.content).toContain(`Note #${TEST_UUID} has been force-published`);
+      expect(editReplyCall.components).toBeUndefined();
+    });
+
+    it('should fall back to the truncated preview when cache.set resolves false', async () => {
+      const longSummary = 'C'.repeat(260);
+      const mockNote = createMockNoteJSONAPIResponse({
+        id: TEST_UUID,
+        summary: longSummary,
+        status: 'PUBLISHED',
+        forcePublished: true,
+        forcePublishedAt: new Date().toISOString(),
+      });
+
+      mockCache.set.mockResolvedValueOnce(false);
+      mockApiClient.forcePublishNote.mockResolvedValue(mockNote);
+
+      await execute(mockInteraction);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.content).toContain(`Note #${TEST_UUID} has been force-published`);
+      expect(editReplyCall.content).toContain('**Note Summary:**');
+      expect(editReplyCall.content).toContain('...');
+      expect(editReplyCall.components).toBeUndefined();
     });
   });
 

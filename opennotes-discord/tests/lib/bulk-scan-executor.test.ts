@@ -76,6 +76,7 @@ const {
   executeBulkScan,
   pollForResults,
   truncateContent,
+  truncateContentWithMeta,
   POLL_TIMEOUT_MS,
   BACKOFF_INITIAL_MS,
   BACKOFF_MULTIPLIER,
@@ -1073,6 +1074,22 @@ describe('bulk-scan-executor', () => {
       expect(truncateContent(simpleEmoji, 5)).toBe(emoji + '...');
       expect(truncateContent(simpleEmoji, 6)).toBe(emoji + 'test');
       expect(truncateContent(simpleEmoji, 4)).toBe('...');
+    });
+  });
+
+  describe('truncateContentWithMeta', () => {
+    it('should expose truncation metadata for scan preview helpers', () => {
+      expect(truncateContentWithMeta('Hello world', 5)).toEqual({
+        text: 'He...',
+        isTruncated: true,
+      });
+    });
+
+    it('should return non-truncated metadata when content fits', () => {
+      expect(truncateContentWithMeta('Hi', 5)).toEqual({
+        text: 'Hi',
+        isTruncated: false,
+      });
     });
   });
 
