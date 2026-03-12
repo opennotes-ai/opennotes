@@ -1127,6 +1127,7 @@ def _determine_scan_status(
     processed_count: int,
     error_count: int,
     total_errors: int,
+    skipped_count: int = 0,
     finalization_incomplete: bool = False,
 ) -> tuple[BulkScanStatus, str | None]:
     if messages_scanned > 0 and finalization_incomplete:
@@ -1138,6 +1139,14 @@ def _determine_scan_status(
         return BulkScanStatus.FAILED, "100% of messages had errors"
     if messages_scanned > 0 and processed_count == 0 and error_count > 0:
         return BulkScanStatus.FAILED, "all messages had batch errors"
+    if (
+        messages_scanned > 0
+        and processed_count == 0
+        and skipped_count == messages_scanned
+        and error_count == 0
+        and total_errors == 0
+    ):
+        return BulkScanStatus.COMPLETED, None
     if messages_scanned > 0 and processed_count == 0 and error_count == 0 and total_errors == 0:
         return (
             BulkScanStatus.FAILED,
@@ -1237,6 +1246,7 @@ def finalize_scan_step(
             status, failure_reason = _determine_scan_status(
                 messages_scanned=messages_scanned,
                 processed_count=processed_count,
+                skipped_count=actual_skipped,
                 error_count=error_count,
                 total_errors=total_errors,
                 finalization_incomplete=finalization_incomplete,
