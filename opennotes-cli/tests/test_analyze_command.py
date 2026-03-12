@@ -3,12 +3,32 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import huuid
 import httpx
 import pytest
 from click.testing import CliRunner
 
 from opennotes_cli.cli import cli
 from opennotes_cli.commands.analyze import analyze
+
+
+def make_analysis_response(*, status_code: int, data: dict | None = None) -> MagicMock:
+    response = MagicMock()
+    response.status_code = status_code
+    response.json.return_value = data or {
+        "data": {
+            "attributes": {
+                "rater_factors": [],
+                "note_factors": [],
+                "scored_at": "2026-01-01",
+                "tier": "FULL",
+                "global_intercept": 0.0,
+                "rater_count": 0,
+                "note_count": 0,
+            }
+        }
+    }
+    return response
 
 
 @pytest.fixture()
@@ -135,8 +155,196 @@ class TestTriggerRescore:
     def test_no_batch_job_polling(self) -> None:
         from opennotes_cli.commands import analyze as analyze_mod
 
-        assert not hasattr(analyze_mod, "poll_batch_job_until_complete") or \
-            "poll_batch_job_until_complete" not in dir(analyze_mod)
+        assert not hasattr(
+            analyze_mod, "poll_batch_job_until_complete"
+        ) or "poll_batch_job_until_complete" not in dir(analyze_mod)
+
+    def test_explicit_rescore_waits_for_snapshot(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_csrf_resp = MagicMock()
+        mock_csrf_resp.status_code = 200
+
+        mock_score_resp = MagicMock()
+        mock_score_resp.status_code = 202
+        mock_score_resp.json.return_value = {
+            "workflow_id": "score-community-test123",
+            "message": "Scoring workflow dispatched",
+        }
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [
+            mock_csrf_resp,
+            make_analysis_response(status_code=404),
+            make_analysis_response(status_code=200),
+        ]
+        mock_client.post.return_value = mock_score_resp
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with (
+            patch("opennotes_cli.cli.httpx.Client", return_value=mock_client),
+            patch(
+                "opennotes_cli.commands.analyze.ANALYSIS_POLL_INTERVAL", 0, create=True
+            ),
+            patch(
+                "opennotes_cli.commands.analyze.ANALYSIS_POLL_MAX_RETRIES",
+                3,
+                create=True,
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--rescore", "--no-prompt", community_id],
+            )
+
+        assert result.exit_code == 0
+        assert mock_client.get.call_count == 3
+
+    def test_prompted_rescore_waits_for_snapshot(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_csrf_resp = MagicMock()
+        mock_csrf_resp.status_code = 200
+
+        mock_score_resp = MagicMock()
+        mock_score_resp.status_code = 202
+        mock_score_resp.json.return_value = {
+            "workflow_id": "score-community-test123",
+            "message": "Scoring workflow dispatched",
+        }
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [
+            make_analysis_response(status_code=404),
+            mock_csrf_resp,
+            make_analysis_response(status_code=404),
+            make_analysis_response(status_code=200),
+        ]
+        mock_client.post.return_value = mock_score_resp
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with (
+            patch("opennotes_cli.cli.httpx.Client", return_value=mock_client),
+            patch(
+                "opennotes_cli.commands.analyze.ANALYSIS_POLL_INTERVAL", 0, create=True
+            ),
+            patch(
+                "opennotes_cli.commands.analyze.ANALYSIS_POLL_MAX_RETRIES",
+                3,
+                create=True,
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", community_id],
+                input="y\n",
+            )
+
+        assert result.exit_code == 0
+        assert mock_client.get.call_count == 4
+
+    def test_conflict_waits_for_existing_snapshot(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_csrf_resp = MagicMock()
+        mock_csrf_resp.status_code = 200
+
+        mock_score_resp = MagicMock()
+        mock_score_resp.status_code = 409
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [
+            mock_csrf_resp,
+            make_analysis_response(status_code=404),
+            make_analysis_response(status_code=200),
+        ]
+        mock_client.post.return_value = mock_score_resp
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with (
+            patch("opennotes_cli.cli.httpx.Client", return_value=mock_client),
+            patch(
+                "opennotes_cli.commands.analyze.ANALYSIS_POLL_INTERVAL", 0, create=True
+            ),
+            patch(
+                "opennotes_cli.commands.analyze.ANALYSIS_POLL_MAX_RETRIES",
+                3,
+                create=True,
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--rescore", "--no-prompt", community_id],
+            )
+
+        assert result.exit_code == 0
+        assert "already in progress" in result.output.lower()
+
+    def test_times_out_with_follow_up_guidance(self, runner: CliRunner) -> None:
+        community_id = str(uuid4())
+
+        mock_csrf_resp = MagicMock()
+        mock_csrf_resp.status_code = 200
+
+        mock_score_resp = MagicMock()
+        mock_score_resp.status_code = 202
+        mock_score_resp.json.return_value = {
+            "workflow_id": "score-community-test123",
+            "message": "Scoring workflow dispatched",
+        }
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [
+            mock_csrf_resp,
+            make_analysis_response(status_code=404),
+            make_analysis_response(status_code=404),
+        ]
+        mock_client.post.return_value = mock_score_resp
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = "test-csrf"
+
+        with (
+            patch("opennotes_cli.cli.httpx.Client", return_value=mock_client),
+            patch(
+                "opennotes_cli.commands.analyze.ANALYSIS_POLL_INTERVAL", 0, create=True
+            ),
+            patch(
+                "opennotes_cli.commands.analyze.ANALYSIS_POLL_MAX_RETRIES",
+                2,
+                create=True,
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--rescore", "--no-prompt", community_id],
+            )
+
+        assert result.exit_code != 0
+        assert "timed out waiting for a scoring snapshot" in result.output.lower()
+
+
+class TestCommunityServerIdResolution:
+    def test_accepts_huuid_input(self, runner: CliRunner) -> None:
+        community_id = uuid4()
+        community_huuid = huuid.uuid2human(community_id)
+
+        mock_client = MagicMock()
+        mock_client.get.return_value = make_analysis_response(status_code=200)
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client):
+            result = runner.invoke(
+                cli,
+                ["--local", "analyze", "mf", "--no-prompt", community_huuid],
+            )
+
+        assert result.exit_code == 0
+        analysis_url = mock_client.get.call_args.args[0]
+        assert analysis_url.endswith(
+            f"/community-servers/{community_id}/scoring-analysis"
+        )
 
 
 class TestNetworkErrorHandling:
