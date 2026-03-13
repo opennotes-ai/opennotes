@@ -1169,6 +1169,9 @@ def _determine_scan_status(
     all_transmitted_observed: bool = True,
     finalization_incomplete: bool = False,
 ) -> tuple[BulkScanStatus, str | None]:
+    status = BulkScanStatus.COMPLETED
+    failure_reason = None
+
     if (
         not all_transmitted_observed
         and messages_scanned == 0
@@ -1176,30 +1179,30 @@ def _determine_scan_status(
         and error_count == 0
         and total_errors == 0
     ):
-        return BulkScanStatus.FAILED, "zero-message scan never observed all_transmitted"
-    if messages_scanned > 0 and finalization_incomplete:
-        return (
-            BulkScanStatus.FAILED,
-            "finalization incomplete after all_transmitted handoff",
-        )
-    if messages_scanned > 0 and processed_count == 0 and total_errors > 0:
-        return BulkScanStatus.FAILED, "100% of messages had errors"
-    if messages_scanned > 0 and processed_count == 0 and error_count > 0:
-        return BulkScanStatus.FAILED, "all messages had batch errors"
-    if (
+        status = BulkScanStatus.FAILED
+        failure_reason = "zero-message scan never observed all_transmitted"
+    elif messages_scanned > 0 and finalization_incomplete:
+        status = BulkScanStatus.FAILED
+        failure_reason = "finalization incomplete after all_transmitted handoff"
+    elif messages_scanned > 0 and processed_count == 0 and total_errors > 0:
+        status = BulkScanStatus.FAILED
+        failure_reason = "100% of messages had errors"
+    elif messages_scanned > 0 and processed_count == 0 and error_count > 0:
+        status = BulkScanStatus.FAILED
+        failure_reason = "all messages had batch errors"
+    elif (
         messages_scanned > 0
         and processed_count == 0
         and skipped_count == messages_scanned
         and error_count == 0
         and total_errors == 0
     ):
-        return BulkScanStatus.COMPLETED, None
-    if messages_scanned > 0 and processed_count == 0 and error_count == 0 and total_errors == 0:
-        return (
-            BulkScanStatus.FAILED,
-            "orchestrator timed out with zero messages processed",
-        )
-    return BulkScanStatus.COMPLETED, None
+        failure_reason = None
+    elif messages_scanned > 0 and processed_count == 0 and error_count == 0 and total_errors == 0:
+        status = BulkScanStatus.FAILED
+        failure_reason = "orchestrator timed out with zero messages processed"
+
+    return status, failure_reason
 
 
 @DBOS.step()
