@@ -182,6 +182,43 @@ class TestWorkerWorkflowRegistration:
         assert str(fake_root / "missing.py") in message
         assert "missing_workflow" in message
 
+    def test_register_dbos_workflows_reports_import_failures_with_module_context(
+        self,
+        main_module,
+    ) -> None:
+        real_import_module = importlib.import_module
+        fake_root = Path("/tmp/fake-workflows")
+
+        def fake_import_module(module_path: str) -> object:
+            if module_path == "src.fake.broken":
+                raise ImportError("boom")
+            return real_import_module(module_path)
+
+        with (
+            pytest.raises(RuntimeError) as exc_info,
+            patch(
+                "src.main._discover_dbos_workflow_modules",
+                return_value=main_module.DiscoveredDBOSWorkflowModules(
+                    discovered_modules=[
+                        main_module.DiscoveredDBOSWorkflowModule(
+                            module_path="src.fake.broken",
+                            module_file=fake_root / "broken.py",
+                            workflow_names=("broken_workflow",),
+                        )
+                    ],
+                    errors=[],
+                ),
+            ),
+            patch("importlib.import_module", side_effect=fake_import_module),
+        ):
+            main_module._register_dbos_workflows()
+
+        message = str(exc_info.value)
+        assert "Workflow registration incomplete" in message
+        assert "src.fake.broken" in message
+        assert str(fake_root / "broken.py") in message
+        assert "ImportError: boom" in message
+
     def test_workflow_packages_avoid_eager_submodule_imports(self) -> None:
         src_root = Path(__file__).resolve().parents[3] / "src"
         init_files = [
@@ -202,6 +239,50 @@ class TestWorkerWorkflowRegistration:
                 )
             ]
             assert eager_imports == [], f"{init_file} still eagerly imports {eager_imports}"
+
+    @pytest.mark.parametrize(
+        ("module_name", "export_name"),
+        [
+            ("src.dbos_workflows", "get_dbos"),
+            ("src.simulation.workflows", "run_orchestrator"),
+        ],
+    )
+    def test_workflow_packages_lazy_load_exports(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        module_name: str,
+        export_name: str,
+    ) -> None:
+        module = importlib.reload(importlib.import_module(module_name))
+        module.__dict__.pop(export_name, None)
+
+        sentinel = object()
+        module_path, attr_name = module._LAZY_IMPORTS[export_name]
+
+        def fake_import_module(requested_module_path: str) -> object:
+            assert requested_module_path == module_path
+            return SimpleNamespace(**{attr_name: sentinel})
+
+        monkeypatch.setattr(importlib, "import_module", fake_import_module)
+
+        assert module.__getattr__(export_name) is sentinel
+        assert getattr(module, export_name) is sentinel
+
+    @pytest.mark.parametrize(
+        "module_name",
+        [
+            "src.dbos_workflows",
+            "src.simulation.workflows",
+        ],
+    )
+    def test_workflow_packages_raise_attribute_error_for_unknown_exports(
+        self,
+        module_name: str,
+    ) -> None:
+        module = importlib.reload(importlib.import_module(module_name))
+
+        with pytest.raises(AttributeError, match="missing_export"):
+            module.__getattr__("missing_export")
 
     @pytest.mark.asyncio
     async def test_workflow_modules_imported_in_worker_mode(self, main_module) -> None:

@@ -121,6 +121,57 @@ class _FakeMFCoreScorerAdapter:
 
 class TestSnapshotPersistenceResilience:
     @pytest.mark.asyncio
+    async def test_maybe_persist_snapshot_returns_none_for_non_mf_scorer(self) -> None:
+        from src.simulation import scoring_integration
+
+        db = AsyncMock()
+
+        assert (
+            await scoring_integration._maybe_persist_snapshot(
+                object(),
+                uuid4(),
+                "Minimal",
+                "other",
+                db,
+            )
+            is None
+        )
+
+    def test_schedule_scoring_snapshot_upload_skips_empty_payload(self) -> None:
+        from src.simulation import scoring_integration
+
+        with patch("src.simulation.scoring_integration.asyncio.get_running_loop") as mock_loop:
+            scoring_integration._schedule_scoring_snapshot_upload(uuid4(), None)
+
+        mock_loop.assert_not_called()
+
+    def test_schedule_scoring_snapshot_upload_logs_executor_errors(self) -> None:
+        from src.simulation import scoring_integration
+
+        community_server_id = uuid4()
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.asyncio.get_running_loop",
+                side_effect=RuntimeError("loop unavailable"),
+            ),
+            patch("src.simulation.scoring_integration.logger") as mock_logger,
+        ):
+            scoring_integration._schedule_scoring_snapshot_upload(
+                community_server_id,
+                {"snapshot": "payload"},
+            )
+
+        mock_logger.exception.assert_called_once()
+        assert (
+            mock_logger.exception.call_args.args[0]
+            == "Failed to schedule GCS scoring snapshot upload"
+        )
+        assert mock_logger.exception.call_args.kwargs["extra"]["community_server_id"] == str(
+            community_server_id
+        )
+
+    @pytest.mark.asyncio
     async def test_manual_scoring_publishes_history_only_after_commit(self) -> None:
         cs_id = uuid4()
         note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")

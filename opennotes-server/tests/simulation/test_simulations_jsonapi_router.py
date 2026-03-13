@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -335,6 +336,83 @@ class TestGetSimulation:
 
         response = await admin_auth_client.get(f"/api/v2/simulations/{run['id']}")
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_simulation_returns_raw_non_sensitive_error_for_admin(
+        self,
+        admin_auth_client,
+        simulation_run_factory,
+    ):
+        from src.database import get_session_maker
+        from src.simulation.models import SimulationRun
+
+        run = await simulation_run_factory("failed")
+        raw_error = "different failure"
+
+        async with get_session_maker()() as session:
+            await session.execute(
+                update(SimulationRun)
+                .where(SimulationRun.id == run["id"])
+                .values(error_message=raw_error)
+            )
+            await session.commit()
+
+        response = await admin_auth_client.get(f"/api/v2/simulations/{run['id']}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["error_message"] == raw_error
+
+    @pytest.mark.asyncio
+    async def test_get_simulation_direct_call_uses_unsanitized_resource_for_admin(self):
+        from starlette.requests import Request
+
+        from src.simulation.simulations_jsonapi_router import get_simulation
+
+        run = MagicMock()
+        run.id = uuid4()
+        run.status = "failed"
+        run.error_message = "different failure"
+        run.metrics = {}
+        run.cumulative_turns = 0
+        run.restart_count = 0
+        run.is_public = False
+        run.orchestrator_id = uuid4()
+        run.community_server_id = uuid4()
+        run.started_at = None
+        run.completed_at = None
+        run.paused_at = None
+        run.created_at = None
+        run.updated_at = None
+        run.generation = 1
+        run.current_config_id = None
+        run.config_snapshot = None
+
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = run
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=result)
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": f"/api/v2/simulations/{run.id}",
+                "headers": [],
+                "query_string": b"",
+                "scheme": "http",
+                "server": ("test", 80),
+                "client": ("testclient", 1234),
+            }
+        )
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.require_scope_or_admin",
+            return_value=False,
+        ):
+            response = await get_simulation(run.id, request, db, MagicMock())
+
+        payload = json.loads(response.body)
+        assert payload["data"]["attributes"]["error_message"] == "different failure"
 
 
 class TestListSimulations:
@@ -1713,6 +1791,13 @@ class TestPublishUnpublishAuth:
 
 
 class TestScopedKeyFiltering:
+    def test_sanitize_public_simulation_error_message_preserves_non_sensitive_errors(self):
+        from src.simulation.simulations_jsonapi_router import (
+            _sanitize_public_simulation_error_message,
+        )
+
+        assert _sanitize_public_simulation_error_message("different failure") == "different failure"
+
     @pytest.fixture
     async def service_account_scoped_client(self):
         from src.auth.models import APIKeyCreate
