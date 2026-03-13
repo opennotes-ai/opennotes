@@ -205,6 +205,32 @@ class TestScoreCommunityServerWorkflow:
 
 class TestDispatchCommunityScoring:
     @pytest.mark.asyncio
+    async def test_dispatch_uses_stable_deduplication_id_per_community(self) -> None:
+        from src.simulation.workflows.scoring_workflow import dispatch_community_scoring
+
+        cs_id = uuid4()
+        mock_handle = MagicMock()
+        mock_handle.get_workflow_id.return_value = f"score-community-{cs_id}-1709000000"
+        captured_dedup_ids: list[str] = []
+
+        def capture_enqueue_options(*, deduplication_id: str):
+            captured_dedup_ids.append(deduplication_id)
+            return MagicMock()
+
+        with (
+            patch(
+                "src.simulation.workflows.scoring_workflow.community_scoring_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID"),
+            patch("dbos.SetEnqueueOptions", side_effect=capture_enqueue_options),
+            patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
+        ):
+            mock_queue.enqueue.return_value = mock_handle
+            await dispatch_community_scoring(cs_id)
+
+        assert captured_dedup_ids == [f"score-community-{cs_id}"]
+
+    @pytest.mark.asyncio
     async def test_dispatch_creates_workflow_id_with_temporal_component(self) -> None:
         from src.simulation.workflows.scoring_workflow import (
             dispatch_community_scoring,

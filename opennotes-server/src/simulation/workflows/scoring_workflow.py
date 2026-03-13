@@ -61,12 +61,13 @@ SCORE_COMMUNITY_SERVER_WORKFLOW_NAME: str = score_community_server.__qualname__
 async def dispatch_community_scoring(community_server_id: UUID) -> str:
     import asyncio
 
-    from dbos import SetWorkflowID
+    from dbos import SetEnqueueOptions, SetWorkflowID
 
-    wf_id = f"score-community-{community_server_id}-{int(time.time())}"
+    deduplication_id = f"score-community-{community_server_id}"
+    wf_id = f"{deduplication_id}-{int(time.time())}"
 
     def _enqueue() -> str:
-        with SetWorkflowID(wf_id):
+        with SetWorkflowID(wf_id), SetEnqueueOptions(deduplication_id=deduplication_id):
             handle = community_scoring_queue.enqueue(
                 score_community_server,
                 str(community_server_id),
