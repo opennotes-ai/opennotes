@@ -1090,7 +1090,7 @@ describe('NotePublisherService', () => {
         );
       });
 
-      it('should use cached note context when force-publish events have only a partial routing payload', async () => {
+      it('should skip force-publish events when cache-restored routing conflicts with a partial event payload', async () => {
         const event: ScoreUpdateEvent = {
           ...createForcePublishEvent(),
           original_message_id: undefined,
@@ -1109,7 +1109,26 @@ describe('NotePublisherService', () => {
         await notePublisherService.handleScoreUpdate(event);
 
         expect(mockNoteContextService.getNoteContext).toHaveBeenCalledWith(event.note_id);
-        expect(mockChannel.send).toHaveBeenCalled();
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          'Skipping score update - cache-restored routing conflicts with event routing fields',
+          expect.objectContaining({
+            noteId: event.note_id,
+            isForcePublished: true,
+            sourceContextMissing: true,
+            cacheLookupAttempted: true,
+            mismatchedFields: expect.arrayContaining([
+              expect.objectContaining({
+                field: 'community_server_id',
+                eventValue: 'playground-guild-999',
+                restoredValue: 'guild-123',
+              }),
+            ]),
+          })
+        );
+        expect(mockApiClient.checkNoteDuplicate).not.toHaveBeenCalled();
+        expect(mockConfigService.getConfig).not.toHaveBeenCalled();
+        expect(mockChannel.send).not.toHaveBeenCalled();
+        expect(mockApiClient.recordNotePublisher).not.toHaveBeenCalled();
       });
 
       it('should skip cached force-publish routing when the restored guild is not in cache', async () => {
@@ -1131,6 +1150,54 @@ describe('NotePublisherService', () => {
         await notePublisherService.handleScoreUpdate(event);
 
         expect(mockNoteContextService.getNoteContext).toHaveBeenCalledWith(event.note_id);
+        expect(mockApiClient.checkNoteDuplicate).not.toHaveBeenCalled();
+        expect(mockConfigService.getConfig).not.toHaveBeenCalled();
+        expect(mockChannel.send).not.toHaveBeenCalled();
+        expect(mockApiClient.recordNotePublisher).not.toHaveBeenCalled();
+      });
+
+      it('should skip standard score updates when cache-restored routing conflicts with a partial event payload', async () => {
+        const event: ScoreUpdateEvent = {
+          note_id: '1',
+          score: TEST_SCORE_ABOVE_THRESHOLD,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 10,
+          tier: 2,
+          tier_name: 'Tier 2',
+          timestamp: new Date().toISOString(),
+          original_message_id: undefined,
+          channel_id: undefined,
+          community_server_id: 'playground-guild-999',
+        };
+
+        mockNoteContextService.getNoteContext.mockResolvedValue({
+          noteId: event.note_id,
+          originalMessageId: 'msg-cached',
+          channelId: 'channel-456',
+          guildId: 'guild-123',
+          authorId: '',
+        });
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockNoteContextService.getNoteContext).toHaveBeenCalledWith(event.note_id);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          'Skipping score update - cache-restored routing conflicts with event routing fields',
+          expect.objectContaining({
+            noteId: event.note_id,
+            isForcePublished: false,
+            sourceContextMissing: true,
+            cacheLookupAttempted: true,
+            mismatchedFields: expect.arrayContaining([
+              expect.objectContaining({
+                field: 'community_server_id',
+                eventValue: 'playground-guild-999',
+                restoredValue: 'guild-123',
+              }),
+            ]),
+          })
+        );
         expect(mockApiClient.checkNoteDuplicate).not.toHaveBeenCalled();
         expect(mockConfigService.getConfig).not.toHaveBeenCalled();
         expect(mockChannel.send).not.toHaveBeenCalled();

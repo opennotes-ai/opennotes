@@ -131,6 +131,18 @@ export class NotePublisherService {
         return;
       }
 
+      const routingMismatches = sourceContextMissing ? this.getRoutingContextMismatches(event, context) : [];
+      if (routingMismatches.length > 0) {
+        logger.warn('Skipping score update - cache-restored routing conflicts with event routing fields', {
+          noteId: event.note_id,
+          isForcePublished,
+          sourceContextMissing,
+          cacheLookupAttempted: sourceContextMissing,
+          mismatchedFields: routingMismatches,
+        });
+        return;
+      }
+
       logger.info('Discord context resolved', {
         noteId: event.note_id,
         channelId: context.channelId,
@@ -314,6 +326,43 @@ export class NotePublisherService {
       missing_community_server_id: !event.community_server_id,
     });
     return await this.noteContextService.getNoteContext(event.note_id);
+  }
+
+  private getRoutingContextMismatches(
+    event: ScoreUpdateEvent,
+    context: NoteContext
+  ): Array<{ field: 'original_message_id' | 'channel_id' | 'community_server_id'; eventValue: string; restoredValue: string }> {
+    const comparisons = [
+      {
+        field: 'original_message_id' as const,
+        eventValue: event.original_message_id,
+        restoredValue: context.originalMessageId,
+      },
+      {
+        field: 'channel_id' as const,
+        eventValue: event.channel_id,
+        restoredValue: context.channelId,
+      },
+      {
+        field: 'community_server_id' as const,
+        eventValue: event.community_server_id,
+        restoredValue: context.guildId,
+      },
+    ];
+
+    return comparisons
+      .filter(
+        (comparison): comparison is {
+          field: 'original_message_id' | 'channel_id' | 'community_server_id';
+          eventValue: string;
+          restoredValue: string;
+        } => Boolean(comparison.eventValue) && comparison.eventValue !== comparison.restoredValue
+      )
+      .map(({ field, eventValue, restoredValue }) => ({
+        field,
+        eventValue,
+        restoredValue,
+      }));
   }
 
   private async isDuplicate(originalMessageId: string, guildId: string): Promise<boolean> {
