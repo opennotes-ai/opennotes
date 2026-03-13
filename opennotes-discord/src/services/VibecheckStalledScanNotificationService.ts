@@ -59,31 +59,32 @@ export class VibecheckStalledScanNotificationService {
     this.activeDeliveries.add(event.scan_id);
 
     const lockKey = `vibecheck:stalled-scan:${event.scan_id}`;
-    const lockAcquired = this.distributedLock
-      ? await this.distributedLock.acquire(lockKey, {
-        ttlMs: this.lockTtlMs,
-        retryDelayMs: 50,
-        maxRetries: 3,
-      })
-      : true;
-
-    if (!lockAcquired) {
-      logger.info('Retrying stalled scan DM after lock acquisition failed', {
-        scanId: event.scan_id,
-        lockKey,
-      });
-      this.activeDeliveries.delete(event.scan_id);
-      throw new RetryableTerminalEventError(
-        `Stalled scan terminal event is waiting on lock contention for ${event.scan_id}`,
-        'lock-contention'
-      );
-    }
-
+    let lockAcquired = false;
     let stalledScan: StalledScanRecord | null = null;
-    const stopLockKeepalive = this.startLockKeepalive(lockKey);
+    let stopLockKeepalive = () => {};
     const historicalReplay = this.isHistoricalReplay(event);
 
     try {
+      lockAcquired = this.distributedLock
+        ? await this.distributedLock.acquire(lockKey, {
+          ttlMs: this.lockTtlMs,
+          retryDelayMs: 50,
+          maxRetries: 3,
+        })
+        : true;
+
+      if (!lockAcquired) {
+        logger.info('Retrying stalled scan DM after lock acquisition failed', {
+          scanId: event.scan_id,
+          lockKey,
+        });
+        throw new RetryableTerminalEventError(
+          `Stalled scan terminal event is waiting on lock contention for ${event.scan_id}`,
+          'lock-contention'
+        );
+      }
+
+      stopLockKeepalive = this.startLockKeepalive(lockKey);
       stalledScan = await this.findStalledScan(event.scan_id, {
         retryOnMiss: !historicalReplay,
       });
@@ -168,7 +169,7 @@ export class VibecheckStalledScanNotificationService {
     } finally {
       this.activeDeliveries.delete(event.scan_id);
       stopLockKeepalive();
-      if (this.distributedLock) {
+      if (this.distributedLock && lockAcquired) {
         try {
           await this.distributedLock.release(lockKey);
         } catch (error) {

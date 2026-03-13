@@ -63,6 +63,8 @@ interface Command {
   execute: (interaction: ChatInputCommandInteraction | MessageContextMenuCommandInteraction) => Promise<void>;
 }
 
+type TerminalSubscriptionStatus = 'pending' | 'ready' | 'degraded';
+
 export class Bot {
   private client: Client;
   commands: Collection<string, Command>;
@@ -79,6 +81,8 @@ export class Bot {
   private vibecheckStalledScanNotificationService?: VibecheckStalledScanNotificationService;
   private healthCheckServer?: Express;
   private healthCheckPort?: number;
+  private terminalSubscriptionStatus: TerminalSubscriptionStatus;
+  private terminalSubscriptionError?: string;
 
   constructor() {
     this.client = new Client({
@@ -91,6 +95,7 @@ export class Bot {
 
     this.commands = new Collection();
     this.isReady = false;
+    this.terminalSubscriptionStatus = 'pending';
 
     this.loadCommands();
     this.setupEventHandlers();
@@ -322,6 +327,9 @@ export class Bot {
   }
 
   private async initializeNotePublisher(): Promise<void> {
+    this.terminalSubscriptionStatus = 'pending';
+    this.terminalSubscriptionError = undefined;
+
     try {
       const noteContextService = new NoteContextService();
       const configService = new NotePublisherConfigService();
@@ -368,9 +376,11 @@ export class Bot {
             this.vibecheckStalledScanNotificationService
           )
         );
+        this.markTerminalSubscriptionReady();
 
         logger.info('Vibecheck stalled scan notification service initialized and subscribed to terminal events');
       } catch (error) {
+        this.markTerminalSubscriptionDegraded(error);
         logger.warn('Vibecheck stalled scan notification service degraded - terminal event subscription unavailable', {
           error: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : undefined,
@@ -738,6 +748,177 @@ export class Bot {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  private markTerminalSubscriptionReady(): void {
+    this.terminalSubscriptionStatus = 'ready';
+    this.terminalSubscriptionError = undefined;
+  }
+
+  private markTerminalSubscriptionDegraded(error: unknown): void {
+    this.terminalSubscriptionStatus = 'degraded';
+    this.terminalSubscriptionError = error instanceof Error ? error.message : String(error);
+  }
+
+  private getTerminalSubscriptionHealth(): { status: TerminalSubscriptionStatus; error?: string } {
+    return {
+      status: this.terminalSubscriptionStatus,
+      ...(this.terminalSubscriptionError
+        ? { error: this.terminalSubscriptionError }
+        : {}),
+    };
+  }
+
+  private getReadinessState(): {
+    ready: boolean;
+    reason?: string;
+    terminalSubscriptions: { status: TerminalSubscriptionStatus; error?: string };
+  } {
+    const terminalSubscriptions = this.getTerminalSubscriptionHealth();
+
+    if (!this.isReady) {
+      return {
+        ready: false,
+        reason: 'starting',
+        terminalSubscriptions,
+      };
+    }
+
+    if (terminalSubscriptions.status === 'degraded') {
+      return {
+        ready: false,
+        reason: 'bulk_scan_terminal_subscriptions_degraded',
+        terminalSubscriptions,
+      };
+    }
+
+    if (terminalSubscriptions.status !== 'ready') {
+      return {
+        ready: false,
+        reason: 'bulk_scan_terminal_subscriptions_initializing',
+        terminalSubscriptions,
+      };
+    }
+
+    return {
+      ready: true,
+      terminalSubscriptions,
+    };
+  }
+
+  private getHealthStatus(): 'starting' | 'healthy' | 'degraded' {
+    const readiness = this.getReadinessState();
+
+    if (!this.isReady || readiness.reason === 'bulk_scan_terminal_subscriptions_initializing') {
+      return 'starting';
+    }
+
+    return readiness.ready ? 'healthy' : 'degraded';
+  }
+
+  private async buildDistributedHealthSnapshot(): Promise<{
+    allHealthy: boolean;
+    checks: Record<string, string | number>;
+  }> {
+    const checks: Record<string, string | number> = {
+      instance: config.instanceId,
+    };
+    let allHealthy = true;
+
+    const terminalSubscriptions = this.getTerminalSubscriptionHealth();
+    checks.bulk_scan_terminal_subscriptions = terminalSubscriptions.status;
+    if (terminalSubscriptions.error) {
+      checks.bulk_scan_terminal_subscription_error = terminalSubscriptions.error;
+    }
+    if (terminalSubscriptions.status !== 'ready') {
+      allHealthy = false;
+    }
+
+    try {
+      const { getRedisClient } = await import('./redis-client.js');
+      const redisClient = getRedisClient();
+
+      if (redisClient) {
+        try {
+          const pingStart = Date.now();
+          await redisClient.ping();
+          checks.redis = 'connected';
+          checks.redis_latency_ms = Date.now() - pingStart;
+        } catch (error) {
+          checks.redis = 'error';
+          checks.redis_error = error instanceof Error ? error.message : String(error);
+          allHealthy = false;
+        }
+      } else {
+        checks.redis = 'not_configured';
+      }
+    } catch (error) {
+      checks.redis = 'unavailable';
+      checks.redis_error = error instanceof Error ? error.message : String(error);
+      allHealthy = false;
+    }
+
+    if (this.natsSubscriber) {
+      checks.nats = this.natsSubscriber.isConnected() ? 'connected' : 'disconnected';
+      if (!this.natsSubscriber.isConnected()) {
+        allHealthy = false;
+      }
+    } else {
+      checks.nats = 'not_initialized';
+      allHealthy = false;
+    }
+
+    if (this.notePublisherService) {
+      try {
+        const { getRedisClient } = await import('./redis-client.js');
+        const redisClient = getRedisClient();
+
+        if (redisClient) {
+          const { DistributedLock } = await import('./utils/distributed-lock.js');
+          const lock = new DistributedLock(redisClient);
+          const testKey = `healthcheck:lock:${config.instanceId}`;
+
+          try {
+            const acquired = await lock.acquire(testKey, { ttlMs: 5000, maxRetries: 1 });
+            if (acquired) {
+              await lock.release(testKey);
+              checks.distributed_lock = 'ok';
+            } else {
+              checks.distributed_lock = 'contention';
+            }
+          } catch (error) {
+            checks.distributed_lock = 'error';
+            checks.lock_error = error instanceof Error ? error.message : String(error);
+            allHealthy = false;
+          }
+        } else {
+          checks.distributed_lock = 'redis_unavailable';
+        }
+      } catch (error) {
+        checks.distributed_lock = 'error';
+        checks.lock_error = error instanceof Error ? error.message : String(error);
+        allHealthy = false;
+      }
+    } else {
+      checks.distributed_lock = 'service_not_initialized';
+    }
+
+    if (this.messageMonitorService) {
+      try {
+        const metrics = await this.messageMonitorService.getMetrics();
+        checks.message_queue_size = metrics.queueSize;
+        checks.message_queue_utilization = `${metrics.utilizationPercent.toFixed(1)}%`;
+        const lastProcessedTime = metrics.performance?.uptimeSeconds
+          ? `${Math.floor(metrics.performance.uptimeSeconds)}s ago`
+          : 'never';
+        checks.last_message_processed = lastProcessedTime;
+      } catch (error) {
+        checks.message_monitor = 'error';
+        checks.monitor_error = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    return { checks, allHealthy };
+  }
+
   async start(): Promise<void> {
     try {
       logger.info('Starting bot initialization');
@@ -780,8 +961,9 @@ export class Bot {
     this.healthCheckPort = config.healthCheck.port;
 
     this.healthCheckServer.get('/health', (_req, res) => {
+      const status = this.getHealthStatus();
       const health = {
-        status: this.isReady ? 'healthy' : 'starting',
+        status,
         instance: config.instanceId,
         uptime: process.uptime(),
         timestamp: Date.now(),
@@ -793,16 +975,18 @@ export class Bot {
           : null,
         guilds: this.client.guilds.cache.size,
         ping: this.client.ws.ping,
+        terminalSubscriptions: this.getTerminalSubscriptionHealth(),
       };
 
-      res.status(200).json(health);
+      res.status(status === 'degraded' ? 503 : 200).json(health);
     });
 
     this.healthCheckServer.get('/ready', (_req, res) => {
-      if (this.isReady) {
-        res.status(200).json({ ready: true });
+      const readiness = this.getReadinessState();
+      if (readiness.ready) {
+        res.status(200).json(readiness);
       } else {
-        res.status(503).json({ ready: false });
+        res.status(503).json(readiness);
       }
     });
 
@@ -812,94 +996,7 @@ export class Bot {
 
     this.healthCheckServer.get('/health/distributed', (_req, res) => {
       void (async (): Promise<void> => {
-      const checks: Record<string, string | number> = {
-        instance: config.instanceId,
-      };
-      let allHealthy = true;
-
-      try {
-        const { getRedisClient } = await import('./redis-client.js');
-        const redisClient = getRedisClient();
-
-        if (redisClient) {
-          try {
-            const pingStart = Date.now();
-            await redisClient.ping();
-            checks.redis = 'connected';
-            checks.redis_latency_ms = Date.now() - pingStart;
-          } catch (error) {
-            checks.redis = 'error';
-            checks.redis_error = error instanceof Error ? error.message : String(error);
-            allHealthy = false;
-          }
-        } else {
-          checks.redis = 'not_configured';
-        }
-      } catch (error) {
-        checks.redis = 'unavailable';
-        checks.redis_error = error instanceof Error ? error.message : String(error);
-        allHealthy = false;
-      }
-
-      if (this.natsSubscriber) {
-        checks.nats = this.natsSubscriber.isConnected() ? 'connected' : 'disconnected';
-        if (!this.natsSubscriber.isConnected()) {
-          allHealthy = false;
-        }
-      } else {
-        checks.nats = 'not_initialized';
-        allHealthy = false;
-      }
-
-      if (this.notePublisherService) {
-        try {
-          const { getRedisClient } = await import('./redis-client.js');
-          const redisClient = getRedisClient();
-
-          if (redisClient) {
-            const { DistributedLock } = await import('./utils/distributed-lock.js');
-            const lock = new DistributedLock(redisClient);
-            const testKey = `healthcheck:lock:${config.instanceId}`;
-
-            try {
-              const acquired = await lock.acquire(testKey, { ttlMs: 5000, maxRetries: 1 });
-              if (acquired) {
-                await lock.release(testKey);
-                checks.distributed_lock = 'ok';
-              } else {
-                checks.distributed_lock = 'contention';
-              }
-            } catch (error) {
-              checks.distributed_lock = 'error';
-              checks.lock_error = error instanceof Error ? error.message : String(error);
-              allHealthy = false;
-            }
-          } else {
-            checks.distributed_lock = 'redis_unavailable';
-          }
-        } catch (error) {
-          checks.distributed_lock = 'error';
-          checks.lock_error = error instanceof Error ? error.message : String(error);
-          allHealthy = false;
-        }
-      } else {
-        checks.distributed_lock = 'service_not_initialized';
-      }
-
-      if (this.messageMonitorService) {
-        try {
-          const metrics = await this.messageMonitorService.getMetrics();
-          checks.message_queue_size = metrics.queueSize;
-          checks.message_queue_utilization = `${metrics.utilizationPercent.toFixed(1)}%`;
-          const lastProcessedTime = metrics.performance?.uptimeSeconds
-            ? `${Math.floor(metrics.performance.uptimeSeconds)}s ago`
-            : 'never';
-          checks.last_message_processed = lastProcessedTime;
-        } catch (error) {
-          checks.message_monitor = 'error';
-          checks.monitor_error = error instanceof Error ? error.message : String(error);
-        }
-      }
+      const { checks, allHealthy } = await this.buildDistributedHealthSnapshot();
 
       const statusCode = allHealthy ? 200 : 503;
       res.status(statusCode).json({
@@ -959,6 +1056,8 @@ export class Bot {
     cache.stop();
     void this.client.destroy();
     this.isReady = false;
+    this.terminalSubscriptionStatus = 'pending';
+    this.terminalSubscriptionError = undefined;
 
     logger.info('Bot stopped');
   }

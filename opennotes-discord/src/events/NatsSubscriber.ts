@@ -20,6 +20,7 @@ import type {
 import { EventType, NATS_SUBJECTS } from '../types/bulk-scan.js';
 
 export class NatsSubscriber {
+  private readonly retryableTerminalRedeliveryDelayMs = 30_000;
   private nc?: NatsConnection;
   private readonly codec = StringCodec();
   private readonly maxReconnectAttempts: number;
@@ -151,6 +152,19 @@ export class NatsSubscriber {
       expectedPolicy: 'all',
     });
     return true;
+  }
+
+  private isRetryableTerminalEventError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    if (error.name !== 'RetryableTerminalEventError') {
+      return false;
+    }
+
+    const reason = Reflect.get(error, 'reason');
+    return reason === 'lock-contention' || reason === 'recent-cache-miss';
   }
 
   async connect(url?: string): Promise<void> {
@@ -431,6 +445,12 @@ export class NatsSubscriber {
                 error: error instanceof Error ? error.message : String(error),
                 subject,
               });
+
+              if (this.isRetryableTerminalEventError(error)) {
+                msg.nak(this.retryableTerminalRedeliveryDelayMs);
+                continue;
+              }
+
               msg.nak();
             }
           }

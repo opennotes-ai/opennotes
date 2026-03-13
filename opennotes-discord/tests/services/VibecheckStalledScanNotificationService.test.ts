@@ -335,6 +335,68 @@ describe('VibecheckStalledScanNotificationService', () => {
     expect(mockDistributedLock.release).not.toHaveBeenCalled();
   });
 
+  it('clears the local delivery guard when distributed lock acquisition throws', async () => {
+    const event = {
+      event_id: 'evt-lock-acquire-throws',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      metadata: {},
+      scan_id: 'scan-lock-acquire-throws-123',
+      community_server_id: 'community-123',
+      messages_scanned: 48,
+      messages_flagged: 2,
+    };
+    const mockDistributedLock = {
+      acquire: jest
+        .fn<(...args: unknown[]) => Promise<boolean>>()
+        .mockRejectedValueOnce(new Error('redis unavailable'))
+        .mockResolvedValueOnce(true),
+      release: jest.fn<(...args: unknown[]) => Promise<boolean>>().mockResolvedValue(true),
+      extend: jest.fn<(...args: unknown[]) => Promise<boolean>>().mockResolvedValue(true),
+    };
+    service = new VibecheckStalledScanNotificationService(
+      {
+        users: {
+          fetch: mockUsersFetch,
+        },
+      } as any,
+      mockDistributedLock as any
+    );
+    stalledScanStore['vibecheck:stalled:scan-lock-acquire-throws-123'] = {
+      scanId: 'scan-lock-acquire-throws-123',
+      initiatorId: 'user-123',
+      guildId: 'guild-123',
+      days: 7,
+      source: 'slash_command',
+    };
+    mockApiClient.getBulkScanResults.mockResolvedValue({
+      data: {
+        type: 'bulk-scans',
+        id: 'scan-lock-acquire-throws-123',
+        attributes: {
+          status: 'completed',
+          initiated_at: new Date().toISOString(),
+          messages_scanned: 48,
+          messages_flagged: 2,
+        },
+      },
+      included: [],
+      jsonapi: { version: '1.1' },
+    });
+
+    await expect(service.handleTerminalEvent(event)).rejects.toThrow('redis unavailable');
+
+    await expect(service.handleTerminalEvent({
+      ...event,
+      event_id: 'evt-lock-acquire-throws-retry',
+    })).resolves.toBeUndefined();
+
+    expect(mockDistributedLock.acquire).toHaveBeenCalledTimes(2);
+    expect(mockDistributedLock.release).toHaveBeenCalledTimes(1);
+    expect(mockUserSend).toHaveBeenCalledTimes(1);
+  });
+
   it('acks historical replay misses after a single stalled-scan lookup', async () => {
     let lookupCount = 0;
     mockCacheGet.mockImplementation(async () => {
