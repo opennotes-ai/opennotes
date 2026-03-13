@@ -481,6 +481,46 @@ describe('vibecheck-prompt-handler', () => {
         );
       });
 
+      it('falls back to the terminal prompt message when stalled scan persistence fails', async () => {
+        mockCacheGet.mockResolvedValue({
+          guildId: 'guild-123',
+          adminId: 'admin-123',
+          botChannelId: 'channel-123',
+          selectedDays: 7,
+        });
+        mockCacheSet.mockRejectedValueOnce(new Error('redis unavailable'));
+
+        mockExecuteBulkScan.mockImplementationOnce(async ({ stallWarningCallback }) => {
+          await stallWarningCallback?.('scan-prompt-123').catch(() => undefined);
+          return {
+            scanId: 'scan-prompt-123',
+            messagesScanned: 100,
+            channelsScanned: 5,
+            batchesPublished: 1,
+            status: 'completed',
+            flaggedMessages: [],
+          };
+        });
+
+        const mockGuild = { id: 'guild-123', name: 'Test Guild' };
+        const mockChannel = Object.assign(Object.create(TextChannel.prototype), {
+          guild: mockGuild,
+          id: 'channel-123',
+          name: 'open-notes',
+        });
+        const interaction = createMockInteraction({
+          customId: 'vibecheck_prompt_start',
+          isButton: () => true,
+          channel: mockChannel,
+        });
+
+        await handleVibecheckPromptInteraction(interaction as any);
+
+        const editContents = interaction.message.edit.mock.calls.map(([arg]: any[]) => String(arg.content ?? ''));
+        expect(editContents.some((content: string) => content.includes('**Scan Complete**'))).toBe(true);
+        expect(editContents.at(-1)).not.toContain('taking longer than we can keep updated');
+      });
+
       it('should display flagged messages count when issues found', async () => {
         mockCacheGet.mockResolvedValue({
           guildId: 'guild-123',

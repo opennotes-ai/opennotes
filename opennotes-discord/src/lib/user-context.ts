@@ -15,8 +15,8 @@ export function extractUserContext(user: User, guildId?: string | null, member?:
   return {
     userId: user.id,
     username: user.username,
-    displayName: user.displayName ?? user.globalName ?? undefined,
-    avatarUrl: user.displayAvatarURL(),
+    displayName: ('displayName' in user ? user.displayName : undefined) ?? user.globalName ?? undefined,
+    avatarUrl: typeof user.displayAvatarURL === 'function' ? user.displayAvatarURL() : undefined,
     guildId: guildId ?? undefined,
     channelId: channelId ?? undefined,
     hasManageServer: member?.permissions.has(PermissionFlagsBits.ManageGuild) ?? undefined,

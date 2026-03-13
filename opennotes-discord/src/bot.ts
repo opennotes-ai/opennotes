@@ -358,7 +358,10 @@ export class Bot {
 
       logger.info('Vibecheck progress service initialized and subscribed to progress updates');
 
-      this.vibecheckStalledScanNotificationService = new VibecheckStalledScanNotificationService(this.client);
+      this.vibecheckStalledScanNotificationService = new VibecheckStalledScanNotificationService(
+        this.client,
+        distributedLock
+      );
       await this.natsSubscriber.subscribeToBulkScanTerminalUpdates(
         this.vibecheckStalledScanNotificationService.handleTerminalEvent.bind(
           this.vibecheckStalledScanNotificationService

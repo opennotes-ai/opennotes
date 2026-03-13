@@ -16,6 +16,7 @@ import {
 } from '../lib/vibecheck-prompt.js';
 import { executeBulkScan } from '../lib/bulk-scan-executor.js';
 import { recordStalledScan } from '../lib/vibecheck-stalled-scan.js';
+import { createStallWarningController } from '../lib/vibecheck-stall-warning.js';
 
 const VIBECHECK_PROMPT_TTL_SECONDS = 300;
 
@@ -232,26 +233,27 @@ async function handleStart(
   }
 
   try {
-    let stalled = false;
+    const stallWarningController = createStallWarningController(async (scanId) => {
+      await recordStalledScan({
+        scanId,
+        initiatorId: interaction.user.id,
+        guildId: state.guildId,
+        days: selectedDays,
+        source: 'prompt',
+      });
+      await interaction.message.edit({
+        content: `Scan is taking longer than we can keep updated.\n\n` +
+          `Use \`/vibecheck status scan_id:${scanId}\` to check later.\n\n` +
+        `**Scan ID:** \`${scanId}\``,
+      });
+    });
     const result = await executeBulkScan({
       guild,
       days: selectedDays,
       initiatorId: interaction.user.id,
       errorId,
       stallWarningCallback: async (scanId) => {
-        stalled = true;
-        await recordStalledScan({
-          scanId,
-          initiatorId: interaction.user.id,
-          guildId: state.guildId,
-          days: selectedDays,
-          source: 'prompt',
-        });
-        await interaction.message.edit({
-          content: `Scan is taking longer than we can keep updated.\n\n` +
-            `Use \`/vibecheck status scan_id:${scanId}\` to check later.\n\n` +
-          `**Scan ID:** \`${scanId}\``,
-        });
+        await stallWarningController.onStallWarning(scanId);
       },
     });
 
@@ -262,7 +264,7 @@ async function handleStart(
       return;
     }
 
-    if (stalled) {
+    if (await stallWarningController.shouldSuppressUpdates()) {
       return;
     }
 

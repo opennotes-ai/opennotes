@@ -22,6 +22,8 @@ import { executeBulkScan } from '../lib/bulk-scan-executor.js';
 import { formatScanStatusPaginated } from '../lib/scan-status-formatter.js';
 import { TextPaginator } from '../lib/text-paginator.js';
 import { recordStalledScan } from '../lib/vibecheck-stalled-scan.js';
+import { createStallWarningController } from '../lib/vibecheck-stall-warning.js';
+import { extractUserContext } from '../lib/user-context.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { serviceProvider } from '../services/index.js';
 import { ConfigKey } from '../lib/config-schema.js';
@@ -233,7 +235,20 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       });
     }
 
-    let stalled = false;
+    const stallWarningController = createStallWarningController(async (scanId) => {
+      await recordStalledScan({
+        scanId,
+        initiatorId: userId,
+        guildId,
+        days,
+        source: 'slash_command',
+      });
+      await interaction.editReply({
+        content: `Scan is taking longer than we can keep updated.\n\n` +
+          `Use \`/vibecheck status scan_id:${scanId}\` to check later.\n\n` +
+          `**Scan ID:** \`${scanId}\``,
+      });
+    });
     const result = await executeBulkScan({
       guild,
       days,
@@ -241,7 +256,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       errorId,
       excludeChannelIds,
       progressCallback: async (progress) => {
-        if (stalled) {
+        if (await stallWarningController.shouldSuppressUpdates()) {
           return;
         }
 
@@ -269,19 +284,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         });
       },
       stallWarningCallback: async (scanId) => {
-        stalled = true;
-        await recordStalledScan({
-          scanId,
-          initiatorId: userId,
-          guildId,
-          days,
-          source: 'slash_command',
-        });
-        await interaction.editReply({
-          content: `Scan is taking longer than we can keep updated.\n\n` +
-            `Use \`/vibecheck status scan_id:${scanId}\` to check later.\n\n` +
-            `**Scan ID:** \`${scanId}\``,
-        });
+        await stallWarningController.onStallWarning(scanId);
       },
     });
 
@@ -292,7 +295,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       return;
     }
 
-    if (stalled) {
+    if (await stallWarningController.shouldSuppressUpdates()) {
       return;
     }
 
@@ -648,6 +651,8 @@ async function handleStatusSubcommand(
   guildId: string,
   errorId: string
 ): Promise<void> {
+  const requestedScanId = interaction.options.getString?.('scan_id') ?? null;
+
   await interaction.deferReply({
     flags: MessageFlags.Ephemeral,
   });
@@ -661,10 +666,30 @@ async function handleStatusSubcommand(
 
   try {
     const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-    const requestedScanId = interaction.options.getString?.('scan_id') ?? null;
+    const userContext = requestedScanId
+      ? extractUserContext(
+        interaction.user,
+        guildId,
+        interaction.member as GuildMember | null,
+        interaction.channelId
+      )
+      : undefined;
     const scan = requestedScanId
-      ? await apiClient.getBulkScanResults(requestedScanId)
+      ? await apiClient.getBulkScanResults(requestedScanId, userContext)
       : await apiClient.getLatestScan(communityServer.data.id);
+    const scanCommunityId = (scan.data.attributes as { community_server_id?: string }).community_server_id;
+
+    if (
+      requestedScanId
+      && scanCommunityId
+      && scanCommunityId !== communityServer.data.id
+    ) {
+      await interaction.editReply({
+        content: `Scan \`${requestedScanId}\` belongs to a different server. Use \`/vibecheck status\` here to view scans for this server.`,
+      });
+      return;
+    }
+
     const flaggedMessages = scan.included || [];
 
     const cachedExplanations = await cache.get<Record<string, string>>(
@@ -744,7 +769,9 @@ async function handleStatusSubcommand(
   } catch (error) {
     if (error instanceof ApiError && error.statusCode === 404) {
       await interaction.editReply({
-        content: 'No scans have been run for this server yet. Use `/vibecheck scan` to start one.',
+        content: requestedScanId
+          ? `Scan \`${requestedScanId}\` was not found for this server. Use \`/vibecheck status\` to view the latest scan for this server.`
+          : 'No scans have been run for this server yet. Use `/vibecheck scan` to start one.',
       });
       return;
     }

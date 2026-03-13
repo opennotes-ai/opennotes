@@ -490,199 +490,6 @@ describe('formatScanStatusPaginated', () => {
     formatScanStatusPaginated = module.formatScanStatusPaginated;
   });
 
-<<<<<<< HEAD
-  describe('completed status', () => {
-    it('renders the completed empty-state summary when no flagged messages are included', () => {
-      const scan = latestScanResponseFactory.build(
-        {
-          data: {
-            type: 'bulk-scans',
-            id: 'scan-123',
-            attributes: {
-              status: 'completed',
-              initiated_at: new Date().toISOString(),
-              messages_scanned: 42,
-              messages_flagged: 0,
-            },
-          },
-        },
-        { transient: { status: 'completed', messagesScanned: 42 } }
-      );
-
-      const result = formatScanStatusPaginated({
-        scan,
-        guildId: 'guild-456',
-        days: 7,
-      });
-
-      expect(result.header).toMatch(/scan complete/i);
-      expect(result.header).toContain('**Messages scanned:** 42');
-      expect(result.pages.pages[0]).toMatch(/no flagged content found/i);
-      expect(result.actionButtons).toBeUndefined();
-    });
-
-    it('renders completed flagged results and keeps action buttons when requested', () => {
-      const flaggedMessages = [
-        flaggedMessageFactory.build({
-          id: 'msg-1',
-          attributes: {
-            channel_id: 'ch-1',
-            content: 'This vaccine causes autism',
-            author_id: '00000000-0000-0001-aaaa-000000000001',
-            timestamp: new Date().toISOString(),
-            matches: [{
-              scan_type: 'similarity' as const,
-              score: 0.95,
-              matched_claim: 'Vaccines cause autism',
-              matched_source: 'snopes',
-              fact_check_item_id: '12345678-1234-1234-1234-123456789abc',
-            }],
-          },
-        }),
-      ];
-
-      const scan = latestScanResponseFactory.build(
-        {
-          data: {
-            type: 'bulk-scans',
-            id: 'scan-456',
-            attributes: {
-              status: 'completed',
-              initiated_at: new Date().toISOString(),
-              messages_scanned: 100,
-              messages_flagged: 1,
-            },
-          },
-          included: flaggedMessages,
-        },
-        { transient: { status: 'completed', messagesScanned: 100, flaggedMessages } }
-      );
-
-      const result = formatScanStatusPaginated({
-        scan,
-        guildId: 'guild-456',
-        includeButtons: true,
-      });
-
-      expect(result.header).toMatch(/scan complete/i);
-      expect(result.header).toContain('**Flagged:** 1');
-      expect(result.pages.pages[0]).toContain('This vaccine causes autism');
-      expect(result.pages.pages[0]).toMatch(/\(link to message\)/);
-      expect(result.actionButtons).toBeDefined();
-    });
-  });
-
-  describe('non-completed status', () => {
-    it('renders the failed status header and failure message', () => {
-      const scan = latestScanResponseFactory.build(
-        {
-          data: {
-            type: 'bulk-scans',
-            id: 'scan-123',
-            attributes: {
-              status: 'failed',
-              initiated_at: new Date().toISOString(),
-              messages_scanned: 0,
-              messages_flagged: 0,
-            },
-          },
-        },
-        { transient: { status: 'failed', messagesScanned: 0 } }
-      );
-
-      const result = formatScanStatusPaginated({
-        scan,
-        guildId: 'guild-456',
-        days: 7,
-      });
-
-      expect(result.header).toMatch(/scan status: failed/i);
-      expect(result.header).toContain('scan-123');
-      expect(result.pages.pages[0]).toMatch(/scan failed due to processing errors/i);
-      expect(result.pages.pages[0]).not.toMatch(/scan complete/i);
-    });
-
-    it('preserves flagged results when a failed scan includes them', () => {
-      const flaggedMessages = [
-        flaggedMessageFactory.build({
-          id: 'msg-1',
-          attributes: {
-            channel_id: 'ch-1',
-            content: 'This vaccine causes autism',
-            author_id: '00000000-0000-0001-aaaa-000000000001',
-            timestamp: new Date().toISOString(),
-            matches: [{
-              scan_type: 'similarity' as const,
-              score: 0.95,
-              matched_claim: 'Vaccines cause autism',
-              matched_source: 'snopes',
-              fact_check_item_id: '12345678-1234-1234-1234-123456789abc',
-            }],
-          },
-        }),
-      ];
-
-      const scan = latestScanResponseFactory.build(
-        {
-          data: {
-            type: 'bulk-scans',
-            id: 'scan-123',
-            attributes: {
-              status: 'failed',
-              initiated_at: new Date().toISOString(),
-              messages_scanned: 5,
-              messages_flagged: 1,
-            },
-          },
-          included: flaggedMessages,
-        },
-        { transient: { status: 'failed', messagesScanned: 5, flaggedMessages } }
-      );
-
-      const result = formatScanStatusPaginated({
-        scan,
-        guildId: 'guild-456',
-      });
-
-      expect(result.header).toMatch(/scan status: failed/i);
-      expect(result.pages.pages[0]).toMatch(/scan failed due to processing errors/i);
-      expect(result.pages.pages[0]).toContain('This vaccine causes autism');
-      expect(result.pages.pages[0]).toMatch(/\(link to message\)/);
-    });
-    it('formats pending scan status in the header', () => {
-      const scan = latestScanResponseFactory.build(
-        { data: { type: 'bulk-scans', id: 'scan-123', attributes: { status: 'pending', initiated_at: new Date().toISOString(), messages_scanned: 0, messages_flagged: 0 } } },
-        { transient: { status: 'pending', messagesScanned: 0 } }
-      );
-
-      const result = formatScanStatusPaginated({
-        scan,
-        guildId: 'guild-456',
-        days: 7,
-      });
-
-      expect(result.header).toContain('Pending');
-      expect(result.header).toContain('scan-123');
-      expect(result.header).toContain('waiting to be processed');
-    });
-
-    it('formats in_progress scan status in the header', () => {
-      const scan = latestScanResponseFactory.build(
-        { data: { type: 'bulk-scans', id: 'scan-123', attributes: { status: 'in_progress', initiated_at: new Date().toISOString(), messages_scanned: 50, messages_flagged: 0 } } },
-        { transient: { status: 'in_progress', messagesScanned: 50 } }
-      );
-
-      const result = formatScanStatusPaginated({
-        scan,
-        guildId: 'guild-456',
-        days: 7,
-      });
-
-      expect(result.header).toContain('In Progress');
-      expect(result.header).toContain('50');
-      expect(result.header).toContain('currently in progress');
-    });
-=======
   it('should paginate pending scan status without using the completed header', () => {
     const scan = latestScanResponseFactory.build(
       {
@@ -765,6 +572,86 @@ describe('formatScanStatusPaginated', () => {
     expect(result.header).toContain('Failed');
     expect(result.header).not.toContain('Scan Complete');
     expect(result.pages.pages[0]).toContain('failed due to processing errors');
->>>>>>> 1640e2f (feat(task-1284): wire stalled vibecheck follow-up flow)
+  });
+
+  it('should paginate included flagged messages for failed scans with partial results', () => {
+    const flaggedMessages = [
+      flaggedMessageFactory.build({
+        id: 'msg-1',
+        attributes: {
+          channel_id: 'ch-1',
+          content: 'This vaccine causes autism',
+          author_id: '00000000-0000-0001-aaaa-000000000001',
+          timestamp: new Date().toISOString(),
+          matches: [{
+            scan_type: 'similarity' as const,
+            score: 0.95,
+            matched_claim: 'Vaccines cause autism',
+            matched_source: 'snopes',
+            fact_check_item_id: '12345678-1234-1234-1234-123456789abc',
+          }],
+        },
+      }),
+    ];
+
+    const scan = latestScanResponseFactory.build(
+      {
+        data: {
+          type: 'bulk-scans',
+          id: 'scan-failed-partial-123',
+          attributes: {
+            status: 'failed',
+            initiated_at: new Date().toISOString(),
+            messages_scanned: 17,
+            messages_flagged: 1,
+          },
+        },
+        included: flaggedMessages,
+      },
+      { transient: { status: 'failed', messagesScanned: 17, flaggedMessages } }
+    );
+
+    const result = formatScanStatusPaginated({
+      scan,
+      guildId: 'guild-456',
+      days: 7,
+    });
+
+    expect(result.header).toContain('Failed');
+    expect(result.header).not.toContain('Scan Complete');
+    expect(result.pages.pages[0]).toContain('Preview:');
+    expect(result.pages.pages[0]).toContain('This vaccine causes autism');
+    expect(result.pages.pages[0]).toContain('Confidence: **95%**');
+    expect(result.pages.pages[0]).toContain('failed due to processing errors');
+  });
+
+  it('should keep the no-results body for completed scans with zero flagged messages', () => {
+    const scan = latestScanResponseFactory.build(
+      {
+        data: {
+          type: 'bulk-scans',
+          id: 'scan-complete-empty-123',
+          attributes: {
+            status: 'completed',
+            initiated_at: new Date().toISOString(),
+            messages_scanned: 17,
+            messages_flagged: 0,
+          },
+        },
+        included: [],
+      },
+      { transient: { status: 'completed', messagesScanned: 17, flaggedMessages: [] } }
+    );
+
+    const result = formatScanStatusPaginated({
+      scan,
+      guildId: 'guild-456',
+      days: 7,
+    });
+
+    expect(result.header).toContain('Scan Complete');
+    expect(result.header).toContain('**Flagged:** 0');
+    expect(result.pages.pages[0]).toContain('No flagged content found');
+    expect(result.pages.pages[0]).toContain('No flashpoints or potential misinformation were detected');
   });
 });

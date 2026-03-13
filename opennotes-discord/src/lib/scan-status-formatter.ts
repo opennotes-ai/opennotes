@@ -176,30 +176,12 @@ export function formatScanStatusPaginated(options: FormatScanStatusOptions): For
     ? formatErrorSummary(errorSummary)
     : '';
 
-<<<<<<< HEAD
   if (status === 'pending' || status === 'in_progress') {
-    return {
-      pages: TextPaginator.paginate(''),
-      header: formatScanStatus({
-        scan,
-        guildId,
-        days,
-        warningMessage,
-        includeButtons: false,
-        explanations,
-      }).content,
-      scanId,
-    };
-  }
-=======
-  if (status === 'pending' || status === 'in_progress' || status === 'failed') {
     const nonTerminalContent = status === 'pending'
       ? `The scan is pending and waiting to be processed.${warningText}`
-      : status === 'in_progress'
-        ? `**Messages scanned so far:** ${messagesScanned}\n\nThe scan is currently in progress...${warningText}`
-        : `The scan failed due to processing errors. Please try again later.${errorText}${warningText}`;
+      : `**Messages scanned so far:** ${messagesScanned}\n\nThe scan is currently in progress...${warningText}`;
 
-    const header = `${status === 'failed' ? '**Scan Status: Failed**' : status === 'in_progress' ? '**Scan Status: In Progress**' : '**Scan Status: Pending**'}\n\n` +
+    const header = `${status === 'in_progress' ? '**Scan Status: In Progress**' : '**Scan Status: Pending**'}\n\n` +
       `**Scan ID:** \`${scanId}\`\n` +
       daysText;
 
@@ -210,45 +192,25 @@ export function formatScanStatusPaginated(options: FormatScanStatusOptions): For
     };
   }
 
-  const header = `**Scan Complete**\n\n` +
+  const header = `${status === 'failed' ? '**Scan Status: Failed**' : '**Scan Complete**'}\n\n` +
     `**Scan ID:** \`${scanId}\`\n` +
     daysText +
     `**Messages scanned:** ${messagesScanned}\n` +
     `**Flagged:** ${flaggedMessages.length}\n`;
->>>>>>> 1640e2f (feat(task-1284): wire stalled vibecheck follow-up flow)
 
-  if (status === 'failed') {
-    const header = `**Scan Status: Failed**\n\n**Scan ID:** \`${scanId}\`\n${daysText}`;
-    const statusMessage = 'The scan failed due to processing errors. Please try again later.';
+  let fullContent: string;
 
-    const resultsContent = flaggedMessages.length > 0
-      ? `\n\n${formatFlaggedMessagesListFull(flaggedMessages, guildId, explanations)}`
+  if (flaggedMessages.length === 0) {
+    fullContent = status === 'failed'
+      ? `The scan failed due to processing errors. Please try again later.${errorText}${warningText}`
+      : `No flagged content found. No flashpoints or potential misinformation were detected.${errorText}${warningText}`;
+  } else {
+    const resultsContent = formatFlaggedMessagesListFull(flaggedMessages, guildId, explanations);
+    const failureText = status === 'failed'
+      ? '\n\nThe scan failed due to processing errors. Please try again later.'
       : '';
-
-    return {
-      pages: TextPaginator.paginate(
-        `${statusMessage}${resultsContent}${errorText}${warningText}`,
-        { maxCharsPerPage: 1800 }
-      ),
-      header,
-      scanId,
-    };
+    fullContent = `${resultsContent}${failureText}${errorText}${warningText}`;
   }
-
-  const header = flaggedMessages.length === 0
-    ? `**Scan Complete**\n\n` +
-      `**Scan ID:** \`${scanId}\`\n` +
-      daysText +
-      `**Messages scanned:** ${messagesScanned}\n`
-    : `**Scan Complete**\n\n` +
-      `**Scan ID:** \`${scanId}\`\n` +
-      daysText +
-      `**Messages scanned:** ${messagesScanned}\n` +
-      `**Flagged:** ${flaggedMessages.length}\n`;
-
-  const fullContent = flaggedMessages.length === 0
-    ? `No flagged content found. No flashpoints or potential misinformation were detected.${errorText}${warningText}`
-    : `${formatFlaggedMessagesListFull(flaggedMessages, guildId, explanations)}${errorText}${warningText}`;
 
   const pages = TextPaginator.paginate(fullContent, { maxCharsPerPage: 1800 });
 
