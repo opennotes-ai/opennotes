@@ -47,130 +47,213 @@ Workflows:
     start_ai_note_workflow: Enqueue AI note generation workflow
 """
 
-from src.dbos_workflows.approval_workflow import (
-    BULK_APPROVAL_WORKFLOW_NAME,
-    bulk_approval_workflow,
-    dispatch_bulk_approval_workflow,
-)
-from src.dbos_workflows.batch_job_adapter import BatchJobDBOSAdapter
-from src.dbos_workflows.circuit_breaker import (
-    CircuitBreaker,
-    CircuitOpenError,
-    CircuitState,
-)
-from src.dbos_workflows.config import (
-    destroy_dbos,
-    get_dbos,
-    reset_dbos,
-)
-from src.dbos_workflows.content_monitoring_workflows import (
-    AI_NOTE_GENERATION_WORKFLOW_NAME,
-    AUDIT_LOG_WORKFLOW_NAME,
-    VISION_DESCRIPTION_WORKFLOW_NAME,
-    ai_note_generation_workflow,
-    call_persist_audit_log,
-    start_ai_note_workflow,
-    vision_description_workflow,
-)
-from src.dbos_workflows.content_scan_workflow import (
-    CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
-    PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME,
-    content_scan_orchestration_workflow,
-    dispatch_content_scan_workflow,
-    enqueue_content_scan_batch,
-    flashpoint_scan_step,
-    load_messages_from_redis,
-    preprocess_batch_step,
-    process_content_scan_batch,
-    relevance_filter_step,
-    send_all_transmitted_signal,
-    similarity_scan_step,
-    store_messages_in_redis,
-)
-from src.dbos_workflows.import_workflow import (
-    FACT_CHECK_IMPORT_WORKFLOW_NAME,
-    PROMOTE_CANDIDATES_WORKFLOW_NAME,
-    SCRAPE_CANDIDATES_WORKFLOW_NAME,
-    dispatch_import_workflow,
-    dispatch_promote_workflow,
-    dispatch_scrape_workflow,
-    fact_check_import_workflow,
-    promote_candidates_workflow,
-    scrape_candidates_workflow,
-)
-from src.dbos_workflows.rechunk_workflow import (
-    CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
-    RECHUNK_FACT_CHECK_WORKFLOW_NAME,
-    RECHUNK_PREVIOUSLY_SEEN_WORKFLOW_NAME,
-    dispatch_dbos_previously_seen_rechunk_workflow,
-    dispatch_dbos_rechunk_workflow,
-    enqueue_single_fact_check_chunk,
-    rechunk_fact_check_workflow,
-    rechunk_previously_seen_workflow,
-)
-from src.dbos_workflows.scheduler_workflows import (
-    CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME,
-    MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME,
-    cleanup_stale_batch_jobs_workflow,
-    monitor_stuck_batch_jobs_workflow,
-)
-from src.dbos_workflows.token_bucket.cleanup import (
-    CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME,
-    cleanup_stale_token_holds,
-)
+from __future__ import annotations
 
-__all__ = [
-    "AI_NOTE_GENERATION_WORKFLOW_NAME",
-    "AUDIT_LOG_WORKFLOW_NAME",
-    "BULK_APPROVAL_WORKFLOW_NAME",
-    "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
-    "CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME",
-    "CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME",
-    "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME",
-    "FACT_CHECK_IMPORT_WORKFLOW_NAME",
-    "MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME",
-    "PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME",
-    "PROMOTE_CANDIDATES_WORKFLOW_NAME",
-    "RECHUNK_FACT_CHECK_WORKFLOW_NAME",
-    "RECHUNK_PREVIOUSLY_SEEN_WORKFLOW_NAME",
-    "SCRAPE_CANDIDATES_WORKFLOW_NAME",
-    "VISION_DESCRIPTION_WORKFLOW_NAME",
-    "BatchJobDBOSAdapter",
-    "CircuitBreaker",
-    "CircuitOpenError",
-    "CircuitState",
-    "ai_note_generation_workflow",
-    "bulk_approval_workflow",
-    "call_persist_audit_log",
-    "cleanup_stale_batch_jobs_workflow",
-    "cleanup_stale_token_holds",
-    "content_scan_orchestration_workflow",
-    "destroy_dbos",
-    "dispatch_bulk_approval_workflow",
-    "dispatch_content_scan_workflow",
-    "dispatch_dbos_previously_seen_rechunk_workflow",
-    "dispatch_dbos_rechunk_workflow",
-    "dispatch_import_workflow",
-    "dispatch_promote_workflow",
-    "dispatch_scrape_workflow",
-    "enqueue_content_scan_batch",
-    "enqueue_single_fact_check_chunk",
-    "fact_check_import_workflow",
-    "flashpoint_scan_step",
-    "get_dbos",
-    "load_messages_from_redis",
-    "monitor_stuck_batch_jobs_workflow",
-    "preprocess_batch_step",
-    "process_content_scan_batch",
-    "promote_candidates_workflow",
-    "rechunk_fact_check_workflow",
-    "rechunk_previously_seen_workflow",
-    "relevance_filter_step",
-    "reset_dbos",
-    "scrape_candidates_workflow",
-    "send_all_transmitted_signal",
-    "similarity_scan_step",
-    "start_ai_note_workflow",
-    "store_messages_in_redis",
-    "vision_description_workflow",
-]
+import importlib
+
+_LAZY_IMPORTS: dict[str, tuple[str, str]] = {
+    "AI_NOTE_GENERATION_WORKFLOW_NAME": (
+        "src.dbos_workflows.content_monitoring_workflows",
+        "AI_NOTE_GENERATION_WORKFLOW_NAME",
+    ),
+    "AUDIT_LOG_WORKFLOW_NAME": (
+        "src.dbos_workflows.content_monitoring_workflows",
+        "AUDIT_LOG_WORKFLOW_NAME",
+    ),
+    "BULK_APPROVAL_WORKFLOW_NAME": (
+        "src.dbos_workflows.approval_workflow",
+        "BULK_APPROVAL_WORKFLOW_NAME",
+    ),
+    "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME": (
+        "src.dbos_workflows.rechunk_workflow",
+        "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
+    ),
+    "CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME": (
+        "src.dbos_workflows.scheduler_workflows",
+        "CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME",
+    ),
+    "CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME": (
+        "src.dbos_workflows.token_bucket.cleanup",
+        "CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME",
+    ),
+    "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME": (
+        "src.dbos_workflows.content_scan_workflow",
+        "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME",
+    ),
+    "FACT_CHECK_IMPORT_WORKFLOW_NAME": (
+        "src.dbos_workflows.import_workflow",
+        "FACT_CHECK_IMPORT_WORKFLOW_NAME",
+    ),
+    "MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME": (
+        "src.dbos_workflows.scheduler_workflows",
+        "MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME",
+    ),
+    "PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME": (
+        "src.dbos_workflows.content_scan_workflow",
+        "PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME",
+    ),
+    "PROMOTE_CANDIDATES_WORKFLOW_NAME": (
+        "src.dbos_workflows.import_workflow",
+        "PROMOTE_CANDIDATES_WORKFLOW_NAME",
+    ),
+    "RECHUNK_FACT_CHECK_WORKFLOW_NAME": (
+        "src.dbos_workflows.rechunk_workflow",
+        "RECHUNK_FACT_CHECK_WORKFLOW_NAME",
+    ),
+    "RECHUNK_PREVIOUSLY_SEEN_WORKFLOW_NAME": (
+        "src.dbos_workflows.rechunk_workflow",
+        "RECHUNK_PREVIOUSLY_SEEN_WORKFLOW_NAME",
+    ),
+    "SCRAPE_CANDIDATES_WORKFLOW_NAME": (
+        "src.dbos_workflows.import_workflow",
+        "SCRAPE_CANDIDATES_WORKFLOW_NAME",
+    ),
+    "VISION_DESCRIPTION_WORKFLOW_NAME": (
+        "src.dbos_workflows.content_monitoring_workflows",
+        "VISION_DESCRIPTION_WORKFLOW_NAME",
+    ),
+    "BatchJobDBOSAdapter": ("src.dbos_workflows.batch_job_adapter", "BatchJobDBOSAdapter"),
+    "CircuitBreaker": ("src.dbos_workflows.circuit_breaker", "CircuitBreaker"),
+    "CircuitOpenError": ("src.dbos_workflows.circuit_breaker", "CircuitOpenError"),
+    "CircuitState": ("src.dbos_workflows.circuit_breaker", "CircuitState"),
+    "ai_note_generation_workflow": (
+        "src.dbos_workflows.content_monitoring_workflows",
+        "ai_note_generation_workflow",
+    ),
+    "bulk_approval_workflow": (
+        "src.dbos_workflows.approval_workflow",
+        "bulk_approval_workflow",
+    ),
+    "call_persist_audit_log": (
+        "src.dbos_workflows.content_monitoring_workflows",
+        "call_persist_audit_log",
+    ),
+    "cleanup_stale_batch_jobs_workflow": (
+        "src.dbos_workflows.scheduler_workflows",
+        "cleanup_stale_batch_jobs_workflow",
+    ),
+    "cleanup_stale_token_holds": (
+        "src.dbos_workflows.token_bucket.cleanup",
+        "cleanup_stale_token_holds",
+    ),
+    "content_scan_orchestration_workflow": (
+        "src.dbos_workflows.content_scan_workflow",
+        "content_scan_orchestration_workflow",
+    ),
+    "destroy_dbos": ("src.dbos_workflows.config", "destroy_dbos"),
+    "dispatch_bulk_approval_workflow": (
+        "src.dbos_workflows.approval_workflow",
+        "dispatch_bulk_approval_workflow",
+    ),
+    "dispatch_content_scan_workflow": (
+        "src.dbos_workflows.content_scan_workflow",
+        "dispatch_content_scan_workflow",
+    ),
+    "dispatch_dbos_previously_seen_rechunk_workflow": (
+        "src.dbos_workflows.rechunk_workflow",
+        "dispatch_dbos_previously_seen_rechunk_workflow",
+    ),
+    "dispatch_dbos_rechunk_workflow": (
+        "src.dbos_workflows.rechunk_workflow",
+        "dispatch_dbos_rechunk_workflow",
+    ),
+    "dispatch_import_workflow": (
+        "src.dbos_workflows.import_workflow",
+        "dispatch_import_workflow",
+    ),
+    "dispatch_promote_workflow": (
+        "src.dbos_workflows.import_workflow",
+        "dispatch_promote_workflow",
+    ),
+    "dispatch_scrape_workflow": (
+        "src.dbos_workflows.import_workflow",
+        "dispatch_scrape_workflow",
+    ),
+    "enqueue_content_scan_batch": (
+        "src.dbos_workflows.content_scan_workflow",
+        "enqueue_content_scan_batch",
+    ),
+    "enqueue_single_fact_check_chunk": (
+        "src.dbos_workflows.rechunk_workflow",
+        "enqueue_single_fact_check_chunk",
+    ),
+    "fact_check_import_workflow": (
+        "src.dbos_workflows.import_workflow",
+        "fact_check_import_workflow",
+    ),
+    "flashpoint_scan_step": (
+        "src.dbos_workflows.content_scan_workflow",
+        "flashpoint_scan_step",
+    ),
+    "get_dbos": ("src.dbos_workflows.config", "get_dbos"),
+    "load_messages_from_redis": (
+        "src.dbos_workflows.content_scan_workflow",
+        "load_messages_from_redis",
+    ),
+    "monitor_stuck_batch_jobs_workflow": (
+        "src.dbos_workflows.scheduler_workflows",
+        "monitor_stuck_batch_jobs_workflow",
+    ),
+    "preprocess_batch_step": (
+        "src.dbos_workflows.content_scan_workflow",
+        "preprocess_batch_step",
+    ),
+    "process_content_scan_batch": (
+        "src.dbos_workflows.content_scan_workflow",
+        "process_content_scan_batch",
+    ),
+    "promote_candidates_workflow": (
+        "src.dbos_workflows.import_workflow",
+        "promote_candidates_workflow",
+    ),
+    "rechunk_fact_check_workflow": (
+        "src.dbos_workflows.rechunk_workflow",
+        "rechunk_fact_check_workflow",
+    ),
+    "rechunk_previously_seen_workflow": (
+        "src.dbos_workflows.rechunk_workflow",
+        "rechunk_previously_seen_workflow",
+    ),
+    "relevance_filter_step": (
+        "src.dbos_workflows.content_scan_workflow",
+        "relevance_filter_step",
+    ),
+    "reset_dbos": ("src.dbos_workflows.config", "reset_dbos"),
+    "scrape_candidates_workflow": (
+        "src.dbos_workflows.import_workflow",
+        "scrape_candidates_workflow",
+    ),
+    "send_all_transmitted_signal": (
+        "src.dbos_workflows.content_scan_workflow",
+        "send_all_transmitted_signal",
+    ),
+    "similarity_scan_step": (
+        "src.dbos_workflows.content_scan_workflow",
+        "similarity_scan_step",
+    ),
+    "start_ai_note_workflow": (
+        "src.dbos_workflows.content_monitoring_workflows",
+        "start_ai_note_workflow",
+    ),
+    "store_messages_in_redis": (
+        "src.dbos_workflows.content_scan_workflow",
+        "store_messages_in_redis",
+    ),
+    "vision_description_workflow": (
+        "src.dbos_workflows.content_monitoring_workflows",
+        "vision_description_workflow",
+    ),
+}
+
+
+def __getattr__(name: str) -> object:
+    if name in _LAZY_IMPORTS:
+        module_path, attr = _LAZY_IMPORTS[name]
+        mod = importlib.import_module(module_path)
+        val = getattr(mod, attr)
+        globals()[name] = val
+        return val
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = list(_LAZY_IMPORTS)

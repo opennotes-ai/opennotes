@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import ast
+import importlib
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,25 +14,85 @@ import pytest
 class TestWorkerWorkflowRegistration:
     """Verify workflows are registered when SERVER_MODE=dbos_worker."""
 
-    def test_register_dbos_workflows_discovers_package_exported_workflow_names(
+    def test_register_dbos_workflows_discovers_workflow_names_even_if_exports_are_missing(
         self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from src import dbos_workflows
         from src.main import _register_dbos_workflows
         from src.simulation import workflows as simulation_workflows
 
-        expected = {
-            value
-            for module in (dbos_workflows, simulation_workflows)
-            for name, value in vars(module).items()
-            if name.endswith("_NAME") and isinstance(value, str)
-        }
+        monkeypatch.delattr(
+            dbos_workflows,
+            "CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME",
+            raising=True,
+        )
+        monkeypatch.delattr(
+            simulation_workflows,
+            "SCORE_COMMUNITY_SERVER_WORKFLOW_NAME",
+            raising=True,
+        )
 
         registered = set(_register_dbos_workflows())
 
-        assert expected <= registered
-        assert simulation_workflows.SCORE_COMMUNITY_SERVER_WORKFLOW_NAME in registered
-        assert simulation_workflows.RUN_AGENT_TURN_WORKFLOW_NAME in registered
+        assert "cleanup_stale_token_holds" in registered
+        assert "score_community_server" in registered
+        assert "run_agent_turn" in registered
+
+    def test_register_dbos_workflows_isolates_broken_module_imports(self) -> None:
+        from src.main import _register_dbos_workflows
+
+        real_import_module = importlib.import_module
+
+        def healthy_workflow() -> None:
+            return None
+
+        healthy_workflow.__qualname__ = "healthy_workflow"
+        healthy_module = SimpleNamespace(healthy_workflow=healthy_workflow)
+
+        def fake_import_module(module_path: str) -> object:
+            if module_path == "src.fake.good":
+                return healthy_module
+            if module_path == "src.fake.bad":
+                raise RuntimeError("boom")
+            return real_import_module(module_path)
+
+        with (
+            patch(
+                "src.main._discover_dbos_workflow_modules",
+                return_value=[
+                    ("src.fake.good", ("healthy_workflow",)),
+                    ("src.fake.bad", ("broken_workflow",)),
+                ],
+            ),
+            patch("importlib.import_module", side_effect=fake_import_module),
+            patch("src.main.logger") as mock_logger,
+        ):
+            registered = _register_dbos_workflows()
+
+        assert registered == ["healthy_workflow"]
+        mock_logger.error.assert_called_once()
+
+    def test_workflow_packages_avoid_eager_submodule_imports(self) -> None:
+        src_root = Path(__file__).resolve().parents[3] / "src"
+        init_files = [
+            src_root / "dbos_workflows" / "__init__.py",
+            src_root / "simulation" / "workflows" / "__init__.py",
+        ]
+
+        for init_file in init_files:
+            tree = ast.parse(init_file.read_text())
+            eager_imports = [
+                node.module
+                for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom)
+                and node.module
+                and (
+                    node.module.startswith("src.dbos_workflows")
+                    or node.module.startswith("src.simulation.workflows")
+                )
+            ]
+            assert eager_imports == [], f"{init_file} still eagerly imports {eager_imports}"
 
     @pytest.mark.asyncio
     async def test_workflow_modules_imported_in_worker_mode(self) -> None:

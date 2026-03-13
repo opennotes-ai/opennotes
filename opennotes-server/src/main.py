@@ -1,3 +1,4 @@
+import ast
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -288,27 +289,71 @@ async def _run_startup_validation() -> None:
         raise RuntimeError("Server startup aborted due to failed validation checks") from e
 
 
-def _register_dbos_workflows() -> list[str]:
-    """Import workflow packages and return their exported workflow names."""
-    import importlib
+def _is_dbos_workflow_decorator(decorator: ast.expr) -> bool:
+    target = decorator.func if isinstance(decorator, ast.Call) else decorator
+    return (
+        isinstance(target, ast.Attribute)
+        and target.attr == "workflow"
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "DBOS"
+    )
 
-    def _workflow_name_exports(module: Any) -> set[str]:
-        return {
-            value
-            for name, value in vars(module).items()
-            if name.endswith("_NAME") and isinstance(value, str)
-        }
+
+def _discover_dbos_workflow_modules() -> list[tuple[str, tuple[str, ...]]]:
+    src_root = Path(__file__).resolve().parent
+    package_roots = (
+        src_root / "dbos_workflows",
+        src_root / "simulation" / "workflows",
+    )
+    discovered: list[tuple[str, tuple[str, ...]]] = []
+
+    for package_root in package_roots:
+        for module_file in sorted(package_root.rglob("*.py")):
+            if module_file.name == "__init__.py":
+                continue
+
+            tree = ast.parse(module_file.read_text(encoding="utf-8"))
+            workflow_names = tuple(
+                node.name
+                for node in tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and any(_is_dbos_workflow_decorator(decorator) for decorator in node.decorator_list)
+            )
+            if not workflow_names:
+                continue
+
+            module_path = ".".join(module_file.relative_to(src_root.parent).with_suffix("").parts)
+            discovered.append((module_path, workflow_names))
+
+    return discovered
+
+
+def _register_dbos_workflows() -> list[str]:
+    """Import DBOS workflow modules and return their registered workflow names."""
+    import importlib
 
     registered: set[str] = set()
 
-    for module_path in ("src.dbos_workflows", "src.simulation.workflows"):
+    for module_path, workflow_names in _discover_dbos_workflow_modules():
         try:
-            workflow_package = importlib.import_module(module_path)
+            workflow_module = importlib.import_module(module_path)
         except Exception as e:
-            logger.error(f"Failed to import workflow package {module_path}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to import workflow module {module_path}: {e}",
+                exc_info=True,
+            )
             continue
 
-        registered.update(_workflow_name_exports(workflow_package))
+        for workflow_name in workflow_names:
+            workflow = getattr(workflow_module, workflow_name, None)
+            if callable(workflow):
+                registered.add(workflow.__qualname__)
+            else:
+                logger.error(
+                    "Workflow %s not found in module %s during worker registration",
+                    workflow_name,
+                    module_path,
+                )
 
     return sorted(registered)
 
