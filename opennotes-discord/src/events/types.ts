@@ -1,5 +1,5 @@
 export interface ScoreUpdateEvent {
-  note_id: number;
+  note_id: string;
   score: number;
   confidence: 'no_data' | 'provisional' | 'standard';
   algorithm: string;
@@ -24,7 +24,7 @@ export interface ScoreUpdateEvent {
 }
 
 export interface NotePublisherAttempt {
-  noteId: number;
+  noteId: string;
   originalMessageId: string;
   channelId: string;
   guildId: string;

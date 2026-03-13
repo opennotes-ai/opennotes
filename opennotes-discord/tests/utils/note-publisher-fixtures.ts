@@ -9,7 +9,7 @@ export interface TestScenario {
 }
 
 export const createBaseScoreEvent = (overrides?: Partial<ScoreUpdateEvent>): ScoreUpdateEvent => ({
-  note_id: 1,
+  note_id: '019cda12-97c5-7de7-bb19-3e8287ae033d',
   score: TEST_SCORE_ABOVE_THRESHOLD,
   confidence: 'standard',
   algorithm: 'MFCoreScorer',
@@ -48,7 +48,7 @@ export const testScenarios: TestScenario[] = [
     name: 'Duplicate Post: Same original message',
     event: createBaseScoreEvent({
       original_message_id: 'msg-duplicate',
-      note_id: 2,
+      note_id: '2',
     }),
     shouldPublishNote: false,
     reason: 'Auto-post already exists for this original message',
@@ -57,7 +57,7 @@ export const testScenarios: TestScenario[] = [
     name: 'Cooldown Violation: Recent post in channel',
     event: createBaseScoreEvent({
       channel_id: 'channel-cooldown',
-      note_id: 3,
+      note_id: '3',
     }),
     shouldPublishNote: false,
     reason: 'Channel is on cooldown (5-minute minimum between posts)',
@@ -66,7 +66,7 @@ export const testScenarios: TestScenario[] = [
     name: 'Permission Failure: Missing SEND_MESSAGES',
     event: createBaseScoreEvent({
       channel_id: 'channel-no-send',
-      note_id: 4,
+      note_id: '4',
     }),
     shouldPublishNote: false,
     reason: 'Bot lacks SEND_MESSAGES permission in channel',
@@ -75,7 +75,7 @@ export const testScenarios: TestScenario[] = [
     name: 'Permission Failure: Missing CREATE_PUBLIC_THREADS',
     event: createBaseScoreEvent({
       channel_id: 'channel-no-threads',
-      note_id: 5,
+      note_id: '5',
     }),
     shouldPublishNote: false,
     reason: 'Bot lacks CREATE_PUBLIC_THREADS permission in channel',
@@ -85,7 +85,7 @@ export const testScenarios: TestScenario[] = [
     event: createBaseScoreEvent({
       score: 0.65,
       confidence: 'standard',
-      note_id: 6,
+      note_id: '6',
     }),
     shouldPublishNote: false,
     reason: 'Score (0.65) below threshold (0.7)',
@@ -96,7 +96,7 @@ export const testScenarios: TestScenario[] = [
       score: TEST_SCORE_ABOVE_THRESHOLD,
       confidence: 'provisional',
       rating_count: 3,
-      note_id: 7,
+      note_id: '7',
     }),
     shouldPublishNote: false,
     reason: 'Confidence is provisional (< 5 ratings)',
@@ -105,7 +105,7 @@ export const testScenarios: TestScenario[] = [
     name: 'Server Disabled: Auto-posting disabled for server',
     event: createBaseScoreEvent({
       community_server_id: 'guild-disabled',
-      note_id: 8,
+      note_id: '8',
     }),
     shouldPublishNote: false,
     reason: 'Auto-posting disabled at server level',
@@ -114,7 +114,7 @@ export const testScenarios: TestScenario[] = [
     name: 'Channel Disabled: Auto-posting disabled for channel',
     event: createBaseScoreEvent({
       channel_id: 'channel-disabled',
-      note_id: 9,
+      note_id: '9',
     }),
     shouldPublishNote: false,
     reason: 'Auto-posting disabled for this specific channel',
@@ -125,7 +125,7 @@ export const errorScenarios: TestScenario[] = [
   {
     name: 'NATS Connection Failure',
     event: createBaseScoreEvent({
-      note_id: 100,
+      note_id: '100',
     }),
     shouldPublishNote: false,
     reason: 'NATS server unavailable',
@@ -134,7 +134,7 @@ export const errorScenarios: TestScenario[] = [
     name: 'Discord API Rate Limit (429)',
     event: createBaseScoreEvent({
       channel_id: 'channel-rate-limited',
-      note_id: 101,
+      note_id: '101',
     }),
     shouldPublishNote: false,
     reason: 'Discord API returns 429 rate limit error',
@@ -142,7 +142,7 @@ export const errorScenarios: TestScenario[] = [
   {
     name: 'Database Unavailability',
     event: createBaseScoreEvent({
-      note_id: 102,
+      note_id: '102',
     }),
     shouldPublishNote: false,
     reason: 'Cannot connect to PostgreSQL database',
@@ -151,7 +151,7 @@ export const errorScenarios: TestScenario[] = [
     name: 'Original Message Deleted',
     event: createBaseScoreEvent({
       original_message_id: 'msg-deleted',
-      note_id: 103,
+      note_id: '103',
     }),
     shouldPublishNote: false,
     reason: 'Original Discord message has been deleted',
@@ -159,7 +159,7 @@ export const errorScenarios: TestScenario[] = [
   {
     name: 'Note Content Not Found',
     event: createBaseScoreEvent({
-      note_id: 999,
+      note_id: '999',
     }),
     shouldPublishNote: false,
     reason: 'Note does not exist in backend database',
@@ -170,7 +170,7 @@ export const performanceScenarios = {
   generateConcurrentEvents: (count: number): ScoreUpdateEvent[] => {
     return Array.from({ length: count }, (_, i) =>
       createBaseScoreEvent({
-        note_id: i + 1,
+        note_id: `${i + 1}`,
         original_message_id: `msg-${i}`,
         channel_id: `channel-${i % 10}`,
         score: 0.7 + (i % 30) / 100,
@@ -184,7 +184,7 @@ export const performanceScenarios = {
       Array.from({ length: burstSize }, (_, eventIndex) => {
         const id = burstIndex * burstSize + eventIndex + 1;
         return createBaseScoreEvent({
-          note_id: id,
+          note_id: `${id}`,
           original_message_id: `msg-${id}`,
           channel_id: `channel-${id % 10}`,
           score: 0.7 + (id % 30) / 100,

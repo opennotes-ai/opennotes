@@ -185,7 +185,7 @@ describeWithNats('NotePublisher End-to-End Workflow Test (AC #17)', () => {
   describe('Complete Auto-Post Workflow', () => {
     it('should execute full workflow: NATS event → threshold check → duplicate check → permission check → Discord post → database record → audit log', async () => {
       const event = createBaseScoreEvent({
-        note_id: 42,
+        note_id: '42',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         rating_count: 10,
@@ -265,17 +265,17 @@ describeWithNats('NotePublisher End-to-End Workflow Test (AC #17)', () => {
     it('should handle multi-step workflow with realistic timing', async () => {
       const events = [
         createBaseScoreEvent({
-          note_id: 1,
+          note_id: '1',
           score: 0.75,
           original_message_id: 'msg-1',
         }),
         createBaseScoreEvent({
-          note_id: 2,
+          note_id: '2',
           score: 0.80,
           original_message_id: 'msg-2',
         }),
         createBaseScoreEvent({
-          note_id: 3,
+          note_id: '3',
           score: 0.90,
           original_message_id: 'msg-3',
         }),

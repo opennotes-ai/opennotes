@@ -295,7 +295,7 @@ describe('NatsSubscriber', () => {
       const handler = jest.fn<(event: ScoreUpdateEvent) => Promise<void>>();
 
       const testEvent: ScoreUpdateEvent = {
-        note_id: 123,
+        note_id: '123',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -333,13 +333,47 @@ describe('NatsSubscriber', () => {
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Received score update event',
         expect.objectContaining({
-          noteId: 123,
+          noteId: '123',
           score: TEST_SCORE_ABOVE_THRESHOLD,
           confidence: 'standard',
           hasDiscordContext: true,
           redeliveryCount: 0,
         })
       );
+    });
+
+    it('should reject score update events whose note_id is not a string', async () => {
+      const handler = jest.fn<(event: ScoreUpdateEvent) => Promise<void>>();
+
+      mockCodec.decode.mockReturnValue(
+        JSON.stringify({
+          note_id: 123,
+          score: 0.75,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 5,
+          tier: 1,
+          tier_name: 'Tier 1',
+          timestamp: new Date().toISOString(),
+        })
+      );
+
+      const mockMessage = createMockJsMessage({
+        data: new Uint8Array([1, 2, 3]),
+        subject: 'OPENNOTES.note_score_updated',
+        redeliveryCount: 0,
+      });
+
+      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage] });
+      mockJetStream.subscribe.mockResolvedValue(subscriptionWithMessages);
+
+      await subscriber.subscribeToScoreUpdates(handler);
+
+      await waitFor(() => {
+        expect(mockMessage.nak).toHaveBeenCalled();
+      });
+
+      expect(handler).not.toHaveBeenCalled();
     });
 
     it('should handle malformed JSON in messages', async () => {
@@ -378,7 +412,7 @@ describe('NatsSubscriber', () => {
       );
 
       const testEvent: ScoreUpdateEvent = {
-        note_id: 456,
+        note_id: '456',
         score: 0.75,
         confidence: 'standard',
         algorithm: 'BayesianAverage',
@@ -419,7 +453,7 @@ describe('NatsSubscriber', () => {
       const handler = jest.fn<(event: ScoreUpdateEvent) => Promise<void>>();
 
       const testEvent: ScoreUpdateEvent = {
-        note_id: 789,
+        note_id: '789',
         score: 0.9,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',

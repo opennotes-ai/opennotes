@@ -1119,3 +1119,38 @@ class TestForcePublishNote:
         assert "application/vnd.api+json" in content_type, (
             f"Content-Type should be application/vnd.api+json, got: {content_type}"
         )
+
+    @pytest.mark.asyncio
+    async def test_force_publish_note_routing_lookup_failure_is_non_fatal(
+        self,
+        admin_auth_client,
+        jsonapi_auth_client,
+        jsonapi_sample_note_data,
+    ):
+        """Force-publish should succeed even if score-event routing lookup fails."""
+        from unittest.mock import patch
+
+        note_data = self._get_unique_note_data(jsonapi_sample_note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
+        assert create_response.status_code == 201
+        note_id = create_response.json()["data"]["id"]
+
+        with patch(
+            "src.notes.notes_jsonapi_router.build_score_event_routing_context",
+            side_effect=RuntimeError("routing lookup failed"),
+        ):
+            response = await admin_auth_client.post(f"/api/v2/notes/{note_id}/force-publish")
+
+        assert response.status_code == 200, (
+            f"Expected 200 when routing lookup fails, got {response.status_code}: {response.text}"
+        )
+
+        data = response.json()
+        assert data["data"]["attributes"]["force_published"] is True
+        assert data["data"]["attributes"]["status"] == "CURRENTLY_RATED_HELPFUL"
+
+        note_response = await admin_auth_client.get(f"/api/v2/notes/{note_id}")
+        assert note_response.status_code == 200
+        persisted_note = note_response.json()
+        assert persisted_note["data"]["attributes"]["force_published"] is True
+        assert persisted_note["data"]["attributes"]["status"] == "CURRENTLY_RATED_HELPFUL"

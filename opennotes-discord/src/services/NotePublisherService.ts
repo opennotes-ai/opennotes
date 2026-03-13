@@ -53,19 +53,21 @@ export class NotePublisherService {
 
   async handleScoreUpdate(event: ScoreUpdateEvent): Promise<void> {
     const startTime = Date.now();
+    const isForcePublished = event.metadata?.force_published === true;
+    const hasCompleteEventRoutingContext =
+      !!event.original_message_id && !!event.channel_id && !!event.community_server_id;
 
-    if (event.community_server_id && !this.client.guilds.cache.has(event.community_server_id)) {
-      logger.debug('Skipping score update - community server not in guild cache (likely playground)', {
-        noteId: event.note_id,
-        communityServerId: event.community_server_id,
-      });
+    if (
+      hasCompleteEventRoutingContext &&
+      this.shouldSkipForMissingGuildCache(event.note_id, event.community_server_id)
+    ) {
       return;
     }
 
     logger.info('Processing score update event', {
       noteId: event.note_id,
       score: event.score,
-      isForcePublished: event.metadata?.force_published === true,
+      isForcePublished,
       hasChannelId: !!event.channel_id,
       hasOriginalMessageId: !!event.original_message_id,
     });
@@ -94,7 +96,6 @@ export class NotePublisherService {
 
     try {
       // Skip threshold check for force-published notes
-      const isForcePublished = event.metadata?.force_published === true;
       if (!isForcePublished && !this.meetsThreshold(event)) {
         logger.info('Skipping score update - does not meet threshold', {
           noteId: event.note_id,
@@ -104,15 +105,40 @@ export class NotePublisherService {
         return;
       }
 
+      const sourceContextMissing = !hasCompleteEventRoutingContext;
       const context = await this.getNoteContext(event);
       if (!context) {
-        logger.info('Skipping score update - no Discord context found', {
+        if (isForcePublished) {
+          logger.warn('Force-publish routing context unavailable after cache fallback', {
+            noteId: event.note_id,
+            sourceContextMissing,
+            cacheLookupAttempted: sourceContextMissing,
+            cacheMiss: true,
+            hasOriginalMessageId: !!event.original_message_id,
+            hasChannelId: !!event.channel_id,
+            hasCommunityServerId: !!event.community_server_id,
+          });
+        } else {
+          logger.info('Skipping score update - no Discord context found', {
+            noteId: event.note_id,
+            eventData: {
+              channelId: event.channel_id,
+              originalMessageId: event.original_message_id,
+              communityServerId: event.community_server_id,
+            },
+          });
+        }
+        return;
+      }
+
+      const routingMismatches = sourceContextMissing ? this.getRoutingContextMismatches(event, context) : [];
+      if (routingMismatches.length > 0) {
+        logger.warn('Skipping score update - cache-restored routing conflicts with event routing fields', {
           noteId: event.note_id,
-          eventData: {
-            channelId: event.channel_id,
-            originalMessageId: event.original_message_id,
-            communityServerId: event.community_server_id,
-          },
+          isForcePublished,
+          sourceContextMissing,
+          cacheLookupAttempted: sourceContextMissing,
+          mismatchedFields: routingMismatches,
         });
         return;
       }
@@ -123,6 +149,19 @@ export class NotePublisherService {
         originalMessageId: context.originalMessageId,
         guildId: context.guildId,
       });
+
+      if (isForcePublished && sourceContextMissing && !this.client.guilds.cache.has(context.guildId)) {
+        logger.warn('Force-publish restored guild missing from bot guild cache after context fallback', {
+          noteId: event.note_id,
+          restoredGuildId: context.guildId,
+          sourceContextMissing,
+          cacheLookupAttempted: sourceContextMissing,
+        });
+      }
+
+      if (this.shouldSkipForMissingGuildCache(event.note_id, context.guildId)) {
+        return;
+      }
 
       if (!this.hasPermissionsCached(context.channelId)) {
         const channel = this.client.channels.cache.get(context.channelId);
@@ -241,6 +280,18 @@ export class NotePublisherService {
     return event.score >= threshold;
   }
 
+  private shouldSkipForMissingGuildCache(noteId: string, communityServerId?: string): boolean {
+    if (!communityServerId || this.client.guilds.cache.has(communityServerId)) {
+      return false;
+    }
+
+    logger.debug('Skipping score update - community server not in guild cache (likely playground)', {
+      noteId,
+      communityServerId,
+    });
+    return true;
+  }
+
   private async getNoteContext(event: ScoreUpdateEvent): Promise<NoteContext | null> {
     logger.debug('Getting note context from event', {
       noteId: event.note_id,
@@ -260,7 +311,7 @@ export class NotePublisherService {
         guildId: event.community_server_id,
       });
       return {
-        noteId: event.note_id.toString(),
+        noteId: event.note_id,
         originalMessageId: event.original_message_id,
         channelId: event.channel_id,
         guildId: event.community_server_id,
@@ -274,7 +325,44 @@ export class NotePublisherService {
       missing_channel_id: !event.channel_id,
       missing_community_server_id: !event.community_server_id,
     });
-    return await this.noteContextService.getNoteContext(event.note_id.toString());
+    return await this.noteContextService.getNoteContext(event.note_id);
+  }
+
+  private getRoutingContextMismatches(
+    event: ScoreUpdateEvent,
+    context: NoteContext
+  ): Array<{ field: 'original_message_id' | 'channel_id' | 'community_server_id'; eventValue: string; restoredValue: string }> {
+    const comparisons = [
+      {
+        field: 'original_message_id' as const,
+        eventValue: event.original_message_id,
+        restoredValue: context.originalMessageId,
+      },
+      {
+        field: 'channel_id' as const,
+        eventValue: event.channel_id,
+        restoredValue: context.channelId,
+      },
+      {
+        field: 'community_server_id' as const,
+        eventValue: event.community_server_id,
+        restoredValue: context.guildId,
+      },
+    ];
+
+    return comparisons
+      .filter(
+        (comparison): comparison is {
+          field: 'original_message_id' | 'channel_id' | 'community_server_id';
+          eventValue: string;
+          restoredValue: string;
+        } => Boolean(comparison.eventValue) && comparison.eventValue !== comparison.restoredValue
+      )
+      .map(({ field, eventValue, restoredValue }) => ({
+        field,
+        eventValue,
+        restoredValue,
+      }));
   }
 
   private async isDuplicate(originalMessageId: string, guildId: string): Promise<boolean> {
@@ -393,9 +481,9 @@ export class NotePublisherService {
     }
   }
 
-  private async fetchNoteContent(noteId: number): Promise<{ summary: string; imageUrls?: string[] } | null> {
+  private async fetchNoteContent(noteId: string): Promise<{ summary: string; imageUrls?: string[] } | null> {
     try {
-      const response = await apiClient.getNote(noteId.toString());
+      const response = await apiClient.getNote(noteId);
       if (!response.data.attributes.summary) {
         return null;
       }
@@ -589,7 +677,7 @@ export class NotePublisherService {
       }
 
       await apiClient.recordNotePublisher({
-        noteId: String(event.note_id),
+        noteId: event.note_id,
         originalMessageId: context.originalMessageId,
         channelId: context.channelId,
         guildId: context.guildId,

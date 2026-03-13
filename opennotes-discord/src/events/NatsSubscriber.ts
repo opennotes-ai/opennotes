@@ -209,8 +209,8 @@ export class NatsSubscriber {
                   const isValid =
                     typeof parsed === 'object' &&
                     parsed !== null &&
-                    'note_id' in parsed &&
-                    'score' in parsed;
+                    typeof (parsed as Record<string, unknown>).note_id === 'string' &&
+                    typeof (parsed as Record<string, unknown>).score === 'number';
 
                   if (!isValid) {
                     logger.warn('Invalid score update event structure', { parsed });
