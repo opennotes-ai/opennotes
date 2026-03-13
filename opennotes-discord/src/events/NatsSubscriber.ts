@@ -65,8 +65,19 @@ export class NatsSubscriber {
     try {
       const bindOpts = consumerOpts().bind(streamName, durableName);
       const subscription = await js.subscribe(subject, bindOpts);
-      logger.info('Bound to existing consumer', { consumerName: durableName, streamName });
-      return subscription;
+
+      if (await this.shouldRecreateConsumer(subscription, streamName, durableName, deliverPolicy)) {
+        await subscription.destroy();
+        logger.warn('Destroyed incompatible consumer so it can be recreated with replay support', {
+          consumerName: durableName,
+          streamName,
+          subject,
+          deliverPolicy,
+        });
+      } else {
+        logger.info('Bound to existing consumer', { consumerName: durableName, streamName });
+        return subscription;
+      }
     } catch (bindError) {
       // Log the bind error but don't throw yet - we'll try to create
       // This handles both "consumer not found" AND "stream not found" errors
@@ -113,6 +124,33 @@ export class NatsSubscriber {
       });
       throw createError;
     }
+  }
+
+  private async shouldRecreateConsumer(
+    subscription: JetStreamSubscription,
+    streamName: string,
+    durableName: string,
+    deliverPolicy: 'all' | 'new'
+  ): Promise<boolean> {
+    if (deliverPolicy !== 'all') {
+      return false;
+    }
+
+    const consumerInfo = await subscription.consumerInfo();
+    const existingPolicy = consumerInfo.config?.deliver_policy;
+    const existingPolicyValue = existingPolicy ? String(existingPolicy) : undefined;
+
+    if (existingPolicyValue !== 'new') {
+      return false;
+    }
+
+    logger.warn('Existing consumer uses incompatible deliver policy for replay recovery', {
+      consumerName: durableName,
+      streamName,
+      existingPolicy: existingPolicyValue,
+      expectedPolicy: 'all',
+    });
+    return true;
   }
 
   async connect(url?: string): Promise<void> {

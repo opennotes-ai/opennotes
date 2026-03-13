@@ -259,6 +259,105 @@ describe('VibecheckStalledScanNotificationService', () => {
     expect(mockUserSend).toHaveBeenCalledTimes(1);
   });
 
+  it('rethrows recent cache misses so terminal events can be retried after the stalled-scan record arrives', async () => {
+    const event = {
+      event_id: 'evt-recent-cache-miss',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      metadata: {},
+      scan_id: 'scan-recent-cache-miss-123',
+      community_server_id: 'community-123',
+      messages_scanned: 64,
+      messages_flagged: 2,
+    };
+
+    await expect(service.handleTerminalEvent(event)).rejects.toThrow();
+
+    stalledScanStore['vibecheck:stalled:scan-recent-cache-miss-123'] = {
+      scanId: 'scan-recent-cache-miss-123',
+      initiatorId: 'user-123',
+      guildId: 'guild-123',
+      days: 7,
+      source: 'slash_command',
+    };
+    mockApiClient.getBulkScanResults.mockResolvedValue({
+      data: {
+        type: 'bulk-scans',
+        id: 'scan-recent-cache-miss-123',
+        attributes: {
+          status: 'completed',
+          initiated_at: new Date().toISOString(),
+          messages_scanned: 64,
+          messages_flagged: 2,
+        },
+      },
+      included: [],
+      jsonapi: { version: '1.1' },
+    });
+
+    await expect(service.handleTerminalEvent({
+      ...event,
+      event_id: 'evt-recent-cache-miss-retry',
+    })).resolves.toBeUndefined();
+
+    expect(mockUserSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('rethrows distributed lock contention so the terminal event can be retried later', async () => {
+    const mockDistributedLock = {
+      acquire: jest.fn<(...args: unknown[]) => Promise<boolean>>().mockResolvedValue(false),
+      release: jest.fn<(...args: unknown[]) => Promise<boolean>>().mockResolvedValue(true),
+      extend: jest.fn<(...args: unknown[]) => Promise<boolean>>().mockResolvedValue(true),
+    };
+    service = new VibecheckStalledScanNotificationService(
+      {
+        users: {
+          fetch: mockUsersFetch,
+        },
+      } as any,
+      mockDistributedLock as any
+    );
+
+    await expect(service.handleTerminalEvent({
+      event_id: 'evt-lock-contention',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      metadata: {},
+      scan_id: 'scan-lock-contention-123',
+      community_server_id: 'community-123',
+      messages_scanned: 21,
+      messages_flagged: 1,
+    })).rejects.toThrow();
+
+    expect(mockUserSend).not.toHaveBeenCalled();
+    expect(mockDistributedLock.release).not.toHaveBeenCalled();
+  });
+
+  it('acks historical replay misses after a single stalled-scan lookup', async () => {
+    let lookupCount = 0;
+    mockCacheGet.mockImplementation(async () => {
+      lookupCount += 1;
+      return null;
+    });
+
+    await expect(service.handleTerminalEvent({
+      event_id: 'evt-historical-cache-miss',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      metadata: {},
+      scan_id: 'scan-historical-cache-miss-123',
+      community_server_id: 'community-123',
+      messages_scanned: 99,
+      messages_flagged: 0,
+    })).resolves.toBeUndefined();
+
+    expect(lookupCount).toBe(1);
+    expect(mockUserSend).not.toHaveBeenCalled();
+  });
+
   it('keeps stalled scans retryable after DM delivery failures', async () => {
     stalledScanStore['vibecheck:stalled:scan-retry-123'] = {
       scanId: 'scan-retry-123',

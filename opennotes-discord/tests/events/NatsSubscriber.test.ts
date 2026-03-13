@@ -497,6 +497,54 @@ describe('NatsSubscriber', () => {
       expect(createdOpts.every(builder => builder.deliverNew.mock.calls.length === 0)).toBe(true);
     });
 
+    it('recreates bound terminal consumers when the existing durable still uses deliverNew', async () => {
+      const handler = jest.fn<(event: any) => Promise<void>>().mockResolvedValue(undefined);
+      const createdOpts: ReturnType<typeof createMockConsumerOpts>[] = [];
+      const staleTerminalSubscription = createMockSubscription();
+      const healthyTerminalSubscription = createMockSubscription();
+      let finishedSubjectCalls = 0;
+
+      (staleTerminalSubscription.consumerInfo as any).mockImplementation(async () => ({
+        name: 'discord-bot-OPENNOTES_bulk_scan_processing_finished',
+        stream_name: 'OPENNOTES',
+        config: {
+          deliver_policy: 'new',
+        },
+      }));
+
+      (healthyTerminalSubscription.consumerInfo as any).mockImplementation(async () => ({
+        name: 'discord-bot-OPENNOTES_bulk_scan_failed',
+        stream_name: 'OPENNOTES',
+        config: {
+          deliver_policy: 'all',
+        },
+      }));
+
+      mockConsumerOpts.mockImplementation(() => {
+        const builder = createMockConsumerOpts();
+        createdOpts.push(builder);
+        return builder;
+      });
+
+      (mockJetStream.subscribe as any).mockImplementation(async (subject: string) => {
+        if (subject === 'OPENNOTES.bulk_scan_processing_finished') {
+          finishedSubjectCalls += 1;
+          if (finishedSubjectCalls === 1) {
+            return staleTerminalSubscription;
+          }
+
+          return createMockSubscription();
+        }
+
+        return healthyTerminalSubscription;
+      });
+
+      await subscriber.subscribeToBulkScanTerminalUpdates(handler);
+
+      expect(staleTerminalSubscription.destroy).toHaveBeenCalledTimes(1);
+      expect(createdOpts.some(builder => builder.deliverAll.mock.calls.length === 1)).toBe(true);
+    });
+
     it('acks bulk scan terminal events when the handler succeeds', async () => {
       const handler = jest.fn<(event: any) => Promise<void>>().mockResolvedValue(undefined);
       const terminalEvent = {
