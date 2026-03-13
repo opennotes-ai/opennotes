@@ -422,6 +422,38 @@ class TestPersistTransmittedScanHandoff:
         assert mock_scan_log.messages_scanned == 623
         mock_session.commit.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_ignores_terminal_scan_handoff_updates(self) -> None:
+        from src.bulk_content_scan.nats_handler import persist_transmitted_scan_handoff
+        from src.bulk_content_scan.schemas import BulkScanStatus
+
+        scan_id = uuid4()
+        mock_scan_log = MagicMock()
+        mock_scan_log.id = scan_id
+        mock_scan_log.messages_scanned = 42
+        mock_scan_log.status = BulkScanStatus.COMPLETED
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_scan_log
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            await persist_transmitted_scan_handoff(scan_id=scan_id, messages_scanned=99)
+
+        assert mock_scan_log.messages_scanned == 42
+        mock_session.commit.assert_not_awaited()
+
 
 class TestGetScanTypesForCommunity:
     """Tests for _get_scan_types_for_community flashpoint toggle check."""

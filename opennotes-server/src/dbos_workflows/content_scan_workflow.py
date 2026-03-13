@@ -45,6 +45,7 @@ DBOS_PARALLEL_NOTES:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 import uuid as uuid_module
 from typing import TYPE_CHECKING, Any
@@ -123,6 +124,20 @@ def _checkpoint_wall_clock_step() -> float:
     during DBOS replay.
     """
     return time.time()
+
+
+async def _scan_is_terminal_async(session: Any, scan_id: UUID) -> bool:
+    from sqlalchemy import select
+
+    from src.bulk_content_scan.models import BulkContentScanLog
+
+    result = await session.execute(
+        select(BulkContentScanLog.status).where(BulkContentScanLog.id == scan_id)
+    )
+    status = result.scalar_one_or_none()
+    if inspect.isawaitable(status):
+        status = await status
+    return status in {BulkScanStatus.COMPLETED, BulkScanStatus.FAILED}
 
 
 @DBOS.workflow()
@@ -421,6 +436,81 @@ def create_scan_record_step(scan_id: str, community_server_id: str) -> bool:
     return run_sync(_update_scan_status())
 
 
+@DBOS.step()
+def get_scan_terminal_state_step(scan_id: str) -> bool:
+    from src.database import get_session_maker
+
+    scan_uuid = UUID(scan_id)
+
+    async def _load_state() -> bool:
+        async with get_session_maker()() as session:
+            return await _scan_is_terminal_async(session, scan_uuid)
+
+    return run_sync(_load_state())
+
+
+def _run_batch_scan_steps(
+    *,
+    scan_id: str,
+    community_server_id: str,
+    batch_number: int,
+    filtered_messages_key: str,
+    context_maps_key: str,
+    scan_types: list[str],
+    step_errors: list[str],
+) -> tuple[int, int]:
+    similarity_result: dict[str, Any] = {
+        "similarity_candidates_key": "",
+        "candidate_count": 0,
+    }
+    flashpoint_result: dict[str, Any] = {
+        "flashpoint_candidates_key": "",
+        "candidate_count": 0,
+    }
+
+    if "similarity" in scan_types:
+        try:
+            similarity_result = similarity_scan_step(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=batch_number,
+                filtered_messages_key=filtered_messages_key,
+                context_maps_key=context_maps_key,
+            )
+        except Exception as e:
+            logger.error("similarity_scan_step failed", exc_info=True)
+            step_errors.append(f"similarity: {e}")
+
+    if "conversation_flashpoint" in scan_types:
+        try:
+            flashpoint_result = flashpoint_scan_step(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=batch_number,
+                filtered_messages_key=filtered_messages_key,
+                context_maps_key=context_maps_key,
+            )
+        except Exception as e:
+            logger.error("flashpoint_scan_step failed", exc_info=True)
+            step_errors.append(f"flashpoint: {e}")
+
+    try:
+        filter_result = relevance_filter_step(
+            scan_id=scan_id,
+            community_server_id=community_server_id,
+            batch_number=batch_number,
+            similarity_candidates_key=similarity_result.get("similarity_candidates_key", ""),
+            flashpoint_candidates_key=flashpoint_result.get("flashpoint_candidates_key", ""),
+        )
+        flagged_count = filter_result.get("flagged_count", 0)
+        errors = filter_result.get("errors", 0) + len(step_errors)
+        return flagged_count, errors
+    except Exception as e:
+        logger.error("relevance_filter_step failed", exc_info=True)
+        step_errors.append(f"relevance: {e}")
+        return 0, len(step_errors)
+
+
 @DBOS.workflow()
 def process_content_scan_batch(
     orchestrator_workflow_id: str,
@@ -464,6 +554,19 @@ def process_content_scan_batch(
 
     scan_types = orjson.loads(scan_types_json)
 
+    if get_scan_terminal_state_step(scan_id):
+        logger.info(
+            "Scan already terminal before batch execution",
+            extra={"scan_id": scan_id, "batch_number": batch_number},
+        )
+        return {
+            "processed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "flagged_count": 0,
+            "batch_number": batch_number,
+        }
+
     errors = 0
     flagged_count = 0
     message_count = 0
@@ -487,63 +590,31 @@ def process_content_scan_batch(
         message_count = preprocess_result.get("message_count", 0)
         skipped_count = preprocess_result.get("skipped_count", 0)
 
+        if get_scan_terminal_state_step(scan_id):
+            logger.info(
+                "Scan became terminal after preprocess; skipping remaining batch stages",
+                extra={"scan_id": scan_id, "batch_number": batch_number},
+            )
+            return {
+                "processed": 0,
+                "skipped": 0,
+                "errors": 0,
+                "flagged_count": 0,
+                "batch_number": batch_number,
+            }
+
         if message_count > 0:
             filtered_messages_key = preprocess_result["filtered_messages_key"]
             context_maps_key = preprocess_result.get("context_maps_key", "")
-
-            similarity_result: dict[str, Any] = {
-                "similarity_candidates_key": "",
-                "candidate_count": 0,
-            }
-            flashpoint_result: dict[str, Any] = {
-                "flashpoint_candidates_key": "",
-                "candidate_count": 0,
-            }
-
-            if "similarity" in scan_types:
-                try:
-                    similarity_result = similarity_scan_step(
-                        scan_id=scan_id,
-                        community_server_id=community_server_id,
-                        batch_number=batch_number,
-                        filtered_messages_key=filtered_messages_key,
-                        context_maps_key=context_maps_key,
-                    )
-                except Exception as e:
-                    logger.error("similarity_scan_step failed", exc_info=True)
-                    step_errors.append(f"similarity: {e}")
-
-            if "conversation_flashpoint" in scan_types:
-                try:
-                    flashpoint_result = flashpoint_scan_step(
-                        scan_id=scan_id,
-                        community_server_id=community_server_id,
-                        batch_number=batch_number,
-                        filtered_messages_key=filtered_messages_key,
-                        context_maps_key=context_maps_key,
-                    )
-                except Exception as e:
-                    logger.error("flashpoint_scan_step failed", exc_info=True)
-                    step_errors.append(f"flashpoint: {e}")
-
-            try:
-                filter_result = relevance_filter_step(
-                    scan_id=scan_id,
-                    community_server_id=community_server_id,
-                    batch_number=batch_number,
-                    similarity_candidates_key=similarity_result.get(
-                        "similarity_candidates_key", ""
-                    ),
-                    flashpoint_candidates_key=flashpoint_result.get(
-                        "flashpoint_candidates_key", ""
-                    ),
-                )
-                flagged_count = filter_result.get("flagged_count", 0)
-                errors = filter_result.get("errors", 0) + len(step_errors)
-            except Exception as e:
-                logger.error("relevance_filter_step failed", exc_info=True)
-                step_errors.append(f"relevance: {e}")
-                errors = len(step_errors)
+            flagged_count, errors = _run_batch_scan_steps(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=batch_number,
+                filtered_messages_key=filtered_messages_key,
+                context_maps_key=context_maps_key,
+                scan_types=scan_types,
+                step_errors=step_errors,
+            )
         else:
             errors = len(step_errors)
     else:
@@ -813,6 +884,18 @@ def preprocess_batch_step(
                 llm_service=llm_service,
             )
 
+            if await _scan_is_terminal_async(session, scan_uuid):
+                logger.info(
+                    "Preprocess step skipped because scan is already terminal",
+                    extra={"scan_id": scan_id, "batch_number": batch_number},
+                )
+                return {
+                    "filtered_messages_key": "",
+                    "context_maps_key": "",
+                    "message_count": 0,
+                    "skipped_count": 0,
+                }
+
             platform_message_ids = [msg.message_id for msg in typed_messages]
             existing_ids = await service.get_existing_request_message_ids(platform_message_ids)
             skipped_count = 0
@@ -930,6 +1013,13 @@ def similarity_scan_step(
                 flashpoint_service=flashpoint_service,
             )
 
+            if await _scan_is_terminal_async(session, scan_uuid):
+                logger.info(
+                    "Similarity step skipped because scan is already terminal",
+                    extra={"scan_id": scan_id, "batch_number": batch_number},
+                )
+                return {"similarity_candidates_key": "", "candidate_count": 0}
+
             candidates = []
             for msg in typed_messages:
                 if not msg.content or len(msg.content.strip()) < 10:
@@ -1018,6 +1108,13 @@ def flashpoint_scan_step(
                 llm_service=llm_service,
                 flashpoint_service=flashpoint_service,
             )
+
+            if await _scan_is_terminal_async(session, scan_uuid):
+                logger.info(
+                    "Flashpoint step skipped because scan is already terminal",
+                    extra={"scan_id": scan_id, "batch_number": batch_number},
+                )
+                return {"flashpoint_candidates_key": "", "candidate_count": 0}
 
             message_id_index = service._build_message_id_index(channel_context_map)
 
@@ -1132,6 +1229,13 @@ def relevance_filter_step(
                 llm_service=llm_service,
                 flashpoint_service=flashpoint_service,
             )
+
+            if await _scan_is_terminal_async(session, scan_uuid):
+                logger.info(
+                    "Relevance step skipped because scan is already terminal",
+                    extra={"scan_id": scan_id, "batch_number": batch_number},
+                )
+                return {"flagged_count": 0, "errors": 0}
 
             try:
                 flagged = await service._filter_candidates_with_relevance(all_candidates, scan_uuid)

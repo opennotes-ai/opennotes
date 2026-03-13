@@ -1082,6 +1082,50 @@ class TestProcessContentScanBatch:
         assert signal_data["skipped"] == 1
         assert signal_data["flagged_count"] == 2
 
+    def test_skips_remaining_stages_when_scan_becomes_terminal_after_preprocess(self) -> None:
+        """Terminal scans stop downstream batch work and suppress completion signals."""
+        from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
+            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step") as mock_sim,
+            patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step") as mock_fp,
+            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.get_scan_terminal_state_step"
+            ) as mock_terminal,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+        ):
+            mock_pre.return_value = {
+                "filtered_messages_key": "test:filtered",
+                "context_maps_key": "test:context",
+                "message_count": 2,
+                "skipped_count": 0,
+            }
+            mock_terminal.side_effect = [False, True]
+
+            result = process_content_scan_batch.__wrapped__(
+                orchestrator_workflow_id="orch-wf",
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                messages_redis_key="test:messages:key",
+                scan_types_json=json.dumps(["similarity", "conversation_flashpoint"]),
+            )
+
+        mock_sim.assert_not_called()
+        mock_fp.assert_not_called()
+        mock_filter.assert_not_called()
+        mock_dbos.send.assert_not_called()
+        assert result == {
+            "processed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "flagged_count": 0,
+            "batch_number": 1,
+        }
+
     def test_short_circuits_when_all_messages_skipped(self) -> None:
         """When preprocess returns message_count=0, skip scan steps entirely."""
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
@@ -3046,6 +3090,79 @@ class TestPreprocessBatchStepInnerLogic:
                     scan_types_json=json.dumps(["similarity"]),
                 )
 
+    def test_skips_derived_writes_when_scan_is_terminal(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import preprocess_batch_step
+
+        messages = [_make_test_message("msg_1"), _make_test_message("msg_2")]
+
+        mock_service_instance = MagicMock()
+        mock_service_instance.get_existing_request_message_ids = AsyncMock(return_value={"msg_1"})
+        mock_service_instance.increment_skipped_count = AsyncMock()
+        mock_service_instance._populate_cross_batch_cache = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = "platform_123"
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch("src.config.get_settings") as mock_settings,
+            patch(
+                "src.database.get_session_maker",
+                return_value=self._make_session_context(mock_session),
+            ),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.fact_checking.embedding_service.EmbeddingService",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service_instance,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.load_messages_from_redis",
+                new_callable=AsyncMock,
+                return_value=messages,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ) as mock_store,
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+
+            result = preprocess_batch_step.__wrapped__(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                messages_redis_key="test:messages",
+                scan_types_json=json.dumps(["similarity", "conversation_flashpoint"]),
+            )
+
+        assert result == {
+            "filtered_messages_key": "",
+            "context_maps_key": "",
+            "message_count": 0,
+            "skipped_count": 0,
+        }
+        mock_service_instance.increment_skipped_count.assert_not_awaited()
+        mock_service_instance._populate_cross_batch_cache.assert_not_awaited()
+        mock_store.assert_not_awaited()
+
 
 class TestSimilarityScanStepInnerLogic:
     """Tests for inner async logic of similarity_scan_step."""
@@ -3252,6 +3369,153 @@ class TestSimilarityScanStepInnerLogic:
 
         assert result["similarity_candidates_key"] == ""
         assert result["candidate_count"] == 0
+
+    def test_skips_candidate_writes_when_scan_is_terminal(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import similarity_scan_step
+
+        messages = [_make_test_message("msg_1")]
+
+        mock_service_instance = MagicMock()
+        mock_service_instance._similarity_scan_candidate = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = "platform_123"
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch("src.config.get_settings") as mock_settings,
+            patch(
+                "src.database.get_session_maker",
+                return_value=self._make_session_context(mock_session),
+            ),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.fact_checking.embedding_service.EmbeddingService",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service_instance,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.load_messages_from_redis",
+                new_callable=AsyncMock,
+                return_value=messages,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ) as mock_store,
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+
+            result = similarity_scan_step.__wrapped__(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                filtered_messages_key="test:filtered",
+                context_maps_key="test:context",
+            )
+
+        assert result == {"similarity_candidates_key": "", "candidate_count": 0}
+        mock_service_instance._similarity_scan_candidate.assert_not_awaited()
+        mock_store.assert_not_awaited()
+
+
+class TestFlashpointScanStepInnerLogic:
+    """Tests for inner async logic of flashpoint_scan_step."""
+
+    def _make_session_context(self, mock_session):
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        return MagicMock(return_value=mock_session_ctx)
+
+    def test_skips_candidate_writes_when_scan_is_terminal(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import flashpoint_scan_step
+
+        messages = [_make_test_message("msg_1")]
+
+        mock_service_instance = MagicMock()
+        mock_service_instance._build_message_id_index.return_value = {}
+        mock_service_instance._get_context_for_message.return_value = []
+        mock_service_instance._flashpoint_scan_candidate = AsyncMock()
+
+        mock_session = AsyncMock()
+
+        with (
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch("src.config.get_settings") as mock_settings,
+            patch(
+                "src.database.get_session_maker",
+                return_value=self._make_session_context(mock_session),
+            ),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.fact_checking.embedding_service.EmbeddingService",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service_instance,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.load_messages_from_redis",
+                new_callable=AsyncMock,
+                side_effect=[messages, [{"ch_1": messages}]],
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ) as mock_store,
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+
+            result = flashpoint_scan_step.__wrapped__(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                filtered_messages_key="test:filtered",
+                context_maps_key="test:context",
+            )
+
+        assert result == {"flashpoint_candidates_key": "", "candidate_count": 0}
+        mock_service_instance._flashpoint_scan_candidate.assert_not_awaited()
+        mock_store.assert_not_awaited()
 
 
 class TestRelevanceFilterStepInnerLogic:
@@ -3546,6 +3810,70 @@ class TestRelevanceFilterStepInnerLogic:
         assert result["flagged_count"] == 0
         assert result["errors"] == 1
         mock_service_instance.record_error.assert_awaited_once()
+
+    def test_skips_flagged_writes_when_scan_is_terminal(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import relevance_filter_step
+
+        candidates = [self._make_candidate_dict()]
+        mock_service_instance = MagicMock()
+        mock_service_instance._filter_candidates_with_relevance = AsyncMock(
+            return_value=[MagicMock()]
+        )
+        mock_service_instance.append_flagged_result = AsyncMock()
+
+        mock_session = AsyncMock()
+
+        with (
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch("src.config.get_settings") as mock_settings,
+            patch(
+                "src.database.get_session_maker",
+                return_value=self._make_session_context(mock_session),
+            ),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.fact_checking.embedding_service.EmbeddingService",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service_instance,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.load_messages_from_redis",
+                new_callable=AsyncMock,
+                return_value=candidates,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+
+            result = relevance_filter_step.__wrapped__(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                similarity_candidates_key="sim_key",
+                flashpoint_candidates_key="",
+            )
+
+        assert result == {"flagged_count": 0, "errors": 0}
+        mock_service_instance._filter_candidates_with_relevance.assert_not_awaited()
+        mock_service_instance.append_flagged_result.assert_not_awaited()
 
 
 class TestDBOSReplayWithExpiredRedisKeys:
