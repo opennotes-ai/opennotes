@@ -21,6 +21,9 @@ import { VIBE_CHECK_DAYS_OPTIONS } from '../types/bulk-scan.js';
 import { executeBulkScan } from '../lib/bulk-scan-executor.js';
 import { formatScanStatusPaginated } from '../lib/scan-status-formatter.js';
 import { TextPaginator } from '../lib/text-paginator.js';
+import { recordStalledScan } from '../lib/vibecheck-stalled-scan.js';
+import { createStallWarningController } from '../lib/vibecheck-stall-warning.js';
+import { extractUserContext } from '../lib/user-context.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { serviceProvider } from '../services/index.js';
 import { ConfigKey } from '../lib/config-schema.js';
@@ -126,6 +129,12 @@ export const data = new SlashCommandBuilder()
     subcommand
       .setName('status')
       .setDescription('View the status of the most recent scan')
+      .addStringOption(option =>
+        option
+          .setName('scan_id')
+          .setDescription('Optional scan ID to inspect directly')
+          .setRequired(false)
+      )
   )
   .addSubcommand(subcommand =>
     subcommand
@@ -226,6 +235,20 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       });
     }
 
+    const stallWarningController = createStallWarningController(async (scanId) => {
+      await recordStalledScan({
+        scanId,
+        initiatorId: userId,
+        guildId,
+        days,
+        source: 'slash_command',
+      });
+      await interaction.editReply({
+        content: `Scan is taking longer than we can keep updated.\n\n` +
+          `Use \`/vibecheck status scan_id:${scanId}\` to check later.\n\n` +
+          `**Scan ID:** \`${scanId}\``,
+      });
+    });
     const result = await executeBulkScan({
       guild,
       days,
@@ -233,6 +256,10 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       errorId,
       excludeChannelIds,
       progressCallback: async (progress) => {
+        if (await stallWarningController.shouldSuppressUpdates()) {
+          return;
+        }
+
         const isAnalysisPhase = progress.currentChannel?.startsWith('Analyzing')
           || (progress.totalChannels > 0 && progress.channelsProcessed >= progress.totalChannels);
 
@@ -256,12 +283,19 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
             (progress.currentChannel ? `Current channel: #${progress.currentChannel}` : ''),
         });
       },
+      stallWarningCallback: async (scanId) => {
+        await stallWarningController.onStallWarning(scanId);
+      },
     });
 
     if (result.channelsScanned === 0) {
       await interaction.editReply({
         content: 'No accessible text channels found to scan.',
       });
+      return;
+    }
+
+    if (await stallWarningController.shouldSuppressUpdates()) {
       return;
     }
 
@@ -554,13 +588,20 @@ async function showAiGenerationPrompt(
     const generateAiNotes = aiAction.startsWith('yes');
 
     const messageIds = flaggedMessages.map(msg => msg.id);
+    const userContext = extractUserContext(
+      aiButtonInteraction.user,
+      aiButtonInteraction.guildId,
+      aiButtonInteraction.member as GuildMember | null,
+      aiButtonInteraction.channelId
+    );
 
     void (async (): Promise<void> => {
       try {
         const result = await apiClient.createNoteRequestsFromScan(
           scanId,
           messageIds,
-          generateAiNotes
+          generateAiNotes,
+          userContext
         );
         const createdCount = result.data.attributes.created_count;
 
@@ -617,6 +658,8 @@ async function handleStatusSubcommand(
   guildId: string,
   errorId: string
 ): Promise<void> {
+  const requestedScanId = interaction.options.getString?.('scan_id') ?? null;
+
   await interaction.deferReply({
     flags: MessageFlags.Ephemeral,
   });
@@ -630,19 +673,41 @@ async function handleStatusSubcommand(
 
   try {
     const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
+    const userContext = requestedScanId
+      ? extractUserContext(
+        interaction.user,
+        guildId,
+        interaction.member as GuildMember | null,
+        interaction.channelId
+      )
+      : undefined;
+    const scan = requestedScanId
+      ? await apiClient.getBulkScanResults(requestedScanId, userContext)
+      : await apiClient.getLatestScan(communityServer.data.id);
+    const scanCommunityId = (scan.data.attributes as { community_server_id?: string }).community_server_id;
 
-    const latestScan = await apiClient.getLatestScan(communityServer.data.id);
-    const flaggedMessages = latestScan.included || [];
+    if (
+      requestedScanId
+      && scanCommunityId
+      && scanCommunityId !== communityServer.data.id
+    ) {
+      await interaction.editReply({
+        content: `Scan \`${requestedScanId}\` belongs to a different server. Use \`/vibecheck status\` here to view scans for this server.`,
+      });
+      return;
+    }
+
+    const flaggedMessages = scan.included || [];
 
     const cachedExplanations = await cache.get<Record<string, string>>(
-      getExplanationsCacheKey(latestScan.data.id)
+      getExplanationsCacheKey(scan.data.id)
     );
     const explanations = cachedExplanations
       ? new Map(Object.entries(cachedExplanations))
       : undefined;
 
     const paginatedResult = formatScanStatusPaginated({
-      scan: latestScan,
+      scan,
       guildId,
       includeButtons: false,
       explanations,
@@ -652,10 +717,10 @@ async function handleStatusSubcommand(
     const currentPage = 1;
 
     const state: VibecheckPaginationState = {
-      scanId: latestScan.data.id,
+      scanId: scan.data.id,
       guildId,
       days: 0,
-      messagesScanned: latestScan.data.attributes.messages_scanned,
+      messagesScanned: scan.data.attributes.messages_scanned,
       flaggedMessages,
     };
     await cache.set(`vibecheck:pagination:${stateId}`, state, PAGINATION_STATE_TTL);
@@ -700,7 +765,7 @@ async function handleStatusSubcommand(
       collector.on('end', (_collected, reason) => {
         if (reason === 'time') {
           interaction.editReply({
-            content: `Session expired.\n\n**Scan ID:** \`${latestScan.data.id}\``,
+            content: `Session expired.\n\n**Scan ID:** \`${scan.data.id}\``,
             components: [],
           }).catch(() => {
             /* Silently ignore - interaction may have expired */
@@ -711,7 +776,16 @@ async function handleStatusSubcommand(
   } catch (error) {
     if (error instanceof ApiError && error.statusCode === 404) {
       await interaction.editReply({
-        content: 'No scans have been run for this server yet. Use `/vibecheck scan` to start one.',
+        content: requestedScanId
+          ? `Scan \`${requestedScanId}\` was not found for this server. Use \`/vibecheck status\` to view the latest scan for this server.`
+          : 'No scans have been run for this server yet. Use `/vibecheck scan` to start one.',
+      });
+      return;
+    }
+
+    if (error instanceof ApiError && error.statusCode === 403 && requestedScanId) {
+      await interaction.editReply({
+        content: `Scan \`${requestedScanId}\` belongs to a different server. Use \`/vibecheck status\` here to view scans for this server.`,
       });
       return;
     }
@@ -792,7 +866,13 @@ async function handleCreateRequestsSubcommand(
   });
 
   try {
-    const scanResults = await apiClient.getBulkScanResults(scanId);
+    const userContext = extractUserContext(
+      interaction.user,
+      guildId,
+      interaction.member as GuildMember | null,
+      interaction.channelId
+    );
+    const scanResults = await apiClient.getBulkScanResults(scanId, userContext);
     const flaggedMessages = scanResults.included || [];
 
     if (flaggedMessages.length === 0) {
@@ -806,7 +886,8 @@ async function handleCreateRequestsSubcommand(
     const result = await apiClient.createNoteRequestsFromScan(
       scanId,
       messageIds,
-      false
+      false,
+      userContext
     );
 
     const createdCount = result.data.attributes.created_count;

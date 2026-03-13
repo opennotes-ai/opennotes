@@ -12,8 +12,12 @@ import { logger } from '../logger.js';
 import { sanitizeConnectionUrl } from '../utils/url-sanitizer.js';
 import { safeJSONParse } from '../utils/safe-json.js';
 import type { ScoreUpdateEvent } from './types.js';
-import type { BulkScanProgressEvent } from '../types/bulk-scan.js';
-import { NATS_SUBJECTS } from '../types/bulk-scan.js';
+import type {
+  BulkScanFailedEvent,
+  BulkScanProcessingFinishedEvent,
+  BulkScanProgressEvent,
+} from '../types/bulk-scan.js';
+import { EventType, NATS_SUBJECTS } from '../types/bulk-scan.js';
 
 export class NatsSubscriber {
   private nc?: NatsConnection;
@@ -54,7 +58,8 @@ export class NatsSubscriber {
     streamName: string,
     durableName: string,
     subject: string,
-    deliverSubject: string
+    deliverSubject: string,
+    deliverPolicy: 'all' | 'new' = 'all'
   ): Promise<JetStreamSubscription> {
     // Try bind first - if consumer exists, this is the fastest path
     try {
@@ -78,10 +83,14 @@ export class NatsSubscriber {
         .durable(durableName)
         .deliverGroup(durableName)
         .deliverTo(deliverSubject)
-        .deliverAll()
         .ackExplicit()
         .ackWait(30_000)
         .maxDeliver(3);
+      if (deliverPolicy === 'new') {
+        createOpts.deliverNew();
+      } else {
+        createOpts.deliverAll();
+      }
       const subscription = await js.subscribe(subject, createOpts);
       logger.info('Created new consumer', { consumerName: durableName, streamName });
       return subscription;
@@ -324,6 +333,75 @@ export class NatsSubscriber {
       logger.error('Failed to subscribe to progress updates', {
         error: error instanceof Error ? error.message : String(error),
         subject,
+      });
+      throw error;
+    }
+  }
+
+  async subscribeToBulkScanTerminalUpdates(
+    handler: (event: BulkScanProcessingFinishedEvent | BulkScanFailedEvent) => Promise<void>
+  ): Promise<void> {
+    if (!this.nc) {
+      throw new Error('NATS connection not established. Call connect() first.');
+    }
+
+    const subjects = [
+      NATS_SUBJECTS.BULK_SCAN_PROCESSING_FINISHED,
+      NATS_SUBJECTS.BULK_SCAN_FAILED,
+    ];
+
+    try {
+      const js = this.nc.jetstream();
+
+      await Promise.all(subjects.map(async (subject) => {
+        const durableName = `discord-bot-${subject.replace(/\./g, '_')}`;
+        const deliverSubject = `_DELIVER.${durableName}`;
+        const terminalIterator = await this.bindOrCreateConsumer(
+          js,
+          'OPENNOTES',
+          durableName,
+          subject,
+          deliverSubject,
+          'new'
+        );
+
+        logger.info('Subscribed to bulk scan terminal events', {
+          subject,
+          consumerName: durableName,
+        });
+
+        void (async (): Promise<void> => {
+          for await (const msg of terminalIterator) {
+            try {
+              const data = this.codec.decode(msg.data);
+              const event = safeJSONParse<BulkScanProcessingFinishedEvent | BulkScanFailedEvent>(data, {
+                validate: (parsed) =>
+                  typeof parsed === 'object' &&
+                  parsed !== null &&
+                  'scan_id' in parsed &&
+                  'community_server_id' in parsed &&
+                  'event_type' in parsed &&
+                  (
+                    parsed.event_type === EventType.BULK_SCAN_PROCESSING_FINISHED ||
+                    parsed.event_type === EventType.BULK_SCAN_FAILED
+                  ),
+              });
+
+              await handler(event);
+              msg.ack();
+            } catch (error) {
+              logger.error('Error processing bulk scan terminal event', {
+                error: error instanceof Error ? error.message : String(error),
+                subject,
+              });
+              msg.nak();
+            }
+          }
+        })();
+      }));
+    } catch (error) {
+      logger.error('Failed to subscribe to bulk scan terminal events', {
+        error: error instanceof Error ? error.message : String(error),
       });
       throw error;
     }

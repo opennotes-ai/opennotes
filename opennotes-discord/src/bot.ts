@@ -53,6 +53,7 @@ import { GuildConfigService } from './services/GuildConfigService.js';
 import { PermissionModeService } from './services/PermissionModeService.js';
 import { ConfigKey } from './lib/config-schema.js';
 import { VibecheckProgressService } from './services/VibecheckProgressService.js';
+import { VibecheckStalledScanNotificationService } from './services/VibecheckStalledScanNotificationService.js';
 import { apiClient } from './api-client.js';
 import { closeRedisClient } from './redis-client.js';
 import express, { Express } from 'express';
@@ -75,6 +76,7 @@ export class Bot {
   private guildConfigService?: GuildConfigService;
   private permissionModeService?: PermissionModeService;
   private vibecheckProgressService?: VibecheckProgressService;
+  private vibecheckStalledScanNotificationService?: VibecheckStalledScanNotificationService;
   private healthCheckServer?: Express;
   private healthCheckPort?: number;
 
@@ -355,6 +357,25 @@ export class Bot {
       );
 
       logger.info('Vibecheck progress service initialized and subscribed to progress updates');
+
+      this.vibecheckStalledScanNotificationService = new VibecheckStalledScanNotificationService(
+        this.client,
+        distributedLock
+      );
+      try {
+        await this.natsSubscriber.subscribeToBulkScanTerminalUpdates(
+          this.vibecheckStalledScanNotificationService.handleTerminalEvent.bind(
+            this.vibecheckStalledScanNotificationService
+          )
+        );
+
+        logger.info('Vibecheck stalled scan notification service initialized and subscribed to terminal events');
+      } catch (error) {
+        logger.warn('Vibecheck stalled scan notification service degraded - terminal event subscription unavailable', {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+      }
     } catch (error) {
       logger.error('Failed to initialize note publisher system - JetStream is required', {
         error: error instanceof Error ? error.message : String(error),

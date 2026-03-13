@@ -553,6 +553,34 @@ describe('bulk-scan-executor', () => {
   });
 
   describe('executeBulkScan - progress callback behavior', () => {
+    it('passes a scan-aware stall warning callback into the executor wait path', async () => {
+      const messages = new Map();
+      const messageId = generateRecentSnowflake(1000);
+      messages.set(messageId, createMockMessage(messageId, 'Message 1'));
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      const stallWarningCallback = jest.fn<(scanId: string) => Promise<void>>().mockResolvedValue(undefined);
+      let waiterCallback: (() => void) | undefined;
+
+      mockWaitForNatsResults.mockImplementationOnce(async (_scanId, _nc, opts) => {
+        waiterCallback = opts.onStallWarning;
+        return createBulkScanResultsResponse('test-scan-123', 'completed', 1);
+      });
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        stallWarningCallback,
+      });
+
+      expect(waiterCallback).toBeDefined();
+      waiterCallback!();
+      expect(stallWarningCallback).toHaveBeenCalledWith('test-scan-123');
+    });
+
     it('forwards analysis progress events from NATS waiter to progressCallback', async () => {
       const messages = new Map();
       for (let i = 0; i < 10; i++) {

@@ -90,8 +90,8 @@ const mockApiClient = {
   healthCheck: jest.fn<() => Promise<any>>(),
   getCommunityServerByPlatformId: jest.fn<(platformId: string) => Promise<CommunityServerJSONAPIResponse>>(),
   initiateBulkScan: jest.fn<(guildId: string, days: number) => Promise<any>>(),
-  getBulkScanResults: jest.fn<(scanId: string) => Promise<any>>(),
-  createNoteRequestsFromScan: jest.fn<(scanId: string, messageIds: string[], generateAiNotes: boolean) => Promise<NoteRequestsResultResponse>>(),
+  getBulkScanResults: jest.fn<(scanId: string, context?: any) => Promise<any>>(),
+  createNoteRequestsFromScan: jest.fn<(scanId: string, messageIds: string[], generateAiNotes: boolean, context?: any) => Promise<NoteRequestsResultResponse>>(),
   getLatestScan: jest.fn<(communityServerId: string) => Promise<LatestScanResponse>>(),
   generateScanExplanation: jest.fn<(originalMessage: string, factCheckItemId: string, communityServerId: string) => Promise<ExplanationResultResponse>>(),
 };
@@ -347,6 +347,17 @@ describe('vibecheck command', () => {
       expect(scanIdOption.required).toBe(true);
     });
 
+    it('should expose an optional scan_id parameter on the status subcommand', () => {
+      const options = data.options;
+      const statusSubcommand = options.find((opt: any) => opt.name === 'status') as any;
+
+      expect(statusSubcommand).toBeDefined();
+
+      const scanIdOption = statusSubcommand.options?.find((opt: any) => opt.name === 'scan_id') as any;
+      expect(scanIdOption).toBeDefined();
+      expect(scanIdOption.required).toBe(false);
+    });
+
     it('should have days parameter on scan subcommand with correct choices', () => {
       const options = data.options;
       const scanSubcommand = options.find((opt: any) => opt.name === 'scan') as any;
@@ -430,9 +441,16 @@ describe('vibecheck command', () => {
       };
 
       const mockInteraction = {
-        user: { id: 'admin123', username: 'adminuser' },
+        user: {
+          id: 'admin123',
+          username: 'adminuser',
+          displayName: 'Admin User',
+          globalName: 'Admin User',
+          displayAvatarURL: jest.fn(() => 'https://cdn.test/slash-avatar.png'),
+        },
         member: mockMember,
         guildId: 'guild789',
+        channelId: 'channel-555',
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
@@ -498,9 +516,16 @@ describe('vibecheck command', () => {
       };
 
       const mockInteraction = {
-        user: { id: 'admin123', username: 'adminuser' },
+        user: {
+          id: 'admin123',
+          username: 'adminuser',
+          displayName: 'Admin User',
+          globalName: 'Admin User',
+          displayAvatarURL: jest.fn(() => 'https://cdn.test/slash-avatar.png'),
+        },
         member: mockMember,
         guildId: 'guild789',
+        channelId: 'channel-555',
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
@@ -1057,8 +1082,21 @@ describe('vibecheck command', () => {
 
       const mockCreateButtonInteraction = {
         customId: 'vibecheck_create:scan-123',
-        user: { id: 'admin123' },
+        user: {
+          id: 'admin123',
+          username: 'adminuser',
+          displayName: 'Admin User',
+          globalName: 'Admin User',
+          displayAvatarURL: jest.fn(() => 'https://cdn.test/button-avatar.png'),
+        },
         update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        guildId: 'guild789',
+        channelId: 'channel123',
+        member: {
+          permissions: {
+            has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+          },
+        },
         message: {
           createMessageComponentCollector: jest.fn().mockReturnValue(mockAiCollector),
         },
@@ -1071,7 +1109,20 @@ describe('vibecheck command', () => {
 
       const aiYesInteraction = {
         customId: 'vibecheck_ai_yes:scan-123',
-        user: { id: 'admin123' },
+        user: {
+          id: 'admin123',
+          username: 'adminuser',
+          displayName: 'Admin User',
+          globalName: 'Admin User',
+          displayAvatarURL: jest.fn(() => 'https://cdn.test/button-avatar.png'),
+        },
+        guildId: 'guild789',
+        channelId: 'channel123',
+        member: {
+          permissions: {
+            has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+          },
+        },
         update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
@@ -1085,7 +1136,14 @@ describe('vibecheck command', () => {
       expect(mockApiClient.createNoteRequestsFromScan).toHaveBeenCalledWith(
         'scan-123',
         ['1234567890123456789'],
-        true
+        true,
+        expect.objectContaining({
+          userId: 'admin123',
+          username: 'adminuser',
+          guildId: 'guild789',
+          channelId: 'channel123',
+          hasManageServer: true,
+        })
       );
     });
 
@@ -1137,7 +1195,20 @@ describe('vibecheck command', () => {
 
       const aiNoInteraction = {
         customId: 'vibecheck_ai_no:scan-123',
-        user: { id: 'admin123' },
+        user: {
+          id: 'admin123',
+          username: 'adminuser',
+          displayName: 'Admin User',
+          globalName: 'Admin User',
+          displayAvatarURL: jest.fn(() => 'https://cdn.test/button-avatar.png'),
+        },
+        guildId: 'guild789',
+        channelId: 'channel123',
+        member: {
+          permissions: {
+            has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+          },
+        },
         update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
@@ -1151,7 +1222,14 @@ describe('vibecheck command', () => {
       expect(mockApiClient.createNoteRequestsFromScan).toHaveBeenCalledWith(
         'scan-123',
         ['1234567890123456789'],
-        false
+        false,
+        expect.objectContaining({
+          userId: 'admin123',
+          username: 'adminuser',
+          guildId: 'guild789',
+          channelId: 'channel123',
+          hasManageServer: true,
+        })
       );
     });
   });
@@ -1561,9 +1639,16 @@ describe('vibecheck command', () => {
       };
 
       const mockInteraction = {
-        user: { id: 'admin123', username: 'adminuser' },
+        user: {
+          id: 'admin123',
+          username: 'adminuser',
+          displayName: 'Admin User',
+          globalName: 'Admin User',
+          displayAvatarURL: jest.fn(() => 'https://cdn.test/slash-avatar.png'),
+        },
         member: mockMember,
         guildId: 'guild789',
+        channelId: 'channel-555',
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
@@ -1627,11 +1712,7 @@ describe('vibecheck command', () => {
       );
     });
 
-    it.each([
-      ['failed', 'Scan Status: Failed', 'The scan failed due to processing errors. Please try again later.'],
-      ['pending', 'Scan Status: Pending', 'The scan is pending and waiting to be processed.'],
-      ['in_progress', 'Scan Status: In Progress', 'The scan is currently in progress...'],
-    ])('should display %s scan status without a completed header', async (status, expectedHeader, bodyText) => {
+    it('should fetch a specific scan when status scan_id is provided', async () => {
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
@@ -1654,6 +1735,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getString: jest.fn<(name: string) => string | null>().mockImplementation((name) =>
+            name === 'scan_id' ? 'scan-specific-123' : null
+          ),
           getSubcommand: jest.fn().mockReturnValue('status'),
           getSubcommandGroup: jest.fn().mockReturnValue(null),
           getChannel: jest.fn().mockReturnValue(null),
@@ -1663,26 +1747,88 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      mockFormatScanStatusPaginated.mockReturnValueOnce({
-        pages: { pages: [bodyText], totalPages: 1 },
-        header: `**${expectedHeader}**\n\n**Scan ID:** \`test-scan-status\`\n`,
-        actionButtons: undefined,
-        scanId: 'test-scan-status',
-      });
-      mockApiClient.getLatestScan.mockResolvedValueOnce(
-        createLatestScanResponse('test-scan-status', status, 12)
+      mockApiClient.getBulkScanResults.mockResolvedValueOnce(
+        createLatestScanResponse('scan-specific-123', 'in_progress', 42)
       );
 
       await execute(mockInteraction as any);
 
-      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+      expect(mockApiClient.getBulkScanResults).toHaveBeenCalledWith(
+        'scan-specific-123',
         expect.objectContaining({
-          content: expect.stringContaining(expectedHeader),
+          userId: 'admin123',
+          guildId: 'guild789',
+        })
+      );
+      expect(mockApiClient.getLatestScan).not.toHaveBeenCalled();
+    });
+
+    it('maps explicit 403 scan_id lookup failures to the different-server guidance and forwards user context', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: {
+          id: 'admin123',
+          username: 'adminuser',
+          displayName: 'Admin User',
+          globalName: 'Admin User',
+          displayAvatarURL: jest.fn(() => 'https://cdn.test/avatar.png'),
+        },
+        member: mockMember,
+        guildId: 'guild789',
+        channelId: 'channel-321',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getString: jest.fn<(name: string) => string | null>().mockImplementation((name) =>
+            name === 'scan_id' ? 'scan-specific-123' : null
+          ),
+          getSubcommand: jest.fn().mockReturnValue('status'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockApiClient.getBulkScanResults.mockRejectedValueOnce(
+        new ApiError('Forbidden', '/api/v2/bulk-scans/scan-specific-123', 403)
+      );
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.getBulkScanResults).toHaveBeenCalledWith(
+        'scan-specific-123',
+        expect.objectContaining({
+          userId: 'admin123',
+          username: 'adminuser',
+          guildId: 'guild789',
+          channelId: 'channel-321',
+          hasManageServer: true,
         })
       );
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.not.stringContaining('**Scan Complete**'),
+          content: expect.stringContaining('belongs to a different server'),
+        })
+      );
+      expect(mockInteraction.editReply).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('No scans have been run for this server yet'),
         })
       );
     });
@@ -2140,9 +2286,16 @@ describe('vibecheck command', () => {
       };
 
       const mockInteraction = {
-        user: { id: 'admin123', username: 'adminuser' },
+        user: {
+          id: 'admin123',
+          username: 'adminuser',
+          displayName: 'Admin User',
+          globalName: 'Admin User',
+          displayAvatarURL: jest.fn(() => 'https://cdn.test/slash-avatar.png'),
+        },
         member: mockMember,
         guildId: 'guild789',
+        channelId: 'channel-555',
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
@@ -2183,11 +2336,27 @@ describe('vibecheck command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockApiClient.getBulkScanResults).toHaveBeenCalledWith('scan-123');
+      expect(mockApiClient.getBulkScanResults).toHaveBeenCalledWith(
+        'scan-123',
+        expect.objectContaining({
+          userId: 'admin123',
+          username: 'adminuser',
+          guildId: 'guild789',
+          channelId: 'channel-555',
+          hasManageServer: true,
+        })
+      );
       expect(mockApiClient.createNoteRequestsFromScan).toHaveBeenCalledWith(
         'scan-123',
         ['msg-1', 'msg-2'],
-        false
+        false,
+        expect.objectContaining({
+          userId: 'admin123',
+          username: 'adminuser',
+          guildId: 'guild789',
+          channelId: 'channel-555',
+          hasManageServer: true,
+        })
       );
 
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
@@ -2584,25 +2753,6 @@ describe('vibecheck command', () => {
       expect(lastEditReply.content).toContain('scan-timeout-123');
     });
 
-    it('shows failed guidance when a zero-message scan status is failed', async () => {
-      const interaction = createScanInteraction();
-      mockExecuteBulkScan.mockResolvedValueOnce({
-        scanId: 'scan-failed-123',
-        messagesScanned: 0,
-        channelsScanned: 3,
-        batchesPublished: 0,
-        failedBatches: 0,
-        status: 'failed',
-        flaggedMessages: [],
-      });
-
-      await execute(interaction as any);
-
-      const lastEditReply = interaction.editReply.mock.calls.at(-1)?.[0];
-      expect(lastEditReply.content).toContain('Scan analysis failed');
-      expect(lastEditReply.content).toContain('scan-failed-123');
-    });
-
     it('transitions to analysis interstitial text during analysis progress', async () => {
       const interaction = createScanInteraction();
       mockExecuteBulkScan.mockImplementationOnce(async ({ progressCallback }) => {
@@ -2627,6 +2777,69 @@ describe('vibecheck command', () => {
 
       const editContents = interaction.editReply.mock.calls.map(([arg]: any[]) => String(arg.content ?? ''));
       expect(editContents.some((content: string) => content.includes('Analyzing scan results'))).toBe(true);
+    });
+
+    it('freezes the slash-command reply after a stall warning and records cache metadata', async () => {
+      const interaction = createScanInteraction();
+
+      mockExecuteBulkScan.mockImplementationOnce(async ({ stallWarningCallback }) => {
+        expect(stallWarningCallback).toBeDefined();
+        await stallWarningCallback?.('scan-stalled-123');
+        return {
+          scanId: 'scan-stalled-123',
+          messagesScanned: 100,
+          channelsScanned: 5,
+          batchesPublished: 1,
+          failedBatches: 0,
+          status: 'completed',
+          flaggedMessages: [],
+        };
+      });
+
+      await execute(interaction as any);
+
+      const lastEditReply = interaction.editReply.mock.calls.at(-1)?.[0];
+      expect(lastEditReply.content).toContain('taking longer than we can keep updated');
+      expect(lastEditReply.content).toContain('scan-stalled-123');
+      expect(lastEditReply.content).toContain('scan_id:scan-stalled-123');
+      expect(lastEditReply.content).not.toContain('Scan complete!');
+      expect(mockCache.set).toHaveBeenCalledWith(
+        'vibecheck:stalled:scan-stalled-123',
+        expect.objectContaining({
+          scanId: 'scan-stalled-123',
+          initiatorId: 'admin123',
+          guildId: 'guild789',
+          days: 7,
+          source: 'slash_command',
+        }),
+        7 * 24 * 60 * 60
+      );
+    });
+
+    it('falls back to the terminal interaction reply when stall metadata persistence fails', async () => {
+      const interaction = createScanInteraction();
+      mockCache.set
+        .mockResolvedValueOnce(true)
+        .mockRejectedValueOnce(new Error('redis unavailable'));
+
+      mockExecuteBulkScan.mockImplementationOnce(async ({ stallWarningCallback }) => {
+        await stallWarningCallback?.('scan-stalled-123').catch(() => undefined);
+        return {
+          scanId: 'scan-stalled-123',
+          messagesScanned: 100,
+          channelsScanned: 5,
+          batchesPublished: 1,
+          failedBatches: 0,
+          status: 'completed',
+          flaggedMessages: [],
+        };
+      });
+
+      await execute(interaction as any);
+
+      const editContents = interaction.editReply.mock.calls.map(([arg]: any[]) => String(arg.content ?? ''));
+      expect(editContents.some((content: string) => content.includes('Scan complete! No flagged content found.'))).toBe(true);
+      expect(editContents.at(-1)).not.toContain('taking longer than we can keep updated');
     });
   });
 });

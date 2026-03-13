@@ -1150,9 +1150,10 @@ export class ApiClient {
     return handleError(result, '/api/v2/bulk-scans')
   }
 
-  async getBulkScanResults(scanId: string): Promise<BulkScanResultsResponse> {
+  async getBulkScanResults(scanId: string, context?: UserContext): Promise<BulkScanResultsResponse> {
     const result = await this.client.GET('/api/v2/bulk-scans/{scan_id}', {
       params: { path: { scan_id: scanId } },
+      headers: this.profileHeaders(context),
     });
     return handleError(result, `/api/v2/bulk-scans/${scanId}`)
   }
@@ -1160,10 +1161,12 @@ export class ApiClient {
   async createNoteRequestsFromScan(
     scanId: string,
     messageIds: string[],
-    generateAiNotes: boolean
+    generateAiNotes: boolean,
+    context?: UserContext
   ): Promise<NoteRequestsResultResponse> {
     const result = await this.client.POST('/api/v2/bulk-scans/{scan_id}/note-requests', {
       params: { path: { scan_id: scanId } },
+      headers: this.profileHeaders(context),
       body: {
         data: {
           type: 'note-requests',
