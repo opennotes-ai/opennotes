@@ -141,6 +141,7 @@ class TestGetDbosConfig:
         """Config dict includes required DBOS fields."""
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.DATABASE_DIRECT_URL = None
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = "Test Project"
             mock_settings.OTLP_ENDPOINT = None
@@ -158,6 +159,7 @@ class TestGetDbosConfig:
         """Async PostgreSQL URL is converted to sync format for DBOS."""
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host:5432/db"
+            mock_settings.DATABASE_DIRECT_URL = None
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = None
             mock_settings.OTLP_ENDPOINT = None
@@ -176,6 +178,7 @@ class TestGetDbosConfig:
         """Config uses DBOS_APP_NAME setting directly."""
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.DATABASE_DIRECT_URL = None
             mock_settings.DBOS_APP_NAME = "custom-dbos-app"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.DBOS_CONDUCTOR_KEY = None
@@ -190,6 +193,7 @@ class TestGetDbosConfig:
         """Raises ValueError if DATABASE_URL is not configured."""
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = None
+            mock_settings.DATABASE_DIRECT_URL = None
 
             with pytest.raises(ValueError, match="DATABASE_URL"):
                 get_dbos_config()
@@ -198,6 +202,7 @@ class TestGetDbosConfig:
         """Raises ValueError if DATABASE_URL is empty string."""
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = ""
+            mock_settings.DATABASE_DIRECT_URL = None
 
             with pytest.raises(ValueError, match="DATABASE_URL"):
                 get_dbos_config()
@@ -284,6 +289,39 @@ class TestGetDbosConfig:
 
             assert config["admin_port"] == 3001
             assert config["run_admin_server"] is True
+
+    def test_prefers_direct_url_for_system_database(self) -> None:
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@pooler:6543/db"
+            mock_settings.DATABASE_DIRECT_URL = "postgresql+asyncpg://user:pass@direct:5432/db"
+            mock_settings.DBOS_APP_NAME = "test"
+            mock_settings.DBOS_ADMIN_PORT = 3001
+            mock_settings.DBOS_RUN_ADMIN_SERVER = False
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
+
+            config = dict(get_dbos_config())
+
+            assert "direct:5432" in config["system_database_url"]
+            assert "pooler:6543" not in config["system_database_url"]
+
+    def test_falls_back_to_database_url_when_direct_url_is_none(self) -> None:
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@pooler:6543/db"
+            mock_settings.DATABASE_DIRECT_URL = None
+            mock_settings.DBOS_APP_NAME = "test"
+            mock_settings.DBOS_ADMIN_PORT = 3001
+            mock_settings.DBOS_RUN_ADMIN_SERVER = False
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
+
+            config = dict(get_dbos_config())
+
+            assert "pooler:6543" in config["system_database_url"]
 
     def test_config_does_not_include_conductor_key(self) -> None:
         with patch("src.dbos_workflows.config.settings") as mock_settings:

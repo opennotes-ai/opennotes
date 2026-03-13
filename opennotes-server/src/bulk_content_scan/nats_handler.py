@@ -23,6 +23,7 @@ from src.dbos_workflows.content_scan_workflow import (
 from src.events.schemas import (
     BulkScanAllBatchesTransmittedEvent,
     BulkScanMessageBatchEvent,
+    BulkScanProcessingFinishedEvent,
     BulkScanResultsEvent,
     EventType,
     ScanErrorSummary,
@@ -311,6 +312,10 @@ class BulkScanEventHandler:
 
         The orchestrator workflow ID is the scan_id (set via SetWorkflowID at dispatch).
         """
+        if event.messages_scanned == 0:
+            await self._finalize_zero_message_scan(event)
+            return
+
         logger.info(
             "Sending all_transmitted signal to DBOS orchestrator",
             extra={
@@ -329,6 +334,68 @@ class BulkScanEventHandler:
         await send_all_transmitted_signal(
             orchestrator_workflow_id=orchestrator_workflow_id,
             messages_scanned=event.messages_scanned,
+        )
+
+    async def _finalize_zero_message_scan(self, event: BulkScanAllBatchesTransmittedEvent) -> None:
+        logger.info(
+            "Finalizing zero-message scan directly",
+            extra={"scan_id": str(event.scan_id)},
+        )
+        session_maker = get_session_maker()
+        async with session_maker() as session:
+            stmt = (
+                select(BulkContentScanLog)
+                .where(BulkContentScanLog.id == event.scan_id)
+                .with_for_update()
+            )
+            result = await session.execute(stmt)
+            scan_log = result.scalar_one_or_none()
+            if scan_log is None:
+                logger.warning(
+                    "Zero-message scan not found",
+                    extra={"scan_id": str(event.scan_id)},
+                )
+                return
+            if scan_log.status in {BulkScanStatus.COMPLETED, BulkScanStatus.FAILED}:
+                logger.info(
+                    "Zero-message scan already terminal",
+                    extra={"scan_id": str(event.scan_id), "status": scan_log.status},
+                )
+                return
+
+            scan_log.status = BulkScanStatus.COMPLETED
+            scan_log.messages_scanned = 0
+            scan_log.messages_flagged = 0
+            await session.commit()
+
+        await self.publisher.publish(
+            scan_id=event.scan_id,
+            messages_scanned=0,
+            messages_flagged=0,
+        )
+
+        finished_event = BulkScanProcessingFinishedEvent(
+            event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
+            scan_id=event.scan_id,
+            community_server_id=event.community_server_id,
+            messages_scanned=0,
+            messages_flagged=0,
+            messages_skipped=0,
+        )
+        event_name = EventType.BULK_SCAN_PROCESSING_FINISHED.value.replace(".", "_")
+        subject = f"{settings.NATS_STREAM_NAME}.{event_name}"
+        data = finished_event.model_dump_json().encode()
+        headers = {
+            "event-id": finished_event.event_id,
+            "event-type": EventType.BULK_SCAN_PROCESSING_FINISHED.value,
+            "Msg-Id": finished_event.event_id,
+            "X-Correlation-Id": finished_event.event_id,
+        }
+        await self.nats_client.publish(subject, data, headers=headers)
+
+        logger.info(
+            "Zero-message scan finalized as COMPLETED",
+            extra={"scan_id": str(event.scan_id)},
         )
 
     def register(self) -> None:

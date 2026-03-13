@@ -602,6 +602,125 @@ class TestGetScanTypesForCommunity:
         assert all(isinstance(st, str) for st in result)
 
 
+class TestHandleZeroMessageScan:
+    """Tests for zero-message scan finalization in _handle_all_batches_transmitted."""
+
+    @pytest.mark.asyncio
+    async def test_zero_messages_finalizes_scan_as_completed(self) -> None:
+        handler = _make_handler()
+        scan_id = uuid4()
+        community_server_id = uuid4()
+        event = BulkScanAllBatchesTransmittedEvent(
+            event_id=f"evt_{uuid4().hex[:12]}",
+            scan_id=scan_id,
+            community_server_id=community_server_id,
+            messages_scanned=0,
+        )
+
+        mock_scan_log = MagicMock()
+        mock_scan_log.status = "pending"
+        mock_scan_log.messages_scanned = None
+        mock_scan_log.messages_flagged = None
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_scan_log
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler.persist_transmitted_scan_handoff",
+                new_callable=AsyncMock,
+            ) as mock_handoff,
+            patch(
+                "src.bulk_content_scan.nats_handler.send_all_transmitted_signal",
+                new_callable=AsyncMock,
+            ) as mock_signal,
+            patch.object(handler.publisher, "publish", new_callable=AsyncMock) as mock_publish,
+        ):
+            await handler._handle_all_batches_transmitted(event)
+
+        mock_handoff.assert_not_called()
+        mock_signal.assert_not_called()
+
+        from src.bulk_content_scan.schemas import BulkScanStatus
+
+        assert mock_scan_log.status == BulkScanStatus.COMPLETED
+        assert mock_scan_log.messages_scanned == 0
+        assert mock_scan_log.messages_flagged == 0
+
+        mock_publish.assert_called_once_with(
+            scan_id=scan_id,
+            messages_scanned=0,
+            messages_flagged=0,
+        )
+
+        mock_session.commit.assert_awaited_once()
+
+        handler.nats_client.publish.assert_awaited_once()
+        call_args = handler.nats_client.publish.call_args
+        assert "processing_finished" in call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_zero_messages_skips_already_terminal_scan(self) -> None:
+        handler = _make_handler()
+        scan_id = uuid4()
+        event = BulkScanAllBatchesTransmittedEvent(
+            event_id=f"evt_{uuid4().hex[:12]}",
+            scan_id=scan_id,
+            community_server_id=uuid4(),
+            messages_scanned=0,
+        )
+
+        from src.bulk_content_scan.schemas import BulkScanStatus
+
+        mock_scan_log = MagicMock()
+        mock_scan_log.status = BulkScanStatus.COMPLETED
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_scan_log
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.get_session_maker",
+                return_value=mock_session_maker,
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler.persist_transmitted_scan_handoff",
+                new_callable=AsyncMock,
+            ) as mock_handoff,
+            patch(
+                "src.bulk_content_scan.nats_handler.send_all_transmitted_signal",
+                new_callable=AsyncMock,
+            ) as mock_signal,
+        ):
+            await handler._handle_all_batches_transmitted(event)
+
+        mock_handoff.assert_not_called()
+        mock_signal.assert_not_called()
+        mock_session.commit.assert_not_awaited()
+
+
 class TestRegister:
     """Tests for handler registration."""
 

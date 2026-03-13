@@ -78,7 +78,7 @@ def get_dbos_config() -> DBOSConfig:
     Note: DBOS uses synchronous psycopg internally, so we convert
     the async DATABASE_URL (postgresql+asyncpg://) to sync format.
     """
-    database_url = settings.DATABASE_URL
+    database_url = settings.DATABASE_DIRECT_URL or settings.DATABASE_URL
     if not database_url:
         raise ValueError("DATABASE_URL environment variable required for DBOS")
 
