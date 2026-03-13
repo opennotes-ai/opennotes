@@ -3850,6 +3850,88 @@ class TestFlashpointScanStepInnerLogic:
         mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
         return MagicMock(return_value=mock_session_ctx)
 
+    def test_stores_candidates_and_returns_key_when_scan_remains_active(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import flashpoint_scan_step
+
+        messages = [_make_test_message("msg_1")]
+        candidate = MagicMock()
+        candidate.model_dump.return_value = {"message_id": "msg_1"}
+
+        mock_service_instance = MagicMock()
+        mock_service_instance._build_message_id_index.return_value = {}
+        mock_service_instance._get_context_for_message.return_value = []
+        mock_service_instance._flashpoint_scan_candidate = AsyncMock(return_value=candidate)
+
+        mock_session = AsyncMock()
+        mock_redis = MagicMock()
+
+        with (
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=mock_redis,
+            ),
+            patch("src.config.get_settings") as mock_settings,
+            patch(
+                "src.database.get_session_maker",
+                return_value=self._make_session_context(mock_session),
+            ),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.fact_checking.embedding_service.EmbeddingService",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service_instance,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.load_messages_from_redis",
+                new_callable=AsyncMock,
+                side_effect=[messages, [{"ch_1": messages}]],
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ) as mock_store,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.get_batch_redis_key",
+                return_value="test:flashpoint",
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+
+            result = flashpoint_scan_step.__wrapped__(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                filtered_messages_key="test:filtered",
+                context_maps_key="test:context",
+            )
+
+        assert result == {
+            "flashpoint_candidates_key": "test:flashpoint",
+            "candidate_count": 1,
+        }
+        mock_service_instance._flashpoint_scan_candidate.assert_awaited_once()
+        mock_store.assert_awaited_once_with(
+            mock_redis,
+            "test:flashpoint",
+            [{"message_id": "msg_1"}],
+        )
+
     def test_skips_candidate_writes_when_scan_is_terminal(self) -> None:
         from src.dbos_workflows.content_scan_workflow import flashpoint_scan_step
 
