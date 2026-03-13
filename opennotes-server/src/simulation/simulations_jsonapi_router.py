@@ -48,7 +48,10 @@ from src.simulation.schemas import (
     DetailedNoteResource,
     RequestVarianceMeta,
 )
-from src.simulation.workflows.orchestrator_workflow import dispatch_orchestrator
+from src.simulation.workflows.orchestrator_workflow import (
+    SCORING_PERSISTENCE_FAILURE_MESSAGE,
+    dispatch_orchestrator,
+)
 from src.users.models import User
 
 logger = get_logger(__name__)
@@ -247,7 +250,25 @@ class CancelWorkflowsResponse(SQLAlchemySchema):
     errors: list[str] = []
 
 
-def simulation_run_to_resource(run: SimulationRun) -> SimulationResource:
+def _sanitize_public_simulation_error_message(error_message: str | None) -> str | None:
+    if error_message is None:
+        return None
+    if error_message == SCORING_PERSISTENCE_FAILURE_MESSAGE or error_message.startswith(
+        f"{SCORING_PERSISTENCE_FAILURE_MESSAGE}:"
+    ):
+        return SCORING_PERSISTENCE_FAILURE_MESSAGE
+    return error_message
+
+
+def simulation_run_to_resource(
+    run: SimulationRun, *, sanitize_error_message: bool = False
+) -> SimulationResource:
+    error_message = (
+        _sanitize_public_simulation_error_message(run.error_message)
+        if sanitize_error_message
+        else run.error_message
+    )
+
     return SimulationResource(
         type="simulations",
         id=str(run.id),
@@ -259,7 +280,7 @@ def simulation_run_to_resource(run: SimulationRun) -> SimulationResource:
             completed_at=run.completed_at,
             paused_at=run.paused_at,
             metrics=run.metrics,
-            error_message=run.error_message,
+            error_message=error_message,
             restart_count=run.restart_count,
             cumulative_turns=run.cumulative_turns,
             is_public=run.is_public,
@@ -443,7 +464,7 @@ async def list_simulations(
         result = await db.execute(query)
         runs = result.scalars().all()
 
-        resources = [simulation_run_to_resource(run) for run in runs]
+        resources = [simulation_run_to_resource(run, sanitize_error_message=scoped) for run in runs]
 
         base_url = str(request.url).split("?")[0]
         links = create_pagination_links(
@@ -504,7 +525,7 @@ async def get_simulation(
                 f"SimulationRun {simulation_id} not found",
             )
 
-        resource = simulation_run_to_resource(run)
+        resource = simulation_run_to_resource(run, sanitize_error_message=scoped)
         response = SimulationSingleResponse(
             data=resource,
             links=JSONAPILinks(self_=str(request.url)),

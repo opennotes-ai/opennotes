@@ -1822,6 +1822,37 @@ class TestScopedKeyFiltering:
         assert data["data"]["attributes"]["is_public"] is True
 
     @pytest.mark.asyncio
+    async def test_scoped_key_get_public_sim_sanitizes_scoring_persistence_error(
+        self,
+        admin_auth_client,
+        service_account_scoped_client,
+        simulation_run_factory,
+    ):
+        from src.database import get_session_maker
+        from src.simulation.models import SimulationRun
+
+        run = await simulation_run_factory("failed")
+        raw_error = "Required scoring snapshot persistence failed: bucket credentials leaked"
+
+        async with get_session_maker()() as session:
+            await session.execute(
+                update(SimulationRun)
+                .where(SimulationRun.id == run["id"])
+                .values(error_message=raw_error)
+            )
+            await session.commit()
+
+        await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/publish")
+
+        response = await service_account_scoped_client.get(f"/api/v2/simulations/{run['id']}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["error_message"] == (
+            "Required scoring snapshot persistence failed"
+        )
+
+    @pytest.mark.asyncio
     async def test_scoped_key_get_private_sim_returns_404(
         self,
         service_account_scoped_client,

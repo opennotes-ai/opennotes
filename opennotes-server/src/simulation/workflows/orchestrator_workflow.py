@@ -32,6 +32,8 @@ SPAWN_BATCH_SIZE: int = 5
 SCORING_INTERVAL: int = 5
 CIRCUIT_BREAKER_THRESHOLD: int = 5
 CIRCUIT_BREAKER_RESET_TIMEOUT: float = 300.0
+SCORING_PERSISTENCE_FAILURE_MESSAGE = "Required scoring snapshot persistence failed"
+FINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
 
 simulation_orchestrator_queue = Queue(
     name="simulation_orchestrator",
@@ -953,26 +955,39 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                             "tier": scoring_result["tier"],
                         },
                     )
-                except Exception as exc:
+                except Exception:
                     logger.exception("Required scoring snapshot persistence failed")
+                    preserved_status: str | None = None
                     try:
                         updated = set_run_status_step(
                             simulation_run_id,
                             "failed",
                             expected_status="running",
-                            error_message=(f"Required scoring snapshot persistence failed: {exc}"),
+                            error_message=SCORING_PERSISTENCE_FAILURE_MESSAGE,
                         )
                         if not updated:
                             logger.warning(
                                 "Failed run-state update skipped: status was no longer 'running'",
                                 extra={"simulation_run_id": simulation_run_id},
                             )
+                            try:
+                                current_status = check_run_status_step(simulation_run_id)
+                            except Exception:
+                                logger.exception(
+                                    "Failed to re-read run status after scoring failure",
+                                    extra={"simulation_run_id": simulation_run_id},
+                                )
+                            else:
+                                if current_status == "paused":
+                                    preserved_status = "paused"
+                                elif current_status in FINAL_RUN_STATUSES:
+                                    preserved_status = current_status
                     except Exception:
                         logger.exception(
                             "Failed to persist scoring failure state",
                             extra={"simulation_run_id": simulation_run_id},
                         )
-                    final_status = "failed"
+                    final_status = preserved_status or "failed"
                     break
 
             DBOS.sleep(config["turn_cadence_seconds"])
@@ -986,7 +1001,10 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 },
             )
 
-        finalize_result, final_status = _finalize_with_fallback(simulation_run_id, final_status)
+        if final_status == "paused":
+            finalize_result = {"final_status": "paused", "instances_finalized": 0}
+        else:
+            finalize_result, final_status = _finalize_with_fallback(simulation_run_id, final_status)
 
         logger.info(
             "Orchestrator workflow completed",
