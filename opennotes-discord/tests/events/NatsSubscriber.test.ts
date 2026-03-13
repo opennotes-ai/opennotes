@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import type { ScoreUpdateEvent } from '../../src/events/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
+import { EventType } from '../../src/types/bulk-scan.js';
 import {
   loggerFactory,
   natsConnectionFactory,
@@ -472,6 +473,84 @@ describe('NatsSubscriber', () => {
       expect(mockJetStream.subscribe).toHaveBeenCalledWith(
         'OPENNOTES.bulk_scan_failed',
         expect.any(Object)
+      );
+    });
+
+    it('acks bulk scan terminal events when the handler succeeds', async () => {
+      const handler = jest.fn<(event: any) => Promise<void>>().mockResolvedValue(undefined);
+      const terminalEvent = {
+        event_id: 'evt-terminal-ack',
+        event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        metadata: {},
+        scan_id: 'scan-terminal-ack',
+        community_server_id: 'community-123',
+        messages_scanned: 42,
+        messages_flagged: 1,
+      };
+      const completedMessage = createMockJsMessage({
+        data: new Uint8Array([1, 2, 3]),
+        subject: 'OPENNOTES.bulk_scan_processing_finished',
+      });
+      const completedSubscription = createMockSubscription({ messages: [completedMessage] });
+      const failedSubscription = createMockSubscription();
+
+      mockJetStream.subscribe
+        .mockResolvedValueOnce(completedSubscription)
+        .mockResolvedValueOnce(failedSubscription);
+      mockCodec.decode.mockReturnValue(JSON.stringify(terminalEvent));
+
+      await subscriber.subscribeToBulkScanTerminalUpdates(handler);
+
+      await waitFor(() => {
+        expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+          scan_id: 'scan-terminal-ack',
+        }));
+      });
+
+      expect(completedMessage.ack).toHaveBeenCalledTimes(1);
+      expect(completedMessage.nak).not.toHaveBeenCalled();
+    });
+
+    it('naks bulk scan terminal events when the handler rejects', async () => {
+      const handler = jest.fn<(event: any) => Promise<void>>().mockRejectedValue(new Error('transient dm failure'));
+      const terminalEvent = {
+        event_id: 'evt-terminal-nak',
+        event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        metadata: {},
+        scan_id: 'scan-terminal-nak',
+        community_server_id: 'community-123',
+        messages_scanned: 84,
+        messages_flagged: 2,
+      };
+      const completedMessage = createMockJsMessage({
+        data: new Uint8Array([4, 5, 6]),
+        subject: 'OPENNOTES.bulk_scan_processing_finished',
+      });
+      const completedSubscription = createMockSubscription({ messages: [completedMessage] });
+      const failedSubscription = createMockSubscription();
+
+      mockJetStream.subscribe
+        .mockResolvedValueOnce(completedSubscription)
+        .mockResolvedValueOnce(failedSubscription);
+      mockCodec.decode.mockReturnValue(JSON.stringify(terminalEvent));
+
+      await subscriber.subscribeToBulkScanTerminalUpdates(handler);
+
+      await waitFor(() => {
+        expect(completedMessage.nak).toHaveBeenCalledTimes(1);
+      });
+
+      expect(completedMessage.ack).not.toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Error processing bulk scan terminal event',
+        expect.objectContaining({
+          error: 'transient dm failure',
+          subject: 'OPENNOTES.bulk_scan_processing_finished',
+        })
       );
     });
   });

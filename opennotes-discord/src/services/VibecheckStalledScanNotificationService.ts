@@ -1,4 +1,8 @@
-import type { Client } from 'discord.js';
+import {
+  DiscordAPIError,
+  RESTJSONErrorCodes,
+  type Client,
+} from 'discord.js';
 import { apiClient } from '../api-client.js';
 import { logger } from '../logger.js';
 import {
@@ -47,8 +51,10 @@ export class VibecheckStalledScanNotificationService {
       return;
     }
 
+    let stalledScan: StalledScanRecord | null = null;
+
     try {
-      const stalledScan = await this.findStalledScan(event.scan_id);
+      stalledScan = await this.findStalledScan(event.scan_id);
       if (!stalledScan || stalledScan.notificationState === 'sent') {
         return;
       }
@@ -91,13 +97,29 @@ export class VibecheckStalledScanNotificationService {
         });
       }
     } catch (error) {
-      logger.warn('Failed to deliver stalled scan DM', {
-        scanId: event.scan_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (this.isPermanentDiscordDeliveryError(error)) {
+        logger.warn('Skipping stalled scan DM after permanent Discord failure', {
+          scanId: event.scan_id,
+          initiatorId: stalledScan?.initiatorId,
+          error: error.message,
+          code: error.code,
+          status: error.status,
+        });
+        return;
+      }
+
+      throw error;
     } finally {
       if (this.distributedLock) {
-        await this.distributedLock.release(lockKey);
+        try {
+          await this.distributedLock.release(lockKey);
+        } catch (error) {
+          logger.warn('Failed to release stalled scan DM lock', {
+            scanId: event.scan_id,
+            lockKey,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
   }
@@ -119,5 +141,22 @@ export class VibecheckStalledScanNotificationService {
 
   private async sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private isPermanentDiscordDeliveryError(error: unknown): error is DiscordAPIError {
+    if (!(error instanceof DiscordAPIError)) {
+      return false;
+    }
+
+    if (typeof error.code !== 'number') {
+      return false;
+    }
+
+    return new Set<number>([
+      RESTJSONErrorCodes.CannotSendMessagesToThisUser,
+      RESTJSONErrorCodes.UnknownUser,
+      RESTJSONErrorCodes.MissingAccess,
+      RESTJSONErrorCodes.MissingPermissions,
+    ]).has(error.code);
   }
 }

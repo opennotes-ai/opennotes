@@ -10,7 +10,7 @@ export interface StalledScanRecord {
   notifiedAt?: string;
 }
 
-const STALLED_SCAN_TTL_SECONDS = 3600;
+const STALLED_SCAN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export function getStalledScanCacheKey(scanId: string): string {
   return `vibecheck:stalled:${scanId}`;

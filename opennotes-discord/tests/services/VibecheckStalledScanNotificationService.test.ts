@@ -1,5 +1,8 @@
 import { jest } from '@jest/globals';
+import { DiscordAPIError, RESTJSONErrorCodes } from 'discord.js';
 import { EventType } from '../../src/types/bulk-scan.js';
+
+const STALLED_SCAN_RETENTION_SECONDS = 7 * 24 * 60 * 60;
 
 const mockLogger = {
   debug: jest.fn<(...args: unknown[]) => void>(),
@@ -110,6 +113,14 @@ describe('VibecheckStalledScanNotificationService', () => {
         notificationState: 'sent',
       })
     );
+    expect(mockCacheSet).toHaveBeenLastCalledWith(
+      'vibecheck:stalled:scan-123',
+      expect.objectContaining({
+        scanId: 'scan-123',
+        notificationState: 'sent',
+      }),
+      STALLED_SCAN_RETENTION_SECONDS
+    );
   });
 
   it('sends failure guidance for a cached failed stalled scan and marks it delivered', async () => {
@@ -141,6 +152,14 @@ describe('VibecheckStalledScanNotificationService', () => {
         scanId: 'scan-456',
         notificationState: 'sent',
       })
+    );
+    expect(mockCacheSet).toHaveBeenLastCalledWith(
+      'vibecheck:stalled:scan-456',
+      expect.objectContaining({
+        scanId: 'scan-456',
+        notificationState: 'sent',
+      }),
+      STALLED_SCAN_RETENTION_SECONDS
     );
   });
 
@@ -230,7 +249,7 @@ describe('VibecheckStalledScanNotificationService', () => {
       messages_flagged: 3,
     };
 
-    await service.handleTerminalEvent(event);
+    await expect(service.handleTerminalEvent(event)).rejects.toThrow('DMs disabled');
     expect(stalledScanStore['vibecheck:stalled:scan-retry-123']).toEqual(
       expect.not.objectContaining({
         notificationState: 'sent',
@@ -242,6 +261,112 @@ describe('VibecheckStalledScanNotificationService', () => {
     expect(mockUserSend).toHaveBeenCalledTimes(2);
     expect(stalledScanStore['vibecheck:stalled:scan-retry-123']).toEqual(
       expect.objectContaining({
+        notificationState: 'sent',
+      })
+    );
+  });
+
+  it('rethrows transient DM delivery failures so terminal events can be retried', async () => {
+    stalledScanStore['vibecheck:stalled:scan-transient-123'] = {
+      scanId: 'scan-transient-123',
+      initiatorId: 'user-123',
+      guildId: 'guild-123',
+      days: 7,
+      source: 'slash_command',
+    };
+    mockApiClient.getBulkScanResults.mockResolvedValue({
+      data: {
+        type: 'bulk-scans',
+        id: 'scan-transient-123',
+        attributes: {
+          status: 'completed',
+          initiated_at: new Date().toISOString(),
+          messages_scanned: 55,
+          messages_flagged: 4,
+        },
+      },
+      included: [],
+      jsonapi: { version: '1.1' },
+    });
+    mockUserSend.mockRejectedValueOnce(new Error('network timeout'));
+
+    await expect(service.handleTerminalEvent({
+      event_id: 'evt-transient',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      metadata: {},
+      scan_id: 'scan-transient-123',
+      community_server_id: 'community-123',
+      messages_scanned: 55,
+      messages_flagged: 4,
+    })).rejects.toThrow('network timeout');
+
+    expect(stalledScanStore['vibecheck:stalled:scan-transient-123']).toEqual(
+      expect.not.objectContaining({
+        notificationState: 'sent',
+      })
+    );
+  });
+
+  it('swallows permanent DM-closed failures and only logs them', async () => {
+    stalledScanStore['vibecheck:stalled:scan-closed-123'] = {
+      scanId: 'scan-closed-123',
+      initiatorId: 'user-123',
+      guildId: 'guild-123',
+      days: 7,
+      source: 'slash_command',
+    };
+    mockApiClient.getBulkScanResults.mockResolvedValue({
+      data: {
+        type: 'bulk-scans',
+        id: 'scan-closed-123',
+        attributes: {
+          status: 'completed',
+          initiated_at: new Date().toISOString(),
+          messages_scanned: 12,
+          messages_flagged: 0,
+        },
+      },
+      included: [],
+      jsonapi: { version: '1.1' },
+    });
+    mockUserSend.mockRejectedValueOnce(
+      new DiscordAPIError(
+        {
+          code: RESTJSONErrorCodes.CannotSendMessagesToThisUser,
+          message: 'Cannot send messages to this user',
+        },
+        RESTJSONErrorCodes.CannotSendMessagesToThisUser,
+        403,
+        'POST',
+        'https://discord.com/api/v10/users/@me/channels',
+        {}
+      )
+    );
+
+    await expect(service.handleTerminalEvent({
+      event_id: 'evt-closed',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      metadata: {},
+      scan_id: 'scan-closed-123',
+      community_server_id: 'community-123',
+      messages_scanned: 12,
+      messages_flagged: 0,
+    })).resolves.toBeUndefined();
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      'Skipping stalled scan DM after permanent Discord failure',
+      expect.objectContaining({
+        scanId: 'scan-closed-123',
+        initiatorId: 'user-123',
+        error: expect.stringContaining('Cannot send messages to this user'),
+      })
+    );
+    expect(stalledScanStore['vibecheck:stalled:scan-closed-123']).toEqual(
+      expect.not.objectContaining({
         notificationState: 'sent',
       })
     );

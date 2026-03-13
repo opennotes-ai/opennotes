@@ -477,7 +477,7 @@ describe('vibecheck-prompt-handler', () => {
             days: 7,
             source: 'prompt',
           }),
-          expect.any(Number)
+          7 * 24 * 60 * 60
         );
       });
 
