@@ -23,7 +23,8 @@ export function createStallWarningController(
             await handleWarning(scanId);
             stallActive = true;
           } catch (error) {
-            stallActive = (await getStalledScan(scanId)) !== null;
+            const stalledScan = await getStalledScan(scanId);
+            stallActive = stalledScan?.scanId === scanId;
             throw error;
           } finally {
             pendingWarning = null;
