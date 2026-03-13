@@ -389,6 +389,7 @@ class BulkScanEventHandler:
             "event-id": finished_event.event_id,
             "event-type": EventType.BULK_SCAN_PROCESSING_FINISHED.value,
             "Msg-Id": finished_event.event_id,
+            "X-Correlation-Id": finished_event.event_id,
         }
         await self.nats_client.publish(subject, data, headers=headers)
 
