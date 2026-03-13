@@ -10,7 +10,6 @@ from sqlalchemy.exc import IntegrityError
 
 from src.notes.scoring_schemas import NoteScoreResponse, ScoreConfidence
 from src.simulation.scoring_integration import (
-    ScoringRunResult,
     score_community_server_notes,
     trigger_scoring_for_simulation,
 )
@@ -96,7 +95,7 @@ def _mock_db_for_community_scoring(note_count, unscored_notes, rescore_notes):
 
 class TestSnapshotPersistenceResilience:
     @pytest.mark.asyncio
-    async def test_scoring_completes_when_snapshot_persistence_raises(self) -> None:
+    async def test_manual_scoring_raises_when_snapshot_persistence_raises(self) -> None:
         cs_id = uuid4()
         note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
         note.ratings = [_make_rating() for _ in range(5)]
@@ -120,12 +119,10 @@ class TestSnapshotPersistenceResilience:
             ),
         ):
             mock_calc.return_value = _make_score_response(note.id, score=0.8, rating_count=5)
+            with pytest.raises(IntegrityError):
+                await score_community_server_notes(cs_id, db)
 
-            result = await score_community_server_notes(cs_id, db)
-
-        assert result.total_scores_computed == 1
-        assert result.unscored_notes_processed == 1
-        db.commit.assert_awaited_once()
+        db.commit.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_snapshot_failure_is_logged_with_community_server_id(
@@ -155,8 +152,8 @@ class TestSnapshotPersistenceResilience:
             caplog.at_level(logging.ERROR, logger="src.simulation.scoring_integration"),
         ):
             mock_calc.return_value = _make_score_response(note.id, score=0.8, rating_count=5)
-
-            await score_community_server_notes(cs_id, db)
+            with pytest.raises(IntegrityError):
+                await score_community_server_notes(cs_id, db)
 
         error_records = [r for r in caplog.records if r.levelno >= logging.ERROR]
         assert len(error_records) >= 1
@@ -165,7 +162,7 @@ class TestSnapshotPersistenceResilience:
         assert snapshot_record.community_server_id == str(cs_id)
 
     @pytest.mark.asyncio
-    async def test_simulation_scoring_completes_when_snapshot_persistence_raises(self) -> None:
+    async def test_simulation_scoring_raises_when_snapshot_persistence_raises(self) -> None:
         sim_run_id = uuid4()
         cs_id = uuid4()
         note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
@@ -225,9 +222,7 @@ class TestSnapshotPersistenceResilience:
             ),
         ):
             mock_calc.return_value = _make_score_response(note.id, score=0.7, rating_count=5)
+            with pytest.raises(IntegrityError):
+                await trigger_scoring_for_simulation(sim_run_id, db)
 
-            result = await trigger_scoring_for_simulation(sim_run_id, db)
-
-        assert isinstance(result, ScoringRunResult)
-        assert result.scores_computed == 1
-        db.commit.assert_awaited_once()
+        db.commit.assert_not_awaited()
