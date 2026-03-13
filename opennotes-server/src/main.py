@@ -454,11 +454,15 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
         try:
             from dbos import DBOS
 
+            registered_workflows = _register_dbos_workflows()
             dbos = get_dbos()
             DBOS.listen_queues([])
             dbos.launch()
             await asyncio.to_thread(validate_dbos_connection)
-            logger.info("DBOS server mode - full DBOS with empty queue listeners")
+            logger.info(
+                "DBOS server mode - full DBOS with empty queue listeners",
+                extra={"registered_workflows": registered_workflows},
+            )
         except Exception as e:
             logger.error(f"DBOS server-mode initialization failed: {e}")
             raise RuntimeError(f"DBOS server-mode initialization failed: {e}") from e
