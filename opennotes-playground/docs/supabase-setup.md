@@ -50,13 +50,43 @@ You can use wildcard patterns for preview deployments if needed (e.g., `https://
 
 ## 5. Row Level Security
 
-If you create any playground-specific tables in Supabase (beyond the built-in `auth` schema), enable Row Level Security (RLS) on every table:
+RLS is managed via Alembic migrations, not the Supabase dashboard. This ensures policies are version-controlled, reproducible, and consistent across environments.
 
-1. Go to **Table Editor** > select your table
-2. Click **Enable RLS**
-3. Add appropriate policies (e.g., "Users can read their own data")
+### Current state
 
-The playground currently uses Supabase only for authentication. The application data (simulations, notes, ratings) lives in the OpenNotes server, accessed via API key.
+All 41 public tables have RLS + FORCE RLS enabled. 12 policies exist for playground-facing tables (user_profiles, community_servers, community_members, notes, ratings, requests, message_archive, scoring_snapshots, simulation_runs). Server-only tables have RLS enabled with no policies — access is blocked for `anon`/`authenticated` roles while `service_role` bypasses RLS automatically.
+
+### Adding RLS to new tables
+
+When creating a new table, include RLS in the same Alembic migration:
+
+```python
+def upgrade() -> None:
+    op.create_table("my_table", ...)
+    op.execute("ALTER TABLE my_table ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE my_table FORCE ROW LEVEL SECURITY")
+
+    # If playground-facing, add policies:
+    op.execute("""
+        CREATE POLICY "Members can read my_table" ON my_table
+        FOR SELECT TO authenticated
+        USING ((SELECT public.is_community_member(community_server_id)))
+    """)
+```
+
+### Policy patterns
+
+- Wrap `auth.uid()` in a subquery: `(SELECT auth.uid())` — evaluated once, not per-row
+- Use `public.is_community_member(community_server_id)` for community-scoped access
+- Always scope to `TO authenticated` (not `TO public`)
+- For user-owned data: `user_id = (SELECT auth.uid())`
+
+### Auditing RLS status
+
+```sql
+SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;
+SELECT tablename, policyname, cmd FROM pg_policies WHERE schemaname = 'public' ORDER BY tablename;
+```
 
 ## Architecture Notes
 
