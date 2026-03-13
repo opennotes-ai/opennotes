@@ -53,6 +53,7 @@ export class NotePublisherService {
 
   async handleScoreUpdate(event: ScoreUpdateEvent): Promise<void> {
     const startTime = Date.now();
+    const isForcePublished = event.metadata?.force_published === true;
 
     if (this.shouldSkipForMissingGuildCache(event.note_id, event.community_server_id)) {
       return;
@@ -61,7 +62,7 @@ export class NotePublisherService {
     logger.info('Processing score update event', {
       noteId: event.note_id,
       score: event.score,
-      isForcePublished: event.metadata?.force_published === true,
+      isForcePublished,
       hasChannelId: !!event.channel_id,
       hasOriginalMessageId: !!event.original_message_id,
     });
@@ -90,7 +91,6 @@ export class NotePublisherService {
 
     try {
       // Skip threshold check for force-published notes
-      const isForcePublished = event.metadata?.force_published === true;
       if (!isForcePublished && !this.meetsThreshold(event)) {
         logger.info('Skipping score update - does not meet threshold', {
           noteId: event.note_id,
@@ -133,6 +133,15 @@ export class NotePublisherService {
         originalMessageId: context.originalMessageId,
         guildId: context.guildId,
       });
+
+      if (isForcePublished && sourceContextMissing && !this.client.guilds.cache.has(context.guildId)) {
+        logger.warn('Force-publish restored guild missing from bot guild cache after context fallback', {
+          noteId: event.note_id,
+          restoredGuildId: context.guildId,
+          sourceContextMissing,
+          cacheLookupAttempted: sourceContextMissing,
+        });
+      }
 
       if (this.shouldSkipForMissingGuildCache(event.note_id, context.guildId)) {
         return;

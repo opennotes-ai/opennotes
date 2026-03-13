@@ -743,8 +743,6 @@ async def force_publish_note_jsonapi(
             },
         )
 
-        routing_context = await build_score_event_routing_context(db, note)
-
         force_publish_metadata: dict[str, str | bool | None] = {
             "force_published": True,
             "force_published_by": str(admin_profile_id),
@@ -755,6 +753,7 @@ async def force_publish_note_jsonapi(
             force_publish_metadata["admin_username"] = note.force_published_by_profile.display_name
 
         try:
+            routing_context = await build_score_event_routing_context(db, note)
             await event_publisher.publish_note_score_updated(
                 note_id=note.id,
                 score=1.0,
