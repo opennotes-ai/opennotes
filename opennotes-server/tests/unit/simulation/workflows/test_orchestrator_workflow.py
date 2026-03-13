@@ -1436,6 +1436,35 @@ class TestSetRunStatusStep:
         mock_session.execute.assert_awaited_once()
         mock_session.commit.assert_awaited_once()
 
+    def test_set_run_status_step_with_expected_generation_mismatch(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_run_status_step
+
+        run_id = str(uuid4())
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+        ):
+            result = set_run_status_step.__wrapped__(
+                run_id,
+                "failed",
+                expected_status="running",
+                expected_generation=2,
+            )
+
+        assert result is False
+        stmt = mock_session.execute.call_args[0][0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": True})
+        compiled_str = str(compiled)
+        assert "generation = 2" in compiled_str
+        mock_session.commit.assert_awaited_once()
+
     def test_set_run_status_step_sets_paused_at_for_paused(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import set_run_status_step
 
@@ -2534,6 +2563,90 @@ class TestPauseToRunningConfigRefresh:
 
 
 class TestGenerationGuard:
+    def test_orchestrator_scoring_failure_exits_when_generation_changes_before_failure_persist(
+        self,
+    ) -> None:
+        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
+
+        run_id = str(uuid4())
+        config = _make_config()
+        config["generation"] = 1
+
+        with (
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
+                return_value=config,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
+                return_value="running",
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_generation_step",
+                return_value=2,
+            ) as mock_check_generation,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
+                return_value={"has_content": True, "pending_requests": 1, "unrated_notes": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
+                return_value={
+                    "active_count": 2,
+                    "total_spawned": 2,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
+                return_value={"retried": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
+                return_value={"dispatched_count": 0, "skipped_count": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
+                return_value={},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.run_scoring_step",
+                side_effect=RuntimeError("snapshot persistence failed"),
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
+                return_value=False,
+            ) as mock_set_status,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
+            ) as mock_finalize,
+            patch("src.simulation.workflows.orchestrator_workflow.SCORING_INTERVAL", 1),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "wf-old-gen"
+            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
+
+        assert result["status"] == "superseded"
+        mock_set_status.assert_called_once_with(
+            run_id,
+            "failed",
+            expected_status="running",
+            expected_generation=1,
+            error_message="Required scoring snapshot persistence failed",
+        )
+        mock_check_generation.assert_called_once_with(run_id)
+        mock_finalize.assert_not_called()
+
     def test_orchestrator_exits_when_generation_changes_after_refresh(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import run_orchestrator
 

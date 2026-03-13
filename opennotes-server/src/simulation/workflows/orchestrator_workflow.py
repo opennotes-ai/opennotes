@@ -195,6 +195,7 @@ def set_run_status_step(
     simulation_run_id: str,
     new_status: str,
     expected_status: str | None = None,
+    expected_generation: int | None = None,
     error_message: str | None = None,
 ) -> bool:
     from src.database import get_session_maker
@@ -212,6 +213,8 @@ def set_run_status_step(
             stmt = update(SimulationRun).where(SimulationRun.id == run_uuid)
             if expected_status is not None:
                 stmt = stmt.where(SimulationRun.status == expected_status)
+            if expected_generation is not None:
+                stmt = stmt.where(SimulationRun.generation == expected_generation)
             stmt = stmt.values(**values).returning(SimulationRun.id)
 
             result = await session.execute(stmt)
@@ -958,18 +961,44 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 except Exception:
                     logger.exception("Required scoring snapshot persistence failed")
                     preserved_status: str | None = None
+                    expected_generation = config.get("generation", initial_generation)
                     try:
                         updated = set_run_status_step(
                             simulation_run_id,
                             "failed",
                             expected_status="running",
+                            expected_generation=expected_generation,
                             error_message=SCORING_PERSISTENCE_FAILURE_MESSAGE,
                         )
                         if not updated:
                             logger.warning(
-                                "Failed run-state update skipped: status was no longer 'running'",
+                                "Failed run-state update skipped: status or generation no longer matched",
                                 extra={"simulation_run_id": simulation_run_id},
                             )
+                            try:
+                                current_generation = check_generation_step(simulation_run_id)
+                            except Exception:
+                                logger.exception(
+                                    "Failed to re-read generation after scoring failure",
+                                    extra={"simulation_run_id": simulation_run_id},
+                                )
+                            else:
+                                if current_generation != expected_generation:
+                                    logger.info(
+                                        "Generation changed from %d to %d during scoring failure handling",
+                                        expected_generation,
+                                        current_generation,
+                                        extra={
+                                            "simulation_run_id": simulation_run_id,
+                                            "workflow_id": workflow_id,
+                                        },
+                                    )
+                                    return {
+                                        "simulation_run_id": simulation_run_id,
+                                        "status": "superseded",
+                                        "iterations": iteration,
+                                        "instances_finalized": 0,
+                                    }
                             try:
                                 current_status = check_run_status_step(simulation_run_id)
                             except Exception:
