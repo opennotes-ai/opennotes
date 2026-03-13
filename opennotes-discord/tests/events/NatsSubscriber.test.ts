@@ -476,6 +476,27 @@ describe('NatsSubscriber', () => {
       );
     });
 
+    it('creates terminal consumers with deliverNew when bind fails', async () => {
+      const handler = jest.fn<(event: any) => Promise<void>>().mockResolvedValue(undefined);
+      const createdOpts: ReturnType<typeof createMockConsumerOpts>[] = [];
+
+      mockConsumerOpts.mockImplementation(() => {
+        const builder = createMockConsumerOpts();
+        createdOpts.push(builder);
+        return builder;
+      });
+
+      mockJetStream.subscribe
+        .mockRejectedValueOnce(new Error('consumer not found'))
+        .mockResolvedValueOnce(createMockSubscription())
+        .mockResolvedValueOnce(createMockSubscription());
+
+      await subscriber.subscribeToBulkScanTerminalUpdates(handler);
+
+      expect(createdOpts.some(builder => builder.deliverNew.mock.calls.length === 1)).toBe(true);
+      expect(createdOpts.every(builder => builder.deliverAll.mock.calls.length === 0)).toBe(true);
+    });
+
     it('acks bulk scan terminal events when the handler succeeds', async () => {
       const handler = jest.fn<(event: any) => Promise<void>>().mockResolvedValue(undefined);
       const terminalEvent = {

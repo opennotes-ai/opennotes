@@ -362,13 +362,20 @@ export class Bot {
         this.client,
         distributedLock
       );
-      await this.natsSubscriber.subscribeToBulkScanTerminalUpdates(
-        this.vibecheckStalledScanNotificationService.handleTerminalEvent.bind(
-          this.vibecheckStalledScanNotificationService
-        )
-      );
+      try {
+        await this.natsSubscriber.subscribeToBulkScanTerminalUpdates(
+          this.vibecheckStalledScanNotificationService.handleTerminalEvent.bind(
+            this.vibecheckStalledScanNotificationService
+          )
+        );
 
-      logger.info('Vibecheck stalled scan notification service initialized and subscribed to terminal events');
+        logger.info('Vibecheck stalled scan notification service initialized and subscribed to terminal events');
+      } catch (error) {
+        logger.warn('Vibecheck stalled scan notification service degraded - terminal event subscription unavailable', {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+      }
     } catch (error) {
       logger.error('Failed to initialize note publisher system - JetStream is required', {
         error: error instanceof Error ? error.message : String(error),

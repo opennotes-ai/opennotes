@@ -58,7 +58,8 @@ export class NatsSubscriber {
     streamName: string,
     durableName: string,
     subject: string,
-    deliverSubject: string
+    deliverSubject: string,
+    deliverPolicy: 'all' | 'new' = 'all'
   ): Promise<JetStreamSubscription> {
     // Try bind first - if consumer exists, this is the fastest path
     try {
@@ -82,10 +83,14 @@ export class NatsSubscriber {
         .durable(durableName)
         .deliverGroup(durableName)
         .deliverTo(deliverSubject)
-        .deliverAll()
         .ackExplicit()
         .ackWait(30_000)
         .maxDeliver(3);
+      if (deliverPolicy === 'new') {
+        createOpts.deliverNew();
+      } else {
+        createOpts.deliverAll();
+      }
       const subscription = await js.subscribe(subject, createOpts);
       logger.info('Created new consumer', { consumerName: durableName, streamName });
       return subscription;
@@ -356,7 +361,8 @@ export class NatsSubscriber {
           'OPENNOTES',
           durableName,
           subject,
-          deliverSubject
+          deliverSubject,
+          'new'
         );
 
         logger.info('Subscribed to bulk scan terminal events', {

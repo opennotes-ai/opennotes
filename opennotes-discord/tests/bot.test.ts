@@ -190,6 +190,25 @@ describe('Bot', () => {
 
       expect(mockSubscribeToBulkScanTerminalUpdates).toHaveBeenCalledWith(expect.any(Function));
     });
+
+    it('degrades stalled scan notification startup when terminal subscription fails', async () => {
+      mockSubscribeToBulkScanTerminalUpdates.mockRejectedValueOnce(
+        new Error('terminal consumer unavailable')
+      );
+
+      await expect((bot as any).initializeNotePublisher()).resolves.toBeUndefined();
+
+      expect(mockConnectNats).toHaveBeenCalledTimes(1);
+      expect(mockSubscribeToScoreUpdates).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockSubscribeToProgressUpdates).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockSubscribeToBulkScanTerminalUpdates).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Vibecheck stalled scan notification service degraded - terminal event subscription unavailable',
+        expect.objectContaining({
+          error: 'terminal consumer unavailable',
+        })
+      );
+    });
   });
 
   describe('syncCommunityNames', () => {
