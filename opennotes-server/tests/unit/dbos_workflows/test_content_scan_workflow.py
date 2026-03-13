@@ -72,6 +72,50 @@ class TestCheckpointWallClockStep:
         assert before <= result <= after
 
 
+class TestTerminalScanHelpers:
+    """Tests for terminal scan helper functions."""
+
+    @pytest.mark.asyncio
+    async def test_scan_is_terminal_async_awaits_awaitable_scalar_result(self) -> None:
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.dbos_workflows.content_scan_workflow import _scan_is_terminal_async
+
+        async def _status() -> str:
+            return BulkScanStatus.COMPLETED
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = _status()
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        assert await _scan_is_terminal_async(mock_session, uuid4()) is True
+        mock_session.execute.assert_awaited_once()
+
+    def test_get_scan_terminal_state_step_loads_status_via_session_lookup(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import get_scan_terminal_state_step
+
+        scan_id = uuid4()
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with (
+            patch("src.database.get_session_maker", return_value=mock_session_maker),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_terminal,
+        ):
+            result = get_scan_terminal_state_step.__wrapped__(str(scan_id))
+
+        assert result is True
+        mock_terminal.assert_awaited_once_with(mock_session, scan_id)
+
+
 def _make_recv_dispatcher(
     batch_responses: list[dict | None],
     tx_responses: list[dict | None],
@@ -997,6 +1041,36 @@ class TestProcessContentScanBatch:
         assert result["processed"] == 1
         assert result["flagged_count"] == 1
 
+    def test_short_circuits_when_scan_terminal_before_batch_execution(self) -> None:
+        """Terminal scans return before preprocess or downstream signaling."""
+        from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
+
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["terminal"].return_value = True
+
+            result = process_content_scan_batch.__wrapped__(
+                orchestrator_workflow_id="orch-wf",
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                messages_redis_key="test:messages:key",
+                scan_types_json=json.dumps(["similarity"]),
+            )
+
+        mocks["preprocess"].assert_not_called()
+        mocks["similarity"].assert_not_called()
+        mocks["flashpoint"].assert_not_called()
+        mocks["relevance"].assert_not_called()
+        mocks["dbos"].send.assert_not_called()
+        assert result == {
+            "processed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "flagged_count": 0,
+            "batch_number": 1,
+        }
+
     def test_calls_per_strategy_steps_in_order(self) -> None:
         """Batch workflow calls preprocess, similarity, and relevance steps."""
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
@@ -1214,6 +1288,43 @@ class TestProcessContentScanBatch:
         assert result["errors"] >= 1
         assert "preprocess" in result.get("step_errors", [""])[0]
         mocks["dbos"].send.assert_called_once()
+
+    def test_run_batch_scan_steps_collects_step_errors(self) -> None:
+        """Helper records individual scan-stage failures and returns aggregate error count."""
+        from src.dbos_workflows.content_scan_workflow import _run_batch_scan_steps
+
+        step_errors: list[str] = []
+
+        with (
+            patch(
+                "src.dbos_workflows.content_scan_workflow.similarity_scan_step",
+                side_effect=RuntimeError("sim boom"),
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.flashpoint_scan_step",
+                side_effect=RuntimeError("flash boom"),
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.relevance_filter_step",
+                side_effect=RuntimeError("relevance boom"),
+            ),
+        ):
+            flagged_count, errors = _run_batch_scan_steps(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                filtered_messages_key="test:filtered",
+                context_maps_key="test:context",
+                scan_types=["similarity", "conversation_flashpoint"],
+                step_errors=step_errors,
+            )
+
+        assert (flagged_count, errors) == (0, 3)
+        assert step_errors == [
+            "similarity: sim boom",
+            "flashpoint: flash boom",
+            "relevance: relevance boom",
+        ]
 
 
 class TestProcessBatchMessagesStep:
