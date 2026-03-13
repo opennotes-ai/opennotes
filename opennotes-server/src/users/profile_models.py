@@ -24,6 +24,9 @@ from src.database import Base, EncryptedJSONB
 from src.llm_config.models import CommunityServer
 from src.notes.models import TimestampMixin
 
+USER_IDENTITY_PROVIDER_USER_UNIQUE_CONSTRAINT = "idx_user_identities_provider_user"
+COMMUNITY_MEMBER_COMMUNITY_PROFILE_UNIQUE_CONSTRAINT = "idx_community_members_community_profile"
+
 
 class UserProfile(Base, TimestampMixin):
     """
@@ -163,7 +166,7 @@ class UserIdentity(Base, TimestampMixin):
     # Unique constraint: one provider account can only link to one profile
     __table_args__ = (
         Index(
-            "idx_user_identities_provider_user",
+            USER_IDENTITY_PROVIDER_USER_UNIQUE_CONSTRAINT,
             "provider",
             "provider_user_id",
             unique=True,
@@ -253,7 +256,7 @@ class CommunityMember(Base, TimestampMixin):
     # Unique constraint: one profile can only have one membership per community
     __table_args__ = (
         Index(
-            "idx_community_members_community_profile",
+            COMMUNITY_MEMBER_COMMUNITY_PROFILE_UNIQUE_CONSTRAINT,
             "community_id",
             "profile_id",
             unique=True,

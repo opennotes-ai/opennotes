@@ -37,6 +37,9 @@ if TYPE_CHECKING:
 
 VALID_PLATFORMS = ("discord", "reddit", "slack", "matrix", "discourse", "playground", "other")
 PlatformType = Literal["discord", "reddit", "slack", "matrix", "discourse", "playground", "other"]
+COMMUNITY_SERVER_PLATFORM_ID_UNIQUE_CONSTRAINT = (
+    "idx_community_servers_platform_community_server_id"
+)
 
 
 class CommunityServer(Base):
@@ -106,7 +109,7 @@ class CommunityServer(Base):
 
     __table_args__ = (
         Index(
-            "idx_community_servers_platform_community_server_id",
+            COMMUNITY_SERVER_PLATFORM_ID_UNIQUE_CONSTRAINT,
             "platform",
             "platform_community_server_id",
             unique=True,
