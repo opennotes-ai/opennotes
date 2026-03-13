@@ -1463,6 +1463,34 @@ class TestSetRunStatusStep:
         compiled_str = str(compiled)
         assert "paused_at" in compiled_str
 
+    def test_set_run_status_step_persists_error_message_for_failed(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_run_status_step
+
+        run_id = str(uuid4())
+        mock_session = AsyncMock()
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = uuid4()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+        ):
+            result = set_run_status_step.__wrapped__(
+                run_id,
+                "failed",
+                error_message="required scoring snapshot persistence failed",
+            )
+
+        assert result is True
+        stmt = mock_session.execute.call_args[0][0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": True})
+        compiled_str = str(compiled)
+        assert "error_message" in compiled_str
+        assert "required scoring snapshot persistence failed" in compiled_str
+
 
 class TestDispatchOrchestrator:
     @pytest.mark.asyncio
@@ -1846,6 +1874,80 @@ class TestOrchestratorScoringIntegration:
             run_orchestrator.__wrapped__(simulation_run_id=run_id)
 
         mock_scoring.assert_not_called()
+
+    def test_orchestrator_marks_run_failed_when_required_scoring_persistence_fails(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
+
+        run_id = str(uuid4())
+        config = _make_config()
+        status_calls = iter(["running"])
+
+        with (
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
+                return_value=config,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
+                side_effect=lambda _: next(status_calls),
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
+                return_value={"has_content": True, "pending_requests": 1, "unrated_notes": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
+                return_value={
+                    "active_count": 0,
+                    "total_spawned": 0,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
+                return_value={"retried": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
+                return_value={"dispatched_count": 0, "skipped_count": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
+                return_value={},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.run_scoring_step",
+                side_effect=RuntimeError("snapshot persistence failed"),
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
+                return_value=True,
+            ) as mock_set_status,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
+                return_value={"final_status": "failed", "instances_finalized": 0},
+            ) as mock_finalize,
+            patch("src.simulation.workflows.orchestrator_workflow.SCORING_INTERVAL", 1),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
+
+        assert result["status"] == "failed"
+        mock_set_status.assert_called_once()
+        assert mock_set_status.call_args.args[:2] == (run_id, "failed")
+        assert "snapshot persistence failed" in mock_set_status.call_args.kwargs["error_message"]
+        mock_finalize.assert_called_once_with(run_id, "failed")
 
 
 class TestRetryExhaustedRemovalMetrics:

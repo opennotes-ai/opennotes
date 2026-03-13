@@ -64,7 +64,9 @@ async def dispatch_community_scoring(community_server_id: UUID) -> str:
     from dbos import SetEnqueueOptions, SetWorkflowID
 
     deduplication_id = f"score-community-{community_server_id}"
-    wf_id = f"{deduplication_id}-{int(time.time())}"
+    # Keep queue deduplication stable per community server while ensuring each
+    # completed rerun gets a fresh workflow ID.
+    wf_id = f"{deduplication_id}-{time.time_ns()}"
 
     def _enqueue() -> str:
         with SetWorkflowID(wf_id), SetEnqueueOptions(deduplication_id=deduplication_id):

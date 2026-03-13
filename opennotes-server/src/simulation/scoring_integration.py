@@ -79,7 +79,7 @@ async def _maybe_persist_snapshot(
     tier_value: str,
     scorer_type: str,
     db: AsyncSession,
-) -> None:
+) -> dict[str, Any] | None:
     if isinstance(scorer, MFCoreScorerAdapter):
         factors = scorer.get_last_scoring_factors()
         if factors:
@@ -97,19 +97,29 @@ async def _maybe_persist_snapshot(
                 metadata=metadata,
                 db=db,
             )
+            return {**factors, **metadata}
 
-            try:
-                gcs_snapshot = {**factors, **metadata}
-                loop = asyncio.get_running_loop()
-                future = loop.run_in_executor(
-                    None, upload_scoring_snapshot, community_server_id, gcs_snapshot
-                )
-                future.add_done_callback(_log_gcs_upload_error)
-            except Exception:
-                logger.exception(
-                    "Failed to schedule GCS scoring snapshot upload",
-                    extra={"community_server_id": str(community_server_id)},
-                )
+    return None
+
+
+def _schedule_scoring_snapshot_upload(
+    community_server_id: UUID,
+    gcs_snapshot: dict[str, Any] | None,
+) -> None:
+    if gcs_snapshot is None:
+        return
+
+    try:
+        loop = asyncio.get_running_loop()
+        future = loop.run_in_executor(
+            None, upload_scoring_snapshot, community_server_id, gcs_snapshot
+        )
+        future.add_done_callback(_log_gcs_upload_error)
+    except Exception:
+        logger.exception(
+            "Failed to schedule GCS scoring snapshot upload",
+            extra={"community_server_id": str(community_server_id)},
+        )
 
 
 async def _persist_snapshot_or_raise(
@@ -118,9 +128,11 @@ async def _persist_snapshot_or_raise(
     tier_value: str,
     scorer_type: str,
     db: AsyncSession,
-) -> None:
+) -> dict[str, Any] | None:
     try:
-        await _maybe_persist_snapshot(scorer, community_server_id, tier_value, scorer_type, db)
+        return await _maybe_persist_snapshot(
+            scorer, community_server_id, tier_value, scorer_type, db
+        )
     except Exception:
         logger.exception(
             "Snapshot persistence failed",
@@ -364,9 +376,12 @@ async def score_community_server_notes(
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
 
-    await _persist_snapshot_or_raise(scorer, community_server_id, tier.value, scorer_type, db)
+    gcs_snapshot = await _persist_snapshot_or_raise(
+        scorer, community_server_id, tier.value, scorer_type, db
+    )
 
     await db.commit()
+    _schedule_scoring_snapshot_upload(community_server_id, gcs_snapshot)
 
     platform = await _record_scoring_metrics(
         db, community_server_id, total_scores_computed, tier.value
@@ -517,7 +532,9 @@ async def trigger_scoring_for_simulation(
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
 
-    await _persist_snapshot_or_raise(scorer, community_server_id, tier.value, scorer_type, db)
+    gcs_snapshot = await _persist_snapshot_or_raise(
+        scorer, community_server_id, tier.value, scorer_type, db
+    )
 
     result = ScoringRunResult(
         scores_computed=scores_computed,
@@ -530,6 +547,7 @@ async def trigger_scoring_for_simulation(
     _update_run_metrics(run, result)
     await _add_count_metrics(run, simulation_run_id, db)
     await db.commit()
+    _schedule_scoring_snapshot_upload(community_server_id, gcs_snapshot)
 
     await _record_scoring_metrics(db, community_server_id, scores_computed, tier.value)
 

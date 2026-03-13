@@ -2,6 +2,7 @@ import ast
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -299,20 +300,50 @@ def _is_dbos_workflow_decorator(decorator: ast.expr) -> bool:
     )
 
 
-def _discover_dbos_workflow_modules() -> list[tuple[str, tuple[str, ...]]]:
+@dataclass(frozen=True)
+class DiscoveredDBOSWorkflowModule:
+    module_path: str
+    module_file: Path
+    workflow_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DiscoveredDBOSWorkflowModules:
+    discovered_modules: list[DiscoveredDBOSWorkflowModule]
+    errors: list[str]
+
+
+def _build_workflow_registration_error(errors: list[str]) -> RuntimeError:
+    return RuntimeError(
+        "Workflow registration incomplete:\n" + "\n".join(f"- {error}" for error in errors)
+    )
+
+
+def _discover_dbos_workflow_modules() -> DiscoveredDBOSWorkflowModules:
     src_root = Path(__file__).resolve().parent
     package_roots = (
         src_root / "dbos_workflows",
         src_root / "simulation" / "workflows",
     )
-    discovered: list[tuple[str, tuple[str, ...]]] = []
+    discovered: list[DiscoveredDBOSWorkflowModule] = []
+    errors: list[str] = []
 
     for package_root in package_roots:
         for module_file in sorted(package_root.rglob("*.py")):
             if module_file.name == "__init__.py":
                 continue
 
-            tree = ast.parse(module_file.read_text(encoding="utf-8"))
+            module_path = ".".join(module_file.relative_to(src_root.parent).with_suffix("").parts)
+
+            try:
+                tree = ast.parse(module_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                errors.append(
+                    f"Failed to inspect workflow module {module_path} "
+                    f"({module_file}): {type(e).__name__}: {e}"
+                )
+                continue
+
             workflow_names = tuple(
                 node.name
                 for node in tree.body
@@ -322,38 +353,47 @@ def _discover_dbos_workflow_modules() -> list[tuple[str, tuple[str, ...]]]:
             if not workflow_names:
                 continue
 
-            module_path = ".".join(module_file.relative_to(src_root.parent).with_suffix("").parts)
-            discovered.append((module_path, workflow_names))
+            discovered.append(
+                DiscoveredDBOSWorkflowModule(
+                    module_path=module_path,
+                    module_file=module_file,
+                    workflow_names=workflow_names,
+                )
+            )
 
-    return discovered
+    return DiscoveredDBOSWorkflowModules(discovered_modules=discovered, errors=errors)
 
 
 def _register_dbos_workflows() -> list[str]:
     """Import DBOS workflow modules and return their registered workflow names."""
     import importlib
 
+    discovery = _discover_dbos_workflow_modules()
     registered: set[str] = set()
+    errors = list(discovery.errors)
 
-    for module_path, workflow_names in _discover_dbos_workflow_modules():
+    for discovered_module in discovery.discovered_modules:
         try:
-            workflow_module = importlib.import_module(module_path)
+            workflow_module = importlib.import_module(discovered_module.module_path)
         except Exception as e:
-            logger.error(
-                f"Failed to import workflow module {module_path}: {e}",
-                exc_info=True,
+            errors.append(
+                f"Failed to import workflow module {discovered_module.module_path} "
+                f"({discovered_module.module_file}): {type(e).__name__}: {e}"
             )
             continue
 
-        for workflow_name in workflow_names:
+        for workflow_name in discovered_module.workflow_names:
             workflow = getattr(workflow_module, workflow_name, None)
             if callable(workflow):
                 registered.add(workflow.__qualname__)
             else:
-                logger.error(
-                    "Workflow %s not found in module %s during worker registration",
-                    workflow_name,
-                    module_path,
+                errors.append(
+                    f"Workflow {workflow_name} missing or not callable in module "
+                    f"{discovered_module.module_path} ({discovered_module.module_file})"
                 )
+
+    if errors:
+        raise _build_workflow_registration_error(errors)
 
     return sorted(registered)
 
@@ -368,14 +408,14 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
         logger.info("DBOS Conductor disabled (no API key)")
 
     if is_dbos_worker:
-        registered_workflows = _register_dbos_workflows()
-
-        logger.info(
-            "DBOS workflow modules loaded",
-            extra={"registered_workflows": registered_workflows},
-        )
-
         try:
+            registered_workflows = _register_dbos_workflows()
+
+            logger.info(
+                "DBOS workflow modules loaded",
+                extra={"registered_workflows": registered_workflows},
+            )
+
             dbos = get_dbos()
             dbos.launch()
             await asyncio.to_thread(validate_dbos_connection)

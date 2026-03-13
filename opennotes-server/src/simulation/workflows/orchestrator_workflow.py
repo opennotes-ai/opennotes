@@ -193,6 +193,7 @@ def set_run_status_step(
     simulation_run_id: str,
     new_status: str,
     expected_status: str | None = None,
+    error_message: str | None = None,
 ) -> bool:
     from src.database import get_session_maker
 
@@ -202,6 +203,8 @@ def set_run_status_step(
         values: dict[str, Any] = {"status": new_status, "updated_at": now}
         if new_status == "paused":
             values["paused_at"] = now
+        if error_message is not None:
+            values["error_message"] = error_message
 
         async with get_session_maker()() as session:
             stmt = update(SimulationRun).where(SimulationRun.id == run_uuid)
@@ -950,8 +953,27 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                             "tier": scoring_result["tier"],
                         },
                     )
-                except Exception:
-                    logger.exception("Scoring failed, continuing")
+                except Exception as exc:
+                    logger.exception("Required scoring snapshot persistence failed")
+                    try:
+                        updated = set_run_status_step(
+                            simulation_run_id,
+                            "failed",
+                            expected_status="running",
+                            error_message=(f"Required scoring snapshot persistence failed: {exc}"),
+                        )
+                        if not updated:
+                            logger.warning(
+                                "Failed run-state update skipped: status was no longer 'running'",
+                                extra={"simulation_run_id": simulation_run_id},
+                            )
+                    except Exception:
+                        logger.exception(
+                            "Failed to persist scoring failure state",
+                            extra={"simulation_run_id": simulation_run_id},
+                        )
+                    final_status = "failed"
+                    break
 
             DBOS.sleep(config["turn_cadence_seconds"])
 
