@@ -141,6 +141,10 @@ class TestDualWorkflowIsolation:
             ) as mock_similarity,
             patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.get_scan_terminal_state_step",
+                return_value=False,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_preprocess.return_value = preprocess_result_a

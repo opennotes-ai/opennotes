@@ -14,6 +14,7 @@ import asyncio
 import collections.abc
 import json
 import time
+from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -93,6 +94,36 @@ def _make_recv_dispatcher(
         return None
 
     return _recv
+
+
+def _patch_process_content_scan_batch_dependencies(
+    stack: ExitStack,
+) -> dict[str, MagicMock]:
+    """Patch workflow-level batch dependencies with a non-terminal default seam."""
+    return {
+        "preprocess": stack.enter_context(
+            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step")
+        ),
+        "similarity": stack.enter_context(
+            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step")
+        ),
+        "flashpoint": stack.enter_context(
+            patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step")
+        ),
+        "relevance": stack.enter_context(
+            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step")
+        ),
+        "terminal": stack.enter_context(
+            patch(
+                "src.dbos_workflows.content_scan_workflow.get_scan_terminal_state_step",
+                return_value=False,
+            )
+        ),
+        "dbos": stack.enter_context(patch("src.dbos_workflows.content_scan_workflow.DBOS")),
+        "token_gate": stack.enter_context(
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate")
+        ),
+    }
 
 
 class TestContentScanOrchestrationWorkflow:
@@ -925,15 +956,46 @@ class TestRedisHelpers:
 class TestProcessContentScanBatch:
     """Tests for process_content_scan_batch workflow with per-strategy steps."""
 
-    def _patch_all_steps(self):
-        """Patch all per-strategy steps for workflow-level tests."""
-        return (
-            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step"),
-            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
-            patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step"),
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step"),
-            patch("src.dbos_workflows.content_scan_workflow.DBOS"),
-        )
+    def test_patch_all_steps_prevents_terminal_lookup_db_calls(self) -> None:
+        """Workflow test helper should keep batch workflow tests DB-free by default."""
+        from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
+
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            stack.enter_context(
+                patch(
+                    "src.database.get_session_maker",
+                    side_effect=AssertionError(
+                        "workflow-level tests should not hit the terminal-state DB lookup"
+                    ),
+                )
+            )
+
+            mocks["preprocess"].return_value = {
+                "filtered_messages_key": "test:filtered",
+                "context_maps_key": "test:context",
+                "message_count": 1,
+                "skipped_count": 0,
+            }
+            mocks["similarity"].return_value = {
+                "similarity_candidates_key": "test:sim",
+                "candidate_count": 1,
+            }
+            mocks["relevance"].return_value = {"flagged_count": 1, "errors": 0}
+
+            result = process_content_scan_batch.__wrapped__(
+                orchestrator_workflow_id="orch-wf",
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                messages_redis_key="test:messages:key",
+                scan_types_json=json.dumps(["similarity"]),
+            )
+
+        mocks["flashpoint"].assert_not_called()
+        mocks["dbos"].send.assert_called_once()
+        assert result["processed"] == 1
+        assert result["flagged_count"] == 1
 
     def test_calls_per_strategy_steps_in_order(self) -> None:
         """Batch workflow calls preprocess, similarity, and relevance steps."""
@@ -944,24 +1006,19 @@ class TestProcessContentScanBatch:
         redis_key = "test:bulk_scan:messages:scan:1"
         scan_types_json = json.dumps(["similarity"])
 
-        with (
-            patch(
-                "src.dbos_workflows.content_scan_workflow.preprocess_batch_step"
-            ) as mock_preprocess,
-            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step") as mock_sim,
-            patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step") as mock_fp,
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
-            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
-        ):
-            mock_preprocess.return_value = {
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["preprocess"].return_value = {
                 "filtered_messages_key": "test:filtered",
                 "context_maps_key": "test:context",
                 "message_count": 1,
                 "skipped_count": 0,
             }
-            mock_sim.return_value = {"similarity_candidates_key": "test:sim", "candidate_count": 1}
-            mock_filter.return_value = {"flagged_count": 1, "errors": 0}
+            mocks["similarity"].return_value = {
+                "similarity_candidates_key": "test:sim",
+                "candidate_count": 1,
+            }
+            mocks["relevance"].return_value = {"flagged_count": 1, "errors": 0}
 
             result = process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id="orch-wf",
@@ -972,13 +1029,13 @@ class TestProcessContentScanBatch:
                 scan_types_json=scan_types_json,
             )
 
-        mock_preprocess.assert_called_once()
-        mock_sim.assert_called_once()
-        mock_fp.assert_not_called()
-        mock_filter.assert_called_once()
+        mocks["preprocess"].assert_called_once()
+        mocks["similarity"].assert_called_once()
+        mocks["flashpoint"].assert_not_called()
+        mocks["relevance"].assert_called_once()
         assert result["processed"] == 1
         assert result["flagged_count"] == 1
-        mock_dbos.send.assert_called_once()
+        mocks["dbos"].send.assert_called_once()
 
     def test_passes_redis_key_to_preprocess_step(self) -> None:
         """Batch workflow passes messages_redis_key to preprocess step."""
@@ -986,19 +1043,15 @@ class TestProcessContentScanBatch:
 
         redis_key = "test:bulk_scan:messages:scan-id:1"
 
-        with (
-            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
-            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS"),
-        ):
-            mock_pre.return_value = {
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["preprocess"].return_value = {
                 "filtered_messages_key": "k",
                 "context_maps_key": "k",
                 "message_count": 1,
                 "skipped_count": 0,
             }
-            mock_filter.return_value = {"flagged_count": 0, "errors": 0}
+            mocks["relevance"].return_value = {"flagged_count": 0, "errors": 0}
 
             process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id="orch",
@@ -1009,7 +1062,7 @@ class TestProcessContentScanBatch:
                 scan_types_json=json.dumps(["similarity"]),
             )
 
-        assert mock_pre.call_args.kwargs["messages_redis_key"] == redis_key
+        assert mocks["preprocess"].call_args.kwargs["messages_redis_key"] == redis_key
 
     def test_includes_flashpoint_step_when_scan_type_requested(self) -> None:
         """Flashpoint step is called when conversation_flashpoint is in scan_types."""
@@ -1017,22 +1070,23 @@ class TestProcessContentScanBatch:
 
         scan_types_json = json.dumps(["similarity", "conversation_flashpoint"])
 
-        with (
-            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
-            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step") as mock_sim,
-            patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step") as mock_fp,
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS"),
-        ):
-            mock_pre.return_value = {
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["preprocess"].return_value = {
                 "filtered_messages_key": "k",
                 "context_maps_key": "k",
                 "message_count": 1,
                 "skipped_count": 0,
             }
-            mock_sim.return_value = {"similarity_candidates_key": "s", "candidate_count": 1}
-            mock_fp.return_value = {"flashpoint_candidates_key": "f", "candidate_count": 1}
-            mock_filter.return_value = {"flagged_count": 2, "errors": 0}
+            mocks["similarity"].return_value = {
+                "similarity_candidates_key": "s",
+                "candidate_count": 1,
+            }
+            mocks["flashpoint"].return_value = {
+                "flashpoint_candidates_key": "f",
+                "candidate_count": 1,
+            }
+            mocks["relevance"].return_value = {"flagged_count": 2, "errors": 0}
 
             result = process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id="orch",
@@ -1043,8 +1097,8 @@ class TestProcessContentScanBatch:
                 scan_types_json=scan_types_json,
             )
 
-        mock_sim.assert_called_once()
-        mock_fp.assert_called_once()
+        mocks["similarity"].assert_called_once()
+        mocks["flashpoint"].assert_called_once()
         assert result["flagged_count"] == 2
 
     def test_signals_orchestrator_with_result(self) -> None:
@@ -1053,20 +1107,15 @@ class TestProcessContentScanBatch:
 
         orchestrator_wf_id = "orchestrator-wf-123"
 
-        with (
-            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
-            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
-            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
-        ):
-            mock_pre.return_value = {
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["preprocess"].return_value = {
                 "filtered_messages_key": "k",
                 "context_maps_key": "k",
                 "message_count": 5,
                 "skipped_count": 1,
             }
-            mock_filter.return_value = {"flagged_count": 2, "errors": 0}
+            mocks["relevance"].return_value = {"flagged_count": 2, "errors": 0}
 
             process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id=orchestrator_wf_id,
@@ -1077,7 +1126,7 @@ class TestProcessContentScanBatch:
                 scan_types_json=json.dumps(["similarity"]),
             )
 
-        signal_data = mock_dbos.send.call_args.args[1]
+        signal_data = mocks["dbos"].send.call_args.args[1]
         assert signal_data["processed"] == 5
         assert signal_data["skipped"] == 1
         assert signal_data["flagged_count"] == 2
@@ -1086,24 +1135,15 @@ class TestProcessContentScanBatch:
         """Terminal scans stop downstream batch work and suppress completion signals."""
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
-        with (
-            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
-            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step") as mock_sim,
-            patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step") as mock_fp,
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
-            patch(
-                "src.dbos_workflows.content_scan_workflow.get_scan_terminal_state_step"
-            ) as mock_terminal,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
-            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
-        ):
-            mock_pre.return_value = {
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["preprocess"].return_value = {
                 "filtered_messages_key": "test:filtered",
                 "context_maps_key": "test:context",
                 "message_count": 2,
                 "skipped_count": 0,
             }
-            mock_terminal.side_effect = [False, True]
+            mocks["terminal"].side_effect = [False, True]
 
             result = process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id="orch-wf",
@@ -1114,10 +1154,10 @@ class TestProcessContentScanBatch:
                 scan_types_json=json.dumps(["similarity", "conversation_flashpoint"]),
             )
 
-        mock_sim.assert_not_called()
-        mock_fp.assert_not_called()
-        mock_filter.assert_not_called()
-        mock_dbos.send.assert_not_called()
+        mocks["similarity"].assert_not_called()
+        mocks["flashpoint"].assert_not_called()
+        mocks["relevance"].assert_not_called()
+        mocks["dbos"].send.assert_not_called()
         assert result == {
             "processed": 0,
             "skipped": 0,
@@ -1130,14 +1170,9 @@ class TestProcessContentScanBatch:
         """When preprocess returns message_count=0, skip scan steps entirely."""
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
-        with (
-            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
-            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step") as mock_sim,
-            patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step") as mock_fp,
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS"),
-        ):
-            mock_pre.return_value = {
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["preprocess"].return_value = {
                 "filtered_messages_key": "",
                 "context_maps_key": "",
                 "message_count": 0,
@@ -1153,9 +1188,9 @@ class TestProcessContentScanBatch:
                 scan_types_json=json.dumps(["similarity"]),
             )
 
-        mock_sim.assert_not_called()
-        mock_fp.assert_not_called()
-        mock_filter.assert_not_called()
+        mocks["similarity"].assert_not_called()
+        mocks["flashpoint"].assert_not_called()
+        mocks["relevance"].assert_not_called()
         assert result["processed"] == 0
         assert result["skipped"] == 5
 
@@ -1163,12 +1198,9 @@ class TestProcessContentScanBatch:
         """Batch workflow sends signal to orchestrator even when preprocess fails."""
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
-        with (
-            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
-            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
-        ):
-            mock_pre.side_effect = RuntimeError("Step failed")
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["preprocess"].side_effect = RuntimeError("Step failed")
 
             result = process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id="wf-123",
@@ -1181,7 +1213,7 @@ class TestProcessContentScanBatch:
 
         assert result["errors"] >= 1
         assert "preprocess" in result.get("step_errors", [""])[0]
-        mock_dbos.send.assert_called_once()
+        mocks["dbos"].send.assert_called_once()
 
 
 class TestProcessBatchMessagesStep:
@@ -2225,20 +2257,15 @@ class TestSignalCoordination:
     def test_batch_complete_signal_sent_with_correct_topic(self) -> None:
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
-        with (
-            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
-            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
-            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
-        ):
-            mock_pre.return_value = {
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["preprocess"].return_value = {
                 "filtered_messages_key": "k",
                 "context_maps_key": "k",
                 "message_count": 10,
                 "skipped_count": 1,
             }
-            mock_filter.return_value = {"flagged_count": 2, "errors": 0}
+            mocks["relevance"].return_value = {"flagged_count": 2, "errors": 0}
 
             process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id="orch-wf-id",
@@ -2249,7 +2276,7 @@ class TestSignalCoordination:
                 scan_types_json='["similarity"]',
             )
 
-        call_args = mock_dbos.send.call_args
+        call_args = mocks["dbos"].send.call_args
         assert call_args.args[0] == "orch-wf-id"
         assert call_args.kwargs["topic"] == "batch_complete"
 
@@ -2496,20 +2523,15 @@ class TestProgressTrackingThroughWorkflowSteps:
     def test_batch_signal_carries_progress_data(self) -> None:
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
-        with (
-            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
-            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
-            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
-        ):
-            mock_pre.return_value = {
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["preprocess"].return_value = {
                 "filtered_messages_key": "k",
                 "context_maps_key": "k",
                 "message_count": 7,
                 "skipped_count": 1,
             }
-            mock_filter.return_value = {"flagged_count": 3, "errors": 2}
+            mocks["relevance"].return_value = {"flagged_count": 3, "errors": 2}
 
             process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id="orch-wf-id",
@@ -2520,7 +2542,7 @@ class TestProgressTrackingThroughWorkflowSteps:
                 scan_types_json='["similarity"]',
             )
 
-        signal_data = mock_dbos.send.call_args.args[1]
+        signal_data = mocks["dbos"].send.call_args.args[1]
         assert signal_data["processed"] == 7
         assert signal_data["skipped"] == 1
         assert signal_data["errors"] == 2
