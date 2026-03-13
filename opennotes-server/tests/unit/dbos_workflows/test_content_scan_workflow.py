@@ -92,6 +92,20 @@ class TestTerminalScanHelpers:
         assert await _scan_is_terminal_async(mock_session, uuid4()) is True
         mock_session.execute.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_scan_is_terminal_async_returns_false_for_in_progress_status(self) -> None:
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.dbos_workflows.content_scan_workflow import _scan_is_terminal_async
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = BulkScanStatus.IN_PROGRESS
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        assert await _scan_is_terminal_async(mock_session, uuid4()) is False
+        mock_session.execute.assert_awaited_once()
+
     def test_get_scan_terminal_state_step_loads_status_via_session_lookup(self) -> None:
         from src.dbos_workflows.content_scan_workflow import get_scan_terminal_state_step
 
@@ -114,6 +128,77 @@ class TestTerminalScanHelpers:
 
         assert result is True
         mock_terminal.assert_awaited_once_with(mock_session, scan_id)
+
+    @pytest.mark.asyncio
+    async def test_skip_step_persist_if_scan_terminal_returns_false_when_scan_is_active(
+        self,
+    ) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            _skip_step_persist_if_scan_terminal,
+        )
+
+        mock_session = AsyncMock()
+        scan_id = str(uuid4())
+        scan_uuid = uuid4()
+
+        with (
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=False,
+            ) as mock_terminal,
+            patch("src.dbos_workflows.content_scan_workflow.logger.info") as mock_logger,
+        ):
+            result = await _skip_step_persist_if_scan_terminal(
+                mock_session,
+                scan_uuid,
+                step_name="Preprocess",
+                scan_id=scan_id,
+                batch_number=7,
+            )
+
+        assert result is False
+        mock_terminal.assert_awaited_once_with(mock_session, scan_uuid)
+        mock_logger.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skip_step_persist_if_scan_terminal_logs_when_scan_is_terminal(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            _skip_step_persist_if_scan_terminal,
+        )
+
+        mock_session = AsyncMock()
+        scan_id = str(uuid4())
+        scan_uuid = uuid4()
+
+        with (
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_terminal,
+            patch("src.dbos_workflows.content_scan_workflow.logger.info") as mock_logger,
+        ):
+            result = await _skip_step_persist_if_scan_terminal(
+                mock_session,
+                scan_uuid,
+                step_name="Similarity",
+                scan_id=scan_id,
+                batch_number=3,
+            )
+
+        assert result is True
+        mock_terminal.assert_awaited_once_with(mock_session, scan_uuid)
+        mock_logger.assert_called_once()
+        assert (
+            mock_logger.call_args.args[0]
+            == "%s step finished after scan became terminal; skipping late persistence"
+        )
+        assert mock_logger.call_args.args[1] == "Similarity"
+        assert mock_logger.call_args.kwargs["extra"] == {
+            "scan_id": scan_id,
+            "batch_number": 3,
+        }
 
 
 def _make_recv_dispatcher(
@@ -1325,6 +1410,41 @@ class TestProcessContentScanBatch:
             "flashpoint: flash boom",
             "relevance: relevance boom",
         ]
+
+    def test_run_batch_scan_steps_uses_empty_candidate_keys_when_optional_steps_skipped(
+        self,
+    ) -> None:
+        from src.dbos_workflows.content_scan_workflow import _run_batch_scan_steps
+
+        step_errors: list[str] = []
+
+        with (
+            patch(
+                "src.dbos_workflows.content_scan_workflow.similarity_scan_step"
+            ) as mock_similarity,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.flashpoint_scan_step"
+            ) as mock_flashpoint,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.relevance_filter_step",
+                return_value={"flagged_count": 4, "errors": 1},
+            ) as mock_relevance,
+        ):
+            flagged_count, errors = _run_batch_scan_steps(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=2,
+                filtered_messages_key="test:filtered",
+                context_maps_key="test:context",
+                scan_types=[],
+                step_errors=step_errors,
+            )
+
+        assert (flagged_count, errors) == (4, 1)
+        mock_similarity.assert_not_called()
+        mock_flashpoint.assert_not_called()
+        assert mock_relevance.call_args.kwargs["similarity_candidates_key"] == ""
+        assert mock_relevance.call_args.kwargs["flashpoint_candidates_key"] == ""
 
 
 class TestProcessBatchMessagesStep:
