@@ -100,4 +100,42 @@ describe('extractUserContext', () => {
 
     expect(context.channelId).toBeUndefined();
   });
+
+  it('should detect Manage Server from uncached member permission bitfield strings', () => {
+    const mockUser = {
+      id: '123456789',
+      username: 'testuser',
+      displayName: 'Test User',
+      globalName: null,
+      displayAvatarURL: () => 'https://cdn.discordapp.com/avatars/123456789/avatar.png',
+    } as unknown as User;
+
+    const context = extractUserContext(
+      mockUser,
+      '987654321',
+      { permissions: '32' } as any,
+      '111222333'
+    );
+
+    expect(context.hasManageServer).toBe(true);
+  });
+
+  it('should treat uncached member permission bitfield strings without Manage Server as false', () => {
+    const mockUser = {
+      id: '123456789',
+      username: 'testuser',
+      displayName: 'Test User',
+      globalName: null,
+      displayAvatarURL: () => 'https://cdn.discordapp.com/avatars/123456789/avatar.png',
+    } as unknown as User;
+
+    const context = extractUserContext(
+      mockUser,
+      '987654321',
+      { permissions: '16' } as any,
+      '111222333'
+    );
+
+    expect(context.hasManageServer).toBe(false);
+  });
 });

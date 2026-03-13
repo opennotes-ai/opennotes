@@ -588,13 +588,20 @@ async function showAiGenerationPrompt(
     const generateAiNotes = aiAction.startsWith('yes');
 
     const messageIds = flaggedMessages.map(msg => msg.id);
+    const userContext = extractUserContext(
+      aiButtonInteraction.user,
+      aiButtonInteraction.guildId,
+      aiButtonInteraction.member as GuildMember | null,
+      aiButtonInteraction.channelId
+    );
 
     void (async (): Promise<void> => {
       try {
         const result = await apiClient.createNoteRequestsFromScan(
           scanId,
           messageIds,
-          generateAiNotes
+          generateAiNotes,
+          userContext
         );
         const createdCount = result.data.attributes.created_count;
 
@@ -776,6 +783,13 @@ async function handleStatusSubcommand(
       return;
     }
 
+    if (error instanceof ApiError && error.statusCode === 403 && requestedScanId) {
+      await interaction.editReply({
+        content: `Scan \`${requestedScanId}\` belongs to a different server. Use \`/vibecheck status\` here to view scans for this server.`,
+      });
+      return;
+    }
+
     const errorDetails = extractErrorDetails(error);
 
     logger.error('Vibecheck status check failed', {
@@ -852,7 +866,13 @@ async function handleCreateRequestsSubcommand(
   });
 
   try {
-    const scanResults = await apiClient.getBulkScanResults(scanId);
+    const userContext = extractUserContext(
+      interaction.user,
+      guildId,
+      interaction.member as GuildMember | null,
+      interaction.channelId
+    );
+    const scanResults = await apiClient.getBulkScanResults(scanId, userContext);
     const flaggedMessages = scanResults.included || [];
 
     if (flaggedMessages.length === 0) {
@@ -866,7 +886,8 @@ async function handleCreateRequestsSubcommand(
     const result = await apiClient.createNoteRequestsFromScan(
       scanId,
       messageIds,
-      false
+      false,
+      userContext
     );
 
     const createdCount = result.data.attributes.created_count;
