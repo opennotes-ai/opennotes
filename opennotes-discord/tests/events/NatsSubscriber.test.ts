@@ -476,7 +476,7 @@ describe('NatsSubscriber', () => {
       );
     });
 
-    it('creates terminal consumers with deliverNew when bind fails', async () => {
+    it('creates terminal consumers with deliverAll when bind fails', async () => {
       const handler = jest.fn<(event: any) => Promise<void>>().mockResolvedValue(undefined);
       const createdOpts: ReturnType<typeof createMockConsumerOpts>[] = [];
 
@@ -493,8 +493,8 @@ describe('NatsSubscriber', () => {
 
       await subscriber.subscribeToBulkScanTerminalUpdates(handler);
 
-      expect(createdOpts.some(builder => builder.deliverNew.mock.calls.length === 1)).toBe(true);
-      expect(createdOpts.every(builder => builder.deliverAll.mock.calls.length === 0)).toBe(true);
+      expect(createdOpts.some(builder => builder.deliverAll.mock.calls.length === 1)).toBe(true);
+      expect(createdOpts.every(builder => builder.deliverNew.mock.calls.length === 0)).toBe(true);
     });
 
     it('acks bulk scan terminal events when the handler succeeds', async () => {

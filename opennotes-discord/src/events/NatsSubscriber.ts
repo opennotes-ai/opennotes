@@ -361,8 +361,7 @@ export class NatsSubscriber {
           'OPENNOTES',
           durableName,
           subject,
-          deliverSubject,
-          'new'
+          deliverSubject
         );
 
         logger.info('Subscribed to bulk scan terminal events', {

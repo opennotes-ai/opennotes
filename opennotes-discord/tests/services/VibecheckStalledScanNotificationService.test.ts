@@ -475,6 +475,38 @@ describe('VibecheckStalledScanNotificationService', () => {
     expect(mockUserSend).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores replayed terminal events after delivery is already marked sent', async () => {
+    stalledScanStore['vibecheck:stalled:scan-replayed-123'] = {
+      scanId: 'scan-replayed-123',
+      initiatorId: 'user-123',
+      guildId: 'guild-123',
+      days: 7,
+      source: 'slash_command',
+      notificationState: 'sent',
+      notifiedAt: new Date().toISOString(),
+    };
+
+    await service.handleTerminalEvent({
+      event_id: 'evt-replayed',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      metadata: {},
+      scan_id: 'scan-replayed-123',
+      community_server_id: 'community-123',
+      messages_scanned: 33,
+      messages_flagged: 1,
+    });
+
+    expect(mockUserSend).not.toHaveBeenCalled();
+    expect(mockApiClient.getBulkScanResults).not.toHaveBeenCalled();
+    expect(stalledScanStore['vibecheck:stalled:scan-replayed-123']).toEqual(
+      expect.objectContaining({
+        notificationState: 'sent',
+      })
+    );
+  });
+
   it('does not send duplicate DMs when a second worker reacquires delivery mid-send', async () => {
     const mockDistributedLock = {
       acquire: jest.fn<(...args: unknown[]) => Promise<boolean>>().mockResolvedValue(true),
