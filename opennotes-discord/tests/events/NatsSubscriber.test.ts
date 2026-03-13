@@ -510,7 +510,7 @@ describe('NatsSubscriber', () => {
       );
     });
 
-    it('creates terminal consumers with deliverNew when bind fails', async () => {
+    it('creates terminal consumers with deliverAll when bind fails', async () => {
       const handler = jest.fn<(event: any) => Promise<void>>().mockResolvedValue(undefined);
       const createdOpts: ReturnType<typeof createMockConsumerOpts>[] = [];
 
@@ -527,8 +527,56 @@ describe('NatsSubscriber', () => {
 
       await subscriber.subscribeToBulkScanTerminalUpdates(handler);
 
-      expect(createdOpts.some(builder => builder.deliverNew.mock.calls.length === 1)).toBe(true);
-      expect(createdOpts.every(builder => builder.deliverAll.mock.calls.length === 0)).toBe(true);
+      expect(createdOpts.some(builder => builder.deliverAll.mock.calls.length === 1)).toBe(true);
+      expect(createdOpts.every(builder => builder.deliverNew.mock.calls.length === 0)).toBe(true);
+    });
+
+    it('recreates bound terminal consumers when the existing durable still uses deliverNew', async () => {
+      const handler = jest.fn<(event: any) => Promise<void>>().mockResolvedValue(undefined);
+      const createdOpts: ReturnType<typeof createMockConsumerOpts>[] = [];
+      const staleTerminalSubscription = createMockSubscription();
+      const healthyTerminalSubscription = createMockSubscription();
+      let finishedSubjectCalls = 0;
+
+      (staleTerminalSubscription.consumerInfo as any).mockImplementation(async () => ({
+        name: 'discord-bot-OPENNOTES_bulk_scan_processing_finished',
+        stream_name: 'OPENNOTES',
+        config: {
+          deliver_policy: 'new',
+        },
+      }));
+
+      (healthyTerminalSubscription.consumerInfo as any).mockImplementation(async () => ({
+        name: 'discord-bot-OPENNOTES_bulk_scan_failed',
+        stream_name: 'OPENNOTES',
+        config: {
+          deliver_policy: 'all',
+        },
+      }));
+
+      mockConsumerOpts.mockImplementation(() => {
+        const builder = createMockConsumerOpts();
+        createdOpts.push(builder);
+        return builder;
+      });
+
+      (mockJetStream.subscribe as any).mockImplementation(async (subject: string) => {
+        if (subject === 'OPENNOTES.bulk_scan_processing_finished') {
+          finishedSubjectCalls += 1;
+          if (finishedSubjectCalls === 1) {
+            return staleTerminalSubscription;
+          }
+
+          return createMockSubscription();
+        }
+
+        return healthyTerminalSubscription;
+      });
+
+      await subscriber.subscribeToBulkScanTerminalUpdates(handler);
+
+      expect(staleTerminalSubscription.destroy).toHaveBeenCalledTimes(1);
+      expect(createdOpts.some(builder => builder.deliverAll.mock.calls.length === 1)).toBe(true);
     });
 
     it('acks bulk scan terminal events when the handler succeeds', async () => {
@@ -605,6 +653,50 @@ describe('NatsSubscriber', () => {
         expect.objectContaining({
           error: 'transient dm failure',
           subject: 'OPENNOTES.bulk_scan_processing_finished',
+        })
+      );
+    });
+
+    it('delays redelivery for retryable bulk scan terminal event failures', async () => {
+      const retryableError = new Error('waiting on stalled scan metadata');
+      retryableError.name = 'RetryableTerminalEventError';
+      Object.assign(retryableError, { reason: 'recent-cache-miss' });
+
+      const handler = jest.fn<(event: any) => Promise<void>>().mockRejectedValue(retryableError);
+      const terminalEvent = {
+        event_id: 'evt-terminal-retry-delay',
+        event_type: EventType.BULK_SCAN_FAILED,
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        metadata: {},
+        scan_id: 'scan-terminal-retry-delay',
+        community_server_id: 'community-123',
+        error: 'scan failed',
+      };
+      const failedMessage = createMockJsMessage({
+        data: new Uint8Array([7, 8, 9]),
+        subject: 'OPENNOTES.bulk_scan_failed',
+      });
+      const completedSubscription = createMockSubscription();
+      const failedSubscription = createMockSubscription({ messages: [failedMessage] });
+
+      mockJetStream.subscribe
+        .mockResolvedValueOnce(completedSubscription)
+        .mockResolvedValueOnce(failedSubscription);
+      mockCodec.decode.mockReturnValue(JSON.stringify(terminalEvent));
+
+      await subscriber.subscribeToBulkScanTerminalUpdates(handler);
+
+      await waitFor(() => {
+        expect(failedMessage.nak).toHaveBeenCalledWith(30_000);
+      });
+
+      expect(failedMessage.ack).not.toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Error processing bulk scan terminal event',
+        expect.objectContaining({
+          error: 'waiting on stalled scan metadata',
+          subject: 'OPENNOTES.bulk_scan_failed',
         })
       );
     });

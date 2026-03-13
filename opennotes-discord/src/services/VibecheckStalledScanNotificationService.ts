@@ -11,6 +11,7 @@ import {
   markStalledScanDeliveryFailed,
   markStalledScanNotified,
   resetStalledScanDelivery,
+  STALLED_SCAN_DELIVERY_CLAIM_TTL_MS,
   type StalledScanRecord,
 } from '../lib/vibecheck-stalled-scan.js';
 import type {
@@ -22,11 +23,22 @@ import type { DistributedLock } from '../utils/distributed-lock.js';
 
 type BulkScanTerminalEvent = BulkScanProcessingFinishedEvent | BulkScanFailedEvent;
 
+class RetryableTerminalEventError extends Error {
+  constructor(
+    message: string,
+    readonly reason: 'lock-contention' | 'recent-cache-miss'
+  ) {
+    super(message);
+    this.name = 'RetryableTerminalEventError';
+  }
+}
+
 export class VibecheckStalledScanNotificationService {
   private readonly activeDeliveries = new Set<string>();
-  private readonly lockTtlMs = 60 * 1000;
+  private readonly lockTtlMs = STALLED_SCAN_DELIVERY_CLAIM_TTL_MS;
   private readonly lookupRetryDelayMs = 50;
-  private readonly lookupRetryAttempts = 6;
+  private readonly lookupRetryAttempts = 12;
+  private readonly historicalReplayThresholdMs = STALLED_SCAN_DELIVERY_CLAIM_TTL_MS * 2;
 
   constructor(
     private readonly client: Client,
@@ -47,29 +59,48 @@ export class VibecheckStalledScanNotificationService {
     this.activeDeliveries.add(event.scan_id);
 
     const lockKey = `vibecheck:stalled-scan:${event.scan_id}`;
-    const lockAcquired = this.distributedLock
-      ? await this.distributedLock.acquire(lockKey, {
-        ttlMs: this.lockTtlMs,
-        retryDelayMs: 50,
-        maxRetries: 3,
-      })
-      : true;
-
-    if (!lockAcquired) {
-      logger.info('Skipping stalled scan DM - lock acquisition failed', {
-        scanId: event.scan_id,
-        lockKey,
-      });
-      return;
-    }
-
+    let lockAcquired = false;
     let stalledScan: StalledScanRecord | null = null;
-    const stopLockKeepalive = this.startLockKeepalive(lockKey);
+    let stopLockKeepalive = () => {};
+    const historicalReplay = this.isHistoricalReplay(event);
 
     try {
-      stalledScan = await this.findStalledScan(event.scan_id);
+      lockAcquired = this.distributedLock
+        ? await this.distributedLock.acquire(lockKey, {
+          ttlMs: this.lockTtlMs,
+          retryDelayMs: 50,
+          maxRetries: 3,
+        })
+        : true;
+
+      if (!lockAcquired) {
+        logger.info('Retrying stalled scan DM after lock acquisition failed', {
+          scanId: event.scan_id,
+          lockKey,
+        });
+        throw new RetryableTerminalEventError(
+          `Stalled scan terminal event is waiting on lock contention for ${event.scan_id}`,
+          'lock-contention'
+        );
+      }
+
+      stopLockKeepalive = this.startLockKeepalive(lockKey);
+      stalledScan = await this.findStalledScan(event.scan_id, {
+        retryOnMiss: !historicalReplay,
+      });
       if (!stalledScan) {
-        return;
+        if (historicalReplay) {
+          logger.info('Skipping historical terminal replay without stalled scan metadata', {
+            scanId: event.scan_id,
+            eventTimestamp: event.timestamp,
+          });
+          return;
+        }
+
+        throw new RetryableTerminalEventError(
+          `Stalled scan metadata is not visible yet for ${event.scan_id}`,
+          'recent-cache-miss'
+        );
       }
 
       const deliveryClaim = await claimStalledScanDelivery(event.scan_id);
@@ -116,6 +147,11 @@ export class VibecheckStalledScanNotificationService {
         });
       }
     } catch (error) {
+      if (error instanceof RetryableTerminalEventError) {
+        await resetStalledScanDelivery(event.scan_id);
+        throw error;
+      }
+
       if (this.isPermanentDiscordDeliveryError(error)) {
         await markStalledScanDeliveryFailed(event.scan_id, error.message);
         logger.warn('Skipping stalled scan DM after permanent Discord failure', {
@@ -133,7 +169,7 @@ export class VibecheckStalledScanNotificationService {
     } finally {
       this.activeDeliveries.delete(event.scan_id);
       stopLockKeepalive();
-      if (this.distributedLock) {
+      if (this.distributedLock && lockAcquired) {
         try {
           await this.distributedLock.release(lockKey);
         } catch (error) {
@@ -147,14 +183,19 @@ export class VibecheckStalledScanNotificationService {
     }
   }
 
-  private async findStalledScan(scanId: string): Promise<StalledScanRecord | null> {
-    for (let attempt = 0; attempt < this.lookupRetryAttempts; attempt += 1) {
+  private async findStalledScan(
+    scanId: string,
+    options: { retryOnMiss: boolean } = { retryOnMiss: true }
+  ): Promise<StalledScanRecord | null> {
+    const attempts = options.retryOnMiss ? this.lookupRetryAttempts : 1;
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       const stalledScan = await getStalledScan(scanId);
       if (stalledScan) {
         return stalledScan;
       }
 
-      if (attempt < this.lookupRetryAttempts - 1) {
+      if (attempt < attempts - 1) {
         await this.sleep(this.lookupRetryDelayMs);
       }
     }
@@ -164,6 +205,15 @@ export class VibecheckStalledScanNotificationService {
 
   private async sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private isHistoricalReplay(event: BulkScanTerminalEvent): boolean {
+    const eventTimestampMs = Date.parse(event.timestamp);
+    if (Number.isNaN(eventTimestampMs)) {
+      return false;
+    }
+
+    return Date.now() - eventTimestampMs > this.historicalReplayThresholdMs;
   }
 
   private startLockKeepalive(lockKey: string): () => void {

@@ -82,6 +82,11 @@ jest.unstable_mockModule('../src/config.js', () => ({
     serverUrl: 'http://localhost:8000',
     discordToken: 'test-token',
     clientId: 'test-client-id',
+    instanceId: 'test-instance',
+    healthCheck: {
+      enabled: false,
+      port: 3100,
+    },
   },
 }));
 
@@ -189,9 +194,13 @@ describe('Bot', () => {
       await (bot as any).initializeNotePublisher();
 
       expect(mockSubscribeToBulkScanTerminalUpdates).toHaveBeenCalledWith(expect.any(Function));
+      expect((bot as any).getTerminalSubscriptionHealth()).toEqual({
+        status: 'ready',
+      });
     });
 
     it('degrades stalled scan notification startup when terminal subscription fails', async () => {
+      (bot as any).isReady = true;
       mockSubscribeToBulkScanTerminalUpdates.mockRejectedValueOnce(
         new Error('terminal consumer unavailable')
       );
@@ -208,6 +217,53 @@ describe('Bot', () => {
           error: 'terminal consumer unavailable',
         })
       );
+      expect((bot as any).getHealthStatus()).toBe('degraded');
+      expect((bot as any).getReadinessState()).toEqual({
+        ready: false,
+        reason: 'bulk_scan_terminal_subscriptions_degraded',
+        terminalSubscriptions: {
+          status: 'degraded',
+          error: 'terminal consumer unavailable',
+        },
+      });
+    });
+
+    it('reports terminal subscription readiness through distributed health checks', async () => {
+      (bot as any).isReady = true;
+
+      await (bot as any).initializeNotePublisher();
+
+      await expect((bot as any).buildDistributedHealthSnapshot()).resolves.toEqual({
+        allHealthy: true,
+        checks: expect.objectContaining({
+          instance: 'test-instance',
+          bulk_scan_terminal_subscriptions: 'ready',
+          nats: 'connected',
+          redis: 'not_configured',
+          distributed_lock: 'redis_unavailable',
+        }),
+      });
+    });
+
+    it('marks distributed health degraded when terminal subscriptions are unavailable', async () => {
+      (bot as any).isReady = true;
+      mockSubscribeToBulkScanTerminalUpdates.mockRejectedValueOnce(
+        new Error('terminal consumer unavailable')
+      );
+
+      await (bot as any).initializeNotePublisher();
+
+      await expect((bot as any).buildDistributedHealthSnapshot()).resolves.toEqual({
+        allHealthy: false,
+        checks: expect.objectContaining({
+          instance: 'test-instance',
+          bulk_scan_terminal_subscriptions: 'degraded',
+          bulk_scan_terminal_subscription_error: 'terminal consumer unavailable',
+          nats: 'connected',
+          redis: 'not_configured',
+          distributed_lock: 'redis_unavailable',
+        }),
+      });
     });
   });
 

@@ -20,6 +20,7 @@ import type {
 import { EventType, NATS_SUBJECTS } from '../types/bulk-scan.js';
 
 export class NatsSubscriber {
+  private readonly retryableTerminalRedeliveryDelayMs = 30_000;
   private nc?: NatsConnection;
   private readonly codec = StringCodec();
   private readonly maxReconnectAttempts: number;
@@ -65,8 +66,19 @@ export class NatsSubscriber {
     try {
       const bindOpts = consumerOpts().bind(streamName, durableName);
       const subscription = await js.subscribe(subject, bindOpts);
-      logger.info('Bound to existing consumer', { consumerName: durableName, streamName });
-      return subscription;
+
+      if (await this.shouldRecreateConsumer(subscription, streamName, durableName, deliverPolicy)) {
+        await subscription.destroy();
+        logger.warn('Destroyed incompatible consumer so it can be recreated with replay support', {
+          consumerName: durableName,
+          streamName,
+          subject,
+          deliverPolicy,
+        });
+      } else {
+        logger.info('Bound to existing consumer', { consumerName: durableName, streamName });
+        return subscription;
+      }
     } catch (bindError) {
       // Log the bind error but don't throw yet - we'll try to create
       // This handles both "consumer not found" AND "stream not found" errors
@@ -113,6 +125,46 @@ export class NatsSubscriber {
       });
       throw createError;
     }
+  }
+
+  private async shouldRecreateConsumer(
+    subscription: JetStreamSubscription,
+    streamName: string,
+    durableName: string,
+    deliverPolicy: 'all' | 'new'
+  ): Promise<boolean> {
+    if (deliverPolicy !== 'all') {
+      return false;
+    }
+
+    const consumerInfo = await subscription.consumerInfo();
+    const existingPolicy = consumerInfo.config?.deliver_policy;
+    const existingPolicyValue = existingPolicy ? String(existingPolicy) : undefined;
+
+    if (existingPolicyValue !== 'new') {
+      return false;
+    }
+
+    logger.warn('Existing consumer uses incompatible deliver policy for replay recovery', {
+      consumerName: durableName,
+      streamName,
+      existingPolicy: existingPolicyValue,
+      expectedPolicy: 'all',
+    });
+    return true;
+  }
+
+  private isRetryableTerminalEventError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    if (error.name !== 'RetryableTerminalEventError') {
+      return false;
+    }
+
+    const reason = Reflect.get(error, 'reason');
+    return reason === 'lock-contention' || reason === 'recent-cache-miss';
   }
 
   async connect(url?: string): Promise<void> {
@@ -361,8 +413,7 @@ export class NatsSubscriber {
           'OPENNOTES',
           durableName,
           subject,
-          deliverSubject,
-          'new'
+          deliverSubject
         );
 
         logger.info('Subscribed to bulk scan terminal events', {
@@ -394,6 +445,12 @@ export class NatsSubscriber {
                 error: error instanceof Error ? error.message : String(error),
                 subject,
               });
+
+              if (this.isRetryableTerminalEventError(error)) {
+                msg.nak(this.retryableTerminalRedeliveryDelayMs);
+                continue;
+              }
+
               msg.nak();
             }
           }

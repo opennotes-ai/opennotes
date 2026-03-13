@@ -14,6 +14,7 @@ export interface StalledScanRecord {
 }
 
 const STALLED_SCAN_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const STALLED_SCAN_DELIVERY_CLAIM_TTL_MS = 60 * 1000;
 
 export function getStalledScanCacheKey(scanId: string): string {
   return `vibecheck:stalled:${scanId}`;
@@ -74,7 +75,7 @@ export async function claimStalledScanDelivery(scanId: string): Promise<{
     return { status: 'terminal', record: stalledScan };
   }
 
-  if (stalledScan.notificationState === 'sending') {
+  if (stalledScan.notificationState === 'sending' && hasActiveDeliveryClaim(stalledScan)) {
     return { status: 'already_processing', record: stalledScan };
   }
 
@@ -86,6 +87,19 @@ export async function claimStalledScanDelivery(scanId: string): Promise<{
   await cache.set(getStalledScanCacheKey(scanId), claimedRecord, STALLED_SCAN_TTL_SECONDS);
 
   return { status: 'claimed', record: claimedRecord };
+}
+
+function hasActiveDeliveryClaim(record: StalledScanRecord): boolean {
+  if (!record.deliveryClaimedAt) {
+    return false;
+  }
+
+  const claimedAtMs = Date.parse(record.deliveryClaimedAt);
+  if (Number.isNaN(claimedAtMs)) {
+    return false;
+  }
+
+  return Date.now() - claimedAtMs < STALLED_SCAN_DELIVERY_CLAIM_TTL_MS;
 }
 
 export async function resetStalledScanDelivery(scanId: string): Promise<boolean> {
