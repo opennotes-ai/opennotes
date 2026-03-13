@@ -54,8 +54,13 @@ export class NotePublisherService {
   async handleScoreUpdate(event: ScoreUpdateEvent): Promise<void> {
     const startTime = Date.now();
     const isForcePublished = event.metadata?.force_published === true;
+    const hasCompleteEventRoutingContext =
+      !!event.original_message_id && !!event.channel_id && !!event.community_server_id;
 
-    if (this.shouldSkipForMissingGuildCache(event.note_id, event.community_server_id)) {
+    if (
+      hasCompleteEventRoutingContext &&
+      this.shouldSkipForMissingGuildCache(event.note_id, event.community_server_id)
+    ) {
       return;
     }
 
@@ -100,8 +105,7 @@ export class NotePublisherService {
         return;
       }
 
-      const sourceContextMissing =
-        !event.original_message_id || !event.channel_id || !event.community_server_id;
+      const sourceContextMissing = !hasCompleteEventRoutingContext;
       const context = await this.getNoteContext(event);
       if (!context) {
         if (isForcePublished) {

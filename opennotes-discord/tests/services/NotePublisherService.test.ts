@@ -1090,6 +1090,28 @@ describe('NotePublisherService', () => {
         );
       });
 
+      it('should use cached note context when force-publish events have only a partial routing payload', async () => {
+        const event: ScoreUpdateEvent = {
+          ...createForcePublishEvent(),
+          original_message_id: undefined,
+          channel_id: undefined,
+          community_server_id: 'playground-guild-999',
+        };
+
+        mockNoteContextService.getNoteContext.mockResolvedValue({
+          noteId: event.note_id,
+          originalMessageId: 'msg-cached',
+          channelId: 'channel-456',
+          guildId: 'guild-123',
+          authorId: '',
+        });
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockNoteContextService.getNoteContext).toHaveBeenCalledWith(event.note_id);
+        expect(mockChannel.send).toHaveBeenCalled();
+      });
+
       it('should skip cached force-publish routing when the restored guild is not in cache', async () => {
         const event: ScoreUpdateEvent = {
           ...createForcePublishEvent(),
