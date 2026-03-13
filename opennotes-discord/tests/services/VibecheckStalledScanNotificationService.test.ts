@@ -211,11 +211,11 @@ describe('VibecheckStalledScanNotificationService', () => {
     expect(mockUserSend).toHaveBeenCalledTimes(1);
   });
 
-  it('waits long enough for stalled-scan metadata that becomes visible after a slower cache write', async () => {
+  it('waits long enough for stalled-scan metadata that becomes visible after the initial retry window', async () => {
     let lookupCount = 0;
     mockCacheGet.mockImplementation(async (key: string) => {
       lookupCount += 1;
-      if (lookupCount < 4) {
+      if (lookupCount < 8) {
         return null;
       }
 
@@ -255,7 +255,7 @@ describe('VibecheckStalledScanNotificationService', () => {
       messages_flagged: 2,
     });
 
-    expect(lookupCount).toBeGreaterThanOrEqual(4);
+    expect(lookupCount).toBeGreaterThanOrEqual(8);
     expect(mockUserSend).toHaveBeenCalledTimes(1);
   });
 
@@ -501,6 +501,57 @@ describe('VibecheckStalledScanNotificationService', () => {
     expect(mockUserSend).not.toHaveBeenCalled();
     expect(mockApiClient.getBulkScanResults).not.toHaveBeenCalled();
     expect(stalledScanStore['vibecheck:stalled:scan-replayed-123']).toEqual(
+      expect.objectContaining({
+        notificationState: 'sent',
+      })
+    );
+  });
+
+  it('reclaims an expired sending lease after a restart and delivers the replayed terminal event', async () => {
+    const restartedService = new VibecheckStalledScanNotificationService({
+      users: {
+        fetch: mockUsersFetch,
+      },
+    } as any);
+
+    stalledScanStore['vibecheck:stalled:scan-restart-123'] = {
+      scanId: 'scan-restart-123',
+      initiatorId: 'user-123',
+      guildId: 'guild-123',
+      days: 7,
+      source: 'slash_command',
+      notificationState: 'sending',
+      deliveryClaimedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    };
+    mockApiClient.getBulkScanResults.mockResolvedValue({
+      data: {
+        type: 'bulk-scans',
+        id: 'scan-restart-123',
+        attributes: {
+          status: 'completed',
+          initiated_at: new Date().toISOString(),
+          messages_scanned: 73,
+          messages_flagged: 2,
+        },
+      },
+      included: [],
+      jsonapi: { version: '1.1' },
+    });
+
+    await restartedService.handleTerminalEvent({
+      event_id: 'evt-restart-replay',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      metadata: {},
+      scan_id: 'scan-restart-123',
+      community_server_id: 'community-123',
+      messages_scanned: 73,
+      messages_flagged: 2,
+    });
+
+    expect(mockUserSend).toHaveBeenCalledTimes(1);
+    expect(stalledScanStore['vibecheck:stalled:scan-restart-123']).toEqual(
       expect.objectContaining({
         notificationState: 'sent',
       })

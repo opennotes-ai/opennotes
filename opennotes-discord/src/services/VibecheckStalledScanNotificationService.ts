@@ -11,6 +11,7 @@ import {
   markStalledScanDeliveryFailed,
   markStalledScanNotified,
   resetStalledScanDelivery,
+  STALLED_SCAN_DELIVERY_CLAIM_TTL_MS,
   type StalledScanRecord,
 } from '../lib/vibecheck-stalled-scan.js';
 import type {
@@ -24,9 +25,9 @@ type BulkScanTerminalEvent = BulkScanProcessingFinishedEvent | BulkScanFailedEve
 
 export class VibecheckStalledScanNotificationService {
   private readonly activeDeliveries = new Set<string>();
-  private readonly lockTtlMs = 60 * 1000;
+  private readonly lockTtlMs = STALLED_SCAN_DELIVERY_CLAIM_TTL_MS;
   private readonly lookupRetryDelayMs = 50;
-  private readonly lookupRetryAttempts = 6;
+  private readonly lookupRetryAttempts = 12;
 
   constructor(
     private readonly client: Client,
