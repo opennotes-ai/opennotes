@@ -14,6 +14,15 @@ from uuid import uuid4
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def mock_clear_scan_finalizing_step():
+    with patch(
+        "src.dbos_workflows.content_scan_workflow.clear_scan_finalizing_step",
+        return_value=True,
+    ) as mock_clear:
+        yield mock_clear
+
+
 def _make_recv_dispatcher(
     batch_responses: list[dict | None],
     tx_responses: list[dict | None],
@@ -64,6 +73,10 @@ class TestDualWorkflowIsolation:
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize_a,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -85,6 +98,10 @@ class TestDualWorkflowIsolation:
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize_b,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos_b,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -141,6 +158,10 @@ class TestDualWorkflowIsolation:
             ) as mock_similarity,
             patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.get_scan_terminal_state_step",
+                return_value=False,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_preprocess.return_value = preprocess_result_a
@@ -258,6 +279,10 @@ class TestDualWorkflowIsolation:
 
             with (
                 patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+                patch(
+                    "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                    return_value=True,
+                ),
                 patch(
                     "src.dbos_workflows.content_scan_workflow.finalize_scan_step",
                     side_effect=capture_finalize,

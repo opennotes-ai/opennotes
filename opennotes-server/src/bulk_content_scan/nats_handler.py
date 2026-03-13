@@ -54,6 +54,17 @@ async def persist_transmitted_scan_handoff(scan_id: UUID, messages_scanned: int)
             )
             return
 
+        if scan_log.status in {BulkScanStatus.COMPLETED, BulkScanStatus.FAILED}:
+            logger.info(
+                "Ignoring transmitted handoff for terminal bulk scan",
+                extra={
+                    "scan_id": str(scan_id),
+                    "messages_scanned": messages_scanned,
+                    "status": scan_log.status,
+                },
+            )
+            return
+
         previous_messages_scanned = scan_log.messages_scanned or 0
         persisted_messages_scanned = max(previous_messages_scanned, messages_scanned)
 
