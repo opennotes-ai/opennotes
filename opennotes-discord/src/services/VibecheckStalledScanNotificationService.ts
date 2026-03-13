@@ -6,8 +6,11 @@ import {
 import { apiClient } from '../api-client.js';
 import { logger } from '../logger.js';
 import {
+  claimStalledScanDelivery,
   getStalledScan,
+  markStalledScanDeliveryFailed,
   markStalledScanNotified,
+  resetStalledScanDelivery,
   type StalledScanRecord,
 } from '../lib/vibecheck-stalled-scan.js';
 import type {
@@ -20,9 +23,10 @@ import type { DistributedLock } from '../utils/distributed-lock.js';
 type BulkScanTerminalEvent = BulkScanProcessingFinishedEvent | BulkScanFailedEvent;
 
 export class VibecheckStalledScanNotificationService {
-  private readonly lockTtlMs = 10 * 1000;
+  private readonly activeDeliveries = new Set<string>();
+  private readonly lockTtlMs = 60 * 1000;
   private readonly lookupRetryDelayMs = 50;
-  private readonly lookupRetryAttempts = 3;
+  private readonly lookupRetryAttempts = 6;
 
   constructor(
     private readonly client: Client,
@@ -34,6 +38,14 @@ export class VibecheckStalledScanNotificationService {
   }
 
   async handleTerminalEvent(event: BulkScanTerminalEvent): Promise<void> {
+    if (this.activeDeliveries.has(event.scan_id)) {
+      logger.info('Skipping stalled scan DM - delivery already in progress locally', {
+        scanId: event.scan_id,
+      });
+      return;
+    }
+    this.activeDeliveries.add(event.scan_id);
+
     const lockKey = `vibecheck:stalled-scan:${event.scan_id}`;
     const lockAcquired = this.distributedLock
       ? await this.distributedLock.acquire(lockKey, {
@@ -52,12 +64,19 @@ export class VibecheckStalledScanNotificationService {
     }
 
     let stalledScan: StalledScanRecord | null = null;
+    const stopLockKeepalive = this.startLockKeepalive(lockKey);
 
     try {
       stalledScan = await this.findStalledScan(event.scan_id);
-      if (!stalledScan || stalledScan.notificationState === 'sent') {
+      if (!stalledScan) {
         return;
       }
+
+      const deliveryClaim = await claimStalledScanDelivery(event.scan_id);
+      if (deliveryClaim.status !== 'claimed' || !deliveryClaim.record) {
+        return;
+      }
+      stalledScan = deliveryClaim.record;
 
       const user = await this.client.users.fetch(stalledScan.initiatorId);
 
@@ -98,6 +117,7 @@ export class VibecheckStalledScanNotificationService {
       }
     } catch (error) {
       if (this.isPermanentDiscordDeliveryError(error)) {
+        await markStalledScanDeliveryFailed(event.scan_id, error.message);
         logger.warn('Skipping stalled scan DM after permanent Discord failure', {
           scanId: event.scan_id,
           initiatorId: stalledScan?.initiatorId,
@@ -108,8 +128,11 @@ export class VibecheckStalledScanNotificationService {
         return;
       }
 
+      await resetStalledScanDelivery(event.scan_id);
       throw error;
     } finally {
+      this.activeDeliveries.delete(event.scan_id);
+      stopLockKeepalive();
       if (this.distributedLock) {
         try {
           await this.distributedLock.release(lockKey);
@@ -141,6 +164,26 @@ export class VibecheckStalledScanNotificationService {
 
   private async sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private startLockKeepalive(lockKey: string): () => void {
+    if (!this.distributedLock) {
+      return () => {};
+    }
+
+    const intervalMs = Math.max(1000, Math.floor(this.lockTtlMs / 2));
+    const interval = setInterval(() => {
+      void this.distributedLock!.extend(lockKey, this.lockTtlMs).catch((error) => {
+        logger.warn('Failed to extend stalled scan DM lock', {
+          lockKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }, intervalMs);
+
+    return () => {
+      clearInterval(interval);
+    };
   }
 
   private isPermanentDiscordDeliveryError(error: unknown): error is DiscordAPIError {

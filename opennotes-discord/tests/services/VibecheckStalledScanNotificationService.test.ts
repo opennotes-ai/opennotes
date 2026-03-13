@@ -211,6 +211,54 @@ describe('VibecheckStalledScanNotificationService', () => {
     expect(mockUserSend).toHaveBeenCalledTimes(1);
   });
 
+  it('waits long enough for stalled-scan metadata that becomes visible after a slower cache write', async () => {
+    let lookupCount = 0;
+    mockCacheGet.mockImplementation(async (key: string) => {
+      lookupCount += 1;
+      if (lookupCount < 4) {
+        return null;
+      }
+
+      stalledScanStore[key] = {
+        scanId: 'scan-slow-visibility-123',
+        initiatorId: 'user-123',
+        guildId: 'guild-123',
+        days: 7,
+        source: 'slash_command',
+      };
+      return stalledScanStore[key];
+    });
+    mockApiClient.getBulkScanResults.mockResolvedValue({
+      data: {
+        type: 'bulk-scans',
+        id: 'scan-slow-visibility-123',
+        attributes: {
+          status: 'completed',
+          initiated_at: new Date().toISOString(),
+          messages_scanned: 64,
+          messages_flagged: 2,
+        },
+      },
+      included: [],
+      jsonapi: { version: '1.1' },
+    });
+
+    await service.handleTerminalEvent({
+      event_id: 'evt-slow-visibility',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      metadata: {},
+      scan_id: 'scan-slow-visibility-123',
+      community_server_id: 'community-123',
+      messages_scanned: 64,
+      messages_flagged: 2,
+    });
+
+    expect(lookupCount).toBeGreaterThanOrEqual(4);
+    expect(mockUserSend).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps stalled scans retryable after DM delivery failures', async () => {
     stalledScanStore['vibecheck:stalled:scan-retry-123'] = {
       scanId: 'scan-retry-123',
@@ -366,10 +414,24 @@ describe('VibecheckStalledScanNotificationService', () => {
       })
     );
     expect(stalledScanStore['vibecheck:stalled:scan-closed-123']).toEqual(
-      expect.not.objectContaining({
-        notificationState: 'sent',
+      expect.objectContaining({
+        notificationState: 'failed_permanent',
       })
     );
+
+    await expect(service.handleTerminalEvent({
+      event_id: 'evt-closed-retry',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      metadata: {},
+      scan_id: 'scan-closed-123',
+      community_server_id: 'community-123',
+      messages_scanned: 12,
+      messages_flagged: 0,
+    })).resolves.toBeUndefined();
+
+    expect(mockUserSend).toHaveBeenCalledTimes(1);
   });
 
   it('does not send duplicate DMs after a stalled scan has already been delivered', async () => {
@@ -409,6 +471,76 @@ describe('VibecheckStalledScanNotificationService', () => {
 
     await service.handleTerminalEvent(event);
     await service.handleTerminalEvent(event);
+
+    expect(mockUserSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not send duplicate DMs when a second worker reacquires delivery mid-send', async () => {
+    const mockDistributedLock = {
+      acquire: jest.fn<(...args: unknown[]) => Promise<boolean>>().mockResolvedValue(true),
+      release: jest.fn<(...args: unknown[]) => Promise<boolean>>().mockResolvedValue(true),
+      extend: jest.fn<(...args: unknown[]) => Promise<boolean>>().mockResolvedValue(true),
+    };
+    service = new VibecheckStalledScanNotificationService(
+      {
+        users: {
+          fetch: mockUsersFetch,
+        },
+      } as any,
+      mockDistributedLock as any
+    );
+    stalledScanStore['vibecheck:stalled:scan-lock-race-123'] = {
+      scanId: 'scan-lock-race-123',
+      initiatorId: 'user-123',
+      guildId: 'guild-123',
+      days: 7,
+      source: 'slash_command',
+    };
+    mockApiClient.getBulkScanResults.mockResolvedValue({
+      data: {
+        type: 'bulk-scans',
+        id: 'scan-lock-race-123',
+        attributes: {
+          status: 'completed',
+          initiated_at: new Date().toISOString(),
+          messages_scanned: 21,
+          messages_flagged: 1,
+        },
+      },
+      included: [],
+      jsonapi: { version: '1.1' },
+    });
+
+    let releaseFirstSend!: () => void;
+    mockUserSend.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseFirstSend = resolve;
+        })
+    );
+
+    const event = {
+      event_id: 'evt-lock-race',
+      event_type: EventType.BULK_SCAN_PROCESSING_FINISHED,
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      metadata: {},
+      scan_id: 'scan-lock-race-123',
+      community_server_id: 'community-123',
+      messages_scanned: 21,
+      messages_flagged: 1,
+    };
+
+    const firstDelivery = service.handleTerminalEvent(event);
+    while (!releaseFirstSend) {
+      await Promise.resolve();
+    }
+    await service.handleTerminalEvent({
+      ...event,
+      event_id: 'evt-lock-race-retry',
+    });
+    releaseFirstSend();
+    await firstDelivery;
 
     expect(mockUserSend).toHaveBeenCalledTimes(1);
   });

@@ -1,3 +1,5 @@
+import { getStalledScan } from './vibecheck-stalled-scan.js';
+
 export interface StallWarningController {
   onStallWarning(scanId: string): Promise<void>;
   shouldSuppressUpdates(): Promise<boolean>;
@@ -20,6 +22,9 @@ export function createStallWarningController(
           try {
             await handleWarning(scanId);
             stallActive = true;
+          } catch (error) {
+            stallActive = (await getStalledScan(scanId)) !== null;
+            throw error;
           } finally {
             pendingWarning = null;
           }
@@ -34,7 +39,7 @@ export function createStallWarningController(
         try {
           await pendingWarning;
         } catch {
-          return false;
+          return stallActive;
         }
       }
 
