@@ -2721,6 +2721,71 @@ class TestSignalCoordination:
         mock_clear_finalizing.assert_called_once_with(scan_id=scan_id)
         assert call_order == ["mark", "clear"]
 
+    def test_orchestrator_logs_and_returns_when_finalizing_latch_clear_fails_after_finalize(
+        self,
+    ) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        recv_fn = _make_recv_dispatcher(
+            batch_responses=[
+                {"processed": 3, "skipped": 0, "errors": 0, "flagged_count": 1, "batch_number": 1},
+            ],
+            tx_responses=[
+                {"messages_scanned": 3},
+            ],
+        )
+        finalized_result = {"status": "completed"}
+        call_order: list[str] = []
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step",
+                return_value=time.time(),
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                side_effect=lambda **_: call_order.append("mark"),
+            ) as mock_mark_finalizing,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.finalize_scan_step",
+                side_effect=lambda **_: call_order.append("finalize") or finalized_result,
+            ) as mock_finalize,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.clear_scan_finalizing_step",
+                side_effect=lambda **_: call_order.append("clear")
+                or (_ for _ in ()).throw(RuntimeError("clear boom")),
+                create=True,
+            ) as mock_clear_finalizing,
+            patch("src.dbos_workflows.content_scan_workflow.logger.warning") as mock_warning,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = recv_fn
+
+            result = content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=json.dumps(["similarity"]),
+            )
+
+        assert result == finalized_result
+        mock_mark_finalizing.assert_called_once_with(scan_id=scan_id)
+        mock_finalize.assert_called_once()
+        mock_clear_finalizing.assert_called_once_with(scan_id=scan_id)
+        mock_warning.assert_called_once_with(
+            "Failed to clear finalizing latch after successful finalization",
+            extra={"scan_id": scan_id},
+            exc_info=True,
+        )
+        assert call_order == ["mark", "finalize", "clear"]
+
     def test_late_batch_does_not_send_batch_complete_after_finalizing(self) -> None:
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 

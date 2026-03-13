@@ -460,7 +460,14 @@ def content_scan_orchestration_workflow(  # noqa: PLR0912
                 )
             raise
 
-        clear_scan_finalizing_step(scan_id=scan_id)
+        try:
+            clear_scan_finalizing_step(scan_id=scan_id)
+        except Exception:
+            logger.warning(
+                "Failed to clear finalizing latch after successful finalization",
+                extra={"scan_id": scan_id},
+                exc_info=True,
+            )
 
         logger.info(
             "Content scan orchestration workflow completed",
