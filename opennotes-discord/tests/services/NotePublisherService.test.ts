@@ -1090,6 +1090,31 @@ describe('NotePublisherService', () => {
         );
       });
 
+      it('should skip cached force-publish routing when the restored guild is not in cache', async () => {
+        const event: ScoreUpdateEvent = {
+          ...createForcePublishEvent(),
+          original_message_id: undefined,
+          channel_id: undefined,
+          community_server_id: undefined,
+        };
+
+        mockNoteContextService.getNoteContext.mockResolvedValue({
+          noteId: event.note_id,
+          originalMessageId: 'msg-cached',
+          channelId: 'channel-456',
+          guildId: 'playground-guild-999',
+          authorId: '',
+        });
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockNoteContextService.getNoteContext).toHaveBeenCalledWith(event.note_id);
+        expect(mockApiClient.checkNoteDuplicate).not.toHaveBeenCalled();
+        expect(mockConfigService.getConfig).not.toHaveBeenCalled();
+        expect(mockChannel.send).not.toHaveBeenCalled();
+        expect(mockApiClient.recordNotePublisher).not.toHaveBeenCalled();
+      });
+
       it('should log a dedicated warning when a force-publish event still has no routing context after cache fallback', async () => {
         const event: ScoreUpdateEvent = {
           ...createForcePublishEvent(),

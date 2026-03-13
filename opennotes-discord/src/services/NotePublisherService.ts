@@ -54,11 +54,7 @@ export class NotePublisherService {
   async handleScoreUpdate(event: ScoreUpdateEvent): Promise<void> {
     const startTime = Date.now();
 
-    if (event.community_server_id && !this.client.guilds.cache.has(event.community_server_id)) {
-      logger.debug('Skipping score update - community server not in guild cache (likely playground)', {
-        noteId: event.note_id,
-        communityServerId: event.community_server_id,
-      });
+    if (this.shouldSkipForMissingGuildCache(event.note_id, event.community_server_id)) {
       return;
     }
 
@@ -137,6 +133,10 @@ export class NotePublisherService {
         originalMessageId: context.originalMessageId,
         guildId: context.guildId,
       });
+
+      if (this.shouldSkipForMissingGuildCache(event.note_id, context.guildId)) {
+        return;
+      }
 
       if (!this.hasPermissionsCached(context.channelId)) {
         const channel = this.client.channels.cache.get(context.channelId);
@@ -253,6 +253,18 @@ export class NotePublisherService {
 
     const threshold = this.configService.getDefaultThreshold();
     return event.score >= threshold;
+  }
+
+  private shouldSkipForMissingGuildCache(noteId: string, communityServerId?: string): boolean {
+    if (!communityServerId || this.client.guilds.cache.has(communityServerId)) {
+      return false;
+    }
+
+    logger.debug('Skipping score update - community server not in guild cache (likely playground)', {
+      noteId,
+      communityServerId,
+    });
+    return true;
   }
 
   private async getNoteContext(event: ScoreUpdateEvent): Promise<NoteContext | null> {
