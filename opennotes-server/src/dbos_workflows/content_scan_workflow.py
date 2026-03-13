@@ -140,6 +140,25 @@ async def _scan_is_terminal_async(session: Any, scan_id: UUID) -> bool:
     return status in {BulkScanStatus.COMPLETED, BulkScanStatus.FAILED}
 
 
+async def _skip_step_persist_if_scan_terminal(
+    session: Any,
+    scan_uuid: UUID,
+    *,
+    step_name: str,
+    scan_id: str,
+    batch_number: int,
+) -> bool:
+    if not await _scan_is_terminal_async(session, scan_uuid):
+        return False
+
+    logger.info(
+        "%s step finished after scan became terminal; skipping late persistence",
+        step_name,
+        extra={"scan_id": scan_id, "batch_number": batch_number},
+    )
+    return True
+
+
 @DBOS.workflow()
 def content_scan_orchestration_workflow(  # noqa: PLR0912
     scan_id: str,
@@ -925,20 +944,33 @@ def preprocess_batch_step(
                 channel_context_map = {
                     ch: [m.model_dump(mode="json") for m in msgs] for ch, msgs in raw_map.items()
                 }
+            if await _skip_step_persist_if_scan_terminal(
+                session,
+                scan_uuid,
+                step_name="Preprocess",
+                scan_id=scan_id,
+                batch_number=batch_number,
+            ):
+                return {
+                    "filtered_messages_key": "",
+                    "context_maps_key": "",
+                    "message_count": 0,
+                    "skipped_count": 0,
+                }
 
-        filtered_key = get_batch_redis_key(scan_id, batch_number, "filtered")
-        context_key = get_batch_redis_key(scan_id, batch_number, "context")
+            filtered_key = get_batch_redis_key(scan_id, batch_number, "filtered")
+            context_key = get_batch_redis_key(scan_id, batch_number, "context")
 
-        filtered_dicts = [m.model_dump(mode="json") for m in typed_messages]
-        await store_messages_in_redis(redis_conn, filtered_key, filtered_dicts)
-        await store_messages_in_redis(redis_conn, context_key, [channel_context_map])
+            filtered_dicts = [m.model_dump(mode="json") for m in typed_messages]
+            await store_messages_in_redis(redis_conn, filtered_key, filtered_dicts)
+            await store_messages_in_redis(redis_conn, context_key, [channel_context_map])
 
-        return {
-            "filtered_messages_key": filtered_key,
-            "context_maps_key": context_key,
-            "message_count": len(typed_messages),
-            "skipped_count": skipped_count,
-        }
+            return {
+                "filtered_messages_key": filtered_key,
+                "context_maps_key": context_key,
+                "message_count": len(typed_messages),
+                "skipped_count": skipped_count,
+            }
 
     return run_sync(_preprocess())
 
@@ -1027,24 +1059,32 @@ def similarity_scan_step(
                 candidate = await service._similarity_scan_candidate(scan_uuid, msg, platform_id)
                 if candidate:
                     candidates.append(candidate)
+            if await _skip_step_persist_if_scan_terminal(
+                session,
+                scan_uuid,
+                step_name="Similarity",
+                scan_id=scan_id,
+                batch_number=batch_number,
+            ):
+                return {"similarity_candidates_key": "", "candidate_count": 0}
 
-        candidates_key = get_batch_redis_key(scan_id, batch_number, "similarity_candidates")
-        candidates_data = [c.model_dump(mode="json") for c in candidates]
-        await store_messages_in_redis(redis_conn, candidates_key, candidates_data)
+            candidates_key = get_batch_redis_key(scan_id, batch_number, "similarity_candidates")
+            candidates_data = [c.model_dump(mode="json") for c in candidates]
+            await store_messages_in_redis(redis_conn, candidates_key, candidates_data)
 
-        logger.info(
-            "Similarity scan step completed",
-            extra={
-                "scan_id": scan_id,
-                "batch_number": batch_number,
+            logger.info(
+                "Similarity scan step completed",
+                extra={
+                    "scan_id": scan_id,
+                    "batch_number": batch_number,
+                    "candidate_count": len(candidates),
+                },
+            )
+
+            return {
+                "similarity_candidates_key": candidates_key,
                 "candidate_count": len(candidates),
-            },
-        )
-
-        return {
-            "similarity_candidates_key": candidates_key,
-            "candidate_count": len(candidates),
-        }
+            }
 
     return run_sync(_similarity_scan())
 
@@ -1130,24 +1170,32 @@ def flashpoint_scan_step(
                 )
                 if candidate:
                     candidates.append(candidate)
+            if await _skip_step_persist_if_scan_terminal(
+                session,
+                scan_uuid,
+                step_name="Flashpoint",
+                scan_id=scan_id,
+                batch_number=batch_number,
+            ):
+                return {"flashpoint_candidates_key": "", "candidate_count": 0}
 
-        candidates_key = get_batch_redis_key(scan_id, batch_number, "flashpoint_candidates")
-        candidates_data = [c.model_dump(mode="json") for c in candidates]
-        await store_messages_in_redis(redis_conn, candidates_key, candidates_data)
+            candidates_key = get_batch_redis_key(scan_id, batch_number, "flashpoint_candidates")
+            candidates_data = [c.model_dump(mode="json") for c in candidates]
+            await store_messages_in_redis(redis_conn, candidates_key, candidates_data)
 
-        logger.info(
-            "Flashpoint scan step completed",
-            extra={
-                "scan_id": scan_id,
-                "batch_number": batch_number,
+            logger.info(
+                "Flashpoint scan step completed",
+                extra={
+                    "scan_id": scan_id,
+                    "batch_number": batch_number,
+                    "candidate_count": len(candidates),
+                },
+            )
+
+            return {
+                "flashpoint_candidates_key": candidates_key,
                 "candidate_count": len(candidates),
-            },
-        )
-
-        return {
-            "flashpoint_candidates_key": candidates_key,
-            "candidate_count": len(candidates),
-        }
+            }
 
     return run_sync(_flashpoint_scan())
 
@@ -1239,6 +1287,14 @@ def relevance_filter_step(
 
             try:
                 flagged = await service._filter_candidates_with_relevance(all_candidates, scan_uuid)
+                if await _skip_step_persist_if_scan_terminal(
+                    session,
+                    scan_uuid,
+                    step_name="Relevance",
+                    scan_id=scan_id,
+                    batch_number=batch_number,
+                ):
+                    return {"flagged_count": 0, "errors": 0}
 
                 for msg in flagged:
                     await service.append_flagged_result(scan_uuid, msg)
