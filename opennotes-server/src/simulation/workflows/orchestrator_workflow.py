@@ -32,6 +32,8 @@ SPAWN_BATCH_SIZE: int = 5
 SCORING_INTERVAL: int = 5
 CIRCUIT_BREAKER_THRESHOLD: int = 5
 CIRCUIT_BREAKER_RESET_TIMEOUT: float = 300.0
+SCORING_PERSISTENCE_FAILURE_MESSAGE = "Required scoring snapshot persistence failed"
+FINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
 
 simulation_orchestrator_queue = Queue(
     name="simulation_orchestrator",
@@ -193,6 +195,8 @@ def set_run_status_step(
     simulation_run_id: str,
     new_status: str,
     expected_status: str | None = None,
+    expected_generation: int | None = None,
+    error_message: str | None = None,
 ) -> bool:
     from src.database import get_session_maker
 
@@ -202,11 +206,15 @@ def set_run_status_step(
         values: dict[str, Any] = {"status": new_status, "updated_at": now}
         if new_status == "paused":
             values["paused_at"] = now
+        if error_message is not None:
+            values["error_message"] = error_message
 
         async with get_session_maker()() as session:
             stmt = update(SimulationRun).where(SimulationRun.id == run_uuid)
             if expected_status is not None:
                 stmt = stmt.where(SimulationRun.status == expected_status)
+            if expected_generation is not None:
+                stmt = stmt.where(SimulationRun.generation == expected_generation)
             stmt = stmt.values(**values).returning(SimulationRun.id)
 
             result = await session.execute(stmt)
@@ -951,7 +959,65 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                         },
                     )
                 except Exception:
-                    logger.exception("Scoring failed, continuing")
+                    logger.exception("Required scoring snapshot persistence failed")
+                    preserved_status: str | None = None
+                    expected_generation = config.get("generation", initial_generation)
+                    try:
+                        updated = set_run_status_step(
+                            simulation_run_id,
+                            "failed",
+                            expected_status="running",
+                            expected_generation=expected_generation,
+                            error_message=SCORING_PERSISTENCE_FAILURE_MESSAGE,
+                        )
+                        if not updated:
+                            logger.warning(
+                                "Failed run-state update skipped: status or generation no longer matched",
+                                extra={"simulation_run_id": simulation_run_id},
+                            )
+                            try:
+                                current_generation = check_generation_step(simulation_run_id)
+                            except Exception:
+                                logger.exception(
+                                    "Failed to re-read generation after scoring failure",
+                                    extra={"simulation_run_id": simulation_run_id},
+                                )
+                            else:
+                                if current_generation != expected_generation:
+                                    logger.info(
+                                        "Generation changed from %d to %d during scoring failure handling",
+                                        expected_generation,
+                                        current_generation,
+                                        extra={
+                                            "simulation_run_id": simulation_run_id,
+                                            "workflow_id": workflow_id,
+                                        },
+                                    )
+                                    return {
+                                        "simulation_run_id": simulation_run_id,
+                                        "status": "superseded",
+                                        "iterations": iteration,
+                                        "instances_finalized": 0,
+                                    }
+                            try:
+                                current_status = check_run_status_step(simulation_run_id)
+                            except Exception:
+                                logger.exception(
+                                    "Failed to re-read run status after scoring failure",
+                                    extra={"simulation_run_id": simulation_run_id},
+                                )
+                            else:
+                                if current_status == "paused":
+                                    preserved_status = "paused"
+                                elif current_status in FINAL_RUN_STATUSES:
+                                    preserved_status = current_status
+                    except Exception:
+                        logger.exception(
+                            "Failed to persist scoring failure state",
+                            extra={"simulation_run_id": simulation_run_id},
+                        )
+                    final_status = preserved_status or "failed"
+                    break
 
             DBOS.sleep(config["turn_cadence_seconds"])
 
@@ -964,7 +1030,10 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 },
             )
 
-        finalize_result, final_status = _finalize_with_fallback(simulation_run_id, final_status)
+        if final_status == "paused":
+            finalize_result = {"final_status": "paused", "instances_finalized": 0}
+        else:
+            finalize_result, final_status = _finalize_with_fallback(simulation_run_id, final_status)
 
         logger.info(
             "Orchestrator workflow completed",

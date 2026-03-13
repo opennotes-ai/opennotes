@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import time
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from dbos._error import DBOSQueueDeduplicatedError, DBOSWorkflowConflictIDError
 
 
 def _run_coro(coro):
@@ -35,6 +36,59 @@ def _patch_session(mock_session_ctx):
         "src.database.get_session_maker",
         return_value=lambda: mock_session_ctx,
     )
+
+
+def _make_fake_dbos_dispatch_environment():
+    dispatch_state = {"workflow_id": None, "deduplication_id": None}
+    active_deduplication_ids: set[str] = set()
+    seen_workflow_ids: set[str] = set()
+
+    @contextmanager
+    def fake_set_workflow_id(workflow_id: str):
+        previous_workflow_id = dispatch_state["workflow_id"]
+        dispatch_state["workflow_id"] = workflow_id
+        try:
+            yield MagicMock()
+        finally:
+            dispatch_state["workflow_id"] = previous_workflow_id
+
+    @contextmanager
+    def fake_set_enqueue_options(*, deduplication_id: str):
+        previous_deduplication_id = dispatch_state["deduplication_id"]
+        dispatch_state["deduplication_id"] = deduplication_id
+        try:
+            yield MagicMock()
+        finally:
+            dispatch_state["deduplication_id"] = previous_deduplication_id
+
+    def enqueue(*_args, **_kwargs):
+        workflow_id = dispatch_state["workflow_id"]
+        deduplication_id = dispatch_state["deduplication_id"]
+        assert workflow_id is not None
+        assert deduplication_id is not None
+
+        if workflow_id in seen_workflow_ids:
+            raise DBOSWorkflowConflictIDError(workflow_id)
+        if deduplication_id in active_deduplication_ids:
+            raise DBOSQueueDeduplicatedError(
+                workflow_id,
+                "community_scoring",
+                deduplication_id,
+            )
+
+        seen_workflow_ids.add(workflow_id)
+        active_deduplication_ids.add(deduplication_id)
+
+        handle = MagicMock()
+        handle.get_workflow_id.return_value = workflow_id
+        return handle
+
+    return {
+        "active_deduplication_ids": active_deduplication_ids,
+        "enqueue": enqueue,
+        "set_enqueue_options": fake_set_enqueue_options,
+        "set_workflow_id": fake_set_workflow_id,
+    }
 
 
 class TestWorkflowNameConstants:
@@ -205,6 +259,32 @@ class TestScoreCommunityServerWorkflow:
 
 class TestDispatchCommunityScoring:
     @pytest.mark.asyncio
+    async def test_dispatch_uses_stable_deduplication_id_per_community(self) -> None:
+        from src.simulation.workflows.scoring_workflow import dispatch_community_scoring
+
+        cs_id = uuid4()
+        mock_handle = MagicMock()
+        mock_handle.get_workflow_id.return_value = f"score-community-{cs_id}-1709000000"
+        captured_dedup_ids: list[str] = []
+
+        def capture_enqueue_options(*, deduplication_id: str):
+            captured_dedup_ids.append(deduplication_id)
+            return MagicMock()
+
+        with (
+            patch(
+                "src.simulation.workflows.scoring_workflow.community_scoring_queue"
+            ) as mock_queue,
+            patch("dbos.SetWorkflowID"),
+            patch("dbos.SetEnqueueOptions", side_effect=capture_enqueue_options),
+            patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
+        ):
+            mock_queue.enqueue.return_value = mock_handle
+            await dispatch_community_scoring(cs_id)
+
+        assert captured_dedup_ids == [f"score-community-{cs_id}"]
+
+    @pytest.mark.asyncio
     async def test_dispatch_creates_workflow_id_with_temporal_component(self) -> None:
         from src.simulation.workflows.scoring_workflow import (
             dispatch_community_scoring,
@@ -212,7 +292,7 @@ class TestDispatchCommunityScoring:
         )
 
         cs_id = uuid4()
-        before_ts = int(time.time())
+        expected_timestamp_ns = 1709000000000000000
 
         captured_wf_id = None
         mock_handle = MagicMock()
@@ -229,16 +309,17 @@ class TestDispatchCommunityScoring:
             ) as mock_queue,
             patch("dbos.SetWorkflowID", side_effect=capture_set_wf_id),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
+            patch(
+                "src.simulation.workflows.scoring_workflow.time.time_ns",
+                return_value=expected_timestamp_ns,
+            ),
         ):
             mock_queue.enqueue.return_value = mock_handle
             wf_id = await dispatch_community_scoring(cs_id)
 
-        after_ts = int(time.time())
-
         prefix = f"score-community-{cs_id}-"
-        assert wf_id.startswith(prefix)
-        ts_part = int(wf_id[len(prefix) :])
-        assert before_ts <= ts_part <= after_ts
+        assert wf_id == f"{prefix}{expected_timestamp_ns}"
+        assert captured_wf_id == wf_id
 
         mock_queue.enqueue.assert_called_once_with(score_community_server, str(cs_id))
 
@@ -287,14 +368,80 @@ class TestDispatchCommunityScoring:
             ) as mock_queue,
             patch("dbos.SetWorkflowID", side_effect=capture_set_wf_id),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
-            patch("src.simulation.workflows.scoring_workflow.time") as mock_time,
+            patch(
+                "src.simulation.workflows.scoring_workflow.time.time_ns",
+                side_effect=[1000000000, 1000000001],
+            ),
         ):
             mock_queue.enqueue.return_value = mock_handle
-            mock_time.time.side_effect = [1000000, 1000001]
             await dispatch_community_scoring(cs_id)
             await dispatch_community_scoring(cs_id)
 
         assert len(captured_ids) == 2
         assert captured_ids[0] != captured_ids[1]
-        assert captured_ids[0] == f"score-community-{cs_id}-1000000"
-        assert captured_ids[1] == f"score-community-{cs_id}-1000001"
+        assert captured_ids[0] == f"score-community-{cs_id}-1000000000"
+        assert captured_ids[1] == f"score-community-{cs_id}-1000000001"
+
+    @pytest.mark.asyncio
+    async def test_completed_same_second_rerun_uses_new_workflow_id(self) -> None:
+        from src.simulation.workflows.scoring_workflow import dispatch_community_scoring
+
+        cs_id = uuid4()
+        fake_dbos = _make_fake_dbos_dispatch_environment()
+
+        with (
+            patch(
+                "src.simulation.workflows.scoring_workflow.community_scoring_queue.enqueue",
+                side_effect=fake_dbos["enqueue"],
+            ),
+            patch("dbos.SetWorkflowID", side_effect=fake_dbos["set_workflow_id"]),
+            patch(
+                "dbos.SetEnqueueOptions",
+                side_effect=fake_dbos["set_enqueue_options"],
+            ),
+            patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
+            patch(
+                "src.simulation.workflows.scoring_workflow.time.time",
+                return_value=1000000,
+            ),
+            patch(
+                "src.simulation.workflows.scoring_workflow.time.time_ns",
+                side_effect=[1000000000000000000, 1000000000000000001],
+            ),
+        ):
+            first_workflow_id = await dispatch_community_scoring(cs_id)
+            fake_dbos["active_deduplication_ids"].clear()
+            second_workflow_id = await dispatch_community_scoring(cs_id)
+
+        assert first_workflow_id != second_workflow_id
+
+    @pytest.mark.asyncio
+    async def test_in_flight_duplicate_dispatch_raises_queue_deduplication_error(self) -> None:
+        from src.simulation.workflows.scoring_workflow import dispatch_community_scoring
+
+        cs_id = uuid4()
+        fake_dbos = _make_fake_dbos_dispatch_environment()
+
+        with (
+            patch(
+                "src.simulation.workflows.scoring_workflow.community_scoring_queue.enqueue",
+                side_effect=fake_dbos["enqueue"],
+            ),
+            patch("dbos.SetWorkflowID", side_effect=fake_dbos["set_workflow_id"]),
+            patch(
+                "dbos.SetEnqueueOptions",
+                side_effect=fake_dbos["set_enqueue_options"],
+            ),
+            patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
+            patch(
+                "src.simulation.workflows.scoring_workflow.time.time",
+                return_value=1000000,
+            ),
+            patch(
+                "src.simulation.workflows.scoring_workflow.time.time_ns",
+                side_effect=[1000000000000000000, 1000000000000000001],
+            ),
+        ):
+            await dispatch_community_scoring(cs_id)
+            with pytest.raises(DBOSQueueDeduplicatedError):
+                await dispatch_community_scoring(cs_id)

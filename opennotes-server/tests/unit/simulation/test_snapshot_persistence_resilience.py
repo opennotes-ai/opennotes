@@ -10,7 +10,6 @@ from sqlalchemy.exc import IntegrityError
 
 from src.notes.scoring_schemas import NoteScoreResponse, ScoreConfidence
 from src.simulation.scoring_integration import (
-    ScoringRunResult,
     score_community_server_notes,
     trigger_scoring_for_simulation,
 )
@@ -94,9 +93,203 @@ def _mock_db_for_community_scoring(note_count, unscored_notes, rescore_notes):
     return db
 
 
+class _CompletedFuture:
+    def add_done_callback(self, callback):
+        callback(self)
+
+    def exception(self):
+        return None
+
+
+class _ImmediateExecutorLoop:
+    def __init__(self, events: list[str]):
+        self._events = events
+
+    def run_in_executor(self, _executor, fn, *args):
+        self._events.append("upload")
+        fn(*args)
+        return _CompletedFuture()
+
+
+class _FakeMFCoreScorerAdapter:
+    def __init__(self, factors: dict[str, object]):
+        self._factors = factors
+
+    def get_last_scoring_factors(self) -> dict[str, object]:
+        return self._factors
+
+
 class TestSnapshotPersistenceResilience:
     @pytest.mark.asyncio
-    async def test_scoring_completes_when_snapshot_persistence_raises(self) -> None:
+    async def test_maybe_persist_snapshot_returns_none_for_non_mf_scorer(self) -> None:
+        from src.simulation import scoring_integration
+
+        db = AsyncMock()
+
+        assert (
+            await scoring_integration._maybe_persist_snapshot(
+                object(),
+                uuid4(),
+                "Minimal",
+                "other",
+                db,
+            )
+            is None
+        )
+
+    def test_schedule_scoring_snapshot_upload_skips_empty_payload(self) -> None:
+        from src.simulation import scoring_integration
+
+        with patch("src.simulation.scoring_integration.asyncio.get_running_loop") as mock_loop:
+            scoring_integration._schedule_scoring_snapshot_upload(uuid4(), None)
+
+        mock_loop.assert_not_called()
+
+    def test_schedule_scoring_snapshot_upload_logs_executor_errors(self) -> None:
+        from src.simulation import scoring_integration
+
+        community_server_id = uuid4()
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.asyncio.get_running_loop",
+                side_effect=RuntimeError("loop unavailable"),
+            ),
+            patch("src.simulation.scoring_integration.logger") as mock_logger,
+        ):
+            scoring_integration._schedule_scoring_snapshot_upload(
+                community_server_id,
+                {"snapshot": "payload"},
+            )
+
+        mock_logger.exception.assert_called_once()
+        assert (
+            mock_logger.exception.call_args.args[0]
+            == "Failed to schedule GCS scoring snapshot upload"
+        )
+        assert mock_logger.exception.call_args.kwargs["extra"]["community_server_id"] == str(
+            community_server_id
+        )
+
+    @pytest.mark.asyncio
+    async def test_manual_scoring_publishes_history_only_after_commit(self) -> None:
+        cs_id = uuid4()
+        note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note.ratings = [_make_rating() for _ in range(5)]
+        db = _mock_db_for_community_scoring(note_count=10, unscored_notes=[note], rescore_notes=[])
+        events: list[str] = []
+
+        async def track_commit() -> None:
+            events.append("commit")
+
+        db.commit = AsyncMock(side_effect=track_commit)
+
+        mock_scorer = _FakeMFCoreScorerAdapter(
+            {
+                "note_count": 10,
+                "rater_count": 5,
+                "rater_factors": {"r1": 0.1},
+                "note_factors": {str(note.id): 0.2},
+                "global_intercept": 0.3,
+            }
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+                return_value=_make_score_response(note.id, score=0.8, rating_count=5),
+            ),
+            patch(
+                "src.simulation.scoring_integration.MFCoreScorerAdapter",
+                _FakeMFCoreScorerAdapter,
+            ),
+            patch(
+                "src.simulation.scoring_integration.settings.SCORING_HISTORY_BUCKET", "test-bucket"
+            ),
+            patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory,
+            patch(
+                "src.simulation.scoring_integration.persist_scoring_snapshot",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.simulation.scoring_integration._record_scoring_metrics",
+                new_callable=AsyncMock,
+                return_value="discord",
+            ),
+            patch(
+                "src.simulation.scoring_integration.upload_scoring_snapshot",
+                side_effect=lambda *_args, **_kwargs: None,
+            ),
+            patch(
+                "src.simulation.scoring_integration.asyncio.get_running_loop",
+                return_value=_ImmediateExecutorLoop(events),
+            ),
+        ):
+            mock_factory.return_value.get_scorer.return_value = mock_scorer
+            await score_community_server_notes(cs_id, db)
+
+        assert events == ["commit", "upload"]
+
+    @pytest.mark.asyncio
+    async def test_manual_scoring_skips_history_upload_when_commit_fails(self) -> None:
+        cs_id = uuid4()
+        note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note.ratings = [_make_rating() for _ in range(5)]
+        db = _mock_db_for_community_scoring(note_count=10, unscored_notes=[note], rescore_notes=[])
+        events: list[str] = []
+
+        async def fail_commit() -> None:
+            events.append("commit")
+            raise RuntimeError("commit failed")
+
+        db.commit = AsyncMock(side_effect=fail_commit)
+
+        mock_scorer = _FakeMFCoreScorerAdapter(
+            {
+                "note_count": 10,
+                "rater_count": 5,
+                "rater_factors": {"r1": 0.1},
+                "note_factors": {str(note.id): 0.2},
+                "global_intercept": 0.3,
+            }
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+                return_value=_make_score_response(note.id, score=0.8, rating_count=5),
+            ),
+            patch(
+                "src.simulation.scoring_integration.MFCoreScorerAdapter",
+                _FakeMFCoreScorerAdapter,
+            ),
+            patch(
+                "src.simulation.scoring_integration.settings.SCORING_HISTORY_BUCKET", "test-bucket"
+            ),
+            patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory,
+            patch(
+                "src.simulation.scoring_integration.persist_scoring_snapshot",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.simulation.scoring_integration.upload_scoring_snapshot",
+                side_effect=lambda *_args, **_kwargs: None,
+            ),
+            patch(
+                "src.simulation.scoring_integration.asyncio.get_running_loop",
+                return_value=_ImmediateExecutorLoop(events),
+            ),
+        ):
+            mock_factory.return_value.get_scorer.return_value = mock_scorer
+            with pytest.raises(RuntimeError, match="commit failed"):
+                await score_community_server_notes(cs_id, db)
+
+        assert events == ["commit"]
+
+    @pytest.mark.asyncio
+    async def test_manual_scoring_raises_when_snapshot_persistence_raises(self) -> None:
         cs_id = uuid4()
         note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
         note.ratings = [_make_rating() for _ in range(5)]
@@ -120,12 +313,10 @@ class TestSnapshotPersistenceResilience:
             ),
         ):
             mock_calc.return_value = _make_score_response(note.id, score=0.8, rating_count=5)
+            with pytest.raises(IntegrityError):
+                await score_community_server_notes(cs_id, db)
 
-            result = await score_community_server_notes(cs_id, db)
-
-        assert result.total_scores_computed == 1
-        assert result.unscored_notes_processed == 1
-        db.commit.assert_awaited_once()
+        db.commit.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_snapshot_failure_is_logged_with_community_server_id(
@@ -155,8 +346,8 @@ class TestSnapshotPersistenceResilience:
             caplog.at_level(logging.ERROR, logger="src.simulation.scoring_integration"),
         ):
             mock_calc.return_value = _make_score_response(note.id, score=0.8, rating_count=5)
-
-            await score_community_server_notes(cs_id, db)
+            with pytest.raises(IntegrityError):
+                await score_community_server_notes(cs_id, db)
 
         error_records = [r for r in caplog.records if r.levelno >= logging.ERROR]
         assert len(error_records) >= 1
@@ -165,7 +356,7 @@ class TestSnapshotPersistenceResilience:
         assert snapshot_record.community_server_id == str(cs_id)
 
     @pytest.mark.asyncio
-    async def test_simulation_scoring_completes_when_snapshot_persistence_raises(self) -> None:
+    async def test_simulation_scoring_raises_when_snapshot_persistence_raises(self) -> None:
         sim_run_id = uuid4()
         cs_id = uuid4()
         note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
@@ -225,9 +416,175 @@ class TestSnapshotPersistenceResilience:
             ),
         ):
             mock_calc.return_value = _make_score_response(note.id, score=0.7, rating_count=5)
+            with pytest.raises(IntegrityError):
+                await trigger_scoring_for_simulation(sim_run_id, db)
 
-            result = await trigger_scoring_for_simulation(sim_run_id, db)
+        db.commit.assert_not_awaited()
 
-        assert isinstance(result, ScoringRunResult)
-        assert result.scores_computed == 1
-        db.commit.assert_awaited_once()
+    @pytest.mark.asyncio
+    async def test_simulation_scoring_publishes_history_only_after_commit(self) -> None:
+        sim_run_id = uuid4()
+        cs_id = uuid4()
+        note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note.ratings = [_make_rating() for _ in range(5)]
+        run = MagicMock()
+        run.community_server_id = cs_id
+        run.metrics = {}
+        db = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 10
+        note_batch = MagicMock()
+        note_batch.scalars.return_value.all.return_value = [note]
+        empty_batch = MagicMock()
+        empty_batch.scalars.return_value.all.return_value = []
+        update_result = MagicMock()
+        request_update_result = MagicMock()
+        db.get = AsyncMock(return_value=run)
+        db.execute = AsyncMock(
+            side_effect=[
+                count_result,
+                note_batch,
+                update_result,
+                empty_batch,
+                request_update_result,
+            ]
+        )
+        events: list[str] = []
+
+        async def track_commit() -> None:
+            events.append("commit")
+
+        db.commit = AsyncMock(side_effect=track_commit)
+
+        mock_scorer = _FakeMFCoreScorerAdapter(
+            {
+                "note_count": 10,
+                "rater_count": 5,
+                "rater_factors": {"r1": 0.1},
+                "note_factors": {str(note.id): 0.2},
+                "global_intercept": 0.3,
+            }
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+                return_value=_make_score_response(note.id, score=0.7, rating_count=5),
+            ),
+            patch(
+                "src.simulation.scoring_integration.MFCoreScorerAdapter",
+                _FakeMFCoreScorerAdapter,
+            ),
+            patch(
+                "src.simulation.scoring_integration.settings.SCORING_HISTORY_BUCKET", "test-bucket"
+            ),
+            patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory,
+            patch(
+                "src.simulation.scoring_integration.persist_scoring_snapshot",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.simulation.scoring_integration._add_count_metrics",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.simulation.scoring_integration._record_scoring_metrics",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.simulation.scoring_integration.upload_scoring_snapshot",
+                side_effect=lambda *_args, **_kwargs: None,
+            ),
+            patch(
+                "src.simulation.scoring_integration.asyncio.get_running_loop",
+                return_value=_ImmediateExecutorLoop(events),
+            ),
+        ):
+            mock_factory.return_value.get_scorer.return_value = mock_scorer
+            await trigger_scoring_for_simulation(sim_run_id, db)
+
+        assert events == ["commit", "upload"]
+
+    @pytest.mark.asyncio
+    async def test_simulation_scoring_skips_history_upload_when_commit_fails(self) -> None:
+        sim_run_id = uuid4()
+        cs_id = uuid4()
+        note = _make_note(community_server_id=cs_id, status="NEEDS_MORE_RATINGS")
+        note.ratings = [_make_rating() for _ in range(5)]
+        run = MagicMock()
+        run.community_server_id = cs_id
+        run.metrics = {}
+        db = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 10
+        note_batch = MagicMock()
+        note_batch.scalars.return_value.all.return_value = [note]
+        empty_batch = MagicMock()
+        empty_batch.scalars.return_value.all.return_value = []
+        update_result = MagicMock()
+        request_update_result = MagicMock()
+        db.get = AsyncMock(return_value=run)
+        db.execute = AsyncMock(
+            side_effect=[
+                count_result,
+                note_batch,
+                update_result,
+                empty_batch,
+                request_update_result,
+            ]
+        )
+        events: list[str] = []
+
+        async def fail_commit() -> None:
+            events.append("commit")
+            raise RuntimeError("commit failed")
+
+        db.commit = AsyncMock(side_effect=fail_commit)
+
+        mock_scorer = _FakeMFCoreScorerAdapter(
+            {
+                "note_count": 10,
+                "rater_count": 5,
+                "rater_factors": {"r1": 0.1},
+                "note_factors": {str(note.id): 0.2},
+                "global_intercept": 0.3,
+            }
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+                return_value=_make_score_response(note.id, score=0.7, rating_count=5),
+            ),
+            patch(
+                "src.simulation.scoring_integration.MFCoreScorerAdapter",
+                _FakeMFCoreScorerAdapter,
+            ),
+            patch(
+                "src.simulation.scoring_integration.settings.SCORING_HISTORY_BUCKET", "test-bucket"
+            ),
+            patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory,
+            patch(
+                "src.simulation.scoring_integration.persist_scoring_snapshot",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.simulation.scoring_integration._add_count_metrics",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.simulation.scoring_integration.upload_scoring_snapshot",
+                side_effect=lambda *_args, **_kwargs: None,
+            ),
+            patch(
+                "src.simulation.scoring_integration.asyncio.get_running_loop",
+                return_value=_ImmediateExecutorLoop(events),
+            ),
+        ):
+            mock_factory.return_value.get_scorer.return_value = mock_scorer
+            with pytest.raises(RuntimeError, match="commit failed"):
+                await trigger_scoring_for_simulation(sim_run_id, db)
+
+        assert events == ["commit"]
