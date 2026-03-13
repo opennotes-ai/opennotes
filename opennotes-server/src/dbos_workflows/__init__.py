@@ -114,6 +114,10 @@ from src.dbos_workflows.scheduler_workflows import (
     cleanup_stale_batch_jobs_workflow,
     monitor_stuck_batch_jobs_workflow,
 )
+from src.dbos_workflows.token_bucket.cleanup import (
+    CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME,
+    cleanup_stale_token_holds,
+)
 
 __all__ = [
     "AI_NOTE_GENERATION_WORKFLOW_NAME",
@@ -121,6 +125,7 @@ __all__ = [
     "BULK_APPROVAL_WORKFLOW_NAME",
     "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
     "CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME",
+    "CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME",
     "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME",
     "FACT_CHECK_IMPORT_WORKFLOW_NAME",
     "MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME",
@@ -138,6 +143,7 @@ __all__ = [
     "bulk_approval_workflow",
     "call_persist_audit_log",
     "cleanup_stale_batch_jobs_workflow",
+    "cleanup_stale_token_holds",
     "content_scan_orchestration_workflow",
     "destroy_dbos",
     "dispatch_bulk_approval_workflow",

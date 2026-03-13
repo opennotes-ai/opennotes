@@ -289,75 +289,28 @@ async def _run_startup_validation() -> None:
 
 
 def _register_dbos_workflows() -> list[str]:
-    """Import all DBOS workflow modules and return their registered workflow names.
-
-    Each module is imported in its own try/except so a single broken module
-    does not prevent the remaining workflows from registering.
-    """
+    """Import workflow packages and return their exported workflow names."""
     import importlib
 
-    registered: list[str] = []
+    def _workflow_name_exports(module: Any) -> set[str]:
+        return {
+            value
+            for name, value in vars(module).items()
+            if name.endswith("_NAME") and isinstance(value, str)
+        }
 
-    workflow_modules: list[tuple[str, list[str]]] = [
-        (
-            "src.dbos_workflows.rechunk_workflow",
-            [
-                "RECHUNK_FACT_CHECK_WORKFLOW_NAME",
-                "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
-                "RECHUNK_PREVIOUSLY_SEEN_WORKFLOW_NAME",
-            ],
-        ),
-        (
-            "src.dbos_workflows.content_scan_workflow",
-            [
-                "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME",
-                "PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME",
-            ],
-        ),
-        (
-            "src.dbos_workflows.content_monitoring_workflows",
-            [
-                "AI_NOTE_GENERATION_WORKFLOW_NAME",
-                "VISION_DESCRIPTION_WORKFLOW_NAME",
-                "AUDIT_LOG_WORKFLOW_NAME",
-            ],
-        ),
-        (
-            "src.dbos_workflows.scheduler_workflows",
-            [
-                "CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME",
-                "MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME",
-            ],
-        ),
-        (
-            "src.dbos_workflows.import_workflow",
-            [
-                "FACT_CHECK_IMPORT_WORKFLOW_NAME",
-                "SCRAPE_CANDIDATES_WORKFLOW_NAME",
-                "PROMOTE_CANDIDATES_WORKFLOW_NAME",
-            ],
-        ),
-        (
-            "src.dbos_workflows.approval_workflow",
-            [
-                "BULK_APPROVAL_WORKFLOW_NAME",
-            ],
-        ),
-        (
-            "src.dbos_workflows.token_bucket.cleanup",
-            ["CLEANUP_STALE_TOKEN_HOLDS_WORKFLOW_NAME"],
-        ),
-    ]
+    registered: set[str] = set()
 
-    for module_path, attr_names in workflow_modules:
+    for module_path in ("src.dbos_workflows", "src.simulation.workflows"):
         try:
-            mod = importlib.import_module(module_path)
-            registered.extend(getattr(mod, attr) for attr in attr_names)
+            workflow_package = importlib.import_module(module_path)
         except Exception as e:
-            module_name = module_path.rsplit(".", 1)[-1]
-            logger.error(f"Failed to import {module_name}: {e}", exc_info=True)
+            logger.error(f"Failed to import workflow package {module_path}: {e}", exc_info=True)
+            continue
 
-    return registered
+        registered.update(_workflow_name_exports(workflow_package))
+
+    return sorted(registered)
 
 
 async def _init_dbos(is_dbos_worker: bool) -> None:

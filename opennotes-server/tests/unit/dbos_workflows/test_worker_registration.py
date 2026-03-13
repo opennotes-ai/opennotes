@@ -10,6 +10,26 @@ import pytest
 class TestWorkerWorkflowRegistration:
     """Verify workflows are registered when SERVER_MODE=dbos_worker."""
 
+    def test_register_dbos_workflows_discovers_package_exported_workflow_names(
+        self,
+    ) -> None:
+        from src import dbos_workflows
+        from src.main import _register_dbos_workflows
+        from src.simulation import workflows as simulation_workflows
+
+        expected = {
+            value
+            for module in (dbos_workflows, simulation_workflows)
+            for name, value in vars(module).items()
+            if name.endswith("_NAME") and isinstance(value, str)
+        }
+
+        registered = set(_register_dbos_workflows())
+
+        assert expected <= registered
+        assert simulation_workflows.SCORE_COMMUNITY_SERVER_WORKFLOW_NAME in registered
+        assert simulation_workflows.RUN_AGENT_TURN_WORKFLOW_NAME in registered
+
     @pytest.mark.asyncio
     async def test_workflow_modules_imported_in_worker_mode(self) -> None:
         """_init_dbos imports workflow modules before launch() in worker mode."""
@@ -76,6 +96,10 @@ class TestWorkerWorkflowRegistration:
                 "promote_candidates_workflow",
                 "bulk_approval_workflow",
                 "cleanup_stale_token_holds",
+                "run_agent_turn",
+                "run_orchestrator",
+                "run_playground_url_extraction",
+                "score_community_server",
             }
             assert workflow_names == expected
 
