@@ -3,7 +3,18 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
+
+
+@pytest.fixture(autouse=True)
+def mock_clear_scan_finalizing_step():
+    with patch(
+        "src.dbos_workflows.content_scan_workflow.clear_scan_finalizing_step",
+        return_value=True,
+    ) as mock_clear:
+        yield mock_clear
 
 
 class TestQueueConcurrencyBumped:

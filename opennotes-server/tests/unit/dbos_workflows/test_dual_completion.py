@@ -14,6 +14,15 @@ from uuid import uuid4
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def mock_clear_scan_finalizing_step():
+    with patch(
+        "src.dbos_workflows.content_scan_workflow.clear_scan_finalizing_step",
+        return_value=True,
+    ) as mock_clear:
+        yield mock_clear
+
+
 def _make_recv_dispatcher(
     batch_responses: list[dict | None],
     tx_responses: list[dict | None],

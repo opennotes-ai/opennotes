@@ -21,6 +21,15 @@ from uuid import uuid4
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def mock_clear_scan_finalizing_step():
+    with patch(
+        "src.dbos_workflows.content_scan_workflow.clear_scan_finalizing_step",
+        return_value=True,
+    ) as mock_clear:
+        yield mock_clear
+
+
 class TestContentScanQueueConfiguration:
     """Tests for DBOS Queue configuration."""
 
@@ -319,7 +328,7 @@ class TestContentScanOrchestrationWorkflow:
             "batch_number": batch_number,
         }
 
-    def test_single_batch_completes_normally(self) -> None:
+    def test_single_batch_completes_normally(self, mock_clear_scan_finalizing_step) -> None:
         """Orchestrator processes one batch then finalizes."""
         from src.dbos_workflows.content_scan_workflow import (
             content_scan_orchestration_workflow,
@@ -376,6 +385,7 @@ class TestContentScanOrchestrationWorkflow:
         assert result["messages_scanned"] == 10
         mock_create.assert_called_once_with(scan_id, community_server_id)
         mock_finalize.assert_called_once()
+        mock_clear_scan_finalizing_step.assert_called_once_with(scan_id=scan_id)
         finalize_kwargs = mock_finalize.call_args.kwargs
         assert finalize_kwargs["processed_count"] == 10
         assert finalize_kwargs["flagged_count"] == 2
