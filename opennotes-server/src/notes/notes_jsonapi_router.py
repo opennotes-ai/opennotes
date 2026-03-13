@@ -56,7 +56,6 @@ from src.common.jsonapi import (
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.events.publisher import event_publisher
-from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.notes import loaders
 from src.notes.message_archive_models import MessageArchive
@@ -69,6 +68,7 @@ from src.notes.schemas import (
     NoteSingleResponse,
     NoteStatus,
 )
+from src.notes.score_event_context import build_score_event_routing_context
 from src.users.models import User
 
 logger = get_logger(__name__)
@@ -743,23 +743,7 @@ async def force_publish_note_jsonapi(
             },
         )
 
-        original_message_id = None
-        channel_id = None
-        if note.request and note.request.message_archive:
-            original_message_id = note.request.message_archive.platform_message_id
-            channel_id = note.request.message_archive.platform_channel_id
-
-        if not channel_id:
-            channel_id = note.channel_id
-
-        platform_community_server_id: str | None = None
-        if note.community_server_id:
-            platform_id_result = await db.execute(
-                select(CommunityServer.platform_community_server_id).where(
-                    CommunityServer.id == note.community_server_id
-                )
-            )
-            platform_community_server_id = platform_id_result.scalar_one_or_none()
+        routing_context = await build_score_event_routing_context(db, note)
 
         force_publish_metadata: dict[str, str | bool | None] = {
             "force_published": True,
@@ -779,9 +763,9 @@ async def force_publish_note_jsonapi(
                 rating_count=len(note.ratings) if note.ratings else 0,
                 tier=3,
                 tier_name="admin_published",
-                original_message_id=original_message_id,
-                channel_id=channel_id,
-                community_server_id=platform_community_server_id,
+                original_message_id=routing_context.original_message_id,
+                channel_id=routing_context.channel_id,
+                community_server_id=routing_context.community_server_id,
                 metadata=force_publish_metadata,
             )
             logger.info(f"Published score update event for force-published note {note_id}")

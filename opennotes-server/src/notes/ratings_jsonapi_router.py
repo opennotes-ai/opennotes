@@ -38,12 +38,12 @@ from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.database import get_db
 from src.events.scoring_events import ScoringEventPublisher
-from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.monitoring.metrics import nats_events_failed_total
 from src.notes import loaders
 from src.notes.models import Note, Rating
 from src.notes.schemas import HelpfulnessLevel
+from src.notes.score_event_context import build_score_event_routing_context
 from src.notes.scoring import ScorerFactory
 from src.notes.scoring_utils import calculate_note_score
 from src.users.models import User
@@ -302,23 +302,7 @@ async def create_rating_jsonapi(
         )
 
         try:
-            original_message_id = None
-            channel_id = None
-            if note.request and note.request.message_archive:
-                original_message_id = note.request.message_archive.platform_message_id
-                channel_id = note.request.message_archive.platform_channel_id
-
-            if not channel_id:
-                channel_id = note.channel_id
-
-            platform_community_server_id: str | None = None
-            if note.community_server_id:
-                platform_id_result = await db.execute(
-                    select(CommunityServer.platform_community_server_id).where(
-                        CommunityServer.id == note.community_server_id
-                    )
-                )
-                platform_community_server_id = platform_id_result.scalar_one_or_none()
+            routing_context = await build_score_event_routing_context(db, note)
 
             await ScoringEventPublisher.publish_note_score_updated(
                 note_id=note.id,
@@ -328,9 +312,9 @@ async def create_rating_jsonapi(
                 rating_count=score_response.rating_count,
                 tier=score_response.tier if score_response.tier and score_response.tier > 0 else 1,
                 tier_name=score_response.tier_name or "unknown",
-                original_message_id=original_message_id,
-                channel_id=channel_id,
-                community_server_id=platform_community_server_id,
+                original_message_id=routing_context.original_message_id,
+                channel_id=routing_context.channel_id,
+                community_server_id=routing_context.community_server_id,
             )
         except Exception as e:
             error_type = type(e).__name__

@@ -104,16 +104,30 @@ export class NotePublisherService {
         return;
       }
 
+      const sourceContextMissing =
+        !event.original_message_id || !event.channel_id || !event.community_server_id;
       const context = await this.getNoteContext(event);
       if (!context) {
-        logger.info('Skipping score update - no Discord context found', {
-          noteId: event.note_id,
-          eventData: {
-            channelId: event.channel_id,
-            originalMessageId: event.original_message_id,
-            communityServerId: event.community_server_id,
-          },
-        });
+        if (isForcePublished) {
+          logger.warn('Force-publish routing context unavailable after cache fallback', {
+            noteId: event.note_id,
+            sourceContextMissing,
+            cacheLookupAttempted: sourceContextMissing,
+            cacheMiss: true,
+            hasOriginalMessageId: !!event.original_message_id,
+            hasChannelId: !!event.channel_id,
+            hasCommunityServerId: !!event.community_server_id,
+          });
+        } else {
+          logger.info('Skipping score update - no Discord context found', {
+            noteId: event.note_id,
+            eventData: {
+              channelId: event.channel_id,
+              originalMessageId: event.original_message_id,
+              communityServerId: event.community_server_id,
+            },
+          });
+        }
         return;
       }
 
@@ -260,7 +274,7 @@ export class NotePublisherService {
         guildId: event.community_server_id,
       });
       return {
-        noteId: event.note_id.toString(),
+        noteId: event.note_id,
         originalMessageId: event.original_message_id,
         channelId: event.channel_id,
         guildId: event.community_server_id,
@@ -274,7 +288,7 @@ export class NotePublisherService {
       missing_channel_id: !event.channel_id,
       missing_community_server_id: !event.community_server_id,
     });
-    return await this.noteContextService.getNoteContext(event.note_id.toString());
+    return await this.noteContextService.getNoteContext(event.note_id);
   }
 
   private async isDuplicate(originalMessageId: string, guildId: string): Promise<boolean> {
@@ -393,9 +407,9 @@ export class NotePublisherService {
     }
   }
 
-  private async fetchNoteContent(noteId: number): Promise<{ summary: string; imageUrls?: string[] } | null> {
+  private async fetchNoteContent(noteId: string): Promise<{ summary: string; imageUrls?: string[] } | null> {
     try {
-      const response = await apiClient.getNote(noteId.toString());
+      const response = await apiClient.getNote(noteId);
       if (!response.data.attributes.summary) {
         return null;
       }
@@ -589,7 +603,7 @@ export class NotePublisherService {
       }
 
       await apiClient.recordNotePublisher({
-        noteId: String(event.note_id),
+        noteId: event.note_id,
         originalMessageId: context.originalMessageId,
         channelId: context.channelId,
         guildId: context.guildId,

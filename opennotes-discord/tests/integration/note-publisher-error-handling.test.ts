@@ -265,7 +265,7 @@ describeWithNats('NotePublisher Error Handling Integration Tests (AC #7)', () =>
   describe('Missing Note Content', () => {
     it('should handle missing note content from backend API', async () => {
       const event = createBaseScoreEvent({
-        note_id: 999,
+        note_id: '999',
       });
 
       mockFetch

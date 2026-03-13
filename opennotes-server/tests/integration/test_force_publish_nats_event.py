@@ -128,6 +128,7 @@ class TestForcePublishNATSEvent:
                     "classification": NoteClassification.NOT_MISLEADING.value,
                     "community_server_id": str(nats_event_community_server["uuid"]),
                     "author_id": str(nats_event_registered_user["profile_id"]),
+                    "channel_id": "force-publish-channel-123",
                 },
             }
         }
@@ -167,3 +168,5 @@ class TestForcePublishNATSEvent:
             f"community_server_id should be the platform snowflake ({expected_platform_id}), "
             f"got: {event_data['community_server_id']}"
         )
+        assert event_data["channel_id"] == "force-publish-channel-123"
+        assert event_data["original_message_id"] is None

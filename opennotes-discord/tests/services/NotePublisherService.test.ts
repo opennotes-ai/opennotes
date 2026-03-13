@@ -158,7 +158,7 @@ describe('NotePublisherService', () => {
   describe('threshold validation (AC #2)', () => {
     it('should reject events below threshold', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_BELOW_THRESHOLD,
         confidence: 'standard',
         algorithm: 'BayesianAverage',
@@ -178,7 +178,7 @@ describe('NotePublisherService', () => {
 
     it('should reject events with non-standard confidence', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'provisional',
         algorithm: 'BayesianAverage',
@@ -198,7 +198,7 @@ describe('NotePublisherService', () => {
 
     it('should accept events meeting threshold with standard confidence', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -234,7 +234,7 @@ describe('NotePublisherService', () => {
   describe('duplicate prevention (AC #7)', () => {
     it('should skip if auto-post already exists for message', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -258,7 +258,7 @@ describe('NotePublisherService', () => {
   describe('cooldown system (AC #8)', () => {
     it('should skip if channel is on cooldown', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -283,7 +283,7 @@ describe('NotePublisherService', () => {
 
     it('should proceed if cooldown expired', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -321,7 +321,7 @@ describe('NotePublisherService', () => {
   describe('configuration (AC #3)', () => {
     it('should skip if auto-posting disabled for server', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -350,7 +350,7 @@ describe('NotePublisherService', () => {
 
     it('should skip if auto-posting disabled for channel', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -382,7 +382,7 @@ describe('NotePublisherService', () => {
   describe('permission checks (AC #9)', () => {
     it('should skip if missing SEND_MESSAGES permission', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -412,7 +412,7 @@ describe('NotePublisherService', () => {
   describe('error handling (AC #10)', () => {
     it('should handle deleted original message gracefully', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -449,7 +449,7 @@ describe('NotePublisherService', () => {
   describe('message formatting (AC #6 - updated for Components v2)', () => {
     it('should format message with all required components using v2 format', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -501,7 +501,7 @@ describe('NotePublisherService', () => {
   describe('parallel API checks (task-386 AC #6)', () => {
     it('should execute isDuplicate, isOnCooldown, and getConfig in parallel', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -555,7 +555,7 @@ describe('NotePublisherService', () => {
   describe('error handling with Promise.all (task-386 AC #7)', () => {
     it('should handle errors in parallel checks gracefully', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -582,7 +582,7 @@ describe('NotePublisherService', () => {
 
     it('should handle partial failures in parallel checks', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -608,7 +608,7 @@ describe('NotePublisherService', () => {
   describe('permission caching (task-386 AC #3)', () => {
     it('should cache permission checks for 5 minutes', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -648,7 +648,7 @@ describe('NotePublisherService', () => {
     describe('AC #1: Convert auto-post embed to ContainerBuilder', () => {
       it('should send message with ContainerBuilder components', async () => {
         const event: ScoreUpdateEvent = {
-          note_id: 1,
+          note_id: '1',
           score: TEST_SCORE_ABOVE_THRESHOLD,
           confidence: 'standard',
           algorithm: 'MFCoreScorer',
@@ -691,7 +691,7 @@ describe('NotePublisherService', () => {
     describe('AC #2: Add visual score indicator using TextDisplayBuilder', () => {
       it('should include score percentage in message components', async () => {
         const event: ScoreUpdateEvent = {
-          note_id: 1,
+          note_id: '1',
           score: TEST_SCORE_ABOVE_THRESHOLD,
           confidence: 'standard',
           algorithm: 'MFCoreScorer',
@@ -730,7 +730,7 @@ describe('NotePublisherService', () => {
     describe('AC #3: Use SectionBuilder for note metadata', () => {
       it('should include author, timestamp, and score in metadata section', async () => {
         const event: ScoreUpdateEvent = {
-          note_id: 1,
+          note_id: '1',
           score: TEST_SCORE_ABOVE_THRESHOLD,
           confidence: 'standard',
           algorithm: 'MFCoreScorer',
@@ -770,7 +770,7 @@ describe('NotePublisherService', () => {
     describe('AC #4: Apply accent color based on score', () => {
       it('should use HELPFUL color for high confidence published notes', async () => {
         const event: ScoreUpdateEvent = {
-          note_id: 1,
+          note_id: '1',
           score: TEST_SCORE_ABOVE_THRESHOLD,
           confidence: 'standard',
           algorithm: 'MFCoreScorer',
@@ -809,7 +809,7 @@ describe('NotePublisherService', () => {
     describe('AC #5: Add MediaGalleryBuilder support for image references', () => {
       it('should include media gallery when note has image URLs', async () => {
         const event: ScoreUpdateEvent = {
-          note_id: 1,
+          note_id: '1',
           score: TEST_SCORE_ABOVE_THRESHOLD,
           confidence: 'standard',
           algorithm: 'MFCoreScorer',
@@ -850,7 +850,7 @@ describe('NotePublisherService', () => {
 
       it('should not include media gallery when note has no images', async () => {
         const event: ScoreUpdateEvent = {
-          note_id: 1,
+          note_id: '1',
           score: TEST_SCORE_ABOVE_THRESHOLD,
           confidence: 'standard',
           algorithm: 'MFCoreScorer',
@@ -889,7 +889,7 @@ describe('NotePublisherService', () => {
     describe('AC #6: Apply MessageFlags.IsComponentsV2', () => {
       it('should include IsComponentsV2 flag in message options', async () => {
         const event: ScoreUpdateEvent = {
-          note_id: 1,
+          note_id: '1',
           score: TEST_SCORE_ABOVE_THRESHOLD,
           confidence: 'standard',
           algorithm: 'MFCoreScorer',
@@ -930,7 +930,7 @@ describe('NotePublisherService', () => {
     describe('force-published notes', () => {
       it('should use different header for force-published notes', async () => {
         const event: ScoreUpdateEvent = {
-          note_id: 1,
+          note_id: '1',
           score: TEST_SCORE_ABOVE_THRESHOLD,
           confidence: 'standard',
           algorithm: 'MFCoreScorer',
@@ -974,7 +974,7 @@ describe('NotePublisherService', () => {
 
     describe('force-publish bypasses guards (task-1281)', () => {
       const createForcePublishEvent = (): ScoreUpdateEvent => ({
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_BELOW_THRESHOLD,
         confidence: 'provisional',
         algorithm: 'MFCoreScorer',
@@ -1063,6 +1063,60 @@ describe('NotePublisherService', () => {
         expect(mockConfigService.getConfig).not.toHaveBeenCalled();
         expect(mockChannel.send).toHaveBeenCalled();
       });
+
+      it('should use cached note context for force-published events when the event lacks routing fields', async () => {
+        const event: ScoreUpdateEvent = {
+          ...createForcePublishEvent(),
+          original_message_id: undefined,
+          channel_id: undefined,
+          community_server_id: undefined,
+        };
+
+        mockNoteContextService.getNoteContext.mockResolvedValue({
+          noteId: event.note_id,
+          originalMessageId: 'msg-cached',
+          channelId: 'channel-456',
+          guildId: 'guild-123',
+          authorId: '',
+        });
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockNoteContextService.getNoteContext).toHaveBeenCalledWith(event.note_id);
+        expect(mockChannel.send).toHaveBeenCalled();
+        expect(mockLogger.warn).not.toHaveBeenCalledWith(
+          'Force-publish routing context unavailable after cache fallback',
+          expect.anything()
+        );
+      });
+
+      it('should log a dedicated warning when a force-publish event still has no routing context after cache fallback', async () => {
+        const event: ScoreUpdateEvent = {
+          ...createForcePublishEvent(),
+          original_message_id: undefined,
+          channel_id: undefined,
+          community_server_id: undefined,
+        };
+
+        mockNoteContextService.getNoteContext.mockResolvedValue(null);
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          'Force-publish routing context unavailable after cache fallback',
+          expect.objectContaining({
+            noteId: event.note_id,
+            sourceContextMissing: true,
+            cacheLookupAttempted: true,
+            cacheMiss: true,
+            hasOriginalMessageId: false,
+            hasChannelId: false,
+            hasCommunityServerId: false,
+          })
+        );
+        expect(mockChannel.send).not.toHaveBeenCalled();
+        expect(mockApiClient.recordNotePublisher).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -1082,7 +1136,7 @@ describe('NotePublisherService', () => {
       (mockClient as any).guilds.cache.set(discordSnowflake, { id: discordSnowflake });
 
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -1124,7 +1178,7 @@ describe('NotePublisherService', () => {
       (mockClient as any).guilds.cache.set(uuidGuildId, { id: uuidGuildId });
 
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -1164,7 +1218,7 @@ describe('NotePublisherService', () => {
   describe('playground community server early-return (task-1134)', () => {
     it('should skip events from community servers not in guild cache', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'BayesianAverage',
@@ -1186,7 +1240,7 @@ describe('NotePublisherService', () => {
 
     it('should process events from community servers in guild cache', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'BayesianAverage',
@@ -1222,7 +1276,7 @@ describe('NotePublisherService', () => {
 
     it('should process events without community_server_id (fallback to cache lookup)', async () => {
       const event: ScoreUpdateEvent = {
-        note_id: 1,
+        note_id: '1',
         score: TEST_SCORE_ABOVE_THRESHOLD,
         confidence: 'standard',
         algorithm: 'BayesianAverage',
