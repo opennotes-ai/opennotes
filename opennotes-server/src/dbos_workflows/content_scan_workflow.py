@@ -101,6 +101,25 @@ def get_scan_finalizing_redis_key(scan_id: str) -> str:
     return f"{env}:bulk_scan:finalizing:{scan_id}"
 
 
+def _build_suppressed_batch_result(
+    *,
+    batch_number: int,
+    skipped_count: int = 0,
+    error_count: int = 0,
+    step_errors: list[str] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "processed": 0,
+        "skipped": skipped_count,
+        "errors": error_count,
+        "flagged_count": 0,
+        "batch_number": batch_number,
+    }
+    if step_errors:
+        result["step_errors"] = step_errors
+    return result
+
+
 async def store_messages_in_redis(
     redis_client: Redis,
     key: str,
@@ -417,18 +436,31 @@ def content_scan_orchestration_workflow(  # noqa: PLR0912
 
         mark_scan_finalizing_step(scan_id=scan_id)
 
-        result = finalize_scan_step(
-            scan_id=scan_id,
-            community_server_id=community_server_id,
-            messages_scanned=messages_scanned,
-            processed_count=processed_count,
-            skipped_count=skipped_count,
-            error_count=error_count,
-            flagged_count=flagged_count,
-            all_transmitted_observed=all_transmitted,
-            finalization_incomplete=all_transmitted
-            and (processed_count + skipped_count + error_count) < messages_scanned,
-        )
+        try:
+            result = finalize_scan_step(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                messages_scanned=messages_scanned,
+                processed_count=processed_count,
+                skipped_count=skipped_count,
+                error_count=error_count,
+                flagged_count=flagged_count,
+                all_transmitted_observed=all_transmitted,
+                finalization_incomplete=all_transmitted
+                and (processed_count + skipped_count + error_count) < messages_scanned,
+            )
+        except Exception:
+            try:
+                clear_scan_finalizing_step(scan_id=scan_id)
+            except Exception:
+                logger.warning(
+                    "Failed to clear finalizing latch after finalization error",
+                    extra={"scan_id": scan_id},
+                    exc_info=True,
+                )
+            raise
+
+        clear_scan_finalizing_step(scan_id=scan_id)
 
         logger.info(
             "Content scan orchestration workflow completed",
@@ -514,6 +546,21 @@ def mark_scan_finalizing_step(scan_id: str) -> bool:
         return True
 
     return run_sync(_mark_finalizing())
+
+
+@DBOS.step()
+def clear_scan_finalizing_step(scan_id: str) -> bool:
+    from src.cache.redis_client import get_shared_redis_client
+    from src.config import get_settings
+
+    settings = get_settings()
+
+    async def _clear_finalizing() -> bool:
+        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
+        await redis_conn.delete(get_scan_finalizing_redis_key(scan_id))
+        return True
+
+    return run_sync(_clear_finalizing())
 
 
 def _run_batch_scan_steps(
@@ -662,13 +709,12 @@ def process_content_scan_batch(
                 "Scan became terminal after preprocess; skipping remaining batch stages",
                 extra={"scan_id": scan_id, "batch_number": batch_number},
             )
-            return {
-                "processed": 0,
-                "skipped": 0,
-                "errors": 0,
-                "flagged_count": 0,
-                "batch_number": batch_number,
-            }
+            return _build_suppressed_batch_result(
+                batch_number=batch_number,
+                skipped_count=skipped_count,
+                error_count=len(step_errors),
+                step_errors=step_errors,
+            )
 
         if message_count > 0:
             filtered_messages_key = preprocess_result["filtered_messages_key"]
@@ -702,13 +748,12 @@ def process_content_scan_batch(
             "Scan became terminal/finalizing before batch_complete; suppressing late signal",
             extra={"scan_id": scan_id, "batch_number": batch_number},
         )
-        return {
-            "processed": 0,
-            "skipped": 0,
-            "errors": 0,
-            "flagged_count": 0,
-            "batch_number": batch_number,
-        }
+        return _build_suppressed_batch_result(
+            batch_number=batch_number,
+            skipped_count=skipped_count,
+            error_count=errors,
+            step_errors=step_errors,
+        )
 
     DBOS.send(
         orchestrator_workflow_id,
@@ -1363,7 +1408,7 @@ def relevance_filter_step(
                     "Relevance step skipped because scan is already terminal/finalizing",
                     extra={"scan_id": scan_id, "batch_number": batch_number},
                 )
-                return {"flagged_count": 0, "errors": 0}
+                return {"flagged_count": 0, "errors": errors}
 
             try:
                 flagged = await service._filter_candidates_with_relevance(all_candidates, scan_uuid)
@@ -1375,12 +1420,12 @@ def relevance_filter_step(
                     scan_id=scan_id,
                     batch_number=batch_number,
                 ):
-                    return {"flagged_count": 0, "errors": 0}
+                    return {"flagged_count": 0, "errors": errors}
 
                 for msg in flagged:
                     await service.append_flagged_result(scan_uuid, msg)
 
-                return {"flagged_count": len(flagged), "errors": 0}
+                return {"flagged_count": len(flagged), "errors": errors}
             except Exception as e:
                 logger.warning(
                     "Error in relevance filter step",
@@ -1390,13 +1435,23 @@ def relevance_filter_step(
                         "error": str(e),
                     },
                 )
+                if await _skip_step_persist_if_scan_terminal(
+                    session,
+                    redis_conn,
+                    scan_uuid,
+                    step_name="Relevance",
+                    scan_id=scan_id,
+                    batch_number=batch_number,
+                ):
+                    return {"flagged_count": 0, "errors": errors}
+
                 await service.record_error(
                     scan_id=scan_uuid,
                     error_type=type(e).__name__,
                     error_message=str(e),
                     batch_number=batch_number,
                 )
-                return {"flagged_count": 0, "errors": len(all_candidates)}
+                return {"flagged_count": 0, "errors": errors + len(all_candidates)}
 
     return run_sync(_relevance_filter())
 
