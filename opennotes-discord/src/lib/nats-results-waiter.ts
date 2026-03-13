@@ -249,9 +249,7 @@ export class NatsResultsWaiter {
 
           case EventType.BULK_SCAN_RESULTS:
             msg.ack();
-            logger.debug('Received bulk_scan.results; waiting for terminal event before fetching', {
-              scanId: this.scanId,
-            });
+            await this.fetchAuthoritativeResultsIfTerminal(resolve, reject);
             break;
 
           case EventType.BULK_SCAN_FAILED:
@@ -276,6 +274,38 @@ export class NatsResultsWaiter {
         });
         msg.ack();
       }
+    }
+  }
+
+  private async fetchAuthoritativeResultsIfTerminal(
+    resolve: (value: BulkScanResultsResponse) => void,
+    reject: (reason: Error) => void
+  ): Promise<void> {
+    if (this.resolved) {
+      return;
+    }
+
+    try {
+      const results = await apiClient.getBulkScanResults(this.scanId);
+      const status = results.data.attributes.status;
+
+      if (status === 'completed' || status === 'failed') {
+        this.cleanup();
+        resolve(results);
+        return;
+      }
+
+      logger.debug('Received bulk_scan.results before terminal API state; continuing to wait', {
+        scanId: this.scanId,
+        status,
+      });
+    } catch (fetchErr) {
+      this.cleanup();
+      reject(
+        new Error(
+          `Failed to fetch results: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`
+        )
+      );
     }
   }
 }

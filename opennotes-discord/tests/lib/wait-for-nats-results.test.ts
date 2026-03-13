@@ -200,14 +200,80 @@ describe('NatsResultsWaiter', () => {
     expect(result.data.attributes.status).toBe('completed');
   });
 
-  test('does not resolve or fetch terminal status on bulk_scan.results alone', async () => {
-    const resultsSub = createControlledSub();
-    const terminalFetch = createDeferred<any>();
-    mockGetBulkScanResults.mockReturnValue(terminalFetch.promise);
+  test('fetches authoritative API results for bulk_scan.results and returns failed zero-message scans', async () => {
+    mockGetBulkScanResults.mockResolvedValueOnce({
+      data: {
+        id: 'scan-123',
+        type: 'bulk-scan',
+        attributes: {
+          status: 'failed',
+          messages_scanned: 0,
+          messages_flagged: 0,
+        },
+      },
+      included: [],
+      jsonapi: { version: '1.0' },
+    });
+
+    const resultsMessage = createMockMessage({
+      event_type: 'bulk_scan.results',
+      scan_id: 'scan-123',
+      messages_scanned: 0,
+      messages_flagged: 0,
+      flagged_messages: [],
+    });
 
     mockSubscribe
-      .mockResolvedValueOnce(resultsSub.sub)
       .mockResolvedValueOnce(createMockSub([]))
+      .mockResolvedValueOnce(createMockSub([resultsMessage]))
+      .mockResolvedValueOnce(createMockSub([]))
+      .mockResolvedValueOnce(createMockSub([]));
+
+    const result = await waitForNatsResults('scan-123', {
+      jetstream: () => ({ subscribe: mockSubscribe }),
+    } as any);
+
+    expect(resultsMessage.ack).toHaveBeenCalledTimes(1);
+    expect(mockGetBulkScanResults).toHaveBeenCalledWith('scan-123');
+    expect(result.data.attributes.status).toBe('failed');
+    expect(result.data.attributes.messages_scanned).toBe(0);
+  });
+
+  test('continues waiting when bulk_scan.results arrives before the API becomes terminal', async () => {
+    const processingFinishedSub = createControlledSub();
+    const resultsSub = createControlledSub();
+
+    mockGetBulkScanResults
+      .mockResolvedValueOnce({
+        data: {
+          id: 'scan-123',
+          type: 'bulk-scan',
+          attributes: {
+            status: 'in_progress',
+            messages_scanned: 10,
+            messages_flagged: 0,
+          },
+        },
+        included: [],
+        jsonapi: { version: '1.0' },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'scan-123',
+          type: 'bulk-scan',
+          attributes: {
+            status: 'completed',
+            messages_scanned: 10,
+            messages_flagged: 1,
+          },
+        },
+        included: [],
+        jsonapi: { version: '1.0' },
+      });
+
+    mockSubscribe
+      .mockResolvedValueOnce(processingFinishedSub.sub)
+      .mockResolvedValueOnce(resultsSub.sub)
       .mockResolvedValueOnce(createMockSub([]))
       .mockResolvedValueOnce(createMockSub([]));
 
@@ -229,12 +295,11 @@ describe('NatsResultsWaiter', () => {
       messages_flagged: 1,
       flagged_messages: [],
     });
-
     resultsSub.push(resultsMessage);
     await flushMicrotasks();
 
     expect(resultsMessage.ack).toHaveBeenCalledTimes(1);
-    expect(mockGetBulkScanResults).not.toHaveBeenCalled();
+    expect(mockGetBulkScanResults).toHaveBeenCalledTimes(1);
     expect(settled).toBe(false);
 
     const finishedMessage = createMockMessage({
@@ -242,28 +307,17 @@ describe('NatsResultsWaiter', () => {
       scan_id: 'scan-123',
       community_server_id: 'community-1',
     });
+    processingFinishedSub.push(finishedMessage);
 
-    resultsSub.push(finishedMessage);
-    await flushMicrotasks();
-
-    expect(mockGetBulkScanResults).toHaveBeenCalledTimes(1);
-
-    const completedPayload = {
+    await expect(waiterPromise).resolves.toMatchObject({
       data: {
-        id: 'scan-123',
-        type: 'bulk-scan',
         attributes: {
           status: 'completed',
           messages_scanned: 10,
-          messages_flagged: 1,
         },
       },
-      included: [],
-      jsonapi: { version: '1.0' },
-    };
-
-    terminalFetch.resolve(completedPayload);
-    await expect(waiterPromise).resolves.toEqual(completedPayload);
+    });
+    expect(mockGetBulkScanResults).toHaveBeenCalledTimes(2);
   });
 
   test('resolves failed scans from API payload after bulk_scan.failed', async () => {

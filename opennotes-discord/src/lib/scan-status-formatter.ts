@@ -173,19 +173,24 @@ export function formatScanStatusPaginated(options: FormatScanStatusOptions): For
     ? formatErrorSummary(errorSummary)
     : '';
 
-  if (status === 'pending' || status === 'in_progress' || status === 'failed') {
-    const headerBase = `**Scan ID:** \`${scanId}\`\n${daysText}`;
-    const header = status === 'pending'
-      ? `**Scan Status: Pending**\n\n${headerBase}`
-      : status === 'in_progress'
-        ? `**Scan Status: In Progress**\n\n${headerBase}**Messages scanned so far:** ${messagesScanned}\n`
-        : `**Scan Status: Failed**\n\n${headerBase}`;
+  if (status === 'pending' || status === 'in_progress') {
+    return {
+      pages: TextPaginator.paginate(''),
+      header: formatScanStatus({
+        scan,
+        guildId,
+        days,
+        warningMessage,
+        includeButtons: false,
+        explanations,
+      }).content,
+      scanId,
+    };
+  }
 
-    const statusMessage = status === 'pending'
-      ? 'The scan is pending and waiting to be processed.'
-      : status === 'in_progress'
-        ? 'The scan is currently in progress...'
-        : 'The scan failed due to processing errors. Please try again later.';
+  if (status === 'failed') {
+    const header = `**Scan Status: Failed**\n\n**Scan ID:** \`${scanId}\`\n${daysText}`;
+    const statusMessage = 'The scan failed due to processing errors. Please try again later.';
 
     const resultsContent = flaggedMessages.length > 0
       ? `\n\n${formatFlaggedMessagesListFull(flaggedMessages, guildId, explanations)}`
