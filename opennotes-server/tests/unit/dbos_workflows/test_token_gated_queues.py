@@ -56,6 +56,10 @@ class TestContentScanTokenGated:
         with (
             patch("src.dbos_workflows.content_scan_workflow.TokenGate") as mock_gate_cls,
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step", return_value={}),
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,

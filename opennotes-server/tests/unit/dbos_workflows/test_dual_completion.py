@@ -64,6 +64,10 @@ class TestDualWorkflowIsolation:
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize_a,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -85,6 +89,10 @@ class TestDualWorkflowIsolation:
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize_b,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos_b,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -262,6 +270,10 @@ class TestDualWorkflowIsolation:
 
             with (
                 patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+                patch(
+                    "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                    return_value=True,
+                ),
                 patch(
                     "src.dbos_workflows.content_scan_workflow.finalize_scan_step",
                     side_effect=capture_finalize,

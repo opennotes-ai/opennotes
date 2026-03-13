@@ -346,6 +346,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -405,6 +409,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -455,6 +463,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -507,6 +519,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -546,6 +562,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -588,6 +608,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -638,6 +662,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -707,6 +735,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -762,6 +794,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -813,6 +849,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -868,6 +908,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -920,6 +964,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -976,6 +1024,10 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -2659,6 +2711,10 @@ class TestSignalCoordination:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -2703,6 +2759,10 @@ class TestSignalCoordination:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -2761,6 +2821,10 @@ class TestCountMismatchBreakCondition:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -2814,6 +2878,10 @@ class TestProgressTrackingThroughWorkflowSteps:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
@@ -2858,6 +2926,10 @@ class TestProgressTrackingThroughWorkflowSteps:
             patch(
                 "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
             ) as mock_clock,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                return_value=True,
+            ),
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
             patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
