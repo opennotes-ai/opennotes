@@ -94,6 +94,13 @@ def get_batch_redis_key(scan_id: str, batch_number: int, suffix: str) -> str:
     return f"{env}:bulk_scan:{suffix}:{scan_id}:{batch_number}"
 
 
+def get_scan_finalizing_redis_key(scan_id: str) -> str:
+    from src.config import get_settings
+
+    env = get_settings().ENVIRONMENT
+    return f"{env}:bulk_scan:finalizing:{scan_id}"
+
+
 async def store_messages_in_redis(
     redis_client: Redis,
     key: str,
@@ -140,19 +147,37 @@ async def _scan_is_terminal_async(session: Any, scan_id: UUID) -> bool:
     return status in {BulkScanStatus.COMPLETED, BulkScanStatus.FAILED}
 
 
+async def _scan_is_finalizing_async(redis_client: Redis, scan_id: str) -> bool:
+    exists_result = redis_client.exists(get_scan_finalizing_redis_key(scan_id))
+    if inspect.isawaitable(exists_result):
+        exists_result = await exists_result
+    if isinstance(exists_result, bool):
+        return exists_result
+    if isinstance(exists_result, int):
+        return exists_result > 0
+    return False
+
+
+async def _scan_is_inactive_async(session: Any, redis_client: Redis, scan_uuid: UUID) -> bool:
+    return await _scan_is_terminal_async(session, scan_uuid) or await _scan_is_finalizing_async(
+        redis_client, str(scan_uuid)
+    )
+
+
 async def _skip_step_persist_if_scan_terminal(
     session: Any,
+    redis_client: Redis,
     scan_uuid: UUID,
     *,
     step_name: str,
     scan_id: str,
     batch_number: int,
 ) -> bool:
-    if not await _scan_is_terminal_async(session, scan_uuid):
+    if not await _scan_is_inactive_async(session, redis_client, scan_uuid):
         return False
 
     logger.info(
-        "%s step finished after scan became terminal; skipping late persistence",
+        "%s step finished after scan became terminal/finalizing; skipping late persistence",
         step_name,
         extra={"scan_id": scan_id, "batch_number": batch_number},
     )
@@ -390,6 +415,8 @@ def content_scan_orchestration_workflow(  # noqa: PLR0912
                 )
                 continue
 
+        mark_scan_finalizing_step(scan_id=scan_id)
+
         result = finalize_scan_step(
             scan_id=scan_id,
             community_server_id=community_server_id,
@@ -457,15 +484,36 @@ def create_scan_record_step(scan_id: str, community_server_id: str) -> bool:
 
 @DBOS.step()
 def get_scan_terminal_state_step(scan_id: str) -> bool:
+    from src.cache.redis_client import get_shared_redis_client
+    from src.config import get_settings
     from src.database import get_session_maker
 
     scan_uuid = UUID(scan_id)
+    settings = get_settings()
 
     async def _load_state() -> bool:
+        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
         async with get_session_maker()() as session:
-            return await _scan_is_terminal_async(session, scan_uuid)
+            return await _scan_is_inactive_async(session, redis_conn, scan_uuid)
 
     return run_sync(_load_state())
+
+
+@DBOS.step()
+def mark_scan_finalizing_step(scan_id: str) -> bool:
+    from src.cache.redis_client import get_shared_redis_client
+    from src.config import get_settings
+
+    settings = get_settings()
+
+    async def _mark_finalizing() -> bool:
+        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
+        await redis_conn.setex(
+            get_scan_finalizing_redis_key(scan_id), REDIS_REPLAY_TTL_SECONDS, "1"
+        )
+        return True
+
+    return run_sync(_mark_finalizing())
 
 
 def _run_batch_scan_steps(
@@ -648,6 +696,19 @@ def process_content_scan_batch(
     }
     if step_errors:
         result["step_errors"] = step_errors
+
+    if get_scan_terminal_state_step(scan_id):
+        logger.info(
+            "Scan became terminal/finalizing before batch_complete; suppressing late signal",
+            extra={"scan_id": scan_id, "batch_number": batch_number},
+        )
+        return {
+            "processed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "flagged_count": 0,
+            "batch_number": batch_number,
+        }
 
     DBOS.send(
         orchestrator_workflow_id,
@@ -903,9 +964,9 @@ def preprocess_batch_step(
                 llm_service=llm_service,
             )
 
-            if await _scan_is_terminal_async(session, scan_uuid):
+            if await _scan_is_inactive_async(session, redis_conn, scan_uuid):
                 logger.info(
-                    "Preprocess step skipped because scan is already terminal",
+                    "Preprocess step skipped because scan is already terminal/finalizing",
                     extra={"scan_id": scan_id, "batch_number": batch_number},
                 )
                 return {
@@ -924,7 +985,6 @@ def preprocess_batch_step(
                     msg for msg in typed_messages if msg.message_id not in existing_ids
                 ]
                 skipped_count = original_count - len(typed_messages)
-                await service.increment_skipped_count(scan_uuid, skipped_count)
                 logger.info(
                     "Preprocess: skipped messages with existing note requests",
                     extra={
@@ -940,12 +1000,30 @@ def preprocess_batch_step(
             if needs_context and typed_messages:
                 raw_map = BulkContentScanService.build_channel_context_map(typed_messages)
                 raw_map = await service._enrich_context_from_cache(raw_map, platform_id)
-                await service._populate_cross_batch_cache(typed_messages, platform_id)
                 channel_context_map = {
                     ch: [m.model_dump(mode="json") for m in msgs] for ch, msgs in raw_map.items()
                 }
             if await _skip_step_persist_if_scan_terminal(
                 session,
+                redis_conn,
+                scan_uuid,
+                step_name="Preprocess",
+                scan_id=scan_id,
+                batch_number=batch_number,
+            ):
+                return {
+                    "filtered_messages_key": "",
+                    "context_maps_key": "",
+                    "message_count": 0,
+                    "skipped_count": 0,
+                }
+
+            if needs_context and typed_messages:
+                await service._populate_cross_batch_cache(typed_messages, platform_id)
+
+            if await _skip_step_persist_if_scan_terminal(
+                session,
+                redis_conn,
                 scan_uuid,
                 step_name="Preprocess",
                 scan_id=scan_id,
@@ -1045,9 +1123,9 @@ def similarity_scan_step(
                 flashpoint_service=flashpoint_service,
             )
 
-            if await _scan_is_terminal_async(session, scan_uuid):
+            if await _scan_is_inactive_async(session, redis_conn, scan_uuid):
                 logger.info(
-                    "Similarity step skipped because scan is already terminal",
+                    "Similarity step skipped because scan is already terminal/finalizing",
                     extra={"scan_id": scan_id, "batch_number": batch_number},
                 )
                 return {"similarity_candidates_key": "", "candidate_count": 0}
@@ -1061,6 +1139,7 @@ def similarity_scan_step(
                     candidates.append(candidate)
             if await _skip_step_persist_if_scan_terminal(
                 session,
+                redis_conn,
                 scan_uuid,
                 step_name="Similarity",
                 scan_id=scan_id,
@@ -1149,9 +1228,9 @@ def flashpoint_scan_step(
                 flashpoint_service=flashpoint_service,
             )
 
-            if await _scan_is_terminal_async(session, scan_uuid):
+            if await _scan_is_inactive_async(session, redis_conn, scan_uuid):
                 logger.info(
-                    "Flashpoint step skipped because scan is already terminal",
+                    "Flashpoint step skipped because scan is already terminal/finalizing",
                     extra={"scan_id": scan_id, "batch_number": batch_number},
                 )
                 return {"flashpoint_candidates_key": "", "candidate_count": 0}
@@ -1172,6 +1251,7 @@ def flashpoint_scan_step(
                     candidates.append(candidate)
             if await _skip_step_persist_if_scan_terminal(
                 session,
+                redis_conn,
                 scan_uuid,
                 step_name="Flashpoint",
                 scan_id=scan_id,
@@ -1278,9 +1358,9 @@ def relevance_filter_step(
                 flashpoint_service=flashpoint_service,
             )
 
-            if await _scan_is_terminal_async(session, scan_uuid):
+            if await _scan_is_inactive_async(session, redis_conn, scan_uuid):
                 logger.info(
-                    "Relevance step skipped because scan is already terminal",
+                    "Relevance step skipped because scan is already terminal/finalizing",
                     extra={"scan_id": scan_id, "batch_number": batch_number},
                 )
                 return {"flagged_count": 0, "errors": 0}
@@ -1289,6 +1369,7 @@ def relevance_filter_step(
                 flagged = await service._filter_candidates_with_relevance(all_candidates, scan_uuid)
                 if await _skip_step_persist_if_scan_terminal(
                     session,
+                    redis_conn,
                     scan_uuid,
                     step_name="Relevance",
                     scan_id=scan_id,

@@ -115,9 +115,17 @@ class TestTerminalScanHelpers:
         mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
         mock_session_maker = MagicMock(return_value=mock_session_ctx)
+        mock_redis = AsyncMock()
+        mock_redis.exists.return_value = False
 
         with (
             patch("src.database.get_session_maker", return_value=mock_session_maker),
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=mock_redis,
+            ),
+            patch("src.config.get_settings", return_value=MagicMock(REDIS_URL="redis://test")),
             patch(
                 "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
                 new_callable=AsyncMock,
@@ -128,6 +136,39 @@ class TestTerminalScanHelpers:
 
         assert result is True
         mock_terminal.assert_awaited_once_with(mock_session, scan_id)
+        mock_redis.exists.assert_not_awaited()
+
+    def test_get_scan_terminal_state_step_treats_finalizing_latch_as_terminal(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import get_scan_terminal_state_step
+
+        scan_id = uuid4()
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+        mock_redis = AsyncMock()
+        mock_redis.exists.return_value = True
+
+        with (
+            patch("src.database.get_session_maker", return_value=mock_session_maker),
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=mock_redis,
+            ),
+            patch("src.config.get_settings", return_value=MagicMock(REDIS_URL="redis://test")),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=False,
+            ) as mock_terminal,
+        ):
+            result = get_scan_terminal_state_step.__wrapped__(str(scan_id))
+
+        assert result is True
+        mock_terminal.assert_awaited_once_with(mock_session, scan_id)
+        mock_redis.exists.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_skip_step_persist_if_scan_terminal_returns_false_when_scan_is_active(
@@ -138,6 +179,7 @@ class TestTerminalScanHelpers:
         )
 
         mock_session = AsyncMock()
+        mock_redis = AsyncMock()
         scan_id = str(uuid4())
         scan_uuid = uuid4()
 
@@ -151,6 +193,7 @@ class TestTerminalScanHelpers:
         ):
             result = await _skip_step_persist_if_scan_terminal(
                 mock_session,
+                mock_redis,
                 scan_uuid,
                 step_name="Preprocess",
                 scan_id=scan_id,
@@ -168,6 +211,7 @@ class TestTerminalScanHelpers:
         )
 
         mock_session = AsyncMock()
+        mock_redis = AsyncMock()
         scan_id = str(uuid4())
         scan_uuid = uuid4()
 
@@ -181,6 +225,7 @@ class TestTerminalScanHelpers:
         ):
             result = await _skip_step_persist_if_scan_terminal(
                 mock_session,
+                mock_redis,
                 scan_uuid,
                 step_name="Similarity",
                 scan_id=scan_id,
@@ -192,7 +237,7 @@ class TestTerminalScanHelpers:
         mock_logger.assert_called_once()
         assert (
             mock_logger.call_args.args[0]
-            == "%s step finished after scan became terminal; skipping late persistence"
+            == "%s step finished after scan became terminal/finalizing; skipping late persistence"
         )
         assert mock_logger.call_args.args[1] == "Similarity"
         assert mock_logger.call_args.kwargs["extra"] == {
@@ -2511,6 +2556,86 @@ class TestSignalCoordination:
         assert call_args.args[0] == "orch-wf-id"
         assert call_args.kwargs["topic"] == "batch_complete"
 
+    def test_orchestrator_marks_scan_finalizing_before_finalize_step(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        recv_fn = _make_recv_dispatcher(
+            batch_responses=[
+                {"processed": 3, "skipped": 0, "errors": 0, "flagged_count": 1, "batch_number": 1},
+            ],
+            tx_responses=[
+                {"messages_scanned": 3},
+            ],
+        )
+        call_order: list[str] = []
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step",
+                return_value=time.time(),
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.mark_scan_finalizing_step",
+                side_effect=lambda **_: call_order.append("mark"),
+            ) as mock_mark_finalizing,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.finalize_scan_step",
+                side_effect=lambda **_: call_order.append("finalize") or {"status": "completed"},
+            ) as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+            patch("src.dbos_workflows.content_scan_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = recv_fn
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=json.dumps(["similarity"]),
+            )
+
+        mock_mark_finalizing.assert_called_once_with(scan_id=scan_id)
+        mock_finalize.assert_called_once()
+        assert call_order == ["mark", "finalize"]
+
+    def test_late_batch_does_not_send_batch_complete_after_finalizing(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
+
+        with ExitStack() as stack:
+            mocks = _patch_process_content_scan_batch_dependencies(stack)
+            mocks["terminal"].side_effect = [False, False, True]
+            mocks["preprocess"].return_value = {
+                "filtered_messages_key": "filtered-key",
+                "context_maps_key": "context-key",
+                "message_count": 4,
+                "skipped_count": 2,
+            }
+            mocks["relevance"].return_value = {"flagged_count": 1, "errors": 0}
+
+            result = process_content_scan_batch.__wrapped__(
+                orchestrator_workflow_id="orch-wf-id",
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=3,
+                messages_redis_key="test:messages:key",
+                scan_types_json='["similarity"]',
+            )
+
+        assert result == {
+            "processed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "flagged_count": 0,
+            "batch_number": 3,
+        }
+        mocks["dbos"].send.assert_not_called()
+
     def test_orchestrator_receives_both_signal_types(self) -> None:
         from src.dbos_workflows.content_scan_workflow import (
             content_scan_orchestration_workflow,
@@ -3148,7 +3273,7 @@ class TestPreprocessBatchStepInnerLogic:
         assert result["message_count"] == 1
         assert result["skipped_count"] == 1
         mock_service_instance.get_existing_request_message_ids.assert_awaited_once()
-        mock_service_instance.increment_skipped_count.assert_awaited_once()
+        mock_service_instance.increment_skipped_count.assert_not_awaited()
         assert len(store_calls) == 2
 
     def test_builds_context_map_when_flashpoint_requested(self) -> None:
@@ -3490,7 +3615,8 @@ class TestPreprocessBatchStepInnerLogic:
             "message_count": 0,
             "skipped_count": 0,
         }
-        mock_service_instance._populate_cross_batch_cache.assert_awaited_once()
+        mock_service_instance.increment_skipped_count.assert_not_awaited()
+        mock_service_instance._populate_cross_batch_cache.assert_not_awaited()
         mock_store.assert_not_awaited()
 
 
