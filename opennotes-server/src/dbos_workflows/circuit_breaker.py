@@ -46,18 +46,24 @@ class CircuitBreaker:
         self,
         threshold: int = 5,
         reset_timeout: float = 60.0,
+        backoff_rate: float = 1.0,
+        max_reset_timeout: float | None = None,
     ):
-        """Initialize circuit breaker.
-
-        Args:
-            threshold: Consecutive failures before opening circuit
-            reset_timeout: Seconds before attempting reset (half-open)
-        """
         self.threshold = threshold
         self.reset_timeout = reset_timeout
+        self.backoff_rate = backoff_rate
+        self.max_reset_timeout = max_reset_timeout or reset_timeout * 8
         self.failures = 0
+        self.open_count = 0
         self.last_failure_time: float | None = None
         self.state = CircuitState.CLOSED
+
+    @property
+    def effective_reset_timeout(self) -> float:
+        if self.backoff_rate <= 1.0 or self.open_count <= 1:
+            return self.reset_timeout
+        timeout = self.reset_timeout * (self.backoff_rate ** (self.open_count - 1))
+        return min(timeout, self.max_reset_timeout)
 
     def check(self) -> None:
         """Check if circuit allows request. Raises CircuitOpenError if open."""
@@ -80,6 +86,7 @@ class CircuitBreaker:
             logger.info("Circuit breaker closing after successful test")
 
         self.failures = 0
+        self.open_count = 0
         self.last_failure_time = None
         self.state = CircuitState.CLOSED
 
@@ -89,11 +96,16 @@ class CircuitBreaker:
         self.last_failure_time = time.time()
 
         if self.state == CircuitState.HALF_OPEN:
+            self.open_count += 1
             self.state = CircuitState.OPEN
-            logger.warning("Circuit breaker reopening after failed test")
+            logger.warning(
+                "Circuit breaker reopening after failed test",
+                extra={"effective_reset_timeout": self.effective_reset_timeout},
+            )
             return
 
         if self.failures >= self.threshold:
+            self.open_count += 1
             self.state = CircuitState.OPEN
             logger.error(
                 "Circuit breaker opened",
@@ -108,14 +120,14 @@ class CircuitBreaker:
         if self.last_failure_time is None:
             return True
         elapsed = time.time() - self.last_failure_time
-        return elapsed >= self.reset_timeout
+        return elapsed >= self.effective_reset_timeout
 
     def _time_until_reset(self) -> float:
         """Calculate seconds until reset attempt."""
         if self.last_failure_time is None:
             return 0.0
         elapsed = time.time() - self.last_failure_time
-        return max(0.0, self.reset_timeout - elapsed)
+        return max(0.0, self.effective_reset_timeout - elapsed)
 
     @property
     def is_open(self) -> bool:
