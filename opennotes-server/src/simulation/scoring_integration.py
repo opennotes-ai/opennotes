@@ -17,7 +17,7 @@ from src.notes.models import Note, Rating, Request
 from src.notes.scoring.gcs_storage import upload_scoring_snapshot
 from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 from src.notes.scoring.preloaded_data_provider import PreloadedDataProvider
-from src.notes.scoring.scorer_factory import ScorerFactory
+from src.notes.scoring.scorer_factory import ScorerFactory, record_tier_failure
 from src.notes.scoring.snapshot_persistence import persist_scoring_snapshot
 from src.notes.scoring.tier_config import (
     ScoringTier,
@@ -328,7 +328,7 @@ async def _query_ratings_density(
     }
 
 
-async def score_community_server_notes(
+async def score_community_server_notes(  # noqa: PLR0912
     community_server_id: UUID,
     db: AsyncSession,
 ) -> CommunityServerScoringResult:
@@ -510,6 +510,13 @@ async def score_community_server_notes(
         )
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
+
+    if total_scores_computed == 0 and note_count > 0 and tier != ScoringTier.MINIMAL:
+        record_tier_failure(
+            str(community_server_id),
+            tier,
+            reason=f"Zero scores computed from {note_count} notes at tier {tier.value}",
+        )
 
     gcs_snapshot = await _persist_snapshot_or_raise(
         scorer, community_server_id, tier.value, scorer_type, db
