@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pendulum
 import pytest
@@ -858,3 +859,130 @@ class TestResumeWithResetTurns:
             )
             inst = result.scalar_one()
             assert inst.state == "removed"
+
+
+class TestResumeTimeout:
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_resume_dbos_timeout_returns_503(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        run = await simulation_run_factory("paused")
+
+        with patch(
+            "src.simulation.simulations_jsonapi_router.DBOS",
+        ) as mock_dbos:
+            mock_dbos.list_workflows.side_effect = TimeoutError("simulated DBOS timeout")
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 503
+        data = response.json()
+        assert "errors" in data
+
+
+class TestResumeAppVersionMismatch:
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_orphaned_workflows_trigger_redispatch(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-resume"
+        run = await simulation_run_factory("paused")
+
+        orphaned_wf = SimpleNamespace(
+            workflow_id="orchestrator-old-123",
+            app_version="old-deploy-abc",
+        )
+
+        with (
+            patch(
+                "src.simulation.simulations_jsonapi_router.DBOS",
+            ) as mock_dbos,
+            patch(
+                "src.simulation.simulations_jsonapi_router.GlobalParams",
+            ) as mock_gp,
+        ):
+            mock_dbos.list_workflows.return_value = [orphaned_wf]
+            mock_dbos.cancel_workflow = MagicMock()
+            mock_gp.app_version = "new-deploy-xyz"
+
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 200
+        mock_dispatch.assert_called_once()
+        mock_dbos.cancel_workflow.assert_called_once_with("orchestrator-old-123")
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_matching_app_version_skips_redispatch(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        run = await simulation_run_factory("paused")
+
+        current_wf = SimpleNamespace(
+            workflow_id="orchestrator-current-456",
+            app_version="current-deploy",
+        )
+
+        with (
+            patch(
+                "src.simulation.simulations_jsonapi_router.DBOS",
+            ) as mock_dbos,
+            patch(
+                "src.simulation.simulations_jsonapi_router.GlobalParams",
+            ) as mock_gp,
+        ):
+            mock_dbos.list_workflows.return_value = [current_wf]
+            mock_gp.app_version = "current-deploy"
+
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 200
+        mock_dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_mixed_versions_cancels_only_orphaned(
+        self, mock_dispatch, admin_auth_client, simulation_run_factory
+    ):
+        mock_dispatch.return_value = "wf-resume"
+        run = await simulation_run_factory("paused")
+
+        orphaned_wf = SimpleNamespace(
+            workflow_id="orchestrator-old",
+            app_version="old-version",
+        )
+        current_wf = SimpleNamespace(
+            workflow_id="orchestrator-current",
+            app_version="current-version",
+        )
+
+        with (
+            patch(
+                "src.simulation.simulations_jsonapi_router.DBOS",
+            ) as mock_dbos,
+            patch(
+                "src.simulation.simulations_jsonapi_router.GlobalParams",
+            ) as mock_gp,
+        ):
+            mock_dbos.list_workflows.return_value = [orphaned_wf, current_wf]
+            mock_dbos.cancel_workflow = MagicMock()
+            mock_gp.app_version = "current-version"
+
+            response = await admin_auth_client.post(f"/api/v2/simulations/{run['id']}/resume")
+
+        assert response.status_code == 200
+        mock_dispatch.assert_not_called()
+        mock_dbos.cancel_workflow.assert_called_once_with("orchestrator-old")
