@@ -77,7 +77,7 @@ def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         f"Your personality: {personality}\n\n"
         "Choose exactly one action:\n"
         "- write_note: Write a community note for one of the available content requests\n"
-        "- rate_notes: Rate 1-5 of the available community notes on helpfulness\n"
+        "- rate_note: Rate 1-5 of the available community notes on helpfulness\n"
         "- pass_turn: Skip this turn (only when no content requests or notes are available)\n\n"
         "IMPORTANT: If notes are available to rate, you should rate one rather than passing.\n\n"
         "Respond with your chosen action_type and a brief reasoning."
@@ -113,7 +113,7 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         f"Your personality and approach:\n{personality}\n\n"
         "Available actions:\n"
         "- write_note: Write a new community note for a request\n"
-        "- rate_notes: Rate existing community notes\n"
+        "- rate_note: Rate existing community notes\n"
         "- pass_turn: Do nothing this turn\n\n"
         "Choose the most appropriate action based on the available "
         "requests and notes. Always explain your reasoning."
@@ -460,7 +460,7 @@ class OpenNotesSimAgent:
             nudge_prompt = (
                 " ".join(parts)
                 + " Are you sure you want to pass? Consider choosing "
-                + ("rate_notes" if has_notes else "write_note")
+                + ("rate_note" if has_notes else "write_note")
                 + " instead."
             )
             result = await self._action_selector.run(
@@ -598,7 +598,7 @@ class OpenNotesSimAgent:
                 )
         parts.append(f"\nAvailable work:\n{queue_summary}")
         parts.append(
-            "\nWhat would you like to do this turn? Choose: write_note, rate_notes, or pass_turn."
+            "\nWhat would you like to do this turn? Choose: write_note, rate_note, or pass_turn."
         )
         return "\n".join(parts)
 
