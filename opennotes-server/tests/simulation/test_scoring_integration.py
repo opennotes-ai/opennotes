@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ from src.simulation.scoring_integration import (
     CoverageResult,
     ScoringMetrics,
     ScoringRunResult,
+    _maybe_persist_snapshot,
     check_scoring_coverage,
     get_scoring_metrics,
     trigger_scoring_for_simulation,
@@ -161,7 +163,9 @@ async def test_trigger_scoring_uses_existing_pipeline():
     assert result.scores_computed == 1
     assert result.tier == ScoringTier.MINIMAL
     assert result.note_count == 5
-    mock_factory.get_scorer.assert_called_once_with(str(cs_id), 5)
+    mock_factory.get_scorer.assert_called_once_with(
+        str(cs_id), 5, data_provider=None, community_id=str(cs_id)
+    )
     mock_calc.assert_called_once_with(note, 5, mock_scorer)
 
 
@@ -961,3 +965,182 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
     assert "requests" in sql_str
     assert "COMPLETED" in sql_str
     assert "CURRENTLY_RATED_HELPFUL" in sql_str
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_maybe_persist_snapshot_sentinel_when_no_factors():
+    from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
+
+    scorer = MFCoreScorerAdapter()
+    assert scorer.get_last_scoring_factors() is None
+
+    cs_id = uuid4()
+    db = AsyncMock()
+
+    with patch(
+        "src.simulation.scoring_integration.persist_scoring_snapshot", new_callable=AsyncMock
+    ) as mock_persist:
+        result = await _maybe_persist_snapshot(scorer, cs_id, "limited", "MFCoreScorerAdapter", db)
+
+    assert result is not None
+    assert result["sentinel"] is True
+    assert result["note_count"] == 0
+    assert result["rater_count"] == 0
+    assert result["rater_factors"] == []
+    assert result["note_factors"] == []
+    assert result["global_intercept"] == 0.0
+    mock_persist.assert_called_once()
+    call_kwargs = mock_persist.call_args[1]
+    assert call_kwargs["rater_factors"] == []
+    assert call_kwargs["note_factors"] == []
+    assert call_kwargs["global_intercept"] == 0.0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_maybe_persist_snapshot_sentinel_logs_warning(caplog):
+    from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
+
+    scorer = MFCoreScorerAdapter()
+    cs_id = uuid4()
+    db = AsyncMock()
+
+    with (
+        patch(
+            "src.simulation.scoring_integration.persist_scoring_snapshot", new_callable=AsyncMock
+        ),
+        caplog.at_level(logging.WARNING, logger="src.simulation.scoring_integration"),
+    ):
+        await _maybe_persist_snapshot(scorer, cs_id, "limited", "MFCoreScorerAdapter", db)
+
+    assert any("no scoring factors" in record.message.lower() for record in caplog.records)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_maybe_persist_snapshot_with_real_factors():
+    from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
+
+    scorer = MFCoreScorerAdapter()
+    mock_result = MagicMock()
+    mock_result.helpfulnessScores = None
+    mock_result.scoredNotes = None
+    scorer._last_model_result = mock_result
+    scorer._last_int_to_uuid = {}
+
+    cs_id = uuid4()
+    db = AsyncMock()
+
+    with patch(
+        "src.simulation.scoring_integration.persist_scoring_snapshot", new_callable=AsyncMock
+    ) as mock_persist:
+        result = await _maybe_persist_snapshot(scorer, cs_id, "limited", "MFCoreScorerAdapter", db)
+
+    assert result is not None
+    assert "sentinel" not in result
+    mock_persist.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_maybe_persist_snapshot_non_mf_returns_none():
+    scorer = MagicMock()
+    type(scorer).__name__ = "BayesianAverageScorerAdapter"
+    cs_id = uuid4()
+    db = AsyncMock()
+
+    result = await _maybe_persist_snapshot(
+        scorer, cs_id, "minimal", "BayesianAverageScorerAdapter", db
+    )
+    assert result is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_trigger_scoring_passes_data_provider_for_limited_tier():
+    cs_id = uuid4()
+    run = _make_run(community_server_id=cs_id)
+    note = _make_note(community_server_id=cs_id, ratings=[_make_rating()])
+
+    score_response = NoteScoreResponse(
+        note_id=note.id,
+        score=0.6,
+        confidence=ScoreConfidence.PROVISIONAL,
+        algorithm="mf_core_stub",
+        rating_count=1,
+        tier=1,
+        tier_name="Limited",
+        calculated_at=None,
+        content=None,
+    )
+
+    db = _mock_db_for_trigger(run, 500, [note])
+
+    with (
+        patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
+        patch(
+            "src.simulation.scoring_integration.calculate_note_score",
+            new_callable=AsyncMock,
+            return_value=score_response,
+        ),
+        patch(
+            "src.simulation.scoring_integration._prefetch_community_data", new_callable=AsyncMock
+        ) as mock_prefetch,
+    ):
+        mock_provider = MagicMock()
+        mock_prefetch.return_value = mock_provider
+
+        mock_factory = MagicMock()
+        mock_factory.get_scorer.return_value = MagicMock()
+        mock_factory_cls.return_value = mock_factory
+
+        await trigger_scoring_for_simulation(run.id, db)
+
+    mock_prefetch.assert_called_once_with(cs_id, db)
+    mock_factory.get_scorer.assert_called_once_with(
+        str(cs_id), 500, data_provider=mock_provider, community_id=str(cs_id)
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_trigger_scoring_no_prefetch_for_minimal_tier():
+    cs_id = uuid4()
+    run = _make_run(community_server_id=cs_id)
+    note = _make_note(community_server_id=cs_id, ratings=[_make_rating()])
+
+    score_response = NoteScoreResponse(
+        note_id=note.id,
+        score=0.6,
+        confidence=ScoreConfidence.PROVISIONAL,
+        algorithm="bayesian_average_tier0",
+        rating_count=1,
+        tier=0,
+        tier_name="Minimal",
+        calculated_at=None,
+        content=None,
+    )
+
+    db = _mock_db_for_trigger(run, 5, [note])
+
+    with (
+        patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
+        patch(
+            "src.simulation.scoring_integration.calculate_note_score",
+            new_callable=AsyncMock,
+            return_value=score_response,
+        ),
+        patch(
+            "src.simulation.scoring_integration._prefetch_community_data", new_callable=AsyncMock
+        ) as mock_prefetch,
+    ):
+        mock_factory = MagicMock()
+        mock_factory.get_scorer.return_value = MagicMock(
+            __class__=type("BayesianAverageScorerAdapter", (), {})
+        )
+        mock_factory_cls.return_value = mock_factory
+
+        await trigger_scoring_for_simulation(run.id, db)
+
+    mock_prefetch.assert_not_called()
