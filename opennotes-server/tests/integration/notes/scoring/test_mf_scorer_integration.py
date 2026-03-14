@@ -10,10 +10,10 @@ This file retains:
 """
 
 from datetime import UTC, datetime
-from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
+import pyarrow as pa
 import pytest
 
 from src.notes.scoring.data_provider import CommunityDataProvider
@@ -21,67 +21,52 @@ from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
 
 class MockCommunityDataProvider:
-    """
-    Mock CommunityDataProvider with realistic rating data for MFCoreScorer.
-
-    MFCoreScorer requires:
-    - Minimum 10 ratings per rater
-    - Minimum 5 raters per note
-
-    To meet these requirements, defaults are:
-    - 15 raters (so each note can have up to 14 raters, excluding author)
-    - 20 notes (so each rater can rate up to 19 notes, excluding their own)
-
-    The rating patterns create meaningful structure for matrix factorization:
-    - Notes 0-6: Consensus helpful (most raters rate HELPFUL)
-    - Notes 7-13: Consensus not helpful (most raters rate NOT_HELPFUL)
-    - Notes 14-19: Controversial (mixed ratings)
-    """
-
     def __init__(self, num_raters: int = 15, num_notes: int = 20) -> None:
         self._num_raters = num_raters
         self._num_notes = num_notes
         self._raters = [f"rater-{i}" for i in range(num_raters)]
         self._note_ids = [uuid4() for _ in range(num_notes)]
-        self._notes = self._generate_notes()
-        self._ratings = self._generate_ratings()
+        self._build_data()
 
-    def _generate_notes(self) -> list[dict[str, Any]]:
-        notes = []
-        for i, note_id in enumerate(self._note_ids):
-            author_idx = i % len(self._raters)
-            notes.append(
-                {
-                    "id": note_id,
-                    "author_id": self._raters[author_idx],
-                    "classification": "NOT_MISLEADING"
-                    if i < 10
-                    else "MISINFORMED_OR_POTENTIALLY_MISLEADING",
-                    "status": "NEEDS_MORE_RATINGS",
-                    "created_at": datetime.now(UTC),
-                }
-            )
-        return notes
+    def _build_data(self) -> None:
+        now = datetime.now(UTC)
+        note_ids_str = [str(nid) for nid in self._note_ids]
+        author_ids = [self._raters[i % len(self._raters)] for i in range(self._num_notes)]
+        classifications = [
+            "NOT_MISLEADING" if i < 10 else "MISINFORMED_OR_POTENTIALLY_MISLEADING"
+            for i in range(self._num_notes)
+        ]
 
-    def _generate_ratings(self) -> list[dict[str, Any]]:
-        ratings = []
+        self._notes_table = pa.table(
+            {
+                "id": note_ids_str,
+                "author_id": author_ids,
+                "classification": classifications,
+                "status": ["NEEDS_MORE_RATINGS"] * self._num_notes,
+                "created_at": [now] * self._num_notes,
+            }
+        )
+
+        r_ids, r_note_ids, r_rater_ids, r_levels, r_times = [], [], [], [], []
         for note_idx, note_id in enumerate(self._note_ids):
             for rater_idx, rater_id in enumerate(self._raters):
-                if self._notes[note_idx]["author_id"] == rater_id:
+                if author_ids[note_idx] == rater_id:
                     continue
+                r_ids.append(str(uuid4()))
+                r_note_ids.append(str(note_id))
+                r_rater_ids.append(rater_id)
+                r_levels.append(self._determine_helpfulness(note_idx, rater_idx))
+                r_times.append(now)
 
-                helpfulness = self._determine_helpfulness(note_idx, rater_idx)
-
-                ratings.append(
-                    {
-                        "id": uuid4(),
-                        "note_id": note_id,
-                        "rater_id": rater_id,
-                        "helpfulness_level": helpfulness,
-                        "created_at": datetime.now(UTC),
-                    }
-                )
-        return ratings
+        self._ratings_table = pa.table(
+            {
+                "id": r_ids,
+                "note_id": r_note_ids,
+                "rater_id": r_rater_ids,
+                "helpfulness_level": r_levels,
+                "created_at": r_times,
+            }
+        )
 
     def _determine_helpfulness(self, note_idx: int, rater_idx: int) -> str:
         third = self._num_notes // 3
@@ -93,14 +78,14 @@ class MockCommunityDataProvider:
             return "HELPFUL"
         return "NOT_HELPFUL"
 
-    def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-        return self._ratings
+    def get_all_ratings(self, community_id: str) -> pa.Table:
+        return self._ratings_table
 
-    def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-        return self._notes
+    def get_all_notes(self, community_id: str) -> pa.Table:
+        return self._notes_table
 
-    def get_all_participants(self, community_id: str) -> list[str]:
-        return self._raters
+    def get_all_participants(self, community_id: str) -> pa.Array:
+        return pa.array(self._raters)
 
     def get_note_id(self, index: int) -> str:
         return str(self._note_ids[index])

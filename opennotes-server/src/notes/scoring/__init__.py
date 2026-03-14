@@ -8,6 +8,7 @@ from src.notes.scoring.batch_scoring_trigger import BatchScoringTrigger
 from src.notes.scoring.bayesian_average_scorer import BayesianAverageScorer
 from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
 from src.notes.scoring.data_provider import CommunityDataProvider
+from src.notes.scoring.data_transforms import transform_community_data
 from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 from src.notes.scoring.models import ScoringSnapshot
 from src.notes.scoring.note_status_history_builder import NoteStatusHistoryBuilder
@@ -48,4 +49,5 @@ __all__ = [
     "get_tier_config",
     "get_tier_for_note_count",
     "get_tier_warnings",
+    "transform_community_data",
 ]
