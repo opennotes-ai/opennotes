@@ -267,6 +267,13 @@ async def create_rating_jsonapi(
                         "error": str(e),
                     },
                 )
+        else:
+            logger.warning(
+                "Skipping scoring dispatch: note has no community_server_id",
+                extra={
+                    "note_id": str(attrs.note_id),
+                },
+            )
 
         logger.info(
             "Created/updated rating via JSON:API",
@@ -403,12 +410,39 @@ async def update_rating_jsonapi(
         await db.commit()
         await db.refresh(rating)
 
+        note_result = await db.execute(select(Note).where(Note.id == rating.note_id))
+        note = note_result.scalar_one_or_none()
+
+        scoring_requested = False
+        if note and note.community_server_id:
+            try:
+                await dispatch_community_scoring(note.community_server_id)
+                scoring_requested = True
+            except Exception as e:
+                logger.warning(
+                    "Failed to dispatch DBOS rescore workflow after rating update",
+                    extra={
+                        "rating_id": str(rating_id),
+                        "note_id": str(rating.note_id),
+                        "error": str(e),
+                    },
+                )
+        elif note:
+            logger.warning(
+                "Skipping scoring dispatch: note has no community_server_id",
+                extra={
+                    "note_id": str(note.id),
+                    "rating_id": str(rating_id),
+                },
+            )
+
         logger.info(
             "Updated rating via JSON:API",
             extra={
                 "rating_id": str(rating_id),
                 "user_id": str(current_user.id),
                 "new_helpfulness_level": attrs.helpfulness_level,
+                "scoring_requested": scoring_requested,
             },
         )
 

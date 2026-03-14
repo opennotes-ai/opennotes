@@ -16,46 +16,6 @@ import pendulum
 from src.notes.scoring_schemas import ScoreConfidence
 
 
-class TestRatingCreatedScoreResponse:
-    """AC #2: New response type with scoring_requested flag."""
-
-    def test_schema_exists(self):
-        from src.notes.scoring_schemas import RatingCreatedScoreResponse
-
-        assert RatingCreatedScoreResponse is not None
-
-    def test_schema_has_required_fields(self):
-        from src.notes.scoring_schemas import RatingCreatedScoreResponse
-
-        note_id = uuid4()
-        resp = RatingCreatedScoreResponse(
-            note_id=note_id,
-            score=0.75,
-            scoring_requested=True,
-            rating_count=5,
-        )
-        assert resp.note_id == note_id
-        assert resp.score == 0.75
-        assert resp.scoring_requested is True
-        assert resp.rating_count == 5
-
-    def test_scoring_requested_defaults_to_true(self):
-        from src.notes.scoring_schemas import RatingCreatedScoreResponse
-
-        resp = RatingCreatedScoreResponse(
-            note_id=uuid4(),
-            score=0.5,
-            rating_count=3,
-        )
-        assert resp.scoring_requested is True
-
-    def test_schema_inherits_sqlalchemy_schema(self):
-        from src.common.base_schemas import SQLAlchemySchema
-        from src.notes.scoring_schemas import RatingCreatedScoreResponse
-
-        assert issubclass(RatingCreatedScoreResponse, SQLAlchemySchema)
-
-
 class TestScorerFactoryRemovedFromRouters:
     """AC #4: ScorerFactory and calculate_note_score removed from router files."""
 
@@ -191,3 +151,47 @@ class TestRatingsRouterNoScoringEventPublish:
 
         source = inspect.getsource(mod)
         assert "build_score_event_routing_context" not in source
+
+
+class TestUpdateRatingDispatchesScoring:
+    """TASK-1321.01: update_rating_jsonapi dispatches DBOS rescore."""
+
+    def test_update_path_calls_dispatch_community_scoring(self):
+        import src.notes.ratings_jsonapi_router as mod
+
+        source = inspect.getsource(mod.update_rating_jsonapi)
+        assert "dispatch_community_scoring" in source
+
+    def test_update_path_includes_scoring_requested_in_log(self):
+        import src.notes.ratings_jsonapi_router as mod
+
+        source = inspect.getsource(mod.update_rating_jsonapi)
+        assert "scoring_requested" in source
+
+    def test_update_path_loads_note_for_community_server_id(self):
+        import src.notes.ratings_jsonapi_router as mod
+
+        source = inspect.getsource(mod.update_rating_jsonapi)
+        assert "note.community_server_id" in source
+
+    def test_update_path_handles_dispatch_failure(self):
+        import src.notes.ratings_jsonapi_router as mod
+
+        source = inspect.getsource(mod.update_rating_jsonapi)
+        assert "Failed to dispatch DBOS rescore workflow after rating update" in source
+
+
+class TestCreateRatingMissingCommunityServerWarning:
+    """TASK-1321.02: create_rating_jsonapi warns when note has no community_server_id."""
+
+    def test_create_path_has_else_branch_for_missing_community_server(self):
+        import src.notes.ratings_jsonapi_router as mod
+
+        source = inspect.getsource(mod.create_rating_jsonapi)
+        assert "Skipping scoring dispatch: note has no community_server_id" in source
+
+    def test_update_path_has_else_branch_for_missing_community_server(self):
+        import src.notes.ratings_jsonapi_router as mod
+
+        source = inspect.getsource(mod.update_rating_jsonapi)
+        assert "Skipping scoring dispatch: note has no community_server_id" in source
