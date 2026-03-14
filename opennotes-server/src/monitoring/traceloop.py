@@ -1,9 +1,11 @@
 import logging
 import os
+import threading
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
+_traceloop_lock = threading.Lock()
 _traceloop_configured = False
 
 
@@ -75,60 +77,81 @@ def setup_traceloop(
 ) -> bool:
     global _traceloop_configured
 
-    if _traceloop_configured:
-        logger.debug("Traceloop already configured, skipping setup")
-        return True
+    with _traceloop_lock:
+        if _traceloop_configured:
+            logger.debug("Traceloop already configured, skipping setup")
+            return True
 
-    if not otlp_endpoint:
-        logger.warning("Traceloop enabled but no OTLP_ENDPOINT set - LLM observability disabled")
-        return False
-
-    try:
-        from traceloop.sdk import Traceloop
-
-        os.environ["TRACELOOP_TRACE_CONTENT"] = str(trace_content).lower()
-
-        init_kwargs: dict[str, Any] = {
-            "app_name": app_name.replace(" ", "-").lower(),
-            "disable_batch": False,
-            "resource_attributes": {
-                "service.name": service_name,
-                "service.version": version,
-                "deployment.environment": environment,
-                "service.instance.id": instance_id,
-            },
-            "enabled": True,
-            "telemetry_enabled": False,
-        }
-
-        _configure_span_exporter(init_kwargs, otlp_endpoint, otlp_headers, trace_content)
-
-        from src.monitoring.gcp_resource_detector import is_cloud_run_environment
-
-        if is_cloud_run_environment():
-            try:
-                from opentelemetry.exporter.cloud_logging import CloudLoggingExporter
-
-                init_kwargs["logging_exporter"] = CloudLoggingExporter()
-                logger.info("Traceloop configured with GCP logging exporter")
-            except ImportError:
-                logger.warning("GCP exporter packages not installed, skipping GCP exporters")
+        if not otlp_endpoint:
+            logger.warning(
+                "Traceloop enabled but no OTLP_ENDPOINT set - LLM observability disabled"
+            )
+            return False
 
         try:
-            from traceloop.sdk.instruments import Instruments
+            from traceloop.sdk import Traceloop
 
-            init_kwargs["block_instruments"] = {Instruments.REDIS}
+            os.environ["TRACELOOP_TRACE_CONTENT"] = str(trace_content).lower()
+
+            init_kwargs: dict[str, Any] = {
+                "app_name": app_name.replace(" ", "-").lower(),
+                "disable_batch": False,
+                "resource_attributes": {
+                    "service.name": service_name,
+                    "service.version": version,
+                    "deployment.environment": environment,
+                    "service.instance.id": instance_id,
+                },
+                "enabled": True,
+                "telemetry_enabled": False,
+            }
+
+            _configure_span_exporter(init_kwargs, otlp_endpoint, otlp_headers, trace_content)
+
+            from src.monitoring.gcp_resource_detector import is_cloud_run_environment
+
+            if is_cloud_run_environment():
+                try:
+                    from opentelemetry.exporter.cloud_logging import CloudLoggingExporter
+
+                    init_kwargs["logging_exporter"] = CloudLoggingExporter()
+                    logger.info("Traceloop configured with GCP logging exporter")
+                except ImportError:
+                    logger.warning("GCP exporter packages not installed, skipping GCP exporters")
+
+            try:
+                from traceloop.sdk.instruments import Instruments
+
+                init_kwargs["block_instruments"] = {Instruments.REDIS}
+            except (ImportError, AttributeError):
+                logger.warning(
+                    "Could not configure block_instruments — Instruments enum unavailable"
+                )
+
+            Traceloop.init(**init_kwargs)
+
+            _traceloop_configured = True
+            return True
+
+        except ImportError:
+            logger.warning("traceloop-sdk package not installed - LLM observability disabled")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to configure Traceloop: {e}")
+            return False
+
+
+def shutdown_traceloop() -> None:
+    global _traceloop_configured
+
+    with _traceloop_lock:
+        try:
+            from traceloop.sdk import TracerWrapper
+
+            TracerWrapper.instance = None
         except (ImportError, AttributeError):
-            logger.warning("Could not configure block_instruments — Instruments enum unavailable")
+            pass
 
-        Traceloop.init(**init_kwargs)
-
-        _traceloop_configured = True
-        return True
-
-    except ImportError:
-        logger.warning("traceloop-sdk package not installed - LLM observability disabled")
-        return False
-    except Exception as e:
-        logger.error(f"Failed to configure Traceloop: {e}")
-        return False
+        _traceloop_configured = False
+        os.environ.pop("TRACELOOP_TRACE_CONTENT", None)
+        logger.debug("Traceloop state reset")
