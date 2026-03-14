@@ -146,6 +146,28 @@ def _get_baggage_span_processor() -> "SpanProcessor":
     return BaggageSpanProcessor.instance  # pyright: ignore[reportReturnType]
 
 
+def _add_batch_processor_if_needed(
+    tracer_provider: "TracerProvider",
+    exporter: "SpanExporter",
+    skip_batch_export: bool,
+) -> None:
+    if skip_batch_export:
+        return
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    from src.config import get_settings
+
+    settings = get_settings()
+    batch_processor = BatchSpanProcessor(
+        exporter,
+        max_queue_size=settings.OTEL_BSP_MAX_QUEUE_SIZE,
+        schedule_delay_millis=settings.OTEL_BSP_SCHEDULE_DELAY_MILLIS,
+        max_export_batch_size=settings.OTEL_BSP_MAX_EXPORT_BATCH_SIZE,
+        export_timeout_millis=settings.OTEL_BSP_EXPORT_TIMEOUT_MILLIS,
+    )
+    tracer_provider.add_span_processor(batch_processor)
+
+
 def setup_otel(
     service_name: str,
     service_version: str = "0.0.1",
@@ -156,6 +178,7 @@ def setup_otel(
     sample_rate: float = 0.1,
     enable_console_export: bool = False,
     use_gcp_exporters: bool = True,
+    skip_batch_export: bool = False,
 ) -> bool:
     """Initialize OpenTelemetry with OTLP export.
 
@@ -173,6 +196,9 @@ def setup_otel(
         enable_console_export: Enable console span export for debugging
         use_gcp_exporters: Use GCP-native exporters when on Cloud Run (default True).
             Set to False to force OTLP export even in Cloud Run environments.
+        skip_batch_export: When True, create the span exporter but do not wrap it
+            in a BatchSpanProcessor. Use this when another component (e.g. Traceloop)
+            will own span export to avoid double export.
 
     Returns:
         True if initialization succeeded, False otherwise
@@ -253,14 +279,9 @@ def setup_otel(
                         project_id=gcp_project,
                     )
 
-                    batch_processor = BatchSpanProcessor(
-                        _span_exporter,
-                        max_queue_size=settings.OTEL_BSP_MAX_QUEUE_SIZE,
-                        schedule_delay_millis=settings.OTEL_BSP_SCHEDULE_DELAY_MILLIS,
-                        max_export_batch_size=settings.OTEL_BSP_MAX_EXPORT_BATCH_SIZE,
-                        export_timeout_millis=settings.OTEL_BSP_EXPORT_TIMEOUT_MILLIS,
+                    _add_batch_processor_if_needed(
+                        _tracer_provider, _span_exporter, skip_batch_export
                     )
-                    _tracer_provider.add_span_processor(batch_processor)
                     _used_gcp_exporter = True
 
                     logger.info("GCP Cloud Trace exporter configured with Cloud Logging overflow")
@@ -281,14 +302,7 @@ def setup_otel(
                     compression=compression,
                 )
 
-                batch_processor = BatchSpanProcessor(
-                    _span_exporter,
-                    max_queue_size=settings.OTEL_BSP_MAX_QUEUE_SIZE,
-                    schedule_delay_millis=settings.OTEL_BSP_SCHEDULE_DELAY_MILLIS,
-                    max_export_batch_size=settings.OTEL_BSP_MAX_EXPORT_BATCH_SIZE,
-                    export_timeout_millis=settings.OTEL_BSP_EXPORT_TIMEOUT_MILLIS,
-                )
-                _tracer_provider.add_span_processor(batch_processor)
+                _add_batch_processor_if_needed(_tracer_provider, _span_exporter, skip_batch_export)
 
                 logger.info(
                     f"OTLP exporter configured: {otlp_endpoint}, "
