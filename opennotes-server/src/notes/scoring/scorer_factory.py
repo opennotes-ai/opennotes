@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+MIN_AVG_RATERS_PER_NOTE = 5
+MIN_AVG_RATINGS_PER_RATER = 10
+
 
 class ScorerFactory:
     """
@@ -45,6 +48,7 @@ class ScorerFactory:
         tier_override: ScoringTier | None = None,
         data_provider: "CommunityDataProvider | None" = None,
         community_id: str | None = None,
+        ratings_density: dict[str, float] | None = None,
     ) -> ScorerProtocol:
         """
         Get the appropriate scorer for a community based on note count.
@@ -79,6 +83,24 @@ class ScorerFactory:
                     "note_count": note_count,
                 },
             )
+
+            if tier != ScoringTier.MINIMAL and ratings_density is not None:
+                avg_raters = ratings_density.get("avg_raters_per_note", 0)
+                avg_ratings = ratings_density.get("avg_ratings_per_rater", 0)
+                if avg_raters < MIN_AVG_RATERS_PER_NOTE or avg_ratings < MIN_AVG_RATINGS_PER_RATER:
+                    logger.warning(
+                        "Insufficient ratings density for tier %s, downgrading to MINIMAL",
+                        tier.value,
+                        extra={
+                            "community_server_id": community_server_id,
+                            "avg_raters_per_note": avg_raters,
+                            "avg_ratings_per_rater": avg_ratings,
+                            "required_raters_per_note": MIN_AVG_RATERS_PER_NOTE,
+                            "required_ratings_per_rater": MIN_AVG_RATINGS_PER_RATER,
+                            "original_tier": tier.value,
+                        },
+                    )
+                    tier = ScoringTier.MINIMAL
 
         cache_key = (community_server_id, tier)
 

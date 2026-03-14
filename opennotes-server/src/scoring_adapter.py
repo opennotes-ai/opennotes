@@ -161,9 +161,25 @@ class ScoringAdapter:
         enrollment_df = pd.DataFrame(enrollment)
         status_df = pd.DataFrame(status) if status else None
 
-        scored_notes_df, helpful_scores_df, aux_info_df = await asyncio.to_thread(
-            self._run_scoring_sync, notes_df, ratings_df, enrollment_df, status_df, tier_config
-        )
+        try:
+            scored_notes_df, helpful_scores_df, aux_info_df = await asyncio.to_thread(
+                self._run_scoring_sync, notes_df, ratings_df, enrollment_df, status_df, tier_config
+            )
+        except AssertionError as e:
+            logger.warning(
+                "Scoring failed due to assertion in communitynotes library",
+                extra={
+                    "error": str(e),
+                    "note_count": note_count,
+                    "rating_count": rating_count,
+                    "user_count": user_count,
+                    "scoring_tier": scoring_tier.value,
+                },
+            )
+            raise RuntimeError(
+                f"Scoring failed due to assertion in communitynotes library: {e}. "
+                f"Community may have insufficient ratings density for tier {scoring_tier.value}."
+            ) from e
 
         scored_notes = cast(list[dict[str, Any]], scored_notes_df.to_dict(orient="records"))
         helpful_scores = cast(list[dict[str, Any]], helpful_scores_df.to_dict(orient="records"))
