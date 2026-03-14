@@ -77,9 +77,7 @@ async def _prefetch_community_data(
         for n in notes
     ]
 
-    participant_ids = list(
-        set([str(r.rater_id) for r in ratings] + [str(n.author_id) for n in notes])
-    )
+    participant_ids = sorted({str(r.rater_id) for r in ratings} | {str(n.author_id) for n in notes})
 
     return PreloadedDataProvider(
         ratings=ratings_data,

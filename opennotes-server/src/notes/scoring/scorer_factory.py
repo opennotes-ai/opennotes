@@ -53,6 +53,8 @@ class ScorerFactory:
             community_server_id: Unique identifier for the community.
             note_count: Current number of notes in the community.
             tier_override: Optional tier to force, ignoring note_count.
+            data_provider: Optional data provider for MFCoreScorerAdapter.
+            community_id: Optional community ID passed to MFCoreScorerAdapter.
 
         Returns:
             ScorerProtocol implementation appropriate for the tier.
