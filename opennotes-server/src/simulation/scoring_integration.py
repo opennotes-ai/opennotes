@@ -16,6 +16,7 @@ from src.notes import loaders as note_loaders
 from src.notes.models import Note, Rating, Request
 from src.notes.scoring.gcs_storage import upload_scoring_snapshot
 from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
+from src.notes.scoring.preloaded_data_provider import PreloadedDataProvider
 from src.notes.scoring.scorer_factory import ScorerFactory
 from src.notes.scoring.snapshot_persistence import persist_scoring_snapshot
 from src.notes.scoring.tier_config import (
@@ -28,6 +29,63 @@ from src.simulation.models import SimAgentInstance, SimulationRun
 logger = logging.getLogger(__name__)
 
 SCORING_BATCH_SIZE = 100
+
+
+async def _prefetch_community_data(
+    community_server_id: UUID,
+    db: AsyncSession,
+) -> PreloadedDataProvider:
+    ratings_result = await db.execute(
+        select(Rating).where(
+            Rating.note_id.in_(
+                select(Note.id).where(
+                    Note.community_server_id == community_server_id,
+                    Note.deleted_at.is_(None),
+                )
+            )
+        )
+    )
+    ratings = ratings_result.scalars().all()
+
+    notes_result = await db.execute(
+        select(Note).where(
+            Note.community_server_id == community_server_id,
+            Note.deleted_at.is_(None),
+        )
+    )
+    notes = notes_result.scalars().all()
+
+    ratings_data = [
+        {
+            "id": str(r.id),
+            "note_id": str(r.note_id),
+            "rater_id": str(r.rater_id),
+            "helpfulness_level": r.helpfulness_level,
+            "created_at": r.created_at,
+        }
+        for r in ratings
+    ]
+
+    notes_data = [
+        {
+            "id": str(n.id),
+            "author_id": str(n.author_id),
+            "classification": n.classification,
+            "status": n.status,
+            "created_at": n.created_at,
+        }
+        for n in notes
+    ]
+
+    participant_ids = list(
+        set([str(r.rater_id) for r in ratings] + [str(n.author_id) for n in notes])
+    )
+
+    return PreloadedDataProvider(
+        ratings=ratings_data,
+        notes=notes_data,
+        participants=participant_ids,
+    )
 
 
 def _log_gcs_upload_error(future: asyncio.Future) -> None:  # type: ignore[type-arg]
@@ -98,6 +156,36 @@ async def _maybe_persist_snapshot(
                 db=db,
             )
             return {**factors, **metadata}
+
+        logger.warning(
+            "MFCoreScorerAdapter has no scoring factors, persisting sentinel snapshot",
+            extra={
+                "community_server_id": str(community_server_id),
+                "tier": tier_value,
+                "scorer_type": scorer_type,
+            },
+        )
+        sentinel_metadata = {
+            "tier": tier_value,
+            "scorer_name": scorer_type,
+            "note_count": 0,
+            "rater_count": 0,
+            "sentinel": True,
+        }
+        await persist_scoring_snapshot(
+            community_server_id=community_server_id,
+            rater_factors=[],
+            note_factors=[],
+            global_intercept=0.0,
+            metadata=sentinel_metadata,
+            db=db,
+        )
+        return {
+            "rater_factors": [],
+            "note_factors": [],
+            "global_intercept": 0.0,
+            **sentinel_metadata,
+        }
 
     return None
 
@@ -238,8 +326,18 @@ async def score_community_server_notes(
         )
 
     tier = get_tier_for_note_count(note_count)
+
+    data_provider = None
+    if tier != ScoringTier.MINIMAL:
+        data_provider = await _prefetch_community_data(community_server_id, db)
+
     factory = ScorerFactory()
-    scorer = factory.get_scorer(str(community_server_id), note_count)
+    scorer = factory.get_scorer(
+        str(community_server_id),
+        note_count,
+        data_provider=data_provider,
+        community_id=str(community_server_id),
+    )
     scorer_type = type(scorer).__name__
 
     latest_rating_subq = (
@@ -442,8 +540,18 @@ async def trigger_scoring_for_simulation(
         return _empty_result
 
     tier = get_tier_for_note_count(note_count)
+
+    data_provider = None
+    if tier != ScoringTier.MINIMAL:
+        data_provider = await _prefetch_community_data(community_server_id, db)
+
     factory = ScorerFactory()
-    scorer = factory.get_scorer(str(community_server_id), note_count)
+    scorer = factory.get_scorer(
+        str(community_server_id),
+        note_count,
+        data_provider=data_provider,
+        community_id=str(community_server_id),
+    )
     scorer_type = type(scorer).__name__
 
     scores_computed = 0

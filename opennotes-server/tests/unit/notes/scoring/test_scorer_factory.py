@@ -350,3 +350,93 @@ class TestScorerFactoryIntegrationWithTierConfig:
             "community-123",
             ScoringTier.BASIC,
         ) in factory._cache
+
+
+class TestScorerFactoryDataProvider:
+    """Tests for data_provider passthrough to MFCoreScorerAdapter (Task 1319 AC #1)."""
+
+    def test_get_scorer_passes_data_provider_for_limited_tier(self):
+        from unittest.mock import MagicMock
+
+        from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+
+        mock_provider = MagicMock()
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer(
+            "community-123",
+            note_count=500,
+            data_provider=mock_provider,
+            community_id="community-123",
+        )
+
+        assert isinstance(scorer, MFCoreScorerAdapter)
+        assert scorer._data_provider is mock_provider
+        assert scorer._community_id == "community-123"
+
+    def test_get_scorer_passes_data_provider_for_basic_tier(self):
+        from unittest.mock import MagicMock
+
+        from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+
+        mock_provider = MagicMock()
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer(
+            "community-456",
+            note_count=2000,
+            data_provider=mock_provider,
+            community_id="community-456",
+        )
+
+        assert isinstance(scorer, MFCoreScorerAdapter)
+        assert scorer._data_provider is mock_provider
+
+    def test_get_scorer_no_data_provider_for_minimal_tier(self):
+        from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer(
+            "community-123",
+            note_count=50,
+            data_provider=None,
+            community_id="community-123",
+        )
+
+        assert isinstance(scorer, BayesianAverageScorerAdapter)
+
+    def test_get_scorer_without_data_provider_still_works(self):
+        from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer("community-123", note_count=500)
+
+        assert isinstance(scorer, MFCoreScorerAdapter)
+        assert scorer._data_provider is None  # pyright: ignore[reportPrivateUsage]
+
+    def test_get_scorer_with_tier_override_passes_data_provider(self):
+        from unittest.mock import MagicMock
+
+        from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+        from src.notes.scoring.tier_config import ScoringTier
+
+        mock_provider = MagicMock()
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer(
+            "community-123",
+            note_count=10,
+            tier_override=ScoringTier.LIMITED,
+            data_provider=mock_provider,
+            community_id="community-123",
+        )
+
+        assert isinstance(scorer, MFCoreScorerAdapter)
+        assert scorer._data_provider is mock_provider

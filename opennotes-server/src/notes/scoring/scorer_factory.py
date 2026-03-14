@@ -6,13 +6,16 @@ based on community note count, with caching to avoid repeated instantiation.
 """
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.notes.scoring.bayesian_average_scorer import BayesianAverageScorer
 from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
 from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 from src.notes.scoring.scorer_protocol import ScorerProtocol
 from src.notes.scoring.tier_config import ScoringTier, get_tier_for_note_count
+
+if TYPE_CHECKING:
+    from src.notes.scoring.data_provider import CommunityDataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,8 @@ class ScorerFactory:
         community_server_id: str,
         note_count: int,
         tier_override: ScoringTier | None = None,
+        data_provider: "CommunityDataProvider | None" = None,
+        community_id: str | None = None,
     ) -> ScorerProtocol:
         """
         Get the appropriate scorer for a community based on note count.
@@ -85,7 +90,7 @@ class ScorerFactory:
             )
             return self._cache[cache_key]
 
-        scorer = self._create_scorer_for_tier(tier)
+        scorer = self._create_scorer_for_tier(tier, data_provider, community_id)
 
         self._cache[cache_key] = scorer
 
@@ -101,21 +106,17 @@ class ScorerFactory:
 
         return scorer
 
-    def _create_scorer_for_tier(self, tier: ScoringTier) -> ScorerProtocol:
-        """
-        Create the appropriate scorer for a given tier.
-
-        Args:
-            tier: The scoring tier to create a scorer for.
-
-        Returns:
-            ScorerProtocol implementation for the tier.
-        """
+    def _create_scorer_for_tier(
+        self,
+        tier: ScoringTier,
+        data_provider: "CommunityDataProvider | None" = None,
+        community_id: str | None = None,
+    ) -> ScorerProtocol:
         if tier == ScoringTier.MINIMAL:
             bayesian_scorer = BayesianAverageScorer()
             return BayesianAverageScorerAdapter(bayesian_scorer)
 
-        return MFCoreScorerAdapter()
+        return MFCoreScorerAdapter(data_provider=data_provider, community_id=community_id)
 
     def get_cache_info(self) -> dict[str, Any]:
         """
