@@ -9,7 +9,6 @@ from opentelemetry.trace import StatusCode
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.cache.redis_client import redis_client
 from src.config import settings
 from src.fact_checking.embedding_schemas import FactCheckMatch, SimilaritySearchResponse
 from src.fact_checking.previously_seen_schemas import PreviouslySeenMessageMatch
@@ -319,7 +318,6 @@ class EmbeddingService:
                 )
 
                 await log_search_results(
-                    redis=redis_client,
                     query_hash=hash_query(query_text),
                     alpha=DEFAULT_ALPHA,
                     dataset_tags=dataset_tags,
