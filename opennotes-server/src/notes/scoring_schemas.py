@@ -123,15 +123,6 @@ class NoteScoreResponse(SQLAlchemySchema):
     )
 
 
-class RatingCreatedScoreResponse(SQLAlchemySchema):
-    note_id: UUID = Field(..., description="Note that was rated")
-    score: float = Field(..., description="Current persisted score (helpfulness_score / 100.0)")
-    scoring_requested: bool = Field(
-        default=True, description="Whether a DBOS batch rescore workflow has been dispatched"
-    )
-    rating_count: int = Field(..., description="Number of ratings on the note")
-
-
 class NoteData(BaseModel):
     noteId: int
     noteAuthorParticipantId: str
