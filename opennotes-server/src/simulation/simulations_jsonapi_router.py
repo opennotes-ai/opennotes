@@ -641,6 +641,13 @@ async def _check_orchestrator_workflows(
         return True, False
 
     current_app_version = GlobalParams.app_version
+    if not current_app_version:
+        logger.warning(
+            "DBOS app_version is empty — skipping orphan detection",
+            extra={"simulation_run_id": str(simulation_id)},
+        )
+        return False, False
+
     matching_workflows = [wf for wf in active_workflows if wf.app_version == current_app_version]
     orphaned = [wf for wf in active_workflows if wf.app_version != current_app_version]
 
