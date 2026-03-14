@@ -32,6 +32,8 @@ SPAWN_BATCH_SIZE: int = 5
 SCORING_INTERVAL: int = 5
 CIRCUIT_BREAKER_THRESHOLD: int = 5
 CIRCUIT_BREAKER_RESET_TIMEOUT: float = 300.0
+CIRCUIT_BREAKER_STUCK_THRESHOLD: int = 3
+SCORING_TIMEOUT: float = 600.0
 SCORING_PERSISTENCE_FAILURE_MESSAGE = "Required scoring snapshot persistence failed"
 FINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
 
@@ -515,7 +517,6 @@ def check_content_availability_step(community_server_id: str) -> dict[str, Any]:
     return run_sync(_check())
 
 
-@DBOS.step()
 def schedule_turns_step(
     simulation_run_id: str,
     config: dict[str, Any],
@@ -655,7 +656,7 @@ def run_scoring_step(simulation_run_id: str) -> dict[str, Any]:
                 "scorer": result.scorer_type,
             }
 
-    return run_sync(_score())
+    return run_sync(_score(), timeout=SCORING_TIMEOUT)
 
 
 @DBOS.step(
@@ -739,6 +740,14 @@ def _finalize_with_fallback(
 
 @DBOS.workflow()
 def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
+    """Run the simulation orchestrator loop for a given simulation run.
+
+    Circuit Breaker Recovery:
+        If the circuit breaker gets stuck open (e.g. persistent turn-scheduling
+        failures), pause and resume the simulation via the API.  Resuming starts
+        a new orchestrator workflow with a fresh CircuitBreaker instance,
+        clearing the failure counter without manual intervention.
+    """
     gate = TokenGate(pool="default", weight=WorkflowWeight.SIMULATION_ORCHESTRATOR)
     gate.acquire()
     try:
@@ -771,11 +780,13 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
         circuit_breaker = CircuitBreaker(
             threshold=CIRCUIT_BREAKER_THRESHOLD,
             reset_timeout=CIRCUIT_BREAKER_RESET_TIMEOUT,
+            backoff_rate=2.0,
         )
 
         final_status = "completed"
         iteration = 0
         consecutive_empty = 0
+        consecutive_open_skips = 0
         consecutive_status_failures = 0
         max_consecutive_status_failures = 10
         prev_status = "running"
@@ -925,14 +936,26 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 dispatched_count = turn_result["dispatched_count"]
                 removed_for_retries = turn_result.get("removed_for_retries", 0)
                 circuit_breaker.record_success()
+                consecutive_open_skips = 0
             except CircuitOpenError:
-                logger.warning(
-                    "Circuit breaker open, skipping turn scheduling",
-                    extra={
-                        "simulation_run_id": simulation_run_id,
-                        "failures": circuit_breaker.failures,
-                    },
-                )
+                consecutive_open_skips += 1
+                if consecutive_open_skips >= CIRCUIT_BREAKER_STUCK_THRESHOLD:
+                    logger.error(
+                        "circuit_breaker_stuck",
+                        extra={
+                            "simulation_run_id": simulation_run_id,
+                            "consecutive_open_skips": consecutive_open_skips,
+                            "failures": circuit_breaker.failures,
+                        },
+                    )
+                else:
+                    logger.warning(
+                        "Circuit breaker open, skipping turn scheduling",
+                        extra={
+                            "simulation_run_id": simulation_run_id,
+                            "failures": circuit_breaker.failures,
+                        },
+                    )
             except Exception:
                 logger.exception("Failed to schedule turns")
                 circuit_breaker.record_failure()

@@ -319,6 +319,6 @@ class TestScheduleTurnsPassesGeneration:
                 mock_dispatch,
             ),
         ):
-            schedule_turns_step.__wrapped__(str(uuid4()), config)
+            schedule_turns_step(str(uuid4()), config)
 
         mock_dispatch.assert_awaited_once_with(instance_id, 3, 0, generation=4)

@@ -194,3 +194,72 @@ class TestCircuitBreakerErrorMessages:
 
         error_message = str(exc_info.value)
         assert "Reset in" in error_message
+
+
+@pytest.mark.unit
+class TestCircuitBreakerExponentialBackoff:
+    """Test exponential backoff on half-open retry interval."""
+
+    def test_no_backoff_by_default(self):
+        breaker = CircuitBreaker(threshold=2, reset_timeout=10)
+        assert breaker.effective_reset_timeout == 10
+
+    def test_no_backoff_with_rate_1(self):
+        breaker = CircuitBreaker(threshold=2, reset_timeout=10, backoff_rate=1.0)
+        for _ in range(2):
+            breaker.record_failure()
+        assert breaker.open_count == 1
+        assert breaker.effective_reset_timeout == 10
+
+    def test_backoff_increases_after_reopen(self):
+        breaker = CircuitBreaker(threshold=2, reset_timeout=10, backoff_rate=2.0)
+
+        for _ in range(2):
+            breaker.record_failure()
+        assert breaker.open_count == 1
+        assert breaker.effective_reset_timeout == 10
+
+        breaker.state = CircuitState.HALF_OPEN
+        breaker.record_failure()
+        assert breaker.open_count == 2
+        assert breaker.effective_reset_timeout == 20
+
+        breaker.state = CircuitState.HALF_OPEN
+        breaker.record_failure()
+        assert breaker.open_count == 3
+        assert breaker.effective_reset_timeout == 40
+
+    def test_backoff_capped_at_max(self):
+        breaker = CircuitBreaker(
+            threshold=2, reset_timeout=10, backoff_rate=2.0, max_reset_timeout=30
+        )
+
+        for _ in range(2):
+            breaker.record_failure()
+        breaker.state = CircuitState.HALF_OPEN
+        breaker.record_failure()
+        breaker.state = CircuitState.HALF_OPEN
+        breaker.record_failure()
+        breaker.state = CircuitState.HALF_OPEN
+        breaker.record_failure()
+        assert breaker.effective_reset_timeout == 30
+
+    def test_success_resets_open_count(self):
+        breaker = CircuitBreaker(threshold=2, reset_timeout=10, backoff_rate=2.0)
+
+        for _ in range(2):
+            breaker.record_failure()
+        assert breaker.open_count == 1
+
+        breaker.state = CircuitState.HALF_OPEN
+        breaker.record_failure()
+        assert breaker.open_count == 2
+
+        breaker.state = CircuitState.HALF_OPEN
+        breaker.record_success()
+        assert breaker.open_count == 0
+        assert breaker.effective_reset_timeout == 10
+
+    def test_default_max_timeout_is_8x_base(self):
+        breaker = CircuitBreaker(threshold=2, reset_timeout=60, backoff_rate=2.0)
+        assert breaker.max_reset_timeout == 480
