@@ -148,6 +148,63 @@ def sim_agent_get(ctx: click.Context, agent_id: str) -> None:
     console.print(Panel(panel_content, title="[bold]Agent Personality[/bold]"))
 
 
+def _display_agent(result: dict, cli_ctx: CliContext) -> None:
+    if cli_ctx.json_output:
+        console.print(json.dumps(result, indent=2, default=str))
+        return
+
+    attrs = result.get("data", {}).get("attributes", {})
+    raw_id = result.get("data", {}).get("id", "N/A")
+
+    model_name_val = attrs.get("model_name", "N/A")
+    if isinstance(model_name_val, dict):
+        model_name_val = f"{model_name_val.get('provider', '?')}:{model_name_val.get('model', '?')}"
+
+    panel_content = (
+        f"[bold]ID:[/bold] {format_id(raw_id, cli_ctx.use_huuid)}\n"
+        f"[bold]Name:[/bold] {attrs.get('name', 'N/A')}\n"
+        f"[bold]Model:[/bold] {model_name_val}\n"
+        f"[bold]Memory Strategy:[/bold] {attrs.get('memory_compaction_strategy', 'N/A')}"
+    )
+
+    personality = attrs.get("personality", "")
+    if personality:
+        preview = personality[:200] + ("..." if len(personality) > 200 else "")
+        panel_content += f"\n[bold]Personality:[/bold] {preview}"
+
+    model_params = attrs.get("model_params")
+    if model_params:
+        panel_content += f"\n[bold]Model Params:[/bold] {json.dumps(model_params)}"
+
+    tool_config = attrs.get("tool_config")
+    if tool_config:
+        panel_content += f"\n[bold]Tool Config:[/bold] {json.dumps(tool_config)}"
+
+    memory_config = attrs.get("memory_compaction_config")
+    if memory_config:
+        panel_content += f"\n[bold]Memory Config:[/bold] {json.dumps(memory_config)}"
+
+    for ts_field in ("created_at", "updated_at"):
+        val = attrs.get(ts_field)
+        if val:
+            label = ts_field.replace("_", " ").title()
+            panel_content += f"\n[bold]{label}:[/bold] {val[:19]}"
+
+    console.print(Panel(panel_content, title="[bold]Agent Personality[/bold]"))
+
+
+def _parse_json_option(value: str | None, name: str) -> dict | None:
+    if value is None:
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise click.BadParameter(f"Invalid JSON for {name}: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise click.BadParameter(f"{name} must be a JSON object, got {type(parsed).__name__}")
+    return parsed
+
+
 @sim_agent.command("create")
 @click.option("--name", required=True, help="Agent name.")
 @click.option(
@@ -208,3 +265,139 @@ def sim_agent_create(
     console.print(
         f"[green]\u2713[/green] Created agent [bold]{agent_name}[/bold]: {agent_id}"
     )
+
+
+@sim_agent.command("update")
+@click.argument("agent_id", required=False, default=None)
+@click.option("--name", default=None, help="Agent name.")
+@click.option(
+    "--personality", default=None,
+    help="Personality text (use @filename to read from file).",
+)
+@click.option("--model-name", default=None, help="LLM model name (provider:model).")
+@click.option("--model-params", default=None, help="Model parameters as JSON string.")
+@click.option("--tool-config", default=None, help="Tool configuration as JSON string.")
+@click.option(
+    "--memory-compaction-strategy", default=None,
+    help="Memory compaction strategy.",
+)
+@click.option(
+    "--memory-compaction-config", default=None,
+    help="Memory compaction config as JSON string.",
+)
+@click.option("--all", "update_all", is_flag=True, default=False, help="Update all non-deleted agents.")
+@click.pass_context
+def sim_agent_update(
+    ctx: click.Context,
+    agent_id: str | None,
+    name: str | None,
+    personality: str | None,
+    model_name: str | None,
+    model_params: str | None,
+    tool_config: str | None,
+    memory_compaction_strategy: str | None,
+    memory_compaction_config: str | None,
+    update_all: bool,
+) -> None:
+    """Update an agent personality."""
+    if not update_all and not agent_id:
+        error_console.print("[red]Error:[/red] Provide AGENT_ID or use --all.")
+        sys.exit(1)
+
+    if update_all and agent_id:
+        error_console.print("[red]Error:[/red] Cannot use --all with a specific AGENT_ID.")
+        sys.exit(1)
+
+    cli_ctx: CliContext = ctx.obj
+    base_url = cli_ctx.base_url
+    client = cli_ctx.client
+
+    if personality and personality.startswith("@"):
+        filepath = Path(personality[1:])
+        if not filepath.exists():
+            error_console.print(f"[red]Error:[/red] File not found: {filepath}")
+            sys.exit(1)
+        personality = filepath.read_text().strip()
+
+    parsed_model_params = _parse_json_option(model_params, "model-params")
+    parsed_tool_config = _parse_json_option(tool_config, "tool-config")
+    parsed_memory_config = _parse_json_option(memory_compaction_config, "memory-compaction-config")
+
+    attributes: dict = {}
+    if name is not None:
+        attributes["name"] = name
+    if personality is not None:
+        attributes["personality"] = personality
+    if model_name is not None:
+        attributes["model_name"] = model_name
+    if parsed_model_params is not None:
+        attributes["model_params"] = parsed_model_params
+    if parsed_tool_config is not None:
+        attributes["tool_config"] = parsed_tool_config
+    if memory_compaction_strategy is not None:
+        attributes["memory_compaction_strategy"] = memory_compaction_strategy
+    if parsed_memory_config is not None:
+        attributes["memory_compaction_config"] = parsed_memory_config
+
+    if not attributes:
+        error_console.print("[red]No update fields specified.[/red]")
+        sys.exit(1)
+
+    csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+    headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    if update_all:
+        params = {"page[number]": 1, "page[size]": 100}
+        response = client.get(f"{base_url}/api/v2/sim-agents", headers=headers, params=params)
+        handle_jsonapi_error(response)
+        agents = response.json().get("data", [])
+
+        if not agents:
+            console.print("[yellow]No agents found to update.[/yellow]")
+            return
+
+        for agent in agents:
+            aid = agent["id"]
+            payload = {
+                "data": {
+                    "type": "sim-agents",
+                    "id": aid,
+                    "attributes": attributes,
+                }
+            }
+            resp = client.patch(
+                f"{base_url}/api/v2/sim-agents/{aid}",
+                headers=headers,
+                json=payload,
+            )
+            handle_jsonapi_error(resp)
+            _display_agent(resp.json(), cli_ctx)
+
+        console.print(f"\n[green]\u2713[/green] Updated {len(agents)} agent(s).")
+    else:
+        assert agent_id is not None
+        try:
+            agent_id = resolve_id(agent_id)
+        except click.BadParameter as e:
+            error_console.print(f"[red]Error:[/red] {e}")
+            sys.exit(1)
+
+        payload = {
+            "data": {
+                "type": "sim-agents",
+                "id": agent_id,
+                "attributes": attributes,
+            }
+        }
+
+        response = client.patch(
+            f"{base_url}/api/v2/sim-agents/{agent_id}",
+            headers=headers,
+            json=payload,
+        )
+        handle_jsonapi_error(response)
+        result = response.json()
+        _display_agent(result, cli_ctx)
+        console.print(
+            f"[green]\u2713[/green] Updated agent [bold]{format_id(agent_id, cli_ctx.use_huuid)}[/bold]"
+        )
