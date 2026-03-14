@@ -224,6 +224,7 @@ class ScoringAdapter:
         enabled_scorers = {
             Scorers.MFCoreScorer,
             Scorers.MFExpansionScorer,
+            Scorers.GaussianScorer,
         }
 
         if tier_config:

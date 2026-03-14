@@ -553,6 +553,7 @@ class MFCoreScorerAdapter:
             prescoringNoteModelOutput=prescore_result.scoredNotes,
             prescoringRaterModelOutput=prescore_result.helpfulnessScores,
             prescoringMetaOutput=prescoring_meta_output,
+            empiricalTotals=None,
         )
 
         logger.debug("Running score_final phase")
