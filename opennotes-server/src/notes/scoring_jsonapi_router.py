@@ -47,7 +47,6 @@ from src.monitoring import get_logger
 from src.notes.loaders import full
 from src.notes.models import Note
 from src.notes.scoring import (
-    ScorerFactory,
     get_tier_config,
     get_tier_for_note_count,
 )
@@ -68,6 +67,7 @@ from src.notes.scoring_schemas import (
     EnrollmentData,
     NextTierInfo,
     NoteData,
+    NoteScoreResponse,
     PerformanceMetrics,
     RatingData,
     ScoreConfidence,
@@ -76,7 +76,6 @@ from src.notes.scoring_schemas import (
 )
 from src.notes.scoring_utils import (
     TIER_ORDER,
-    calculate_note_score,
     get_next_tier,
     get_tier_data_confidence,
     get_tier_level,
@@ -96,7 +95,6 @@ scoring_adapter = ScoringAdapter()
 logger = get_logger(__name__)
 
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
-scorer_factory = ScorerFactory()
 _ISO8601_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 top_notes_filter_builder = FilterBuilder().add_auth_gated_filter(
@@ -315,6 +313,36 @@ def note_score_to_resource(note_id: UUID, score_response: Any) -> NoteScoreResou
     )
 
 
+def _build_persisted_score_response(note: Any, note_count: int) -> NoteScoreResponse:
+    active_tier_enum = get_tier_for_note_count(note_count)
+    active_tier_level = get_tier_level(active_tier_enum)
+    rating_count = len(note.ratings) if note.ratings else 0
+    score = (note.helpfulness_score or 0) / 100.0
+
+    if rating_count == 0:
+        confidence = ScoreConfidence.NO_DATA
+    elif rating_count < 5:
+        confidence = ScoreConfidence.PROVISIONAL
+    else:
+        confidence = ScoreConfidence.STANDARD
+
+    content = None
+    if note.request and note.request.message_archive:
+        content = note.request.message_archive.get_content()
+
+    return NoteScoreResponse(
+        note_id=note.id,
+        score=score,
+        confidence=confidence,
+        algorithm="persisted",
+        rating_count=rating_count,
+        tier=active_tier_level,
+        tier_name=active_tier_enum.value.capitalize(),
+        calculated_at=note.updated_at or note.created_at,
+        content=content,
+    )
+
+
 @router.get(
     "/scoring/status", response_class=JSONResponse, response_model=ScoringStatusJSONAPIResponse
 )
@@ -485,9 +513,7 @@ async def get_note_score_jsonapi(
         )
         note_count = count_result.scalar() or 0
 
-        community_id = str(note.community_server_id) if note.community_server_id else ""
-        scorer = scorer_factory.get_scorer(community_id, note_count)
-        score_response = await calculate_note_score(note, note_count, scorer)
+        score_response = _build_persisted_score_response(note, note_count)
 
         logger.info(
             f"Score retrieved for note {note_id} (JSON:API)",
@@ -588,9 +614,7 @@ async def get_batch_scores_jsonapi(
             ):
                 continue
 
-            community_id = str(note.community_server_id) if note.community_server_id else ""
-            scorer = scorer_factory.get_scorer(community_id, total_note_count)
-            score_response = await calculate_note_score(note, total_note_count, scorer)
+            score_response = _build_persisted_score_response(note, total_note_count)
             score_resources.append(note_score_to_resource(note.id, score_response))
             found_note_ids.add(note.id)
 
@@ -751,9 +775,7 @@ async def get_top_notes_jsonapi(  # noqa: PLR0912
                 break
 
             for note in batch_notes:
-                community_id = str(note.community_server_id) if note.community_server_id else ""
-                scorer = scorer_factory.get_scorer(community_id, note_count)
-                score_response = await calculate_note_score(note, note_count, scorer)
+                score_response = _build_persisted_score_response(note, note_count)
 
                 if (
                     min_confidence
