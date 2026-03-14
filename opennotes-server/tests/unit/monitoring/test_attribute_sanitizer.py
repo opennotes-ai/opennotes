@@ -204,3 +204,50 @@ class TestBaggageSpanProcessorFactory:
         mock_span = MagicMock()
         processor.on_start(mock_span, ctx)
         mock_span.set_attribute.assert_any_call("request_id", "req-123")
+
+    def test_factory_on_start_propagates_multiple_baggage_keys(self):
+        from opentelemetry import baggage, context
+
+        from src.monitoring.otel import _get_baggage_span_processor
+
+        processor = _get_baggage_span_processor()
+        ctx = context.get_current()
+        ctx = baggage.set_baggage("discord.user_id", "u-42", ctx)
+        ctx = baggage.set_baggage("discord.guild_id", "g-99", ctx)
+        ctx = baggage.set_baggage("request_id", "req-abc", ctx)
+        ctx = baggage.set_baggage("community_server_id", "cs-7", ctx)
+
+        mock_span = MagicMock()
+        processor.on_start(mock_span, ctx)
+
+        mock_span.set_attribute.assert_any_call("discord_user_id", "u-42")
+        mock_span.set_attribute.assert_any_call("discord_guild_id", "g-99")
+        mock_span.set_attribute.assert_any_call("request_id", "req-abc")
+        mock_span.set_attribute.assert_any_call("community_server_id", "cs-7")
+        assert mock_span.set_attribute.call_count == 4
+
+    def test_factory_instance_is_span_processor(self):
+        from opentelemetry.sdk.trace import SpanProcessor as SpanProcessorBase
+
+        from src.monitoring.otel import _get_baggage_span_processor
+
+        processor = _get_baggage_span_processor()
+        assert isinstance(processor, SpanProcessorBase)
+
+    def test_factory_returns_singleton(self):
+        from src.monitoring.otel import _get_baggage_span_processor
+
+        first = _get_baggage_span_processor()
+        second = _get_baggage_span_processor()
+        assert first is second
+
+    def test_factory_ignores_keys_not_in_baggage(self):
+        from opentelemetry import baggage, context
+
+        from src.monitoring.otel import _get_baggage_span_processor
+
+        processor = _get_baggage_span_processor()
+        ctx = baggage.set_baggage("request_id", "req-only", context.get_current())
+        mock_span = MagicMock()
+        processor.on_start(mock_span, ctx)
+        mock_span.set_attribute.assert_called_once_with("request_id", "req-only")
