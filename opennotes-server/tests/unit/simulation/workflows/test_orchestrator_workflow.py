@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 
 
-def _run_coro(coro):
+def _run_coro(coro, **_kwargs):
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(coro)
@@ -696,7 +696,7 @@ class TestScheduleTurnsStep:
                 mock_dispatch,
             ),
         ):
-            result = schedule_turns_step.__wrapped__(str(uuid4()), config)
+            result = schedule_turns_step(str(uuid4()), config)
 
         assert result["dispatched_count"] == 2
         assert result["skipped_count"] == 0
@@ -729,7 +729,7 @@ class TestScheduleTurnsStep:
                 mock_dispatch,
             ),
         ):
-            result = schedule_turns_step.__wrapped__(str(uuid4()), config)
+            result = schedule_turns_step(str(uuid4()), config)
 
         assert result["dispatched_count"] == 1
         assert result["skipped_count"] == 1
@@ -776,7 +776,7 @@ class TestScheduleTurnsStep:
                 mock_dispatch,
             ),
         ):
-            result = schedule_turns_step.__wrapped__(str(uuid4()), config)
+            result = schedule_turns_step(str(uuid4()), config)
 
         assert result["dispatched_count"] == 0
         assert result["removed_for_retries"] == 1
@@ -830,7 +830,7 @@ class TestScheduleTurnsStep:
                 mock_dispatch,
             ),
         ):
-            result = schedule_turns_step.__wrapped__(str(uuid4()), config)
+            result = schedule_turns_step(str(uuid4()), config)
 
         assert result["dispatched_count"] == 1
         assert result["removed_for_retries"] == 2
@@ -862,7 +862,7 @@ class TestScheduleTurnsStep:
                 mock_dispatch,
             ),
         ):
-            schedule_turns_step.__wrapped__(str(uuid4()), config)
+            schedule_turns_step(str(uuid4()), config)
 
         mock_dispatch.assert_awaited_once_with(instance_id, 3, 1, generation=1)
 
