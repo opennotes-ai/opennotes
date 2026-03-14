@@ -100,10 +100,54 @@ class TestSimulationSubcommands:
 
 
 class TestSimAgentSubcommands:
-    @pytest.mark.parametrize("subcmd", ["list", "get", "create"])
+    @pytest.mark.parametrize("subcmd", ["list", "get", "create", "update"])
     def test_subcommand_registered(self, runner: CliRunner, subcmd: str) -> None:
         result = runner.invoke(cli, ["sim-agent", subcmd, "--help"])
         assert result.exit_code == 0, f"sim-agent {subcmd} failed: {result.output}"
+
+
+class TestSimAgentUpdate:
+    def test_update_help_shows_all_options(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["sim-agent", "update", "--help"])
+        assert result.exit_code == 0
+        for opt in [
+            "--name", "--personality", "--model-name", "--model-params",
+            "--tool-config", "--memory-compaction-strategy",
+            "--memory-compaction-config", "--all",
+        ]:
+            assert opt in result.output, f"Missing option {opt}"
+
+    def test_update_no_agent_id_no_all_flag(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["--local", "sim-agent", "update", "--name", "foo"])
+        assert result.exit_code != 0
+        assert "Provide AGENT_ID or use --all" in result.output
+
+    def test_update_both_agent_id_and_all_flag(self, runner: CliRunner) -> None:
+        result = runner.invoke(
+            cli, ["--local", "sim-agent", "update", "some-id", "--all", "--name", "foo"]
+        )
+        assert result.exit_code != 0
+        assert "Cannot use --all" in result.output
+
+    def test_update_no_fields_specified(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["--local", "sim-agent", "update", "some-id"])
+        assert result.exit_code != 0
+        assert "No update fields" in result.output
+
+    def test_update_invalid_json_model_params(self, runner: CliRunner) -> None:
+        result = runner.invoke(
+            cli, ["--local", "sim-agent", "update", "some-id", "--model-params", "not-json"]
+        )
+        assert result.exit_code != 0
+        assert "Invalid JSON" in result.output
+
+    def test_update_personality_file_not_found(self, runner: CliRunner) -> None:
+        result = runner.invoke(
+            cli,
+            ["--local", "sim-agent", "update", "some-id", "--personality", "@/nonexistent/file.txt"],
+        )
+        assert result.exit_code != 0
+        assert "File not found" in result.output
 
 
 class TestOrchestratorSubcommands:
