@@ -7,6 +7,7 @@ TDD: Write failing tests first, then implement.
 from dataclasses import fields
 
 import pendulum
+import pyarrow as pa
 import pytest
 
 
@@ -326,22 +327,35 @@ class TestMFCoreScorerAdapterPhase3:
 
     def test_adapter_accepts_data_provider_and_community_id(self):
         """Adapter constructor accepts data_provider and community_id parameters."""
-        from typing import Any
 
         from src.notes.scoring.data_provider import CommunityDataProvider
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            """Mock implementation of CommunityDataProvider."""
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
-
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         provider = MockDataProvider()
         adapter = MFCoreScorerAdapter(
@@ -354,19 +368,34 @@ class TestMFCoreScorerAdapterPhase3:
 
     def test_adapter_stores_data_provider_and_community_id(self):
         """Adapter stores data_provider and community_id as instance attributes."""
-        from typing import Any
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         provider = MockDataProvider()
         adapter = MFCoreScorerAdapter(
@@ -381,7 +410,6 @@ class TestMFCoreScorerAdapterPhase3:
         """Adapter instantiates MFCoreScorer when data_provider is provided."""
         import sys
         from pathlib import Path
-        from typing import Any
 
         scoring_path = Path(__file__).parent.parent.parent.parent.parent.parent / (
             "communitynotes/scoring/src"
@@ -394,14 +422,30 @@ class TestMFCoreScorerAdapterPhase3:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -411,53 +455,76 @@ class TestMFCoreScorerAdapterPhase3:
         assert hasattr(adapter, "_scorer")
         assert isinstance(adapter._scorer, MFCoreScorer)
 
-    def test_adapter_instantiates_dataframe_builders(self):
-        """Adapter instantiates all three DataFrame builders."""
-        from typing import Any
-
+    def test_adapter_no_longer_has_builder_instances(self):
+        """Adapter no longer uses builder classes after pyarrow migration."""
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
-        from src.notes.scoring.note_status_history_builder import NoteStatusHistoryBuilder
-        from src.notes.scoring.ratings_dataframe_builder import RatingsDataFrameBuilder
-        from src.notes.scoring.user_enrollment_builder import UserEnrollmentBuilder
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
             community_id="test-community",
         )
 
-        assert hasattr(adapter, "_ratings_builder")
-        assert hasattr(adapter, "_note_status_builder")
-        assert hasattr(adapter, "_user_enrollment_builder")
-        assert isinstance(adapter._ratings_builder, RatingsDataFrameBuilder)
-        assert isinstance(adapter._note_status_builder, NoteStatusHistoryBuilder)
-        assert isinstance(adapter._user_enrollment_builder, UserEnrollmentBuilder)
+        assert not hasattr(adapter, "_ratings_builder")
+        assert not hasattr(adapter, "_note_status_builder")
+        assert not hasattr(adapter, "_user_enrollment_builder")
 
     def test_adapter_has_thread_lock(self):
         """Adapter has a threading.Lock for thread safety."""
         import threading
-        from typing import Any
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -483,7 +550,6 @@ class TestMFCoreScorerAdapterPhase4:
 
     def test_build_scoring_inputs_returns_tuple_of_four_dataframes(self):
         """_build_scoring_inputs returns a tuple of 4 DataFrames + int_to_uuid mapping."""
-        from typing import Any
         from uuid import uuid4
 
         import pandas as pd
@@ -491,30 +557,30 @@ class TestMFCoreScorerAdapterPhase4:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "note_id": uuid4(),
-                        "rater_id": "user-1",
-                        "helpfulness_level": "HELPFUL",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "note_id": [str(uuid4())],
+                        "rater_id": ["user-1"],
+                        "helpfulness_level": ["HELPFUL"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "author_id": "user-1",
-                        "classification": "NOT_MISLEADING",
-                        "status": "NEEDS_MORE_RATINGS",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "author_id": ["user-1"],
+                        "classification": ["NOT_MISLEADING"],
+                        "status": ["NEEDS_MORE_RATINGS"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return ["user-1", "user-2"]
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array(["user-1", "user-2"])
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -530,7 +596,6 @@ class TestMFCoreScorerAdapterPhase4:
 
     def test_build_scoring_inputs_calls_data_provider_methods(self):
         """_build_scoring_inputs calls all three data provider methods."""
-        from typing import Any
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
@@ -538,17 +603,33 @@ class TestMFCoreScorerAdapterPhase4:
             def __init__(self):
                 self.calls = {"ratings": 0, "notes": 0, "participants": 0}
 
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
+            def get_all_ratings(self, community_id: str) -> pa.Table:
                 self.calls["ratings"] += 1
-                return []
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
+            def get_all_notes(self, community_id: str) -> pa.Table:
                 self.calls["notes"] += 1
-                return []
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
+            def get_all_participants(self, community_id: str) -> pa.Array:
                 self.calls["participants"] += 1
-                return []
+                return pa.array([], type=pa.string())
 
         provider = MockDataProvider()
         adapter = MFCoreScorerAdapter(
@@ -564,7 +645,6 @@ class TestMFCoreScorerAdapterPhase4:
 
     def test_build_scoring_inputs_passes_community_id_to_provider(self):
         """_build_scoring_inputs passes the correct community_id to data provider."""
-        from typing import Any
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
@@ -572,17 +652,33 @@ class TestMFCoreScorerAdapterPhase4:
             def __init__(self):
                 self.received_community_ids = []
 
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
+            def get_all_ratings(self, community_id: str) -> pa.Table:
                 self.received_community_ids.append(("ratings", community_id))
-                return []
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
+            def get_all_notes(self, community_id: str) -> pa.Table:
                 self.received_community_ids.append(("notes", community_id))
-                return []
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
+            def get_all_participants(self, community_id: str) -> pa.Array:
                 self.received_community_ids.append(("participants", community_id))
-                return []
+                return pa.array([], type=pa.string())
 
         provider = MockDataProvider()
         adapter = MFCoreScorerAdapter(
@@ -598,7 +694,6 @@ class TestMFCoreScorerAdapterPhase4:
 
     def test_build_scoring_inputs_ratings_dataframe_has_expected_columns(self):
         """Ratings DataFrame has expected Community Notes columns."""
-        from typing import Any
         from uuid import uuid4
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
@@ -606,22 +701,30 @@ class TestMFCoreScorerAdapterPhase4:
         note_id = uuid4()
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "note_id": note_id,
-                        "rater_id": "user-1",
-                        "helpfulness_level": "HELPFUL",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "note_id": [str(note_id)],
+                        "rater_id": ["user-1"],
+                        "helpfulness_level": ["HELPFUL"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return ["user-1"]
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array(["user-1"])
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -636,28 +739,35 @@ class TestMFCoreScorerAdapterPhase4:
 
     def test_build_scoring_inputs_note_status_dataframe_has_expected_columns(self):
         """Note status history DataFrame has expected Community Notes columns."""
-        from typing import Any
         from uuid import uuid4
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
-
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "author_id": "user-1",
-                        "classification": "NOT_MISLEADING",
-                        "status": "NEEDS_MORE_RATINGS",
-                        "created_at": pendulum.now("UTC"),
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
                     }
-                ]
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return ["user-1"]
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": [str(uuid4())],
+                        "author_id": ["user-1"],
+                        "classification": ["NOT_MISLEADING"],
+                        "status": ["NEEDS_MORE_RATINGS"],
+                        "created_at": [pendulum.now("UTC")],
+                    }
+                )
+
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array(["user-1"])
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -672,19 +782,34 @@ class TestMFCoreScorerAdapterPhase4:
 
     def test_build_scoring_inputs_user_enrollment_dataframe_has_expected_columns(self):
         """User enrollment DataFrame has expected Community Notes columns."""
-        from typing import Any
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return ["user-1", "user-2"]
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array(["user-1", "user-2"])
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -698,21 +823,36 @@ class TestMFCoreScorerAdapterPhase4:
 
     def test_build_scoring_inputs_note_topics_is_empty_dataframe(self):
         """Note topics DataFrame is an empty DataFrame (for now)."""
-        from typing import Any
 
         import pandas as pd
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -741,37 +881,36 @@ class TestMFCoreScorerAdapterPhase5:
 
     def test_execute_batch_scoring_calls_build_scoring_inputs(self):
         """_execute_batch_scoring calls _build_scoring_inputs to get DataFrames."""
-        from typing import Any
         from unittest.mock import MagicMock, patch
         from uuid import uuid4
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "note_id": uuid4(),
-                        "rater_id": "user-1",
-                        "helpfulness_level": "HELPFUL",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "note_id": [str(uuid4())],
+                        "rater_id": ["user-1"],
+                        "helpfulness_level": ["HELPFUL"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "author_id": "user-1",
-                        "classification": "NOT_MISLEADING",
-                        "status": "NEEDS_MORE_RATINGS",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "author_id": ["user-1"],
+                        "classification": ["NOT_MISLEADING"],
+                        "status": ["NEEDS_MORE_RATINGS"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return ["user-1", "user-2"]
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array(["user-1", "user-2"])
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -799,37 +938,36 @@ class TestMFCoreScorerAdapterPhase5:
 
     def test_execute_batch_scoring_calls_prescore(self):
         """_execute_batch_scoring calls scorer.prescore() with PrescoringArgs."""
-        from typing import Any
         from unittest.mock import MagicMock, patch
         from uuid import uuid4
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "note_id": uuid4(),
-                        "rater_id": "user-1",
-                        "helpfulness_level": "HELPFUL",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "note_id": [str(uuid4())],
+                        "rater_id": ["user-1"],
+                        "helpfulness_level": ["HELPFUL"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "author_id": "user-1",
-                        "classification": "NOT_MISLEADING",
-                        "status": "NEEDS_MORE_RATINGS",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "author_id": ["user-1"],
+                        "classification": ["NOT_MISLEADING"],
+                        "status": ["NEEDS_MORE_RATINGS"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return ["user-1", "user-2"]
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array(["user-1", "user-2"])
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -854,37 +992,36 @@ class TestMFCoreScorerAdapterPhase5:
 
     def test_execute_batch_scoring_calls_score_final_with_prescore_output(self):
         """_execute_batch_scoring calls score_final() with prescore output."""
-        from typing import Any
         from unittest.mock import MagicMock, patch
         from uuid import uuid4
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "note_id": uuid4(),
-                        "rater_id": "user-1",
-                        "helpfulness_level": "HELPFUL",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "note_id": [str(uuid4())],
+                        "rater_id": ["user-1"],
+                        "helpfulness_level": ["HELPFUL"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "author_id": "user-1",
-                        "classification": "NOT_MISLEADING",
-                        "status": "NEEDS_MORE_RATINGS",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "author_id": ["user-1"],
+                        "classification": ["NOT_MISLEADING"],
+                        "status": ["NEEDS_MORE_RATINGS"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return ["user-1", "user-2"]
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array(["user-1", "user-2"])
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -909,7 +1046,6 @@ class TestMFCoreScorerAdapterPhase5:
 
     def test_execute_batch_scoring_returns_model_result(self):
         """_execute_batch_scoring returns ModelResult from score_final."""
-        from typing import Any
         from unittest.mock import MagicMock, patch
         from uuid import uuid4
 
@@ -918,30 +1054,30 @@ class TestMFCoreScorerAdapterPhase5:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "note_id": uuid4(),
-                        "rater_id": "user-1",
-                        "helpfulness_level": "HELPFUL",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "note_id": [str(uuid4())],
+                        "rater_id": ["user-1"],
+                        "helpfulness_level": ["HELPFUL"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return [
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
                     {
-                        "id": uuid4(),
-                        "author_id": "user-1",
-                        "classification": "NOT_MISLEADING",
-                        "status": "NEEDS_MORE_RATINGS",
-                        "created_at": pendulum.now("UTC"),
+                        "id": [str(uuid4())],
+                        "author_id": ["user-1"],
+                        "classification": ["NOT_MISLEADING"],
+                        "status": ["NEEDS_MORE_RATINGS"],
+                        "created_at": [pendulum.now("UTC")],
                     }
-                ]
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return ["user-1", "user-2"]
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array(["user-1", "user-2"])
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1046,7 +1182,6 @@ class TestMFCoreScorerAdapterPhase6:
 
     def test_process_model_result_single_note(self):
         """_process_model_result correctly maps a single note."""
-        from typing import Any
         from unittest.mock import MagicMock
 
         import pandas as pd
@@ -1055,14 +1190,30 @@ class TestMFCoreScorerAdapterPhase6:
         from src.notes.scoring.scorer_protocol import ScoringResult
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1088,7 +1239,6 @@ class TestMFCoreScorerAdapterPhase6:
 
     def test_process_model_result_multiple_notes(self):
         """_process_model_result correctly maps multiple notes."""
-        from typing import Any
         from unittest.mock import MagicMock
 
         import pandas as pd
@@ -1096,14 +1246,30 @@ class TestMFCoreScorerAdapterPhase6:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1137,7 +1303,6 @@ class TestMFCoreScorerAdapterPhase6:
 
     def test_process_model_result_metadata_contains_required_fields(self):
         """_process_model_result includes required metadata fields."""
-        from typing import Any
         from unittest.mock import MagicMock
 
         import pandas as pd
@@ -1145,14 +1310,30 @@ class TestMFCoreScorerAdapterPhase6:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1180,7 +1361,6 @@ class TestMFCoreScorerAdapterPhase6:
 
     def test_process_model_result_score_is_normalized(self):
         """_process_model_result produces normalized scores between 0.0 and 1.0."""
-        from typing import Any
         from unittest.mock import MagicMock
 
         import pandas as pd
@@ -1188,14 +1368,30 @@ class TestMFCoreScorerAdapterPhase6:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1222,7 +1418,6 @@ class TestMFCoreScorerAdapterPhase6:
 
     def test_score_note_uses_batch_scoring_with_data_provider(self):
         """score_note uses actual batch scoring instead of stub when data_provider exists."""
-        from typing import Any
         from unittest.mock import MagicMock, patch
 
         import pandas as pd
@@ -1230,14 +1425,30 @@ class TestMFCoreScorerAdapterPhase6:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1276,7 +1487,6 @@ class TestMFCoreScorerAdapterPhase6:
 
     def test_process_model_result_empty_dataframe(self):
         """_process_model_result returns empty dict for empty scoredNotes DataFrame."""
-        from typing import Any
         from unittest.mock import MagicMock
 
         import pandas as pd
@@ -1284,14 +1494,30 @@ class TestMFCoreScorerAdapterPhase6:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1314,20 +1540,35 @@ class TestMFCoreScorerAdapterPhase7:
 
     def test_score_note_falls_back_to_stub_on_batch_scoring_failure(self):
         """score_note falls back to stub when _execute_batch_scoring raises an exception."""
-        from typing import Any
         from unittest.mock import patch
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1343,20 +1584,35 @@ class TestMFCoreScorerAdapterPhase7:
 
     def test_score_note_degraded_result_has_metadata_flag(self):
         """Fallback result has metadata['degraded'] = True."""
-        from typing import Any
         from unittest.mock import patch
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1372,20 +1628,35 @@ class TestMFCoreScorerAdapterPhase7:
 
     def test_score_note_logs_warning_on_batch_scoring_failure(self):
         """score_note logs a warning when batch scoring fails."""
-        from typing import Any
         from unittest.mock import patch
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1411,7 +1682,6 @@ class TestMFCoreScorerAdapterPhase8:
     def test_concurrent_score_note_calls_are_thread_safe(self):
         """Multiple threads calling score_note should not cause race conditions."""
         import threading
-        from typing import Any
         from unittest.mock import MagicMock, patch
 
         import pandas as pd
@@ -1419,14 +1689,30 @@ class TestMFCoreScorerAdapterPhase8:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1473,7 +1759,6 @@ class TestMFCoreScorerAdapterPhase8:
         """Lock prevents race conditions when accessing the cache."""
         import threading
         import time
-        from typing import Any
         from unittest.mock import MagicMock, patch
 
         import pandas as pd
@@ -1481,14 +1766,30 @@ class TestMFCoreScorerAdapterPhase8:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1528,19 +1829,34 @@ class TestMFCoreScorerAdapterPhase8:
     def test_adapter_has_lock_and_uses_it(self):
         """Adapter has a lock for thread safety."""
         import threading
-        from typing import Any
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1557,19 +1873,34 @@ class TestMFCoreScorerAdapterPhase9:
     def test_cache_is_ordered_dict(self):
         """Cache uses OrderedDict for LRU eviction support."""
         from collections import OrderedDict
-        from typing import Any
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1580,20 +1911,35 @@ class TestMFCoreScorerAdapterPhase9:
 
     def test_evict_if_needed_removes_oldest_entries(self):
         """_evict_if_needed removes oldest entries when cache exceeds max size."""
-        from typing import Any
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
         from src.notes.scoring.scorer_protocol import ScoringResult
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1640,7 +1986,6 @@ class TestMFCoreScorerAdapterPhase9:
 
     def test_cache_size_bounded_after_batch_scoring(self):
         """Cache size is bounded after batch scoring populates it."""
-        from typing import Any
         from unittest.mock import MagicMock, patch
 
         import pandas as pd
@@ -1648,14 +1993,30 @@ class TestMFCoreScorerAdapterPhase9:
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),
@@ -1683,19 +2044,34 @@ class TestMFCoreScorerAdapterPhase9:
     def test_evict_if_needed_default_max_size_is_10000(self):
         """_evict_if_needed has default max_size of 10000."""
         import inspect
-        from typing import Any
 
         from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
         class MockDataProvider:
-            def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_ratings(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "note_id": pa.array([], type=pa.string()),
+                        "rater_id": pa.array([], type=pa.string()),
+                        "helpfulness_level": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
-                return []
+            def get_all_notes(self, community_id: str) -> pa.Table:
+                return pa.table(
+                    {
+                        "id": pa.array([], type=pa.string()),
+                        "author_id": pa.array([], type=pa.string()),
+                        "classification": pa.array([], type=pa.string()),
+                        "status": pa.array([], type=pa.string()),
+                        "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+                    }
+                )
 
-            def get_all_participants(self, community_id: str) -> list[str]:
-                return []
+            def get_all_participants(self, community_id: str) -> pa.Array:
+                return pa.array([], type=pa.string())
 
         adapter = MFCoreScorerAdapter(
             data_provider=MockDataProvider(),

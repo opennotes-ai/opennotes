@@ -71,6 +71,7 @@ dependencies = [
     "pendulum>=3.2.0",
     "pydantic-ai>=1.0.0,<2.0.0",
     "sanitary>=0.1.0",
+    "pyarrow>=15.0.0",
 ]
 
 [project.optional-dependencies]
