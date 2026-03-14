@@ -468,6 +468,46 @@ class TestRateNotesTool:
         sample_deps.db.rollback.assert_awaited_once()
 
 
+class TestRateNotesFullTurn:
+    @pytest.mark.asyncio
+    async def test_full_rate_notes_turn_multiple_notes(self, mock_db):
+        note_ids = [str(uuid4()) for _ in range(3)]
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[
+                {
+                    "note_id": nid,
+                    "summary": f"Note {i}",
+                    "classification": "NOT_MISLEADING",
+                    "status": "NEEDS_MORE_RATINGS",
+                }
+                for i, nid in enumerate(note_ids)
+            ],
+            agent_personality="You rate notes carefully.",
+            model_name=_GENERIC_MODEL_ID,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        levels = ["HELPFUL", "SOMEWHAT_HELPFUL", "NOT_HELPFUL"]
+        ratings_input = [
+            {"note_id": nid, "helpfulness_level": levels[i]} for i, nid in enumerate(note_ids)
+        ]
+        result = await rate_notes(ctx, ratings=ratings_input)
+
+        assert mock_db.execute.await_count == 3
+        assert mock_db.flush.await_count == 3
+        for nid in note_ids:
+            assert nid in result
+        for level in levels:
+            assert level in result
+        assert result.count("Rated note") == 3
+
+
 class TestPassTurnTool:
     def test_pass_turn_returns_message(self):
         result = pass_turn()
