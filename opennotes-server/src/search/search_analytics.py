@@ -28,8 +28,9 @@ from typing import TYPE_CHECKING, Any
 
 import orjson
 import pendulum
+import redis.asyncio as aioredis
 
-from src.cache.redis_client import RedisClient
+from src.cache.redis_client import get_shared_redis_client
 from src.monitoring import get_logger
 from src.monitoring.metrics import search_analytics_failures_total
 
@@ -102,7 +103,6 @@ def compute_score_stats(results: list["HybridSearchResult"]) -> dict[str, float 
 
 
 async def log_search_results(
-    redis: RedisClient | None,
     query_hash: str,
     alpha: float,
     dataset_tags: list[str] | None,
@@ -112,10 +112,11 @@ async def log_search_results(
     """
     Log search results for fusion weight optimization analysis.
 
-    Logs to both structured logger and optionally Redis for aggregation.
+    Logs to structured logger and persists to Redis for aggregation.
+    Uses get_shared_redis_client() for a per-thread Redis connection,
+    safe for both the main uvicorn loop and DBOS worker threads.
 
     Args:
-        redis: Redis client (optional, for persistent storage)
         query_hash: Hashed query text
         alpha: Fusion weight used
         dataset_tags: Dataset tags used in search
@@ -150,44 +151,45 @@ async def log_search_results(
         },
     )
 
-    if redis and redis.client:
-        try:
-            timestamp_ms = int(time.time() * 1000)
-            key = f"{SEARCH_LOG_KEY_PREFIX}{timestamp_ms}:{query_hash}"
+    try:
+        conn = await get_shared_redis_client()
 
-            entry_dict = {
-                "query_hash": entry.query_hash,
-                "alpha": entry.alpha,
-                "dataset_tags": entry.dataset_tags,
-                "result_count": entry.result_count,
-                "top_score": entry.top_score,
-                "min_score": entry.min_score,
-                "max_score": entry.max_score,
-                "score_spread": entry.score_spread,
-                "timestamp": entry.timestamp,
-                "query_duration_ms": query_duration_ms,
-            }
+        timestamp_ms = int(time.time() * 1000)
+        key = f"{SEARCH_LOG_KEY_PREFIX}{timestamp_ms}:{query_hash}"
 
-            await redis.set(key, orjson.dumps(entry_dict).decode(), ttl=SEARCH_LOG_TTL_SECONDS)
+        entry_dict = {
+            "query_hash": entry.query_hash,
+            "alpha": entry.alpha,
+            "dataset_tags": entry.dataset_tags,
+            "result_count": entry.result_count,
+            "top_score": entry.top_score,
+            "min_score": entry.min_score,
+            "max_score": entry.max_score,
+            "score_spread": entry.score_spread,
+            "timestamp": entry.timestamp,
+            "query_duration_ms": query_duration_ms,
+        }
 
-            await _update_aggregate_stats(redis, entry)
+        await conn.setex(key, SEARCH_LOG_TTL_SECONDS, orjson.dumps(entry_dict))
 
-        except Exception as e:
-            search_analytics_failures_total.add(1, {"operation": "log_entry"})
-            logger.warning(
-                "Failed to log search analytics to Redis",
-                extra={"error": str(e)},
-            )
+        await _update_aggregate_stats(conn, entry)
+
+    except Exception as e:
+        search_analytics_failures_total.add(1, {"operation": "log_entry"})
+        logger.warning(
+            "Failed to log search analytics to Redis",
+            extra={"error": str(e)},
+        )
 
 
-async def _update_aggregate_stats(redis: RedisClient, entry: SearchAnalyticsEntry) -> None:
+async def _update_aggregate_stats(conn: aioredis.Redis, entry: SearchAnalyticsEntry) -> None:  # type: ignore[type-arg]
     """
     Update aggregate statistics in Redis.
 
     Maintains running statistics for analysis.
     """
     try:
-        stats_raw = await redis.get(SEARCH_STATS_KEY)
+        stats_raw = await conn.get(SEARCH_STATS_KEY)
         if stats_raw:
             stats = orjson.loads(stats_raw)
         else:
@@ -198,20 +200,20 @@ async def _update_aggregate_stats(redis: RedisClient, entry: SearchAnalyticsEntr
                 "alpha_usage": {},
             }
 
-        stats["total_searches"] += 1  # pyright: ignore[reportOperatorIssue]
-        stats["total_results"] += entry.result_count  # pyright: ignore[reportOperatorIssue]
+        stats["total_searches"] += 1
+        stats["total_results"] += entry.result_count
 
         if entry.score_spread is not None:
             n = stats["total_searches"]
             old_avg = stats["avg_score_spread"]
-            stats["avg_score_spread"] = old_avg + (entry.score_spread - old_avg) / n  # pyright: ignore[reportOperatorIssue]
+            stats["avg_score_spread"] = old_avg + (entry.score_spread - old_avg) / n
 
         alpha_key = str(entry.alpha)
-        if alpha_key not in stats["alpha_usage"]:  # pyright: ignore[reportOperatorIssue]
-            stats["alpha_usage"][alpha_key] = 0  # pyright: ignore[reportIndexIssue]
-        stats["alpha_usage"][alpha_key] += 1  # pyright: ignore[reportIndexIssue]
+        if alpha_key not in stats["alpha_usage"]:
+            stats["alpha_usage"][alpha_key] = 0
+        stats["alpha_usage"][alpha_key] += 1
 
-        await redis.set(SEARCH_STATS_KEY, orjson.dumps(stats).decode())
+        await conn.set(SEARCH_STATS_KEY, orjson.dumps(stats))
 
     except Exception as e:
         search_analytics_failures_total.add(1, {"operation": "update_stats"})
@@ -221,18 +223,16 @@ async def _update_aggregate_stats(redis: RedisClient, entry: SearchAnalyticsEntr
         )
 
 
-async def get_search_stats(redis: RedisClient) -> dict[str, Any] | None:
+async def get_search_stats() -> dict[str, Any] | None:
     """
     Get aggregate search statistics.
-
-    Args:
-        redis: Redis client
 
     Returns:
         Aggregate statistics or None if not available
     """
     try:
-        stats_raw = await redis.get(SEARCH_STATS_KEY)
+        conn = await get_shared_redis_client()
+        stats_raw = await conn.get(SEARCH_STATS_KEY)
         if stats_raw:
             return orjson.loads(stats_raw)
         return None
