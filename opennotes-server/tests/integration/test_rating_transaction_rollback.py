@@ -1,11 +1,4 @@
-"""
-Tests for task-226: Verify rating submission and score update happen in same transaction.
-
-This ensures data consistency by verifying that if score calculation fails,
-both the rating and score updates are rolled back together.
-"""
-
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 import pytest
@@ -17,12 +10,10 @@ from src.notes.models import Note, Rating
 from src.notes.schemas import HelpfulnessLevel, NoteClassification, NoteStatus
 from src.users.profile_models import UserProfile
 
+DISPATCH_PATCH_TARGET = "src.notes.ratings_jsonapi_router.dispatch_community_scoring"
+
 
 async def create_rater_profile(display_name: str) -> UUID:
-    """Create a rater profile for testing.
-
-    Returns the profile ID (UUID) to use as rater_id.
-    """
     async with get_session_maker()() as session:
         profile = UserProfile(
             display_name=display_name,
@@ -36,7 +27,6 @@ async def create_rater_profile(display_name: str) -> UUID:
 
 
 def make_jsonapi_rating_request(note_id: str, rater_id: str, helpfulness_level: str):
-    """Helper to create JSON:API formatted rating request."""
     return {
         "data": {
             "type": "ratings",
@@ -51,11 +41,9 @@ def make_jsonapi_rating_request(note_id: str, rater_id: str, helpfulness_level: 
 
 @pytest.fixture
 async def test_note(db_session, community_server):
-    """Create a test note for rating submission."""
     import secrets
     from uuid import uuid4
 
-    # Create author profile
     author_profile = UserProfile(
         display_name="Test Author",
         is_human=True,
@@ -83,8 +71,6 @@ async def test_note(db_session, community_server):
 async def test_rating_and_score_in_same_transaction_success(
     async_client, async_auth_headers, db_session, test_note
 ):
-    """Test that rating creation and score update happen in the same transaction on success."""
-    # Create a proper rater profile with UUID
     rater_id = await create_rater_profile("Test Rater 1")
 
     rating_data = make_jsonapi_rating_request(
@@ -93,15 +79,17 @@ async def test_rating_and_score_in_same_transaction_success(
         HelpfulnessLevel.HELPFUL,
     )
 
-    response = await async_client.post(
-        "/api/v2/ratings",
-        json=rating_data,
-        headers=async_auth_headers,
-    )
+    with patch(DISPATCH_PATCH_TARGET, new_callable=AsyncMock) as mock_dispatch:
+        response = await async_client.post(
+            "/api/v2/ratings",
+            json=rating_data,
+            headers=async_auth_headers,
+        )
 
-    assert response.status_code == status.HTTP_201_CREATED
-    data = response.json()
-    assert data["data"]["attributes"]["note_id"] == str(test_note.id)
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["data"]["attributes"]["note_id"] == str(test_note.id)
+        mock_dispatch.assert_called_once_with(test_note.community_server_id)
 
     rating_result = await db_session.execute(
         select(Rating).where(
@@ -117,16 +105,13 @@ async def test_rating_and_score_in_same_transaction_success(
     note_result = await db_session.execute(select(Note).where(Note.id == test_note.id))
     refreshed_note = note_result.scalar_one_or_none()
     assert refreshed_note is not None
-    assert refreshed_note.helpfulness_score > 0
     assert refreshed_note.status == NoteStatus.NEEDS_MORE_RATINGS
 
 
 @pytest.mark.asyncio
-async def test_transaction_rollback_on_score_calculation_failure(
+async def test_dispatch_failure_does_not_rollback_rating(
     async_client, async_auth_headers, db_session, test_note
 ):
-    """Test that if score calculation fails, both rating and score updates are rolled back."""
-    # Create a proper rater profile with UUID
     rater_id = await create_rater_profile("Test Rater 2")
 
     rating_data = make_jsonapi_rating_request(
@@ -135,90 +120,8 @@ async def test_transaction_rollback_on_score_calculation_failure(
         HelpfulnessLevel.HELPFUL,
     )
 
-    with patch("src.notes.ratings_jsonapi_router.calculate_note_score") as mock_calculate:
-        mock_calculate.side_effect = Exception("Score calculation failed")
-
-        response = await async_client.post(
-            "/api/v2/ratings",
-            json=rating_data,
-            headers=async_auth_headers,
-        )
-
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-        response_data = response.json()
-        assert "errors" in response_data
-        assert response_data["errors"][0]["detail"] == "Failed to create rating"
-
-    rating_result = await db_session.execute(
-        select(Rating).where(
-            Rating.note_id == test_note.id,
-            Rating.rater_id == rater_id,
-        )
-    )
-    rating = rating_result.scalar_one_or_none()
-    assert rating is None, "Rating should not exist after rollback"
-
-    db_session.expunge(test_note)
-    note_result = await db_session.execute(select(Note).where(Note.id == test_note.id))
-    refreshed_note = note_result.scalar_one_or_none()
-    assert refreshed_note is not None
-    assert refreshed_note.helpfulness_score == 0
-    assert refreshed_note.status == NoteStatus.NEEDS_MORE_RATINGS
-
-
-@pytest.mark.asyncio
-async def test_transaction_rollback_on_database_error(
-    async_client, async_auth_headers, db_session, test_note
-):
-    """Test that database errors trigger full transaction rollback."""
-    # Create a proper rater profile with UUID
-    rater_id = await create_rater_profile("Test Rater 3")
-
-    rating_data = make_jsonapi_rating_request(
-        str(test_note.id),
-        str(rater_id),
-        HelpfulnessLevel.HELPFUL,
-    )
-
-    with patch("src.notes.ratings_jsonapi_router.calculate_note_score") as mock_calculate:
-        mock_calculate.side_effect = Exception("Score calculation failed")
-
-        response = await async_client.post(
-            "/api/v2/ratings",
-            json=rating_data,
-            headers=async_auth_headers,
-        )
-
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-
-    rating_result = await db_session.execute(
-        select(Rating).where(
-            Rating.note_id == test_note.id,
-            Rating.rater_id == rater_id,
-        )
-    )
-    rating = rating_result.scalar_one_or_none()
-    assert rating is None, "Rating should not exist after rollback"
-
-
-@pytest.mark.asyncio
-async def test_event_publish_failure_does_not_affect_transaction(
-    async_client, async_auth_headers, db_session, test_note
-):
-    """Test that event publishing failures don't affect database consistency."""
-    # Create a proper rater profile with UUID
-    rater_id = await create_rater_profile("Test Rater 4")
-
-    rating_data = make_jsonapi_rating_request(
-        str(test_note.id),
-        str(rater_id),
-        HelpfulnessLevel.HELPFUL,
-    )
-
-    with patch(
-        "src.events.scoring_events.ScoringEventPublisher.publish_note_score_updated"
-    ) as mock_publish:
-        mock_publish.side_effect = Exception("Event publish failed")
+    with patch(DISPATCH_PATCH_TARGET, new_callable=AsyncMock) as mock_dispatch:
+        mock_dispatch.side_effect = Exception("Dispatch failed")
 
         response = await async_client.post(
             "/api/v2/ratings",
@@ -235,22 +138,93 @@ async def test_event_publish_failure_does_not_affect_transaction(
         )
     )
     rating = rating_result.scalar_one_or_none()
-    assert rating is not None, "Rating should exist even if event publishing fails"
+    assert rating is not None, "Rating should persist even when dispatch fails"
 
     db_session.expunge(test_note)
     note_result = await db_session.execute(select(Note).where(Note.id == test_note.id))
     refreshed_note = note_result.scalar_one_or_none()
     assert refreshed_note is not None
-    assert refreshed_note.helpfulness_score > 0
+    assert refreshed_note.helpfulness_score == 0
     assert refreshed_note.status == NoteStatus.NEEDS_MORE_RATINGS
 
 
 @pytest.mark.asyncio
-async def test_no_partial_state_after_score_update_failure(
+async def test_dispatch_failure_preserves_database_state(
     async_client, async_auth_headers, db_session, test_note
 ):
-    """Test that there's no partial state where rating exists but score is not updated."""
-    # Create a proper rater profile with UUID
+    rater_id = await create_rater_profile("Test Rater 3")
+
+    rating_data = make_jsonapi_rating_request(
+        str(test_note.id),
+        str(rater_id),
+        HelpfulnessLevel.HELPFUL,
+    )
+
+    with patch(DISPATCH_PATCH_TARGET, new_callable=AsyncMock) as mock_dispatch:
+        mock_dispatch.side_effect = Exception("Dispatch failed")
+
+        response = await async_client.post(
+            "/api/v2/ratings",
+            json=rating_data,
+            headers=async_auth_headers,
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    rating_result = await db_session.execute(
+        select(Rating).where(
+            Rating.note_id == test_note.id,
+            Rating.rater_id == rater_id,
+        )
+    )
+    rating = rating_result.scalar_one_or_none()
+    assert rating is not None, "Rating should exist despite dispatch failure"
+
+
+@pytest.mark.asyncio
+async def test_scoring_dispatch_failure_does_not_affect_response(
+    async_client, async_auth_headers, db_session, test_note
+):
+    rater_id = await create_rater_profile("Test Rater 4")
+
+    rating_data = make_jsonapi_rating_request(
+        str(test_note.id),
+        str(rater_id),
+        HelpfulnessLevel.HELPFUL,
+    )
+
+    with patch(DISPATCH_PATCH_TARGET, new_callable=AsyncMock) as mock_dispatch:
+        mock_dispatch.side_effect = Exception("Scoring dispatch failed")
+
+        response = await async_client.post(
+            "/api/v2/ratings",
+            json=rating_data,
+            headers=async_auth_headers,
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    rating_result = await db_session.execute(
+        select(Rating).where(
+            Rating.note_id == test_note.id,
+            Rating.rater_id == rater_id,
+        )
+    )
+    rating = rating_result.scalar_one_or_none()
+    assert rating is not None, "Rating should exist even if scoring dispatch fails"
+
+    db_session.expunge(test_note)
+    note_result = await db_session.execute(select(Note).where(Note.id == test_note.id))
+    refreshed_note = note_result.scalar_one_or_none()
+    assert refreshed_note is not None
+    assert refreshed_note.helpfulness_score == 0
+    assert refreshed_note.status == NoteStatus.NEEDS_MORE_RATINGS
+
+
+@pytest.mark.asyncio
+async def test_no_partial_state_after_dispatch_failure(
+    async_client, async_auth_headers, db_session, test_note
+):
     rater_id = await create_rater_profile("Test Rater 5")
 
     initial_score = test_note.helpfulness_score
@@ -262,8 +236,8 @@ async def test_no_partial_state_after_score_update_failure(
         HelpfulnessLevel.HELPFUL,
     )
 
-    with patch("src.notes.ratings_jsonapi_router.calculate_note_score") as mock_calculate:
-        mock_calculate.side_effect = Exception("Score calculation failed")
+    with patch(DISPATCH_PATCH_TARGET, new_callable=AsyncMock) as mock_dispatch:
+        mock_dispatch.side_effect = Exception("Dispatch failed")
 
         response = await async_client.post(
             "/api/v2/ratings",
@@ -271,7 +245,7 @@ async def test_no_partial_state_after_score_update_failure(
             headers=async_auth_headers,
         )
 
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.status_code == status.HTTP_201_CREATED
 
     rating_result = await db_session.execute(
         select(Rating).where(
@@ -280,7 +254,7 @@ async def test_no_partial_state_after_score_update_failure(
         )
     )
     rating = rating_result.scalar_one_or_none()
-    assert rating is None, "Rating should not exist"
+    assert rating is not None, "Rating should exist after dispatch failure"
 
     db_session.expunge(test_note)
     note_result = await db_session.execute(select(Note).where(Note.id == test_note.id))
@@ -294,8 +268,6 @@ async def test_no_partial_state_after_score_update_failure(
 async def test_upsert_updates_existing_rating_in_same_transaction(
     async_client, async_auth_headers, db_session, test_note
 ):
-    """Test that updating existing rating also updates score in same transaction."""
-    # Create a proper rater profile with UUID
     rater_id = await create_rater_profile("Test Rater 6")
 
     rating_data = make_jsonapi_rating_request(
@@ -304,23 +276,17 @@ async def test_upsert_updates_existing_rating_in_same_transaction(
         HelpfulnessLevel.SOMEWHAT_HELPFUL,
     )
 
-    response1 = await async_client.post(
-        "/api/v2/ratings", json=rating_data, headers=async_auth_headers
-    )
-    assert response1.status_code == status.HTTP_201_CREATED
+    with patch(DISPATCH_PATCH_TARGET, new_callable=AsyncMock):
+        response1 = await async_client.post(
+            "/api/v2/ratings", json=rating_data, headers=async_auth_headers
+        )
+        assert response1.status_code == status.HTTP_201_CREATED
 
-    db_session.expunge_all()
-    note_result = await db_session.execute(select(Note).where(Note.id == test_note.id))
-    note_after_first = note_result.scalar_one_or_none()
-    assert note_after_first is not None
-    first_score = note_after_first.helpfulness_score
-    assert first_score > 0, "Score should be updated after first rating"
-
-    rating_data["data"]["attributes"]["helpfulness_level"] = HelpfulnessLevel.HELPFUL
-    response2 = await async_client.post(
-        "/api/v2/ratings", json=rating_data, headers=async_auth_headers
-    )
-    assert response2.status_code == status.HTTP_201_CREATED
+        rating_data["data"]["attributes"]["helpfulness_level"] = HelpfulnessLevel.HELPFUL
+        response2 = await async_client.post(
+            "/api/v2/ratings", json=rating_data, headers=async_auth_headers
+        )
+        assert response2.status_code == status.HTTP_201_CREATED
 
     db_session.expunge_all()
     rating_result = await db_session.execute(
@@ -340,7 +306,6 @@ async def test_upsert_updates_existing_rating_in_same_transaction(
     assert note_after_second.status == NoteStatus.NEEDS_MORE_RATINGS, (
         "Note status should remain NEEDS_MORE_RATINGS until rating threshold is reached"
     )
-    final_rating = ratings[0]
-    assert final_rating.helpfulness_level == HelpfulnessLevel.HELPFUL, (
+    assert ratings[0].helpfulness_level == HelpfulnessLevel.HELPFUL, (
         "Rating should be updated to HELPFUL"
     )

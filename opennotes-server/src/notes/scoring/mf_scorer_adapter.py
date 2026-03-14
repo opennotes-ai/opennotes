@@ -17,10 +17,8 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from src.notes.scoring.note_status_history_builder import NoteStatusHistoryBuilder
-from src.notes.scoring.ratings_dataframe_builder import RatingsDataFrameBuilder
+from src.notes.scoring.data_transforms import transform_community_data
 from src.notes.scoring.scorer_protocol import ScoringResult
-from src.notes.scoring.user_enrollment_builder import UserEnrollmentBuilder
 
 if TYPE_CHECKING:
     from src.notes.scoring.data_provider import CommunityDataProvider
@@ -162,14 +160,8 @@ class MFCoreScorerAdapter:
                 pseudoraters=False,
                 useStableInitialization=True,
             )
-            self._ratings_builder = RatingsDataFrameBuilder()
-            self._note_status_builder = NoteStatusHistoryBuilder()
-            self._user_enrollment_builder = UserEnrollmentBuilder()
         else:
             self._scorer = None
-            self._ratings_builder = None
-            self._note_status_builder = None
-            self._user_enrollment_builder = None
 
     def score_note(self, note_id: str, ratings: Sequence[float]) -> ScoringResult:
         """
@@ -462,13 +454,13 @@ class MFCoreScorerAdapter:
 
         community_id = self._community_id or ""
 
-        ratings_data = self._data_provider.get_all_ratings(community_id)
-        notes_data = self._data_provider.get_all_notes(community_id)
-        participant_ids = self._data_provider.get_all_participants(community_id)
+        ratings_table = self._data_provider.get_all_ratings(community_id)
+        notes_table = self._data_provider.get_all_notes(community_id)
+        participants_array = self._data_provider.get_all_participants(community_id)
 
-        ratings_df = self._ratings_builder.build(ratings_data)  # pyright: ignore[reportOptionalMemberAccess]
-        note_status_df = self._note_status_builder.build(notes_data)  # pyright: ignore[reportOptionalMemberAccess]
-        user_enrollment_df = self._user_enrollment_builder.build(participant_ids)  # pyright: ignore[reportOptionalMemberAccess]
+        ratings_df, note_status_df, user_enrollment_df = transform_community_data(
+            ratings_table, notes_table, participants_array
+        )
 
         all_note_ids = list(set(ratings_df["noteId"].tolist() + note_status_df["noteId"].tolist()))
         uuid_to_int, int_to_uuid = self._build_note_id_mapping(all_note_ids)
