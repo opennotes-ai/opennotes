@@ -83,7 +83,7 @@ class TestPhase2PromptFiltering:
     def test_rate_note_prompt_has_action_specific_instruction(self, sample_requests, sample_notes):
         agent = OpenNotesSimAgent()
         prompt = agent._build_phase2_prompt(SimActionType.RATE_NOTE, sample_requests, sample_notes)
-        assert "Rate one of the notes above" in prompt
+        assert "Rate between 1 and 5 of the notes above" in prompt
 
 
 class TestPhase2PromptTokenBudget:

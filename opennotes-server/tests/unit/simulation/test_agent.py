@@ -14,6 +14,7 @@ from src.simulation.agent import (
     MAX_CONTEXT_NOTES,
     MAX_CONTEXT_REQUESTS,
     MAX_PERSONALITY_CHARS,
+    MAX_RATE_NOTES_BATCH,
     WEBSEARCH_SUPPORTED_PROVIDERS,
     OpenNotesSimAgent,
     SimAgentDeps,
@@ -23,7 +24,7 @@ from src.simulation.agent import (
     build_instructions,
     estimate_tokens,
     pass_turn,
-    rate_note,
+    rate_notes,
     sim_agent,
     write_note,
 )
@@ -109,8 +110,8 @@ class TestToolsRegistered:
     def test_write_note_tool_registered(self):
         assert "write_note" in self._get_tool_names()
 
-    def test_rate_note_tool_registered(self):
-        assert "rate_note" in self._get_tool_names()
+    def test_rate_notes_tool_registered(self):
+        assert "rate_notes" in self._get_tool_names()
 
     def test_react_to_note_tool_not_registered(self):
         assert "react_to_note" not in self._get_tool_names()
@@ -285,17 +286,16 @@ class TestWriteNoteTool:
         sample_deps.db.rollback.assert_awaited_once()
 
 
-class TestRateNoteTool:
+class TestRateNotesTool:
     @pytest.mark.asyncio
-    async def test_rate_note_creates_rating(self, sample_deps):
+    async def test_rate_notes_single_rating(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
 
         note_id = sample_deps.available_notes[0]["note_id"]
-        result = await rate_note(
+        result = await rate_notes(
             ctx,
-            note_id=note_id,
-            helpfulness_level="HELPFUL",
+            ratings=[{"note_id": note_id, "helpfulness_level": "HELPFUL"}],
         )
 
         sample_deps.db.execute.assert_awaited_once()
@@ -304,30 +304,92 @@ class TestRateNoteTool:
         assert "HELPFUL" in result
 
     @pytest.mark.asyncio
-    async def test_rate_note_validates_note_id(self, sample_deps):
+    async def test_rate_notes_batch_of_five(self, mock_db):
+        note_ids = [str(uuid4()) for _ in range(5)]
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[
+                {
+                    "note_id": nid,
+                    "summary": f"Note {i}",
+                    "classification": "NOT_MISLEADING",
+                    "status": "NEEDS_MORE_RATINGS",
+                }
+                for i, nid in enumerate(note_ids)
+            ],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        ratings_input = [{"note_id": nid, "helpfulness_level": "HELPFUL"} for nid in note_ids]
+        result = await rate_notes(ctx, ratings=ratings_input)
+
+        assert mock_db.execute.await_count == 5
+        assert mock_db.flush.await_count == 5
+        for nid in note_ids:
+            assert nid in result
+
+    @pytest.mark.asyncio
+    async def test_rate_notes_batch_over_five_rejected(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
 
-        result = await rate_note(
-            ctx,
-            note_id="nonexistent",
-            helpfulness_level="HELPFUL",
-        )
+        ratings_input = [
+            {"note_id": str(uuid4()), "helpfulness_level": "HELPFUL"} for _ in range(6)
+        ]
+        result = await rate_notes(ctx, ratings=ratings_input)
 
         assert "Error" in result
-        assert "nonexistent" in result
+        assert str(MAX_RATE_NOTES_BATCH) in result
         sample_deps.db.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_rate_note_validates_helpfulness_level(self, sample_deps):
+    async def test_rate_notes_empty_batch_rejected(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await rate_notes(ctx, ratings=[])
+
+        assert "Error" in result
+        sample_deps.db.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_rate_notes_mixed_valid_invalid(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        valid_note_id = sample_deps.available_notes[0]["note_id"]
+        invalid_note_id = "nonexistent"
+
+        result = await rate_notes(
+            ctx,
+            ratings=[
+                {"note_id": valid_note_id, "helpfulness_level": "HELPFUL"},
+                {"note_id": invalid_note_id, "helpfulness_level": "HELPFUL"},
+            ],
+        )
+
+        assert "Rated note" in result
+        assert valid_note_id in result
+        assert "Error" in result
+        assert "nonexistent" in result
+        sample_deps.db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_rate_notes_invalid_helpfulness_level(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
 
         note_id = sample_deps.available_notes[0]["note_id"]
-        result = await rate_note(
+        result = await rate_notes(
             ctx,
-            note_id=note_id,
-            helpfulness_level="INVALID",
+            ratings=[{"note_id": note_id, "helpfulness_level": "INVALID"}],
         )
 
         assert "Error" in result
@@ -335,7 +397,24 @@ class TestRateNoteTool:
         sample_deps.db.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_rate_note_validates_uuid_format(self, sample_deps):
+    async def test_rate_notes_duplicate_note_ids(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        note_id = sample_deps.available_notes[0]["note_id"]
+        result = await rate_notes(
+            ctx,
+            ratings=[
+                {"note_id": note_id, "helpfulness_level": "HELPFUL"},
+                {"note_id": note_id, "helpfulness_level": "NOT_HELPFUL"},
+            ],
+        )
+
+        assert sample_deps.db.execute.await_count == 2
+        assert result.count("Rated note") == 2
+
+    @pytest.mark.asyncio
+    async def test_rate_notes_validates_uuid_format(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
         sample_deps.available_notes.append(
@@ -347,10 +426,9 @@ class TestRateNoteTool:
             }
         )
 
-        result = await rate_note(
+        result = await rate_notes(
             ctx,
-            note_id="not-a-uuid",
-            helpfulness_level="HELPFUL",
+            ratings=[{"note_id": "not-a-uuid", "helpfulness_level": "HELPFUL"}],
         )
 
         assert "Error" in result
@@ -358,106 +436,35 @@ class TestRateNoteTool:
         sample_deps.db.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_rate_note_str_conversion_matches_uuid_note_ids(self, mock_db):
-        note_uuid = uuid4()
-        deps = SimAgentDeps(
-            db=mock_db,
-            community_server_id=uuid4(),
-            agent_instance_id=uuid4(),
-            user_profile_id=uuid4(),
-            available_requests=[],
-            available_notes=[
-                {
-                    "note_id": note_uuid,
-                    "summary": "test",
-                    "classification": "NOT_MISLEADING",
-                    "status": "NEEDS_MORE_RATINGS",
-                },
-            ],
-            agent_personality="test",
-            model_name=_GENERIC_MODEL_ID,
-        )
-        ctx = MagicMock()
-        ctx.deps = deps
-
-        result = await rate_note(
-            ctx,
-            note_id=str(note_uuid),
-            helpfulness_level="HELPFUL",
-        )
-
-        assert "Rated note" in result
-        mock_db.execute.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_rate_note_handles_integrity_error(self, sample_deps):
-        ctx = MagicMock()
-        ctx.deps = sample_deps
-        sample_deps.db.execute = AsyncMock(side_effect=IntegrityError("fk violation", {}, None))
-
-        note_id = sample_deps.available_notes[0]["note_id"]
-        result = await rate_note(
-            ctx,
-            note_id=note_id,
-            helpfulness_level="HELPFUL",
-        )
-
-        assert result == "Error: could not create rating due to a constraint violation."
-
-    @pytest.mark.asyncio
-    async def test_rate_note_handles_sqlalchemy_error(self, sample_deps):
-        ctx = MagicMock()
-        ctx.deps = sample_deps
-        sample_deps.db.execute = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
-
-        note_id = sample_deps.available_notes[0]["note_id"]
-        result = await rate_note(
-            ctx,
-            note_id=note_id,
-            helpfulness_level="HELPFUL",
-        )
-
-        assert result == "Error: could not create rating due to a database error."
-
-    @pytest.mark.asyncio
-    async def test_rate_note_integrity_error_does_not_leak_details(self, sample_deps):
-        ctx = MagicMock()
-        ctx.deps = sample_deps
-        sample_deps.db.execute = AsyncMock(
-            side_effect=IntegrityError("ix_ratings_note_rater", {}, None)
-        )
-
-        note_id = sample_deps.available_notes[0]["note_id"]
-        result = await rate_note(
-            ctx,
-            note_id=note_id,
-            helpfulness_level="HELPFUL",
-        )
-
-        assert "ix_ratings_note_rater" not in result
-
-    @pytest.mark.asyncio
-    async def test_rate_note_rolls_back_on_integrity_error(self, sample_deps):
+    async def test_rate_notes_handles_integrity_error(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
         sample_deps.db.execute = AsyncMock(side_effect=IntegrityError("fk violation", {}, None))
         sample_deps.db.rollback = AsyncMock()
 
         note_id = sample_deps.available_notes[0]["note_id"]
-        await rate_note(ctx, note_id=note_id, helpfulness_level="HELPFUL")
+        result = await rate_notes(
+            ctx,
+            ratings=[{"note_id": note_id, "helpfulness_level": "HELPFUL"}],
+        )
 
+        assert "constraint violation" in result
         sample_deps.db.rollback.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_rate_note_rolls_back_on_sqlalchemy_error(self, sample_deps):
+    async def test_rate_notes_handles_sqlalchemy_error(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
         sample_deps.db.execute = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
         sample_deps.db.rollback = AsyncMock()
 
         note_id = sample_deps.available_notes[0]["note_id"]
-        await rate_note(ctx, note_id=note_id, helpfulness_level="HELPFUL")
+        result = await rate_notes(
+            ctx,
+            ratings=[{"note_id": note_id, "helpfulness_level": "HELPFUL"}],
+        )
 
+        assert "database error" in result
         sample_deps.db.rollback.assert_awaited_once()
 
 
@@ -603,16 +610,15 @@ class TestOutput:
         )
         assert action.action_type == SimActionType.PASS_TURN
         assert action.request_id is None
-        assert action.note_id is None
+        assert action.rated_notes == []
 
     def test_rate_note_action(self):
         action = SimAgentAction(
             action_type=SimActionType.RATE_NOTE,
-            note_id="some-note-id",
-            helpfulness_level="HELPFUL",
+            rated_notes=[{"note_id": "some-note-id", "helpfulness_level": "HELPFUL"}],
             reasoning="The note is accurate",
         )
-        assert action.helpfulness_level == "HELPFUL"
+        assert action.rated_notes[0]["helpfulness_level"] == "HELPFUL"
 
 
 class TestBuildTurnPrompt:
