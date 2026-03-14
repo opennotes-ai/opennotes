@@ -33,6 +33,7 @@ SCORING_INTERVAL: int = 5
 CIRCUIT_BREAKER_THRESHOLD: int = 5
 CIRCUIT_BREAKER_RESET_TIMEOUT: float = 300.0
 CIRCUIT_BREAKER_STUCK_THRESHOLD: int = 3
+SCORING_TIMEOUT: float = 600.0
 SCORING_PERSISTENCE_FAILURE_MESSAGE = "Required scoring snapshot persistence failed"
 FINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
 
@@ -655,7 +656,7 @@ def run_scoring_step(simulation_run_id: str) -> dict[str, Any]:
                 "scorer": result.scorer_type,
             }
 
-    return run_sync(_score(), timeout=600.0)
+    return run_sync(_score(), timeout=SCORING_TIMEOUT)
 
 
 @DBOS.step(

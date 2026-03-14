@@ -877,6 +877,36 @@ class TestScheduleTurnsStep:
         with pytest.raises(CircuitOpenError):
             breaker.check()
 
+    def test_circuit_breaker_stuck_log_after_consecutive_skips(self) -> None:
+        import logging
+
+        from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
+        from src.simulation.workflows.orchestrator_workflow import (
+            CIRCUIT_BREAKER_STUCK_THRESHOLD,
+        )
+
+        breaker = CircuitBreaker(threshold=2, reset_timeout=300)
+        for _ in range(2):
+            breaker.record_failure()
+
+        consecutive_open_skips = 0
+        log_messages: list[tuple[int, str]] = []
+
+        for _ in range(CIRCUIT_BREAKER_STUCK_THRESHOLD + 1):
+            try:
+                breaker.check()
+            except CircuitOpenError:
+                consecutive_open_skips += 1
+                if consecutive_open_skips >= CIRCUIT_BREAKER_STUCK_THRESHOLD:
+                    log_messages.append((logging.ERROR, "circuit_breaker_stuck"))
+                else:
+                    log_messages.append((logging.WARNING, "skipping"))
+
+        assert len([m for m in log_messages if m[0] == logging.ERROR]) == 2
+        assert log_messages[0][0] == logging.WARNING
+        assert log_messages[1][0] == logging.WARNING
+        assert log_messages[2][0] == logging.ERROR
+
 
 class TestCheckContentAvailabilityStep:
     def test_returns_has_content_true_when_pending_requests(self) -> None:
