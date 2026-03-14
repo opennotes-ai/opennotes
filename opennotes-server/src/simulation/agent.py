@@ -242,15 +242,14 @@ async def rate_notes(
             )
         )
         try:
-            await ctx.deps.db.execute(stmt)
-            await ctx.deps.db.flush()
+            async with ctx.deps.db.begin_nested():
+                await ctx.deps.db.execute(stmt)
+                await ctx.deps.db.flush()
             results.append(f"Rated note '{note_id}' as '{helpfulness_level}'.")
         except IntegrityError:
-            await ctx.deps.db.rollback()
             logger.exception("Integrity error creating rating for note %s", note_id)
             results.append(f"Error rating '{note_id}': constraint violation.")
         except SQLAlchemyError:
-            await ctx.deps.db.rollback()
             logger.exception("Database error creating rating for note %s", note_id)
             results.append(f"Error rating '{note_id}': database error.")
 

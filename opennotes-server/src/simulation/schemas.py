@@ -99,12 +99,19 @@ class ActionSelectionResult(BaseModel):
         return v
 
 
+class RatedNoteEntry(BaseModel):
+    note_id: str = Field(..., description="UUID of the note that was rated")
+    helpfulness_level: str = Field(
+        ..., description="Rating level: HELPFUL, SOMEWHAT_HELPFUL, or NOT_HELPFUL"
+    )
+
+
 class SimAgentAction(BaseModel):
     action_type: SimActionType
     request_id: str | None = Field(default=None, description="Request ID the note was written for")
-    rated_notes: list[dict] = Field(
+    rated_notes: list[RatedNoteEntry] = Field(
         default_factory=list,
-        description="List of {note_id, helpfulness_level} dicts if rated notes",
+        description="List of rated notes if action was rate_notes",
     )
     summary: str | None = Field(default=None, description="Note summary text if wrote a note")
     classification: str | None = Field(

@@ -28,10 +28,17 @@ from src.simulation.agent import (
     sim_agent,
     write_note,
 )
-from src.simulation.schemas import SimActionType, SimAgentAction
+from src.simulation.schemas import RatedNoteEntry, SimActionType, SimAgentAction
 
 _TEST_MODEL_ID = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
 _GENERIC_MODEL_ID = ModelId.from_pydantic_ai("test:model")
+
+
+def _make_nested_ctx():
+    nested = AsyncMock()
+    nested.__aenter__ = AsyncMock(return_value=None)
+    nested.__aexit__ = AsyncMock(return_value=False)
+    return nested
 
 
 @pytest.fixture
@@ -42,6 +49,7 @@ def mock_db():
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = []
     db.execute = AsyncMock(return_value=mock_result)
+    db.begin_nested = MagicMock(side_effect=lambda: _make_nested_ctx())
     return db
 
 
@@ -439,8 +447,11 @@ class TestRateNotesTool:
     async def test_rate_notes_handles_integrity_error(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
-        sample_deps.db.execute = AsyncMock(side_effect=IntegrityError("fk violation", {}, None))
-        sample_deps.db.rollback = AsyncMock()
+
+        nested_ctx = AsyncMock()
+        nested_ctx.__aenter__ = AsyncMock(side_effect=IntegrityError("fk violation", {}, None))
+        nested_ctx.__aexit__ = AsyncMock(return_value=False)
+        sample_deps.db.begin_nested = MagicMock(return_value=nested_ctx)
 
         note_id = sample_deps.available_notes[0]["note_id"]
         result = await rate_notes(
@@ -449,14 +460,16 @@ class TestRateNotesTool:
         )
 
         assert "constraint violation" in result
-        sample_deps.db.rollback.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_rate_notes_handles_sqlalchemy_error(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
-        sample_deps.db.execute = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
-        sample_deps.db.rollback = AsyncMock()
+
+        nested_ctx = AsyncMock()
+        nested_ctx.__aenter__ = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
+        nested_ctx.__aexit__ = AsyncMock(return_value=False)
+        sample_deps.db.begin_nested = MagicMock(return_value=nested_ctx)
 
         note_id = sample_deps.available_notes[0]["note_id"]
         result = await rate_notes(
@@ -465,7 +478,63 @@ class TestRateNotesTool:
         )
 
         assert "database error" in result
-        sample_deps.db.rollback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_rate_notes_mid_batch_error_preserves_earlier_ratings(self, mock_db):
+        note_ids = [str(uuid4()) for _ in range(3)]
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[
+                {
+                    "note_id": nid,
+                    "summary": f"Note {i}",
+                    "classification": "NOT_MISLEADING",
+                    "status": "NEEDS_MORE_RATINGS",
+                }
+                for i, nid in enumerate(note_ids)
+            ],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        call_count = 0
+
+        def _begin_nested_side_effect():
+            nonlocal call_count
+            call_count += 1
+            nested = AsyncMock()
+            if call_count == 2:
+                nested.__aenter__ = AsyncMock(side_effect=IntegrityError("fk violation", {}, None))
+            else:
+                nested.__aenter__ = AsyncMock()
+            nested.__aexit__ = AsyncMock(return_value=False)
+            return nested
+
+        mock_db.begin_nested = MagicMock(side_effect=_begin_nested_side_effect)
+
+        result = await rate_notes(
+            ctx,
+            ratings=[
+                {"note_id": note_ids[0], "helpfulness_level": "HELPFUL"},
+                {"note_id": note_ids[1], "helpfulness_level": "HELPFUL"},
+                {"note_id": note_ids[2], "helpfulness_level": "HELPFUL"},
+            ],
+        )
+
+        lines = result.strip().split("\n")
+        assert len(lines) == 3
+        assert "Rated note" in lines[0]
+        assert note_ids[0] in lines[0]
+        assert "constraint violation" in lines[1]
+        assert note_ids[1] in lines[1]
+        assert "Rated note" in lines[2]
+        assert note_ids[2] in lines[2]
 
 
 class TestRateNotesFullTurn:
@@ -655,10 +724,10 @@ class TestOutput:
     def test_rate_note_action(self):
         action = SimAgentAction(
             action_type=SimActionType.RATE_NOTE,
-            rated_notes=[{"note_id": "some-note-id", "helpfulness_level": "HELPFUL"}],
+            rated_notes=[RatedNoteEntry(note_id="some-note-id", helpfulness_level="HELPFUL")],
             reasoning="The note is accurate",
         )
-        assert action.rated_notes[0]["helpfulness_level"] == "HELPFUL"
+        assert action.rated_notes[0].helpfulness_level == "HELPFUL"
 
 
 class TestBuildTurnPrompt:
