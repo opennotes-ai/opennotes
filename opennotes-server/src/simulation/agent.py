@@ -21,10 +21,11 @@ logger = logging.getLogger(__name__)
 
 MAX_PERSONALITY_CHARS: int = 500
 MAX_CONTEXT_REQUESTS: int = 5
-MAX_CONTEXT_NOTES: int = 5
+MAX_CONTEXT_NOTES: int = 10
 MAX_LINKED_NOTES_PER_REQUEST: int = 10
 MAX_CHANNEL_MESSAGE_LENGTH: int = 2000
 TOKEN_BUDGET: int = 4000
+MAX_RATE_NOTES_BATCH: int = 5
 
 
 _DEFAULT_MODEL = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
@@ -76,7 +77,7 @@ def build_action_selector_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         f"Your personality: {personality}\n\n"
         "Choose exactly one action:\n"
         "- write_note: Write a community note for one of the available content requests\n"
-        "- rate_note: Rate one of the available community notes on helpfulness\n"
+        "- rate_note: Rate 1-5 of the available community notes on helpfulness\n"
         "- pass_turn: Skip this turn (only when no content requests or notes are available)\n\n"
         "IMPORTANT: If notes are available to rate, you should rate one rather than passing.\n\n"
         "Respond with your chosen action_type and a brief reasoning."
@@ -112,7 +113,7 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         f"Your personality and approach:\n{personality}\n\n"
         "Available actions:\n"
         "- write_note: Write a new community note for a request\n"
-        "- rate_note: Rate an existing community note\n"
+        "- rate_note: Rate existing community notes\n"
         "- pass_turn: Do nothing this turn\n\n"
         "Choose the most appropriate action based on the available "
         "requests and notes. Always explain your reasoning."
@@ -187,58 +188,72 @@ async def write_note(
 
 
 @sim_agent.tool
-async def rate_note(
+async def rate_notes(
     ctx: RunContext[SimAgentDeps],
-    note_id: str,
-    helpfulness_level: str,
+    ratings: list[dict[str, str]],
 ) -> str:
-    """Rate an existing community note. Use this to express whether a note is
-    helpful. helpfulness_level must be one of: HELPFUL, SOMEWHAT_HELPFUL,
-    NOT_HELPFUL."""
-    valid_ids = {str(n["note_id"]) for n in ctx.deps.available_notes}
-    if note_id not in valid_ids:
-        return f"Error: note_id '{note_id}' not found in available notes."
-
-    valid_levels = {"HELPFUL", "SOMEWHAT_HELPFUL", "NOT_HELPFUL"}
-    if helpfulness_level not in valid_levels:
+    """Rate one or more community notes in a single call. Each entry must have
+    'note_id' and 'helpfulness_level'. helpfulness_level must be one of:
+    HELPFUL, SOMEWHAT_HELPFUL, NOT_HELPFUL. You can rate between 1 and 5 notes."""
+    if not ratings or len(ratings) > MAX_RATE_NOTES_BATCH:
         return (
-            f"Error: helpfulness_level '{helpfulness_level}' is invalid. "
-            f"Must be one of: {', '.join(sorted(valid_levels))}"
+            f"Error: ratings must contain between 1 and {MAX_RATE_NOTES_BATCH} entries, "
+            f"got {len(ratings)}."
         )
 
-    try:
-        note_uuid = UUID(note_id)
-    except ValueError:
-        return f"Error: note_id '{note_id}' is not a valid UUID."
+    valid_ids = {str(n["note_id"]) for n in ctx.deps.available_notes}
+    valid_levels = {"HELPFUL", "SOMEWHAT_HELPFUL", "NOT_HELPFUL"}
+    results: list[str] = []
 
-    stmt = (
-        insert(Rating)
-        .values(
-            rater_id=ctx.deps.user_profile_id,
-            note_id=note_uuid,
-            helpfulness_level=helpfulness_level,
-        )
-        .on_conflict_do_update(
-            index_elements=["note_id", "rater_id"],
-            set_={
-                "helpfulness_level": helpfulness_level,
-                "updated_at": func.now(),
-            },
-        )
-    )
-    try:
-        await ctx.deps.db.execute(stmt)
-        await ctx.deps.db.flush()
-    except IntegrityError:
-        await ctx.deps.db.rollback()
-        logger.exception("Integrity error creating rating for note %s", note_id)
-        return "Error: could not create rating due to a constraint violation."
-    except SQLAlchemyError:
-        await ctx.deps.db.rollback()
-        logger.exception("Database error creating rating for note %s", note_id)
-        return "Error: could not create rating due to a database error."
+    for entry in ratings:
+        note_id = entry.get("note_id", "")
+        helpfulness_level = entry.get("helpfulness_level", "")
 
-    return f"Rated note '{note_id}' as '{helpfulness_level}'."
+        if note_id not in valid_ids:
+            results.append(f"Error: note_id '{note_id}' not found in available notes.")
+            continue
+
+        if helpfulness_level not in valid_levels:
+            results.append(
+                f"Error: helpfulness_level '{helpfulness_level}' is invalid. "
+                f"Must be one of: {', '.join(sorted(valid_levels))}"
+            )
+            continue
+
+        try:
+            note_uuid = UUID(note_id)
+        except ValueError:
+            results.append(f"Error: note_id '{note_id}' is not a valid UUID.")
+            continue
+
+        stmt = (
+            insert(Rating)
+            .values(
+                rater_id=ctx.deps.user_profile_id,
+                note_id=note_uuid,
+                helpfulness_level=helpfulness_level,
+            )
+            .on_conflict_do_update(
+                index_elements=["note_id", "rater_id"],
+                set_={
+                    "helpfulness_level": helpfulness_level,
+                    "updated_at": func.now(),
+                },
+            )
+        )
+        try:
+            async with ctx.deps.db.begin_nested():
+                await ctx.deps.db.execute(stmt)
+                await ctx.deps.db.flush()
+            results.append(f"Rated note '{note_id}' as '{helpfulness_level}'.")
+        except IntegrityError:
+            logger.exception("Integrity error creating rating for note %s", note_id)
+            results.append(f"Error rating '{note_id}': constraint violation.")
+        except SQLAlchemyError:
+            logger.exception("Database error creating rating for note %s", note_id)
+            results.append(f"Error rating '{note_id}': database error.")
+
+    return "\n".join(results)
 
 
 @sim_agent.tool_plain
@@ -533,7 +548,7 @@ class OpenNotesSimAgent:
                 items.pop()
                 prompt = self._format_sections(items, [])
             return prompt.replace(
-                "Choose an action: write a note, rate a note, or pass.",
+                "Choose an action: write a note, rate notes, or pass.",
                 "Write a community note for one of the requests above.",
             )
 
@@ -546,8 +561,8 @@ class OpenNotesSimAgent:
                 items.pop()
                 prompt = self._format_sections([], items)
             return prompt.replace(
-                "Choose an action: write a note, rate a note, or pass.",
-                "Rate one of the notes above.",
+                "Choose an action: write a note, rate notes, or pass.",
+                "Rate between 1 and 5 of the notes above.",
             )
 
         return "You chose to pass this turn. No action needed."
@@ -621,7 +636,7 @@ class OpenNotesSimAgent:
                 )
         else:
             sections.append("== No notes available ==")
-        sections.append("\nChoose an action: write a note, rate a note, or pass.")
+        sections.append("\nChoose an action: write a note, rate notes, or pass.")
         return "\n".join(sections)
 
 
@@ -631,6 +646,7 @@ __all__ = [
     "MAX_CONTEXT_REQUESTS",
     "MAX_LINKED_NOTES_PER_REQUEST",
     "MAX_PERSONALITY_CHARS",
+    "MAX_RATE_NOTES_BATCH",
     "PHASE1_DIVERSITY_THRESHOLD",
     "TOKEN_BUDGET",
     "WEBSEARCH_SUPPORTED_PROVIDERS",
@@ -642,6 +658,7 @@ __all__ = [
     "build_queue_summary",
     "estimate_tokens",
     "post_to_channel",
+    "rate_notes",
     "read_channel",
     "sim_agent",
 ]
