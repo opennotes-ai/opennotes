@@ -1,25 +1,12 @@
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 
-scoring_path = str(
-    Path(__file__).resolve().parent.parent.parent.parent.parent.parent
-    / "communitynotes"
-    / "scoring"
-    / "src"
-)
-if scoring_path not in sys.path:
-    sys.path.insert(0, scoring_path)
-
-from scoring.scorer import EmptyRatingException  # noqa: E402
-
-from src.notes.scoring.adaptive_tier_manager import (  # noqa: E402
+from src.notes.scoring.adaptive_tier_manager import (
     AdaptiveScoringTierManager,
     ScorerFailureError,
 )
-from src.notes.scoring.tier_config import ScoringTier  # noqa: E402
+from src.notes.scoring.tier_config import ScoringTier
 
 
 @pytest.fixture(autouse=True)
@@ -32,10 +19,10 @@ def mock_external_services():
     return
 
 
-class TestEmptyRatingFallback:
+class TestAssertionErrorFallback:
     @pytest.mark.asyncio
-    async def test_empty_rating_exception_triggers_fallback(self):
-        """When scorer raises EmptyRatingException, tier manager should fall back to lower tier."""
+    async def test_assertion_error_triggers_fallback(self):
+        """When scorer raises AssertionError (e.g. empty ratingsForTraining), tier manager should fall back."""
         mock_session = AsyncMock()
         manager = AdaptiveScoringTierManager(
             db_session=mock_session,
@@ -48,7 +35,7 @@ class TestEmptyRatingFallback:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise EmptyRatingException("MFCoreScorer has empty ratings")
+                raise AssertionError("MFCoreScorer: empty ratingsForTraining")
             return {"status": "scored_with_fallback"}
 
         result = await manager.run_scorer_with_fallback(
@@ -59,23 +46,23 @@ class TestEmptyRatingFallback:
         assert call_count == 2
 
     @pytest.mark.asyncio
-    async def test_empty_rating_exception_at_minimal_tier_raises(self):
-        """EmptyRatingException at MINIMAL tier should raise ScorerFailureError (no lower tier)."""
+    async def test_assertion_error_at_minimal_tier_raises(self):
+        """AssertionError at MINIMAL tier should raise ScorerFailureError (no lower tier)."""
         mock_session = AsyncMock()
         manager = AdaptiveScoringTierManager(
             db_session=mock_session,
             tier_override=ScoringTier.MINIMAL,
         )
 
-        async def scorer_always_empty(*args, **kwargs):
-            raise EmptyRatingException("No ratings available")
+        async def scorer_always_asserts(*args, **kwargs):
+            raise AssertionError("empty ratingsForTraining")
 
         with pytest.raises(ScorerFailureError):
-            await manager.run_scorer_with_fallback(scorer_always_empty)
+            await manager.run_scorer_with_fallback(scorer_always_asserts)
 
     @pytest.mark.asyncio
-    async def test_empty_rating_falls_back_from_basic_to_limited_to_minimal(self):
-        """EmptyRatingException should cascade through tiers until one succeeds."""
+    async def test_assertion_error_cascades_through_tiers(self):
+        """AssertionError should cascade through tiers until one succeeds."""
         mock_session = AsyncMock()
         manager = AdaptiveScoringTierManager(
             db_session=mock_session,
@@ -88,7 +75,7 @@ class TestEmptyRatingFallback:
             nonlocal call_count
             call_count += 1
             if call_count <= 2:
-                raise EmptyRatingException("Empty ratings")
+                raise AssertionError("empty ratings")
             return {"tier": "minimal"}
 
         result = await manager.run_scorer_with_fallback(scorer_fails_twice)
@@ -97,8 +84,8 @@ class TestEmptyRatingFallback:
         assert call_count == 3
 
     @pytest.mark.asyncio
-    async def test_empty_rating_exception_is_distinct_from_generic_exception(self):
-        """EmptyRatingException should be handled the same as generic exceptions (fallback)."""
+    async def test_generic_exception_also_triggers_fallback(self):
+        """Generic exceptions should also trigger the same fallback behavior."""
         mock_session = AsyncMock()
         manager = AdaptiveScoringTierManager(
             db_session=mock_session,
@@ -107,12 +94,12 @@ class TestEmptyRatingFallback:
 
         call_count = 0
 
-        async def scorer_empty_then_ok(*args, **kwargs):
+        async def scorer_generic_then_ok(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise EmptyRatingException("Empty")
+                raise RuntimeError("unexpected scoring failure")
             return "ok"
 
-        result = await manager.run_scorer_with_fallback(scorer_empty_then_ok)
+        result = await manager.run_scorer_with_fallback(scorer_generic_then_ok)
         assert result == "ok"
