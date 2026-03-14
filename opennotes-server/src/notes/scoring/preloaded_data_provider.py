@@ -12,11 +12,11 @@ class PreloadedDataProvider:
         self._notes = notes
         self._participants = participants
 
-    def get_all_ratings(self, _community_id: str) -> list[dict[str, Any]]:
+    def get_all_ratings(self, community_id: str) -> list[dict[str, Any]]:
         return self._ratings
 
-    def get_all_notes(self, _community_id: str) -> list[dict[str, Any]]:
+    def get_all_notes(self, community_id: str) -> list[dict[str, Any]]:
         return self._notes
 
-    def get_all_participants(self, _community_id: str) -> list[str]:
+    def get_all_participants(self, community_id: str) -> list[str]:
         return self._participants
