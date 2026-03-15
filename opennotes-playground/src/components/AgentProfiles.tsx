@@ -1,12 +1,10 @@
-import { createSignal, createMemo, createEffect, For, Show } from "solid-js";
+import { createSignal, createMemo, createEffect, on, For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import InlineHistogram from "~/components/ui/inline-histogram";
 import IdBadge from "~/components/ui/id-badge";
 import PaginationControls from "~/components/ui/pagination-controls";
-
-const PAGE_SIZE = 20;
 
 type AgentBehaviorData = components["schemas"]["AgentBehaviorData"];
 
@@ -40,15 +38,16 @@ function PersonalityCell(props: { text: string }) {
   );
 }
 
-export default function AgentProfiles(props: { agents: AgentBehaviorData[] }) {
+export default function AgentProfiles(props: { agents: AgentBehaviorData[]; pageSize: number }) {
   const [page, setPage] = createSignal(1);
-  const totalPages = createMemo(() => Math.max(1, Math.ceil(props.agents.length / PAGE_SIZE)));
+  const totalPages = createMemo(() => Math.max(1, Math.ceil(props.agents.length / props.pageSize)));
+  createEffect(on(() => props.pageSize, () => setPage(1), { defer: true }));
   createEffect(() => {
     if (page() > totalPages()) setPage(totalPages());
   });
   const visibleAgents = createMemo(() => {
-    const start = (page() - 1) * PAGE_SIZE;
-    return props.agents.slice(start, start + PAGE_SIZE);
+    const start = (page() - 1) * props.pageSize;
+    return props.agents.slice(start, start + props.pageSize);
   });
 
   return (
