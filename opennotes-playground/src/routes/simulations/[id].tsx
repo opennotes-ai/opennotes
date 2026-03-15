@@ -86,7 +86,7 @@ const fetchDetailedAnalysis = query(async (
   id: string,
   page: number,
   pageSize: number,
-  sortBy: string,
+  sortBy: "count" | "has_score",
   filterClassification: string[],
   filterStatus: string[],
 ) => {
@@ -158,8 +158,9 @@ export default function SimulationDetailPage() {
   createEffect(on(() => pageSize(), () => setNotesPage(1), { defer: true }));
   createEffect(on(() => sortBy(), () => setNotesPage(1), { defer: true }));
   createEffect(on(() => [filterClassification(), filterStatus()], () => setNotesPage(1), { defer: true }));
+  const serverSortBy = () => (sortBy() === "has_score" ? "has_score" : "count") as "count" | "has_score";
   const detailed = createAsync(() => fetchDetailedAnalysis(
-    params.id!, notesPage(), pageSize(), sortBy(), filterClassification(), filterStatus(),
+    params.id!, notesPage(), pageSize(), serverSortBy(), filterClassification(), filterStatus(),
   ));
 
   const simError = () => {

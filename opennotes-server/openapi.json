@@ -11586,6 +11586,10 @@
             "in": "query",
             "required": false,
             "schema": {
+              "enum": [
+                "count",
+                "has_score"
+              ],
               "type": "string",
               "default": "count",
               "title": "Sort By"

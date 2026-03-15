@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import case, func, select
@@ -412,7 +413,7 @@ async def compute_detailed_notes(
     *,
     offset: int = 0,
     limit: int = 20,
-    sort_by: str = "count",
+    sort_by: Literal["count", "has_score"] = "count",
     filter_classification: list[str] | None = None,
     filter_status: list[str] | None = None,
 ) -> tuple[list[DetailedNoteData], int]:

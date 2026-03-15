@@ -16843,7 +16843,7 @@ export interface operations {
             query?: {
                 "page[number]"?: number;
                 "page[size]"?: number;
-                sort_by?: string;
+                sort_by?: "count" | "has_score";
                 "filter[classification]"?: string[];
                 "filter[status]"?: string[];
             };

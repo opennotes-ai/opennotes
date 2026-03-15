@@ -144,7 +144,7 @@ export async function getSimulationDetailedAnalysis(
   id: string,
   page = 1,
   pageSize = 20,
-  sortBy = "count",
+  sortBy: "count" | "has_score" = "count",
   filterClassification: string[] = [],
   filterStatus: string[] = [],
 ) {
@@ -165,7 +165,7 @@ export async function getSimulationDetailedAnalysis(
     {
       params: {
         path: { simulation_id: id },
-        query: query as { "page[number]"?: number; "page[size]"?: number; sort_by?: string; "filter[classification]"?: string[]; "filter[status]"?: string[] },
+        query: query as { "page[number]"?: number; "page[size]"?: number; sort_by?: "count" | "has_score"; "filter[classification]"?: string[]; "filter[status]"?: string[] },
       },
     },
   );

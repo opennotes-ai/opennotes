@@ -8,6 +8,9 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.detailed_analysis_response import DetailedAnalysisResponse
+from ...models.get_simulation_detailed_analysis_api_v2_simulations_simulation_id_analysis_detailed_get_sort_by import (
+    GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy,
+)
 from ...models.http_validation_error import HTTPValidationError
 from ...types import UNSET, Response, Unset
 
@@ -17,7 +20,8 @@ def _get_kwargs(
     *,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
-    sort_by: str | Unset = "count",
+    sort_by: GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy
+    | Unset = GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy.COUNT,
     filterclassification: list[str] | Unset = UNSET,
     filterstatus: list[str] | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
@@ -32,7 +36,11 @@ def _get_kwargs(
 
     params["page[size]"] = pagesize
 
-    params["sort_by"] = sort_by
+    json_sort_by: str | Unset = UNSET
+    if not isinstance(sort_by, Unset):
+        json_sort_by = sort_by.value
+
+    params["sort_by"] = json_sort_by
 
     json_filterclassification: list[str] | Unset = UNSET
     if not isinstance(filterclassification, Unset):
@@ -96,7 +104,8 @@ def sync_detailed(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
-    sort_by: str | Unset = "count",
+    sort_by: GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy
+    | Unset = GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy.COUNT,
     filterclassification: list[str] | Unset = UNSET,
     filterstatus: list[str] | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
@@ -107,7 +116,10 @@ def sync_detailed(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
-        sort_by (str | Unset):  Default: 'count'.
+        sort_by
+            (GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy |
+            Unset):  Default:
+            GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy.COUNT.
         filterclassification (list[str] | Unset):
         filterstatus (list[str] | Unset):
         x_api_key (None | str | Unset):
@@ -143,7 +155,8 @@ def sync(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
-    sort_by: str | Unset = "count",
+    sort_by: GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy
+    | Unset = GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy.COUNT,
     filterclassification: list[str] | Unset = UNSET,
     filterstatus: list[str] | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
@@ -154,7 +167,10 @@ def sync(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
-        sort_by (str | Unset):  Default: 'count'.
+        sort_by
+            (GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy |
+            Unset):  Default:
+            GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy.COUNT.
         filterclassification (list[str] | Unset):
         filterstatus (list[str] | Unset):
         x_api_key (None | str | Unset):
@@ -185,7 +201,8 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
-    sort_by: str | Unset = "count",
+    sort_by: GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy
+    | Unset = GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy.COUNT,
     filterclassification: list[str] | Unset = UNSET,
     filterstatus: list[str] | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
@@ -196,7 +213,10 @@ async def asyncio_detailed(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
-        sort_by (str | Unset):  Default: 'count'.
+        sort_by
+            (GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy |
+            Unset):  Default:
+            GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy.COUNT.
         filterclassification (list[str] | Unset):
         filterstatus (list[str] | Unset):
         x_api_key (None | str | Unset):
@@ -230,7 +250,8 @@ async def asyncio(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
-    sort_by: str | Unset = "count",
+    sort_by: GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy
+    | Unset = GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy.COUNT,
     filterclassification: list[str] | Unset = UNSET,
     filterstatus: list[str] | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
@@ -241,7 +262,10 @@ async def asyncio(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
-        sort_by (str | Unset):  Default: 'count'.
+        sort_by
+            (GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy |
+            Unset):  Default:
+            GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy.COUNT.
         filterclassification (list[str] | Unset):
         filterstatus (list[str] | Unset):
         x_api_key (None | str | Unset):
