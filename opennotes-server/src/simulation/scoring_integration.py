@@ -17,7 +17,7 @@ from src.notes.models import Note, Rating, Request
 from src.notes.scoring.gcs_storage import upload_scoring_snapshot
 from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 from src.notes.scoring.preloaded_data_provider import PreloadedDataProvider
-from src.notes.scoring.scorer_factory import ScorerFactory
+from src.notes.scoring.scorer_factory import ScorerFactory, record_tier_failure
 from src.notes.scoring.snapshot_persistence import persist_scoring_snapshot
 from src.notes.scoring.tier_config import (
     ScoringTier,
@@ -292,7 +292,43 @@ def _compute_offset_advance(
     return offset + batch_size
 
 
-async def score_community_server_notes(
+async def _query_ratings_density(
+    community_server_id: UUID,
+    db: AsyncSession,
+) -> dict[str, float]:
+    raters_per_note_subq = (
+        select(func.count(func.distinct(Rating.rater_id)).label("rater_count"))
+        .join(Note, Rating.note_id == Note.id)
+        .where(
+            Note.community_server_id == community_server_id,
+            Note.deleted_at.is_(None),
+        )
+        .group_by(Rating.note_id)
+        .subquery()
+    )
+    avg_raters_result = await db.execute(select(func.avg(raters_per_note_subq.c.rater_count)))
+    avg_raters_per_note = avg_raters_result.scalar() or 0
+
+    ratings_per_rater_subq = (
+        select(func.count(Rating.id).label("rating_count"))
+        .join(Note, Rating.note_id == Note.id)
+        .where(
+            Note.community_server_id == community_server_id,
+            Note.deleted_at.is_(None),
+        )
+        .group_by(Rating.rater_id)
+        .subquery()
+    )
+    avg_ratings_result = await db.execute(select(func.avg(ratings_per_rater_subq.c.rating_count)))
+    avg_ratings_per_rater = avg_ratings_result.scalar() or 0
+
+    return {
+        "avg_raters_per_note": float(avg_raters_per_note),
+        "avg_ratings_per_rater": float(avg_ratings_per_rater),
+    }
+
+
+async def score_community_server_notes(  # noqa: PLR0912
     community_server_id: UUID,
     db: AsyncSession,
 ) -> CommunityServerScoringResult:
@@ -325,8 +361,10 @@ async def score_community_server_notes(
 
     tier = get_tier_for_note_count(note_count)
 
+    ratings_density = None
     data_provider = None
     if tier != ScoringTier.MINIMAL:
+        ratings_density = await _query_ratings_density(community_server_id, db)
         data_provider = await _prefetch_community_data(community_server_id, db)
 
     factory = ScorerFactory()
@@ -335,6 +373,7 @@ async def score_community_server_notes(
         note_count,
         data_provider=data_provider,
         community_id=str(community_server_id),
+        ratings_density=ratings_density,
     )
     scorer_type = type(scorer).__name__
 
@@ -472,6 +511,13 @@ async def score_community_server_notes(
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
 
+    if total_scores_computed == 0 and note_count > 0 and tier != ScoringTier.MINIMAL:
+        record_tier_failure(
+            str(community_server_id),
+            tier,
+            reason=f"Zero scores computed from {note_count} notes at tier {tier.value}",
+        )
+
     gcs_snapshot = await _persist_snapshot_or_raise(
         scorer, community_server_id, tier.value, scorer_type, db
     )
@@ -539,8 +585,10 @@ async def trigger_scoring_for_simulation(
 
     tier = get_tier_for_note_count(note_count)
 
+    ratings_density = None
     data_provider = None
     if tier != ScoringTier.MINIMAL:
+        ratings_density = await _query_ratings_density(community_server_id, db)
         data_provider = await _prefetch_community_data(community_server_id, db)
 
     factory = ScorerFactory()
@@ -549,6 +597,7 @@ async def trigger_scoring_for_simulation(
         note_count,
         data_provider=data_provider,
         community_id=str(community_server_id),
+        ratings_density=ratings_density,
     )
     scorer_type = type(scorer).__name__
 

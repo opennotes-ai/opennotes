@@ -152,6 +152,7 @@ class MFCoreScorerAdapter:
         self._data_provider = data_provider
         self._community_id = community_id
         self._lock = threading.Lock()
+        self._batch_scoring_failed = False
         self._last_model_result: ModelResult | None = None
         self._last_int_to_uuid: dict[int, str] | None = None
 
@@ -209,7 +210,7 @@ class MFCoreScorerAdapter:
                 extra={"note_id": note_id, "ratings_count": len(ratings)},
             )
 
-            if self._data_provider is not None:
+            if self._data_provider is not None and not self._batch_scoring_failed:
                 try:
                     model_result, int_to_uuid = self._execute_batch_scoring()
                     self._last_model_result = model_result
@@ -226,7 +227,8 @@ class MFCoreScorerAdapter:
                         "Note not found in batch scoring results, using stub",
                         extra={"note_id": note_id},
                     )
-                except Exception as e:
+                except AssertionError as e:
+                    self._batch_scoring_failed = True
                     logger.warning(
                         "Batch scoring failed, falling back to stub",
                         extra={
@@ -242,6 +244,8 @@ class MFCoreScorerAdapter:
                     return result
 
             result = self._score_batch_stub(note_id, ratings)
+            if self._batch_scoring_failed:
+                result.metadata["degraded"] = True
             self._cache[note_id] = result
             self._evict_if_needed()
 
@@ -263,6 +267,7 @@ class MFCoreScorerAdapter:
         )
         self._cache.clear()
         self._cache_version = self._current_version
+        self._batch_scoring_failed = False
 
     def update_ratings_version(self) -> None:
         """

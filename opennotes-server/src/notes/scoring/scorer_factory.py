@@ -19,6 +19,54 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+MIN_AVG_RATERS_PER_NOTE = 5
+MIN_AVG_RATINGS_PER_RATER = 10
+
+_TIER_HIERARCHY = [
+    ScoringTier.MINIMAL,
+    ScoringTier.LIMITED,
+    ScoringTier.BASIC,
+    ScoringTier.INTERMEDIATE,
+    ScoringTier.ADVANCED,
+    ScoringTier.FULL,
+]
+
+_tier_failures: dict[str, ScoringTier] = {}
+
+
+def record_tier_failure(
+    community_server_id: str,
+    failed_tier: ScoringTier,
+    reason: str = "",
+) -> None:
+    failed_idx = _TIER_HIERARCHY.index(failed_tier)
+    max_viable = _TIER_HIERARCHY[max(0, failed_idx - 1)]
+
+    existing = _tier_failures.get(community_server_id)
+    if existing is not None:
+        existing_idx = _TIER_HIERARCHY.index(existing)
+        max_viable_idx = _TIER_HIERARCHY.index(max_viable)
+        if max_viable_idx < existing_idx:
+            max_viable = _TIER_HIERARCHY[max_viable_idx]
+
+    _tier_failures[community_server_id] = max_viable
+    logger.warning(
+        "Downgrading max viable tier for community",
+        extra={
+            "community_server_id": community_server_id,
+            "failed_tier": failed_tier.value,
+            "max_viable_tier": max_viable.value,
+            "reason": reason,
+        },
+    )
+
+
+def clear_tier_failures(community_server_id: str | None = None) -> None:
+    if community_server_id is None:
+        _tier_failures.clear()
+    else:
+        _tier_failures.pop(community_server_id, None)
+
 
 class ScorerFactory:
     """
@@ -45,6 +93,7 @@ class ScorerFactory:
         tier_override: ScoringTier | None = None,
         data_provider: "CommunityDataProvider | None" = None,
         community_id: str | None = None,
+        ratings_density: dict[str, float] | None = None,
     ) -> ScorerProtocol:
         """
         Get the appropriate scorer for a community based on note count.
@@ -79,6 +128,49 @@ class ScorerFactory:
                     "note_count": note_count,
                 },
             )
+
+            if tier != ScoringTier.MINIMAL and ratings_density is not None:
+                avg_raters = ratings_density.get("avg_raters_per_note", 0)
+                avg_ratings = ratings_density.get("avg_ratings_per_rater", 0)
+                density_sufficient = (
+                    avg_raters >= MIN_AVG_RATERS_PER_NOTE
+                    and avg_ratings >= MIN_AVG_RATINGS_PER_RATER
+                )
+                if not density_sufficient:
+                    logger.warning(
+                        "Insufficient ratings density for tier %s, downgrading to MINIMAL",
+                        tier.value,
+                        extra={
+                            "community_server_id": community_server_id,
+                            "avg_raters_per_note": avg_raters,
+                            "avg_ratings_per_rater": avg_ratings,
+                            "required_raters_per_note": MIN_AVG_RATERS_PER_NOTE,
+                            "required_ratings_per_rater": MIN_AVG_RATINGS_PER_RATER,
+                            "original_tier": tier.value,
+                        },
+                    )
+                    tier = ScoringTier.MINIMAL
+                elif community_server_id in _tier_failures:
+                    clear_tier_failures(community_server_id)
+                    logger.info(
+                        "Ratings density recovered, clearing tier failure cap",
+                        extra={"community_server_id": community_server_id},
+                    )
+
+            max_viable = _tier_failures.get(community_server_id)
+            if max_viable is not None and tier != ScoringTier.MINIMAL:
+                max_idx = _TIER_HIERARCHY.index(max_viable)
+                tier_idx = _TIER_HIERARCHY.index(tier)
+                if tier_idx > max_idx:
+                    logger.warning(
+                        "Capping tier to max_viable_tier due to prior failure",
+                        extra={
+                            "community_server_id": community_server_id,
+                            "detected_tier": tier.value,
+                            "max_viable_tier": max_viable.value,
+                        },
+                    )
+                    tier = max_viable
 
         cache_key = (community_server_id, tier)
 

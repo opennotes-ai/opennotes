@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
 import pendulum
 from dbos import DBOS
+from dbos._utils import GlobalParams
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
@@ -610,6 +612,62 @@ async def pause_simulation(
         )
 
 
+async def _cancel_orphaned_workflows(workflows: list[Any]) -> None:
+    cancel_tasks = [asyncio.to_thread(DBOS.cancel_workflow, wf.workflow_id) for wf in workflows]
+    results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
+    for wf, result in zip(workflows, results, strict=True):
+        if isinstance(result, BaseException):
+            logger.warning(
+                "Failed to cancel orphaned workflow",
+                extra={"workflow_id": wf.workflow_id},
+            )
+
+
+async def _check_orchestrator_workflows(
+    simulation_id: UUID,
+) -> tuple[bool, bool]:
+    wf_prefix = f"orchestrator-{simulation_id}"
+    active_workflows = await asyncio.wait_for(
+        asyncio.to_thread(
+            DBOS.list_workflows,
+            workflow_id_prefix=wf_prefix,
+            status=["ENQUEUED", "PENDING"],
+            load_input=False,
+            load_output=False,
+        ),
+        timeout=10.0,
+    )
+    if len(active_workflows) == 0:
+        return True, False
+
+    current_app_version = GlobalParams.app_version
+    if not current_app_version:
+        logger.warning(
+            "DBOS app_version is empty — skipping orphan detection",
+            extra={"simulation_run_id": str(simulation_id)},
+        )
+        return False, False
+
+    matching_workflows = [wf for wf in active_workflows if wf.app_version == current_app_version]
+    orphaned = [wf for wf in active_workflows if wf.app_version != current_app_version]
+
+    if orphaned:
+        if not matching_workflows:
+            logger.warning(
+                "Orphaned orchestrator workflows detected (app version mismatch)",
+                extra={
+                    "simulation_run_id": str(simulation_id),
+                    "orphaned_count": len(orphaned),
+                    "old_app_versions": list({wf.app_version for wf in orphaned}),
+                    "current_app_version": current_app_version,
+                },
+            )
+        await _cancel_orphaned_workflows(orphaned)
+
+    needs_redispatch = len(matching_workflows) == 0
+    return needs_redispatch, False
+
+
 @router.post(
     "/simulations/{simulation_id}/resume",
     response_class=JSONResponse,
@@ -624,6 +682,14 @@ async def resume_simulation(
 ) -> JSONResponse:
     require_admin(current_user)
     reset_turns = body.data.attributes.reset_turns if body else False
+    start_time = time.monotonic()
+    logger.info(
+        "Resume simulation started",
+        extra={
+            "simulation_run_id": str(simulation_id),
+            "reset_turns": reset_turns,
+        },
+    )
 
     try:
         result = await db.execute(
@@ -652,15 +718,13 @@ async def resume_simulation(
         needs_redispatch = False
         dbos_check_failed = False
         try:
-            wf_prefix = f"orchestrator-{simulation_id}"
-            active_workflows = await asyncio.to_thread(
-                DBOS.list_workflows,
-                workflow_id_prefix=wf_prefix,
-                status=["ENQUEUED", "PENDING"],
-                load_input=False,
-                load_output=False,
+            needs_redispatch, dbos_check_failed = await _check_orchestrator_workflows(simulation_id)
+        except TimeoutError:
+            logger.warning(
+                "DBOS list_workflows timed out",
+                extra={"simulation_run_id": str(simulation_id)},
             )
-            needs_redispatch = len(active_workflows) == 0
+            dbos_check_failed = True
         except Exception:
             logger.error(
                 "Failed to check DBOS workflow status, cannot safely resume",
@@ -763,13 +827,30 @@ async def resume_simulation(
             links=JSONAPILinks(self_=str(request.url)),
         )
 
+        elapsed = time.monotonic() - start_time
+        logger.info(
+            "Resume simulation completed",
+            extra={
+                "simulation_run_id": str(simulation_id),
+                "elapsed_seconds": round(elapsed, 3),
+                "needs_redispatch": needs_redispatch,
+            },
+        )
+
         return JSONResponse(
             content=response.model_dump(by_alias=True, mode="json"),
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
     except Exception:
-        logger.exception("Failed to resume simulation")
+        elapsed = time.monotonic() - start_time
+        logger.exception(
+            "Failed to resume simulation",
+            extra={
+                "simulation_run_id": str(simulation_id),
+                "elapsed_seconds": round(elapsed, 3),
+            },
+        )
         await db.rollback()
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

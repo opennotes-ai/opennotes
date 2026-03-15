@@ -1335,7 +1335,7 @@ class TestMFCoreScorerAdapterPhase7:
         )
 
         with patch.object(
-            adapter, "_execute_batch_scoring", side_effect=Exception("Scoring failed")
+            adapter, "_execute_batch_scoring", side_effect=AssertionError("Scoring failed")
         ):
             result = adapter.score_note("note-123", [0.6, 0.7])
 
@@ -1364,7 +1364,7 @@ class TestMFCoreScorerAdapterPhase7:
         )
 
         with patch.object(
-            adapter, "_execute_batch_scoring", side_effect=RuntimeError("Data error")
+            adapter, "_execute_batch_scoring", side_effect=AssertionError("Data error")
         ):
             result = adapter.score_note("note-456", [0.5])
 
@@ -1393,7 +1393,9 @@ class TestMFCoreScorerAdapterPhase7:
         )
 
         with (
-            patch.object(adapter, "_execute_batch_scoring", side_effect=ValueError("Invalid data")),
+            patch.object(
+                adapter, "_execute_batch_scoring", side_effect=AssertionError("Invalid data")
+            ),
             patch("src.notes.scoring.mf_scorer_adapter.logger") as mock_logger,
         ):
             adapter.score_note("note-789", [0.8])
@@ -1434,7 +1436,7 @@ class TestMFCoreScorerAdapterPhase8:
         mock_result = MagicMock()
         mock_result.scoredNotes = pd.DataFrame(
             {
-                "noteId": [f"note-{i}" for i in range(100)],
+                "noteId": list(range(100)),
                 "coreNoteIntercept": [0.5] * 100,
                 "coreNoteFactor1": [0.1] * 100,
                 "coreRatingStatus": ["CURRENTLY_RATED_HELPFUL"] * 100,
@@ -1451,7 +1453,10 @@ class TestMFCoreScorerAdapterPhase8:
             except Exception as e:
                 errors.append(e)
 
-        with patch.object(adapter, "_execute_batch_scoring", return_value=mock_result):
+        int_to_uuid = {i: f"note-{i}" for i in range(100)}
+        with patch.object(
+            adapter, "_execute_batch_scoring", return_value=(mock_result, int_to_uuid)
+        ):
             threads = []
             for i in range(20):
                 t = threading.Thread(target=score_note_thread, args=(f"note-{i % 100}",))
@@ -1499,13 +1504,14 @@ class TestMFCoreScorerAdapterPhase8:
             mock_result = MagicMock()
             mock_result.scoredNotes = pd.DataFrame(
                 {
-                    "noteId": ["note-1"],
+                    "noteId": [1],
                     "coreNoteIntercept": [0.5],
                     "coreNoteFactor1": [0.1],
                     "coreRatingStatus": ["CURRENTLY_RATED_HELPFUL"],
                 }
             )
-            return mock_result
+            int_to_uuid = {1: "note-1"}
+            return mock_result, int_to_uuid
 
         with patch.object(adapter, "_execute_batch_scoring", side_effect=slow_batch_scoring):
             threads = []
@@ -1659,14 +1665,17 @@ class TestMFCoreScorerAdapterPhase9:
         mock_result = MagicMock()
         mock_result.scoredNotes = pd.DataFrame(
             {
-                "noteId": [f"note-{i}" for i in range(100)],
+                "noteId": list(range(100)),
                 "coreNoteIntercept": [0.5] * 100,
                 "coreNoteFactor1": [0.1] * 100,
                 "coreRatingStatus": ["CURRENTLY_RATED_HELPFUL"] * 100,
             }
         )
 
-        with patch.object(adapter, "_execute_batch_scoring", return_value=mock_result):
+        int_to_uuid = {i: f"note-{i}" for i in range(100)}
+        with patch.object(
+            adapter, "_execute_batch_scoring", return_value=(mock_result, int_to_uuid)
+        ):
             adapter.score_note("note-1", [0.6])
 
         assert len(adapter._cache) <= 10000
