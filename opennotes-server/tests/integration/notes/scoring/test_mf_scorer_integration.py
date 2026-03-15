@@ -156,7 +156,7 @@ class TestMFCoreScorerErrorHandling:
             community_id="test-community",
         )
 
-        with patch.object(adapter._scorer, "prescore", side_effect=RuntimeError("Scorer failed")):
+        with patch.object(adapter._scorer, "prescore", side_effect=AssertionError("Scorer failed")):
             note_id = provider.get_note_id(0)
             result = adapter.score_note(note_id, [0.5, 0.6])
 
@@ -172,7 +172,7 @@ class TestMFCoreScorerErrorHandling:
             community_id="test-community",
         )
 
-        with patch.object(adapter._scorer, "prescore", side_effect=ValueError("Invalid input")):
+        with patch.object(adapter._scorer, "prescore", side_effect=AssertionError("Invalid input")):
             note_id = provider.get_note_id(0)
             result = adapter.score_note(note_id, [0.5, 0.6, 0.7])
 
@@ -192,7 +192,7 @@ class TestMFCoreScorerErrorHandling:
         def failing_prescore(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            raise RuntimeError("Scorer unavailable")
+            raise AssertionError("Scorer unavailable")
 
         with patch.object(adapter._scorer, "prescore", side_effect=failing_prescore):
             note_id = provider.get_note_id(0)
