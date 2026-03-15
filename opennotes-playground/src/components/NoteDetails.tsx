@@ -89,6 +89,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
             <span class="text-sm font-medium text-muted-foreground">Sort by:</span>
             <div class="flex overflow-hidden rounded-md border border-input">
               <button
+                data-testid="sort-count"
                 class={cn(
                   "px-3 py-1.5 text-xs font-medium transition-colors",
                   sortBy() === "count" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
@@ -96,9 +97,10 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                 aria-pressed={sortBy() === "count"}
                 onClick={() => setSortBy("count")}
               >
-                Note Count
+                Note Count {sortBy() === "count" ? "\u2193" : ""}
               </button>
               <button
+                data-testid="sort-disagreement"
                 class={cn(
                   "border-l border-input px-3 py-1.5 text-xs font-medium transition-colors",
                   sortBy() === "disagreement" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
@@ -106,7 +108,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                 aria-pressed={sortBy() === "disagreement"}
                 onClick={() => setSortBy("disagreement")}
               >
-                Disagreement
+                Disagreement {sortBy() === "disagreement" ? "\u2193" : ""}
               </button>
             </div>
           </div>

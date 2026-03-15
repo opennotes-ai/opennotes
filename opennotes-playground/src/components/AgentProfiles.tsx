@@ -5,6 +5,7 @@ import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import InlineHistogram from "~/components/ui/inline-histogram";
 import IdBadge from "~/components/ui/id-badge";
 import PaginationControls from "~/components/ui/pagination-controls";
+import SortableHeader, { type SortDirection } from "~/components/ui/sortable-header";
 
 type AgentBehaviorData = components["schemas"]["AgentBehaviorData"];
 
@@ -40,14 +41,46 @@ function PersonalityCell(props: { text: string }) {
 
 export default function AgentProfiles(props: { agents: AgentBehaviorData[]; pageSize: number }) {
   const [page, setPage] = createSignal(1);
-  const totalPages = createMemo(() => Math.max(1, Math.ceil(props.agents.length / props.pageSize)));
+  const [agentSort, setAgentSort] = createSignal<{ key: string; direction: SortDirection }>({ key: "", direction: null });
+
+  const handleSort = (key: string, direction: SortDirection) => {
+    setAgentSort({ key, direction });
+    setPage(1);
+  };
+
+  const sortedAgents = createMemo(() => {
+    const agents = [...props.agents];
+    const { key, direction } = agentSort();
+    if (!direction) return agents;
+    const mult = direction === "asc" ? 1 : -1;
+    switch (key) {
+      case "agent":
+        agents.sort((a, b) => mult * a.agent_name.localeCompare(b.agent_name));
+        break;
+      case "notes":
+        agents.sort((a, b) => mult * (a.notes_written - b.notes_written));
+        break;
+      case "ratings":
+        agents.sort((a, b) => mult * (a.ratings_given - b.ratings_given));
+        break;
+      case "turns":
+        agents.sort((a, b) => mult * (a.turn_count - b.turn_count));
+        break;
+      case "state":
+        agents.sort((a, b) => mult * a.state.localeCompare(b.state));
+        break;
+    }
+    return agents;
+  });
+
+  const totalPages = createMemo(() => Math.max(1, Math.ceil(sortedAgents().length / props.pageSize)));
   createEffect(on(() => props.pageSize, () => setPage(1), { defer: true }));
   createEffect(() => {
     if (page() > totalPages()) setPage(totalPages());
   });
   const visibleAgents = createMemo(() => {
     const start = (page() - 1) * props.pageSize;
-    return props.agents.slice(start, start + props.pageSize);
+    return sortedAgents().slice(start, start + props.pageSize);
   });
 
   return (
@@ -57,12 +90,12 @@ export default function AgentProfiles(props: { agents: AgentBehaviorData[]; page
         <table class="w-full text-sm" aria-label="Agent behaviors">
           <thead>
             <tr class="border-b-2 border-border bg-muted/50">
-              <th class="px-4 py-2.5 text-left font-medium">Agent</th>
+              <SortableHeader label="Agent" sortKey="agent" activeSort={agentSort()} onSort={handleSort} class="px-4 py-2.5 text-left font-medium" />
               <th class="px-4 py-2.5 text-left font-medium">Persona</th>
-              <th class="px-4 py-2.5 text-right font-medium">Notes</th>
-              <th class="px-4 py-2.5 text-right font-medium">Ratings</th>
-              <th class="px-4 py-2.5 text-right font-medium">Turns</th>
-              <th class="px-4 py-2.5 text-left font-medium">State</th>
+              <SortableHeader label="Notes" sortKey="notes" activeSort={agentSort()} onSort={handleSort} class="px-4 py-2.5 text-right font-medium" />
+              <SortableHeader label="Ratings" sortKey="ratings" activeSort={agentSort()} onSort={handleSort} class="px-4 py-2.5 text-right font-medium" />
+              <SortableHeader label="Turns" sortKey="turns" activeSort={agentSort()} onSort={handleSort} class="px-4 py-2.5 text-right font-medium" />
+              <SortableHeader label="State" sortKey="state" activeSort={agentSort()} onSort={handleSort} class="px-4 py-2.5 text-left font-medium" />
               <th class="px-4 py-2.5 text-left font-medium">Actions</th>
             </tr>
           </thead>

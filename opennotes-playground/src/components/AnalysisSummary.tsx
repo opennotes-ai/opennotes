@@ -3,6 +3,7 @@ import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
 import InlineHistogram from "~/components/ui/inline-histogram";
 import PaginationControls from "~/components/ui/pagination-controls";
+import SortableHeader, { type SortDirection } from "~/components/ui/sortable-header";
 
 type NoteQualityData = components["schemas"]["NoteQualityData"];
 type RatingDistributionData = components["schemas"]["RatingDistributionData"];
@@ -17,13 +18,32 @@ export default function AnalysisSummary(props: {
   const overallRatings = createMemo(() => Object.entries(props.ratingDistribution.overall));
 
   const [agentPage, setAgentPage] = createSignal(1);
+  const [agentSort, setAgentSort] = createSignal<{ key: string; direction: SortDirection }>({ key: "", direction: null });
+
+  const handleAgentSort = (key: string, direction: SortDirection) => {
+    setAgentSort({ key, direction });
+    setAgentPage(1);
+  };
+
+  const sortedAgents = createMemo(() => {
+    const agents = [...(props.ratingDistribution?.per_agent ?? [])];
+    const { key, direction } = agentSort();
+    if (!direction) return agents;
+    const mult = direction === "asc" ? 1 : -1;
+    if (key === "agent") {
+      agents.sort((a, b) => mult * a.agent_name.localeCompare(b.agent_name));
+    } else if (key === "total") {
+      agents.sort((a, b) => mult * (a.total - b.total));
+    }
+    return agents;
+  });
+
   const totalAgentPages = createMemo(() =>
-    Math.ceil((props.ratingDistribution?.per_agent?.length ?? 0) / props.pageSize)
+    Math.ceil((sortedAgents().length) / props.pageSize)
   );
   const visibleAgents = createMemo(() => {
-    const agents = props.ratingDistribution?.per_agent ?? [];
     const start = (agentPage() - 1) * props.pageSize;
-    return agents.slice(start, start + props.pageSize);
+    return sortedAgents().slice(start, start + props.pageSize);
   });
 
   createEffect(() => {
@@ -100,9 +120,21 @@ export default function AnalysisSummary(props: {
               <table class="w-full text-sm" aria-label="Per agent rating distribution">
                 <thead>
                   <tr class="border-b-2 border-border">
-                    <th class="py-1.5 text-left font-medium text-muted-foreground">Agent</th>
+                    <SortableHeader
+                      label="Agent"
+                      sortKey="agent"
+                      activeSort={agentSort()}
+                      onSort={handleAgentSort}
+                      class="py-1.5 text-left font-medium text-muted-foreground"
+                    />
                     <th class="py-1.5 text-left font-medium text-muted-foreground">Distribution</th>
-                    <th class="py-1.5 text-right font-medium text-muted-foreground">Total</th>
+                    <SortableHeader
+                      label="Total"
+                      sortKey="total"
+                      activeSort={agentSort()}
+                      onSort={handleAgentSort}
+                      class="py-1.5 text-right font-medium text-muted-foreground"
+                    />
                   </tr>
                 </thead>
                 <tbody>
