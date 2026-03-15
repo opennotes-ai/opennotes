@@ -1671,6 +1671,14 @@ class TestRunScoringStep:
         assert result["scorer"] == "BayesianAverageScorerAdapter"
         mock_trigger.assert_awaited_once()
 
+    def test_run_scoring_step_has_max_attempts_3(self) -> None:
+        import inspect
+
+        from src.simulation.workflows.orchestrator_workflow import run_scoring_step
+
+        source = inspect.getsource(run_scoring_step)
+        assert "max_attempts=3" in source
+
 
 class TestOrchestratorEmptyContentPause:
     def test_orchestrator_auto_pauses_and_stays_alive(self) -> None:
@@ -1934,12 +1942,19 @@ class TestOrchestratorScoringIntegration:
 
         mock_scoring.assert_not_called()
 
-    def test_orchestrator_marks_run_failed_when_required_scoring_persistence_fails(self) -> None:
+    def test_orchestrator_continues_after_scoring_failure(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import run_orchestrator
 
         run_id = str(uuid4())
         config = _make_config()
-        status_calls = iter(["running"])
+
+        iteration_count = [0]
+
+        def mock_status(_):
+            iteration_count[0] += 1
+            if iteration_count[0] > 3:
+                return "cancelled"
+            return "running"
 
         with (
             patch(
@@ -1948,7 +1963,7 @@ class TestOrchestratorScoringIntegration:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
-                side_effect=lambda _: next(status_calls),
+                side_effect=mock_status,
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
@@ -1985,164 +2000,10 @@ class TestOrchestratorScoringIntegration:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.run_scoring_step",
-                side_effect=RuntimeError("snapshot persistence failed"),
-            ),
+                side_effect=RuntimeError("scoring exploded"),
+            ) as mock_scoring,
             patch(
                 "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
-                return_value=True,
-            ) as mock_set_status,
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
-                return_value={"final_status": "failed", "instances_finalized": 0},
-            ) as mock_finalize,
-            patch("src.simulation.workflows.orchestrator_workflow.SCORING_INTERVAL", 1),
-            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
-            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
-        ):
-            mock_dbos.workflow_id = "wf-test"
-            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
-
-        assert result["status"] == "failed"
-        mock_set_status.assert_called_once()
-        assert mock_set_status.call_args.args[:2] == (run_id, "failed")
-        assert mock_set_status.call_args.kwargs["error_message"] == (
-            "Required scoring snapshot persistence failed"
-        )
-        mock_finalize.assert_called_once_with(run_id, "failed")
-
-    def test_orchestrator_preserves_paused_status_when_scoring_failure_loses_race(self) -> None:
-        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
-
-        run_id = str(uuid4())
-        config = _make_config()
-        status_calls = iter(["running", "paused"])
-
-        with (
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
-                return_value=config,
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
-                side_effect=lambda _: next(status_calls),
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
-                return_value={"has_content": True, "pending_requests": 1, "unrated_notes": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={
-                    "active_count": 2,
-                    "total_spawned": 2,
-                    "total_removed_for_cause": 0,
-                    "total_removed_by_rate": 0,
-                },
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
-                return_value=[],
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
-                return_value=[],
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
-                return_value={"retried": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
-                return_value={"dispatched_count": 0, "skipped_count": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
-                return_value={},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.run_scoring_step",
-                side_effect=RuntimeError("storage bucket exploded"),
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
-                return_value=False,
-            ) as mock_set_status,
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
-                return_value={"final_status": "failed", "instances_finalized": 0},
-            ) as mock_finalize,
-            patch("src.simulation.workflows.orchestrator_workflow.SCORING_INTERVAL", 1),
-            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
-            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
-        ):
-            mock_dbos.workflow_id = "wf-test"
-            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
-
-        assert result["status"] == "paused"
-        mock_set_status.assert_called_once()
-        assert mock_set_status.call_args.kwargs["error_message"] == (
-            "Required scoring snapshot persistence failed"
-        )
-        mock_finalize.assert_not_called()
-
-    def test_orchestrator_preserves_cancelled_status_when_scoring_failure_loses_race(
-        self,
-    ) -> None:
-        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
-
-        run_id = str(uuid4())
-        config = _make_config()
-        status_calls = iter(["running", "cancelled"])
-
-        with (
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
-                return_value=config,
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
-                side_effect=lambda _: next(status_calls),
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
-                return_value={"has_content": True, "pending_requests": 1, "unrated_notes": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={
-                    "active_count": 2,
-                    "total_spawned": 2,
-                    "total_removed_for_cause": 0,
-                    "total_removed_by_rate": 0,
-                },
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
-                return_value=[],
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
-                return_value=[],
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
-                return_value={"retried": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
-                return_value={"dispatched_count": 0, "skipped_count": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
-                return_value={},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.run_scoring_step",
-                side_effect=RuntimeError("storage bucket exploded"),
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
-                return_value=False,
             ) as mock_set_status,
             patch(
                 "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
@@ -2156,176 +2017,12 @@ class TestOrchestratorScoringIntegration:
             result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
 
         assert result["status"] == "cancelled"
-        mock_set_status.assert_called_once()
-        assert mock_set_status.call_args.kwargs["error_message"] == (
-            "Required scoring snapshot persistence failed"
-        )
+        assert mock_scoring.call_count >= 2
+        failed_calls = [
+            c for c in mock_set_status.call_args_list if len(c.args) >= 2 and c.args[1] == "failed"
+        ]
+        assert len(failed_calls) == 0
         mock_finalize.assert_called_once_with(run_id, "cancelled")
-
-    def test_orchestrator_logs_when_run_status_reread_fails_after_scoring_failure(self) -> None:
-        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
-
-        run_id = str(uuid4())
-        config = _make_config()
-        config["generation"] = 1
-
-        def mock_check_status(_: str) -> str:
-            if not hasattr(mock_check_status, "call_count"):
-                mock_check_status.call_count = 0
-            mock_check_status.call_count += 1
-            if mock_check_status.call_count == 1:
-                return "running"
-            raise RuntimeError("status reread exploded")
-
-        with (
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
-                return_value=config,
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
-                side_effect=mock_check_status,
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
-                return_value={"has_content": True, "pending_requests": 1, "unrated_notes": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={
-                    "active_count": 2,
-                    "total_spawned": 2,
-                    "total_removed_for_cause": 0,
-                    "total_removed_by_rate": 0,
-                },
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
-                return_value=[],
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
-                return_value=[],
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
-                return_value={"retried": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
-                return_value={"dispatched_count": 0, "skipped_count": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
-                return_value={},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.run_scoring_step",
-                side_effect=RuntimeError("storage bucket exploded"),
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
-                return_value=False,
-            ) as mock_set_status,
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_generation_step",
-                return_value=1,
-            ) as mock_check_generation,
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
-                return_value={"final_status": "failed", "instances_finalized": 0},
-            ) as mock_finalize,
-            patch("src.simulation.workflows.orchestrator_workflow.SCORING_INTERVAL", 1),
-            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
-            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
-            patch("src.simulation.workflows.orchestrator_workflow.logger") as mock_logger,
-        ):
-            mock_dbos.workflow_id = "wf-test"
-            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
-
-        assert result["status"] == "failed"
-        mock_set_status.assert_called_once()
-        mock_check_generation.assert_called_once_with(run_id)
-        mock_finalize.assert_called_once_with(run_id, "failed")
-        assert any(
-            call.args[0] == "Failed to re-read run status after scoring failure"
-            for call in mock_logger.exception.call_args_list
-        )
-
-    def test_orchestrator_logs_when_scoring_failure_state_persist_raises(self) -> None:
-        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
-
-        run_id = str(uuid4())
-        config = _make_config()
-
-        with (
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
-                return_value=config,
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
-                return_value="running",
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
-                return_value={"has_content": True, "pending_requests": 1, "unrated_notes": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={
-                    "active_count": 2,
-                    "total_spawned": 2,
-                    "total_removed_for_cause": 0,
-                    "total_removed_by_rate": 0,
-                },
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
-                return_value=[],
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
-                return_value=[],
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
-                return_value={"retried": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
-                return_value={"dispatched_count": 0, "skipped_count": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
-                return_value={},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.run_scoring_step",
-                side_effect=RuntimeError("storage bucket exploded"),
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
-                side_effect=RuntimeError("state write exploded"),
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
-                return_value={"final_status": "failed", "instances_finalized": 0},
-            ) as mock_finalize,
-            patch("src.simulation.workflows.orchestrator_workflow.SCORING_INTERVAL", 1),
-            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
-            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
-            patch("src.simulation.workflows.orchestrator_workflow.logger") as mock_logger,
-        ):
-            mock_dbos.workflow_id = "wf-test"
-            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
-
-        assert result["status"] == "failed"
-        mock_finalize.assert_called_once_with(run_id, "failed")
-        assert any(
-            call.args[0] == "Failed to persist scoring failure state"
-            for call in mock_logger.exception.call_args_list
-        )
 
 
 class TestRetryExhaustedRemovalMetrics:
@@ -2758,90 +2455,6 @@ class TestPauseToRunningConfigRefresh:
 
 
 class TestGenerationGuard:
-    def test_orchestrator_scoring_failure_exits_when_generation_changes_before_failure_persist(
-        self,
-    ) -> None:
-        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
-
-        run_id = str(uuid4())
-        config = _make_config()
-        config["generation"] = 1
-
-        with (
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
-                return_value=config,
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
-                return_value="running",
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_generation_step",
-                return_value=2,
-            ) as mock_check_generation,
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
-                return_value={"has_content": True, "pending_requests": 1, "unrated_notes": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
-                return_value={
-                    "active_count": 2,
-                    "total_spawned": 2,
-                    "total_removed_for_cause": 0,
-                    "total_removed_by_rate": 0,
-                },
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
-                return_value=[],
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
-                return_value=[],
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
-                return_value={"retried": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
-                return_value={"dispatched_count": 0, "skipped_count": 0},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
-                return_value={},
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.run_scoring_step",
-                side_effect=RuntimeError("snapshot persistence failed"),
-            ),
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
-                return_value=False,
-            ) as mock_set_status,
-            patch(
-                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
-            ) as mock_finalize,
-            patch("src.simulation.workflows.orchestrator_workflow.SCORING_INTERVAL", 1),
-            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
-            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
-        ):
-            mock_dbos.workflow_id = "wf-old-gen"
-            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
-
-        assert result["status"] == "superseded"
-        mock_set_status.assert_called_once_with(
-            run_id,
-            "failed",
-            expected_status="running",
-            expected_generation=1,
-            error_message="Required scoring snapshot persistence failed",
-        )
-        mock_check_generation.assert_called_once_with(run_id)
-        mock_finalize.assert_not_called()
-
     def test_orchestrator_exits_when_generation_changes_after_refresh(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import run_orchestrator
 

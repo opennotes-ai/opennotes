@@ -639,7 +639,7 @@ def update_metrics_step(
 
 @DBOS.step(
     retries_allowed=True,
-    max_attempts=10,
+    max_attempts=3,
     interval_seconds=5.0,
     backoff_rate=2.0,
 )
@@ -982,65 +982,10 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                         },
                     )
                 except Exception:
-                    logger.exception("Required scoring snapshot persistence failed")
-                    preserved_status: str | None = None
-                    expected_generation = config.get("generation", initial_generation)
-                    try:
-                        updated = set_run_status_step(
-                            simulation_run_id,
-                            "failed",
-                            expected_status="running",
-                            expected_generation=expected_generation,
-                            error_message=SCORING_PERSISTENCE_FAILURE_MESSAGE,
-                        )
-                        if not updated:
-                            logger.warning(
-                                "Failed run-state update skipped: status or generation no longer matched",
-                                extra={"simulation_run_id": simulation_run_id},
-                            )
-                            try:
-                                current_generation = check_generation_step(simulation_run_id)
-                            except Exception:
-                                logger.exception(
-                                    "Failed to re-read generation after scoring failure",
-                                    extra={"simulation_run_id": simulation_run_id},
-                                )
-                            else:
-                                if current_generation != expected_generation:
-                                    logger.info(
-                                        "Generation changed from %d to %d during scoring failure handling",
-                                        expected_generation,
-                                        current_generation,
-                                        extra={
-                                            "simulation_run_id": simulation_run_id,
-                                            "workflow_id": workflow_id,
-                                        },
-                                    )
-                                    return {
-                                        "simulation_run_id": simulation_run_id,
-                                        "status": "superseded",
-                                        "iterations": iteration,
-                                        "instances_finalized": 0,
-                                    }
-                            try:
-                                current_status = check_run_status_step(simulation_run_id)
-                            except Exception:
-                                logger.exception(
-                                    "Failed to re-read run status after scoring failure",
-                                    extra={"simulation_run_id": simulation_run_id},
-                                )
-                            else:
-                                if current_status == "paused":
-                                    preserved_status = "paused"
-                                elif current_status in FINAL_RUN_STATUSES:
-                                    preserved_status = current_status
-                    except Exception:
-                        logger.exception(
-                            "Failed to persist scoring failure state",
-                            extra={"simulation_run_id": simulation_run_id},
-                        )
-                    final_status = preserved_status or "failed"
-                    break
+                    logger.exception(
+                        "Scoring failed, will retry at next interval",
+                        extra={"simulation_run_id": simulation_run_id, "iteration": iteration},
+                    )
 
             DBOS.sleep(config["turn_cadence_seconds"])
 
