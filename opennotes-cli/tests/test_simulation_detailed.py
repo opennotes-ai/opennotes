@@ -209,9 +209,10 @@ class TestDetailedTerminalOutput:
                 cli, ["--local", "simulation", "analysis", "--detailed", SIM_ID]
             )
         assert result.exit_code == 0
-        assert "note-001" in result.output
-        assert "Ske" in result.output
-        assert "MI" in result.output
+        output = result.output.replace("\u200b", "")
+        assert "note-001" in output
+        assert "Ske" in output
+        assert "MI" in output
 
     def test_terminal_shows_ratings(self, runner: CliRunner) -> None:
         mock_client = _make_single_page_client()
@@ -230,7 +231,7 @@ class TestDetailedTerminalOutput:
                 cli, ["--local", "simulation", "analysis", "--detailed", SIM_ID]
             )
         assert result.exit_code == 0
-        assert "req-001" in result.output
+        assert "req-001" in result.output.replace("\u200b", "")
         assert "https://example.com/article-1" in result.output
 
     def test_terminal_shows_variance_summary(self, runner: CliRunner) -> None:
@@ -277,7 +278,7 @@ class TestDetailedMarkdownOutput:
         assert result.exit_code == 0
         assert "# Detailed Simulation Analysis" in result.output
         assert "## Notes" in result.output
-        assert "note-001" in result.output
+        assert "note-001" in result.output.replace("\u200b", "")
         assert "Skeptic" in result.output
 
     def test_markdown_has_ratings_section(self, runner: CliRunner) -> None:
@@ -298,7 +299,7 @@ class TestDetailedMarkdownOutput:
             )
         assert result.exit_code == 0
         assert "## Requests" in result.output
-        assert "req-001" in result.output
+        assert "req-001" in result.output.replace("\u200b", "")
 
     def test_markdown_has_variance_summary(self, runner: CliRunner) -> None:
         mock_client = _make_single_page_client()
@@ -342,10 +343,11 @@ class TestPaginationAccumulation:
                 cli, ["--local", "simulation", "analysis", "--detailed", "--format", "markdown", SIM_ID]
             )
         assert result.exit_code == 0
-        assert "note-001" in result.output
-        assert "note-002" in result.output
-        assert "req-001" in result.output
-        assert "req-002" in result.output
+        output = result.output.replace("\u200b", "")
+        assert "note-001" in output
+        assert "note-002" in output
+        assert "req-001" in output
+        assert "req-002" in output
 
     def test_pagination_calls_correct_urls(self, runner: CliRunner) -> None:
         mock_client = _make_multi_page_client()
@@ -429,7 +431,7 @@ class TestDetailedHuuidInput:
                 cli, ["--local", "simulation", "analysis", "--detailed", HUUID_SIM_ID]
             )
         assert result.exit_code == 0
-        assert "note-001" in result.output
+        assert "note-001" in result.output.replace("\u200b", "")
 
 
 class TestDetailedUuidFlag:
@@ -440,7 +442,7 @@ class TestDetailedUuidFlag:
                 cli, ["--local", "--uuid", "simulation", "analysis", "--detailed", "--format", "markdown", SIM_ID]
             )
         assert result.exit_code == 0
-        assert SIM_ID in result.output
+        assert SIM_ID in result.output.replace("\u200b", "")
 
     def test_default_shows_huuid(self, runner: CliRunner) -> None:
         mock_client = _make_single_page_client()
@@ -449,7 +451,7 @@ class TestDetailedUuidFlag:
                 cli, ["--local", "simulation", "analysis", "--detailed", "--format", "markdown", SIM_ID]
             )
         assert result.exit_code == 0
-        assert HUUID_SIM_ID in result.output
+        assert HUUID_SIM_ID in result.output.replace("\u200b", "")
 
 
 class TestEscapeMdHelper:

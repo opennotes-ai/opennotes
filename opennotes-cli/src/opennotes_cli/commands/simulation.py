@@ -59,10 +59,10 @@ def simulation_list(ctx: click.Context, page: int, page_size: int) -> None:
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", no_wrap=True)
+    table.add_column("ID")
     table.add_column("Status", width=12)
-    table.add_column("Orchestrator ID", no_wrap=True)
-    table.add_column("Community Server ID", no_wrap=True)
+    table.add_column("Orchestrator ID")
+    table.add_column("Community Server ID")
     table.add_column("Created At", width=20)
 
     for item in items:
@@ -386,7 +386,7 @@ def simulation_cancel_workflows(
 
     if workflow_ids:
         table = Table(show_header=True, header_style="bold")
-        table.add_column("Workflow ID", no_wrap=True)
+        table.add_column("Workflow ID")
         for wf_id in workflow_ids:
             table.add_row(format_id(wf_id, cli_ctx.use_huuid))
         console.print(table)
@@ -1072,13 +1072,13 @@ def _render_detailed_terminal(
 
     if notes:
         note_table = Table(title="Notes", show_header=True, header_style="bold")
-        note_table.add_column("Note ID", no_wrap=True)
+        note_table.add_column("Note ID")
         note_table.add_column("Summary", max_width=50)
         note_table.add_column("Classification")
         note_table.add_column("Status")
         note_table.add_column("Score", justify="right")
         note_table.add_column("Author")
-        note_table.add_column("Request ID", no_wrap=True)
+        note_table.add_column("Request ID")
         note_table.add_column("Created At", width=20)
         for n in notes:
             score = n.get("helpfulness_score")
@@ -1097,7 +1097,7 @@ def _render_detailed_terminal(
 
     if ratings:
         rating_table = Table(title="Ratings", show_header=True, header_style="bold")
-        rating_table.add_column("Note ID", no_wrap=True)
+        rating_table.add_column("Note ID")
         rating_table.add_column("Note Summary", max_width=50)
         rating_table.add_column("Rater")
         rating_table.add_column("Helpfulness")
@@ -1114,7 +1114,7 @@ def _render_detailed_terminal(
 
     if requests:
         req_table = Table(title="Requests", show_header=True, header_style="bold")
-        req_table.add_column("Request ID", no_wrap=True)
+        req_table.add_column("Request ID")
         req_table.add_column("Content", max_width=60)
         req_table.add_column("Type")
         req_table.add_column("Notes", justify="right")
@@ -1142,7 +1142,7 @@ def _render_detailed_terminal(
             show_header=True,
             header_style="bold",
         )
-        var_table.add_column("Request ID", no_wrap=True)
+        var_table.add_column("Request ID")
         var_table.add_column("Variance Score", justify="right")
         var_table.add_column("Content", max_width=60)
         var_table.add_column("Notes", justify="right")

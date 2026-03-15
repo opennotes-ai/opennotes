@@ -155,24 +155,24 @@ def _render_note_table(note_factors: list[dict[str, Any]], fmt: str) -> str | No
         for nf in sorted(
             note_factors, key=lambda x: x.get("intercept", 0), reverse=True
         ):
-            nid = (nf.get("note_id") or "?")[:8]
+            nid = nf.get("note_id") or "?"
             author = nf.get("author_agent_name") or "-"
             status = nf.get("status") or "-"
             lines.append(
-                f"| {nid}... | {author} | {nf.get('intercept', 0):.4f} | "
+                f"| {nid} | {author} | {nf.get('intercept', 0):.4f} | "
                 f"{nf.get('factor1', 0):.4f} | {status} |"
             )
         return "\n".join(lines)
 
     table = Table(title="Note Factor Matrix", show_header=True, header_style="bold")
-    table.add_column("Note ID", no_wrap=True, width=10)
+    table.add_column("Note ID")
     table.add_column("Author", no_wrap=True)
     table.add_column("Intercept", justify="right")
     table.add_column("Factor1", justify="right")
     table.add_column("Status")
 
     for nf in sorted(note_factors, key=lambda x: x.get("intercept", 0), reverse=True):
-        nid = (nf.get("note_id") or "?")[:8] + "..."
+        nid = format_id(nf.get("note_id"), use_huuid=False)
         author = nf.get("author_agent_name") or "-"
         status = nf.get("status") or "-"
         table.add_row(

@@ -353,7 +353,7 @@ class TestAnalysisUuidFlag:
             )
 
         assert result.exit_code == 0
-        assert "019536b8-bdb2-7c81-8975-77f5c3dbdff8" in result.output
+        assert "019536b8-bdb2-7c81-8975-77f5c3dbdff8" in result.output.replace("\u200b", "")
 
     def test_default_shows_huuid(self, runner: CliRunner) -> None:
         mock_resp = MagicMock()
@@ -368,4 +368,4 @@ class TestAnalysisUuidFlag:
             )
 
         assert result.exit_code == 0
-        assert "Vudrotlab-Kuvkattor-Tevzelpim-Liksiksas" in result.output
+        assert "Vudrotlab-Kuvkattor-Tevzelpim-Liksiksas" in result.output.replace("\u200b", "")
