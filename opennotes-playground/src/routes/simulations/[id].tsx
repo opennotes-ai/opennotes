@@ -82,12 +82,21 @@ const fetchAnalysis = query(async (id: string) => {
   }
 }, "analysis");
 
-const fetchDetailedAnalysis = query(async (id: string, page: number, pageSize: number) => {
+const fetchDetailedAnalysis = query(async (
+  id: string,
+  page: number,
+  pageSize: number,
+  sortBy: string,
+  filterClassification: string[],
+  filterStatus: string[],
+) => {
   "use server";
   try {
     const isAuthenticated = await checkAuth();
     const effectivePage = isAuthenticated ? page : 1;
-    const data = await getSimulationDetailedAnalysis(id, effectivePage, pageSize);
+    const data = await getSimulationDetailedAnalysis(
+      id, effectivePage, pageSize, sortBy, filterClassification, filterStatus,
+    );
     const totalCount = data.meta?.count ?? 0;
 
     return {
@@ -142,9 +151,16 @@ export default function SimulationDetailPage() {
   const analysis = createAsync(() => fetchAnalysis(params.id!));
   const [pageSize, setPageSize] = createSignal(10);
   const [notesPage, setNotesPage] = createSignal(1);
+  const [sortBy, setSortBy] = createSignal("count");
+  const [filterClassification, setFilterClassification] = createSignal<string[]>([]);
+  const [filterStatus, setFilterStatus] = createSignal<string[]>([]);
   createEffect(on(() => params.id, () => setNotesPage(1)));
   createEffect(on(() => pageSize(), () => setNotesPage(1), { defer: true }));
-  const detailed = createAsync(() => fetchDetailedAnalysis(params.id!, notesPage(), pageSize()));
+  createEffect(on(() => sortBy(), () => setNotesPage(1), { defer: true }));
+  createEffect(on(() => [filterClassification(), filterStatus()], () => setNotesPage(1), { defer: true }));
+  const detailed = createAsync(() => fetchDetailedAnalysis(
+    params.id!, notesPage(), pageSize(), sortBy(), filterClassification(), filterStatus(),
+  ));
 
   const simError = () => {
     const r = simulation();
@@ -299,6 +315,14 @@ export default function SimulationDetailPage() {
                             <NoteDetails
                               notes={detailedResponse.data}
                               currentTier={analysis()?.data?.attributes?.scoring_coverage?.current_tier ?? ""}
+                              sortBy={sortBy() as "count" | "disagreement" | "has_score"}
+                              onSortChange={setSortBy}
+                              filterClassification={filterClassification()}
+                              filterStatus={filterStatus()}
+                              onFilterChange={(v) => {
+                                setFilterClassification(v.classification);
+                                setFilterStatus(v.status);
+                              }}
                             />
                             <Show when={authMeta?.isAuthenticated && totalPages > 1}>
                               <PaginationControls

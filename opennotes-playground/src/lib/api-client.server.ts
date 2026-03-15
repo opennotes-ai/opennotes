@@ -144,14 +144,28 @@ export async function getSimulationDetailedAnalysis(
   id: string,
   page = 1,
   pageSize = 20,
+  sortBy = "count",
+  filterClassification: string[] = [],
+  filterStatus: string[] = [],
 ) {
   const client = getClient();
+  const query: Record<string, unknown> = {
+    "page[number]": page,
+    "page[size]": pageSize,
+    sort_by: sortBy,
+  };
+  if (filterClassification.length > 0) {
+    query["filter[classification]"] = filterClassification;
+  }
+  if (filterStatus.length > 0) {
+    query["filter[status]"] = filterStatus;
+  }
   const { data, error, response } = await client.GET(
     "/api/v2/simulations/{simulation_id}/analysis/detailed",
     {
       params: {
         path: { simulation_id: id },
-        query: { "page[number]": page, "page[size]": pageSize },
+        query: query as { "page[number]"?: number; "page[size]"?: number; sort_by?: string; "filter[classification]"?: string[]; "filter[status]"?: string[] },
       },
     },
   );
