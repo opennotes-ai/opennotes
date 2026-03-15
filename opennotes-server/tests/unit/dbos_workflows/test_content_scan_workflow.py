@@ -2382,6 +2382,46 @@ class TestDispatchContentScanWorkflow:
 
         mock_set_wf_id.assert_called_once_with(str(scan_id))
 
+    @pytest.mark.asyncio
+    async def test_uses_safe_enqueue(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
+
+        scan_id = uuid4()
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "wf-safe"
+
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.safe_enqueue",
+            new=AsyncMock(return_value=mock_handle),
+        ) as mock_safe:
+            result = await dispatch_content_scan_workflow(
+                scan_id=scan_id,
+                community_server_id=uuid4(),
+                scan_types=["similarity"],
+            )
+
+        mock_safe.assert_called_once()
+        assert result == "wf-safe"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_transient_enqueue_error(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
+        from src.dbos_workflows.enqueue_utils import DBOSEnqueueTransientError
+
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.safe_enqueue",
+            new=AsyncMock(
+                side_effect=DBOSEnqueueTransientError("DBOS enqueue failed after retries")
+            ),
+        ):
+            result = await dispatch_content_scan_workflow(
+                scan_id=uuid4(),
+                community_server_id=uuid4(),
+                scan_types=["similarity"],
+            )
+
+        assert result is None
+
 
 class TestEnqueueContentScanBatch:
     """Tests for enqueue_content_scan_batch async helper."""

@@ -10,6 +10,7 @@ from dbos._error import (
     DBOSWorkflowConflictIDError,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,7 @@ from src.auth.community_dependencies import verify_community_admin_by_uuid
 from src.auth.dependencies import get_current_user_or_api_key
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
+from src.dbos_workflows.enqueue_utils import DBOSEnqueueTransientError
 from src.simulation.workflows.scoring_workflow import dispatch_community_scoring
 from src.users.models import User
 
@@ -61,6 +63,12 @@ async def score_community_server(
 
     try:
         workflow_id = await dispatch_community_scoring(community_server_id)
+    except DBOSEnqueueTransientError:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": "Scoring service temporarily unavailable"},
+            headers={"Retry-After": "5"},
+        )
     except _DBOS_CONFLICT_ERRORS as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
