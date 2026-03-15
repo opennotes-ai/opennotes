@@ -1785,16 +1785,18 @@ async def enqueue_content_scan_batch(
     try:
         scan_types_json = orjson.dumps(scan_types).decode()
 
-        handle = await asyncio.to_thread(
-            content_scan_queue.enqueue,
-            process_content_scan_batch,
-            orchestrator_workflow_id,
-            str(scan_id),
-            str(community_server_id),
-            batch_number,
-            messages_redis_key,
-            scan_types_json,
-        )
+        def _enqueue():
+            return content_scan_queue.enqueue(
+                process_content_scan_batch,
+                orchestrator_workflow_id,
+                str(scan_id),
+                str(community_server_id),
+                batch_number,
+                messages_redis_key,
+                scan_types_json,
+            )
+
+        handle = await safe_enqueue(_enqueue)
 
         logger.info(
             "Content scan batch enqueued via DBOS",
