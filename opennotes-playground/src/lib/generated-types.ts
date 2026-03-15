@@ -16843,6 +16843,9 @@ export interface operations {
             query?: {
                 "page[number]"?: number;
                 "page[size]"?: number;
+                sort_by?: string;
+                "filter[classification]"?: string[];
+                "filter[status]"?: string[];
             };
             header?: {
                 "X-API-Key"?: string | null;

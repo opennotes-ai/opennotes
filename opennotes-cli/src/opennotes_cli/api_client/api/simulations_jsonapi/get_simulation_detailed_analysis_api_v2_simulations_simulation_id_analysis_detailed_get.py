@@ -17,6 +17,9 @@ def _get_kwargs(
     *,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
+    sort_by: str | Unset = "count",
+    filterclassification: list[str] | Unset = UNSET,
+    filterstatus: list[str] | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
@@ -28,6 +31,20 @@ def _get_kwargs(
     params["page[number]"] = pagenumber
 
     params["page[size]"] = pagesize
+
+    params["sort_by"] = sort_by
+
+    json_filterclassification: list[str] | Unset = UNSET
+    if not isinstance(filterclassification, Unset):
+        json_filterclassification = filterclassification
+
+    params["filter[classification]"] = json_filterclassification
+
+    json_filterstatus: list[str] | Unset = UNSET
+    if not isinstance(filterstatus, Unset):
+        json_filterstatus = filterstatus
+
+    params["filter[status]"] = json_filterstatus
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -79,6 +96,9 @@ def sync_detailed(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
+    sort_by: str | Unset = "count",
+    filterclassification: list[str] | Unset = UNSET,
+    filterstatus: list[str] | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[DetailedAnalysisResponse | HTTPValidationError]:
     """Get Simulation Detailed Analysis
@@ -87,6 +107,9 @@ def sync_detailed(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
+        sort_by (str | Unset):  Default: 'count'.
+        filterclassification (list[str] | Unset):
+        filterstatus (list[str] | Unset):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -101,6 +124,9 @@ def sync_detailed(
         simulation_id=simulation_id,
         pagenumber=pagenumber,
         pagesize=pagesize,
+        sort_by=sort_by,
+        filterclassification=filterclassification,
+        filterstatus=filterstatus,
         x_api_key=x_api_key,
     )
 
@@ -117,6 +143,9 @@ def sync(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
+    sort_by: str | Unset = "count",
+    filterclassification: list[str] | Unset = UNSET,
+    filterstatus: list[str] | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> DetailedAnalysisResponse | HTTPValidationError | None:
     """Get Simulation Detailed Analysis
@@ -125,6 +154,9 @@ def sync(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
+        sort_by (str | Unset):  Default: 'count'.
+        filterclassification (list[str] | Unset):
+        filterstatus (list[str] | Unset):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -140,6 +172,9 @@ def sync(
         client=client,
         pagenumber=pagenumber,
         pagesize=pagesize,
+        sort_by=sort_by,
+        filterclassification=filterclassification,
+        filterstatus=filterstatus,
         x_api_key=x_api_key,
     ).parsed
 
@@ -150,6 +185,9 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
+    sort_by: str | Unset = "count",
+    filterclassification: list[str] | Unset = UNSET,
+    filterstatus: list[str] | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[DetailedAnalysisResponse | HTTPValidationError]:
     """Get Simulation Detailed Analysis
@@ -158,6 +196,9 @@ async def asyncio_detailed(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
+        sort_by (str | Unset):  Default: 'count'.
+        filterclassification (list[str] | Unset):
+        filterstatus (list[str] | Unset):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -172,6 +213,9 @@ async def asyncio_detailed(
         simulation_id=simulation_id,
         pagenumber=pagenumber,
         pagesize=pagesize,
+        sort_by=sort_by,
+        filterclassification=filterclassification,
+        filterstatus=filterstatus,
         x_api_key=x_api_key,
     )
 
@@ -186,6 +230,9 @@ async def asyncio(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
+    sort_by: str | Unset = "count",
+    filterclassification: list[str] | Unset = UNSET,
+    filterstatus: list[str] | Unset = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> DetailedAnalysisResponse | HTTPValidationError | None:
     """Get Simulation Detailed Analysis
@@ -194,6 +241,9 @@ async def asyncio(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
+        sort_by (str | Unset):  Default: 'count'.
+        filterclassification (list[str] | Unset):
+        filterstatus (list[str] | Unset):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -210,6 +260,9 @@ async def asyncio(
             client=client,
             pagenumber=pagenumber,
             pagesize=pagesize,
+            sort_by=sort_by,
+            filterclassification=filterclassification,
+            filterstatus=filterstatus,
             x_api_key=x_api_key,
         )
     ).parsed
