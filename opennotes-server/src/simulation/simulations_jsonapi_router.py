@@ -51,12 +51,13 @@ from src.simulation.schemas import (
     RequestVarianceMeta,
 )
 from src.simulation.workflows.orchestrator_workflow import (
-    SCORING_PERSISTENCE_FAILURE_MESSAGE,
     dispatch_orchestrator,
 )
 from src.users.models import User
 
 logger = get_logger(__name__)
+
+SCORING_PERSISTENCE_FAILURE_MESSAGE = "Required scoring snapshot persistence failed"
 
 router = APIRouter()
 

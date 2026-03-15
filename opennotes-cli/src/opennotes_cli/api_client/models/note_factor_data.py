@@ -6,8 +6,6 @@ from typing import Any, TypeVar, cast
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..types import UNSET, Unset
-
 T = TypeVar("T", bound="NoteFactorData")
 
 
@@ -16,23 +14,27 @@ class NoteFactorData:
     """
     Attributes:
         note_id (str):
+        intercept (float):
+        factor1 (float):
         status (None | str):
         classification (None | str):
         author_agent_name (None | str):
-        intercept (float | Unset):  Default: 0.0.
-        factor1 (float | Unset):  Default: 0.0.
     """
 
     note_id: str
+    intercept: float
+    factor1: float
     status: None | str
     classification: None | str
     author_agent_name: None | str
-    intercept: float | Unset = 0.0
-    factor1: float | Unset = 0.0
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         note_id = self.note_id
+
+        intercept = self.intercept
+
+        factor1 = self.factor1
 
         status: None | str
         status = self.status
@@ -43,24 +45,18 @@ class NoteFactorData:
         author_agent_name: None | str
         author_agent_name = self.author_agent_name
 
-        intercept = self.intercept
-
-        factor1 = self.factor1
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
                 "note_id": note_id,
+                "intercept": intercept,
+                "factor1": factor1,
                 "status": status,
                 "classification": classification,
                 "author_agent_name": author_agent_name,
             }
         )
-        if intercept is not UNSET:
-            field_dict["intercept"] = intercept
-        if factor1 is not UNSET:
-            field_dict["factor1"] = factor1
 
         return field_dict
 
@@ -68,6 +64,10 @@ class NoteFactorData:
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
         note_id = d.pop("note_id")
+
+        intercept = d.pop("intercept")
+
+        factor1 = d.pop("factor1")
 
         def _parse_status(data: object) -> None | str:
             if data is None:
@@ -90,17 +90,13 @@ class NoteFactorData:
 
         author_agent_name = _parse_author_agent_name(d.pop("author_agent_name"))
 
-        intercept = d.pop("intercept", UNSET)
-
-        factor1 = d.pop("factor1", UNSET)
-
         note_factor_data = cls(
             note_id=note_id,
+            intercept=intercept,
+            factor1=factor1,
             status=status,
             classification=classification,
             author_agent_name=author_agent_name,
-            intercept=intercept,
-            factor1=factor1,
         )
 
         note_factor_data.additional_properties = d

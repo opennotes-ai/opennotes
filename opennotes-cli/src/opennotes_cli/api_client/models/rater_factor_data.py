@@ -6,8 +6,6 @@ from typing import Any, TypeVar, cast
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..types import UNSET, Unset
-
 T = TypeVar("T", bound="RaterFactorData")
 
 
@@ -18,15 +16,15 @@ class RaterFactorData:
         rater_id (str):
         agent_name (None | str):
         personality (None | str):
-        intercept (float | Unset):  Default: 0.0.
-        factor1 (float | Unset):  Default: 0.0.
+        intercept (float):
+        factor1 (float):
     """
 
     rater_id: str
     agent_name: None | str
     personality: None | str
-    intercept: float | Unset = 0.0
-    factor1: float | Unset = 0.0
+    intercept: float
+    factor1: float
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -49,12 +47,10 @@ class RaterFactorData:
                 "rater_id": rater_id,
                 "agent_name": agent_name,
                 "personality": personality,
+                "intercept": intercept,
+                "factor1": factor1,
             }
         )
-        if intercept is not UNSET:
-            field_dict["intercept"] = intercept
-        if factor1 is not UNSET:
-            field_dict["factor1"] = factor1
 
         return field_dict
 
@@ -77,9 +73,9 @@ class RaterFactorData:
 
         personality = _parse_personality(d.pop("personality"))
 
-        intercept = d.pop("intercept", UNSET)
+        intercept = d.pop("intercept")
 
-        factor1 = d.pop("factor1", UNSET)
+        factor1 = d.pop("factor1")
 
         rater_factor_data = cls(
             rater_id=rater_id,

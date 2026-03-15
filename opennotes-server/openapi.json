@@ -17905,13 +17905,11 @@
           },
           "intercept": {
             "type": "number",
-            "title": "Intercept",
-            "default": 0.0
+            "title": "Intercept"
           },
           "factor1": {
             "type": "number",
-            "title": "Factor1",
-            "default": 0.0
+            "title": "Factor1"
           },
           "status": {
             "anyOf": [
@@ -17950,6 +17948,8 @@
         "type": "object",
         "required": [
           "note_id",
+          "intercept",
+          "factor1",
           "status",
           "classification",
           "author_agent_name"
@@ -21116,20 +21116,20 @@
           },
           "intercept": {
             "type": "number",
-            "title": "Intercept",
-            "default": 0.0
+            "title": "Intercept"
           },
           "factor1": {
             "type": "number",
-            "title": "Factor1",
-            "default": 0.0
+            "title": "Factor1"
           }
         },
         "type": "object",
         "required": [
           "rater_id",
           "agent_name",
-          "personality"
+          "personality",
+          "intercept",
+          "factor1"
         ],
         "title": "RaterFactorData"
       },
