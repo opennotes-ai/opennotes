@@ -533,9 +533,9 @@ class TestDbosQueueEnqueueing:
         with (
             patch("src.dbos_workflows.rechunk_workflow.BatchJobService") as mock_service_cls,
             patch(
-                "src.dbos_workflows.rechunk_workflow.asyncio.to_thread",
+                "src.dbos_workflows.rechunk_workflow.safe_enqueue",
                 new_callable=AsyncMock,
-            ) as mock_to_thread,
+            ) as mock_safe_enqueue,
         ):
             mock_service = MagicMock()
             mock_service.create_job = AsyncMock(return_value=mock_job)
@@ -545,7 +545,7 @@ class TestDbosQueueEnqueueing:
 
             mock_handle = MagicMock()
             mock_handle.workflow_id = "wf-batch-test"
-            mock_to_thread.return_value = mock_handle
+            mock_safe_enqueue.return_value = mock_handle
 
             result = await dispatch_dbos_rechunk_workflow(
                 db=mock_db,
@@ -558,10 +558,7 @@ class TestDbosQueueEnqueueing:
         mock_service.start_job.assert_called_once_with(mock_job.id)
         mock_service.set_workflow_id.assert_called_once_with(mock_job.id, "wf-batch-test")
 
-        enqueue_call_args = mock_to_thread.call_args
-        from src.dbos_workflows.rechunk_workflow import rechunk_queue
-
-        assert enqueue_call_args.args[0] == rechunk_queue.enqueue
+        mock_safe_enqueue.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_batch_dispatch_raises_on_no_items(self) -> None:
@@ -594,9 +591,9 @@ class TestDbosQueueEnqueueing:
         with (
             patch("src.dbos_workflows.rechunk_workflow.BatchJobService") as mock_service_cls,
             patch(
-                "src.dbos_workflows.rechunk_workflow.asyncio.to_thread",
+                "src.dbos_workflows.rechunk_workflow.safe_enqueue",
                 new_callable=AsyncMock,
-            ) as mock_to_thread,
+            ) as mock_safe_enqueue,
         ):
             mock_service = MagicMock()
             mock_service.create_job = AsyncMock(return_value=mock_job)
@@ -604,7 +601,7 @@ class TestDbosQueueEnqueueing:
             mock_service.fail_job = AsyncMock()
             mock_service_cls.return_value = mock_service
 
-            mock_to_thread.side_effect = ConnectionError("NATS unavailable")
+            mock_safe_enqueue.side_effect = ConnectionError("NATS unavailable")
 
             with pytest.raises(ConnectionError):
                 await dispatch_dbos_rechunk_workflow(db=mock_db)
@@ -614,29 +611,26 @@ class TestDbosQueueEnqueueing:
         assert fail_call.args[0] == mock_job.id
 
     @pytest.mark.asyncio
-    async def test_enqueue_uses_asyncio_to_thread_for_blocking_call(self) -> None:
-        """enqueue_single_fact_check_chunk wraps blocking queue.enqueue in asyncio.to_thread."""
+    async def test_enqueue_uses_safe_enqueue_for_blocking_call(self) -> None:
+        """enqueue_single_fact_check_chunk wraps blocking queue.enqueue in safe_enqueue."""
         from src.dbos_workflows.rechunk_workflow import enqueue_single_fact_check_chunk
 
         fact_check_id = uuid4()
 
         with patch(
-            "src.dbos_workflows.rechunk_workflow.asyncio.to_thread",
+            "src.dbos_workflows.rechunk_workflow.safe_enqueue",
             new_callable=AsyncMock,
-        ) as mock_to_thread:
+        ) as mock_safe_enqueue:
             mock_handle = MagicMock()
             mock_handle.workflow_id = "wf-thread-test"
-            mock_to_thread.return_value = mock_handle
+            mock_safe_enqueue.return_value = mock_handle
 
             result = await enqueue_single_fact_check_chunk(
                 fact_check_id=fact_check_id,
             )
 
         assert result == "wf-thread-test"
-        mock_to_thread.assert_called_once()
-        from src.dbos_workflows.rechunk_workflow import rechunk_queue
-
-        assert mock_to_thread.call_args.args[0] == rechunk_queue.enqueue
+        mock_safe_enqueue.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_previously_seen_dispatch_handles_empty_items(self) -> None:

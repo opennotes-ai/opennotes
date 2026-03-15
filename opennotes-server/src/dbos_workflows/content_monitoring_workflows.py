@@ -25,6 +25,7 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from src.dbos_workflows.enqueue_utils import safe_enqueue_sync
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring.metrics import (
@@ -493,15 +494,17 @@ def start_ai_note_workflow(
         orjson.dumps(moderation_metadata).decode() if moderation_metadata else None
     )
 
-    content_monitoring_queue.enqueue(
-        ai_note_generation_workflow,
-        community_server_id,
-        request_id,
-        content,
-        scan_type,
-        fact_check_item_id,
-        similarity_score,
-        moderation_metadata_json,
+    safe_enqueue_sync(
+        lambda: content_monitoring_queue.enqueue(
+            ai_note_generation_workflow,
+            community_server_id,
+            request_id,
+            content,
+            scan_type,
+            fact_check_item_id,
+            similarity_score,
+            moderation_metadata_json,
+        )
     )
 
     logger.info(
@@ -524,14 +527,16 @@ def call_persist_audit_log(
     user_agent: str | None = None,
     created_at_iso: str | None = None,
 ) -> None:
-    content_monitoring_queue.enqueue(
-        _audit_log_wrapper_workflow,
-        user_id,
-        action,
-        resource,
-        resource_id,
-        details,
-        ip_address,
-        user_agent,
-        created_at_iso,
+    safe_enqueue_sync(
+        lambda: content_monitoring_queue.enqueue(
+            _audit_log_wrapper_workflow,
+            user_id,
+            action,
+            resource,
+            resource_id,
+            details,
+            ip_address,
+            user_agent,
+            created_at_iso,
+        )
     )

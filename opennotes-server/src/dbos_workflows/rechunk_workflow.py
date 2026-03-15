@@ -10,7 +10,6 @@ item IDs, enqueue the DBOS workflow, and link them together.
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -28,6 +27,7 @@ from src.dbos_workflows.batch_job_helpers import (
     update_batch_job_progress_sync,
 )
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.dbos_workflows.enqueue_utils import safe_enqueue
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.fact_checking.chunking_service import use_chunking_service_sync
@@ -156,13 +156,14 @@ async def dispatch_dbos_rechunk_workflow(
     await db.refresh(job)
 
     try:
-        handle = await asyncio.to_thread(
-            rechunk_queue.enqueue,
-            rechunk_fact_check_workflow,
-            str(job.id),
-            str(community_server_id) if community_server_id else None,
-            item_ids,
-            batch_size,
+        handle = await safe_enqueue(
+            lambda: rechunk_queue.enqueue(
+                rechunk_fact_check_workflow,
+                str(job.id),
+                str(community_server_id) if community_server_id else None,
+                item_ids,
+                batch_size,
+            )
         )
         workflow_id = handle.workflow_id
     except Exception as e:
@@ -488,11 +489,12 @@ async def enqueue_single_fact_check_chunk(
         The DBOS workflow_id if successfully enqueued, None on failure
     """
     try:
-        handle = await asyncio.to_thread(
-            rechunk_queue.enqueue,
-            chunk_single_fact_check_workflow,
-            str(fact_check_id),
-            str(community_server_id) if community_server_id else None,
+        handle = await safe_enqueue(
+            lambda: rechunk_queue.enqueue(
+                chunk_single_fact_check_workflow,
+                str(fact_check_id),
+                str(community_server_id) if community_server_id else None,
+            )
         )
 
         logger.info(
@@ -813,13 +815,14 @@ async def dispatch_dbos_previously_seen_rechunk_workflow(
     await db.refresh(job)
 
     try:
-        handle = await asyncio.to_thread(
-            rechunk_queue.enqueue,
-            rechunk_previously_seen_workflow,
-            str(job.id),
-            str(community_server_id),
-            item_ids,
-            batch_size,
+        handle = await safe_enqueue(
+            lambda: rechunk_queue.enqueue(
+                rechunk_previously_seen_workflow,
+                str(job.id),
+                str(community_server_id),
+                item_ids,
+                batch_size,
+            )
         )
         workflow_id = handle.workflow_id
     except Exception as e:

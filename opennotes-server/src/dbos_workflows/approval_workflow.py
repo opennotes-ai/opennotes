@@ -637,21 +637,22 @@ async def dispatch_bulk_approval_workflow(
     Raises:
         Exception: If workflow dispatch fails
     """
-    import asyncio
+    from src.dbos_workflows.enqueue_utils import safe_enqueue
 
-    handle = await asyncio.to_thread(
-        approval_queue.enqueue,
-        bulk_approval_workflow,
-        str(batch_job_id),
-        threshold,
-        auto_promote,
-        limit,
-        status,
-        dataset_name,
-        dataset_tags,
-        has_content,
-        published_date_from,
-        published_date_to,
+    handle = await safe_enqueue(
+        lambda: approval_queue.enqueue(
+            bulk_approval_workflow,
+            str(batch_job_id),
+            threshold,
+            auto_promote,
+            limit,
+            status,
+            dataset_name,
+            dataset_tags,
+            has_content,
+            published_date_from,
+            published_date_to,
+        )
     )
 
     logger.info(

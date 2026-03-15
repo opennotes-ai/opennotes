@@ -39,6 +39,7 @@ from src.dbos_workflows.batch_job_helpers import (
     finalize_batch_job_sync,
     start_batch_job_sync,
 )
+from src.dbos_workflows.enqueue_utils import safe_enqueue
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
@@ -1064,13 +1065,14 @@ async def dispatch_import_workflow(
     dry_run: bool,
     enqueue_scrapes: bool,
 ) -> str:
-    handle = await asyncio.to_thread(
-        import_pipeline_queue.enqueue,
-        fact_check_import_workflow,
-        str(batch_job_id),
-        batch_size,
-        dry_run,
-        enqueue_scrapes,
+    handle = await safe_enqueue(
+        lambda: import_pipeline_queue.enqueue(
+            fact_check_import_workflow,
+            str(batch_job_id),
+            batch_size,
+            dry_run,
+            enqueue_scrapes,
+        )
     )
 
     logger.info(
@@ -1091,14 +1093,15 @@ async def dispatch_scrape_workflow(
     concurrency: int = DEFAULT_SCRAPE_CONCURRENCY,
     base_delay: float = 1.0,
 ) -> str:
-    handle = await asyncio.to_thread(
-        import_pipeline_queue.enqueue,
-        scrape_candidates_workflow,
-        str(batch_job_id),
-        batch_size,
-        dry_run,
-        concurrency,
-        base_delay,
+    handle = await safe_enqueue(
+        lambda: import_pipeline_queue.enqueue(
+            scrape_candidates_workflow,
+            str(batch_job_id),
+            batch_size,
+            dry_run,
+            concurrency,
+            base_delay,
+        )
     )
 
     logger.info(
@@ -1117,12 +1120,13 @@ async def dispatch_promote_workflow(
     batch_size: int,
     dry_run: bool,
 ) -> str:
-    handle = await asyncio.to_thread(
-        import_pipeline_queue.enqueue,
-        promote_candidates_workflow,
-        str(batch_job_id),
-        batch_size,
-        dry_run,
+    handle = await safe_enqueue(
+        lambda: import_pipeline_queue.enqueue(
+            promote_candidates_workflow,
+            str(batch_job_id),
+            batch_size,
+            dry_run,
+        )
     )
 
     logger.info(

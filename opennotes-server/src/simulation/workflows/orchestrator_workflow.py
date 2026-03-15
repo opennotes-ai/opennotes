@@ -1082,9 +1082,9 @@ RUN_ORCHESTRATOR_WORKFLOW_NAME: str = run_orchestrator.__qualname__
 
 
 async def dispatch_orchestrator(simulation_run_id: UUID, generation: int = 1) -> str:
-    import asyncio
-
     from dbos import SetEnqueueOptions, SetWorkflowID
+
+    from src.dbos_workflows.enqueue_utils import safe_enqueue
 
     wf_id = f"orchestrator-{simulation_run_id}-gen{generation}"
 
@@ -1096,7 +1096,7 @@ async def dispatch_orchestrator(simulation_run_id: UUID, generation: int = 1) ->
             )
             return handle.get_workflow_id()
 
-    workflow_id = await asyncio.to_thread(_enqueue)
+    workflow_id = await safe_enqueue(_enqueue)
 
     logger.info(
         "Orchestrator workflow dispatched",

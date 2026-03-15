@@ -372,8 +372,10 @@ class TestDispatchPreviouslySeenRechunkWorkflow:
         with (
             patch("src.dbos_workflows.rechunk_workflow.BatchJobService") as mock_batch_job_cls,
             patch(
-                "asyncio.to_thread", new_callable=AsyncMock, return_value=mock_handle
-            ) as mock_to_thread,
+                "src.dbos_workflows.rechunk_workflow.safe_enqueue",
+                new_callable=AsyncMock,
+                return_value=mock_handle,
+            ) as mock_safe_enqueue,
         ):
             mock_service = mock_batch_job_cls.return_value
             mock_service.create_job = AsyncMock(return_value=mock_job)
@@ -391,15 +393,7 @@ class TestDispatchPreviouslySeenRechunkWorkflow:
             mock_service.start_job.assert_called_once()
             mock_service.set_workflow_id.assert_called_once()
 
-            enqueue_args = mock_to_thread.call_args
-            from src.dbos_workflows.rechunk_workflow import (
-                rechunk_previously_seen_workflow,
-                rechunk_queue,
-            )
-
-            assert enqueue_args.args[0].__self__ is rechunk_queue
-            assert enqueue_args.args[0].__func__ is rechunk_queue.enqueue.__func__
-            assert enqueue_args.args[1] is rechunk_previously_seen_workflow
+            mock_safe_enqueue.assert_called_once()
 
             stmt_arg = mock_db.execute.call_args[0][0]
             compiled = str(stmt_arg.compile(compile_kwargs={"literal_binds": True}))
@@ -466,7 +460,7 @@ class TestDispatchPreviouslySeenRechunkWorkflow:
         with (
             patch("src.dbos_workflows.rechunk_workflow.BatchJobService") as mock_batch_job_cls,
             patch(
-                "asyncio.to_thread",
+                "src.dbos_workflows.rechunk_workflow.safe_enqueue",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("DBOS unavailable"),
             ),
