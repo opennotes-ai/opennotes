@@ -6770,9 +6770,15 @@ export interface components {
         NoteFactorData: {
             /** Note Id */
             note_id: string;
-            /** Intercept */
+            /**
+             * Intercept
+             * @default 0
+             */
             intercept: number;
-            /** Factor1 */
+            /**
+             * Factor1
+             * @default 0
+             */
             factor1: number;
             /** Status */
             status: string | null;
@@ -8246,9 +8252,15 @@ export interface components {
             agent_name: string | null;
             /** Personality */
             personality: string | null;
-            /** Intercept */
+            /**
+             * Intercept
+             * @default 0
+             */
             intercept: number;
-            /** Factor1 */
+            /**
+             * Factor1
+             * @default 0
+             */
             factor1: number;
         };
         /**
