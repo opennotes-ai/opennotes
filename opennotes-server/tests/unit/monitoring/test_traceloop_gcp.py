@@ -13,8 +13,17 @@ class TestTraceloopGcpExporters:
         traceloop_mod._traceloop_configured = False
 
         mock_logging_cls = MagicMock()
+        mock_span_exporter_cls = MagicMock()
         with (
-            patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False),
+            patch.dict(
+                "os.environ",
+                {"K_SERVICE": "test", "GOOGLE_CLOUD_PROJECT": "test-project"},
+                clear=False,
+            ),
+            patch(
+                "src.monitoring.cloud_trace_logging_exporter.CloudTraceLoggingSpanExporter",
+                mock_span_exporter_cls,
+            ),
             patch(
                 "opentelemetry.exporter.cloud_logging.CloudLoggingExporter",
                 mock_logging_cls,
@@ -43,8 +52,17 @@ class TestTraceloopGcpExporters:
         traceloop_mod._traceloop_configured = False
 
         mock_logging_cls = MagicMock()
+        mock_span_exporter_cls = MagicMock()
         with (
-            patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False),
+            patch.dict(
+                "os.environ",
+                {"K_SERVICE": "test", "GOOGLE_CLOUD_PROJECT": "test-project"},
+                clear=False,
+            ),
+            patch(
+                "src.monitoring.cloud_trace_logging_exporter.CloudTraceLoggingSpanExporter",
+                mock_span_exporter_cls,
+            ),
             patch(
                 "opentelemetry.exporter.cloud_logging.CloudLoggingExporter",
                 mock_logging_cls,
@@ -218,8 +236,17 @@ class TestTraceloopGcpImportError:
 
         traceloop_mod._traceloop_configured = False
 
+        mock_span_exporter_cls = MagicMock()
         with (
-            patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False),
+            patch.dict(
+                "os.environ",
+                {"K_SERVICE": "test", "GOOGLE_CLOUD_PROJECT": "test-project"},
+                clear=False,
+            ),
+            patch(
+                "src.monitoring.cloud_trace_logging_exporter.CloudTraceLoggingSpanExporter",
+                mock_span_exporter_cls,
+            ),
             patch.dict(
                 "sys.modules",
                 {

@@ -146,9 +146,9 @@ def shutdown_traceloop() -> None:
 
     with _traceloop_lock:
         try:
-            from traceloop.sdk import TracerWrapper
+            from traceloop.sdk.tracing.tracing import TracerWrapper
 
-            TracerWrapper.instance = None
+            TracerWrapper.instance = None  # pyright: ignore[reportAttributeAccessIssue]
         except (ImportError, AttributeError):
             pass
 
