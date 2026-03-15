@@ -75,7 +75,7 @@ async def persist_scoring_snapshot(
     community_server_id: UUID,
     rater_factors: list[dict[str, Any]],
     note_factors: list[dict[str, Any]],
-    global_intercept: float,
+    global_intercept: float | None,
     metadata: dict[str, Any],
     db: AsyncSession,
 ) -> ScoringSnapshot:
@@ -87,7 +87,7 @@ async def persist_scoring_snapshot(
         "scored_at": now,
         "rater_factors": rater_factors,
         "note_factors": note_factors,
-        "global_intercept": global_intercept,
+        "global_intercept": global_intercept if global_intercept is not None else 0.0,
         "metadata": metadata,
     }
 
