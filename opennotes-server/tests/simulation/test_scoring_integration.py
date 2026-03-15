@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -164,7 +164,7 @@ async def test_trigger_scoring_uses_existing_pipeline():
     assert result.tier == ScoringTier.MINIMAL
     assert result.note_count == 5
     mock_factory.get_scorer.assert_called_once_with(
-        str(cs_id), 5, data_provider=None, community_id=str(cs_id)
+        str(cs_id), 5, data_provider=None, community_id=str(cs_id), ratings_density=None
     )
     mock_calc.assert_called_once_with(note, 5, mock_scorer)
 
@@ -1099,7 +1099,7 @@ async def test_trigger_scoring_passes_data_provider_for_limited_tier():
 
     mock_prefetch.assert_called_once_with(cs_id, db)
     mock_factory.get_scorer.assert_called_once_with(
-        str(cs_id), 500, data_provider=mock_provider, community_id=str(cs_id)
+        str(cs_id), 500, data_provider=mock_provider, community_id=str(cs_id), ratings_density=ANY
     )
 
 

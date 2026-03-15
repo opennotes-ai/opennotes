@@ -1,9 +1,12 @@
 """
 Tests for note status threshold transitions.
 
-This test module verifies that note status only changes from NEEDS_MORE_RATINGS
-to CURRENTLY_RATED_HELPFUL or CURRENTLY_RATED_NOT_HELPFUL after reaching the
-minimum rating threshold (MIN_RATINGS_NEEDED).
+Since TASK-1321 removed inline scoring from routers, note status is no longer
+updated synchronously during rating creation. Status transitions now happen
+asynchronously when the DBOS scoring workflow runs. These tests verify that:
+- Rating creation succeeds and returns 201
+- Note status remains NEEDS_MORE_RATINGS after rating creation (no inline update)
+- Scoring dispatch is attempted for notes with a community_server_id
 """
 
 from uuid import UUID, uuid4
@@ -142,20 +145,19 @@ class TestRatingStatusThreshold:
                 )
 
     @pytest.mark.asyncio
-    async def test_status_changes_to_helpful_at_threshold(
+    async def test_status_unchanged_at_threshold_scoring_is_async(
         self, auth_client: AsyncClient, test_note: Note
     ):
         """
-        Test that note status changes to CURRENTLY_RATED_HELPFUL when:
-        - rating count reaches MIN_RATINGS_NEEDED
-        - score >= 0.5
+        After TASK-1321, scoring is async via DBOS. Note status remains
+        NEEDS_MORE_RATINGS after rating creation — the scoring workflow
+        updates it later.
         """
         async with get_session_maker()() as session:
             await session.execute(Rating.__table__.delete().where(Rating.note_id == test_note.id))
             await session.commit()
 
         for i in range(settings.MIN_RATINGS_NEEDED):
-            # Create a proper rater profile with UUID for each rater
             rater_id = await create_rater_profile(f"Helpful Rater {i:03d}")
 
             rating_data = {
@@ -174,45 +176,6 @@ class TestRatingStatusThreshold:
         async with get_session_maker()() as session:
             result = await session.execute(select(Note).where(Note.id == test_note.id))
             note = result.scalar_one()
-            assert note.status == "CURRENTLY_RATED_HELPFUL", (
-                f"Note status should be CURRENTLY_RATED_HELPFUL after "
-                f"{settings.MIN_RATINGS_NEEDED} helpful ratings"
-            )
-
-    @pytest.mark.asyncio
-    async def test_status_changes_to_not_helpful_at_threshold(
-        self, auth_client: AsyncClient, test_note: Note
-    ):
-        """
-        Test that note status changes to CURRENTLY_RATED_NOT_HELPFUL when:
-        - rating count reaches MIN_RATINGS_NEEDED
-        - score < 0.5
-        """
-        async with get_session_maker()() as session:
-            await session.execute(Rating.__table__.delete().where(Rating.note_id == test_note.id))
-            await session.commit()
-
-        for i in range(settings.MIN_RATINGS_NEEDED):
-            # Create a proper rater profile with UUID for each rater
-            rater_id = await create_rater_profile(f"Unhelpful Rater {i:03d}")
-
-            rating_data = {
-                "data": {
-                    "type": "ratings",
-                    "attributes": {
-                        "note_id": str(test_note.id),
-                        "rater_id": str(rater_id),
-                        "helpfulness_level": "NOT_HELPFUL",
-                    },
-                }
-            }
-            response = await auth_client.post("/api/v2/ratings", json=rating_data)
-            assert response.status_code == 201
-
-        async with get_session_maker()() as session:
-            result = await session.execute(select(Note).where(Note.id == test_note.id))
-            note = result.scalar_one()
-            assert note.status == "CURRENTLY_RATED_NOT_HELPFUL", (
-                f"Note status should be CURRENTLY_RATED_NOT_HELPFUL after "
-                f"{settings.MIN_RATINGS_NEEDED} not helpful ratings"
+            assert note.status == "NEEDS_MORE_RATINGS", (
+                "Status should remain NEEDS_MORE_RATINGS — scoring is now async via DBOS"
             )
