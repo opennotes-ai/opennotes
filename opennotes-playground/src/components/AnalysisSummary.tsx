@@ -1,7 +1,8 @@
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createSignal, createMemo, createEffect } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
 import InlineHistogram from "~/components/ui/inline-histogram";
+import PaginationControls from "~/components/ui/pagination-controls";
 
 type NoteQualityData = components["schemas"]["NoteQualityData"];
 type RatingDistributionData = components["schemas"]["RatingDistributionData"];
@@ -9,10 +10,26 @@ type RatingDistributionData = components["schemas"]["RatingDistributionData"];
 export default function AnalysisSummary(props: {
   noteQuality: NoteQualityData;
   ratingDistribution: RatingDistributionData;
+  pageSize: number;
 }) {
   const notesByStatus = createMemo(() => Object.entries(props.noteQuality.notes_by_status));
   const notesByClassification = createMemo(() => Object.entries(props.noteQuality.notes_by_classification));
   const overallRatings = createMemo(() => Object.entries(props.ratingDistribution.overall));
+
+  const [agentPage, setAgentPage] = createSignal(1);
+  const totalAgentPages = createMemo(() =>
+    Math.ceil((props.ratingDistribution?.per_agent?.length ?? 0) / props.pageSize)
+  );
+  const visibleAgents = createMemo(() => {
+    const agents = props.ratingDistribution?.per_agent ?? [];
+    const start = (agentPage() - 1) * props.pageSize;
+    return agents.slice(start, start + props.pageSize);
+  });
+
+  createEffect(() => {
+    props.pageSize;
+    setAgentPage(1);
+  });
 
   return (
     <section>
@@ -60,7 +77,7 @@ export default function AnalysisSummary(props: {
       <p class="mb-3 text-sm text-muted-foreground">
         Total ratings: {props.ratingDistribution.total_ratings}
       </p>
-      <div class="grid gap-4 sm:grid-cols-2">
+      <div class="grid items-start gap-4 sm:grid-cols-2">
         <div class="rounded-lg border border-border bg-card p-4">
           <h3 class="mb-2 text-sm font-semibold">Overall</h3>
           <table class="w-full text-sm" aria-label="Overall rating distribution">
@@ -89,7 +106,7 @@ export default function AnalysisSummary(props: {
                   </tr>
                 </thead>
                 <tbody>
-                  <For each={props.ratingDistribution.per_agent}>
+                  <For each={visibleAgents()}>
                     {(agent) => (
                       <tr class="border-b border-border last:border-0">
                         <td class="py-1.5">{agent.agent_name}</td>
@@ -108,6 +125,14 @@ export default function AnalysisSummary(props: {
                 </tbody>
               </table>
             </div>
+            <Show when={totalAgentPages() > 1}>
+              <PaginationControls
+                currentPage={agentPage()}
+                totalPages={totalAgentPages()}
+                onPageChange={setAgentPage}
+                label="Per agent pagination"
+              />
+            </Show>
           </div>
         </Show>
       </div>

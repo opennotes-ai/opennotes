@@ -251,6 +251,7 @@ export default function SimulationDetailPage() {
                             <AnalysisSummary
                               noteQuality={a.note_quality}
                               ratingDistribution={a.rating_distribution}
+                              pageSize={pageSize()}
                             />
                             <MetricsDisplay
                               consensus={a.consensus_metrics}
