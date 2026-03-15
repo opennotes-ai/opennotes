@@ -12,10 +12,18 @@ class TestTraceloopGcpExporters:
 
         traceloop_mod._traceloop_configured = False
 
-        mock_exporter = MagicMock()
         mock_logging_cls = MagicMock()
+        mock_span_exporter_cls = MagicMock()
         with (
-            patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False),
+            patch.dict(
+                "os.environ",
+                {"K_SERVICE": "test", "GOOGLE_CLOUD_PROJECT": "test-project"},
+                clear=False,
+            ),
+            patch(
+                "src.monitoring.cloud_trace_logging_exporter.CloudTraceLoggingSpanExporter",
+                mock_span_exporter_cls,
+            ),
             patch(
                 "opentelemetry.exporter.cloud_logging.CloudLoggingExporter",
                 mock_logging_cls,
@@ -27,7 +35,7 @@ class TestTraceloopGcpExporters:
                 version="0.0.1",
                 environment="test",
                 instance_id="inst-1",
-                exporter=mock_exporter,
+                otlp_endpoint="http://localhost:4317",
             )
 
         assert result is True
@@ -43,10 +51,18 @@ class TestTraceloopGcpExporters:
 
         traceloop_mod._traceloop_configured = False
 
-        mock_exporter = MagicMock()
         mock_logging_cls = MagicMock()
+        mock_span_exporter_cls = MagicMock()
         with (
-            patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False),
+            patch.dict(
+                "os.environ",
+                {"K_SERVICE": "test", "GOOGLE_CLOUD_PROJECT": "test-project"},
+                clear=False,
+            ),
+            patch(
+                "src.monitoring.cloud_trace_logging_exporter.CloudTraceLoggingSpanExporter",
+                mock_span_exporter_cls,
+            ),
             patch(
                 "opentelemetry.exporter.cloud_logging.CloudLoggingExporter",
                 mock_logging_cls,
@@ -58,7 +74,7 @@ class TestTraceloopGcpExporters:
                 version="0.0.1",
                 environment="test",
                 instance_id="inst-1",
-                exporter=mock_exporter,
+                otlp_endpoint="http://localhost:4317",
             )
 
         assert result is True
@@ -73,20 +89,85 @@ class TestTraceloopGcpExporters:
 
         traceloop_mod._traceloop_configured = False
 
-        mock_exporter = MagicMock()
         result = traceloop_mod.setup_traceloop(
             app_name="test",
             service_name="test-service",
             version="0.0.1",
             environment="test",
             instance_id="inst-1",
-            exporter=mock_exporter,
+            otlp_endpoint="http://localhost:4317",
         )
 
         assert result is True
         init_kwargs = mock_traceloop_cls.init.call_args[1]
         assert "metrics_exporter" not in init_kwargs
         assert "logging_exporter" not in init_kwargs
+
+
+class TestTraceloopDedicatedExporter:
+    @patch(GCP_DETECTOR_PATH, return_value=True)
+    @patch(TRACELOOP_PATH)
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
+    @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
+    def test_creates_dedicated_gcp_exporter_on_cloud_run(
+        self, mock_gcl, mock_ct_init, mock_traceloop_cls, mock_is_gcp
+    ) -> None:
+        import src.monitoring.traceloop as traceloop_mod
+
+        traceloop_mod._traceloop_configured = False
+
+        mock_logging_cls = MagicMock()
+        with (
+            patch.dict(
+                "os.environ",
+                {"K_SERVICE": "test", "GOOGLE_CLOUD_PROJECT": "test-project"},
+                clear=False,
+            ),
+            patch(
+                "opentelemetry.exporter.cloud_logging.CloudLoggingExporter",
+                mock_logging_cls,
+            ),
+        ):
+            result = traceloop_mod.setup_traceloop(
+                app_name="test",
+                service_name="test-service",
+                version="0.0.1",
+                environment="test",
+                instance_id="inst-1",
+                otlp_endpoint="http://localhost:4317",
+            )
+
+        assert result is True
+        init_kwargs = mock_traceloop_cls.init.call_args[1]
+        assert "exporter" in init_kwargs
+
+        from src.monitoring.cloud_trace_logging_exporter import CloudTraceLoggingSpanExporter
+
+        assert isinstance(init_kwargs["exporter"], CloudTraceLoggingSpanExporter)
+
+    @patch(GCP_DETECTOR_PATH, return_value=False)
+    @patch(TRACELOOP_PATH)
+    def test_uses_api_endpoint_when_not_on_gcp(self, mock_traceloop_cls, mock_is_gcp) -> None:
+        import src.monitoring.traceloop as traceloop_mod
+
+        traceloop_mod._traceloop_configured = False
+
+        result = traceloop_mod.setup_traceloop(
+            app_name="test",
+            service_name="test-service",
+            version="0.0.1",
+            environment="test",
+            instance_id="inst-1",
+            otlp_endpoint="http://localhost:4317",
+        )
+
+        assert result is True
+        init_kwargs = mock_traceloop_cls.init.call_args[1]
+        assert "exporter" not in init_kwargs
+        assert init_kwargs["api_endpoint"] == "http://localhost:4317"
 
 
 class TestTraceloopBlockInstruments:
@@ -97,14 +178,13 @@ class TestTraceloopBlockInstruments:
 
         traceloop_mod._traceloop_configured = False
 
-        mock_exporter = MagicMock()
         traceloop_mod.setup_traceloop(
             app_name="test",
             service_name="test-service",
             version="0.0.1",
             environment="test",
             instance_id="inst-1",
-            exporter=mock_exporter,
+            otlp_endpoint="http://localhost:4317",
         )
 
         init_kwargs = mock_traceloop_cls.init.call_args[1]
@@ -124,8 +204,6 @@ class TestTraceloopInstrumentsUnavailable:
 
         traceloop_mod._traceloop_configured = False
 
-        mock_exporter = MagicMock()
-
         original_import = (
             __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
         )
@@ -142,7 +220,7 @@ class TestTraceloopInstrumentsUnavailable:
                 version="0.0.1",
                 environment="test",
                 instance_id="inst-1",
-                exporter=mock_exporter,
+                otlp_endpoint="http://localhost:4317",
             )
 
         assert result is True
@@ -158,10 +236,17 @@ class TestTraceloopGcpImportError:
 
         traceloop_mod._traceloop_configured = False
 
-        mock_exporter = MagicMock()
-
+        mock_span_exporter_cls = MagicMock()
         with (
-            patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False),
+            patch.dict(
+                "os.environ",
+                {"K_SERVICE": "test", "GOOGLE_CLOUD_PROJECT": "test-project"},
+                clear=False,
+            ),
+            patch(
+                "src.monitoring.cloud_trace_logging_exporter.CloudTraceLoggingSpanExporter",
+                mock_span_exporter_cls,
+            ),
             patch.dict(
                 "sys.modules",
                 {
@@ -175,10 +260,29 @@ class TestTraceloopGcpImportError:
                 version="0.0.1",
                 environment="test",
                 instance_id="inst-1",
-                exporter=mock_exporter,
+                otlp_endpoint="http://localhost:4317",
             )
 
         assert result is True
         init_kwargs = mock_traceloop_cls.init.call_args[1]
         assert "metrics_exporter" not in init_kwargs
         assert "logging_exporter" not in init_kwargs
+
+
+class TestTraceloopNoExporterParam:
+    @patch(GCP_DETECTOR_PATH, return_value=False)
+    @patch(TRACELOOP_PATH)
+    def test_setup_without_endpoint_returns_false(self, mock_traceloop_cls, mock_is_gcp) -> None:
+        import src.monitoring.traceloop as traceloop_mod
+
+        traceloop_mod._traceloop_configured = False
+
+        result = traceloop_mod.setup_traceloop(
+            app_name="test",
+            service_name="test-service",
+            version="0.0.1",
+            environment="test",
+            instance_id="inst-1",
+        )
+
+        assert result is False

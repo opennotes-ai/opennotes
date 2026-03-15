@@ -262,7 +262,7 @@ def get_broker() -> PullBasedJetStreamBroker:
     if _broker_instance is None:
         from src.config import get_settings
         from src.monitoring.logging import parse_log_level_overrides, setup_logging
-        from src.monitoring.otel import get_span_exporter, setup_otel
+        from src.monitoring.otel import setup_otel
         from src.monitoring.traceloop import setup_traceloop
 
         settings = get_settings()
@@ -283,6 +283,7 @@ def get_broker() -> PullBasedJetStreamBroker:
                 otlp_insecure=settings.OTLP_INSECURE,
                 sample_rate=settings.TRACING_SAMPLE_RATE,
                 use_gcp_exporters=settings.USE_GCP_EXPORTERS,
+                skip_batch_export=settings.TRACELOOP_ENABLED,
             )
 
         if settings.TRACELOOP_ENABLED:
@@ -295,7 +296,6 @@ def get_broker() -> PullBasedJetStreamBroker:
                 otlp_endpoint=settings.OTLP_ENDPOINT,
                 otlp_headers=settings.OTLP_HEADERS,
                 trace_content=settings.TRACELOOP_TRACE_CONTENT,
-                exporter=get_span_exporter(),
             )
 
         _broker_instance = _create_broker()

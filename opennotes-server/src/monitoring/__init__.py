@@ -17,6 +17,7 @@ from src.monitoring.otel import (
     setup_otel,
     shutdown_otel,
 )
+from src.monitoring.traceloop import shutdown_traceloop
 
 __all__ = [
     "DistributedHealthCoordinator",
@@ -34,5 +35,12 @@ __all__ = [
     "record_span_error",
     "setup_logging",
     "setup_otel",
+    "shutdown_monitoring",
     "shutdown_otel",
+    "shutdown_traceloop",
 ]
+
+
+def shutdown_monitoring(flush_timeout_millis: int | None = None) -> None:
+    shutdown_otel(flush_timeout_millis=flush_timeout_millis)
+    shutdown_traceloop()

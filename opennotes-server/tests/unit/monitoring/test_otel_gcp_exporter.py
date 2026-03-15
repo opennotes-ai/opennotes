@@ -221,6 +221,63 @@ class TestGetSpanExporter:
         assert exporter is None
 
 
+class TestSkipBatchExport:
+    @patch(GCP_DETECTOR_PATH, return_value=False)
+    def test_skip_batch_export_creates_exporter_but_no_batch_processor(self, mock_is_gcp) -> None:
+        from src.monitoring.otel import setup_otel, shutdown_otel
+
+        shutdown_otel(flush_timeout_millis=100)
+
+        setup_otel(
+            service_name="test-service",
+            otlp_endpoint="http://localhost:4317",
+            skip_batch_export=True,
+        )
+
+        from src.monitoring.otel import _span_exporter, _tracer_provider
+
+        assert _span_exporter is not None
+        assert _tracer_provider is not None
+
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        batch_processors = [
+            p
+            for p in _tracer_provider._active_span_processor._span_processors
+            if isinstance(p, BatchSpanProcessor)
+        ]
+        assert len(batch_processors) == 0
+
+        shutdown_otel(flush_timeout_millis=100)
+
+    @patch(GCP_DETECTOR_PATH, return_value=False)
+    def test_no_skip_batch_export_adds_batch_processor(self, mock_is_gcp) -> None:
+        from src.monitoring.otel import setup_otel, shutdown_otel
+
+        shutdown_otel(flush_timeout_millis=100)
+
+        setup_otel(
+            service_name="test-service",
+            otlp_endpoint="http://localhost:4317",
+            skip_batch_export=False,
+        )
+
+        from src.monitoring.otel import _tracer_provider
+
+        assert _tracer_provider is not None
+
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        batch_processors = [
+            p
+            for p in _tracer_provider._active_span_processor._span_processors
+            if isinstance(p, BatchSpanProcessor)
+        ]
+        assert len(batch_processors) == 1
+
+        shutdown_otel(flush_timeout_millis=100)
+
+
 class TestSpanLimitsConfiguration:
     @patch(GCP_DETECTOR_PATH, return_value=False)
     def test_tracer_provider_has_increased_span_limits(self, mock_is_gcp) -> None:
