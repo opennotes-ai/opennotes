@@ -17,12 +17,19 @@ def resolve_id(value: str) -> str:
         raise click.BadParameter(f"Invalid ID: '{value}'. Expected a UUID or huuid.")
 
 
+ZWS = "\u200b"
+
+
+def _insert_wrap_hints(value: str) -> str:
+    return value.replace("-", f"-{ZWS}")
+
+
 def format_id(uuid_str: str | None, use_huuid: bool) -> str:
     if uuid_str is None:
         return "N/A"
     if not use_huuid:
-        return uuid_str
+        return _insert_wrap_hints(uuid_str)
     try:
-        return huuid.uuid2human(uuid_mod.UUID(uuid_str))
+        return _insert_wrap_hints(huuid.uuid2human(uuid_mod.UUID(uuid_str)))
     except (ValueError, TypeError):
-        return uuid_str
+        return _insert_wrap_hints(uuid_str)

@@ -287,8 +287,8 @@ class TestXlsxNotesSheet:
             wb = load_workbook(output_file)
             ws = wb["Notes"]
             assert ws.max_row == 3
-            assert ws.cell(row=2, column=1).value == "note-001"
-            assert ws.cell(row=3, column=1).value == "note-002"
+            assert ws.cell(row=2, column=1).value.replace("\u200b", "") == "note-001"
+            assert ws.cell(row=3, column=1).value.replace("\u200b", "") == "note-002"
 
 
 class TestXlsxRatingsSheet:
@@ -372,7 +372,7 @@ class TestXlsxRequestsSheet:
             wb = load_workbook(output_file)
             ws = wb["Requests"]
             assert ws.max_row == 3
-            assert ws.cell(row=2, column=1).value == "req-001"
+            assert ws.cell(row=2, column=1).value.replace("\u200b", "") == "req-001"
             assert ws.cell(row=2, column=4).value == 3
             assert ws.cell(row=2, column=5).value == 0.92
 

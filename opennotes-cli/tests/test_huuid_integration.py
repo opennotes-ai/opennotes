@@ -50,12 +50,12 @@ class TestFormatId:
         uid = "019536b8-bdb2-7c81-8975-77f5c3dbdff8"
         result = format_id(uid, use_huuid=True)
         expected = huuid.uuid2human(uuid.UUID(uid))
-        assert result == expected
+        assert result.replace("\u200b", "") == expected
 
     def test_returns_raw_uuid_when_disabled(self):
         uid = "019536b8-bdb2-7c81-8975-77f5c3dbdff8"
         result = format_id(uid, use_huuid=False)
-        assert result == uid
+        assert result.replace("\u200b", "") == uid
 
     def test_none_returns_na(self):
         result = format_id(None, use_huuid=True)
@@ -76,7 +76,7 @@ class TestFormatId:
     def test_huuid_is_roundtrippable(self):
         uid = str(uuid.uuid4())
         h = format_id(uid, use_huuid=True)
-        resolved = resolve_id(h)
+        resolved = resolve_id(h.replace("\u200b", ""))
         assert resolved == uid
 
     def test_multiple_uuids_produce_distinct_huuids(self):
@@ -85,6 +85,32 @@ class TestFormatId:
         h1 = format_id(u1, use_huuid=True)
         h2 = format_id(u2, use_huuid=True)
         assert h1 != h2
+
+    def test_zws_inserted_after_hyphens_in_uuid(self):
+        uid = "019536b8-bdb2-7c81-8975-77f5c3dbdff8"
+        result = format_id(uid, use_huuid=False)
+        assert "\u200b" in result
+        parts = uid.split("-")
+        for i, part in enumerate(parts[:-1]):
+            assert part + "-\u200b" in result
+
+    def test_zws_inserted_after_hyphens_in_huuid(self):
+        uid = "019536b8-bdb2-7c81-8975-77f5c3dbdff8"
+        result = format_id(uid, use_huuid=True)
+        assert "\u200b" in result
+
+    def test_zws_not_in_na(self):
+        assert "\u200b" not in format_id(None, use_huuid=True)
+
+    def test_zws_not_in_empty(self):
+        assert "\u200b" not in format_id("", use_huuid=True)
+
+    def test_huuid_with_zws_is_roundtrippable(self):
+        uid = str(uuid.uuid4())
+        h = format_id(uid, use_huuid=True)
+        cleaned = h.replace("\u200b", "")
+        resolved = resolve_id(cleaned)
+        assert resolved == uid
 
 
 class TestCliUuidFlag:

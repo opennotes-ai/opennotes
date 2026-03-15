@@ -43,7 +43,7 @@ class TestScoreCommand:
             result = runner.invoke(cli, ["--local", "score", community_id])
 
         assert result.exit_code == 0
-        assert "score-community-abc123" in result.output
+        assert "score-community-abc123" in result.output.replace("\u200b", "")
 
     def test_score_json_output(self, runner: CliRunner) -> None:
         community_id = str(uuid4())
@@ -133,7 +133,7 @@ class TestScoreCommand:
             result = runner.invoke(cli, ["--local", "score", "Vudrotlab-Kuvkattor-Tevzelpim-Liksiksas"])
 
         assert result.exit_code == 0
-        assert "score-community-abc123" in result.output
+        assert "score-community-abc123" in result.output.replace("\u200b", "")
 
     def test_score_uuid_flag(self, runner: CliRunner) -> None:
         wf_id = "019536b8-bdb2-7c81-8975-77f5c3dbdff8"
@@ -158,7 +158,7 @@ class TestScoreCommand:
             result = runner.invoke(cli, ["--local", "--uuid", "score", str(uuid4())])
 
         assert result.exit_code == 0
-        assert wf_id in result.output
+        assert wf_id in result.output.replace("\u200b", "")
 
     def test_score_rejects_non_uuid(self, runner: CliRunner) -> None:
         with patch("opennotes_cli.cli.httpx.Client", return_value=MagicMock()):

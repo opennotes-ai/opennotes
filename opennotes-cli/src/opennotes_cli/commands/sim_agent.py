@@ -57,7 +57,7 @@ def sim_agent_list(ctx: click.Context, page: int, page_size: int) -> None:
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", no_wrap=True)
+    table.add_column("ID")
     table.add_column("Name", width=25)
     table.add_column("Model", width=30)
     table.add_column("Memory Strategy", width=20)

@@ -152,7 +152,7 @@ def display_task_list(
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("Task ID", no_wrap=True)
+    table.add_column("Task ID")
     table.add_column("Type", width=20)
     table.add_column("Status", width=12)
     table.add_column("Progress", justify="right", width=20)
@@ -234,7 +234,7 @@ def display_batch_job_list(
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("Job ID", no_wrap=True)
+    table.add_column("Job ID")
     table.add_column("Type", width=25)
     table.add_column("Status", width=12)
     table.add_column("Progress", justify="right", width=20)
@@ -312,7 +312,7 @@ def display_candidates_list(
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", no_wrap=True)
+    table.add_column("ID")
     table.add_column("Status", width=12)
     table.add_column("Rating", width=12)
     table.add_column("Dataset", width=20)
