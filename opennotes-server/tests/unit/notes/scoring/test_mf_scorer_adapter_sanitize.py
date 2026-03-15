@@ -3,12 +3,12 @@ from __future__ import annotations
 import math
 import sys
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 
-scoring_modules = [
+_SCORING_MODULES = [
     "scoring",
     "scoring.constants",
     "scoring.mf_core_scorer",
@@ -18,13 +18,10 @@ scoring_modules = [
     "scoring.matrix_factorization.model",
     "torch",
 ]
-_stashed = {}
-for mod in scoring_modules:
-    if mod in sys.modules:
-        _stashed[mod] = sys.modules[mod]
-    sys.modules[mod] = MagicMock()
 
-from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter  # noqa: E402
+_mock_modules = {mod: MagicMock() for mod in _SCORING_MODULES}
+with patch.dict(sys.modules, _mock_modules):
+    from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 
 
 @pytest.fixture
@@ -60,21 +57,21 @@ def adapter_with_nan_inf():
 
 
 class TestGetLastScoringFactorsSanitize:
-    def test_nan_inf_rater_intercept_sanitized(self, adapter_with_nan_inf: MFCoreScorerAdapter):
+    def test_nan_inf_rater_intercept_sanitized(self, adapter_with_nan_inf):
         result = adapter_with_nan_inf.get_last_scoring_factors()
         assert result is not None
         rater_factors = result["rater_factors"]
         assert rater_factors[0]["intercept"] is None
         assert rater_factors[1]["intercept"] is None
 
-    def test_nan_inf_rater_factor1_sanitized(self, adapter_with_nan_inf: MFCoreScorerAdapter):
+    def test_nan_inf_rater_factor1_sanitized(self, adapter_with_nan_inf):
         result = adapter_with_nan_inf.get_last_scoring_factors()
         assert result is not None
         rater_factors = result["rater_factors"]
         assert rater_factors[0]["factor1"] is None
         assert rater_factors[1]["factor1"] == pytest.approx(0.3)
 
-    def test_nan_inf_note_intercept_sanitized(self, adapter_with_nan_inf: MFCoreScorerAdapter):
+    def test_nan_inf_note_intercept_sanitized(self, adapter_with_nan_inf):
         result = adapter_with_nan_inf.get_last_scoring_factors()
         assert result is not None
         note_factors = result["note_factors"]
@@ -82,7 +79,7 @@ class TestGetLastScoringFactorsSanitize:
         assert note_factors[1]["intercept"] is None
         assert note_factors[2]["intercept"] is None
 
-    def test_nan_inf_note_factor1_sanitized(self, adapter_with_nan_inf: MFCoreScorerAdapter):
+    def test_nan_inf_note_factor1_sanitized(self, adapter_with_nan_inf):
         result = adapter_with_nan_inf.get_last_scoring_factors()
         assert result is not None
         note_factors = result["note_factors"]
@@ -90,12 +87,12 @@ class TestGetLastScoringFactorsSanitize:
         assert note_factors[1]["factor1"] == pytest.approx(0.5)
         assert note_factors[2]["factor1"] is None
 
-    def test_nan_inf_global_intercept_sanitized(self, adapter_with_nan_inf: MFCoreScorerAdapter):
+    def test_nan_inf_global_intercept_sanitized(self, adapter_with_nan_inf):
         result = adapter_with_nan_inf.get_last_scoring_factors()
         assert result is not None
         assert result["global_intercept"] is None
 
-    def test_no_nan_values_in_any_float_field(self, adapter_with_nan_inf: MFCoreScorerAdapter):
+    def test_no_nan_values_in_any_float_field(self, adapter_with_nan_inf):
         result = adapter_with_nan_inf.get_last_scoring_factors()
         assert result is not None
 
