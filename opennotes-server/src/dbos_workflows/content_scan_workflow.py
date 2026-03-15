@@ -55,6 +55,7 @@ import orjson
 from dbos import DBOS, Queue, SetEnqueueOptions, SetWorkflowID
 
 from src.bulk_content_scan.schemas import BulkScanStatus
+from src.dbos_workflows.enqueue_utils import safe_enqueue
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
@@ -1729,7 +1730,7 @@ async def dispatch_content_scan_workflow(
                     scan_types_json,
                 )
 
-        handle = await asyncio.to_thread(_enqueue)
+        handle = await safe_enqueue(_enqueue)
 
         logger.info(
             "Content scan DBOS workflow dispatched",
@@ -1784,16 +1785,18 @@ async def enqueue_content_scan_batch(
     try:
         scan_types_json = orjson.dumps(scan_types).decode()
 
-        handle = await asyncio.to_thread(
-            content_scan_queue.enqueue,
-            process_content_scan_batch,
-            orchestrator_workflow_id,
-            str(scan_id),
-            str(community_server_id),
-            batch_number,
-            messages_redis_key,
-            scan_types_json,
-        )
+        def _enqueue():
+            return content_scan_queue.enqueue(
+                process_content_scan_batch,
+                orchestrator_workflow_id,
+                str(scan_id),
+                str(community_server_id),
+                batch_number,
+                messages_redis_key,
+                scan_types_json,
+            )
+
+        handle = await safe_enqueue(_enqueue)
 
         logger.info(
             "Content scan batch enqueued via DBOS",

@@ -244,3 +244,26 @@ class TestScoreCommunityServerEndpoint:
         detail = response.json()["detail"]
         assert "admin" in detail.lower()
         assert "moderator" in detail.lower()
+
+    def test_returns_503_on_transient_enqueue_error(self, client, mock_community_member):
+        community_server_id = str(uuid4())
+
+        from src.dbos_workflows.enqueue_utils import DBOSEnqueueTransientError
+
+        with (
+            patch(
+                "src.community_servers.scoring_router.verify_community_admin_by_uuid",
+                new=AsyncMock(return_value=mock_community_member),
+            ),
+            patch(
+                "src.community_servers.scoring_router.dispatch_community_scoring",
+                new=AsyncMock(
+                    side_effect=DBOSEnqueueTransientError("DBOS enqueue failed after retries")
+                ),
+            ),
+        ):
+            response = client.post(f"/api/v2/community-servers/{community_server_id}/score")
+
+        assert response.status_code == 503
+        assert "retry-after" in response.headers
+        assert response.headers["retry-after"] == "5"

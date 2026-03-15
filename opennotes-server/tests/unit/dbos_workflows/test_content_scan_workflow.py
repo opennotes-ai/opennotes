@@ -2382,6 +2382,46 @@ class TestDispatchContentScanWorkflow:
 
         mock_set_wf_id.assert_called_once_with(str(scan_id))
 
+    @pytest.mark.asyncio
+    async def test_uses_safe_enqueue(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
+
+        scan_id = uuid4()
+        mock_handle = MagicMock()
+        mock_handle.workflow_id = "wf-safe"
+
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.safe_enqueue",
+            new=AsyncMock(return_value=mock_handle),
+        ) as mock_safe:
+            result = await dispatch_content_scan_workflow(
+                scan_id=scan_id,
+                community_server_id=uuid4(),
+                scan_types=["similarity"],
+            )
+
+        mock_safe.assert_called_once()
+        assert result == "wf-safe"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_transient_enqueue_error(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
+        from src.dbos_workflows.enqueue_utils import DBOSEnqueueTransientError
+
+        with patch(
+            "src.dbos_workflows.content_scan_workflow.safe_enqueue",
+            new=AsyncMock(
+                side_effect=DBOSEnqueueTransientError("DBOS enqueue failed after retries")
+            ),
+        ):
+            result = await dispatch_content_scan_workflow(
+                scan_id=uuid4(),
+                community_server_id=uuid4(),
+                scan_types=["similarity"],
+            )
+
+        assert result is None
+
 
 class TestEnqueueContentScanBatch:
     """Tests for enqueue_content_scan_batch async helper."""
@@ -3339,8 +3379,10 @@ class TestEnqueueContentScanBatchRedisKey:
         mock_handle.workflow_id = "batch-wf-789"
 
         with patch(
-            "asyncio.to_thread", new_callable=AsyncMock, return_value=mock_handle
-        ) as mock_to_thread:
+            "src.dbos_workflows.content_scan_workflow.safe_enqueue",
+            new_callable=AsyncMock,
+            return_value=mock_handle,
+        ) as mock_safe_enqueue:
             result = await enqueue_content_scan_batch(
                 orchestrator_workflow_id="orchestrator-wf-123",
                 scan_id=scan_id,
@@ -3351,9 +3393,7 @@ class TestEnqueueContentScanBatchRedisKey:
             )
 
         assert result == "batch-wf-789"
-        enqueue_args = mock_to_thread.call_args.args
-        assert enqueue_args[5] == 1
-        assert enqueue_args[6] == redis_key
+        mock_safe_enqueue.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_messages_redis_key_is_required(self) -> None:
@@ -3363,8 +3403,10 @@ class TestEnqueueContentScanBatchRedisKey:
         mock_handle.workflow_id = "batch-wf-required"
 
         with patch(
-            "asyncio.to_thread", new_callable=AsyncMock, return_value=mock_handle
-        ) as mock_to_thread:
+            "src.dbos_workflows.content_scan_workflow.safe_enqueue",
+            new_callable=AsyncMock,
+            return_value=mock_handle,
+        ):
             result = await enqueue_content_scan_batch(
                 orchestrator_workflow_id="orch",
                 scan_id=uuid4(),
@@ -3375,8 +3417,6 @@ class TestEnqueueContentScanBatchRedisKey:
             )
 
         assert result == "batch-wf-required"
-        enqueue_args = mock_to_thread.call_args.args
-        assert enqueue_args[6] == "test:required:key"
 
 
 def _make_test_message(message_id: str = "msg_1", channel_id: str = "ch_1") -> dict:

@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from dbos import DBOS, Queue
 
+from src.dbos_workflows.enqueue_utils import safe_enqueue
 from src.monitoring import get_logger
 from src.utils.async_compat import run_sync
 
@@ -189,7 +190,7 @@ async def dispatch_playground_url_extraction(
             )
             return handle.get_workflow_id()
 
-    workflow_id = await asyncio.to_thread(_enqueue)
+    workflow_id = await safe_enqueue(_enqueue)
 
     logger.info(
         "Playground URL extraction workflow dispatched",

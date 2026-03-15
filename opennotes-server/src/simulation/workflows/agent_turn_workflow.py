@@ -658,9 +658,9 @@ async def dispatch_agent_turn(
     *,
     generation: int = 1,
 ) -> str:
-    import asyncio
-
     from dbos import SetEnqueueOptions, SetWorkflowID
+
+    from src.dbos_workflows.enqueue_utils import safe_enqueue
 
     wf_id = f"turn-{agent_instance_id}-gen{generation}-{turn_number}-retry{retry_count}"
 
@@ -672,7 +672,7 @@ async def dispatch_agent_turn(
             )
             return handle.get_workflow_id()
 
-    workflow_id = await asyncio.to_thread(_enqueue)
+    workflow_id = await safe_enqueue(_enqueue)
 
     logger.info(
         "Agent turn workflow dispatched",
