@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 from uuid import UUID
 
@@ -11,6 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.notes.scoring.models import ScoringSnapshot
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_float(value: float) -> float | None:
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return None
+    return value
 
 
 def extract_factors_from_model_result(
@@ -25,8 +32,8 @@ def extract_factors_from_model_result(
             rater_factors.append(
                 {
                     "rater_id": str(rater_id_raw),
-                    "intercept": float(row.get("coreRaterIntercept", 0.0)),
-                    "factor1": float(row.get("coreRaterFactor1", 0.0)),
+                    "intercept": _sanitize_float(float(row.get("coreRaterIntercept", 0.0))),
+                    "factor1": _sanitize_float(float(row.get("coreRaterFactor1", 0.0))),
                 }
             )
 
@@ -39,8 +46,8 @@ def extract_factors_from_model_result(
             note_factors.append(
                 {
                     "note_id": note_id,
-                    "intercept": float(row.get("coreNoteIntercept", 0.0)),
-                    "factor1": float(row.get("coreNoteFactor1", 0.0)),
+                    "intercept": _sanitize_float(float(row.get("coreNoteIntercept", 0.0))),
+                    "factor1": _sanitize_float(float(row.get("coreNoteFactor1", 0.0))),
                     "status": str(row.get("coreRatingStatus", "")),
                 }
             )
@@ -51,7 +58,9 @@ def extract_factors_from_model_result(
         and "coreNoteIntercept" in model_result.scoredNotes.columns
         and len(model_result.scoredNotes) > 0
     ):
-        global_intercept = float(model_result.scoredNotes["coreNoteIntercept"].mean())
+        global_intercept = _sanitize_float(
+            float(model_result.scoredNotes["coreNoteIntercept"].mean())
+        )
 
     return {
         "rater_factors": rater_factors,
