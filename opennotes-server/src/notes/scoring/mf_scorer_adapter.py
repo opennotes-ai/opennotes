@@ -227,7 +227,7 @@ class MFCoreScorerAdapter:
                         "Note not found in batch scoring results, using stub",
                         extra={"note_id": note_id},
                     )
-                except Exception as e:
+                except AssertionError as e:
                     self._batch_scoring_failed = True
                     logger.warning(
                         "Batch scoring failed, falling back to stub",
@@ -244,6 +244,8 @@ class MFCoreScorerAdapter:
                     return result
 
             result = self._score_batch_stub(note_id, ratings)
+            if self._batch_scoring_failed:
+                result.metadata["degraded"] = True
             self._cache[note_id] = result
             self._evict_if_needed()
 
@@ -265,6 +267,7 @@ class MFCoreScorerAdapter:
         )
         self._cache.clear()
         self._cache_version = self._current_version
+        self._batch_scoring_failed = False
 
     def update_ratings_version(self) -> None:
         """

@@ -612,11 +612,11 @@ async def pause_simulation(
         )
 
 
-def _cancel_orphaned_workflows(workflows: list[Any]) -> None:
-    for wf in workflows:
-        try:
-            DBOS.cancel_workflow(wf.workflow_id)
-        except Exception:
+async def _cancel_orphaned_workflows(workflows: list[Any]) -> None:
+    cancel_tasks = [asyncio.to_thread(DBOS.cancel_workflow, wf.workflow_id) for wf in workflows]
+    results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
+    for wf, result in zip(workflows, results, strict=True):
+        if isinstance(result, BaseException):
             logger.warning(
                 "Failed to cancel orphaned workflow",
                 extra={"workflow_id": wf.workflow_id},
@@ -662,7 +662,7 @@ async def _check_orchestrator_workflows(
                     "current_app_version": current_app_version,
                 },
             )
-        _cancel_orphaned_workflows(orphaned)
+        await _cancel_orphaned_workflows(orphaned)
 
     needs_redispatch = len(matching_workflows) == 0
     return needs_redispatch, False

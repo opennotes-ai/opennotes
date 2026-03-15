@@ -123,3 +123,56 @@ class TestMFCoreScorerAdapterBatchFailFlag:
             result2 = adapter.score_note("note-2", [0.5])
             mock_batch.assert_not_called()
             assert result2.metadata.get("source") == "batch_stub"
+
+    def test_batch_fail_flag_reset_on_cache_invalidation(self):
+        mock_provider = MagicMock()
+        adapter = MFCoreScorerAdapter(data_provider=None)
+        adapter._data_provider = mock_provider
+
+        with patch.object(
+            adapter,
+            "_execute_batch_scoring",
+            side_effect=AssertionError("empty ratings"),
+        ):
+            adapter.score_note("note-1", [0.5, 0.8])
+        assert adapter._batch_scoring_failed is True
+
+        adapter.update_ratings_version()
+        adapter._invalidate_cache()
+        assert adapter._batch_scoring_failed is False
+
+    def test_degraded_flag_on_all_stub_results_after_failure(self):
+        mock_provider = MagicMock()
+        adapter = MFCoreScorerAdapter(data_provider=None)
+        adapter._data_provider = mock_provider
+
+        with patch.object(
+            adapter,
+            "_execute_batch_scoring",
+            side_effect=AssertionError("empty ratings"),
+        ):
+            result1 = adapter.score_note("note-1", [0.5, 0.8])
+
+        result2 = adapter.score_note("note-2", [0.3])
+        result3 = adapter.score_note("note-3", [0.7, 0.9])
+
+        assert result1.metadata.get("degraded") is True
+        assert result2.metadata.get("degraded") is True
+        assert result3.metadata.get("degraded") is True
+
+    def test_only_assertion_error_triggers_batch_fail(self):
+        mock_provider = MagicMock()
+        adapter = MFCoreScorerAdapter(data_provider=None)
+        adapter._data_provider = mock_provider
+
+        with (
+            patch.object(
+                adapter,
+                "_execute_batch_scoring",
+                side_effect=ValueError("some other error"),
+            ),
+            pytest.raises(ValueError, match="some other error"),
+        ):
+            adapter.score_note("note-1", [0.5])
+
+        assert adapter._batch_scoring_failed is False
