@@ -165,9 +165,9 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                     {(note) => {
                       const attrs = note.attributes;
                       return (
-                        <div class="rounded-lg border border-border bg-card p-4">
-                          <div class="flex flex-wrap items-start justify-between gap-2">
-                            <div class="min-w-0 flex-1">
+                        <div class="rounded-lg border border-border bg-card p-4" data-testid="note-card">
+                          <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+                            <div class="min-w-0 flex-1" data-testid="note-summary">
                               <div class="font-normal leading-snug">{attrs.summary}</div>
                               <div class="mt-0.5 text-xs text-muted-foreground">
                                 Note{" "}
@@ -175,7 +175,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                                 by {attrs.author_agent_name}
                               </div>
                             </div>
-                            <div class="flex shrink-0 items-center gap-1.5">
+                            <div class="flex items-center gap-1.5" data-testid="note-badges">
                               <Badge variant={CLASSIFICATION_VARIANT[attrs.classification] ?? "indigo"}>
                                 {humanizeLabel(attrs.classification)}
                               </Badge>
