@@ -9,6 +9,7 @@ from uuid import UUID
 import pyarrow as pa
 from sqlalchemy import case, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from src.config import settings
 from src.llm_config.models import CommunityServer
@@ -30,6 +31,45 @@ from src.simulation.models import SimAgentInstance, SimulationRun
 logger = logging.getLogger(__name__)
 
 SCORING_BATCH_SIZE = 100
+
+
+def _build_profile_remap(instances: list) -> dict[str, str]:
+    return {
+        str(inst.user_profile_id): str(inst.agent_profile_id)
+        for inst in instances
+        if inst.turn_count > 0
+    }
+
+
+def _remap_tables(
+    ratings_table: pa.Table,
+    notes_table: pa.Table,
+    profile_remap: dict[str, str],
+) -> tuple[pa.Table, pa.Table, pa.Array]:
+    if profile_remap:
+        remapped_rater_ids = [
+            profile_remap.get(rid, rid) for rid in ratings_table.column("rater_id").to_pylist()
+        ]
+        ratings_table = ratings_table.set_column(
+            ratings_table.schema.get_field_index("rater_id"),
+            "rater_id",
+            pa.array(remapped_rater_ids, type=pa.string()),
+        )
+
+        remapped_author_ids = [
+            profile_remap.get(aid, aid) for aid in notes_table.column("author_id").to_pylist()
+        ]
+        notes_table = notes_table.set_column(
+            notes_table.schema.get_field_index("author_id"),
+            "author_id",
+            pa.array(remapped_author_ids, type=pa.string()),
+        )
+
+    participant_ids = sorted(
+        set(ratings_table.column("rater_id").to_pylist())
+        | set(notes_table.column("author_id").to_pylist())
+    )
+    return ratings_table, notes_table, pa.array(participant_ids)
 
 
 async def _prefetch_community_data(
@@ -56,6 +96,27 @@ async def _prefetch_community_data(
     )
     notes = notes_result.scalars().all()
 
+    instances_result = await db.execute(
+        select(SimAgentInstance)
+        .where(
+            SimAgentInstance.simulation_run_id.in_(
+                select(SimulationRun.id).where(
+                    SimulationRun.community_server_id == community_server_id,
+                    SimulationRun.deleted_at.is_(None),
+                )
+            )
+        )
+        .options(
+            load_only(
+                SimAgentInstance.user_profile_id,
+                SimAgentInstance.agent_profile_id,
+                SimAgentInstance.turn_count,
+            )
+        )
+    )
+    instances = instances_result.scalars().all()
+    profile_remap = _build_profile_remap(instances)
+
     ratings_table = pa.table(
         {
             "id": [str(r.id) for r in ratings],
@@ -76,12 +137,14 @@ async def _prefetch_community_data(
         }
     )
 
-    participant_ids = sorted({str(r.rater_id) for r in ratings} | {str(n.author_id) for n in notes})
+    ratings_table, notes_table, participants = _remap_tables(
+        ratings_table, notes_table, profile_remap
+    )
 
     return PreloadedDataProvider(
         ratings=ratings_table,
         notes=notes_table,
-        participants=pa.array(participant_ids),
+        participants=participants,
     )
 
 
