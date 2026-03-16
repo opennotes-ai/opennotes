@@ -645,6 +645,9 @@ async def compute_timeline(
         duration = (run.completed_at or run.updated_at or run.created_at) - run.created_at
         bucket_size = "minute" if duration.total_seconds() < 3600 else "hour"
 
+    if bucket_size not in ("minute", "hour"):
+        raise ValueError(f"Invalid bucket_size: {bucket_size!r}. Must be 'minute' or 'hour'.")
+
     note_trunc = func.date_trunc(bucket_size, Note.created_at)
     note_rows = await db.execute(
         select(
