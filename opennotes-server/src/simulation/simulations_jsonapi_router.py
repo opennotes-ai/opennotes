@@ -1239,9 +1239,12 @@ async def get_simulation_progress(
         instances = instances_result.scalars().all()
 
         turns_completed = sum(inst.turn_count for inst in instances)
-        active_agents = sum(
-            1 for inst in instances if inst.state == "active" and inst.deleted_at is None
-        )
+        active_profile_ids = {
+            inst.agent_profile_id
+            for inst in instances
+            if inst.state == "active" and inst.deleted_at is None
+        }
+        active_agents = len(active_profile_ids)
 
         user_profile_ids = [inst.user_profile_id for inst in instances]
 
