@@ -1,11 +1,24 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import sys
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-import pytest
-
-from src.notes.scoring.analysis import _resolve_note_metadata, _resolve_rater_identities
+_TORCH_MODULES = [
+    "torch",
+    "scoring",
+    "scoring.constants",
+    "scoring.mf_core_scorer",
+    "scoring.mf_base_scorer",
+    "scoring.pandas_utils",
+    "scoring.matrix_factorization",
+    "scoring.matrix_factorization.matrix_factorization",
+    "scoring.matrix_factorization.model",
+    "scoring.tag_consensus",
+]
+_mock_modules = {mod: MagicMock() for mod in _TORCH_MODULES if mod not in sys.modules}
+with patch.dict(sys.modules, _mock_modules):
+    from src.notes.scoring.analysis import _resolve_note_metadata, _resolve_rater_identities
 
 
 def _make_sim_agent(agent_id, name, personality):
@@ -49,7 +62,6 @@ def _mock_db_execute(*results_sequence):
 
 
 class TestResolveRaterIdentitiesNewFormat:
-    @pytest.mark.anyio
     async def test_agent_profile_id_resolves_to_agent(self):
         agent_id = uuid4()
         community_id = uuid4()
@@ -65,7 +77,6 @@ class TestResolveRaterIdentitiesNewFormat:
         assert result[str(agent_id)]["agent_name"] == "Agent_Alpha"
         assert result[str(agent_id)]["personality"] == "skeptical fact-checker"
 
-    @pytest.mark.anyio
     async def test_unknown_id_returns_none_fields(self):
         unknown_id = uuid4()
         community_id = uuid4()
@@ -82,7 +93,6 @@ class TestResolveRaterIdentitiesNewFormat:
 
 
 class TestResolveRaterIdentitiesLegacyFormat:
-    @pytest.mark.anyio
     async def test_user_profile_id_resolves_via_instance(self):
         user_profile_id = uuid4()
         community_id = uuid4()
@@ -100,7 +110,6 @@ class TestResolveRaterIdentitiesLegacyFormat:
 
 
 class TestResolveRaterIdentitiesMixed:
-    @pytest.mark.anyio
     async def test_mixed_new_and_legacy_ids(self):
         agent_id = uuid4()
         user_profile_id = uuid4()
@@ -121,12 +130,10 @@ class TestResolveRaterIdentitiesMixed:
         assert result[str(agent_id)]["agent_name"] == "Agent_Alpha"
         assert result[str(user_profile_id)]["agent_name"] == "Agent_Beta"
 
-    @pytest.mark.anyio
     async def test_empty_rater_ids_returns_empty(self):
         result = await _resolve_rater_identities([], uuid4(), AsyncMock())
         assert result == {}
 
-    @pytest.mark.anyio
     async def test_invalid_uuid_returns_none_fields(self):
         db = _mock_db_execute([], [])
 
@@ -136,7 +143,6 @@ class TestResolveRaterIdentitiesMixed:
 
 
 class TestResolveNoteMetadataAuthorResolution:
-    @pytest.mark.anyio
     async def test_author_resolved_via_sim_agent_direct(self):
         note_id = uuid4()
         author_agent_id = uuid4()
@@ -155,7 +161,6 @@ class TestResolveNoteMetadataAuthorResolution:
 
         assert result[str(note_id)]["author_agent_name"] == "Author_Agent"
 
-    @pytest.mark.anyio
     async def test_author_resolved_via_legacy_instance(self):
         note_id = uuid4()
         author_profile_id = uuid4()
@@ -174,7 +179,6 @@ class TestResolveNoteMetadataAuthorResolution:
 
         assert result[str(note_id)]["author_agent_name"] == "Legacy_Author"
 
-    @pytest.mark.anyio
     async def test_empty_note_ids_returns_empty(self):
         result = await _resolve_note_metadata([], uuid4(), AsyncMock())
         assert result == {}
