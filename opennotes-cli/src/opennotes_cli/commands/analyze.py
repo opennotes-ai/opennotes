@@ -117,29 +117,33 @@ def _wait_for_analysis(
 def _render_rater_table(rater_factors: list[dict[str, Any]], fmt: str) -> str | None:
     if fmt == "md":
         lines = ["## Rater Factor Matrix", ""]
-        lines.append("| Agent | Intercept | Factor1 |")
-        lines.append("|-------|-----------|---------|")
+        lines.append("| Agent | Archetype | Intercept | Factor1 |")
+        lines.append("|-------|-----------|-----------|---------|")
         for rf in sorted(
             rater_factors, key=lambda x: x.get("factor1", 0), reverse=True
         ):
             name = rf.get("agent_name") or rf.get("rater_id", "?")
+            archetype = rf.get("agent_short_description") or ""
             lines.append(
-                f"| {name} | {rf.get('intercept', 0):.4f} | {rf.get('factor1', 0):.4f} |"
+                f"| {name} | {archetype} | {rf.get('intercept', 0):.4f} | {rf.get('factor1', 0):.4f} |"
             )
         return "\n".join(lines)
 
     table = Table(title="Rater Factor Matrix", show_header=True, header_style="bold")
     table.add_column("Agent", no_wrap=True)
+    table.add_column("Archetype", no_wrap=True)
     table.add_column("Intercept", justify="right")
     table.add_column("Factor1", justify="right")
 
     for rf in sorted(rater_factors, key=lambda x: x.get("factor1", 0), reverse=True):
         name = rf.get("agent_name") or rf.get("rater_id", "?")
+        archetype = rf.get("agent_short_description") or ""
         intercept = rf.get("intercept", 0)
         factor1 = rf.get("factor1", 0)
         f1_color = "green" if factor1 > 0 else "red" if factor1 < 0 else "white"
         table.add_row(
             name,
+            archetype,
             f"{intercept:.4f}",
             f"[{f1_color}]{factor1:.4f}[/{f1_color}]",
         )
@@ -150,16 +154,17 @@ def _render_rater_table(rater_factors: list[dict[str, Any]], fmt: str) -> str | 
 def _render_note_table(note_factors: list[dict[str, Any]], fmt: str) -> str | None:
     if fmt == "md":
         lines = ["## Note Factor Matrix", ""]
-        lines.append("| Note ID | Author | Intercept | Factor1 | Status |")
-        lines.append("|---------|--------|-----------|---------|--------|")
+        lines.append("| Note ID | Author | Archetype | Intercept | Factor1 | Status |")
+        lines.append("|---------|--------|-----------|-----------|---------|--------|")
         for nf in sorted(
             note_factors, key=lambda x: x.get("intercept", 0), reverse=True
         ):
             nid = nf.get("note_id") or "?"
             author = nf.get("author_agent_name") or "-"
+            archetype = nf.get("author_short_description") or ""
             status = nf.get("status") or "-"
             lines.append(
-                f"| {nid} | {author} | {nf.get('intercept', 0):.4f} | "
+                f"| {nid} | {author} | {archetype} | {nf.get('intercept', 0):.4f} | "
                 f"{nf.get('factor1', 0):.4f} | {status} |"
             )
         return "\n".join(lines)
@@ -167,6 +172,7 @@ def _render_note_table(note_factors: list[dict[str, Any]], fmt: str) -> str | No
     table = Table(title="Note Factor Matrix", show_header=True, header_style="bold")
     table.add_column("Note ID")
     table.add_column("Author", no_wrap=True)
+    table.add_column("Archetype", no_wrap=True)
     table.add_column("Intercept", justify="right")
     table.add_column("Factor1", justify="right")
     table.add_column("Status")
@@ -174,10 +180,12 @@ def _render_note_table(note_factors: list[dict[str, Any]], fmt: str) -> str | No
     for nf in sorted(note_factors, key=lambda x: x.get("intercept", 0), reverse=True):
         nid = format_id(nf.get("note_id"), use_huuid=False)
         author = nf.get("author_agent_name") or "-"
+        archetype = nf.get("author_short_description") or ""
         status = nf.get("status") or "-"
         table.add_row(
             nid,
             author,
+            archetype,
             f"{nf.get('intercept', 0):.4f}",
             f"{nf.get('factor1', 0):.4f}",
             status,
