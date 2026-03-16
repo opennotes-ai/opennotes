@@ -12,7 +12,7 @@ import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import { SectionSkeleton } from "~/components/ui/skeleton";
 import InlineTOC from "~/components/InlineTOC";
 import type { SectionId } from "~/components/sections";
-import SimulationSidebar from "~/components/SimulationSidebar";
+import SimulationSidebar, { MobileSidebarToggle } from "~/components/SimulationSidebar";
 import IdBadge from "~/components/ui/id-badge";
 import PaginationControls from "~/components/ui/pagination-controls";
 
@@ -205,10 +205,9 @@ export default function SimulationDetailPage() {
               const attrs = simResponse.data.attributes;
               return (
                 <div class="flex gap-8">
-                  <aside class="hidden w-48 shrink-0 lg:block">
-                    <SimulationSidebar />
-                  </aside>
+                  <SimulationSidebar />
                   <main class="min-w-0 flex-1">
+                  <MobileSidebarToggle />
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <h1 class="text-2xl font-bold tracking-tight">
                       Simulation <IdBadge idValue={simResponse.data.id} variant="muted" />
