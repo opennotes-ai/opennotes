@@ -114,3 +114,49 @@ class TestGetLastScoringFactorsSanitize:
         if gi is not None:
             assert not math.isnan(gi), "global_intercept is NaN"
             assert not math.isinf(gi), "global_intercept is Inf"
+
+
+class TestProcessModelResultNaNHandling:
+    def test_nan_intercept_produces_default_score(self):
+        adapter = MFCoreScorerAdapter.__new__(MFCoreScorerAdapter)
+
+        scored_notes = pd.DataFrame(
+            {
+                "noteId": [1],
+                "coreNoteIntercept": [float("nan")],
+                "coreNoteFactor1": [float("nan")],
+                "coreRatingStatus": ["NEEDS_MORE_RATINGS"],
+            }
+        )
+
+        model_result = SimpleNamespace(scoredNotes=scored_notes, helpfulnessScores=None)
+        int_to_uuid = {1: "uuid-1"}
+
+        results = adapter._process_model_result(model_result, int_to_uuid)
+
+        assert "uuid-1" in results
+        score = results["uuid-1"].score
+        assert not math.isnan(score), "NaN intercept should produce a valid score, not NaN"
+        assert 0.0 <= score <= 1.0
+
+    def test_valid_intercept_still_normalized(self):
+        adapter = MFCoreScorerAdapter.__new__(MFCoreScorerAdapter)
+
+        scored_notes = pd.DataFrame(
+            {
+                "noteId": [1],
+                "coreNoteIntercept": [0.4],
+                "coreNoteFactor1": [0.3],
+                "coreRatingStatus": ["CURRENTLY_RATED_HELPFUL"],
+            }
+        )
+
+        model_result = SimpleNamespace(scoredNotes=scored_notes, helpfulnessScores=None)
+        int_to_uuid = {1: "uuid-1"}
+
+        results = adapter._process_model_result(model_result, int_to_uuid)
+
+        score = results["uuid-1"].score
+        assert not math.isnan(score)
+        assert 0.0 <= score <= 1.0
+        assert score != 0.5

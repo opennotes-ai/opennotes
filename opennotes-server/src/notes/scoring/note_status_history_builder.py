@@ -5,11 +5,13 @@ Transforms Note model objects into the DataFrame format expected by
 Community Notes MFCoreScorer.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 import pandas as pd
+
+ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 
 def _datetime_to_millis(dt: datetime) -> int:
@@ -32,7 +34,9 @@ class NoteStatusHistoryBuilder:
     This builder transforms our Note model into the expected format.
     """
 
-    def build(self, notes: list[dict[str, Any]]) -> pd.DataFrame:
+    def build(
+        self, notes: list[dict[str, Any]], scoring_time_millis: int | None = None
+    ) -> pd.DataFrame:
         """
         Build a note status history DataFrame from note data.
 
@@ -43,6 +47,8 @@ class NoteStatusHistoryBuilder:
                 - classification: NOT_MISLEADING or MISINFORMED_OR_POTENTIALLY_MISLEADING
                 - status: NEEDS_MORE_RATINGS, CURRENTLY_RATED_HELPFUL, or CURRENTLY_RATED_NOT_HELPFUL
                 - created_at: datetime when the note was created
+            scoring_time_millis: Optional scoring time in epoch milliseconds.
+                Defaults to current time.
 
         Returns:
             DataFrame with Community Notes note status history columns including:
@@ -52,9 +58,12 @@ class NoteStatusHistoryBuilder:
         if not notes:
             return self._create_empty_dataframe()
 
+        if scoring_time_millis is None:
+            scoring_time_millis = int(datetime.now(UTC).timestamp() * 1000)
+
         rows = []
         for note in notes:
-            row = self._transform_note(note)
+            row = self._transform_note(note, scoring_time_millis)
             rows.append(row)
 
         return pd.DataFrame(rows)
@@ -76,15 +85,14 @@ class NoteStatusHistoryBuilder:
             "timestampMillisOfLatestNonNMRStatus",
         ]
 
-    def _transform_note(self, note: dict[str, Any]) -> dict[str, Any]:
+    def _transform_note(self, note: dict[str, Any], scoring_time_millis: int) -> dict[str, Any]:
         """Transform a single note to Community Notes format."""
         status = note["status"]
         created_at_millis = _datetime_to_millis(note["created_at"])
 
         timestamp_of_latest_non_nmr = float("nan")
         if status != "NEEDS_MORE_RATINGS":
-            one_week_ms = 7 * 24 * 60 * 60 * 1000
-            timestamp_of_latest_non_nmr = float(created_at_millis + one_week_ms)
+            timestamp_of_latest_non_nmr = float(scoring_time_millis + ONE_WEEK_MS)
 
         return {
             "noteId": _to_string(note["id"]),
