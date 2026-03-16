@@ -603,7 +603,7 @@ class MFCoreScorerAdapter:
             factor = row.get("coreNoteFactor1", 0.0)
             status = row.get("coreRatingStatus", "NEEDS_MORE_RATINGS")
 
-            score = 0.5 if math.isnan(intercept) else _normalize_intercept(intercept)
+            score = 0.5 if not math.isfinite(intercept) else _normalize_intercept(intercept)
             confidence_level = _map_rating_status(status)
 
             results[note_id] = ScoringResult(

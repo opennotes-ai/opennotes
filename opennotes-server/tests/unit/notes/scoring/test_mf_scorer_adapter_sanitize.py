@@ -139,6 +139,28 @@ class TestProcessModelResultNaNHandling:
         assert not math.isnan(score), "NaN intercept should produce a valid score, not NaN"
         assert 0.0 <= score <= 1.0
 
+    def test_inf_intercept_produces_default_score(self):
+        adapter = MFCoreScorerAdapter.__new__(MFCoreScorerAdapter)
+
+        scored_notes = pd.DataFrame(
+            {
+                "noteId": [1, 2],
+                "coreNoteIntercept": [float("inf"), float("-inf")],
+                "coreNoteFactor1": [0.0, 0.0],
+                "coreRatingStatus": ["NEEDS_MORE_RATINGS", "NEEDS_MORE_RATINGS"],
+            }
+        )
+
+        model_result = SimpleNamespace(scoredNotes=scored_notes, helpfulnessScores=None)
+        int_to_uuid = {1: "uuid-1", 2: "uuid-2"}
+
+        results = adapter._process_model_result(model_result, int_to_uuid)
+
+        for uid in ["uuid-1", "uuid-2"]:
+            score = results[uid].score
+            assert not math.isinf(score), f"{uid} score should not be inf"
+            assert score == 0.5, f"{uid} inf intercept should default to 0.5"
+
     def test_valid_intercept_still_normalized(self):
         adapter = MFCoreScorerAdapter.__new__(MFCoreScorerAdapter)
 
