@@ -31,7 +31,6 @@ export function EChart(props: EChartProps) {
 
   onMount(() => {
     chart = echarts.init(containerRef);
-    chart.setOption(props.option);
 
     const handleResize = () => chart?.resize();
     window.addEventListener("resize", handleResize);

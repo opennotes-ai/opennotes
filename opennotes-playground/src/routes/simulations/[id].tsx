@@ -119,6 +119,7 @@ const fetchDetailedAnalysis = query(async (
 const fetchTimeline = query(async (id: string) => {
   "use server";
   try {
+    const isAuthenticated = await checkAuth();
     return await getSimulationTimeline(id);
   } catch (error) {
     console.error("Failed to fetch timeline:", error);
@@ -335,7 +336,11 @@ export default function SimulationDetailPage() {
 
                   <Show when={loadedSections().has("charts-timelines")}>
                     <Suspense fallback={<SectionSkeleton />}>
-                      <Show when={timeline()} keyed>
+                      <Show
+                        when={timeline()}
+                        keyed
+                        fallback={<p class="mt-6 italic text-muted-foreground">Timeline unavailable.</p>}
+                      >
                         {(timelineResponse) => {
                           const attrs = timelineResponse.data.attributes;
                           return (
