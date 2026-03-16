@@ -30,6 +30,24 @@ from src.simulation.scoring_integration import get_scoring_metrics
 logger = get_logger(__name__)
 
 
+def build_profile_aggregation_map(
+    instances: list[SimAgentInstance],
+) -> dict[UUID, UUID]:
+    return {
+        inst.user_profile_id: inst.agent_profile_id for inst in instances if inst.turn_count > 0
+    }
+
+
+def group_instances_by_profile(
+    instances: list[SimAgentInstance],
+) -> dict[UUID, list[SimAgentInstance]]:
+    groups: dict[UUID, list[SimAgentInstance]] = defaultdict(list)
+    for inst in instances:
+        if inst.turn_count > 0:
+            groups[inst.agent_profile_id].append(inst)
+    return dict(groups)
+
+
 async def _get_agent_instances(
     simulation_run_id: UUID,
     db: AsyncSession,
