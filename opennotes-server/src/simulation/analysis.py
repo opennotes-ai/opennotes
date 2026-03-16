@@ -76,6 +76,9 @@ async def compute_agent_profiles(
                 agent_instance_id=str(inst.id),
                 agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
                 personality=inst.agent_profile.personality if inst.agent_profile else "",
+                short_description=inst.agent_profile.short_description
+                if inst.agent_profile
+                else None,
                 model_name=inst.agent_profile.model_name if inst.agent_profile else "",
                 memory_compaction_strategy=compaction_strategy
                 or (inst.agent_profile.memory_compaction_strategy if inst.agent_profile else ""),
@@ -133,6 +136,9 @@ async def compute_rating_distribution(
                 PerAgentRatingData(
                     agent_instance_id=str(inst.id),
                     agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
+                    short_description=inst.agent_profile.short_description
+                    if inst.agent_profile
+                    else None,
                     distribution=dict(dist),
                     total=sum(dist.values()),
                 )
@@ -324,6 +330,9 @@ async def compute_agent_behavior_metrics(
                 agent_instance_id=str(inst.id),
                 agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
                 personality=inst.agent_profile.personality if inst.agent_profile else "",
+                short_description=inst.agent_profile.short_description
+                if inst.agent_profile
+                else None,
                 notes_written=notes_by_author.get(inst.user_profile_id, 0),
                 ratings_given=ratings_by_rater.get(inst.user_profile_id, 0),
                 turn_count=inst.turn_count,

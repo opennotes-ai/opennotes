@@ -123,7 +123,7 @@ def _render_rater_table(rater_factors: list[dict[str, Any]], fmt: str) -> str | 
             rater_factors, key=lambda x: x.get("factor1", 0), reverse=True
         ):
             name = rf.get("agent_name") or rf.get("rater_id", "?")
-            archetype = rf.get("agent_short_description") or ""
+            archetype = rf.get("short_description") or ""
             lines.append(
                 f"| {name} | {archetype} | {rf.get('intercept', 0):.4f} | {rf.get('factor1', 0):.4f} |"
             )
@@ -137,7 +137,7 @@ def _render_rater_table(rater_factors: list[dict[str, Any]], fmt: str) -> str | 
 
     for rf in sorted(rater_factors, key=lambda x: x.get("factor1", 0), reverse=True):
         name = rf.get("agent_name") or rf.get("rater_id", "?")
-        archetype = rf.get("agent_short_description") or ""
+        archetype = rf.get("short_description") or ""
         intercept = rf.get("intercept", 0)
         factor1 = rf.get("factor1", 0)
         f1_color = "green" if factor1 > 0 else "red" if factor1 < 0 else "white"

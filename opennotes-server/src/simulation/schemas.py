@@ -240,6 +240,7 @@ class PlaygroundNoteRequestJobResponse(BaseModel):
 class PerAgentRatingData(SQLAlchemySchema):
     agent_instance_id: str
     agent_name: str
+    short_description: str | None = None
     distribution: dict[str, int]
     total: int
 
@@ -272,6 +273,7 @@ class AgentBehaviorData(SQLAlchemySchema):
     agent_instance_id: str
     agent_name: str
     personality: str = ""
+    short_description: str | None = None
     notes_written: int
     ratings_given: int
     turn_count: int
@@ -346,6 +348,7 @@ class AgentProfileData(SQLAlchemySchema):
     agent_instance_id: str
     agent_name: str
     personality: str
+    short_description: str | None = None
     model_name: str
     memory_compaction_strategy: str
     turn_count: int
