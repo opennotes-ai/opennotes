@@ -129,9 +129,10 @@ def _transform_notes(notes: pa.Table) -> pd.DataFrame:
     statuses = notes.column("status")
 
     is_nmr = pc.equal(statuses, "NEEDS_MORE_RATINGS")
-    millis_float = pc.cast(millis, pa.float64())
+    one_week_ms = 7 * 24 * 60 * 60 * 1000
+    future_millis = pc.cast(pc.add(millis, one_week_ms), pa.float64())
     nan_val = pa.scalar(float("nan"))
-    ts_non_nmr = pc.if_else(is_nmr, nan_val, millis_float)
+    ts_non_nmr = pc.if_else(is_nmr, nan_val, future_millis)
 
     out_columns = {
         "noteId": notes.column("id"),

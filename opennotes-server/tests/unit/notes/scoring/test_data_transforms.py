@@ -322,8 +322,11 @@ class TestTransformNotes:
 
         assert np.isnan(notes_df["timestampMillisOfLatestNonNMRStatus"].iloc[0])
 
-        expected_millis = int(datetime(2025, 1, 2, tzinfo=UTC).timestamp() * 1000)
-        assert notes_df["timestampMillisOfLatestNonNMRStatus"].iloc[1] == expected_millis
+        created_millis = int(datetime(2025, 1, 2, tzinfo=UTC).timestamp() * 1000)
+        one_week_ms = 7 * 24 * 60 * 60 * 1000
+        assert (
+            notes_df["timestampMillisOfLatestNonNMRStatus"].iloc[1] == created_millis + one_week_ms
+        )
 
     def test_notes_locked_status_is_none(self):
         notes = pa.table(

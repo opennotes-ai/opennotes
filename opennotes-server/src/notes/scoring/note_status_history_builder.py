@@ -83,7 +83,8 @@ class NoteStatusHistoryBuilder:
 
         timestamp_of_latest_non_nmr = float("nan")
         if status != "NEEDS_MORE_RATINGS":
-            timestamp_of_latest_non_nmr = float(created_at_millis)
+            one_week_ms = 7 * 24 * 60 * 60 * 1000
+            timestamp_of_latest_non_nmr = float(created_at_millis + one_week_ms)
 
         return {
             "noteId": _to_string(note["id"]),
