@@ -18,6 +18,7 @@ class RaterFactorData:
         rater_id (str):
         agent_name (None | str):
         personality (None | str):
+        short_description (None | str | Unset):
         intercept (float | Unset):  Default: 0.0.
         factor1 (float | Unset):  Default: 0.0.
     """
@@ -25,6 +26,7 @@ class RaterFactorData:
     rater_id: str
     agent_name: None | str
     personality: None | str
+    short_description: None | str | Unset = UNSET
     intercept: float | Unset = 0.0
     factor1: float | Unset = 0.0
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -37,6 +39,12 @@ class RaterFactorData:
 
         personality: None | str
         personality = self.personality
+
+        short_description: None | str | Unset
+        if isinstance(self.short_description, Unset):
+            short_description = UNSET
+        else:
+            short_description = self.short_description
 
         intercept = self.intercept
 
@@ -51,6 +59,8 @@ class RaterFactorData:
                 "personality": personality,
             }
         )
+        if short_description is not UNSET:
+            field_dict["short_description"] = short_description
         if intercept is not UNSET:
             field_dict["intercept"] = intercept
         if factor1 is not UNSET:
@@ -77,6 +87,15 @@ class RaterFactorData:
 
         personality = _parse_personality(d.pop("personality"))
 
+        def _parse_short_description(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        short_description = _parse_short_description(d.pop("short_description", UNSET))
+
         intercept = d.pop("intercept", UNSET)
 
         factor1 = d.pop("factor1", UNSET)
@@ -85,6 +104,7 @@ class RaterFactorData:
             rater_id=rater_id,
             agent_name=agent_name,
             personality=personality,
+            short_description=short_description,
             intercept=intercept,
             factor1=factor1,
         )

@@ -29,6 +29,7 @@ class SimAgentCreateAttributes:
         name (str):
         personality (str):
         model_name (str):
+        short_description (None | str | Unset):
         model_params (None | SimAgentCreateAttributesModelParamsType0 | Unset):
         tool_config (None | SimAgentCreateAttributesToolConfigType0 | Unset):
         memory_compaction_strategy (None | str | Unset):
@@ -38,6 +39,7 @@ class SimAgentCreateAttributes:
     name: str
     personality: str
     model_name: str
+    short_description: None | str | Unset = UNSET
     model_params: None | SimAgentCreateAttributesModelParamsType0 | Unset = UNSET
     tool_config: None | SimAgentCreateAttributesToolConfigType0 | Unset = UNSET
     memory_compaction_strategy: None | str | Unset = UNSET
@@ -61,6 +63,12 @@ class SimAgentCreateAttributes:
         personality = self.personality
 
         model_name = self.model_name
+
+        short_description: None | str | Unset
+        if isinstance(self.short_description, Unset):
+            short_description = UNSET
+        else:
+            short_description = self.short_description
 
         model_params: dict[str, Any] | None | Unset
         if isinstance(self.model_params, Unset):
@@ -104,6 +112,8 @@ class SimAgentCreateAttributes:
                 "model_name": model_name,
             }
         )
+        if short_description is not UNSET:
+            field_dict["short_description"] = short_description
         if model_params is not UNSET:
             field_dict["model_params"] = model_params
         if tool_config is not UNSET:
@@ -133,6 +143,15 @@ class SimAgentCreateAttributes:
         personality = d.pop("personality")
 
         model_name = d.pop("model_name")
+
+        def _parse_short_description(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        short_description = _parse_short_description(d.pop("short_description", UNSET))
 
         def _parse_model_params(
             data: object,
@@ -216,6 +235,7 @@ class SimAgentCreateAttributes:
             name=name,
             personality=personality,
             model_name=model_name,
+            short_description=short_description,
             model_params=model_params,
             tool_config=tool_config,
             memory_compaction_strategy=memory_compaction_strategy,

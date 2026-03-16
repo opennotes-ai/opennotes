@@ -29,6 +29,7 @@ class AgentProfileData:
         turn_count (int):
         state (str):
         token_count (int):
+        short_description (None | str | Unset):
         recent_actions (list[Any] | Unset):
         last_messages (list[AgentProfileDataLastMessagesItem] | Unset):
     """
@@ -41,6 +42,7 @@ class AgentProfileData:
     turn_count: int
     state: str
     token_count: int
+    short_description: None | str | Unset = UNSET
     recent_actions: list[Any] | Unset = UNSET
     last_messages: list[AgentProfileDataLastMessagesItem] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -61,6 +63,12 @@ class AgentProfileData:
         state = self.state
 
         token_count = self.token_count
+
+        short_description: None | str | Unset
+        if isinstance(self.short_description, Unset):
+            short_description = UNSET
+        else:
+            short_description = self.short_description
 
         recent_actions: list[Any] | Unset = UNSET
         if not isinstance(self.recent_actions, Unset):
@@ -87,6 +95,8 @@ class AgentProfileData:
                 "token_count": token_count,
             }
         )
+        if short_description is not UNSET:
+            field_dict["short_description"] = short_description
         if recent_actions is not UNSET:
             field_dict["recent_actions"] = recent_actions
         if last_messages is not UNSET:
@@ -117,6 +127,15 @@ class AgentProfileData:
 
         token_count = d.pop("token_count")
 
+        def _parse_short_description(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        short_description = _parse_short_description(d.pop("short_description", UNSET))
+
         recent_actions = cast(list[Any], d.pop("recent_actions", UNSET))
 
         _last_messages = d.pop("last_messages", UNSET)
@@ -139,6 +158,7 @@ class AgentProfileData:
             turn_count=turn_count,
             state=state,
             token_count=token_count,
+            short_description=short_description,
             recent_actions=recent_actions,
             last_messages=last_messages,
         )

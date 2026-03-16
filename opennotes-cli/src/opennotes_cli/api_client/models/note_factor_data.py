@@ -21,6 +21,7 @@ class NoteFactorData:
         author_agent_name (None | str):
         intercept (float | Unset):  Default: 0.0.
         factor1 (float | Unset):  Default: 0.0.
+        author_short_description (None | str | Unset):
     """
 
     note_id: str
@@ -29,6 +30,7 @@ class NoteFactorData:
     author_agent_name: None | str
     intercept: float | Unset = 0.0
     factor1: float | Unset = 0.0
+    author_short_description: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -47,6 +49,12 @@ class NoteFactorData:
 
         factor1 = self.factor1
 
+        author_short_description: None | str | Unset
+        if isinstance(self.author_short_description, Unset):
+            author_short_description = UNSET
+        else:
+            author_short_description = self.author_short_description
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -61,6 +69,8 @@ class NoteFactorData:
             field_dict["intercept"] = intercept
         if factor1 is not UNSET:
             field_dict["factor1"] = factor1
+        if author_short_description is not UNSET:
+            field_dict["author_short_description"] = author_short_description
 
         return field_dict
 
@@ -94,6 +104,17 @@ class NoteFactorData:
 
         factor1 = d.pop("factor1", UNSET)
 
+        def _parse_author_short_description(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        author_short_description = _parse_author_short_description(
+            d.pop("author_short_description", UNSET)
+        )
+
         note_factor_data = cls(
             note_id=note_id,
             status=status,
@@ -101,6 +122,7 @@ class NoteFactorData:
             author_agent_name=author_agent_name,
             intercept=intercept,
             factor1=factor1,
+            author_short_description=author_short_description,
         )
 
         note_factor_data.additional_properties = d

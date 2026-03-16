@@ -3946,6 +3946,8 @@ export interface components {
              * @default
              */
             personality: string;
+            /** Short Description */
+            short_description?: string | null;
             /** Notes Written */
             notes_written: number;
             /** Ratings Given */
@@ -3969,6 +3971,8 @@ export interface components {
             agent_name: string;
             /** Personality */
             personality: string;
+            /** Short Description */
+            short_description?: string | null;
             /** Model Name */
             model_name: string;
             /** Memory Compaction Strategy */
@@ -6786,6 +6790,8 @@ export interface components {
             classification: string | null;
             /** Author Agent Name */
             author_agent_name: string | null;
+            /** Author Short Description */
+            author_short_description?: string | null;
         };
         /**
          * NoteJSONAPIAttributes
@@ -7729,6 +7735,8 @@ export interface components {
             agent_instance_id: string;
             /** Agent Name */
             agent_name: string;
+            /** Short Description */
+            short_description?: string | null;
             /** Distribution */
             distribution: {
                 [key: string]: number;
@@ -8252,6 +8260,8 @@ export interface components {
             agent_name: string | null;
             /** Personality */
             personality: string | null;
+            /** Short Description */
+            short_description?: string | null;
             /**
              * Intercept
              * @default 0

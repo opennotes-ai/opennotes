@@ -34,6 +34,7 @@ class SimAgentAttributes:
         personality (str):
         model_name (ModelNameResponse):
         memory_compaction_strategy (str):
+        short_description (None | str | Unset):
         model_params (None | SimAgentAttributesModelParamsType0 | Unset):
         tool_config (None | SimAgentAttributesToolConfigType0 | Unset):
         memory_compaction_config (None | SimAgentAttributesMemoryCompactionConfigType0 | Unset):
@@ -45,6 +46,7 @@ class SimAgentAttributes:
     personality: str
     model_name: ModelNameResponse
     memory_compaction_strategy: str
+    short_description: None | str | Unset = UNSET
     model_params: None | SimAgentAttributesModelParamsType0 | Unset = UNSET
     tool_config: None | SimAgentAttributesToolConfigType0 | Unset = UNSET
     memory_compaction_config: (
@@ -72,6 +74,12 @@ class SimAgentAttributes:
         model_name = self.model_name.to_dict()
 
         memory_compaction_strategy = self.memory_compaction_strategy
+
+        short_description: None | str | Unset
+        if isinstance(self.short_description, Unset):
+            short_description = UNSET
+        else:
+            short_description = self.short_description
 
         model_params: dict[str, Any] | None | Unset
         if isinstance(self.model_params, Unset):
@@ -125,6 +133,8 @@ class SimAgentAttributes:
                 "memory_compaction_strategy": memory_compaction_strategy,
             }
         )
+        if short_description is not UNSET:
+            field_dict["short_description"] = short_description
         if model_params is not UNSET:
             field_dict["model_params"] = model_params
         if tool_config is not UNSET:
@@ -159,6 +169,15 @@ class SimAgentAttributes:
         model_name = ModelNameResponse.from_dict(d.pop("model_name"))
 
         memory_compaction_strategy = d.pop("memory_compaction_strategy")
+
+        def _parse_short_description(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        short_description = _parse_short_description(d.pop("short_description", UNSET))
 
         def _parse_model_params(
             data: object,
@@ -262,6 +281,7 @@ class SimAgentAttributes:
             personality=personality,
             model_name=model_name,
             memory_compaction_strategy=memory_compaction_strategy,
+            short_description=short_description,
             model_params=model_params,
             tool_config=tool_config,
             memory_compaction_config=memory_compaction_config,

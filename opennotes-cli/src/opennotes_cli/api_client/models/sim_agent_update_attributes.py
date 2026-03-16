@@ -27,6 +27,7 @@ class SimAgentUpdateAttributes:
     """
     Attributes:
         name (None | str | Unset):
+        short_description (None | str | Unset):
         personality (None | str | Unset):
         model_name (None | str | Unset):
         model_params (None | SimAgentUpdateAttributesModelParamsType0 | Unset):
@@ -36,6 +37,7 @@ class SimAgentUpdateAttributes:
     """
 
     name: None | str | Unset = UNSET
+    short_description: None | str | Unset = UNSET
     personality: None | str | Unset = UNSET
     model_name: None | str | Unset = UNSET
     model_params: None | SimAgentUpdateAttributesModelParamsType0 | Unset = UNSET
@@ -61,6 +63,12 @@ class SimAgentUpdateAttributes:
             name = UNSET
         else:
             name = self.name
+
+        short_description: None | str | Unset
+        if isinstance(self.short_description, Unset):
+            short_description = UNSET
+        else:
+            short_description = self.short_description
 
         personality: None | str | Unset
         if isinstance(self.personality, Unset):
@@ -112,6 +120,8 @@ class SimAgentUpdateAttributes:
         field_dict.update({})
         if name is not UNSET:
             field_dict["name"] = name
+        if short_description is not UNSET:
+            field_dict["short_description"] = short_description
         if personality is not UNSET:
             field_dict["personality"] = personality
         if model_name is not UNSET:
@@ -149,6 +159,15 @@ class SimAgentUpdateAttributes:
             return cast(None | str | Unset, data)
 
         name = _parse_name(d.pop("name", UNSET))
+
+        def _parse_short_description(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        short_description = _parse_short_description(d.pop("short_description", UNSET))
 
         def _parse_personality(data: object) -> None | str | Unset:
             if data is None:
@@ -248,6 +267,7 @@ class SimAgentUpdateAttributes:
 
         sim_agent_update_attributes = cls(
             name=name,
+            short_description=short_description,
             personality=personality,
             model_name=model_name,
             model_params=model_params,
