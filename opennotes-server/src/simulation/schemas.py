@@ -37,6 +37,7 @@ class ModelNameResponse(SQLAlchemySchema):
 
 class SimAgentBase(StrictInputSchema):
     name: str = Field(..., max_length=255)
+    short_description: str | None = Field(default=None, max_length=255)
     personality: str
     model_name: str = Field(..., max_length=100)
     model_params: dict[str, Any] | None = None
@@ -56,6 +57,7 @@ class SimAgentCreate(SimAgentBase):
 
 class SimAgentUpdate(StrictInputSchema):
     name: str | None = Field(default=None, max_length=255)
+    short_description: str | None = Field(default=None, max_length=255)
     personality: str | None = None
     model_name: str | None = Field(default=None, max_length=100)
     model_params: dict[str, Any] | None = None
@@ -131,6 +133,7 @@ class SimAgentAction(BaseModel):
 class SimAgentResponse(TimestampSchema):
     id: UUID
     name: str
+    short_description: str | None = None
     personality: str
     model_name: ModelNameResponse
     model_params: dict[str, Any] | None = None

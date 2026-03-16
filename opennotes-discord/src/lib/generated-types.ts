@@ -9399,6 +9399,8 @@ export interface components {
         SimAgentAttributes: {
             /** Name */
             name: string;
+            /** Short Description */
+            short_description?: string | null;
             /** Personality */
             personality: string;
             model_name: components["schemas"]["ModelNameResponse"];
@@ -9425,6 +9427,8 @@ export interface components {
         SimAgentCreateAttributes: {
             /** Name */
             name: string;
+            /** Short Description */
+            short_description?: string | null;
             /** Personality */
             personality: string;
             /** Model Name */
@@ -9503,6 +9507,8 @@ export interface components {
         SimAgentUpdateAttributes: {
             /** Name */
             name?: string | null;
+            /** Short Description */
+            short_description?: string | null;
             /** Personality */
             personality?: string | null;
             /** Model Name */

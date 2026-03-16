@@ -35,6 +35,7 @@ router = APIRouter()
 
 class SimAgentCreateAttributes(StrictInputSchema):
     name: str = Field(..., min_length=1, max_length=255)
+    short_description: str | None = Field(None, max_length=255)
     personality: str = Field(..., min_length=1)
     model_name: str = Field(..., min_length=1, max_length=100)
     model_params: dict[str, Any] | None = None
@@ -63,6 +64,7 @@ class SimAgentCreateRequest(BaseModel):
 
 class SimAgentUpdateAttributes(StrictInputSchema):
     name: str | None = Field(None, min_length=1, max_length=255)
+    short_description: str | None = Field(None, max_length=255)
     personality: str | None = Field(None, min_length=1)
     model_name: str | None = Field(None, min_length=1, max_length=100)
     model_params: dict[str, Any] | None = None
@@ -94,6 +96,7 @@ class SimAgentUpdateRequest(BaseModel):
 
 class SimAgentAttributes(SQLAlchemySchema):
     name: str
+    short_description: str | None = None
     personality: str
     model_name: ModelNameResponse
     model_params: dict[str, Any] | None = None
@@ -151,6 +154,7 @@ def sim_agent_to_resource(agent: SimAgent) -> SimAgentResource:
         id=str(agent.id),
         attributes=SimAgentAttributes(
             name=agent.name,
+            short_description=agent.short_description,
             personality=agent.personality,
             model_name=_parse_model_name_str(agent.model_name),
             model_params=agent.model_params,
@@ -198,6 +202,7 @@ async def create_sim_agent_jsonapi(
         attrs = body.data.attributes
         agent = SimAgent(
             name=attrs.name,
+            short_description=attrs.short_description,
             personality=attrs.personality,
             model_name=attrs.model_name,
             model_params=attrs.model_params,

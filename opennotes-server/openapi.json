@@ -23312,6 +23312,17 @@
             "type": "string",
             "title": "Name"
           },
+          "short_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Description"
+          },
           "personality": {
             "type": "string",
             "title": "Personality"
@@ -23400,6 +23411,18 @@
             "maxLength": 255,
             "minLength": 1,
             "title": "Name"
+          },
+          "short_description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Description"
           },
           "personality": {
             "type": "string",
@@ -23616,6 +23639,18 @@
               }
             ],
             "title": "Name"
+          },
+          "short_description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Description"
           },
           "personality": {
             "anyOf": [
