@@ -1,14 +1,5 @@
 import { For } from "solid-js";
-
-const SECTIONS = [
-  { id: "metadata", label: "Metadata" },
-  { id: "note-quality", label: "Note Quality" },
-  { id: "rating-distribution", label: "Rating Distribution" },
-  { id: "consensus-metrics", label: "Consensus Metrics" },
-  { id: "scoring-coverage", label: "Scoring Coverage" },
-  { id: "agent-behaviors", label: "Agent Behaviors" },
-  { id: "per-note-breakdown", label: "Per-Note Breakdown" },
-];
+import { SECTIONS } from "./sections";
 
 export default function SimulationSidebar() {
   return (
