@@ -91,7 +91,7 @@ async def compute_agent_profiles(
 
         profiles.append(
             AgentProfileData(
-                agent_instance_id=str(inst.id),
+                agent_profile_id=str(inst.agent_profile_id),
                 agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
                 personality=inst.agent_profile.personality if inst.agent_profile else "",
                 short_description=inst.agent_profile.short_description
@@ -152,7 +152,7 @@ async def compute_rating_distribution(
         if inst:
             per_agent.append(
                 PerAgentRatingData(
-                    agent_instance_id=str(inst.id),
+                    agent_profile_id=str(inst.agent_profile_id),
                     agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
                     short_description=inst.agent_profile.short_description
                     if inst.agent_profile
@@ -345,7 +345,7 @@ async def compute_agent_behavior_metrics(
 
         behaviors.append(
             AgentBehaviorData(
-                agent_instance_id=str(inst.id),
+                agent_profile_id=str(inst.agent_profile_id),
                 agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
                 personality=inst.agent_profile.personality if inst.agent_profile else "",
                 short_description=inst.agent_profile.short_description
@@ -497,12 +497,12 @@ async def compute_detailed_notes(
     for note in notes:
         author_inst = profile_to_instance.get(note.author_id)
         author_agent_name = "Unknown"
-        author_agent_instance_id = ""
+        author_agent_profile_id = ""
         if author_inst:
             author_agent_name = (
                 author_inst.agent_profile.name if author_inst.agent_profile else "Unknown"
             )
-            author_agent_instance_id = str(author_inst.id)
+            author_agent_profile_id = str(author_inst.agent_profile_id)
 
         rating_data_list: list[DetailedRatingData] = []
         for rating in note.ratings:
@@ -518,7 +518,7 @@ async def compute_detailed_notes(
             rating_data_list.append(
                 DetailedRatingData(
                     rater_agent_name=rater_name,
-                    rater_agent_instance_id=rater_inst_id,
+                    rater_agent_profile_id=rater_inst_id,
                     helpfulness_level=rating.helpfulness_level,
                     created_at=rating.created_at,
                 )
@@ -536,7 +536,7 @@ async def compute_detailed_notes(
                 status=note.status,
                 helpfulness_score=note.helpfulness_score,
                 author_agent_name=author_agent_name,
-                author_agent_instance_id=author_agent_instance_id,
+                author_agent_profile_id=author_agent_profile_id,
                 request_id=note.request_id,
                 message_metadata=msg_metadata,
                 created_at=note.created_at,

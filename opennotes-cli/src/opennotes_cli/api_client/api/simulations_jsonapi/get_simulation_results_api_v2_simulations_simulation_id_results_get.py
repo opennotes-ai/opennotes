@@ -17,7 +17,7 @@ def _get_kwargs(
     *,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
-    agent_instance_id: None | Unset | UUID = UNSET,
+    agent_profile_id: None | Unset | UUID = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
@@ -30,14 +30,14 @@ def _get_kwargs(
 
     params["page[size]"] = pagesize
 
-    json_agent_instance_id: None | str | Unset
-    if isinstance(agent_instance_id, Unset):
-        json_agent_instance_id = UNSET
-    elif isinstance(agent_instance_id, UUID):
-        json_agent_instance_id = str(agent_instance_id)
+    json_agent_profile_id: None | str | Unset
+    if isinstance(agent_profile_id, Unset):
+        json_agent_profile_id = UNSET
+    elif isinstance(agent_profile_id, UUID):
+        json_agent_profile_id = str(agent_profile_id)
     else:
-        json_agent_instance_id = agent_instance_id
-    params["agent_instance_id"] = json_agent_instance_id
+        json_agent_profile_id = agent_profile_id
+    params["agent_profile_id"] = json_agent_profile_id
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -89,7 +89,7 @@ def sync_detailed(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
-    agent_instance_id: None | Unset | UUID = UNSET,
+    agent_profile_id: None | Unset | UUID = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | ResultsListResponse]:
     """Get Simulation Results
@@ -98,7 +98,7 @@ def sync_detailed(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
-        agent_instance_id (None | Unset | UUID):
+        agent_profile_id (None | Unset | UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -113,7 +113,7 @@ def sync_detailed(
         simulation_id=simulation_id,
         pagenumber=pagenumber,
         pagesize=pagesize,
-        agent_instance_id=agent_instance_id,
+        agent_profile_id=agent_profile_id,
         x_api_key=x_api_key,
     )
 
@@ -130,7 +130,7 @@ def sync(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
-    agent_instance_id: None | Unset | UUID = UNSET,
+    agent_profile_id: None | Unset | UUID = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> HTTPValidationError | ResultsListResponse | None:
     """Get Simulation Results
@@ -139,7 +139,7 @@ def sync(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
-        agent_instance_id (None | Unset | UUID):
+        agent_profile_id (None | Unset | UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -155,7 +155,7 @@ def sync(
         client=client,
         pagenumber=pagenumber,
         pagesize=pagesize,
-        agent_instance_id=agent_instance_id,
+        agent_profile_id=agent_profile_id,
         x_api_key=x_api_key,
     ).parsed
 
@@ -166,7 +166,7 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
-    agent_instance_id: None | Unset | UUID = UNSET,
+    agent_profile_id: None | Unset | UUID = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | ResultsListResponse]:
     """Get Simulation Results
@@ -175,7 +175,7 @@ async def asyncio_detailed(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
-        agent_instance_id (None | Unset | UUID):
+        agent_profile_id (None | Unset | UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -190,7 +190,7 @@ async def asyncio_detailed(
         simulation_id=simulation_id,
         pagenumber=pagenumber,
         pagesize=pagesize,
-        agent_instance_id=agent_instance_id,
+        agent_profile_id=agent_profile_id,
         x_api_key=x_api_key,
     )
 
@@ -205,7 +205,7 @@ async def asyncio(
     client: AuthenticatedClient,
     pagenumber: int | Unset = 1,
     pagesize: int | Unset = 20,
-    agent_instance_id: None | Unset | UUID = UNSET,
+    agent_profile_id: None | Unset | UUID = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> HTTPValidationError | ResultsListResponse | None:
     """Get Simulation Results
@@ -214,7 +214,7 @@ async def asyncio(
         simulation_id (UUID):
         pagenumber (int | Unset):  Default: 1.
         pagesize (int | Unset):  Default: 20.
-        agent_instance_id (None | Unset | UUID):
+        agent_profile_id (None | Unset | UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -231,7 +231,7 @@ async def asyncio(
             client=client,
             pagenumber=pagenumber,
             pagesize=pagesize,
-            agent_instance_id=agent_instance_id,
+            agent_profile_id=agent_profile_id,
             x_api_key=x_api_key,
         )
     ).parsed

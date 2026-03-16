@@ -149,7 +149,7 @@ class TestDetailedAnalysisEndpointHappyPath:
             status="CURRENTLY_RATED_HELPFUL",
             helpfulness_score=80,
             author_agent_name="Agent Alpha",
-            author_agent_instance_id="inst-001",
+            author_agent_profile_id="inst-001",
             request_id="req-001",
             ratings=[],
         )
@@ -161,7 +161,7 @@ class TestDetailedAnalysisEndpointHappyPath:
             variance_score=0.0,
         )
         agent_data = AgentProfileData(
-            agent_instance_id="inst-001",
+            agent_profile_id="inst-001",
             agent_name="Agent Alpha",
             personality="Analytical",
             model_name="gpt-4o",
@@ -230,7 +230,7 @@ class TestDetailedAnalysisEndpointHappyPath:
             status="CURRENTLY_RATED_HELPFUL",
             helpfulness_score=3.75,
             author_agent_name="Agent",
-            author_agent_instance_id="inst-001",
+            author_agent_profile_id="inst-001",
             ratings=[],
         )
 
@@ -278,7 +278,7 @@ class TestDetailedAnalysisEndpointPagination:
                 status="NEEDS_MORE_RATINGS",
                 helpfulness_score=0,
                 author_agent_name="Agent",
-                author_agent_instance_id="inst",
+                author_agent_profile_id="inst",
             )
             for i in range(5)
         ]
@@ -332,7 +332,7 @@ class TestDetailedAnalysisEndpointPagination:
                 status="NEEDS_MORE_RATINGS",
                 helpfulness_score=0,
                 author_agent_name="Agent",
-                author_agent_instance_id="inst",
+                author_agent_profile_id="inst",
             )
         ]
 
@@ -380,7 +380,7 @@ class TestDetailedAnalysisEndpointPagination:
                 status="NEEDS_MORE_RATINGS",
                 helpfulness_score=0,
                 author_agent_name="Agent",
-                author_agent_instance_id="inst",
+                author_agent_profile_id="inst",
             )
         ]
 

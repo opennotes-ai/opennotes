@@ -238,7 +238,7 @@ class PlaygroundNoteRequestJobResponse(BaseModel):
 
 
 class PerAgentRatingData(SQLAlchemySchema):
-    agent_instance_id: str
+    agent_profile_id: str
     agent_name: str
     short_description: str | None = None
     distribution: dict[str, int]
@@ -270,7 +270,7 @@ class ScoringCoverageData(SQLAlchemySchema):
 
 
 class AgentBehaviorData(SQLAlchemySchema):
-    agent_instance_id: str
+    agent_profile_id: str
     agent_name: str
     personality: str = ""
     short_description: str | None = None
@@ -311,7 +311,7 @@ class AnalysisResponse(BaseModel):
 
 class DetailedRatingData(SQLAlchemySchema):
     rater_agent_name: str
-    rater_agent_instance_id: str
+    rater_agent_profile_id: str
     helpfulness_level: str
     created_at: datetime | None = None
 
@@ -323,7 +323,7 @@ class DetailedNoteData(SQLAlchemySchema):
     status: str
     helpfulness_score: float
     author_agent_name: str
-    author_agent_instance_id: str
+    author_agent_profile_id: str
     request_id: str | None = None
     message_metadata: dict[str, Any] | None = None
     created_at: datetime | None = None
@@ -345,7 +345,7 @@ class DetailedNoteResource(BaseModel):
 
 
 class AgentProfileData(SQLAlchemySchema):
-    agent_instance_id: str
+    agent_profile_id: str
     agent_name: str
     personality: str
     short_description: str | None = None

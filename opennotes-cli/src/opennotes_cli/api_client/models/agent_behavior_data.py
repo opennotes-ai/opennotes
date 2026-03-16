@@ -21,7 +21,7 @@ T = TypeVar("T", bound="AgentBehaviorData")
 class AgentBehaviorData:
     """
     Attributes:
-        agent_instance_id (str):
+        agent_profile_id (str):
         agent_name (str):
         notes_written (int):
         ratings_given (int):
@@ -33,7 +33,7 @@ class AgentBehaviorData:
         short_description (None | str | Unset):
     """
 
-    agent_instance_id: str
+    agent_profile_id: str
     agent_name: str
     notes_written: int
     ratings_given: int
@@ -46,7 +46,7 @@ class AgentBehaviorData:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        agent_instance_id = self.agent_instance_id
+        agent_profile_id = self.agent_profile_id
 
         agent_name = self.agent_name
 
@@ -74,7 +74,7 @@ class AgentBehaviorData:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "agent_instance_id": agent_instance_id,
+                "agent_profile_id": agent_profile_id,
                 "agent_name": agent_name,
                 "notes_written": notes_written,
                 "ratings_given": ratings_given,
@@ -98,7 +98,7 @@ class AgentBehaviorData:
         )
 
         d = dict(src_dict)
-        agent_instance_id = d.pop("agent_instance_id")
+        agent_profile_id = d.pop("agent_profile_id")
 
         agent_name = d.pop("agent_name")
 
@@ -128,7 +128,7 @@ class AgentBehaviorData:
         short_description = _parse_short_description(d.pop("short_description", UNSET))
 
         agent_behavior_data = cls(
-            agent_instance_id=agent_instance_id,
+            agent_profile_id=agent_profile_id,
             agent_name=agent_name,
             notes_written=notes_written,
             ratings_given=ratings_given,

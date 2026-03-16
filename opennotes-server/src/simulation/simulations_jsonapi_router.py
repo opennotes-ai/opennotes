@@ -225,7 +225,7 @@ class ResultNoteAttributes(SQLAlchemySchema):
     classification: str
     note_status: str
     author_profile_id: str
-    agent_instance_id: str
+    agent_profile_id: str
     created_at: datetime | None = None
 
 
@@ -1317,7 +1317,7 @@ async def get_simulation_results(
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     page_number: int = Query(1, ge=1, alias="page[number]"),
     page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
-    agent_instance_id: UUID | None = Query(None),
+    agent_profile_id: UUID | None = Query(None),
 ) -> JSONResponse:
     scoped = require_scope_or_admin(current_user, request, "simulations:read")
 
@@ -1343,17 +1343,19 @@ async def get_simulation_results(
             SimAgentInstance.simulation_run_id == simulation_id,
             SimAgentInstance.deleted_at.is_(None),
         )
-        if agent_instance_id is not None:
-            instance_query = instance_query.where(SimAgentInstance.id == agent_instance_id)
+        if agent_profile_id is not None:
+            instance_query = instance_query.where(
+                SimAgentInstance.agent_profile_id == agent_profile_id
+            )
 
         instances_result = await db.execute(instance_query)
         instances = instances_result.scalars().all()
 
-        profile_to_instance: dict[UUID, UUID] = {}
+        profile_to_agent_profile: dict[UUID, UUID] = {}
         for inst in instances:
-            profile_to_instance[inst.user_profile_id] = inst.id
+            profile_to_agent_profile[inst.user_profile_id] = inst.agent_profile_id
 
-        user_profile_ids = list(profile_to_instance.keys())
+        user_profile_ids = list(profile_to_agent_profile.keys())
 
         if not user_profile_ids:
             base_url = str(request.url).split("?")[0]
@@ -1389,8 +1391,8 @@ async def get_simulation_results(
 
         resources: list[ResultNoteResource] = []
         for note in notes:
-            inst_id = profile_to_instance.get(note.author_id)
-            if inst_id is None:
+            agent_prof_id = profile_to_agent_profile.get(note.author_id)
+            if agent_prof_id is None:
                 logger.warning(
                     "No agent instance mapping for author profile",
                     extra={
@@ -1408,7 +1410,7 @@ async def get_simulation_results(
                         classification=note.classification,
                         note_status=note.status,
                         author_profile_id=str(note.author_id),
-                        agent_instance_id=str(inst_id) if inst_id is not None else "",
+                        agent_profile_id=str(agent_prof_id) if agent_prof_id is not None else "",
                         created_at=note.created_at,
                     ),
                 )

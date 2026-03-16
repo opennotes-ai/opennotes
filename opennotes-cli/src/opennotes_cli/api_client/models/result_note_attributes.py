@@ -22,7 +22,7 @@ class ResultNoteAttributes:
         classification (str):
         note_status (str):
         author_profile_id (str):
-        agent_instance_id (str):
+        agent_profile_id (str):
         created_at (datetime.datetime | None | Unset):
     """
 
@@ -31,7 +31,7 @@ class ResultNoteAttributes:
     classification: str
     note_status: str
     author_profile_id: str
-    agent_instance_id: str
+    agent_profile_id: str
     created_at: datetime.datetime | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -46,7 +46,7 @@ class ResultNoteAttributes:
 
         author_profile_id = self.author_profile_id
 
-        agent_instance_id = self.agent_instance_id
+        agent_profile_id = self.agent_profile_id
 
         created_at: None | str | Unset
         if isinstance(self.created_at, Unset):
@@ -65,7 +65,7 @@ class ResultNoteAttributes:
                 "classification": classification,
                 "note_status": note_status,
                 "author_profile_id": author_profile_id,
-                "agent_instance_id": agent_instance_id,
+                "agent_profile_id": agent_profile_id,
             }
         )
         if created_at is not UNSET:
@@ -86,7 +86,7 @@ class ResultNoteAttributes:
 
         author_profile_id = d.pop("author_profile_id")
 
-        agent_instance_id = d.pop("agent_instance_id")
+        agent_profile_id = d.pop("agent_profile_id")
 
         def _parse_created_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
@@ -111,7 +111,7 @@ class ResultNoteAttributes:
             classification=classification,
             note_status=note_status,
             author_profile_id=author_profile_id,
-            agent_instance_id=agent_instance_id,
+            agent_profile_id=agent_profile_id,
             created_at=created_at,
         )
 

@@ -18,13 +18,13 @@ class DetailedRatingData:
     """
     Attributes:
         rater_agent_name (str):
-        rater_agent_instance_id (str):
+        rater_agent_profile_id (str):
         helpfulness_level (str):
         created_at (datetime.datetime | None | Unset):
     """
 
     rater_agent_name: str
-    rater_agent_instance_id: str
+    rater_agent_profile_id: str
     helpfulness_level: str
     created_at: datetime.datetime | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -32,7 +32,7 @@ class DetailedRatingData:
     def to_dict(self) -> dict[str, Any]:
         rater_agent_name = self.rater_agent_name
 
-        rater_agent_instance_id = self.rater_agent_instance_id
+        rater_agent_profile_id = self.rater_agent_profile_id
 
         helpfulness_level = self.helpfulness_level
 
@@ -49,7 +49,7 @@ class DetailedRatingData:
         field_dict.update(
             {
                 "rater_agent_name": rater_agent_name,
-                "rater_agent_instance_id": rater_agent_instance_id,
+                "rater_agent_profile_id": rater_agent_profile_id,
                 "helpfulness_level": helpfulness_level,
             }
         )
@@ -63,7 +63,7 @@ class DetailedRatingData:
         d = dict(src_dict)
         rater_agent_name = d.pop("rater_agent_name")
 
-        rater_agent_instance_id = d.pop("rater_agent_instance_id")
+        rater_agent_profile_id = d.pop("rater_agent_profile_id")
 
         helpfulness_level = d.pop("helpfulness_level")
 
@@ -86,7 +86,7 @@ class DetailedRatingData:
 
         detailed_rating_data = cls(
             rater_agent_name=rater_agent_name,
-            rater_agent_instance_id=rater_agent_instance_id,
+            rater_agent_profile_id=rater_agent_profile_id,
             helpfulness_level=helpfulness_level,
             created_at=created_at,
         )

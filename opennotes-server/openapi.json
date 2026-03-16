@@ -11414,7 +11414,7 @@
             }
           },
           {
-            "name": "agent_instance_id",
+            "name": "agent_profile_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -11427,7 +11427,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Agent Instance Id"
+              "title": "Agent Profile Id"
             }
           },
           {
@@ -12324,9 +12324,9 @@
       },
       "AgentBehaviorData": {
         "properties": {
-          "agent_instance_id": {
+          "agent_profile_id": {
             "type": "string",
-            "title": "Agent Instance Id"
+            "title": "Agent Profile Id"
           },
           "agent_name": {
             "type": "string",
@@ -12381,7 +12381,7 @@
         },
         "type": "object",
         "required": [
-          "agent_instance_id",
+          "agent_profile_id",
           "agent_name",
           "notes_written",
           "ratings_given",
@@ -12394,9 +12394,9 @@
       },
       "AgentProfileData": {
         "properties": {
-          "agent_instance_id": {
+          "agent_profile_id": {
             "type": "string",
-            "title": "Agent Instance Id"
+            "title": "Agent Profile Id"
           },
           "agent_name": {
             "type": "string",
@@ -12453,7 +12453,7 @@
         },
         "type": "object",
         "required": [
-          "agent_instance_id",
+          "agent_profile_id",
           "agent_name",
           "personality",
           "model_name",
@@ -15058,9 +15058,9 @@
             "type": "string",
             "title": "Author Agent Name"
           },
-          "author_agent_instance_id": {
+          "author_agent_profile_id": {
             "type": "string",
-            "title": "Author Agent Instance Id"
+            "title": "Author Agent Profile Id"
           },
           "request_id": {
             "anyOf": [
@@ -15113,7 +15113,7 @@
           "status",
           "helpfulness_score",
           "author_agent_name",
-          "author_agent_instance_id"
+          "author_agent_profile_id"
         ],
         "title": "DetailedNoteData"
       },
@@ -15145,9 +15145,9 @@
             "type": "string",
             "title": "Rater Agent Name"
           },
-          "rater_agent_instance_id": {
+          "rater_agent_profile_id": {
             "type": "string",
-            "title": "Rater Agent Instance Id"
+            "title": "Rater Agent Profile Id"
           },
           "helpfulness_level": {
             "type": "string",
@@ -15169,7 +15169,7 @@
         "type": "object",
         "required": [
           "rater_agent_name",
-          "rater_agent_instance_id",
+          "rater_agent_profile_id",
           "helpfulness_level"
         ],
         "title": "DetailedRatingData"
@@ -20041,9 +20041,9 @@
       },
       "PerAgentRatingData": {
         "properties": {
-          "agent_instance_id": {
+          "agent_profile_id": {
             "type": "string",
-            "title": "Agent Instance Id"
+            "title": "Agent Profile Id"
           },
           "agent_name": {
             "type": "string",
@@ -20074,7 +20074,7 @@
         },
         "type": "object",
         "required": [
-          "agent_instance_id",
+          "agent_profile_id",
           "agent_name",
           "distribution",
           "total"
@@ -22302,9 +22302,9 @@
             "type": "string",
             "title": "Author Profile Id"
           },
-          "agent_instance_id": {
+          "agent_profile_id": {
             "type": "string",
-            "title": "Agent Instance Id"
+            "title": "Agent Profile Id"
           },
           "created_at": {
             "anyOf": [
@@ -22326,7 +22326,7 @@
           "classification",
           "note_status",
           "author_profile_id",
-          "agent_instance_id"
+          "agent_profile_id"
         ],
         "title": "ResultNoteAttributes"
       },
