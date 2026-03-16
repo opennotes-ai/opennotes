@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 SCORING_BATCH_SIZE = 100
 
 
-def _build_profile_remap(instances: list) -> dict[str, str]:
+def _build_profile_remap(instances: Sequence[SimAgentInstance]) -> dict[str, str]:
     return {
         str(inst.user_profile_id): str(inst.agent_profile_id)
         for inst in instances
