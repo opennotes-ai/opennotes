@@ -14,8 +14,8 @@ from src.notes.scoring.schemas import (
     RaterFactorData,
     ScoringAnalysisAttributes,
 )
-from src.simulation.models import SimAgentInstance
-from src.users.profile_models import CommunityMember
+from src.simulation.models import SimAgent, SimAgentInstance
+from src.users.profile_models import CommunityMember  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -38,26 +38,20 @@ async def _resolve_rater_identities(
     if not valid_uuids:
         return {}
 
-    members_result = await db.execute(
-        select(CommunityMember).where(
-            CommunityMember.community_id == community_server_id,
-            CommunityMember.profile_id.in_(valid_uuids),
-        )
-    )
-    members = {m.profile_id: m for m in members_result.scalars().all()}
+    agents_result = await db.execute(select(SimAgent).where(SimAgent.id.in_(valid_uuids)))
+    agents_by_id = {a.id: a for a in agents_result.scalars().all()}
 
-    profile_ids = list(members.keys())
-    if not profile_ids:
-        return {}
+    remaining_uuids = [u for u in valid_uuids if u not in agents_by_id]
 
-    instances_result = await db.execute(
-        select(SimAgentInstance)
-        .where(SimAgentInstance.user_profile_id.in_(profile_ids))
-        .options(selectinload(SimAgentInstance.agent_profile))
-    )
     instance_by_profile: dict[UUID, SimAgentInstance] = {}
-    for inst in instances_result.scalars().all():
-        instance_by_profile[inst.user_profile_id] = inst
+    if remaining_uuids:
+        instances_result = await db.execute(
+            select(SimAgentInstance)
+            .where(SimAgentInstance.user_profile_id.in_(remaining_uuids))
+            .options(selectinload(SimAgentInstance.agent_profile))
+        )
+        for inst in instances_result.scalars().all():
+            instance_by_profile[inst.user_profile_id] = inst
 
     identity_map: dict[str, dict[str, str | None]] = {}
     for rid in rater_ids:
@@ -67,15 +61,23 @@ async def _resolve_rater_identities(
             identity_map[rid] = {"agent_name": None, "personality": None, "short_description": None}
             continue
 
-        inst = instance_by_profile.get(uid)
-        if inst and inst.agent_profile:
+        agent = agents_by_id.get(uid)
+        if agent:
             identity_map[rid] = {
-                "agent_name": inst.agent_profile.name,
-                "personality": inst.agent_profile.personality,
-                "short_description": inst.agent_profile.short_description,
+                "agent_name": agent.name,
+                "personality": agent.personality,
+                "short_description": agent.short_description,
             }
         else:
-            identity_map[rid] = {"agent_name": None, "personality": None, "short_description": None}
+            inst = instance_by_profile.get(uid)
+            if inst and inst.agent_profile:
+                identity_map[rid] = {
+                    "agent_name": inst.agent_profile.name,
+                    "personality": inst.agent_profile.personality,
+                    "short_description": inst.agent_profile.short_description,
+                }
+            else:
+                identity_map[rid] = {"agent_name": None, "personality": None, "short_description": None}
 
     return identity_map
 
@@ -121,18 +123,27 @@ async def _resolve_note_metadata(
         note_authors[nid_str] = note.author_id
 
     if author_ids:
-        instances_result = await db.execute(
-            select(SimAgentInstance)
-            .where(SimAgentInstance.user_profile_id.in_(author_ids))
-            .options(selectinload(SimAgentInstance.agent_profile))
-        )
+        agents_result = await db.execute(select(SimAgent).where(SimAgent.id.in_(author_ids)))
         author_agent_map: dict[UUID, dict[str, str | None]] = {}
-        for inst in instances_result.scalars().all():
-            if inst.agent_profile:
-                author_agent_map[inst.user_profile_id] = {
-                    "name": inst.agent_profile.name,
-                    "short_description": inst.agent_profile.short_description,
-                }
+        for agent in agents_result.scalars().all():
+            author_agent_map[agent.id] = {
+                "name": agent.name,
+                "short_description": agent.short_description,
+            }
+
+        remaining_author_ids = [a for a in author_ids if a not in author_agent_map]
+        if remaining_author_ids:
+            instances_result = await db.execute(
+                select(SimAgentInstance)
+                .where(SimAgentInstance.user_profile_id.in_(remaining_author_ids))
+                .options(selectinload(SimAgentInstance.agent_profile))
+            )
+            for inst in instances_result.scalars().all():
+                if inst.agent_profile:
+                    author_agent_map[inst.user_profile_id] = {
+                        "name": inst.agent_profile.name,
+                        "short_description": inst.agent_profile.short_description,
+                    }
 
         for nid_str, author_id in note_authors.items():
             agent_info = author_agent_map.get(author_id)
