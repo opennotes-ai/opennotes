@@ -1,25 +1,32 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 from src.common.base_schemas import SQLAlchemySchema
+
+
+def _none_to_zero(v: Any) -> float:
+    return 0.0 if v is None else v
+
+
+SafeFloat = Annotated[float, BeforeValidator(_none_to_zero)]
 
 
 class RaterFactorData(SQLAlchemySchema):
     rater_id: str
     agent_name: str | None
     personality: str | None
-    intercept: float
-    factor1: float
+    intercept: SafeFloat = 0.0
+    factor1: SafeFloat = 0.0
 
 
 class NoteFactorData(SQLAlchemySchema):
     note_id: str
-    intercept: float
-    factor1: float
+    intercept: SafeFloat = 0.0
+    factor1: SafeFloat = 0.0
     status: str | None
     classification: str | None
     author_agent_name: str | None

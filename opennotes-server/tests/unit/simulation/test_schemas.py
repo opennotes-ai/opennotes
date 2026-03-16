@@ -5,7 +5,25 @@ from datetime import UTC
 import pytest
 from pydantic import ValidationError
 
-from src.simulation.schemas import ModelNameResponse
+from src.simulation.schemas import ActionSelectionResult, ModelNameResponse, SimActionType
+
+
+class TestActionSelectionRateNotesAlias:
+    def test_accepts_rate_note_singular(self):
+        result = ActionSelectionResult(action_type="rate_note", reasoning="test")
+        assert result.action_type == SimActionType.RATE_NOTE
+
+    def test_accepts_rate_notes_plural(self):
+        result = ActionSelectionResult(action_type="rate_notes", reasoning="test")
+        assert result.action_type == SimActionType.RATE_NOTE
+
+    def test_other_actions_unchanged(self):
+        result = ActionSelectionResult(action_type="write_note", reasoning="test")
+        assert result.action_type == SimActionType.WRITE_NOTE
+
+    def test_pass_turn_unchanged(self):
+        result = ActionSelectionResult(action_type="pass_turn", reasoning="test")
+        assert result.action_type == SimActionType.PASS_TURN
 
 
 class TestSimAgentCreateModelNameValidation:

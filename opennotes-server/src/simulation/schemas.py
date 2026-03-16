@@ -89,6 +89,13 @@ class ActionSelectionResult(BaseModel):
     action_type: SimActionType
     reasoning: str = Field(..., description="Why this action was chosen")
 
+    @field_validator("action_type", mode="before")
+    @classmethod
+    def normalize_action_type(cls, v: str) -> str:
+        if v == "rate_notes":
+            return "rate_note"
+        return v
+
     @field_validator("action_type")
     @classmethod
     def validate_allowed_actions(cls, v: SimActionType) -> SimActionType:

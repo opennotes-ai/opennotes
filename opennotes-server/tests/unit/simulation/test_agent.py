@@ -20,6 +20,7 @@ from src.simulation.agent import (
     SimAgentDeps,
     _is_research_available,
     _truncate_personality,
+    action_selector,
     build_action_selector_instructions,
     build_instructions,
     estimate_tokens,
@@ -1360,3 +1361,11 @@ class TestResearchPromptsUnsupportedProvider:
         ctx = self._make_ctx("anthropic", tool_config={"research_enabled": True})
         result = build_action_selector_instructions(ctx)
         assert "web search" in result.lower()
+
+
+class TestAgentRetryConfiguration:
+    def test_sim_agent_has_retries_3(self):
+        assert sim_agent._max_result_retries == 3
+
+    def test_action_selector_has_retries_3(self):
+        assert action_selector._max_result_retries == 3

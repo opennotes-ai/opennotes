@@ -19,6 +19,7 @@ import pandas as pd
 
 from src.notes.scoring.data_transforms import transform_community_data
 from src.notes.scoring.scorer_protocol import ScoringResult
+from src.notes.scoring.snapshot_persistence import _sanitize_float
 
 if TYPE_CHECKING:
     from src.notes.scoring.data_provider import CommunityDataProvider
@@ -310,8 +311,8 @@ class MFCoreScorerAdapter:
                 rater_factors.append(
                     {
                         "rater_id": str(rater_id_raw),
-                        "intercept": float(row.get("coreRaterIntercept", 0.0)),
-                        "factor1": float(row.get("coreRaterFactor1", 0.0)),
+                        "intercept": _sanitize_float(float(row.get("coreRaterIntercept", 0.0))),
+                        "factor1": _sanitize_float(float(row.get("coreRaterFactor1", 0.0))),
                     }
                 )
 
@@ -324,8 +325,8 @@ class MFCoreScorerAdapter:
                 note_factors.append(
                     {
                         "note_id": note_id,
-                        "intercept": float(row.get("coreNoteIntercept", 0.0)),
-                        "factor1": float(row.get("coreNoteFactor1", 0.0)),
+                        "intercept": _sanitize_float(float(row.get("coreNoteIntercept", 0.0))),
+                        "factor1": _sanitize_float(float(row.get("coreNoteFactor1", 0.0))),
                         "status": str(row.get("coreRatingStatus", "")),
                     }
                 )
@@ -335,7 +336,9 @@ class MFCoreScorerAdapter:
             model_result.scoredNotes is not None
             and "coreNoteIntercept" in model_result.scoredNotes.columns
         ):
-            global_intercept = float(model_result.scoredNotes["coreNoteIntercept"].mean())
+            global_intercept = _sanitize_float(
+                float(model_result.scoredNotes["coreNoteIntercept"].mean())
+            )
 
         return {
             "rater_factors": rater_factors,

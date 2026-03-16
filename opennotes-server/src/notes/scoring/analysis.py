@@ -164,8 +164,8 @@ async def compute_scoring_factor_analysis(
                 rater_id=rid,
                 agent_name=identity.get("agent_name"),
                 personality=identity.get("personality"),
-                intercept=rf.get("intercept", 0.0),
-                factor1=rf.get("factor1", 0.0),
+                intercept=rf.get("intercept") or 0.0,
+                factor1=rf.get("factor1") or 0.0,
             )
         )
 
@@ -178,8 +178,8 @@ async def compute_scoring_factor_analysis(
         note_factors.append(
             NoteFactorData(
                 note_id=nid,
-                intercept=nf.get("intercept", 0.0),
-                factor1=nf.get("factor1", 0.0),
+                intercept=nf.get("intercept") or 0.0,
+                factor1=nf.get("factor1") or 0.0,
                 status=nf.get("status") or meta.get("status"),
                 classification=meta.get("classification"),
                 author_agent_name=meta.get("author_agent_name"),
