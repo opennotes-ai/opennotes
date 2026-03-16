@@ -77,7 +77,11 @@ async def _resolve_rater_identities(
                     "short_description": inst.agent_profile.short_description,
                 }
             else:
-                identity_map[rid] = {"agent_name": None, "personality": None, "short_description": None}
+                identity_map[rid] = {
+                    "agent_name": None,
+                    "personality": None,
+                    "short_description": None,
+                }
 
     return identity_map
 

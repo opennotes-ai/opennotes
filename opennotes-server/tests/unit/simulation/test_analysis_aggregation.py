@@ -41,6 +41,7 @@ def _make_instance(
     profile = MagicMock()
     profile.name = name
     profile.personality = personality
+    profile.short_description = None
     profile.model_name = model_name
     profile.memory_compaction_strategy = memory_compaction_strategy
     inst.agent_profile = profile
