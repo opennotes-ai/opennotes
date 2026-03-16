@@ -1,10 +1,11 @@
-import { For, Show, createSignal, createMemo } from "solid-js";
+import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { formatDate, humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import IdBadge from "~/components/ui/id-badge";
 import { getHelpfulnessTooltip } from "~/lib/scoring-tiers";
 import { cn } from "~/lib/cn";
+import NoteFilter, { type NoteFilterValues } from "~/components/ui/note-filter";
 
 type DetailedNoteResource = components["schemas"]["DetailedNoteResource"];
 
@@ -25,7 +26,7 @@ const HELPFULNESS_VARIANT: Record<string, BadgeVariant> = {
   NOT_HELPFUL: "danger",
 };
 
-type SortMode = "count" | "disagreement";
+type SortMode = "count" | "disagreement" | "has_score";
 
 type RequestGroup = {
   requestId: string;
@@ -64,18 +65,30 @@ function groupByRequest(notes: DetailedNoteResource[]): RequestGroup[] {
   });
 }
 
-export default function NoteDetails(props: { notes: DetailedNoteResource[]; currentTier: string }) {
-  const [sortBy, setSortBy] = createSignal<SortMode>("count");
-
+export default function NoteDetails(props: {
+  notes: DetailedNoteResource[];
+  currentTier: string;
+  sortBy: SortMode;
+  onSortChange: (mode: SortMode) => void;
+  filterClassification: string[];
+  filterStatus: string[];
+  onFilterChange: (values: NoteFilterValues) => void;
+}) {
   const groups = createMemo(() => groupByRequest(props.notes));
 
   const sortedGroups = createMemo(() => {
     const g = [...groups()];
-    const mode = sortBy();
+    const mode = props.sortBy;
     if (mode === "count") {
       g.sort((a, b) => b.noteCount - a.noteCount);
-    } else {
+    } else if (mode === "disagreement") {
       g.sort((a, b) => b.disagreementScore - a.disagreementScore);
+    } else if (mode === "has_score") {
+      g.sort((a, b) => {
+        const aHasScore = a.notes.some((n) => n.attributes.status !== "NEEDS_MORE_RATINGS") ? 1 : 0;
+        const bHasScore = b.notes.some((n) => n.attributes.status !== "NEEDS_MORE_RATINGS") ? 1 : 0;
+        return bHasScore - aHasScore;
+      });
     }
     return g;
   });
@@ -84,31 +97,49 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
     <section>
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 id="per-note-breakdown" class="text-xl font-semibold">Per-Note Breakdown</h2>
-        <Show when={props.notes.length > 1}>
+        <Show when={props.notes.length > 1 || props.filterClassification.length > 0 || props.filterStatus.length > 0}>
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium text-muted-foreground">Sort by:</span>
             <div class="flex overflow-hidden rounded-md border border-input">
               <button
+                data-testid="sort-count"
                 class={cn(
                   "px-3 py-1.5 text-xs font-medium transition-colors",
-                  sortBy() === "count" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
+                  props.sortBy === "count" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
                 )}
-                aria-pressed={sortBy() === "count"}
-                onClick={() => setSortBy("count")}
+                aria-pressed={props.sortBy === "count"}
+                onClick={() => props.onSortChange("count")}
               >
-                Note Count
+                Note Count {props.sortBy === "count" ? "\u2193" : ""}
               </button>
               <button
+                data-testid="sort-disagreement"
                 class={cn(
                   "border-l border-input px-3 py-1.5 text-xs font-medium transition-colors",
-                  sortBy() === "disagreement" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
+                  props.sortBy === "disagreement" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
                 )}
-                aria-pressed={sortBy() === "disagreement"}
-                onClick={() => setSortBy("disagreement")}
+                aria-pressed={props.sortBy === "disagreement"}
+                onClick={() => props.onSortChange("disagreement")}
               >
-                Disagreement
+                Disagreement {props.sortBy === "disagreement" ? "\u2193" : ""}
+              </button>
+              <button
+                data-testid="sort-has-score"
+                class={cn(
+                  "border-l border-input px-3 py-1.5 text-xs font-medium transition-colors",
+                  props.sortBy === "has_score" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
+                )}
+                aria-pressed={props.sortBy === "has_score"}
+                onClick={() => props.onSortChange("has_score")}
+              >
+                Has Score {props.sortBy === "has_score" ? "\u2193" : ""}
               </button>
             </div>
+            <NoteFilter
+              classification={props.filterClassification}
+              status={props.filterStatus}
+              onChange={props.onFilterChange}
+            />
           </div>
         </Show>
       </div>
@@ -165,9 +196,9 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                     {(note) => {
                       const attrs = note.attributes;
                       return (
-                        <div class="rounded-lg border border-border bg-card p-4">
-                          <div class="flex flex-wrap items-start justify-between gap-2">
-                            <div class="min-w-0 flex-1">
+                        <div class="rounded-lg border border-border bg-card p-4" data-testid="note-card">
+                          <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+                            <div class="min-w-0 flex-1" data-testid="note-summary">
                               <div class="font-normal leading-snug">{attrs.summary}</div>
                               <div class="mt-0.5 text-xs text-muted-foreground">
                                 Note{" "}
@@ -175,7 +206,7 @@ export default function NoteDetails(props: { notes: DetailedNoteResource[]; curr
                                 by {attrs.author_agent_name}
                               </div>
                             </div>
-                            <div class="flex shrink-0 items-center gap-1.5">
+                            <div class="flex items-center gap-1.5" data-testid="note-badges">
                               <Badge variant={CLASSIFICATION_VARIANT[attrs.classification] ?? "indigo"}>
                                 {humanizeLabel(attrs.classification)}
                               </Badge>

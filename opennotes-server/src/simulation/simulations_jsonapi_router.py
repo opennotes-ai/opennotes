@@ -1511,6 +1511,9 @@ async def get_simulation_detailed_analysis(
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     page_number: int = Query(1, ge=1, alias="page[number]"),
     page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
+    sort_by: Literal["count", "has_score"] = Query("count", alias="sort_by"),
+    filter_classification: list[str] = Query([], alias="filter[classification]"),
+    filter_status: list[str] = Query([], alias="filter[status]"),
 ) -> JSONResponse:
     scoped = require_scope_or_admin(current_user, request, "simulations:read")
 
@@ -1534,7 +1537,13 @@ async def get_simulation_detailed_analysis(
 
         offset = (page_number - 1) * page_size
         detailed_notes, total = await compute_detailed_notes(
-            simulation_id, db, offset=offset, limit=page_size
+            simulation_id,
+            db,
+            offset=offset,
+            limit=page_size,
+            sort_by=sort_by,
+            filter_classification=filter_classification or None,
+            filter_status=filter_status or None,
         )
 
         if page_number == 1:

@@ -17,8 +17,7 @@ import SimulationSidebar from "~/components/SimulationSidebar";
 import IdBadge from "~/components/ui/id-badge";
 import PaginationControls from "~/components/ui/pagination-controls";
 
-const UNAUTH_PAGE_SIZE = 20;
-const AUTH_PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 
 type AuthMeta = {
   isAuthenticated: boolean;
@@ -61,9 +60,9 @@ const fetchAnalysis = query(async (id: string) => {
 
     const behaviors = data.data.attributes.agent_behaviors ?? [];
     const totalAgents = behaviors.length;
-    const agentsTruncated = !isAuthenticated && totalAgents > UNAUTH_PAGE_SIZE;
+    const agentsTruncated = !isAuthenticated && totalAgents > 20;
     const visibleBehaviors = agentsTruncated
-      ? behaviors.slice(0, UNAUTH_PAGE_SIZE)
+      ? behaviors.slice(0, 20)
       : behaviors;
 
     return {
@@ -83,13 +82,21 @@ const fetchAnalysis = query(async (id: string) => {
   }
 }, "analysis");
 
-const fetchDetailedAnalysis = query(async (id: string, page: number) => {
+const fetchDetailedAnalysis = query(async (
+  id: string,
+  page: number,
+  pageSize: number,
+  sortBy: "count" | "has_score",
+  filterClassification: string[],
+  filterStatus: string[],
+) => {
   "use server";
   try {
     const isAuthenticated = await checkAuth();
-    const pageSize = isAuthenticated ? AUTH_PAGE_SIZE : UNAUTH_PAGE_SIZE;
     const effectivePage = isAuthenticated ? page : 1;
-    const data = await getSimulationDetailedAnalysis(id, effectivePage, pageSize);
+    const data = await getSimulationDetailedAnalysis(
+      id, effectivePage, pageSize, sortBy, filterClassification, filterStatus,
+    );
     const totalCount = data.meta?.count ?? 0;
 
     return {
@@ -142,9 +149,19 @@ export default function SimulationDetailPage() {
   const params = useParams();
   const simulation = createAsync(() => fetchSimulation(params.id!));
   const analysis = createAsync(() => fetchAnalysis(params.id!));
+  const [pageSize, setPageSize] = createSignal(10);
   const [notesPage, setNotesPage] = createSignal(1);
+  const [sortBy, setSortBy] = createSignal("count");
+  const [filterClassification, setFilterClassification] = createSignal<string[]>([]);
+  const [filterStatus, setFilterStatus] = createSignal<string[]>([]);
   createEffect(on(() => params.id, () => setNotesPage(1)));
-  const detailed = createAsync(() => fetchDetailedAnalysis(params.id!, notesPage()));
+  createEffect(on(() => pageSize(), () => setNotesPage(1), { defer: true }));
+  createEffect(on(() => sortBy(), () => setNotesPage(1), { defer: true }));
+  createEffect(on(() => [filterClassification(), filterStatus()], () => setNotesPage(1), { defer: true }));
+  const serverSortBy = () => (sortBy() === "has_score" ? "has_score" : "count") as "count" | "has_score";
+  const detailed = createAsync(() => fetchDetailedAnalysis(
+    params.id!, notesPage(), pageSize(), serverSortBy(), filterClassification(), filterStatus(),
+  ));
 
   const simError = () => {
     const r = simulation();
@@ -251,16 +268,17 @@ export default function SimulationDetailPage() {
                             <AnalysisSummary
                               noteQuality={a.note_quality}
                               ratingDistribution={a.rating_distribution}
+                              pageSize={pageSize()}
                             />
                             <MetricsDisplay
                               consensus={a.consensus_metrics}
                               scoring={a.scoring_coverage}
                             />
                             <div>
-                              <AgentProfiles agents={a.agent_behaviors} />
+                              <AgentProfiles agents={a.agent_behaviors} pageSize={pageSize()} />
                               <Show when={meta?.agentsTruncated && meta.totalAgents}>
                                 <AuthGateCTA
-                                  shown={UNAUTH_PAGE_SIZE}
+                                  shown={20}
                                   total={meta!.totalAgents!}
                                   label="agents"
                                 />
@@ -281,7 +299,7 @@ export default function SimulationDetailPage() {
                       {(detailedResponse) => {
                         const authMeta = detailedResponse._authMeta;
                         const totalNotes = detailedResponse.meta?.count ?? 0;
-                        const notesTruncated = !authMeta?.isAuthenticated && totalNotes > UNAUTH_PAGE_SIZE;
+                        const notesTruncated = !authMeta?.isAuthenticated && totalNotes > pageSize();
                         const totalPages = detailedResponse._totalPages ?? 1;
                         return (
                           <div class="mt-8 border-t border-border pt-8">
@@ -289,7 +307,7 @@ export default function SimulationDetailPage() {
                               {(meta) => (
                                 <p class="mb-2 text-sm text-muted-foreground">
                                   {notesTruncated
-                                    ? `Showing ${UNAUTH_PAGE_SIZE} of ${meta().count}`
+                                    ? `Showing ${pageSize()} of ${meta().count}`
                                     : meta().count}
                                   {" "}note{meta().count !== 1 ? "s" : ""} in detailed analysis
                                 </p>
@@ -298,6 +316,14 @@ export default function SimulationDetailPage() {
                             <NoteDetails
                               notes={detailedResponse.data}
                               currentTier={analysis()?.data?.attributes?.scoring_coverage?.current_tier ?? ""}
+                              sortBy={sortBy() as "count" | "disagreement" | "has_score"}
+                              onSortChange={setSortBy}
+                              filterClassification={filterClassification()}
+                              filterStatus={filterStatus()}
+                              onFilterChange={(v) => {
+                                setFilterClassification(v.classification);
+                                setFilterStatus(v.status);
+                              }}
                             />
                             <Show when={authMeta?.isAuthenticated && totalPages > 1}>
                               <PaginationControls
@@ -305,11 +331,14 @@ export default function SimulationDetailPage() {
                                 totalPages={totalPages}
                                 onPageChange={setNotesPage}
                                 label="Notes pagination"
+                                pageSize={pageSize()}
+                                pageSizeOptions={[...PAGE_SIZE_OPTIONS]}
+                                onPageSizeChange={setPageSize}
                               />
                             </Show>
                             <Show when={notesTruncated}>
                               <AuthGateCTA
-                                shown={UNAUTH_PAGE_SIZE}
+                                shown={pageSize()}
                                 total={totalNotes}
                                 label="notes"
                               />

@@ -177,6 +177,9 @@ from .get_community_server_stats_api_v1_webhooks_stats_platform_community_server
 from .get_opennotes_admin_status_api_v1_admin_profiles_profile_id_opennotes_admin_get_response_get_opennotes_admin_status_api_v1_admin_profiles_profile_id_opennotes_admin_get import (
     GetOpennotesAdminStatusApiV1AdminProfilesProfileIdOpennotesAdminGetResponseGetOpennotesAdminStatusApiV1AdminProfilesProfileIdOpennotesAdminGet,
 )
+from .get_simulation_detailed_analysis_api_v2_simulations_simulation_id_analysis_detailed_get_sort_by import (
+    GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy,
+)
 from .health_check_response import HealthCheckResponse
 from .health_check_response_components import HealthCheckResponseComponents
 from .helpfulness_level import HelpfulnessLevel
@@ -751,6 +754,7 @@ __all__ = (
     "FusionWeightUpdate",
     "GetCommunityServerStatsApiV1WebhooksStatsPlatformCommunityServerIdGetResponseGetCommunityServerStatsApiV1WebhooksStatsPlatformCommunityServerIdGet",
     "GetOpennotesAdminStatusApiV1AdminProfilesProfileIdOpennotesAdminGetResponseGetOpennotesAdminStatusApiV1AdminProfilesProfileIdOpennotesAdminGet",
+    "GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy",
     "HealthCheckResponse",
     "HealthCheckResponseComponents",
     "HelpfulnessLevel",

@@ -11582,6 +11582,46 @@
             }
           },
           {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "count",
+                "has_score"
+              ],
+              "type": "string",
+              "default": "count",
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "filter[classification]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Filter[Classification]"
+            }
+          },
+          {
+            "name": "filter[status]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Filter[Status]"
+            }
+          },
+          {
             "name": "X-API-Key",
             "in": "header",
             "required": false,

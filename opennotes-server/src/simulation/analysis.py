@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
@@ -412,6 +413,9 @@ async def compute_detailed_notes(
     *,
     offset: int = 0,
     limit: int = 20,
+    sort_by: Literal["count", "has_score"] = "count",
+    filter_classification: list[str] | None = None,
+    filter_status: list[str] | None = None,
 ) -> tuple[list[DetailedNoteData], int]:
     instances = await _get_agent_instances(simulation_run_id, db)
     user_profile_ids = [inst.user_profile_id for inst in instances]
@@ -423,22 +427,35 @@ async def compute_detailed_notes(
         inst.user_profile_id: inst for inst in instances
     }
 
-    count_result = await db.execute(
-        select(func.count(Note.id)).where(
-            Note.author_id.in_(user_profile_ids),
-            Note.deleted_at.is_(None),
-        )
-    )
+    base_filters = [
+        Note.author_id.in_(user_profile_ids),
+        Note.deleted_at.is_(None),
+    ]
+    if filter_classification:
+        base_filters.append(Note.classification.in_(filter_classification))
+    if filter_status:
+        base_filters.append(Note.status.in_(filter_status))
+
+    count_result = await db.execute(select(func.count(Note.id)).where(*base_filters))
     total = count_result.scalar() or 0
+
+    if sort_by == "has_score":
+        score_priority = case(
+            (
+                Note.status.in_(["CURRENTLY_RATED_HELPFUL", "CURRENTLY_RATED_NOT_HELPFUL"]),
+                0,
+            ),
+            else_=1,
+        )
+        order_clauses = [score_priority, Note.created_at.desc()]
+    else:
+        order_clauses = [Note.created_at.desc()]
 
     notes_result = await db.execute(
         select(Note)
-        .where(
-            Note.author_id.in_(user_profile_ids),
-            Note.deleted_at.is_(None),
-        )
+        .where(*base_filters)
         .options(*loaders.detailed())
-        .order_by(Note.created_at.desc())
+        .order_by(*order_clauses)
         .offset(offset)
         .limit(limit)
     )
