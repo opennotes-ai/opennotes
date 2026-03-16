@@ -151,7 +151,11 @@ def simulation_status(ctx: click.Context, simulation_id: str) -> None:
         if progress_response.status_code == 200:
             progress = progress_response.json().get("data", {}).get("attributes", {})
             panel_content += "\n\n[bold]Progress:[/bold]"
-            panel_content += f"\n  Turns: {progress.get('turns_completed', 0)} completed, {progress.get('turns_errored', 0)} errored"
+            turns_completed = progress.get("turns_completed", 0)
+            turns_errored = progress.get("turns_errored", 0)
+            panel_content += f"\n  Turns: {turns_completed} completed"
+            if turns_errored:
+                panel_content += f", {turns_errored} errored"
             panel_content += f"\n  Notes: {progress.get('notes_written', 0)}"
             panel_content += f"\n  Ratings: {progress.get('ratings_given', 0)}"
             panel_content += f"\n  Active Agents: {progress.get('active_agents', 0)}"
