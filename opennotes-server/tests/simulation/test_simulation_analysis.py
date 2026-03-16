@@ -136,6 +136,7 @@ async def agent_instance_factory(sim_run, sim_agent, user_profile_factory):
             await session.refresh(instance)
             return {
                 "id": instance.id,
+                "agent_profile_id": sim_agent["id"],
                 "user_profile_id": profile["id"],
                 "state": state,
                 "turn_count": turn_count,
@@ -294,12 +295,13 @@ class TestAnalysisRatingDistribution:
 
         assert response.status_code == 200
         per_agent = response.json()["data"]["attributes"]["rating_distribution"]["per_agent"]
-        assert len(per_agent) == 2
+        assert len(per_agent) == 1
 
-        agent_map = {a["agent_instance_id"]: a for a in per_agent}
-        inst1_data = agent_map[str(inst1["id"])]
-        assert inst1_data["distribution"]["SOMEWHAT_HELPFUL"] == 1
-        assert inst1_data["total"] == 1
+        aggregated = per_agent[0]
+        assert aggregated["agent_profile_id"] == str(inst1["agent_profile_id"])
+        assert aggregated["distribution"]["HELPFUL"] == 1
+        assert aggregated["distribution"]["SOMEWHAT_HELPFUL"] == 1
+        assert aggregated["total"] == 2
 
 
 class TestAnalysisConsensus:
@@ -429,7 +431,7 @@ class TestAnalysisAgentBehavior:
         behaviors = response.json()["data"]["attributes"]["agent_behaviors"]
         assert len(behaviors) == 1
         agent = behaviors[0]
-        assert agent["agent_instance_id"] == str(inst["id"])
+        assert agent["agent_profile_id"] == str(inst["agent_profile_id"])
         assert agent["notes_written"] == 1
         assert agent["ratings_given"] == 1
         assert agent["turn_count"] == 5
@@ -467,8 +469,10 @@ class TestAnalysisAgentBehavior:
 
         assert response.status_code == 200
         behaviors = response.json()["data"]["attributes"]["agent_behaviors"]
-        agent_map = {b["agent_instance_id"]: b for b in behaviors}
-        trend = agent_map[str(inst1["id"])]["helpfulness_trend"]
+        inst1_behavior = next(
+            b for b in behaviors if b["helpfulness_trend"] and len(b["helpfulness_trend"]) == 2
+        )
+        trend = inst1_behavior["helpfulness_trend"]
         assert len(trend) == 2
         assert "HELPFUL" in trend
         assert "NOT_HELPFUL" in trend
@@ -570,7 +574,7 @@ class TestAgentProfileDataSchema:
         from src.simulation.schemas import AgentProfileData
 
         data = AgentProfileData(
-            agent_instance_id="inst-1",
+            agent_profile_id="inst-1",
             agent_name="Test Agent",
             personality="A helpful assistant",
             model_name="openai:gpt-4o-mini",
@@ -589,7 +593,7 @@ class TestAgentProfileDataSchema:
         from src.simulation.schemas import AgentProfileData
 
         data = AgentProfileData(
-            agent_instance_id="inst-1",
+            agent_profile_id="inst-1",
             agent_name="Test Agent",
             personality="",
             model_name="",
@@ -608,7 +612,7 @@ class TestAgentProfileDataSchema:
             count=10,
             agents=[
                 AgentProfileData(
-                    agent_instance_id="inst-1",
+                    agent_profile_id="inst-1",
                     agent_name="Agent1",
                     personality="Smart",
                     model_name="openai:gpt-4o",
@@ -655,7 +659,7 @@ class TestComputeAgentProfiles:
 
         assert len(profiles) == 1
         profile = profiles[0]
-        assert profile.agent_instance_id == str(inst["id"])
+        assert profile.agent_profile_id == str(inst["agent_profile_id"])
         assert profile.turn_count == 5
         assert profile.state == "active"
         assert profile.token_count == 1200
@@ -728,7 +732,7 @@ class TestDetailedAnalysisAgentProfiles:
         assert "agents" in meta
         assert len(meta["agents"]) == 1
         agent = meta["agents"][0]
-        assert agent["agent_instance_id"] == str(inst["id"])
+        assert agent["agent_profile_id"] == str(inst["agent_profile_id"])
         assert agent["token_count"] == 800
         assert agent["turn_count"] == 5
 

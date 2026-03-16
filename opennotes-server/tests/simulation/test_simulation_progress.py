@@ -74,7 +74,7 @@ async def sim_run(playground_community, orchestrator):
 
 
 @pytest.fixture
-async def sim_agent(playground_community):
+async def sim_agent():
     from src.database import get_session_maker
     from src.simulation.models import SimAgent
 
@@ -84,7 +84,6 @@ async def sim_agent(playground_community):
             name=f"TestAgent_{unique}",
             personality="A helpful fact-checker.",
             model_name="openai:gpt-4o-mini",
-            community_server_id=playground_community["id"],
         )
         session.add(agent)
         await session.commit()
@@ -114,16 +113,42 @@ async def user_profile_factory():
 
 
 @pytest.fixture
+async def sim_agent_factory():
+    from src.database import get_session_maker
+    from src.simulation.models import SimAgent
+
+    async def _create() -> dict:
+        unique = uuid4().hex[:8]
+        async with get_session_maker()() as session:
+            agent = SimAgent(
+                name=f"TestAgent_{unique}",
+                personality="A helpful fact-checker.",
+                model_name="openai:gpt-4o-mini",
+            )
+            session.add(agent)
+            await session.commit()
+            await session.refresh(agent)
+            return {"id": agent.id}
+
+    return _create
+
+
+@pytest.fixture
 async def agent_instance_factory(sim_run, sim_agent, user_profile_factory):
     from src.database import get_session_maker
     from src.simulation.models import SimAgentInstance
 
-    async def _create(state: str = "active", turn_count: int = 0) -> dict:
+    async def _create(
+        state: str = "active",
+        turn_count: int = 0,
+        agent_profile_id: UUID | None = None,
+    ) -> dict:
         profile = await user_profile_factory()
+        profile_id = agent_profile_id or sim_agent["id"]
         async with get_session_maker()() as session:
             instance = SimAgentInstance(
                 simulation_run_id=sim_run["id"],
-                agent_profile_id=sim_agent["id"],
+                agent_profile_id=profile_id,
                 user_profile_id=profile["id"],
                 state=state,
                 turn_count=turn_count,
@@ -133,6 +158,7 @@ async def agent_instance_factory(sim_run, sim_agent, user_profile_factory):
             await session.refresh(instance)
             return {
                 "id": instance.id,
+                "agent_profile_id": profile_id,
                 "user_profile_id": profile["id"],
                 "state": state,
                 "turn_count": turn_count,
@@ -369,22 +395,29 @@ class TestGetSimulationResults:
         assert data["links"] is not None
 
     @pytest.mark.asyncio
-    async def test_results_filter_by_agent_instance(
+    async def test_results_filter_by_agent_profile(
         self,
         admin_auth_client,
         sim_run,
+        sim_agent_factory,
         agent_instance_factory,
         note_factory,
     ):
-        inst1 = await agent_instance_factory(state="active", turn_count=2)
-        inst2 = await agent_instance_factory(state="active", turn_count=3)
+        agent1 = await sim_agent_factory()
+        agent2 = await sim_agent_factory()
+        inst1 = await agent_instance_factory(
+            state="active", turn_count=2, agent_profile_id=agent1["id"]
+        )
+        inst2 = await agent_instance_factory(
+            state="active", turn_count=3, agent_profile_id=agent2["id"]
+        )
 
         await note_factory(author_id=inst1["user_profile_id"])
         await note_factory(author_id=inst1["user_profile_id"])
         await note_factory(author_id=inst2["user_profile_id"])
 
         response = await admin_auth_client.get(
-            f"/api/v2/simulations/{sim_run['id']}/results?agent_instance_id={inst1['id']}"
+            f"/api/v2/simulations/{sim_run['id']}/results?agent_profile_id={agent1['id']}"
         )
 
         assert response.status_code == 200

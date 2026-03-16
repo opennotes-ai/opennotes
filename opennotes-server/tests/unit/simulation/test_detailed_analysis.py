@@ -10,6 +10,7 @@ import pytest
 def _make_agent_instance(
     instance_id: UUID | None = None,
     profile_id: UUID | None = None,
+    agent_profile_id: UUID | None = None,
     agent_name: str = "TestAgent",
     personality: str = "A default personality",
     short_description: str | None = None,
@@ -19,6 +20,7 @@ def _make_agent_instance(
     inst = MagicMock()
     inst.id = instance_id or uuid4()
     inst.user_profile_id = profile_id or uuid4()
+    inst.agent_profile_id = agent_profile_id or uuid4()
     inst.agent_profile = MagicMock()
     inst.agent_profile.name = agent_name
     inst.agent_profile.personality = personality
@@ -122,7 +124,7 @@ class TestComputeDetailedNotes:
         assert total == 1
         assert len(result) == 1
         assert result[0].author_agent_name == "Agent Alpha"
-        assert result[0].author_agent_instance_id == str(inst.id)
+        assert result[0].author_agent_profile_id == str(inst.agent_profile_id)
         assert result[0].classification == "MISINFORMED_OR_POTENTIALLY_MISLEADING"
         assert result[0].helpfulness_score == 75
 
@@ -170,7 +172,7 @@ class TestComputeDetailedNotes:
         assert len(result) == 1
         assert len(result[0].ratings) == 1
         assert result[0].ratings[0].rater_agent_name == "Rater Agent"
-        assert result[0].ratings[0].rater_agent_instance_id == str(rater_inst.id)
+        assert result[0].ratings[0].rater_agent_profile_id == str(rater_inst.agent_profile_id)
         assert result[0].ratings[0].helpfulness_level == "NOT_HELPFUL"
 
     @pytest.mark.asyncio
@@ -206,7 +208,7 @@ class TestComputeDetailedNotes:
             result, _total = await compute_detailed_notes(sim_id, mock_db)
 
         assert result[0].ratings[0].rater_agent_name == "Unknown"
-        assert result[0].ratings[0].rater_agent_instance_id == ""
+        assert result[0].ratings[0].rater_agent_profile_id == ""
 
     @pytest.mark.asyncio
     async def test_includes_request_id(self):
@@ -373,7 +375,7 @@ class TestComputeAgentBehaviorMetrics:
         from src.simulation.analysis import compute_agent_behavior_metrics
 
         profile_id = uuid4()
-        inst = _make_agent_instance(profile_id=profile_id)
+        inst = _make_agent_instance(profile_id=profile_id, turn_count=1)
         inst.agent_profile = None
 
         mock_db = AsyncMock()
