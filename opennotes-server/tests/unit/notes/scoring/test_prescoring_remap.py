@@ -141,6 +141,43 @@ class TestRemapTables:
         assert new_ratings.column("rater_id").to_pylist() == [str(unmapped_user)]
         assert new_notes.column("author_id").to_pylist() == [str(unmapped_user)]
 
+    def test_multi_instance_same_profile_deduplicates(self):
+        profile_a = uuid4()
+        user1, user2 = uuid4(), uuid4()
+
+        remap = {str(user1): str(profile_a), str(user2): str(profile_a)}
+
+        ratings_table = pa.table(
+            {
+                "id": [str(uuid4()), str(uuid4())],
+                "note_id": [str(uuid4()), str(uuid4())],
+                "rater_id": [str(user1), str(user2)],
+                "helpfulness_level": ["HELPFUL", "NOT_HELPFUL"],
+                "created_at": [None, None],
+            }
+        )
+
+        notes_table = pa.table(
+            {
+                "id": [str(uuid4())],
+                "author_id": [str(user1)],
+                "classification": ["MISINFORMATION"],
+                "status": ["NEEDS_MORE_RATINGS"],
+                "created_at": [None],
+            }
+        )
+
+        new_ratings, new_notes, participants = _remap_tables(ratings_table, notes_table, remap)
+
+        rater_ids = new_ratings.column("rater_id").to_pylist()
+        assert all(rid == str(profile_a) for rid in rater_ids)
+
+        author_ids = new_notes.column("author_id").to_pylist()
+        assert all(aid == str(profile_a) for aid in author_ids)
+
+        participant_list = participants.to_pylist()
+        assert participant_list.count(str(profile_a)) == 1
+
     def test_empty_remap_preserves_original(self):
         user1 = uuid4()
         note_id = uuid4()
