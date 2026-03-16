@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import desc, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,23 +35,17 @@ from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
 from src.common.responses import AUTHENTICATED_RESPONSES
-from src.config import settings
 from src.database import get_db
-from src.events.scoring_events import ScoringEventPublisher
 from src.monitoring import get_logger
-from src.monitoring.metrics import nats_events_failed_total
 from src.notes import loaders
 from src.notes.models import Note, Rating
 from src.notes.schemas import HelpfulnessLevel
-from src.notes.score_event_context import build_score_event_routing_context
-from src.notes.scoring import ScorerFactory
-from src.notes.scoring_utils import calculate_note_score
+from src.simulation.workflows.scoring_workflow import dispatch_community_scoring
 from src.users.models import User
 
 logger = get_logger(__name__)
 
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
-scorer_factory = ScorerFactory()
 
 
 class RatingCreateAttributes(StrictInputSchema):
@@ -252,87 +246,45 @@ async def create_rating_jsonapi(
         await db.flush()
         rating = result.scalar_one()
 
-        count_result = await db.execute(
-            select(func.count(Note.id)).where(Note.deleted_at.is_(None))
-        )
-        note_count = count_result.scalar() or 0
-
         await db.refresh(note, ["ratings"])
-
-        community_id = str(note.community_server_id) if note.community_server_id else ""
-        scorer = scorer_factory.get_scorer(community_id, note_count)
-        score_response = await calculate_note_score(note, note_count, scorer)
-
-        status_update = "NEEDS_MORE_RATINGS"
-        if score_response.rating_count >= settings.MIN_RATINGS_NEEDED:
-            status_update = (
-                "CURRENTLY_RATED_HELPFUL"
-                if score_response.score >= 0.5
-                else "CURRENTLY_RATED_NOT_HELPFUL"
-            )
-
-        update_stmt = (
-            update(Note)
-            .where(Note.id == note.id)
-            .values(
-                helpfulness_score=int(score_response.score * 100),
-                status=status_update,
-            )
-        )
-        await db.execute(update_stmt)
 
         await db.commit()
         await db.refresh(rating)
+
+        current_score = (note.helpfulness_score or 0) / 100.0
+        rating_count = len(note.ratings)
+
+        scoring_requested = False
+        if note.community_server_id:
+            try:
+                await dispatch_community_scoring(note.community_server_id)
+                scoring_requested = True
+            except Exception as e:
+                logger.warning(
+                    "Failed to dispatch DBOS rescore workflow",
+                    extra={
+                        "note_id": str(attrs.note_id),
+                        "error": str(e),
+                    },
+                )
+        else:
+            logger.warning(
+                "Skipping scoring dispatch: note has no community_server_id",
+                extra={
+                    "note_id": str(attrs.note_id),
+                },
+            )
 
         logger.info(
             "Created/updated rating via JSON:API",
             extra={
                 "note_id": str(attrs.note_id),
                 "user_id": str(current_user.id),
-                "new_score": score_response.score,
-                "new_status": status_update,
-                "rating_count": score_response.rating_count,
+                "current_score": current_score,
+                "rating_count": rating_count,
+                "scoring_requested": scoring_requested,
             },
         )
-
-        confidence_value = (
-            score_response.confidence.value
-            if hasattr(score_response.confidence, "value")
-            else score_response.confidence
-        )
-
-        try:
-            routing_context = await build_score_event_routing_context(db, note)
-
-            await ScoringEventPublisher.publish_note_score_updated(
-                note_id=note.id,
-                score=score_response.score,
-                confidence=confidence_value,
-                algorithm=score_response.algorithm,
-                rating_count=score_response.rating_count,
-                tier=score_response.tier if score_response.tier and score_response.tier > 0 else 1,
-                tier_name=score_response.tier_name or "unknown",
-                original_message_id=routing_context.original_message_id,
-                channel_id=routing_context.channel_id,
-                community_server_id=routing_context.community_server_id,
-            )
-        except Exception as e:
-            error_type = type(e).__name__
-            nats_events_failed_total.add(
-                1,
-                {
-                    "event_type": "note.score.updated",
-                    "error_type": error_type,
-                },
-            )
-            logger.warning(
-                "Failed to publish score update event (database already updated)",
-                extra={
-                    "note_id": str(attrs.note_id),
-                    "error": str(e),
-                    "error_type": error_type,
-                },
-            )
 
         rating_resource = rating_to_resource(rating)
         response = RatingSingleResponse(
@@ -458,12 +410,39 @@ async def update_rating_jsonapi(
         await db.commit()
         await db.refresh(rating)
 
+        note_result = await db.execute(select(Note).where(Note.id == rating.note_id))
+        note = note_result.scalar_one_or_none()
+
+        scoring_requested = False
+        if note and note.community_server_id:
+            try:
+                await dispatch_community_scoring(note.community_server_id)
+                scoring_requested = True
+            except Exception as e:
+                logger.warning(
+                    "Failed to dispatch DBOS rescore workflow after rating update",
+                    extra={
+                        "rating_id": str(rating_id),
+                        "note_id": str(rating.note_id),
+                        "error": str(e),
+                    },
+                )
+        elif note:
+            logger.warning(
+                "Skipping scoring dispatch: note has no community_server_id",
+                extra={
+                    "note_id": str(note.id),
+                    "rating_id": str(rating_id),
+                },
+            )
+
         logger.info(
             "Updated rating via JSON:API",
             extra={
                 "rating_id": str(rating_id),
                 "user_id": str(current_user.id),
                 "new_helpfulness_level": attrs.helpfulness_level,
+                "scoring_requested": scoring_requested,
             },
         )
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+import pyarrow as pa
 from sqlalchemy import case, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,34 +56,32 @@ async def _prefetch_community_data(
     )
     notes = notes_result.scalars().all()
 
-    ratings_data = [
+    ratings_table = pa.table(
         {
-            "id": str(r.id),
-            "note_id": str(r.note_id),
-            "rater_id": str(r.rater_id),
-            "helpfulness_level": r.helpfulness_level,
-            "created_at": r.created_at,
+            "id": [str(r.id) for r in ratings],
+            "note_id": [str(r.note_id) for r in ratings],
+            "rater_id": [str(r.rater_id) for r in ratings],
+            "helpfulness_level": [r.helpfulness_level for r in ratings],
+            "created_at": [r.created_at for r in ratings],
         }
-        for r in ratings
-    ]
+    )
 
-    notes_data = [
+    notes_table = pa.table(
         {
-            "id": str(n.id),
-            "author_id": str(n.author_id),
-            "classification": n.classification,
-            "status": n.status,
-            "created_at": n.created_at,
+            "id": [str(n.id) for n in notes],
+            "author_id": [str(n.author_id) for n in notes],
+            "classification": [n.classification for n in notes],
+            "status": [n.status for n in notes],
+            "created_at": [n.created_at for n in notes],
         }
-        for n in notes
-    ]
+    )
 
     participant_ids = sorted({str(r.rater_id) for r in ratings} | {str(n.author_id) for n in notes})
 
     return PreloadedDataProvider(
-        ratings=ratings_data,
-        notes=notes_data,
-        participants=participant_ids,
+        ratings=ratings_table,
+        notes=notes_table,
+        participants=pa.array(participant_ids),
     )
 
 
