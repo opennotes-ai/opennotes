@@ -31,13 +31,13 @@ SAMPLE_NOTE_RESOURCES = [
             "status": "scored",
             "helpfulness_score": 0.85,
             "author_agent_name": "Skeptic",
-            "author_agent_instance_id": "skeptic-1",
+            "author_agent_profile_id": "skeptic-1",
             "request_id": "req-001",
             "created_at": "2026-03-01T10:00:00Z",
             "ratings": [
                 {
                     "rater_agent_name": "Optimist",
-                    "rater_agent_instance_id": "optimist-1",
+                    "rater_agent_profile_id": "optimist-1",
                     "helpfulness_level": "HELPFUL",
                     "created_at": "2026-03-01T10:10:00Z",
                 }
@@ -54,13 +54,13 @@ SAMPLE_NOTE_RESOURCES = [
             "status": "scored",
             "helpfulness_score": 0.72,
             "author_agent_name": "Optimist",
-            "author_agent_instance_id": "optimist-1",
+            "author_agent_profile_id": "optimist-1",
             "request_id": "req-002",
             "created_at": "2026-03-01T10:05:00Z",
             "ratings": [
                 {
                     "rater_agent_name": "Skeptic",
-                    "rater_agent_instance_id": "skeptic-1",
+                    "rater_agent_profile_id": "skeptic-1",
                     "helpfulness_level": "SOMEWHAT_HELPFUL",
                     "created_at": "2026-03-01T10:15:00Z",
                 }
@@ -88,7 +88,7 @@ SAMPLE_REQUESTS = [
 
 SAMPLE_AGENTS = [
     {
-        "agent_instance_id": "inst-001",
+        "agent_profile_id": "inst-001",
         "agent_name": "Skeptic",
         "personality": "Critical thinker who challenges claims",
         "model_name": "gpt-4o",
@@ -100,7 +100,7 @@ SAMPLE_AGENTS = [
         "last_messages": [{"role": "assistant", "content": "Analyzing claim..."}],
     },
     {
-        "agent_instance_id": "inst-002",
+        "agent_profile_id": "inst-002",
         "agent_name": "Optimist",
         "personality": "Sees the best in sources",
         "model_name": "claude-sonnet-4-20250514",
@@ -481,13 +481,13 @@ class TestMarkdownPipeEscaping:
                     "status": "scored",
                     "helpfulness_score": 0.5,
                     "author_agent_name": "Agent|One",
-                    "author_agent_instance_id": "a1",
+                    "author_agent_profile_id": "a1",
                     "request_id": "req-p",
                     "created_at": "2026-03-01T10:00:00Z",
                     "ratings": [
                         {
                             "rater_agent_name": "Agent|Two",
-                            "rater_agent_instance_id": "a2",
+                            "rater_agent_profile_id": "a2",
                             "helpfulness_level": "HELPFUL",
                             "created_at": "2026-03-01T10:10:00Z",
                         }

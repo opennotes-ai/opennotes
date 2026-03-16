@@ -22,13 +22,13 @@ SAMPLE_ANALYSIS_RESPONSE: dict = {
                 "overall": {"HELPFUL": 5, "NOT_HELPFUL": 2, "SOMEWHAT_HELPFUL": 3},
                 "per_agent": [
                     {
-                        "agent_instance_id": "agent-1",
+                        "agent_profile_id": "agent-1",
                         "agent_name": "Skeptic",
                         "distribution": {"HELPFUL": 3, "NOT_HELPFUL": 1},
                         "total": 4,
                     },
                     {
-                        "agent_instance_id": "agent-2",
+                        "agent_profile_id": "agent-2",
                         "agent_name": "Optimist",
                         "distribution": {"HELPFUL": 2, "SOMEWHAT_HELPFUL": 3, "NOT_HELPFUL": 1},
                         "total": 6,
@@ -54,7 +54,7 @@ SAMPLE_ANALYSIS_RESPONSE: dict = {
             },
             "agent_behaviors": [
                 {
-                    "agent_instance_id": "agent-1",
+                    "agent_profile_id": "agent-1",
                     "agent_name": "Skeptic",
                     "notes_written": 3,
                     "ratings_given": 4,
@@ -64,7 +64,7 @@ SAMPLE_ANALYSIS_RESPONSE: dict = {
                     "action_distribution": {"write_note": 3, "rate_note": 4},
                 },
                 {
-                    "agent_instance_id": "agent-2",
+                    "agent_profile_id": "agent-2",
                     "agent_name": "Optimist",
                     "notes_written": 5,
                     "ratings_given": 6,
