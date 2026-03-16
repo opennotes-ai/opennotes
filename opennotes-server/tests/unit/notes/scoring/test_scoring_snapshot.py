@@ -512,7 +512,7 @@ class TestResolveRaterIdentities:
         assert result[rater_id_str]["personality"] == "skeptical"
 
     @pytest.mark.asyncio
-    async def test_no_community_member_returns_empty_dict(self):
+    async def test_no_matching_agent_returns_none_fields(self):
         from src.notes.scoring.analysis import _resolve_rater_identities
 
         community_id = uuid4()
@@ -522,7 +522,9 @@ class TestResolveRaterIdentities:
         mock_db.execute = AsyncMock(return_value=_mock_scalars_all([]))
 
         result = await _resolve_rater_identities([rater_id_str], community_id, mock_db)
-        assert result == {}
+        assert rater_id_str in result
+        assert result[rater_id_str]["agent_name"] is None
+        assert result[rater_id_str]["personality"] is None
 
     @pytest.mark.asyncio
     async def test_member_without_agent_instance_gets_none_fields(self):
@@ -585,18 +587,15 @@ class TestResolveNoteMetadata:
         note.status = "CURRENTLY_RATED_HELPFUL"
         note.classification = "NOT_MISLEADING"
 
-        agent_profile = MagicMock()
-        agent_profile.name = "TruthBot"
-
-        agent_instance = MagicMock()
-        agent_instance.user_profile_id = author_id
-        agent_instance.agent_profile = agent_profile
+        agent = MagicMock()
+        agent.id = author_id
+        agent.name = "TruthBot"
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(
             side_effect=[
                 _mock_scalars_all([note]),
-                _mock_scalars_all([agent_instance]),
+                _mock_scalars_all([agent]),
             ]
         )
 
@@ -626,6 +625,7 @@ class TestResolveNoteMetadata:
         mock_db.execute = AsyncMock(
             side_effect=[
                 _mock_scalars_all([note]),
+                _mock_scalars_all([]),
                 _mock_scalars_all([]),
             ]
         )

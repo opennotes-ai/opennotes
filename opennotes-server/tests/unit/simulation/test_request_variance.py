@@ -6,10 +6,11 @@ from uuid import uuid4
 import pytest
 
 
-def _make_agent_instance(profile_id=None, agent_name="TestAgent"):
+def _make_agent_instance(profile_id=None, agent_name="TestAgent", turn_count=10):
     inst = MagicMock()
     inst.id = uuid4()
     inst.user_profile_id = profile_id or uuid4()
+    inst.turn_count = turn_count
     inst.agent_profile = MagicMock()
     inst.agent_profile.name = agent_name
     return inst
