@@ -4,11 +4,14 @@ Tests for NoteStatusHistoryBuilder.
 TDD: Write failing tests first, then implement.
 """
 
+import math
 from uuid import uuid4
 
 import pandas as pd
 import pendulum
 import pytest
+
+ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 
 class TestNoteStatusHistoryBuilder:
@@ -157,6 +160,60 @@ class TestNoteStatusHistoryBuilderWithNoteData:
         result = builder.build([mock_note_data])
 
         assert result.iloc[0]["classification"] == "NOT_MISLEADING"
+
+
+class TestNoteStatusHistoryBuilderTimestamps:
+    """Tests for timestampMillisOfLatestNonNMRStatus (AC #4)."""
+
+    def test_nmr_status_gets_nan_timestamp(self):
+        from src.notes.scoring.note_status_history_builder import NoteStatusHistoryBuilder
+
+        note = {
+            "id": uuid4(),
+            "author_id": "author_1",
+            "classification": "NOT_MISLEADING",
+            "status": "NEEDS_MORE_RATINGS",
+            "created_at": pendulum.datetime(2024, 1, 15, 12, 0, 0, tz="UTC"),
+        }
+        builder = NoteStatusHistoryBuilder()
+        result = builder.build([note])
+
+        assert math.isnan(result.iloc[0]["timestampMillisOfLatestNonNMRStatus"])
+
+    def test_non_nmr_status_gets_future_timestamp_not_created_at(self):
+        from src.notes.scoring.note_status_history_builder import NoteStatusHistoryBuilder
+
+        created = pendulum.datetime(2024, 1, 15, 12, 0, 0, tz="UTC")
+        note = {
+            "id": uuid4(),
+            "author_id": "author_1",
+            "classification": "NOT_MISLEADING",
+            "status": "CURRENTLY_RATED_HELPFUL",
+            "created_at": created,
+        }
+        builder = NoteStatusHistoryBuilder()
+        result = builder.build([note])
+
+        created_millis = int(created.timestamp() * 1000)
+        ts = result.iloc[0]["timestampMillisOfLatestNonNMRStatus"]
+        assert ts > created_millis, "timestamp should be future, not created_at"
+
+    def test_non_nmr_with_explicit_scoring_time(self):
+        from src.notes.scoring.note_status_history_builder import NoteStatusHistoryBuilder
+
+        scoring_time_millis = 1_700_000_000_000
+        note = {
+            "id": uuid4(),
+            "author_id": "author_1",
+            "classification": "NOT_MISLEADING",
+            "status": "CURRENTLY_RATED_HELPFUL",
+            "created_at": pendulum.datetime(2024, 1, 15, 12, 0, 0, tz="UTC"),
+        }
+        builder = NoteStatusHistoryBuilder()
+        result = builder.build([note], scoring_time_millis=scoring_time_millis)
+
+        expected = float(scoring_time_millis + ONE_WEEK_MS)
+        assert result.iloc[0]["timestampMillisOfLatestNonNMRStatus"] == expected
 
 
 class TestNoteStatusHistoryBuilderMultipleNotes:

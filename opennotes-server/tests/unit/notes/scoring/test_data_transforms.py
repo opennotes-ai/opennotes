@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 
+ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
+
 
 class TestTransformRatings:
     def test_transforms_ratings_table_to_dataframe(self):
@@ -292,17 +294,14 @@ class TestTransformNotes:
         assert notes_df["noteAuthorParticipantId"].iloc[0] == "u1"
         assert notes_df["currentStatus"].iloc[0] == "NEEDS_MORE_RATINGS"
 
-    def test_notes_timestamp_non_nmr_status(self):
+    def test_notes_timestamp_non_nmr_status_nan_for_nmr(self):
         notes = pa.table(
             {
-                "id": ["n1", "n2"],
-                "author_id": ["u1", "u2"],
-                "classification": ["NOT_MISLEADING", "NOT_MISLEADING"],
-                "status": ["NEEDS_MORE_RATINGS", "CURRENTLY_RATED_HELPFUL"],
-                "created_at": [
-                    datetime(2025, 1, 1, tzinfo=UTC),
-                    datetime(2025, 1, 2, tzinfo=UTC),
-                ],
+                "id": ["n1"],
+                "author_id": ["u1"],
+                "classification": ["NOT_MISLEADING"],
+                "status": ["NEEDS_MORE_RATINGS"],
+                "created_at": [datetime(2025, 1, 1, tzinfo=UTC)],
             }
         )
         ratings = pa.table(
@@ -314,7 +313,7 @@ class TestTransformNotes:
                 "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
             }
         )
-        participants = pa.array(["u1", "u2"])
+        participants = pa.array(["u1"])
 
         from src.notes.scoring.data_transforms import transform_community_data
 
@@ -322,11 +321,66 @@ class TestTransformNotes:
 
         assert np.isnan(notes_df["timestampMillisOfLatestNonNMRStatus"].iloc[0])
 
-        created_millis = int(datetime(2025, 1, 2, tzinfo=UTC).timestamp() * 1000)
-        one_week_ms = 7 * 24 * 60 * 60 * 1000
-        assert (
-            notes_df["timestampMillisOfLatestNonNMRStatus"].iloc[1] == created_millis + one_week_ms
+    def test_notes_timestamp_non_nmr_is_future_not_created_at(self):
+        created = datetime(2025, 1, 2, tzinfo=UTC)
+        notes = pa.table(
+            {
+                "id": ["n1"],
+                "author_id": ["u1"],
+                "classification": ["NOT_MISLEADING"],
+                "status": ["CURRENTLY_RATED_HELPFUL"],
+                "created_at": [created],
+            }
         )
+        ratings = pa.table(
+            {
+                "id": pa.array([], type=pa.string()),
+                "note_id": pa.array([], type=pa.string()),
+                "rater_id": pa.array([], type=pa.string()),
+                "helpfulness_level": pa.array([], type=pa.string()),
+                "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+            }
+        )
+        participants = pa.array(["u1"])
+
+        from src.notes.scoring.data_transforms import transform_community_data
+
+        _, notes_df, _ = transform_community_data(ratings, notes, participants)
+
+        created_millis = int(created.timestamp() * 1000)
+        ts = notes_df["timestampMillisOfLatestNonNMRStatus"].iloc[0]
+        assert ts > created_millis, "timestamp should be in the future, not equal to created_at"
+
+    def test_notes_timestamp_non_nmr_with_explicit_scoring_time(self):
+        scoring_time_millis = 1_700_000_000_000
+        notes = pa.table(
+            {
+                "id": ["n1"],
+                "author_id": ["u1"],
+                "classification": ["NOT_MISLEADING"],
+                "status": ["CURRENTLY_RATED_HELPFUL"],
+                "created_at": [datetime(2025, 1, 2, tzinfo=UTC)],
+            }
+        )
+        ratings = pa.table(
+            {
+                "id": pa.array([], type=pa.string()),
+                "note_id": pa.array([], type=pa.string()),
+                "rater_id": pa.array([], type=pa.string()),
+                "helpfulness_level": pa.array([], type=pa.string()),
+                "created_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+            }
+        )
+        participants = pa.array(["u1"])
+
+        from src.notes.scoring.data_transforms import transform_community_data
+
+        _, notes_df, _ = transform_community_data(
+            ratings, notes, participants, scoring_time_millis=scoring_time_millis
+        )
+
+        expected = float(scoring_time_millis + ONE_WEEK_MS)
+        assert notes_df["timestampMillisOfLatestNonNMRStatus"].iloc[0] == expected
 
     def test_notes_locked_status_is_none(self):
         notes = pa.table(

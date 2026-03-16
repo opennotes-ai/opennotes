@@ -1,7 +1,11 @@
+from datetime import UTC, datetime
+
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
+
+ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 HELPFULNESS_LEVEL_MAP: dict[str, float] = {
     "HELPFUL": 1.0,
@@ -67,9 +71,10 @@ def transform_community_data(
     ratings: pa.Table,
     notes: pa.Table,
     participants: pa.Array,
+    scoring_time_millis: int | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     ratings_df = _transform_ratings(ratings)
-    notes_df = _transform_notes(notes)
+    notes_df = _transform_notes(notes, scoring_time_millis=scoring_time_millis)
     enrollment_df = _transform_participants(participants)
     return ratings_df, notes_df, enrollment_df
 
@@ -111,7 +116,7 @@ def _transform_ratings(ratings: pa.Table) -> pd.DataFrame:
     return pa.table(out_columns).to_pandas()
 
 
-def _transform_notes(notes: pa.Table) -> pd.DataFrame:
+def _transform_notes(notes: pa.Table, scoring_time_millis: int | None = None) -> pd.DataFrame:
     n = notes.num_rows
     if n == 0:
         columns = [
@@ -128,11 +133,13 @@ def _transform_notes(notes: pa.Table) -> pd.DataFrame:
     millis = _timestamps_to_millis(notes.column("created_at"))
     statuses = notes.column("status")
 
+    if scoring_time_millis is None:
+        scoring_time_millis = int(datetime.now(UTC).timestamp() * 1000)
+    future_ts = pa.scalar(float(scoring_time_millis + ONE_WEEK_MS))
+
     is_nmr = pc.equal(statuses, "NEEDS_MORE_RATINGS")
-    one_week_ms = 7 * 24 * 60 * 60 * 1000
-    future_millis = pc.cast(pc.add(millis, one_week_ms), pa.float64())
     nan_val = pa.scalar(float("nan"))
-    ts_non_nmr = pc.if_else(is_nmr, nan_val, future_millis)
+    ts_non_nmr = pc.if_else(is_nmr, nan_val, future_ts)
 
     out_columns = {
         "noteId": notes.column("id"),
