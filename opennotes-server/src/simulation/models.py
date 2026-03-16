@@ -39,6 +39,7 @@ class SimAgent(Base, TimestampMixin):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     personality: Mapped[str] = mapped_column(Text, nullable=False)
+    short_description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     model_params: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     tool_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

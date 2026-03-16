@@ -30,6 +30,7 @@ class AgentBehaviorData:
         helpfulness_trend (list[str]):
         action_distribution (AgentBehaviorDataActionDistribution):
         personality (str | Unset):  Default: ''.
+        short_description (None | str | Unset):
     """
 
     agent_instance_id: str
@@ -41,6 +42,7 @@ class AgentBehaviorData:
     helpfulness_trend: list[str]
     action_distribution: AgentBehaviorDataActionDistribution
     personality: str | Unset = ""
+    short_description: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -62,6 +64,12 @@ class AgentBehaviorData:
 
         personality = self.personality
 
+        short_description: None | str | Unset
+        if isinstance(self.short_description, Unset):
+            short_description = UNSET
+        else:
+            short_description = self.short_description
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -78,6 +86,8 @@ class AgentBehaviorData:
         )
         if personality is not UNSET:
             field_dict["personality"] = personality
+        if short_description is not UNSET:
+            field_dict["short_description"] = short_description
 
         return field_dict
 
@@ -108,6 +118,15 @@ class AgentBehaviorData:
 
         personality = d.pop("personality", UNSET)
 
+        def _parse_short_description(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        short_description = _parse_short_description(d.pop("short_description", UNSET))
+
         agent_behavior_data = cls(
             agent_instance_id=agent_instance_id,
             agent_name=agent_name,
@@ -118,6 +137,7 @@ class AgentBehaviorData:
             helpfulness_trend=helpfulness_trend,
             action_distribution=action_distribution,
             personality=personality,
+            short_description=short_description,
         )
 
         agent_behavior_data.additional_properties = d

@@ -98,6 +98,55 @@ class TestSimAgentsJSONAPICreate:
             response = await client.post("/api/v2/sim-agents", json=request_body)
             assert response.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_create_sim_agent_jsonapi_with_short_description(self, admin_auth_client):
+        unique = uuid4().hex[:8]
+        request_body = {
+            "data": {
+                "type": "sim-agents",
+                "attributes": {
+                    "name": f"ShortDescAgent_{unique}",
+                    "personality": "A scientist who values evidence",
+                    "model_name": "openai:gpt-4o",
+                    "short_description": "The Scientist",
+                },
+            }
+        }
+
+        response = await admin_auth_client.post("/api/v2/sim-agents", json=request_body)
+
+        assert response.status_code == 201, (
+            f"Expected 201, got {response.status_code}: {response.text}"
+        )
+
+        data = response.json()
+        attrs = data["data"]["attributes"]
+        assert attrs["short_description"] == "The Scientist"
+
+        created_id = data["data"]["id"]
+        get_response = await admin_auth_client.get(f"/api/v2/sim-agents/{created_id}")
+        assert get_response.status_code == 200
+        get_attrs = get_response.json()["data"]["attributes"]
+        assert get_attrs["short_description"] == "The Scientist"
+
+    @pytest.mark.asyncio
+    async def test_create_sim_agent_without_short_description(self, admin_auth_client):
+        unique = uuid4().hex[:8]
+        request_body = {
+            "data": {
+                "type": "sim-agents",
+                "attributes": {
+                    "name": f"NoDescAgent_{unique}",
+                    "personality": "Test persona",
+                    "model_name": "openai:gpt-4o",
+                },
+            }
+        }
+        response = await admin_auth_client.post("/api/v2/sim-agents", json=request_body)
+        assert response.status_code == 201
+        data = response.json()
+        assert data["data"]["attributes"]["short_description"] is None
+
 
 class TestSimAgentsJSONAPIList:
     @pytest.mark.asyncio

@@ -12337,6 +12337,17 @@
             "title": "Personality",
             "default": ""
           },
+          "short_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Description"
+          },
           "notes_written": {
             "type": "integer",
             "title": "Notes Written"
@@ -12394,6 +12405,17 @@
           "personality": {
             "type": "string",
             "title": "Personality"
+          },
+          "short_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Description"
           },
           "model_name": {
             "type": "string",
@@ -17945,6 +17967,17 @@
               }
             ],
             "title": "Author Agent Name"
+          },
+          "author_short_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Short Description"
           }
         },
         "type": "object",
@@ -20016,6 +20049,17 @@
             "type": "string",
             "title": "Agent Name"
           },
+          "short_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Description"
+          },
           "distribution": {
             "additionalProperties": {
               "type": "integer"
@@ -21113,6 +21157,17 @@
               }
             ],
             "title": "Personality"
+          },
+          "short_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Description"
           },
           "intercept": {
             "type": "number",
@@ -23312,6 +23367,17 @@
             "type": "string",
             "title": "Name"
           },
+          "short_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Description"
+          },
           "personality": {
             "type": "string",
             "title": "Personality"
@@ -23400,6 +23466,18 @@
             "maxLength": 255,
             "minLength": 1,
             "title": "Name"
+          },
+          "short_description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Description"
           },
           "personality": {
             "type": "string",
@@ -23616,6 +23694,18 @@
               }
             ],
             "title": "Name"
+          },
+          "short_description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Description"
           },
           "personality": {
             "anyOf": [

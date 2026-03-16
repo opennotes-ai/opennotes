@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 from rich.console import Console
@@ -59,6 +59,7 @@ def sim_agent_list(ctx: click.Context, page: int, page_size: int) -> None:
     table = Table(show_header=True, header_style="bold")
     table.add_column("ID")
     table.add_column("Name", width=25)
+    table.add_column("Short Desc", width=20)
     table.add_column("Model", width=30)
     table.add_column("Memory Strategy", width=20)
     table.add_column("Created At", width=20)
@@ -72,6 +73,7 @@ def sim_agent_list(ctx: click.Context, page: int, page_size: int) -> None:
         table.add_row(
             format_id(str(item.get("id", "N/A")), cli_ctx.use_huuid),
             str(attrs.get("name", "N/A")),
+            str(attrs.get("short_description", "")),
             str(model_name),
             str(attrs.get("memory_compaction_strategy", "N/A")),
             str(created),
@@ -118,6 +120,7 @@ def sim_agent_get(ctx: click.Context, agent_id: str) -> None:
     panel_content = (
         f"[bold]ID:[/bold] {format_id(raw_id, cli_ctx.use_huuid)}\n"
         f"[bold]Name:[/bold] {attrs.get('name', 'N/A')}\n"
+        f"[bold]Short Description:[/bold] {attrs.get('short_description', '')}\n"
         f"[bold]Model:[/bold] {model_name_val}\n"
         f"[bold]Memory Strategy:[/bold] {attrs.get('memory_compaction_strategy', 'N/A')}"
     )
@@ -163,6 +166,7 @@ def _display_agent(result: dict, cli_ctx: CliContext) -> None:
     panel_content = (
         f"[bold]ID:[/bold] {format_id(raw_id, cli_ctx.use_huuid)}\n"
         f"[bold]Name:[/bold] {attrs.get('name', 'N/A')}\n"
+        f"[bold]Short Description:[/bold] {attrs.get('short_description', '')}\n"
         f"[bold]Model:[/bold] {model_name_val}\n"
         f"[bold]Memory Strategy:[/bold] {attrs.get('memory_compaction_strategy', 'N/A')}"
     )
@@ -207,19 +211,23 @@ def _parse_json_option(value: str | None, name: str) -> dict | None:
 
 @sim_agent.command("create")
 @click.option("--name", required=True, help="Agent name.")
+@click.option("--short-description", default=None, help="Short description / archetype label.")
 @click.option(
-    "--personality", required=True,
+    "--personality",
+    required=True,
     help="Personality text (use @filename to read from file).",
 )
 @click.option("--model-name", required=True, help="LLM model name.")
 @click.option(
-    "--memory-strategy", default="sliding_window",
+    "--memory-strategy",
+    default="sliding_window",
     help="Memory compaction strategy.",
 )
 @click.pass_context
 def sim_agent_create(
     ctx: click.Context,
     name: str,
+    short_description: str | None,
     personality: str,
     model_name: str,
     memory_strategy: str,
@@ -239,15 +247,19 @@ def sim_agent_create(
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
     headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
 
+    create_attrs: dict[str, Any] = {
+        "name": name,
+        "personality": personality,
+        "model_name": model_name,
+        "memory_compaction_strategy": memory_strategy,
+    }
+    if short_description is not None:
+        create_attrs["short_description"] = short_description
+
     payload = {
         "data": {
             "type": "sim-agents",
-            "attributes": {
-                "name": name,
-                "personality": personality,
-                "model_name": model_name,
-                "memory_compaction_strategy": memory_strategy,
-            },
+            "attributes": create_attrs,
         }
     }
 
@@ -270,27 +282,34 @@ def sim_agent_create(
 @sim_agent.command("update")
 @click.argument("agent_id", required=False, default=None)
 @click.option("--name", default=None, help="Agent name.")
+@click.option("--short-description", default=None, help="Short description / archetype label.")
 @click.option(
-    "--personality", default=None,
+    "--personality",
+    default=None,
     help="Personality text (use @filename to read from file).",
 )
 @click.option("--model-name", default=None, help="LLM model name (provider:model).")
 @click.option("--model-params", default=None, help="Model parameters as JSON string.")
 @click.option("--tool-config", default=None, help="Tool configuration as JSON string.")
 @click.option(
-    "--memory-compaction-strategy", default=None,
+    "--memory-compaction-strategy",
+    default=None,
     help="Memory compaction strategy.",
 )
 @click.option(
-    "--memory-compaction-config", default=None,
+    "--memory-compaction-config",
+    default=None,
     help="Memory compaction config as JSON string.",
 )
-@click.option("--all", "update_all", is_flag=True, default=False, help="Update all non-deleted agents.")
+@click.option(
+    "--all", "update_all", is_flag=True, default=False, help="Update all non-deleted agents."
+)
 @click.pass_context
 def sim_agent_update(
     ctx: click.Context,
     agent_id: str | None,
     name: str | None,
+    short_description: str | None,
     personality: str | None,
     model_name: str | None,
     model_params: str | None,
@@ -326,6 +345,8 @@ def sim_agent_update(
     attributes: dict = {}
     if name is not None:
         attributes["name"] = name
+    if short_description is not None:
+        attributes["short_description"] = short_description
     if personality is not None:
         attributes["personality"] = personality
     if model_name is not None:

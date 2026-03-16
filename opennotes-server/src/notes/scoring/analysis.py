@@ -64,7 +64,7 @@ async def _resolve_rater_identities(
         try:
             uid = UUID(rid)
         except (ValueError, AttributeError):
-            identity_map[rid] = {"agent_name": None, "personality": None}
+            identity_map[rid] = {"agent_name": None, "personality": None, "short_description": None}
             continue
 
         inst = instance_by_profile.get(uid)
@@ -72,9 +72,10 @@ async def _resolve_rater_identities(
             identity_map[rid] = {
                 "agent_name": inst.agent_profile.name,
                 "personality": inst.agent_profile.personality,
+                "short_description": inst.agent_profile.short_description,
             }
         else:
-            identity_map[rid] = {"agent_name": None, "personality": None}
+            identity_map[rid] = {"agent_name": None, "personality": None, "short_description": None}
 
     return identity_map
 
@@ -114,6 +115,7 @@ async def _resolve_note_metadata(
             "status": note.status,
             "classification": note.classification,
             "author_agent_name": None,
+            "author_short_description": None,
         }
         author_ids.append(note.author_id)
         note_authors[nid_str] = note.author_id
@@ -124,15 +126,19 @@ async def _resolve_note_metadata(
             .where(SimAgentInstance.user_profile_id.in_(author_ids))
             .options(selectinload(SimAgentInstance.agent_profile))
         )
-        author_agent_map: dict[UUID, str] = {}
+        author_agent_map: dict[UUID, dict[str, str | None]] = {}
         for inst in instances_result.scalars().all():
             if inst.agent_profile:
-                author_agent_map[inst.user_profile_id] = inst.agent_profile.name
+                author_agent_map[inst.user_profile_id] = {
+                    "name": inst.agent_profile.name,
+                    "short_description": inst.agent_profile.short_description,
+                }
 
         for nid_str, author_id in note_authors.items():
-            agent_name = author_agent_map.get(author_id)
-            if agent_name and nid_str in note_map:
-                note_map[nid_str]["author_agent_name"] = agent_name
+            agent_info = author_agent_map.get(author_id)
+            if agent_info and nid_str in note_map:
+                note_map[nid_str]["author_agent_name"] = agent_info["name"]
+                note_map[nid_str]["author_short_description"] = agent_info.get("short_description")
 
     return note_map
 
@@ -158,12 +164,15 @@ async def compute_scoring_factor_analysis(
     rater_factors = []
     for rf in snapshot.rater_factors:
         rid = rf.get("rater_id", "")
-        identity = rater_identities.get(rid, {"agent_name": None, "personality": None})
+        identity = rater_identities.get(
+            rid, {"agent_name": None, "personality": None, "short_description": None}
+        )
         rater_factors.append(
             RaterFactorData(
                 rater_id=rid,
                 agent_name=identity.get("agent_name"),
                 personality=identity.get("personality"),
+                short_description=identity.get("short_description"),
                 intercept=rf.get("intercept") or 0.0,
                 factor1=rf.get("factor1") or 0.0,
             )
@@ -173,7 +182,13 @@ async def compute_scoring_factor_analysis(
     for nf in snapshot.note_factors:
         nid = nf.get("note_id", "")
         meta = note_metadata.get(
-            nid, {"status": None, "classification": None, "author_agent_name": None}
+            nid,
+            {
+                "status": None,
+                "classification": None,
+                "author_agent_name": None,
+                "author_short_description": None,
+            },
         )
         note_factors.append(
             NoteFactorData(
@@ -183,6 +198,7 @@ async def compute_scoring_factor_analysis(
                 status=nf.get("status") or meta.get("status"),
                 classification=meta.get("classification"),
                 author_agent_name=meta.get("author_agent_name"),
+                author_short_description=meta.get("author_short_description"),
             )
         )
 

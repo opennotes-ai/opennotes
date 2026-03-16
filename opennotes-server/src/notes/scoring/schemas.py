@@ -19,6 +19,7 @@ class RaterFactorData(SQLAlchemySchema):
     rater_id: str
     agent_name: str | None
     personality: str | None
+    short_description: str | None = None
     intercept: SafeFloat = 0.0
     factor1: SafeFloat = 0.0
 
@@ -30,6 +31,7 @@ class NoteFactorData(SQLAlchemySchema):
     status: str | None
     classification: str | None
     author_agent_name: str | None
+    author_short_description: str | None = None
 
 
 class ScoringAnalysisAttributes(SQLAlchemySchema):

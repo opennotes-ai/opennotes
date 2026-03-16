@@ -37,6 +37,7 @@ class ModelNameResponse(SQLAlchemySchema):
 
 class SimAgentBase(StrictInputSchema):
     name: str = Field(..., max_length=255)
+    short_description: str | None = Field(default=None, max_length=255)
     personality: str
     model_name: str = Field(..., max_length=100)
     model_params: dict[str, Any] | None = None
@@ -56,6 +57,7 @@ class SimAgentCreate(SimAgentBase):
 
 class SimAgentUpdate(StrictInputSchema):
     name: str | None = Field(default=None, max_length=255)
+    short_description: str | None = Field(default=None, max_length=255)
     personality: str | None = None
     model_name: str | None = Field(default=None, max_length=100)
     model_params: dict[str, Any] | None = None
@@ -131,6 +133,7 @@ class SimAgentAction(BaseModel):
 class SimAgentResponse(TimestampSchema):
     id: UUID
     name: str
+    short_description: str | None = None
     personality: str
     model_name: ModelNameResponse
     model_params: dict[str, Any] | None = None
@@ -237,6 +240,7 @@ class PlaygroundNoteRequestJobResponse(BaseModel):
 class PerAgentRatingData(SQLAlchemySchema):
     agent_instance_id: str
     agent_name: str
+    short_description: str | None = None
     distribution: dict[str, int]
     total: int
 
@@ -269,6 +273,7 @@ class AgentBehaviorData(SQLAlchemySchema):
     agent_instance_id: str
     agent_name: str
     personality: str = ""
+    short_description: str | None = None
     notes_written: int
     ratings_given: int
     turn_count: int
@@ -343,6 +348,7 @@ class AgentProfileData(SQLAlchemySchema):
     agent_instance_id: str
     agent_name: str
     personality: str
+    short_description: str | None = None
     model_name: str
     memory_compaction_strategy: str
     turn_count: int

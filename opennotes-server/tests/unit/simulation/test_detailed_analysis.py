@@ -12,6 +12,7 @@ def _make_agent_instance(
     profile_id: UUID | None = None,
     agent_name: str = "TestAgent",
     personality: str = "A default personality",
+    short_description: str | None = None,
     turn_count: int = 0,
     state: str = "active",
 ) -> MagicMock:
@@ -21,6 +22,7 @@ def _make_agent_instance(
     inst.agent_profile = MagicMock()
     inst.agent_profile.name = agent_name
     inst.agent_profile.personality = personality
+    inst.agent_profile.short_description = short_description
     inst.turn_count = turn_count
     inst.state = state
     return inst
