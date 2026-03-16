@@ -74,9 +74,14 @@ async def compute_agent_profiles(
     )
     memories_by_instance = {mem.agent_instance_id: mem for mem in memories_result.scalars().all()}
 
+    grouped = group_instances_by_profile(instances)
+
     profiles = []
-    for inst in instances:
-        memory = memories_by_instance.get(inst.id)
+    for profile_id, group in grouped.items():
+        latest = max(group, key=lambda i: i.turn_count)
+        total_turns = sum(i.turn_count for i in group)
+
+        memory = memories_by_instance.get(latest.id)
         last_messages: list[dict] = []
         token_count = 0
         recent_actions: list = []
@@ -91,17 +96,19 @@ async def compute_agent_profiles(
 
         profiles.append(
             AgentProfileData(
-                agent_profile_id=str(inst.agent_profile_id),
-                agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
-                personality=inst.agent_profile.personality if inst.agent_profile else "",
-                short_description=inst.agent_profile.short_description
-                if inst.agent_profile
+                agent_profile_id=str(profile_id),
+                agent_name=latest.agent_profile.name if latest.agent_profile else "Unknown",
+                personality=latest.agent_profile.personality if latest.agent_profile else "",
+                short_description=latest.agent_profile.short_description
+                if latest.agent_profile
                 else None,
-                model_name=inst.agent_profile.model_name if inst.agent_profile else "",
+                model_name=latest.agent_profile.model_name if latest.agent_profile else "",
                 memory_compaction_strategy=compaction_strategy
-                or (inst.agent_profile.memory_compaction_strategy if inst.agent_profile else ""),
-                turn_count=inst.turn_count,
-                state=inst.state,
+                or (
+                    latest.agent_profile.memory_compaction_strategy if latest.agent_profile else ""
+                ),
+                turn_count=total_turns,
+                state=latest.state,
                 token_count=token_count,
                 recent_actions=recent_actions,
                 last_messages=last_messages,
@@ -116,7 +123,8 @@ async def compute_rating_distribution(
     instances: list[SimAgentInstance],
     db: AsyncSession,
 ) -> RatingDistributionData:
-    user_profile_ids = [inst.user_profile_id for inst in instances]
+    active_instances = [inst for inst in instances if inst.turn_count > 0]
+    user_profile_ids = [inst.user_profile_id for inst in active_instances]
 
     if not user_profile_ids:
         return RatingDistributionData(
@@ -124,6 +132,8 @@ async def compute_rating_distribution(
             per_agent=[],
             total_ratings=0,
         )
+
+    aggregation_map = build_profile_aggregation_map(active_instances)
 
     overall_result = await db.execute(
         select(Rating.helpfulness_level, func.count(Rating.id))
@@ -138,29 +148,30 @@ async def compute_rating_distribution(
         .group_by(Rating.rater_id, Rating.helpfulness_level)
     )
 
-    profile_to_instance: dict[UUID, SimAgentInstance] = {
-        inst.user_profile_id: inst for inst in instances
-    }
-
-    agent_distributions: dict[UUID, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    profile_distributions: dict[UUID, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for rater_id, level, count in per_agent_result.all():
-        agent_distributions[rater_id][level] = count
+        agent_profile_id = aggregation_map.get(rater_id)
+        if agent_profile_id:
+            profile_distributions[agent_profile_id][level] += count
+
+    profile_name_map: dict[UUID, str] = {}
+    for inst in active_instances:
+        if inst.agent_profile_id not in profile_name_map:
+            profile_name_map[inst.agent_profile_id] = (
+                inst.agent_profile.name if inst.agent_profile else "Unknown"
+            )
 
     per_agent = []
-    for profile_id, dist in agent_distributions.items():
-        inst = profile_to_instance.get(profile_id)
-        if inst:
-            per_agent.append(
-                PerAgentRatingData(
-                    agent_profile_id=str(inst.agent_profile_id),
-                    agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
-                    short_description=inst.agent_profile.short_description
-                    if inst.agent_profile
-                    else None,
-                    distribution=dict(dist),
-                    total=sum(dist.values()),
-                )
+    for agent_profile_id, dist in profile_distributions.items():
+        per_agent.append(
+            PerAgentRatingData(
+                agent_profile_id=str(agent_profile_id),
+                agent_name=profile_name_map.get(agent_profile_id, "Unknown"),
+                short_description=None,
+                distribution=dict(dist),
+                total=sum(dist.values()),
             )
+        )
 
     total_ratings = sum(overall.values())
 
@@ -175,7 +186,7 @@ async def compute_consensus_metrics(
     instances: list[SimAgentInstance],
     db: AsyncSession,
 ) -> ConsensusMetricsData:
-    user_profile_ids = [inst.user_profile_id for inst in instances]
+    user_profile_ids = [inst.user_profile_id for inst in instances if inst.turn_count > 0]
 
     if not user_profile_ids:
         return ConsensusMetricsData(
@@ -289,10 +300,11 @@ async def compute_agent_behavior_metrics(
     instances: list[SimAgentInstance],
     db: AsyncSession,
 ) -> list[AgentBehaviorData]:
-    if not instances:
+    grouped = group_instances_by_profile(instances)
+    if not grouped:
         return []
 
-    user_profile_ids = [inst.user_profile_id for inst in instances]
+    user_profile_ids = [inst.user_profile_id for inst in instances if inst.turn_count > 0]
 
     notes_count_result = await db.execute(
         select(Note.author_id, func.count(Note.id))
@@ -320,7 +332,8 @@ async def compute_agent_behavior_metrics(
     for rater_id, level in ratings_trend_result.all():
         trends[rater_id].append(level)
 
-    instance_ids = [inst.id for inst in instances]
+    active_instances = [inst for inst in instances if inst.turn_count > 0]
+    instance_ids = [inst.id for inst in active_instances]
     memories_result = await db.execute(
         select(SimAgentMemory)
         .where(SimAgentMemory.agent_instance_id.in_(instance_ids))
@@ -331,32 +344,40 @@ async def compute_agent_behavior_metrics(
     }
 
     behaviors = []
-    for inst in instances:
-        memory = memories_by_instance.get(inst.id)
-        action_dist: dict[str, int] = {}
-        if memory and memory.recent_actions:
-            action_counter: Counter[str] = Counter()
-            for action in memory.recent_actions:
-                if isinstance(action, str):
-                    action_counter[action] += 1
-                elif isinstance(action, dict) and "action_type" in action:
-                    action_counter[action["action_type"]] += 1
-            action_dist = dict(action_counter)
+    for profile_id, group in grouped.items():
+        latest = max(group, key=lambda i: i.turn_count)
+        total_notes = sum(notes_by_author.get(i.user_profile_id, 0) for i in group)
+        total_ratings = sum(ratings_by_rater.get(i.user_profile_id, 0) for i in group)
+        total_turns = sum(i.turn_count for i in group)
+
+        merged_trend: list[str] = []
+        for inst in group:
+            merged_trend.extend(trends.get(inst.user_profile_id, []))
+
+        merged_actions: Counter[str] = Counter()
+        for inst in group:
+            memory = memories_by_instance.get(inst.id)
+            if memory and memory.recent_actions:
+                for action in memory.recent_actions:
+                    if isinstance(action, str):
+                        merged_actions[action] += 1
+                    elif isinstance(action, dict) and "action_type" in action:
+                        merged_actions[action["action_type"]] += 1
 
         behaviors.append(
             AgentBehaviorData(
-                agent_profile_id=str(inst.agent_profile_id),
-                agent_name=inst.agent_profile.name if inst.agent_profile else "Unknown",
-                personality=inst.agent_profile.personality if inst.agent_profile else "",
-                short_description=inst.agent_profile.short_description
-                if inst.agent_profile
+                agent_profile_id=str(profile_id),
+                agent_name=latest.agent_profile.name if latest.agent_profile else "Unknown",
+                personality=latest.agent_profile.personality if latest.agent_profile else "",
+                short_description=latest.agent_profile.short_description
+                if latest.agent_profile
                 else None,
-                notes_written=notes_by_author.get(inst.user_profile_id, 0),
-                ratings_given=ratings_by_rater.get(inst.user_profile_id, 0),
-                turn_count=inst.turn_count,
-                state=inst.state,
-                helpfulness_trend=trends.get(inst.user_profile_id, []),
-                action_distribution=action_dist,
+                notes_written=total_notes,
+                ratings_given=total_ratings,
+                turn_count=total_turns,
+                state=latest.state,
+                helpfulness_trend=merged_trend,
+                action_distribution=dict(merged_actions),
             )
         )
 
@@ -367,7 +388,7 @@ async def compute_note_quality(
     instances: list[SimAgentInstance],
     db: AsyncSession,
 ) -> NoteQualityData:
-    user_profile_ids = [inst.user_profile_id for inst in instances]
+    user_profile_ids = [inst.user_profile_id for inst in instances if inst.turn_count > 0]
 
     if not user_profile_ids:
         return NoteQualityData(
@@ -513,7 +534,7 @@ async def compute_detailed_notes(
                 rater_name = (
                     rater_inst.agent_profile.name if rater_inst.agent_profile else "Unknown"
                 )
-                rater_inst_id = str(rater_inst.id)
+                rater_inst_id = str(rater_inst.agent_profile_id)
 
             rating_data_list.append(
                 DetailedRatingData(
@@ -574,7 +595,7 @@ async def compute_request_variance(
     db: AsyncSession,
 ) -> list[DetailedRequestData]:
     instances = await _get_agent_instances(simulation_run_id, db)
-    user_profile_ids = [inst.user_profile_id for inst in instances]
+    user_profile_ids = [inst.user_profile_id for inst in instances if inst.turn_count > 0]
 
     if not user_profile_ids:
         return []
