@@ -5,6 +5,7 @@ export const SECTIONS = [
   { id: "consensus-metrics", label: "Consensus Metrics" },
   { id: "scoring-coverage", label: "Scoring Coverage" },
   { id: "agent-behaviors", label: "Agent Behaviors" },
+  { id: "charts-timelines", label: "Charts & Timelines" },
   { id: "per-note-breakdown", label: "Per-Note Breakdown" },
 ] as const;
 

@@ -24,6 +24,8 @@ from src.simulation.schemas import (
     PerAgentRatingData,
     RatingDistributionData,
     ScoringCoverageData,
+    TimelineAttributes,
+    TimelineBucketData,
 )
 from src.simulation.scoring_integration import get_scoring_metrics
 
@@ -619,3 +621,75 @@ async def compute_request_variance(
 
     results.sort(key=lambda r: r.variance_score, reverse=True)
     return results
+
+
+async def compute_timeline(
+    simulation_run_id: UUID,
+    db: AsyncSession,
+    bucket_size: str = "auto",
+) -> TimelineAttributes:
+    instances = await _get_agent_instances(simulation_run_id, db)
+    user_profile_ids = [i.user_profile_id for i in instances]
+
+    if not user_profile_ids:
+        return TimelineAttributes(
+            bucket_size=bucket_size, buckets=[], total_notes=0, total_ratings=0
+        )
+
+    run_result = await db.execute(
+        select(SimulationRun).where(SimulationRun.id == simulation_run_id)
+    )
+    run = run_result.scalar_one()
+
+    if bucket_size == "auto":
+        duration = (run.completed_at or run.updated_at or run.created_at) - run.created_at
+        bucket_size = "minute" if duration.total_seconds() < 3600 else "hour"
+
+    note_trunc = func.date_trunc(bucket_size, Note.created_at)
+    note_rows = await db.execute(
+        select(
+            note_trunc.label("bucket"),
+            Note.status,
+            func.count().label("cnt"),
+        )
+        .where(Note.author_id.in_(user_profile_ids))
+        .where(Note.deleted_at.is_(None))
+        .group_by("bucket", Note.status)
+        .order_by("bucket")
+    )
+
+    rating_trunc = func.date_trunc(bucket_size, Rating.created_at)
+    rating_rows = await db.execute(
+        select(
+            rating_trunc.label("bucket"),
+            Rating.helpfulness_level,
+            func.count().label("cnt"),
+        )
+        .where(Rating.rater_id.in_(user_profile_ids))
+        .group_by("bucket", Rating.helpfulness_level)
+        .order_by("bucket")
+    )
+
+    buckets_map: dict[str, TimelineBucketData] = {}
+    total_notes = 0
+    for row in note_rows:
+        ts = row.bucket.isoformat()
+        if ts not in buckets_map:
+            buckets_map[ts] = TimelineBucketData(timestamp=ts)
+        buckets_map[ts].notes_by_status[row.status] = row.cnt
+        total_notes += row.cnt
+
+    total_ratings = 0
+    for row in rating_rows:
+        ts = row.bucket.isoformat()
+        if ts not in buckets_map:
+            buckets_map[ts] = TimelineBucketData(timestamp=ts)
+        buckets_map[ts].ratings_by_level[row.helpfulness_level] = row.cnt
+        total_ratings += row.cnt
+
+    return TimelineAttributes(
+        bucket_size=bucket_size,
+        buckets=sorted(buckets_map.values(), key=lambda b: b.timestamp),
+        total_notes=total_notes,
+        total_ratings=total_ratings,
+    )

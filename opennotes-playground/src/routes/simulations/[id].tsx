@@ -5,6 +5,7 @@ import {
   getSimulation,
   getSimulationAnalysis,
   getSimulationDetailedAnalysis,
+  getSimulationTimeline,
 } from "~/lib/api-client.server";
 import { createClient } from "~/lib/supabase-server";
 import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
@@ -20,6 +21,7 @@ const LazyAnalysisSummary = lazy(() => import("~/components/AnalysisSummary"));
 const LazyMetricsDisplay = lazy(() => import("~/components/MetricsDisplay"));
 const LazyAgentProfiles = lazy(() => import("~/components/AgentProfiles"));
 const LazyNoteDetails = lazy(() => import("~/components/NoteDetails"));
+const LazyChartsTimelines = lazy(() => import("~/components/ChartsTimelines"));
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 
@@ -114,6 +116,16 @@ const fetchDetailedAnalysis = query(async (
   }
 }, "detailed-analysis");
 
+const fetchTimeline = query(async (id: string) => {
+  "use server";
+  try {
+    return await getSimulationTimeline(id);
+  } catch (error) {
+    console.error("Failed to fetch timeline:", error);
+    return null;
+  }
+}, "timeline");
+
 function isError(result: unknown): result is SimulationError {
   return result != null && typeof result === "object" && "_error" in result;
 }
@@ -153,6 +165,7 @@ export default function SimulationDetailPage() {
   const params = useParams();
   const simulation = createAsync(() => fetchSimulation(params.id!));
   const analysis = createAsync(() => fetchAnalysis(params.id!));
+  const timeline = createAsync(() => fetchTimeline(params.id!));
   const [pageSize, setPageSize] = createSignal(10);
   const [notesPage, setNotesPage] = createSignal(1);
   const [sortBy, setSortBy] = createSignal("count");
@@ -319,6 +332,25 @@ export default function SimulationDetailPage() {
                       }}
                     </Show>
                   </Suspense>
+
+                  <Show when={loadedSections().has("charts-timelines")}>
+                    <Suspense fallback={<SectionSkeleton />}>
+                      <Show when={timeline()} keyed>
+                        {(timelineResponse) => {
+                          const attrs = timelineResponse.data.attributes;
+                          return (
+                            <div class="mt-8 border-t border-border pt-8">
+                              <LazyChartsTimelines
+                                buckets={attrs.buckets}
+                                totalNotes={attrs.total_notes}
+                                totalRatings={attrs.total_ratings}
+                              />
+                            </div>
+                          );
+                        }}
+                      </Show>
+                    </Suspense>
+                  </Show>
 
                   <Show when={loadedSections().has("per-note-breakdown")}>
                     <Suspense fallback={<SectionSkeleton />}>

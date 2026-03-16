@@ -38,6 +38,7 @@ from src.simulation.analysis import (
     compute_detailed_notes,
     compute_full_analysis,
     compute_request_variance,
+    compute_timeline,
 )
 from src.simulation.constants import PROGRESS_CACHE_KEY_PREFIX, PROGRESS_CACHE_TTL_SECONDS
 from src.simulation.models import SimAgentInstance, SimulationOrchestrator, SimulationRun
@@ -49,6 +50,8 @@ from src.simulation.schemas import (
     DetailedAnalysisResponse,
     DetailedNoteResource,
     RequestVarianceMeta,
+    TimelineResource,
+    TimelineResponse,
 )
 from src.simulation.workflows.orchestrator_workflow import (
     dispatch_orchestrator,
@@ -1595,4 +1598,61 @@ async def get_simulation_detailed_analysis(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             "Failed to get detailed simulation analysis",
+        )
+
+
+@router.get(
+    "/simulations/{simulation_id}/analysis/timeline",
+    response_class=JSONResponse,
+    response_model=TimelineResponse,
+)
+async def get_simulation_timeline(
+    simulation_id: UUID,
+    request: HTTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    bucket_size: Literal["auto", "minute", "hour"] = Query("auto"),
+) -> JSONResponse:
+    scoped = require_scope_or_admin(current_user, request, "simulations:read")
+
+    try:
+        filters = [
+            SimulationRun.id == simulation_id,
+            SimulationRun.deleted_at.is_(None),
+        ]
+        if scoped:
+            filters.append(SimulationRun.is_public == True)
+
+        run_result = await db.execute(select(SimulationRun).where(*filters))
+        run = run_result.scalar_one_or_none()
+
+        if not run:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"SimulationRun {simulation_id} not found",
+            )
+
+        timeline = await compute_timeline(simulation_id, db, bucket_size)
+
+        response = TimelineResponse(
+            data=TimelineResource(
+                id=str(simulation_id),
+                attributes=timeline,
+            ),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to get simulation timeline")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to get simulation timeline",
         )

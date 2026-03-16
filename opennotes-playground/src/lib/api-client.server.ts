@@ -173,6 +173,16 @@ export async function getSimulationDetailedAnalysis(
   return data;
 }
 
+export async function getSimulationTimeline(id: string) {
+  const client = getClient();
+  const { data, error, response } = await client.GET(
+    "/api/v2/simulations/{simulation_id}/analysis/timeline",
+    { params: { path: { simulation_id: id } } },
+  );
+  if (error) throw new PlaygroundApiError(`Failed to get simulation timeline ${id}: ${JSON.stringify(error)}`, response.status);
+  return data;
+}
+
 export async function getSimulationResults(
   id: string,
   page = 1,
