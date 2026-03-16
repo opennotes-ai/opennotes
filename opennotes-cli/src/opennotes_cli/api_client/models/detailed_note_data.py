@@ -30,7 +30,7 @@ class DetailedNoteData:
         status (str):
         helpfulness_score (float):
         author_agent_name (str):
-        author_agent_instance_id (str):
+        author_agent_profile_id (str):
         request_id (None | str | Unset):
         message_metadata (DetailedNoteDataMessageMetadataType0 | None | Unset):
         created_at (datetime.datetime | None | Unset):
@@ -43,7 +43,7 @@ class DetailedNoteData:
     status: str
     helpfulness_score: float
     author_agent_name: str
-    author_agent_instance_id: str
+    author_agent_profile_id: str
     request_id: None | str | Unset = UNSET
     message_metadata: DetailedNoteDataMessageMetadataType0 | None | Unset = UNSET
     created_at: datetime.datetime | None | Unset = UNSET
@@ -67,7 +67,7 @@ class DetailedNoteData:
 
         author_agent_name = self.author_agent_name
 
-        author_agent_instance_id = self.author_agent_instance_id
+        author_agent_profile_id = self.author_agent_profile_id
 
         request_id: None | str | Unset
         if isinstance(self.request_id, Unset):
@@ -108,7 +108,7 @@ class DetailedNoteData:
                 "status": status,
                 "helpfulness_score": helpfulness_score,
                 "author_agent_name": author_agent_name,
-                "author_agent_instance_id": author_agent_instance_id,
+                "author_agent_profile_id": author_agent_profile_id,
             }
         )
         if request_id is not UNSET:
@@ -142,7 +142,7 @@ class DetailedNoteData:
 
         author_agent_name = d.pop("author_agent_name")
 
-        author_agent_instance_id = d.pop("author_agent_instance_id")
+        author_agent_profile_id = d.pop("author_agent_profile_id")
 
         def _parse_request_id(data: object) -> None | str | Unset:
             if data is None:
@@ -207,7 +207,7 @@ class DetailedNoteData:
             status=status,
             helpfulness_score=helpfulness_score,
             author_agent_name=author_agent_name,
-            author_agent_instance_id=author_agent_instance_id,
+            author_agent_profile_id=author_agent_profile_id,
             request_id=request_id,
             message_metadata=message_metadata,
             created_at=created_at,

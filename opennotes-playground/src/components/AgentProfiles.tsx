@@ -109,7 +109,7 @@ export default function AgentProfiles(props: { agents: AgentBehaviorData[]; page
                       <div class="text-xs text-muted-foreground">{agent.short_description}</div>
                     </Show>
                     <div class="text-xs text-muted-foreground">
-                      <IdBadge idValue={agent.agent_instance_id} variant="muted" />
+                      <IdBadge idValue={agent.agent_profile_id} variant="muted" />
                     </div>
                   </td>
                   <td class="px-4 py-2.5">

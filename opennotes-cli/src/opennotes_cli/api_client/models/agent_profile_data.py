@@ -21,7 +21,7 @@ T = TypeVar("T", bound="AgentProfileData")
 class AgentProfileData:
     """
     Attributes:
-        agent_instance_id (str):
+        agent_profile_id (str):
         agent_name (str):
         personality (str):
         model_name (str):
@@ -34,7 +34,7 @@ class AgentProfileData:
         last_messages (list[AgentProfileDataLastMessagesItem] | Unset):
     """
 
-    agent_instance_id: str
+    agent_profile_id: str
     agent_name: str
     personality: str
     model_name: str
@@ -48,7 +48,7 @@ class AgentProfileData:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        agent_instance_id = self.agent_instance_id
+        agent_profile_id = self.agent_profile_id
 
         agent_name = self.agent_name
 
@@ -85,7 +85,7 @@ class AgentProfileData:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "agent_instance_id": agent_instance_id,
+                "agent_profile_id": agent_profile_id,
                 "agent_name": agent_name,
                 "personality": personality,
                 "model_name": model_name,
@@ -111,7 +111,7 @@ class AgentProfileData:
         )
 
         d = dict(src_dict)
-        agent_instance_id = d.pop("agent_instance_id")
+        agent_profile_id = d.pop("agent_profile_id")
 
         agent_name = d.pop("agent_name")
 
@@ -150,7 +150,7 @@ class AgentProfileData:
                 last_messages.append(last_messages_item)
 
         agent_profile_data = cls(
-            agent_instance_id=agent_instance_id,
+            agent_profile_id=agent_profile_id,
             agent_name=agent_name,
             personality=personality,
             model_name=model_name,

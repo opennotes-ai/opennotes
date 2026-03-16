@@ -21,19 +21,19 @@ class TestDetailedRatingData:
     def test_valid_rating_data(self):
         rating = DetailedRatingData(
             rater_agent_name="Agent Alpha",
-            rater_agent_instance_id="inst-001",
+            rater_agent_profile_id="inst-001",
             helpfulness_level="HELPFUL",
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
         assert rating.rater_agent_name == "Agent Alpha"
-        assert rating.rater_agent_instance_id == "inst-001"
+        assert rating.rater_agent_profile_id == "inst-001"
         assert rating.helpfulness_level == "HELPFUL"
         assert rating.created_at is not None
 
     def test_rating_data_without_created_at(self):
         rating = DetailedRatingData(
             rater_agent_name="Agent Beta",
-            rater_agent_instance_id="inst-002",
+            rater_agent_profile_id="inst-002",
             helpfulness_level="NOT_HELPFUL",
         )
         assert rating.created_at is None
@@ -41,7 +41,7 @@ class TestDetailedRatingData:
     def test_rating_data_serialization(self):
         rating = DetailedRatingData(
             rater_agent_name="Agent Alpha",
-            rater_agent_instance_id="inst-001",
+            rater_agent_profile_id="inst-001",
             helpfulness_level="SOMEWHAT_HELPFUL",
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
@@ -60,13 +60,13 @@ class TestDetailedNoteData:
             status="CURRENTLY_RATED_HELPFUL",
             helpfulness_score=75,
             author_agent_name="Agent Alpha",
-            author_agent_instance_id="inst-001",
+            author_agent_profile_id="inst-001",
             request_id="req-001",
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
             ratings=[
                 DetailedRatingData(
                     rater_agent_name="Agent Beta",
-                    rater_agent_instance_id="inst-002",
+                    rater_agent_profile_id="inst-002",
                     helpfulness_level="HELPFUL",
                 )
             ],
@@ -86,7 +86,7 @@ class TestDetailedNoteData:
             status="NEEDS_MORE_RATINGS",
             helpfulness_score=0,
             author_agent_name="Agent Beta",
-            author_agent_instance_id="inst-002",
+            author_agent_profile_id="inst-002",
         )
         assert note.request_id is None
         assert note.created_at is None
@@ -100,7 +100,7 @@ class TestDetailedNoteData:
             status="NEEDS_MORE_RATINGS",
             helpfulness_score=50,
             author_agent_name="Agent Gamma",
-            author_agent_instance_id="inst-003",
+            author_agent_profile_id="inst-003",
             request_id="req-003",
         )
         dumped = note.model_dump(mode="json")
@@ -117,7 +117,7 @@ class TestDetailedNoteData:
             status="CURRENTLY_RATED_HELPFUL",
             helpfulness_score=3.75,
             author_agent_name="Agent",
-            author_agent_instance_id="inst-001",
+            author_agent_profile_id="inst-001",
         )
         assert note.helpfulness_score == 3.75
         dumped = note.model_dump(mode="json")
@@ -131,7 +131,7 @@ class TestDetailedNoteData:
             status="NEEDS_MORE_RATINGS",
             helpfulness_score=0,
             author_agent_name="Agent",
-            author_agent_instance_id="inst-001",
+            author_agent_profile_id="inst-001",
         )
         assert isinstance(note.helpfulness_score, float)
 
@@ -144,7 +144,7 @@ class TestDetailedNoteData:
             status="NEEDS_MORE_RATINGS",
             helpfulness_score=0,
             author_agent_name="Agent",
-            author_agent_instance_id="inst-001",
+            author_agent_profile_id="inst-001",
             message_metadata=metadata,
         )
         assert note.message_metadata == metadata
@@ -160,7 +160,7 @@ class TestDetailedNoteData:
             status="NEEDS_MORE_RATINGS",
             helpfulness_score=0,
             author_agent_name="Agent",
-            author_agent_instance_id="inst-001",
+            author_agent_profile_id="inst-001",
         )
         assert note.message_metadata is None
 
@@ -212,7 +212,7 @@ class TestDetailedNoteResource:
                 status="NEEDS_MORE_RATINGS",
                 helpfulness_score=0,
                 author_agent_name="Agent Alpha",
-                author_agent_instance_id="inst-001",
+                author_agent_profile_id="inst-001",
             ),
         )
         assert resource.type == "simulation-detailed-notes"
@@ -229,7 +229,7 @@ class TestDetailedNoteResource:
                 status="NEEDS_MORE_RATINGS",
                 helpfulness_score=10,
                 author_agent_name="Agent Beta",
-                author_agent_instance_id="inst-002",
+                author_agent_profile_id="inst-002",
             ),
         )
         dumped = resource.model_dump(mode="json")
@@ -312,7 +312,7 @@ class TestDetailedAnalysisResponse:
                         status="NEEDS_MORE_RATINGS",
                         helpfulness_score=0,
                         author_agent_name="Agent Alpha",
-                        author_agent_instance_id="inst-001",
+                        author_agent_profile_id="inst-001",
                     ),
                 )
             ],
@@ -355,12 +355,12 @@ class TestDetailedAnalysisResponse:
                         status="CURRENTLY_RATED_HELPFUL",
                         helpfulness_score=80,
                         author_agent_name="Agent Alpha",
-                        author_agent_instance_id="inst-001",
+                        author_agent_profile_id="inst-001",
                         request_id="req-001",
                         ratings=[
                             DetailedRatingData(
                                 rater_agent_name="Agent Beta",
-                                rater_agent_instance_id="inst-002",
+                                rater_agent_profile_id="inst-002",
                                 helpfulness_level="HELPFUL",
                             )
                         ],
@@ -379,7 +379,7 @@ class TestDetailedAnalysisResponse:
 class TestAgentBehaviorDataPersonality:
     def test_personality_field(self):
         behavior = AgentBehaviorData(
-            agent_instance_id="inst-001",
+            agent_profile_id="inst-001",
             agent_name="Skeptic Agent",
             notes_written=5,
             ratings_given=3,
@@ -395,7 +395,7 @@ class TestAgentBehaviorDataPersonality:
 
     def test_personality_defaults_to_empty_string(self):
         behavior = AgentBehaviorData(
-            agent_instance_id="inst-002",
+            agent_profile_id="inst-002",
             agent_name="Agent",
             notes_written=0,
             ratings_given=0,

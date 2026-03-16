@@ -3937,8 +3937,8 @@ export interface components {
         };
         /** AgentBehaviorData */
         AgentBehaviorData: {
-            /** Agent Instance Id */
-            agent_instance_id: string;
+            /** Agent Profile Id */
+            agent_profile_id: string;
             /** Agent Name */
             agent_name: string;
             /**
@@ -3965,8 +3965,8 @@ export interface components {
         };
         /** AgentProfileData */
         AgentProfileData: {
-            /** Agent Instance Id */
-            agent_instance_id: string;
+            /** Agent Profile Id */
+            agent_profile_id: string;
             /** Agent Name */
             agent_name: string;
             /** Personality */
@@ -5385,8 +5385,8 @@ export interface components {
             helpfulness_score: number;
             /** Author Agent Name */
             author_agent_name: string;
-            /** Author Agent Instance Id */
-            author_agent_instance_id: string;
+            /** Author Agent Profile Id */
+            author_agent_profile_id: string;
             /** Request Id */
             request_id?: string | null;
             /** Message Metadata */
@@ -5413,8 +5413,8 @@ export interface components {
         DetailedRatingData: {
             /** Rater Agent Name */
             rater_agent_name: string;
-            /** Rater Agent Instance Id */
-            rater_agent_instance_id: string;
+            /** Rater Agent Profile Id */
+            rater_agent_profile_id: string;
             /** Helpfulness Level */
             helpfulness_level: string;
             /** Created At */
@@ -7731,8 +7731,8 @@ export interface components {
         };
         /** PerAgentRatingData */
         PerAgentRatingData: {
-            /** Agent Instance Id */
-            agent_instance_id: string;
+            /** Agent Profile Id */
+            agent_profile_id: string;
             /** Agent Name */
             agent_name: string;
             /** Short Description */
@@ -8835,8 +8835,8 @@ export interface components {
             note_status: string;
             /** Author Profile Id */
             author_profile_id: string;
-            /** Agent Instance Id */
-            agent_instance_id: string;
+            /** Agent Profile Id */
+            agent_profile_id: string;
             /** Created At */
             created_at?: string | null;
         };
@@ -16801,7 +16801,7 @@ export interface operations {
             query?: {
                 "page[number]"?: number;
                 "page[size]"?: number;
-                agent_instance_id?: string | null;
+                agent_profile_id?: string | null;
             };
             header?: {
                 "X-API-Key"?: string | null;
