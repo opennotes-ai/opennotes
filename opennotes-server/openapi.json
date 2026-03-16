@@ -11662,6 +11662,85 @@
         }
       }
     },
+    "/api/v2/simulations/{simulation_id}/analysis/timeline": {
+      "get": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Get Simulation Timeline",
+        "operationId": "get_simulation_timeline_api_v2_simulations__simulation_id__analysis_timeline_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "bucket_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "auto",
+                "minute",
+                "hour"
+              ],
+              "type": "string",
+              "default": "auto",
+              "title": "Bucket Size"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/version": {
       "get": {
         "tags": [
@@ -24406,6 +24485,108 @@
           "current"
         ],
         "title": "TierThreshold"
+      },
+      "TimelineAttributes": {
+        "properties": {
+          "bucket_size": {
+            "type": "string",
+            "title": "Bucket Size"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineBucketData"
+            },
+            "type": "array",
+            "title": "Buckets"
+          },
+          "total_notes": {
+            "type": "integer",
+            "title": "Total Notes"
+          },
+          "total_ratings": {
+            "type": "integer",
+            "title": "Total Ratings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket_size",
+          "buckets",
+          "total_notes",
+          "total_ratings"
+        ],
+        "title": "TimelineAttributes"
+      },
+      "TimelineBucketData": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "notes_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Notes By Status"
+          },
+          "ratings_by_level": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Ratings By Level"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp"
+        ],
+        "title": "TimelineBucketData"
+      },
+      "TimelineResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "simulation-timeline"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/TimelineAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "TimelineResource"
+      },
+      "TimelineResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TimelineResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "TimelineResponse"
       },
       "Token": {
         "properties": {

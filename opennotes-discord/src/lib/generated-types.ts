@@ -3494,6 +3494,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/simulations/{simulation_id}/analysis/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Simulation Timeline */
+        get: operations["get_simulation_timeline_api_v2_simulations__simulation_id__analysis_timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/version": {
         parameters: {
             query?: never;
@@ -9856,6 +9873,54 @@ export interface components {
              * @description Whether this is the currently active tier
              */
             current: boolean;
+        };
+        /** TimelineAttributes */
+        TimelineAttributes: {
+            /** Bucket Size */
+            bucket_size: string;
+            /** Buckets */
+            buckets: components["schemas"]["TimelineBucketData"][];
+            /** Total Notes */
+            total_notes: number;
+            /** Total Ratings */
+            total_ratings: number;
+        };
+        /** TimelineBucketData */
+        TimelineBucketData: {
+            /** Timestamp */
+            timestamp: string;
+            /** Notes By Status */
+            notes_by_status?: {
+                [key: string]: number;
+            };
+            /** Ratings By Level */
+            ratings_by_level?: {
+                [key: string]: number;
+            };
+        };
+        /** TimelineResource */
+        TimelineResource: {
+            /**
+             * Type
+             * @default simulation-timeline
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["TimelineAttributes"];
+        };
+        /** TimelineResponse */
+        TimelineResponse: {
+            data: components["schemas"]["TimelineResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
         };
         /** Token */
         Token: {
@@ -16892,6 +16957,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DetailedAnalysisResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_simulation_timeline_api_v2_simulations__simulation_id__analysis_timeline_get: {
+        parameters: {
+            query?: {
+                bucket_size?: "auto" | "minute" | "hour";
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineResponse"];
                 };
             };
             /** @description Validation Error */

@@ -296,6 +296,32 @@ class AnalysisAttributes(SQLAlchemySchema):
     note_quality: NoteQualityData
 
 
+class TimelineBucketData(SQLAlchemySchema):
+    timestamp: str
+    notes_by_status: dict[str, int] = Field(default_factory=dict)
+    ratings_by_level: dict[str, int] = Field(default_factory=dict)
+
+
+class TimelineAttributes(SQLAlchemySchema):
+    bucket_size: str
+    buckets: list[TimelineBucketData]
+    total_notes: int
+    total_ratings: int
+
+
+class TimelineResource(BaseModel):
+    type: str = "simulation-timeline"
+    id: str
+    attributes: TimelineAttributes
+
+
+class TimelineResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    data: TimelineResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+
+
 class AnalysisResource(BaseModel):
     type: str = "simulation-analysis"
     id: str

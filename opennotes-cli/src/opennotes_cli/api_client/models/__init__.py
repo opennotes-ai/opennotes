@@ -180,6 +180,9 @@ from .get_opennotes_admin_status_api_v1_admin_profiles_profile_id_opennotes_admi
 from .get_simulation_detailed_analysis_api_v2_simulations_simulation_id_analysis_detailed_get_sort_by import (
     GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy,
 )
+from .get_simulation_timeline_api_v2_simulations_simulation_id_analysis_timeline_get_bucket_size import (
+    GetSimulationTimelineApiV2SimulationsSimulationIdAnalysisTimelineGetBucketSize,
+)
 from .health_check_response import HealthCheckResponse
 from .health_check_response_components import HealthCheckResponseComponents
 from .helpfulness_level import HelpfulnessLevel
@@ -600,6 +603,13 @@ from .simulation_single_response import SimulationSingleResponse
 from .simulation_single_response_jsonapi import SimulationSingleResponseJsonapi
 from .tier_info import TierInfo
 from .tier_threshold import TierThreshold
+from .timeline_attributes import TimelineAttributes
+from .timeline_bucket_data import TimelineBucketData
+from .timeline_bucket_data_notes_by_status import TimelineBucketDataNotesByStatus
+from .timeline_bucket_data_ratings_by_level import TimelineBucketDataRatingsByLevel
+from .timeline_resource import TimelineResource
+from .timeline_response import TimelineResponse
+from .timeline_response_jsonapi import TimelineResponseJsonapi
 from .token import Token
 from .token_hold_detail import TokenHoldDetail
 from .token_pool_status import TokenPoolStatus
@@ -755,6 +765,7 @@ __all__ = (
     "GetCommunityServerStatsApiV1WebhooksStatsPlatformCommunityServerIdGetResponseGetCommunityServerStatsApiV1WebhooksStatsPlatformCommunityServerIdGet",
     "GetOpennotesAdminStatusApiV1AdminProfilesProfileIdOpennotesAdminGetResponseGetOpennotesAdminStatusApiV1AdminProfilesProfileIdOpennotesAdminGet",
     "GetSimulationDetailedAnalysisApiV2SimulationsSimulationIdAnalysisDetailedGetSortBy",
+    "GetSimulationTimelineApiV2SimulationsSimulationIdAnalysisTimelineGetBucketSize",
     "HealthCheckResponse",
     "HealthCheckResponseComponents",
     "HelpfulnessLevel",
@@ -1083,6 +1094,13 @@ __all__ = (
     "SimulationSingleResponseJsonapi",
     "TierInfo",
     "TierThreshold",
+    "TimelineAttributes",
+    "TimelineBucketData",
+    "TimelineBucketDataNotesByStatus",
+    "TimelineBucketDataRatingsByLevel",
+    "TimelineResource",
+    "TimelineResponse",
+    "TimelineResponseJsonapi",
     "Token",
     "TokenHoldDetail",
     "TokenPoolStatus",
