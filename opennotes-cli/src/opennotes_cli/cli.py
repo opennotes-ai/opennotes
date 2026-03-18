@@ -47,8 +47,22 @@ def _read_api_key_from_env_file(env_file: Path, verbose: bool = False) -> str | 
     return None
 
 
+class HoistingGroup(click.Group):
+    HOISTABLE = {"--json", "--toon", "-v", "--verbose", "--uuid"}
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        hoisted: list[str] = []
+        rest: list[str] = []
+        for arg in args:
+            if arg in self.HOISTABLE:
+                hoisted.append(arg)
+            else:
+                rest.append(arg)
+        return super().parse_args(ctx, hoisted + rest)
+
+
 @tui()
-@click.group()
+@click.group(cls=HoistingGroup)
 @click.option(
     "-e",
     "--env",
