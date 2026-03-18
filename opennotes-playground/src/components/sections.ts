@@ -1,12 +1,8 @@
 export const SECTIONS = [
-  { id: "metadata", label: "Metadata" },
-  { id: "note-quality", label: "Note Quality" },
-  { id: "rating-distribution", label: "Rating Distribution" },
-  { id: "consensus-metrics", label: "Consensus Metrics" },
-  { id: "scoring-coverage", label: "Scoring Coverage" },
-  { id: "agent-behaviors", label: "Agent Behaviors" },
-  { id: "charts-timelines", label: "Charts & Timelines" },
-  { id: "per-note-breakdown", label: "Per-Note Breakdown" },
+  { id: "agents", label: "Agents" },
+  { id: "notes-ratings", label: "Notes & Ratings" },
+  { id: "note-details", label: "Note Details" },
+  { id: "scoring-analysis", label: "Scoring & Analysis" },
 ] as const;
 
 export type SectionId = (typeof SECTIONS)[number]["id"];

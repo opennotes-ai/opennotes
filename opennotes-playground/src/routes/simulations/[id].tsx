@@ -1,5 +1,5 @@
 import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
-import { Show, Switch, Match, Suspense, createSignal, createEffect, on, lazy } from "solid-js";
+import { Show, Switch, Match, Suspense, createSignal, createEffect, on } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import {
   getSimulation,
@@ -11,17 +11,13 @@ import { createClient } from "~/lib/supabase-server";
 import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import { SectionSkeleton } from "~/components/ui/skeleton";
-import InlineTOC from "~/components/InlineTOC";
-import type { SectionId } from "~/components/sections";
 import SimulationSidebar, { MobileSidebarToggle } from "~/components/SimulationSidebar";
 import IdBadge from "~/components/ui/id-badge";
 import PaginationControls from "~/components/ui/pagination-controls";
-
-const LazyAnalysisSummary = lazy(() => import("~/components/AnalysisSummary"));
-const LazyMetricsDisplay = lazy(() => import("~/components/MetricsDisplay"));
-const LazyAgentProfiles = lazy(() => import("~/components/AgentProfiles"));
-const LazyNoteDetails = lazy(() => import("~/components/NoteDetails"));
-const LazyChartsTimelines = lazy(() => import("~/components/ChartsTimelines"));
+import AgentsSection from "~/components/AgentsSection";
+import NotesRatingsSection from "~/components/NotesRatingsSection";
+import ScoringAnalysisSection from "~/components/ScoringAnalysisSection";
+import NoteDetails from "~/components/NoteDetails";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 
@@ -176,18 +172,6 @@ export default function SimulationDetailPage() {
   createEffect(on(() => pageSize(), () => setNotesPage(1), { defer: true }));
   createEffect(on(() => sortBy(), () => setNotesPage(1), { defer: true }));
   createEffect(on(() => [filterClassification(), filterStatus()], () => setNotesPage(1), { defer: true }));
-  const [loadedSections, setLoadedSections] = createSignal<Set<SectionId>>(new Set(["metadata"]));
-
-  function handleSectionClick(id: SectionId) {
-    setLoadedSections((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-    setTimeout(() => {
-      document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
-  }
 
   const serverSortBy = () => (sortBy() === "has_score" ? "has_score" : "count") as "count" | "has_score";
   const detailed = createAsync(() => fetchDetailedAnalysis(
@@ -270,22 +254,6 @@ export default function SimulationDetailPage() {
                     </Show>
                   </section>
 
-                  <details class="mt-4 rounded-lg border border-border p-3">
-                    <summary class="cursor-pointer text-sm font-medium">Simulation Mechanics</summary>
-                    <div class="mt-3 grid grid-cols-2 gap-2 text-sm text-muted-foreground">
-                      <div>Turns: <strong class="text-foreground">{attrs.cumulative_turns}</strong></div>
-                      <div>Restarts: <strong class="text-foreground">{attrs.restart_count}</strong></div>
-                      <div>
-                        Orchestrator: <IdBadge idValue={attrs.orchestrator_id} variant="muted" />
-                      </div>
-                      <div>
-                        Community Server: <IdBadge idValue={attrs.community_server_id} variant="muted" />
-                      </div>
-                    </div>
-                  </details>
-
-                  <InlineTOC loadedSections={loadedSections()} onSectionClick={handleSectionClick} />
-
                   <Suspense fallback={<p class="mt-6 text-muted-foreground">Loading analysis...</p>}>
                     <Show
                       when={analysis()}
@@ -297,126 +265,97 @@ export default function SimulationDetailPage() {
                         const meta = analysisResponse._authMeta;
                         return (
                           <div class="mt-8 space-y-8 divide-y divide-border [&>*]:pt-8 first:[&>*]:pt-0">
-                            <Show when={loadedSections().has("note-quality") || loadedSections().has("rating-distribution")}>
-                              <Suspense fallback={<SectionSkeleton />}>
-                                <LazyAnalysisSummary
-                                  noteQuality={a.note_quality}
-                                  ratingDistribution={a.rating_distribution}
-                                  pageSize={pageSize()}
+                            <div>
+                              <AgentsSection
+                                agents={a.agent_behaviors}
+                                ratingDistribution={a.rating_distribution}
+                                pageSize={pageSize()}
+                              />
+                              <Show when={meta?.agentsTruncated && meta.totalAgents}>
+                                <AuthGateCTA
+                                  shown={20}
+                                  total={meta!.totalAgents!}
+                                  label="agents"
                                 />
-                              </Suspense>
-                            </Show>
-                            <Show when={loadedSections().has("consensus-metrics") || loadedSections().has("scoring-coverage")}>
-                              <Suspense fallback={<SectionSkeleton />}>
-                                <LazyMetricsDisplay
-                                  consensus={a.consensus_metrics}
-                                  scoring={a.scoring_coverage}
-                                />
-                              </Suspense>
-                            </Show>
-                            <Show when={loadedSections().has("agent-behaviors")}>
-                              <Suspense fallback={<SectionSkeleton />}>
-                                <div>
-                                  <LazyAgentProfiles agents={a.agent_behaviors} pageSize={pageSize()} />
-                                  <Show when={meta?.agentsTruncated && meta.totalAgents}>
-                                    <AuthGateCTA
-                                      shown={20}
-                                      total={meta!.totalAgents!}
-                                      label="agents"
-                                    />
-                                  </Show>
-                                </div>
-                              </Suspense>
-                            </Show>
+                              </Show>
+                            </div>
+
+                            <NotesRatingsSection
+                              noteQuality={a.note_quality}
+                              ratingDistribution={a.rating_distribution}
+                              buckets={timeline()?.data?.attributes?.buckets}
+                              totalNotes={timeline()?.data?.attributes?.total_notes}
+                              totalRatings={timeline()?.data?.attributes?.total_ratings}
+                            />
+
+                            <ScoringAnalysisSection
+                              consensus={a.consensus_metrics}
+                              scoring={a.scoring_coverage}
+                            />
                           </div>
                         );
                       }}
                     </Show>
                   </Suspense>
 
-                  <Show when={loadedSections().has("charts-timelines")}>
-                    <Suspense fallback={<SectionSkeleton />}>
-                      <Show
-                        when={timeline()}
-                        keyed
-                        fallback={<p class="mt-6 italic text-muted-foreground">Timeline unavailable.</p>}
-                      >
-                        {(timelineResponse) => {
-                          const attrs = timelineResponse.data.attributes;
-                          return (
-                            <div class="mt-8 border-t border-border pt-8">
-                              <LazyChartsTimelines
-                                buckets={attrs.buckets}
-                                totalNotes={attrs.total_notes}
-                                totalRatings={attrs.total_ratings}
+                  <Suspense fallback={<SectionSkeleton />}>
+                    <Show
+                      when={detailed()}
+                      keyed
+                      fallback={<p class="mt-6 italic text-muted-foreground">Loading detailed analysis...</p>}
+                    >
+                      {(detailedResponse) => {
+                        const authMeta = detailedResponse._authMeta;
+                        const totalNotes = detailedResponse.meta?.count ?? 0;
+                        const notesTruncated = !authMeta?.isAuthenticated && totalNotes > pageSize();
+                        const totalPages = detailedResponse._totalPages ?? 1;
+                        return (
+                          <section id="note-details" class="mt-8 border-t border-border pt-8">
+                            <Show when={detailedResponse.meta}>
+                              {(meta) => (
+                                <p class="mb-2 text-sm text-muted-foreground">
+                                  {notesTruncated
+                                    ? `Showing ${pageSize()} of ${meta().count}`
+                                    : meta().count}
+                                  {" "}note{meta().count !== 1 ? "s" : ""} in detailed analysis
+                                </p>
+                              )}
+                            </Show>
+                            <NoteDetails
+                              notes={detailedResponse.data}
+                              currentTier={analysis()?.data?.attributes?.scoring_coverage?.current_tier ?? ""}
+                              sortBy={sortBy() as "count" | "disagreement" | "has_score"}
+                              onSortChange={setSortBy}
+                              filterClassification={filterClassification()}
+                              filterStatus={filterStatus()}
+                              onFilterChange={(v) => {
+                                setFilterClassification(v.classification);
+                                setFilterStatus(v.status);
+                              }}
+                            />
+                            <Show when={authMeta?.isAuthenticated && totalPages > 1}>
+                              <PaginationControls
+                                currentPage={notesPage()}
+                                totalPages={totalPages}
+                                onPageChange={setNotesPage}
+                                label="Notes pagination"
+                                pageSize={pageSize()}
+                                pageSizeOptions={[...PAGE_SIZE_OPTIONS]}
+                                onPageSizeChange={setPageSize}
                               />
-                            </div>
-                          );
-                        }}
-                      </Show>
-                    </Suspense>
-                  </Show>
-
-                  <Show when={loadedSections().has("per-note-breakdown")}>
-                    <Suspense fallback={<SectionSkeleton />}>
-                      <Show
-                        when={detailed()}
-                        keyed
-                        fallback={<p class="mt-6 italic text-muted-foreground">Loading detailed analysis...</p>}
-                      >
-                        {(detailedResponse) => {
-                          const authMeta = detailedResponse._authMeta;
-                          const totalNotes = detailedResponse.meta?.count ?? 0;
-                          const notesTruncated = !authMeta?.isAuthenticated && totalNotes > pageSize();
-                          const totalPages = detailedResponse._totalPages ?? 1;
-                          return (
-                            <div class="mt-8 border-t border-border pt-8">
-                              <Show when={detailedResponse.meta}>
-                                {(meta) => (
-                                  <p class="mb-2 text-sm text-muted-foreground">
-                                    {notesTruncated
-                                      ? `Showing ${pageSize()} of ${meta().count}`
-                                      : meta().count}
-                                    {" "}note{meta().count !== 1 ? "s" : ""} in detailed analysis
-                                  </p>
-                                )}
-                              </Show>
-                              <LazyNoteDetails
-                                notes={detailedResponse.data}
-                                currentTier={analysis()?.data?.attributes?.scoring_coverage?.current_tier ?? ""}
-                                sortBy={sortBy() as "count" | "disagreement" | "has_score"}
-                                onSortChange={setSortBy}
-                                filterClassification={filterClassification()}
-                                filterStatus={filterStatus()}
-                                onFilterChange={(v) => {
-                                  setFilterClassification(v.classification);
-                                  setFilterStatus(v.status);
-                                }}
+                            </Show>
+                            <Show when={notesTruncated}>
+                              <AuthGateCTA
+                                shown={pageSize()}
+                                total={totalNotes}
+                                label="notes"
                               />
-                              <Show when={authMeta?.isAuthenticated && totalPages > 1}>
-                                <PaginationControls
-                                  currentPage={notesPage()}
-                                  totalPages={totalPages}
-                                  onPageChange={setNotesPage}
-                                  label="Notes pagination"
-                                  pageSize={pageSize()}
-                                  pageSizeOptions={[...PAGE_SIZE_OPTIONS]}
-                                  onPageSizeChange={setPageSize}
-                                />
-                              </Show>
-                              <Show when={notesTruncated}>
-                                <AuthGateCTA
-                                  shown={pageSize()}
-                                  total={totalNotes}
-                                  label="notes"
-                                />
-                              </Show>
-                            </div>
-                          );
-                        }}
-                      </Show>
-                    </Suspense>
-                  </Show>
+                            </Show>
+                          </section>
+                        );
+                      }}
+                    </Show>
+                  </Suspense>
                   </main>
                 </div>
               );
