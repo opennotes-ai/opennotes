@@ -69,7 +69,7 @@ dependencies = [
     "google-cloud-storage>=2.0,<3.0",
     "orjson>=3.10.0",
     "pendulum>=3.2.0",
-    "pydantic-ai>=1.0.0,<2.0.0",
+    "pydantic-ai-slim>=1.0.0,<2.0.0",
     "sanitary>=0.1.0",
     "pyarrow>=15.0.0",
 ]
