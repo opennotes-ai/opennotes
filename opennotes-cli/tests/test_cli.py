@@ -42,6 +42,32 @@ class TestCliGroup:
         assert result.exit_code == 0
 
 
+class TestFlagHoisting:
+    def test_json_after_subcommand(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["health", "--json", "--help"])
+        assert result.exit_code == 0
+
+    def test_verbose_after_subcommand(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["health", "-v", "--help"])
+        assert result.exit_code == 0
+
+    def test_uuid_after_subcommand(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["health", "--uuid", "--help"])
+        assert result.exit_code == 0
+
+    def test_multiple_flags_after_subcommand(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["health", "--json", "-v", "--help"])
+        assert result.exit_code == 0
+
+    def test_mixed_position_flags(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["--json", "health", "-v", "--help"])
+        assert result.exit_code == 0
+
+    def test_unknown_flag_not_hoisted(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["health", "--nonexistent-flag"])
+        assert result.exit_code != 0
+
+
 class TestAllCommandsRegistered:
     @pytest.mark.parametrize(
         "cmd",
