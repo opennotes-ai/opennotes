@@ -139,6 +139,15 @@ class TestCopyRequestsEndpoint:
         )
         assert response.status_code == 422
 
+    def test_returns_422_for_self_copy(self, client):
+        same_id = uuid4()
+        response = client.post(
+            f"/api/v2/community-servers/{same_id}/copy-requests",
+            json=_make_jsonapi_payload(str(same_id)),
+        )
+        assert response.status_code == 422
+        assert "different" in response.json()["detail"].lower()
+
     def test_returns_422_for_missing_payload(self, client):
         target_id = uuid4()
         response = client.post(

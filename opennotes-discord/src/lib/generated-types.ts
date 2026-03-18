@@ -5392,8 +5392,9 @@ export interface components {
             /**
              * Type
              * @default copy-requests
+             * @constant
              */
-            type: string;
+            type: "copy-requests";
             attributes: components["schemas"]["CopyRequestsAttributes"];
         };
         /** CopyRequestsPayload */

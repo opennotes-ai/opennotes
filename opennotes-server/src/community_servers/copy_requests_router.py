@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import require_superuser_or_service_account
+from src.batch_jobs.constants import COPY_REQUESTS_JOB_TYPE
 from src.common.base_schemas import StrictInputSchema
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
@@ -30,7 +31,7 @@ class CopyRequestsAttributes(StrictInputSchema):
 
 
 class CopyRequestsData(StrictInputSchema):
-    type: str = Field("copy-requests")
+    type: Literal["copy-requests"] = "copy-requests"
     attributes: CopyRequestsAttributes
 
 
@@ -49,6 +50,12 @@ async def copy_requests(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
     source_id = payload.data.attributes.source_community_server_id
+
+    if source_id == community_server_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Source and target community server must be different",
+        )
 
     target_result = await db.execute(
         select(CommunityServer).where(
@@ -85,7 +92,7 @@ async def copy_requests(
                 "type": "batch-jobs",
                 "id": str(batch_job_id),
                 "attributes": {
-                    "job_type": "copy:requests",
+                    "job_type": COPY_REQUESTS_JOB_TYPE,
                     "status": "pending",
                 },
             }
