@@ -39,7 +39,6 @@ function buildOverallBarOption(overall: Record<string, number>): EChartsOption {
 function buildCumulativeOption(
   buckets: TimelineBucketData[],
   field: "notes_by_status" | "ratings_by_level",
-  title: string,
 ): EChartsOption {
   const timestamps = buckets.map((b) => b.timestamp);
   const allKeys = new Set<string>();
@@ -89,10 +88,10 @@ export default function NotesRatingsSection(props: {
   const overallBarOption = createMemo(() => buildOverallBarOption(props.ratingDistribution.overall));
 
   const notesOption = createMemo(() =>
-    props.buckets ? buildCumulativeOption(props.buckets, "notes_by_status", "Cumulative Notes") : null,
+    props.buckets ? buildCumulativeOption(props.buckets, "notes_by_status") : null,
   );
   const ratingsOption = createMemo(() =>
-    props.buckets ? buildCumulativeOption(props.buckets, "ratings_by_level", "Cumulative Ratings") : null,
+    props.buckets ? buildCumulativeOption(props.buckets, "ratings_by_level") : null,
   );
 
   return (
