@@ -115,7 +115,6 @@ const fetchDetailedAnalysis = query(async (
 const fetchTimeline = query(async (id: string) => {
   "use server";
   try {
-    const isAuthenticated = await checkAuth();
     return await getSimulationTimeline(id);
   } catch (error) {
     console.error("Failed to fetch timeline:", error);
