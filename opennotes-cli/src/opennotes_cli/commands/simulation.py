@@ -14,7 +14,7 @@ from rich.table import Table
 from opennotes_cli.display import get_cli_prefix, get_status_style, handle_jsonapi_error
 from opennotes_cli.formatting import format_id, resolve_id
 from opennotes_cli.http import add_csrf, get_csrf_token
-from opennotes_cli.polling import poll_simulation_until_complete
+from opennotes_cli.polling import poll_batch_job_until_complete, poll_simulation_until_complete
 
 if TYPE_CHECKING:
     from opennotes_cli.cli import CliContext
@@ -172,9 +172,10 @@ def simulation_status(ctx: click.Context, simulation_id: str) -> None:
     help="Community server UUID (must be playground).",
 )
 @click.option("--wait", is_flag=True, help="Poll until simulation reaches a terminal state.")
+@click.option("--copy-requests-from", default=None, help="Copy requests from this community server ID before creating simulation.")
 @click.pass_context
 def simulation_create(
-    ctx: click.Context, orchestrator_id: str, community_server_id: str, wait: bool
+    ctx: click.Context, orchestrator_id: str, community_server_id: str, wait: bool, copy_requests_from: str | None
 ) -> None:
     """Create and start a simulation run."""
     try:
@@ -194,6 +195,38 @@ def simulation_create(
 
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
     headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    if copy_requests_from:
+        try:
+            copy_source_id = resolve_id(copy_requests_from)
+        except click.BadParameter as e:
+            error_console.print(f"[red]Error:[/red] {e}")
+            sys.exit(1)
+
+        copy_payload = {
+            "data": {
+                "type": "copy-requests",
+                "attributes": {
+                    "source_community_server_id": copy_source_id,
+                },
+            }
+        }
+        copy_response = client.post(
+            f"{base_url}/api/v2/community-servers/{community_server_id}/copy-requests",
+            headers=headers,
+            json=copy_payload,
+        )
+        handle_jsonapi_error(copy_response)
+        copy_job_id = copy_response.json().get("data", {}).get("id")
+
+        if not cli_ctx.json_output:
+            console.print(f"[green]\u2713[/green] Copying requests from {format_id(copy_source_id, cli_ctx.use_huuid)}...")
+
+        auth_headers = add_csrf(cli_ctx.auth.get_headers(), csrf_token)
+        poll_batch_job_until_complete(client, base_url, auth_headers, copy_job_id, use_huuid=cli_ctx.use_huuid)
+
+        if not cli_ctx.json_output:
+            console.print("[green]\u2713[/green] Requests copied successfully")
 
     payload = {
         "data": {
@@ -509,6 +542,7 @@ def _submit_urls_batch(
 @click.option("--removal-rate", default=0.0, type=float, help="Agent removal rate (default: 0.0).")
 @click.option("--max-turns", default=50, type=int, help="Max turns per agent (default: 50).")
 @click.option("--wait", is_flag=True, help="Poll until simulation completes.")
+@click.option("--copy-requests-from", default=None, help="Copy requests from this community server ID before running simulation.")
 @click.pass_context
 def simulation_launch(
     ctx: click.Context,
@@ -522,6 +556,7 @@ def simulation_launch(
     removal_rate: float,
     max_turns: int,
     wait: bool,
+    copy_requests_from: str | None,
 ) -> None:
     """Launch a full simulation: create orchestrator, playground, submit content, start sim."""
     cli_ctx: CliContext = ctx.obj
@@ -532,8 +567,8 @@ def simulation_launch(
     if urls_file:
         all_urls.extend(_read_urls_from_file(urls_file))
 
-    if not all_urls and not texts:
-        error_console.print("[red]Error:[/red] Provide at least one --url, --urls-from, or --text.")
+    if not all_urls and not texts and not copy_requests_from:
+        error_console.print("[red]Error:[/red] Provide at least one --url, --urls-from, --text, or --copy-requests-from.")
         sys.exit(1)
 
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
@@ -601,6 +636,38 @@ def simulation_launch(
         console.print(f"[green]\u2713[/green] Created playground: [bold]{format_id(cs_id, cli_ctx.use_huuid)}[/bold]")
 
     jsonapi_headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    if copy_requests_from:
+        try:
+            copy_source_id = resolve_id(copy_requests_from)
+        except click.BadParameter as e:
+            error_console.print(f"[red]Error:[/red] {e}")
+            sys.exit(1)
+
+        copy_payload = {
+            "data": {
+                "type": "copy-requests",
+                "attributes": {
+                    "source_community_server_id": copy_source_id,
+                },
+            }
+        }
+        copy_response = client.post(
+            f"{base_url}/api/v2/community-servers/{cs_id}/copy-requests",
+            headers=jsonapi_headers,
+            json=copy_payload,
+        )
+        handle_jsonapi_error(copy_response)
+        copy_job_id = copy_response.json().get("data", {}).get("id")
+
+        if not cli_ctx.json_output:
+            console.print(f"[green]\u2713[/green] Copying requests from {format_id(copy_source_id, cli_ctx.use_huuid)}...")
+
+        auth_headers = add_csrf(cli_ctx.auth.get_headers(), csrf_token)
+        poll_batch_job_until_complete(client, base_url, auth_headers, copy_job_id, use_huuid=cli_ctx.use_huuid)
+
+        if not cli_ctx.json_output:
+            console.print("[green]\u2713[/green] Requests copied successfully")
 
     if all_urls:
         for i in range(0, len(all_urls), 20):

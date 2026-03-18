@@ -46,6 +46,7 @@ from src.claim_relevance_check.router import router as claim_relevance_check_rou
 from src.community_config.router import router as community_config_router
 from src.community_servers.admin_router import router as community_admin_router
 from src.community_servers.clear_router import router as community_clear_router
+from src.community_servers.copy_requests_router import router as copy_requests_router
 from src.community_servers.router import router as community_servers_router
 from src.community_servers.scoring_router import router as community_scoring_router
 from src.config import settings
@@ -788,6 +789,7 @@ app.include_router(community_servers_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_admin_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_clear_router, prefix=settings.API_V2_PREFIX)
 app.include_router(community_scoring_router, prefix=settings.API_V2_PREFIX)
+app.include_router(copy_requests_router, prefix=settings.API_V2_PREFIX)
 app.include_router(llm_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 app.include_router(fact_check_import_router, prefix=settings.API_V1_PREFIX)
