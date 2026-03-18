@@ -61,6 +61,7 @@ sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
     deps_type=SimAgentDeps,
     output_type=SimAgentAction,
     retries=3,
+    instrument=True,
 )
 
 
@@ -68,6 +69,7 @@ action_selector: Agent[SimAgentDeps, ActionSelectionResult] = Agent(
     deps_type=SimAgentDeps,
     output_type=ActionSelectionResult,
     retries=3,
+    instrument=True,
 )
 
 

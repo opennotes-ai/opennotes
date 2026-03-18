@@ -122,10 +122,14 @@ def setup_traceloop(
             try:
                 from traceloop.sdk.instruments import Instruments
 
-                init_kwargs["block_instruments"] = {Instruments.REDIS}
+                init_kwargs["instruments"] = {
+                    Instruments.ANTHROPIC,
+                    Instruments.OPENAI,
+                    Instruments.VERTEXAI,
+                }
             except (ImportError, AttributeError):
                 logger.warning(
-                    "Could not configure block_instruments — Instruments enum unavailable"
+                    "Could not configure instruments allowlist — Instruments enum unavailable"
                 )
 
             Traceloop.init(**init_kwargs)

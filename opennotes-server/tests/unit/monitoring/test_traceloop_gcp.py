@@ -170,10 +170,10 @@ class TestTraceloopDedicatedExporter:
         assert init_kwargs["api_endpoint"] == "http://localhost:4317"
 
 
-class TestTraceloopBlockInstruments:
+class TestTraceloopInstrumentsAllowlist:
     @patch(GCP_DETECTOR_PATH, return_value=False)
     @patch(TRACELOOP_PATH)
-    def test_blocks_redis_instrumentation(self, mock_traceloop_cls, mock_is_gcp) -> None:
+    def test_uses_llm_only_instruments_allowlist(self, mock_traceloop_cls, mock_is_gcp) -> None:
         import src.monitoring.traceloop as traceloop_mod
 
         traceloop_mod._traceloop_configured = False
@@ -190,14 +190,19 @@ class TestTraceloopBlockInstruments:
         init_kwargs = mock_traceloop_cls.init.call_args[1]
         from traceloop.sdk.instruments import Instruments
 
-        assert "block_instruments" in init_kwargs
-        assert Instruments.REDIS in init_kwargs["block_instruments"]
+        assert "instruments" in init_kwargs
+        assert "block_instruments" not in init_kwargs
+        assert init_kwargs["instruments"] == {
+            Instruments.ANTHROPIC,
+            Instruments.OPENAI,
+            Instruments.VERTEXAI,
+        }
 
 
 class TestTraceloopInstrumentsUnavailable:
     @patch(GCP_DETECTOR_PATH, return_value=False)
     @patch(TRACELOOP_PATH)
-    def test_setup_succeeds_when_instruments_redis_unavailable(
+    def test_setup_succeeds_when_instruments_enum_unavailable(
         self, mock_traceloop_cls, mock_is_gcp
     ) -> None:
         import src.monitoring.traceloop as traceloop_mod
@@ -210,7 +215,7 @@ class TestTraceloopInstrumentsUnavailable:
 
         def patched_import(name, *args, **kwargs):
             if name == "traceloop.sdk.instruments":
-                raise AttributeError("Instruments has no attribute REDIS")
+                raise AttributeError("Instruments enum unavailable")
             return original_import(name, *args, **kwargs)
 
         with patch("builtins.__import__", side_effect=patched_import):
@@ -225,7 +230,7 @@ class TestTraceloopInstrumentsUnavailable:
 
         assert result is True
         init_kwargs = mock_traceloop_cls.init.call_args[1]
-        assert "block_instruments" not in init_kwargs
+        assert "instruments" not in init_kwargs
 
 
 class TestTraceloopGcpImportError:
