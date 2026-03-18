@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json as json_mod
 import os
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import click
 import httpx
@@ -32,10 +36,18 @@ class CliContext:
     env_name: str
     client: httpx.Client
     use_huuid: bool = True
+    toon_output: bool = False
 
     @property
     def base_url(self) -> str:
         return self.auth.get_server_url()
+
+    def write_json(self, data: Any) -> None:
+        raw = json_mod.dumps(data, indent=2)
+        if self.toon_output:
+            subprocess.run(["toon"], input=raw.encode(), check=True)
+        else:
+            click.echo(raw)
 
 
 def _read_api_key_from_env_file(env_file: Path, verbose: bool = False) -> str | None:
@@ -77,6 +89,7 @@ class HoistingGroup(click.Group):
     help="Use local server (localhost:8000) with no authentication.",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output raw JSON.")
+@click.option("--toon", "toon_output", is_flag=True, help="Pipe JSON output through toon for rich rendering.")
 @click.option("-v", "--verbose", is_flag=True, help="Show verbose output.")
 @click.option("--uuid", "use_raw_uuid", is_flag=True, help="Display raw UUIDs instead of huuids.")
 @click.pass_context
@@ -85,11 +98,20 @@ def cli(
     env: str,
     use_local: bool,
     json_output: bool,
+    toon_output: bool,
     verbose: bool,
     use_raw_uuid: bool,
 ) -> None:
     """OpenNotes CLI - Interact with opennotes-server endpoints."""
     ctx.ensure_object(dict)
+
+    if toon_output:
+        if not shutil.which("toon"):
+            raise click.UsageError(
+                "--toon requires the 'toon' command to be installed. "
+                "Install it with: cargo install toon"
+            )
+        json_output = True
 
     if use_local:
         env = "local"
@@ -122,6 +144,7 @@ def cli(
         env_name=env,
         client=client,
         use_huuid=not use_raw_uuid,
+        toon_output=toon_output,
     )
 
     ctx.call_on_close(client.close)

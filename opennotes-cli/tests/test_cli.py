@@ -68,6 +68,60 @@ class TestFlagHoisting:
         assert result.exit_code != 0
 
 
+class TestToonFlag:
+    def test_toon_flag_in_help(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["--help"])
+        assert result.exit_code == 0
+        assert "--toon" in result.output
+
+    def test_toon_implies_json(self, runner: CliRunner) -> None:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"status": "ok"}'
+        mock_response.json.return_value = {"status": "ok"}
+
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = None
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client), \
+             patch("shutil.which", return_value="/usr/local/bin/toon"), \
+             patch("subprocess.run") as mock_run:
+            result = runner.invoke(cli, ["--local", "--toon", "health"])
+
+        assert result.exit_code == 0
+        mock_run.assert_called_once()
+        call_kwargs = mock_run.call_args
+        assert call_kwargs[0][0] == ["toon"]
+        assert b"environment" in call_kwargs[1]["input"]
+
+    def test_toon_error_when_not_installed(self, runner: CliRunner) -> None:
+        with patch("shutil.which", return_value=None):
+            result = runner.invoke(cli, ["--local", "--toon", "health"])
+
+        assert result.exit_code != 0
+        assert "toon" in result.output.lower()
+
+    def test_toon_after_subcommand(self, runner: CliRunner) -> None:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"status": "ok"}'
+        mock_response.json.return_value = {"status": "ok"}
+
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+        mock_client.cookies = MagicMock()
+        mock_client.cookies.get.return_value = None
+
+        with patch("opennotes_cli.cli.httpx.Client", return_value=mock_client), \
+             patch("shutil.which", return_value="/usr/local/bin/toon"), \
+             patch("subprocess.run"):
+            result = runner.invoke(cli, ["--local", "health", "--toon"])
+
+        assert result.exit_code == 0
+
+
 class TestAllCommandsRegistered:
     @pytest.mark.parametrize(
         "cmd",
