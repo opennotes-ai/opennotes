@@ -567,8 +567,8 @@ def simulation_launch(
     if urls_file:
         all_urls.extend(_read_urls_from_file(urls_file))
 
-    if not all_urls and not texts:
-        error_console.print("[red]Error:[/red] Provide at least one --url, --urls-from, or --text.")
+    if not all_urls and not texts and not copy_requests_from:
+        error_console.print("[red]Error:[/red] Provide at least one --url, --urls-from, --text, or --copy-requests-from.")
         sys.exit(1)
 
     csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
