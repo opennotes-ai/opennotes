@@ -53,6 +53,54 @@ BAGGAGE_KEYS_TO_PROPAGATE = [
 VALID_ATTR_TYPES = (bool, str, bytes, int, float)
 
 
+class InvalidAttributeTypeFilter(logging.Filter):
+    """Suppress 'Invalid type … for attribute' warnings from opentelemetry.attributes.
+
+    Third-party instrumentors (e.g., OpenLLMetry/Traceloop for Anthropic) pass
+    sentinel values like ``Omit`` and ``NotGiven`` from provider SDKs as span
+    attributes.  The OTel SDK logs a WARNING for each one in ``_clean_attribute()``.
+
+    These warnings are harmless: ``AttributeSanitizingSpanProcessor`` already
+    strips non-primitive attributes in ``on_end()`` before export.  The filter
+    eliminates the per-attribute log noise (153 warnings per agent turn in prod).
+    """
+
+    _SUPPRESSED_PREFIXES = (
+        "Invalid type",
+        "Attribute",
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return all(not msg.startswith(prefix) for prefix in self._SUPPRESSED_PREFIXES)
+
+
+_attribute_filter_installed = False
+
+
+def _install_attribute_warning_filter() -> None:
+    """Install the InvalidAttributeTypeFilter on the opentelemetry.attributes logger.
+
+    Idempotent: safe to call multiple times.
+    """
+    global _attribute_filter_installed
+    if _attribute_filter_installed:
+        return
+    otel_attr_logger = logging.getLogger("opentelemetry.attributes")
+    otel_attr_logger.addFilter(InvalidAttributeTypeFilter())
+    _attribute_filter_installed = True
+
+
+def _remove_attribute_warning_filter() -> None:
+    """Remove all InvalidAttributeTypeFilter instances from the logger."""
+    global _attribute_filter_installed
+    otel_attr_logger = logging.getLogger("opentelemetry.attributes")
+    for f in otel_attr_logger.filters[:]:
+        if isinstance(f, InvalidAttributeTypeFilter):
+            otel_attr_logger.removeFilter(f)
+    _attribute_filter_installed = False
+
+
 class AttributeSanitizingSpanProcessor:
     """Filter out non-primitive span attribute values before export.
 
@@ -234,6 +282,8 @@ def setup_otel(
             from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
             from src.config import get_settings
+
+            _install_attribute_warning_filter()
 
             settings = get_settings()
 
@@ -468,6 +518,7 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
         _otel_initialized = False
         AttributeSanitizingSpanProcessor.instance = None
         BaggageSpanProcessor.instance = None
+        _remove_attribute_warning_filter()
         logger.debug("OpenTelemetry state reset, ready for reinitialization")
 
 

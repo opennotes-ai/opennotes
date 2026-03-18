@@ -1114,7 +1114,9 @@ class TestRunAgentTurnWorkflow:
 
         agent_instance_id = str(uuid4())
         context = _make_context(agent_instance_id=agent_instance_id)
-        compacted = [{"kind": "request", "parts": [{"part_kind": "text", "content": "compacted"}]}]
+        compacted = [
+            {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "compacted"}]}
+        ]
 
         captured_select_args: dict = {}
 

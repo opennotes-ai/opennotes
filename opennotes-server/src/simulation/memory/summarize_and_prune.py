@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from src.simulation.memory.compactor_protocol import CompactionResult, ModelMessage
-from src.simulation.memory.message_utils import extract_text
+from src.simulation.memory.message_utils import extract_text, group_tool_pairs
 
 DEFAULT_KEEP_RECENT = 10
 
@@ -35,8 +35,19 @@ class SummarizeAndPruneCompactor:
                 metadata={"keep_recent": keep_recent, "summarized": False},
             )
 
-        old_messages = messages[:-keep_recent]
-        recent_messages = messages[-keep_recent:]
+        split_idx = len(messages) - keep_recent
+        groups = group_tool_pairs(messages)
+
+        cumulative = 0
+        for group in groups:
+            group_end = cumulative + len(group)
+            if cumulative < split_idx < group_end:
+                split_idx = cumulative
+                break
+            cumulative = group_end
+
+        old_messages = messages[:split_idx]
+        recent_messages = messages[split_idx:]
 
         old_text = "\n".join(extract_text(m) for m in old_messages)
         summary = await self._summarizer(old_text)

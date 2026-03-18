@@ -197,8 +197,9 @@ class TestSelectAction:
             assert mock_run.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_retry_passes_original_message_history(self, sample_deps):
-        """The retry uses the original message_history, not result.all_messages()."""
+    async def test_retry_passes_defensive_copy_of_message_history(self, sample_deps):
+        """The retry uses a defensive copy of the original message_history,
+        not result.all_messages()."""
         agent = OpenNotesSimAgent()
         original_history = [MagicMock(spec_set=["role"])]
         first_messages = [MagicMock(spec_set=["role"])]
@@ -224,7 +225,8 @@ class TestSelectAction:
                 message_history=original_history,
             )
             retry_call = mock_run.call_args_list[1]
-            assert retry_call.kwargs.get("message_history") is original_history
+            assert retry_call.kwargs.get("message_history") == original_history
+            assert retry_call.kwargs.get("message_history") is not original_history
             assert retry_call.kwargs.get("message_history") is not first_messages
 
     @pytest.mark.asyncio

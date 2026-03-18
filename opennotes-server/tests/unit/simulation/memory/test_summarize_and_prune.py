@@ -14,6 +14,38 @@ def _make_response_message(content: str) -> dict[str, Any]:
     return {"kind": "response", "parts": [{"part_kind": "text", "content": content}]}
 
 
+def _make_tool_call_response(
+    tool_name: str = "test_tool", args: str = "{}", tool_call_id: str = "call-1"
+) -> dict[str, Any]:
+    return {
+        "kind": "response",
+        "parts": [
+            {
+                "part_kind": "tool-call",
+                "tool_name": tool_name,
+                "args": args,
+                "tool_call_id": tool_call_id,
+            }
+        ],
+    }
+
+
+def _make_tool_return_request(
+    tool_name: str = "test_tool", content: str = "result", tool_call_id: str = "call-1"
+) -> dict[str, Any]:
+    return {
+        "kind": "request",
+        "parts": [
+            {
+                "part_kind": "tool-return",
+                "tool_name": tool_name,
+                "content": content,
+                "tool_call_id": tool_call_id,
+            }
+        ],
+    }
+
+
 class TestSummarizeAndPruneCompactor:
     @pytest.mark.asyncio
     async def test_summarizes_old_messages(self):
@@ -129,6 +161,77 @@ class TestSummarizeAndPruneCompactor:
 
         summary_msg = result.messages[0]
         assert summary_msg["parts"][0]["part_kind"] != "user-prompt"
+
+
+class TestSummarizeAndPruneToolPairs:
+    @pytest.mark.asyncio
+    async def test_tool_pair_straddling_boundary_kept_in_recent(self):
+        mock_summarizer = AsyncMock(return_value="Summary of old")
+        compactor = SummarizeAndPruneCompactor(summarizer=mock_summarizer)
+
+        messages: list[dict[str, Any]] = []
+        for i in range(9):
+            messages.append(_make_user_message(f"msg-{i}"))
+        messages.append(_make_tool_call_response("lookup", "{}", "call-9"))
+        messages.append(_make_tool_return_request("lookup", "result-10", "call-9"))
+        for i in range(11, 15):
+            messages.append(_make_user_message(f"msg-{i}"))
+
+        assert len(messages) == 15
+
+        result = await compactor.compact(messages, {"keep_recent": 5})
+
+        recent = result.messages[1:]
+        assert messages[9] in recent, "tool_call at index 9 must be in recent"
+        assert messages[10] in recent, "tool_return at index 10 must be in recent"
+        assert result.metadata["messages_summarized"] == 9
+
+    @pytest.mark.asyncio
+    async def test_tool_pair_entirely_in_old_section_summarized(self):
+        mock_summarizer = AsyncMock(return_value="Summary with tool context")
+        compactor = SummarizeAndPruneCompactor(summarizer=mock_summarizer)
+
+        messages: list[dict[str, Any]] = []
+        messages.append(_make_user_message("msg-0"))
+        messages.append(_make_user_message("msg-1"))
+        messages.append(_make_tool_call_response("search", "{}", "call-2"))
+        messages.append(_make_tool_return_request("search", "found-it", "call-2"))
+        for i in range(4, 15):
+            messages.append(_make_user_message(f"msg-{i}"))
+
+        assert len(messages) == 15
+
+        result = await compactor.compact(messages, {"keep_recent": 5})
+
+        mock_summarizer.assert_called_once()
+        call_arg = mock_summarizer.call_args[0][0]
+        assert "found-it" in call_arg
+        assert result.metadata["messages_summarized"] == 10
+        assert result.messages[1:] == messages[-5:]
+
+    @pytest.mark.asyncio
+    async def test_multiple_tool_returns_straddling_boundary(self):
+        mock_summarizer = AsyncMock(return_value="Summary")
+        compactor = SummarizeAndPruneCompactor(summarizer=mock_summarizer)
+
+        messages: list[dict[str, Any]] = []
+        for i in range(8):
+            messages.append(_make_user_message(f"msg-{i}"))
+        messages.append(_make_tool_call_response("multi", "{}", "call-8"))
+        messages.append(_make_tool_return_request("multi", "ret-9", "call-8"))
+        messages.append(_make_tool_return_request("multi", "ret-10", "call-8"))
+        for i in range(11, 15):
+            messages.append(_make_user_message(f"msg-{i}"))
+
+        assert len(messages) == 15
+
+        result = await compactor.compact(messages, {"keep_recent": 5})
+
+        recent = result.messages[1:]
+        assert messages[8] in recent, "tool_call at index 8 must be in recent"
+        assert messages[9] in recent, "tool_return at index 9 must be in recent"
+        assert messages[10] in recent, "tool_return at index 10 must be in recent"
+        assert result.metadata["messages_summarized"] == 8
 
 
 class TestSummarizeAndPrunePydanticAiTypes:
