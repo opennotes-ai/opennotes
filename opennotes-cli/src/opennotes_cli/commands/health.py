@@ -59,7 +59,7 @@ def health(ctx: click.Context) -> None:
             console.print(f"[red]\u2717[/red] Connection failed: {e}")
 
     if cli_ctx.json_output:
-        console.print(json.dumps(results, indent=2))
+        cli_ctx.write_json(results)
     else:
         all_ok = all(
             c.get("status") == "ok" for c in results["checks"].values()
