@@ -8559,6 +8559,81 @@
         }
       }
     },
+    "/api/v2/community-servers/{community_server_id}/copy-requests": {
+      "post": {
+        "tags": [
+          "community-servers"
+        ],
+        "summary": "Copy Requests",
+        "operationId": "copy_requests_api_v2_community_servers__community_server_id__copy_requests_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyRequestsPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/community-servers/{community_server_id}/llm-config": {
       "post": {
         "tags": [
@@ -15043,6 +15118,53 @@
         ],
         "title": "ConversationFlashpointMatch",
         "description": "Match result from conversation flashpoint detection scan."
+      },
+      "CopyRequestsAttributes": {
+        "properties": {
+          "source_community_server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Community Server Id",
+            "description": "Source community server to copy requests from"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_community_server_id"
+        ],
+        "title": "CopyRequestsAttributes"
+      },
+      "CopyRequestsData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "copy-requests"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/CopyRequestsAttributes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "attributes"
+        ],
+        "title": "CopyRequestsData"
+      },
+      "CopyRequestsPayload": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CopyRequestsData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CopyRequestsPayload"
       },
       "DetailedAnalysisMeta": {
         "properties": {
