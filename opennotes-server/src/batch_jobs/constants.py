@@ -13,11 +13,14 @@ BULK_APPROVAL_JOB_TYPE = "approve:candidates"
 RECHUNK_FACT_CHECK_JOB_TYPE = "rechunk:fact_check"
 RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE = "rechunk:previously_seen"
 
+COPY_REQUESTS_JOB_TYPE = "copy:requests"
+
 DEFAULT_SCRAPE_CONCURRENCY = 10  # Max concurrent URL scrapes
 SCRAPE_URL_TIMEOUT_SECONDS = 60  # Per-URL timeout
 
 __all__ = [
     "BULK_APPROVAL_JOB_TYPE",
+    "COPY_REQUESTS_JOB_TYPE",
     "DEFAULT_SCRAPE_CONCURRENCY",
     "IMPORT_JOB_TYPE",
     "PROMOTION_JOB_TYPE",
