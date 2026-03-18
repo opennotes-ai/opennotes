@@ -5,7 +5,12 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from src.simulation.memory.compactor_protocol import CompactionResult, ModelMessage
-from src.simulation.memory.message_utils import extract_text, is_system_message
+from src.simulation.memory.message_utils import (
+    extract_text,
+    is_system_message,
+    is_tool_call_message,
+    is_tool_return_message,
+)
 
 DEFAULT_SIMILARITY_THRESHOLD = 0.92
 DEFAULT_MAX_MESSAGES = 500
@@ -52,7 +57,7 @@ class SemanticDedupCompactor:
         preserved: list[tuple[int, ModelMessage]] = []
         candidates: list[tuple[int, ModelMessage]] = []
         for idx, msg in enumerate(messages):
-            if is_system_message(msg):
+            if is_system_message(msg) or is_tool_call_message(msg) or is_tool_return_message(msg):
                 preserved.append((idx, msg))
             else:
                 candidates.append((idx, msg))

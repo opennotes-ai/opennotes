@@ -259,3 +259,111 @@ class TestSemanticDedupCompactor:
 
         contents = [m["parts"][0]["content"] for m in result.messages]
         assert contents == ["system", "a", "b", "c"]
+
+
+def _make_tool_call_response(
+    tool_name: str = "test_tool", args: str = "{}", tool_call_id: str = "call-1"
+) -> dict[str, Any]:
+    return {
+        "kind": "response",
+        "parts": [
+            {
+                "part_kind": "tool-call",
+                "tool_name": tool_name,
+                "args": args,
+                "tool_call_id": tool_call_id,
+            }
+        ],
+    }
+
+
+def _make_tool_return_request(
+    tool_name: str = "test_tool", content: str = "result", tool_call_id: str = "call-1"
+) -> dict[str, Any]:
+    return {
+        "kind": "request",
+        "parts": [
+            {
+                "part_kind": "tool-return",
+                "tool_name": tool_name,
+                "content": content,
+                "tool_call_id": tool_call_id,
+            }
+        ],
+    }
+
+
+class TestSemanticDedupToolPairs:
+    @pytest.mark.asyncio
+    async def test_tool_pair_not_split_by_dedup(self):
+        async def mock_embed(texts: list[str]) -> list[list[float]]:
+            return [[1.0, 0.0, 0.0]] * len(texts)
+
+        compactor = SemanticDedupCompactor(embed=mock_embed)
+        messages = [
+            _make_user_message("hello"),
+            _make_tool_call_response("search", '{"q": "test"}'),
+            _make_tool_return_request("search", "search result"),
+            _make_user_message("hello again"),
+        ]
+
+        result = await compactor.compact(messages, {"similarity_threshold": 0.0})
+
+        tool_call_present = any(
+            any(p.get("part_kind") == "tool-call" for p in m.get("parts", []))
+            for m in result.messages
+        )
+        tool_return_present = any(
+            any(p.get("part_kind") == "tool-return" for p in m.get("parts", []))
+            for m in result.messages
+        )
+        assert tool_call_present, "tool-call message was removed by dedup"
+        assert tool_return_present, "tool-return message was removed by dedup"
+
+    @pytest.mark.asyncio
+    async def test_tool_messages_not_embedded(self):
+        received_texts: list[list[str]] = []
+
+        async def mock_embed(texts: list[str]) -> list[list[float]]:
+            received_texts.append(texts)
+            return [[float(i), 0.0, 0.0] for i in range(len(texts))]
+
+        compactor = SemanticDedupCompactor(embed=mock_embed)
+        messages = [
+            _make_user_message("user msg"),
+            _make_tool_call_response("mytool", "{}"),
+            _make_tool_return_request("mytool", "tool output"),
+            _make_user_message("another msg"),
+        ]
+
+        await compactor.compact(messages, {"similarity_threshold": 0.99})
+
+        assert len(received_texts) == 1
+        all_embedded = received_texts[0]
+        for text in all_embedded:
+            assert "tool" not in text.lower() or "user" in text.lower(), (
+                f"Tool message text was embedded: {text}"
+            )
+        assert len(all_embedded) == 2
+
+    @pytest.mark.asyncio
+    async def test_tool_pair_preserved_with_all_duplicates_removed(self):
+        async def mock_embed(texts: list[str]) -> list[list[float]]:
+            return [[1.0, 0.0, 0.0]] * len(texts)
+
+        compactor = SemanticDedupCompactor(embed=mock_embed)
+        messages = [
+            _make_user_message("dup1"),
+            _make_tool_call_response("tool", "{}", "c1"),
+            _make_tool_return_request("tool", "result", "c1"),
+            _make_user_message("dup2"),
+            _make_user_message("dup3"),
+        ]
+
+        result = await compactor.compact(messages, {"similarity_threshold": 0.0})
+
+        assert result.compacted_count == 3
+        kinds = [m["parts"][0]["part_kind"] for m in result.messages]
+        assert "tool-call" in kinds
+        assert "tool-return" in kinds
+        assert kinds.count("user-prompt") == 1
