@@ -425,10 +425,12 @@ class OpenNotesSimAgent:
             notes_count=len(notes),
         )
 
+        history_copy = list(message_history) if message_history else None
+
         result = await self._action_selector.run(
             prompt,
             deps=deps,
-            message_history=message_history,
+            message_history=history_copy,
             model=self._model.to_pydantic_ai(),
         )
 
@@ -443,7 +445,7 @@ class OpenNotesSimAgent:
             result = await self._action_selector.run(
                 retry_prompt,
                 deps=deps,
-                message_history=message_history,
+                message_history=list(message_history) if message_history else None,
                 model=self._model.to_pydantic_ai(),
             )
 
@@ -468,7 +470,7 @@ class OpenNotesSimAgent:
             result = await self._action_selector.run(
                 nudge_prompt,
                 deps=deps,
-                message_history=message_history,
+                message_history=list(message_history) if message_history else None,
                 model=self._model.to_pydantic_ai(),
             )
 
