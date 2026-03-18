@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -12,7 +13,7 @@ from src.notes.models import Request
 from src.notes.request_service import RequestService
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +33,7 @@ class CopyRequestService:
         db: AsyncSession,
         source_community_server_id: UUID,
         target_community_server_id: UUID,
-        on_progress: Callable[[int, int], None] | None = None,
+        on_progress: Callable[[int, int], None | Awaitable[None]] | None = None,
     ) -> CopyResult:
         stmt = (
             select(Request)
@@ -55,7 +56,9 @@ class CopyRequestService:
                 if source_req.message_archive is None:
                     skipped += 1
                     if on_progress:
-                        on_progress(i + 1, total)
+                        _res = on_progress(i + 1, total)
+                        if inspect.isawaitable(_res):
+                            await _res
                     continue
 
                 content = source_req.message_archive.get_content() or ""
@@ -93,6 +96,8 @@ class CopyRequestService:
                 failed += 1
 
             if on_progress:
-                on_progress(i + 1, total)
+                _res = on_progress(i + 1, total)
+                if inspect.isawaitable(_res):
+                    await _res
 
         return CopyResult(total_copied=copied, total_skipped=skipped, total_failed=failed)
