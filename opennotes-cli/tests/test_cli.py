@@ -63,6 +63,15 @@ class TestFlagHoisting:
         result = runner.invoke(cli, ["--json", "health", "-v", "--help"])
         assert result.exit_code == 0
 
+    def test_verbose_long_form_after_subcommand(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["health", "--verbose", "--help"])
+        assert result.exit_code == 0
+
+    def test_subcommand_specific_args_preserved(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["sim-agent", "update", "--help", "--json"])
+        assert result.exit_code == 0
+        assert "--name" in result.output
+
     def test_unknown_flag_not_hoisted(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["health", "--nonexistent-flag"])
         assert result.exit_code != 0
@@ -102,6 +111,7 @@ class TestToonFlag:
 
         assert result.exit_code != 0
         assert "toon" in result.output.lower()
+        assert "install" in result.output.lower()
 
     def test_toon_after_subcommand(self, runner: CliRunner) -> None:
         mock_response = MagicMock()
@@ -321,6 +331,42 @@ class TestCliContext:
             client=client,
         )
         assert ctx.base_url == "http://test:8000"
+
+    def test_write_json_without_toon(self) -> None:
+        from opennotes_cli.auth import JwtAuthProvider
+
+        auth = JwtAuthProvider(server_url="http://test:8000")
+        ctx = CliContext(
+            auth=auth,
+            json_output=True,
+            verbose=False,
+            env_name="test",
+            client=MagicMock(),
+            toon_output=False,
+        )
+        with patch("click.echo") as mock_echo:
+                ctx.write_json({"key": "value"})
+                mock_echo.assert_called_once()
+                output = mock_echo.call_args[0][0]
+                assert '"key": "value"' in output
+
+    def test_write_json_with_toon(self) -> None:
+        from opennotes_cli.auth import JwtAuthProvider
+
+        auth = JwtAuthProvider(server_url="http://test:8000")
+        ctx = CliContext(
+            auth=auth,
+            json_output=True,
+            verbose=False,
+            env_name="test",
+            client=MagicMock(),
+            toon_output=True,
+        )
+        with patch("subprocess.run") as mock_run:
+            ctx.write_json({"key": "value"})
+            mock_run.assert_called_once()
+            assert mock_run.call_args[0][0] == ["toon"]
+            assert b'"key": "value"' in mock_run.call_args[1]["input"]
 
 
 class TestHttpHelpers:
