@@ -11,7 +11,6 @@ from src.batch_jobs.schemas import BatchJobCreate
 from src.batch_jobs.service import BatchJobService
 from src.dbos_workflows.batch_job_helpers import (
     finalize_batch_job_sync,
-    update_batch_job_progress_sync,
 )
 from src.dbos_workflows.enqueue_utils import safe_enqueue
 from src.monitoring import get_logger
@@ -208,16 +207,23 @@ def copy_requests_step(
     from src.database import get_session_maker
     from src.notes.copy_request_service import CopyRequestService
 
-    progress_counter = {"count": 0}
-
-    def on_progress(current: int, total: int) -> None:
-        progress_counter["count"] = current
+    async def _on_progress(current: int, total: int) -> None:
         if current % COPY_BATCH_SIZE == 0 or current == total:
-            update_batch_job_progress_sync(
-                UUID(batch_job_id),
-                completed_tasks=current,
-                failed_tasks=0,
-            )
+            try:
+                async with get_session_maker()() as progress_db:
+                    service = BatchJobService(progress_db)
+                    await service.update_progress(
+                        UUID(batch_job_id),
+                        completed_tasks=current,
+                        failed_tasks=0,
+                    )
+                    await progress_db.commit()
+            except Exception as e:
+                logger.error(
+                    "Failed to update batch job progress",
+                    extra={"batch_job_id": batch_job_id, "error": str(e)},
+                    exc_info=True,
+                )
 
     async def _run() -> dict[str, Any]:
         async with get_session_maker()() as db:
@@ -225,7 +231,7 @@ def copy_requests_step(
                 db=db,
                 source_community_server_id=UUID(source_community_server_id),
                 target_community_server_id=UUID(target_community_server_id),
-                on_progress=on_progress,
+                on_progress=_on_progress,
             )
             await db.commit()
             return {

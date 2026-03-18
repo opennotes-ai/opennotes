@@ -84,7 +84,6 @@ class TestCopyRequestsStep:
 
         with (
             patch("src.dbos_workflows.copy_requests_workflow.run_sync") as mock_run_sync,
-            patch("src.dbos_workflows.copy_requests_workflow.update_batch_job_progress_sync"),
         ):
             mock_run_sync.return_value = {
                 "total_copied": 10,

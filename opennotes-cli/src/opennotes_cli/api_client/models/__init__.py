@@ -124,6 +124,9 @@ from .community_server_single_response_jsonapi import (
 )
 from .consensus_metrics_data import ConsensusMetricsData
 from .conversation_flashpoint_match import ConversationFlashpointMatch
+from .copy_requests_attributes import CopyRequestsAttributes
+from .copy_requests_data import CopyRequestsData
+from .copy_requests_payload import CopyRequestsPayload
 from .create_community_server_api_v1_community_servers_post_response_401 import (
     CreateCommunityServerApiV1CommunityServersPostResponse401,
 )
@@ -729,6 +732,9 @@ __all__ = (
     "CommunityServerSingleResponseJsonapi",
     "ConsensusMetricsData",
     "ConversationFlashpointMatch",
+    "CopyRequestsAttributes",
+    "CopyRequestsData",
+    "CopyRequestsPayload",
     "CreateCommunityServerApiV1CommunityServersPostResponse401",
     "CreateCommunityServerApiV1CommunityServersPostResponse403",
     "CreateCommunityServerApiV1CommunityServersPostResponse409",

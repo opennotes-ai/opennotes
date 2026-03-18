@@ -2825,6 +2825,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/community-servers/{community_server_id}/copy-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy Requests */
+        post: operations["copy_requests_api_v2_community_servers__community_server_id__copy_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/community-servers/{community_server_id}/llm-config": {
         parameters: {
             query?: never;
@@ -5360,6 +5377,29 @@ export interface components {
              * @description Number of context messages analyzed
              */
             context_messages: number;
+        };
+        /** CopyRequestsAttributes */
+        CopyRequestsAttributes: {
+            /**
+             * Source Community Server Id
+             * Format: uuid
+             * @description Source community server to copy requests from
+             */
+            source_community_server_id: string;
+        };
+        /** CopyRequestsData */
+        CopyRequestsData: {
+            /**
+             * Type
+             * @default copy-requests
+             * @constant
+             */
+            type: "copy-requests";
+            attributes: components["schemas"]["CopyRequestsAttributes"];
+        };
+        /** CopyRequestsPayload */
+        CopyRequestsPayload: {
+            data: components["schemas"]["CopyRequestsData"];
         };
         /** DetailedAnalysisMeta */
         DetailedAnalysisMeta: {
@@ -15301,6 +15341,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScoreCommunityResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_requests_api_v2_community_servers__community_server_id__copy_requests_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyRequestsPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Not authenticated */
