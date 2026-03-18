@@ -134,6 +134,127 @@ class TestSlidingWindowKeepsLastN:
         assert result.messages[1]["parts"][0]["content"] == "msg-9"
 
 
+def _make_tool_call_response(
+    tool_name: str = "test_tool", args: str = "{}", tool_call_id: str = "call-1"
+) -> dict[str, Any]:
+    return {
+        "kind": "response",
+        "parts": [
+            {
+                "part_kind": "tool-call",
+                "tool_name": tool_name,
+                "args": args,
+                "tool_call_id": tool_call_id,
+            }
+        ],
+    }
+
+
+def _make_tool_return_request(
+    tool_name: str = "test_tool", content: str = "result", tool_call_id: str = "call-1"
+) -> dict[str, Any]:
+    return {
+        "kind": "request",
+        "parts": [
+            {
+                "part_kind": "tool-return",
+                "tool_name": tool_name,
+                "content": content,
+                "tool_call_id": tool_call_id,
+            }
+        ],
+    }
+
+
+class TestSlidingWindowToolPairs:
+    @pytest.mark.asyncio
+    async def test_tool_pair_at_boundary_preserved(self):
+        compactor = SlidingWindowCompactor()
+        messages: list[dict[str, Any]] = []
+        for i in range(8):
+            messages.append(_make_user_message(f"msg-{i}"))
+        messages.append(_make_tool_call_response())
+        messages.append(_make_tool_return_request())
+        for i in range(10, 15):
+            messages.append(_make_user_message(f"msg-{i}"))
+        assert len(messages) == 15
+
+        result = await compactor.compact(messages, {"window_size": 6})
+
+        assert result.messages[0]["parts"][0]["part_kind"] == "tool-call"
+        assert result.messages[1]["parts"][0]["part_kind"] == "tool-return"
+        assert len(result.messages) == 7
+
+    @pytest.mark.asyncio
+    async def test_tool_pair_outside_window_dropped_as_unit(self):
+        compactor = SlidingWindowCompactor()
+        messages: list[dict[str, Any]] = []
+        messages.append(_make_user_message("msg-0"))
+        messages.append(_make_user_message("msg-1"))
+        messages.append(_make_tool_call_response())
+        messages.append(_make_tool_return_request())
+        for i in range(4, 20):
+            messages.append(_make_user_message(f"msg-{i}"))
+        assert len(messages) == 20
+
+        result = await compactor.compact(messages, {"window_size": 5})
+
+        assert len(result.messages) == 5
+        for msg in result.messages:
+            for part in msg["parts"]:
+                assert part["part_kind"] not in ("tool-call", "tool-return")
+
+    @pytest.mark.asyncio
+    async def test_multiple_tool_returns_kept_with_call(self):
+        compactor = SlidingWindowCompactor()
+        messages: list[dict[str, Any]] = []
+        for i in range(6):
+            messages.append(_make_user_message(f"msg-{i}"))
+        messages.append(_make_tool_call_response())
+        messages.append(_make_tool_return_request(tool_name="tool_a", tool_call_id="call-a"))
+        messages.append(_make_tool_return_request(tool_name="tool_b", tool_call_id="call-b"))
+        messages.append(_make_tool_return_request(tool_name="tool_c", tool_call_id="call-c"))
+        for i in range(10, 13):
+            messages.append(_make_user_message(f"msg-{i}"))
+        assert len(messages) == 13
+
+        result = await compactor.compact(messages, {"window_size": 5})
+
+        tool_parts = [
+            part["part_kind"]
+            for msg in result.messages
+            for part in msg["parts"]
+            if part["part_kind"] in ("tool-call", "tool-return")
+        ]
+        assert "tool-call" in tool_parts
+        assert tool_parts.count("tool-return") == 3
+        assert len(result.messages) == 7
+
+    @pytest.mark.asyncio
+    async def test_tool_pair_with_system_message(self):
+        compactor = SlidingWindowCompactor()
+        messages: list[dict[str, Any]] = [_make_system_message("system")]
+        for i in range(7):
+            messages.append(_make_user_message(f"msg-{i}"))
+        messages.append(_make_tool_call_response())
+        messages.append(_make_tool_return_request())
+        for i in range(9, 14):
+            messages.append(_make_user_message(f"msg-{i}"))
+        assert len(messages) == 15
+
+        result = await compactor.compact(messages, {"window_size": 7})
+
+        assert result.messages[0]["parts"][0]["part_kind"] == "system-prompt"
+        tool_parts = [
+            part["part_kind"]
+            for msg in result.messages
+            for part in msg["parts"]
+            if part["part_kind"] in ("tool-call", "tool-return")
+        ]
+        assert "tool-call" in tool_parts
+        assert "tool-return" in tool_parts
+
+
 class TestSlidingWindowPydanticAiTypes:
     @pytest.mark.asyncio
     async def test_handles_pydantic_ai_model_request(self):

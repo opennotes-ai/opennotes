@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.simulation.memory.compactor_protocol import CompactionResult, ModelMessage
-from src.simulation.memory.message_utils import is_system_message
+from src.simulation.memory.message_utils import group_tool_pairs, is_system_message
 
 DEFAULT_WINDOW_SIZE = 20
 
@@ -31,12 +31,22 @@ class SlidingWindowCompactor:
             system_message = messages[0]
             non_system_messages = messages[1:]
 
-        if system_message is not None:
-            remaining = window_size - 1
-            kept = non_system_messages[-remaining:] if remaining > 0 else []
-            result_messages = [system_message, *kept]
-        else:
-            result_messages = non_system_messages[-window_size:]
+        target = window_size - (1 if system_message is not None else 0)
+
+        groups = group_tool_pairs(non_system_messages)
+
+        kept_groups: list[list[ModelMessage]] = []
+        total = 0
+        for group in reversed(groups):
+            if total >= target:
+                break
+            kept_groups.append(group)
+            total += len(group)
+
+        kept_groups.reverse()
+        kept = [msg for group in kept_groups for msg in group]
+
+        result_messages = [system_message, *kept] if system_message is not None else kept
 
         return CompactionResult(
             messages=result_messages,
