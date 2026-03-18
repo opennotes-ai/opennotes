@@ -352,6 +352,7 @@ class TestWorkerWorkflowRegistration:
                 "run_orchestrator",
                 "run_playground_url_extraction",
                 "score_community_server",
+                "copy_requests_workflow",
             }
             assert workflow_names == expected
 

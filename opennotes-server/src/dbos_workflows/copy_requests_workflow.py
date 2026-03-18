@@ -78,7 +78,7 @@ async def dispatch_copy_requests(
     total_requests = result.scalar() or 0
 
     batch_job_service = BatchJobService(db)
-    job_metadata = {
+    job_metadata: dict[str, str | int | bool | float | list[str] | None] = {
         "source_community_server_id": str(source_community_server_id),
         "target_community_server_id": str(target_community_server_id),
         "execution_backend": "dbos",
