@@ -244,11 +244,11 @@ export default function NoteDetails(props: {
                           </div>
 
                           <Show when={attrs.ratings && attrs.ratings.length > 0}>
-                            <div class="mt-3 border-t border-border pt-3">
-                              <div class="mb-1.5 text-xs font-semibold text-muted-foreground">
+                            <details class="mt-3 border-t border-border pt-3">
+                              <summary class="cursor-pointer text-xs font-semibold text-muted-foreground">
                                 Ratings ({attrs.ratings!.length})
-                              </div>
-                              <div class="flex flex-wrap gap-1.5">
+                              </summary>
+                              <div class="mt-1.5 flex flex-wrap gap-1.5">
                                 <For each={attrs.ratings}>
                                   {(rating) => (
                                     <Badge variant={HELPFULNESS_VARIANT[rating.helpfulness_level] ?? "muted"}>
@@ -257,7 +257,7 @@ export default function NoteDetails(props: {
                                   )}
                                 </For>
                               </div>
-                            </div>
+                            </details>
                           </Show>
                         </div>
                       );
