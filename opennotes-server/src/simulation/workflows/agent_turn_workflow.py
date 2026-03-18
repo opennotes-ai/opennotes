@@ -562,6 +562,24 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             compaction_interval=settings.SIMULATION_COMPACTION_INTERVAL,
         )
 
+        if memory_result.get("was_compacted"):
+            from src.simulation.memory.message_utils import (
+                strip_orphaned_tool_messages,
+                validate_tool_pairs,
+            )
+
+            deserialized = _deserialize_messages(memory_result["messages"])
+            if not validate_tool_pairs(deserialized):
+                logger.warning(
+                    "Post-compaction validation failed: orphaned tool messages detected",
+                    extra={
+                        "strategy": context["memory_compaction_strategy"],
+                        "agent_instance_id": agent_instance_id,
+                    },
+                )
+                cleaned = strip_orphaned_tool_messages(deserialized)
+                memory_result["messages"] = _serialize_messages(cleaned)
+
         deps_data = build_deps_step(
             community_server_id=context["community_server_id"],
         )

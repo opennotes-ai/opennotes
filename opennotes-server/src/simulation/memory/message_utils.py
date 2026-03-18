@@ -136,3 +136,21 @@ def validate_tool_pairs(messages: list[Any]) -> bool:
             seen_tool_call = False
 
     return valid
+
+
+def strip_orphaned_tool_messages(messages: list[Any]) -> list[Any]:
+    seen_tool_call = False
+    result: list[Any] = []
+
+    for msg in messages:
+        if is_tool_call_message(msg):
+            seen_tool_call = True
+            result.append(msg)
+        elif is_tool_return_message(msg):
+            if seen_tool_call:
+                result.append(msg)
+        else:
+            seen_tool_call = False
+            result.append(msg)
+
+    return result
