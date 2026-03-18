@@ -157,11 +157,24 @@ def copy_requests_workflow(
         },
     )
 
-    result = copy_requests_step(
-        batch_job_id,
-        source_community_server_id,
-        target_community_server_id,
-    )
+    try:
+        result = copy_requests_step(
+            batch_job_id,
+            source_community_server_id,
+            target_community_server_id,
+        )
+    except Exception:
+        logger.exception(
+            "Copy-requests step failed",
+            extra={"batch_job_id": batch_job_id, "workflow_id": workflow_id},
+        )
+        _finalize_job(
+            UUID(batch_job_id),
+            success=False,
+            completed_tasks=0,
+            failed_tasks=0,
+        )
+        return {"total_copied": 0, "total_failed": 0, "total_skipped": 0}
 
     completed_count = result["total_copied"]
     failed_count = result["total_failed"]
