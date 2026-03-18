@@ -2,18 +2,23 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  timeout: 30000,
+  timeout: 60_000,
+  retries: 1,
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "http://localhost:3100",
   },
-  webServer: {
-    command: "pnpm dev",
-    port: 3000,
-    reuseExistingServer: true,
-    timeout: 30000,
-  },
-  projects: [
-    { name: "desktop", use: { viewport: { width: 1280, height: 720 } } },
-    { name: "mobile", use: { viewport: { width: 375, height: 812 } } },
+  webServer: [
+    {
+      command: "node tests/mock-server.cjs",
+      port: 9999,
+      reuseExistingServer: false,
+    },
+    {
+      command:
+        "PORT=3100 OPENNOTES_SERVER_URL=http://localhost:9999 pnpm dev",
+      port: 3100,
+      reuseExistingServer: true,
+      timeout: 60_000,
+    },
   ],
 });

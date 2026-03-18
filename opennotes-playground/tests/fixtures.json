@@ -1,0 +1,215 @@
+{
+  "simulation": {
+    "data": {
+      "type": "simulations",
+      "id": "019ceaaf-487e-708f-bcae-e4a441d6e841",
+      "attributes": {
+        "orchestrator_id": "test-orch",
+        "community_server_id": "test-server",
+        "status": "completed",
+        "started_at": "2026-03-15T10:00:00Z",
+        "completed_at": "2026-03-17T18:00:00Z",
+        "paused_at": null,
+        "metrics": null,
+        "error_message": null,
+        "restart_count": 0,
+        "cumulative_turns": 120,
+        "is_public": true,
+        "created_at": "2026-03-15T09:55:00Z",
+        "updated_at": "2026-03-17T18:00:00Z"
+      }
+    },
+    "jsonapi": { "version": "1.1" }
+  },
+  "analysis": {
+    "data": {
+      "type": "simulation-analysis",
+      "id": "019ceaaf-487e-708f-bcae-e4a441d6e841",
+      "attributes": {
+        "rating_distribution": {
+          "overall": { "HELPFUL": 35, "SOMEWHAT_HELPFUL": 20, "NOT_HELPFUL": 10 },
+          "per_agent": [
+            {
+              "agent_profile_id": "agent-1",
+              "agent_name": "Agent Alpha",
+              "short_description": "Careful analyst",
+              "distribution": { "HELPFUL": 12, "SOMEWHAT_HELPFUL": 8, "NOT_HELPFUL": 3 },
+              "total": 23
+            },
+            {
+              "agent_profile_id": "agent-2",
+              "agent_name": "Agent Beta",
+              "short_description": "Quick responder",
+              "distribution": { "HELPFUL": 15, "SOMEWHAT_HELPFUL": 5, "NOT_HELPFUL": 2 },
+              "total": 22
+            },
+            {
+              "agent_profile_id": "agent-3",
+              "agent_name": "Agent Gamma",
+              "short_description": "Thorough reviewer",
+              "distribution": { "HELPFUL": 8, "SOMEWHAT_HELPFUL": 7, "NOT_HELPFUL": 5 },
+              "total": 20
+            }
+          ],
+          "total_ratings": 65
+        },
+        "consensus_metrics": {
+          "mean_agreement": 0.72,
+          "polarization_index": 0.18,
+          "notes_with_consensus": 12,
+          "notes_with_disagreement": 5,
+          "total_notes_rated": 17
+        },
+        "scoring_coverage": {
+          "current_tier": "silver",
+          "total_scores_computed": 45,
+          "tier_distribution": { "bronze": 10, "silver": 25, "gold": 10 },
+          "scorer_breakdown": { "core_rater": 30, "expansion_rater": 15 },
+          "notes_by_status": { "helpful": 15, "not_helpful": 5, "needs_more_ratings": 8 },
+          "tiers_reached": ["bronze", "silver", "gold"],
+          "scorers_exercised": ["core_rater", "expansion_rater"]
+        },
+        "agent_behaviors": [
+          {
+            "agent_profile_id": "agent-1",
+            "agent_name": "Agent Alpha",
+            "personality": "analytical",
+            "short_description": "Careful analyst",
+            "notes_written": 8,
+            "ratings_given": 23,
+            "turn_count": 40,
+            "state": "completed",
+            "helpfulness_trend": ["HELPFUL", "SOMEWHAT_HELPFUL", "HELPFUL"],
+            "action_distribution": { "write_note": 8, "rate_note": 23, "skip": 9 }
+          },
+          {
+            "agent_profile_id": "agent-2",
+            "agent_name": "Agent Beta",
+            "personality": "responsive",
+            "short_description": "Quick responder",
+            "notes_written": 12,
+            "ratings_given": 22,
+            "turn_count": 42,
+            "state": "completed",
+            "helpfulness_trend": ["HELPFUL", "HELPFUL", "NOT_HELPFUL"],
+            "action_distribution": { "write_note": 12, "rate_note": 22, "skip": 8 }
+          },
+          {
+            "agent_profile_id": "agent-3",
+            "agent_name": "Agent Gamma",
+            "personality": "thorough",
+            "short_description": "Thorough reviewer",
+            "notes_written": 5,
+            "ratings_given": 20,
+            "turn_count": 38,
+            "state": "completed",
+            "helpfulness_trend": ["SOMEWHAT_HELPFUL", "HELPFUL", "HELPFUL"],
+            "action_distribution": { "write_note": 5, "rate_note": 20, "skip": 13 }
+          }
+        ],
+        "note_quality": {
+          "avg_helpfulness_score": 2.3,
+          "notes_by_status": { "helpful": 15, "not_helpful": 5, "needs_more_ratings": 8 },
+          "notes_by_classification": { "not_misleading": 18, "misinformed": 7 }
+        }
+      }
+    },
+    "jsonapi": { "version": "1.1" }
+  },
+  "detailed": {
+    "data": [
+      {
+        "type": "simulation-detailed-notes",
+        "id": "note-1",
+        "attributes": {
+          "note_id": "note-1",
+          "summary": "This claim has been fact-checked and found to be accurate.",
+          "classification": "not_misleading",
+          "status": "helpful",
+          "helpfulness_score": 3.2,
+          "author_agent_name": "Agent Alpha",
+          "author_agent_profile_id": "agent-1",
+          "request_id": "req-1",
+          "message_metadata": null,
+          "created_at": "2026-03-16T14:30:00Z",
+          "ratings": [
+            { "rater_agent_name": "Agent Beta", "rater_agent_profile_id": "agent-2", "helpfulness_level": "HELPFUL", "created_at": "2026-03-16T15:00:00Z" },
+            { "rater_agent_name": "Agent Gamma", "rater_agent_profile_id": "agent-3", "helpfulness_level": "SOMEWHAT_HELPFUL", "created_at": "2026-03-16T15:30:00Z" }
+          ]
+        }
+      },
+      {
+        "type": "simulation-detailed-notes",
+        "id": "note-2",
+        "attributes": {
+          "note_id": "note-2",
+          "summary": "The original post contains misleading statistics.",
+          "classification": "misinformed",
+          "status": "helpful",
+          "helpfulness_score": 2.8,
+          "author_agent_name": "Agent Beta",
+          "author_agent_profile_id": "agent-2",
+          "request_id": "req-1",
+          "message_metadata": null,
+          "created_at": "2026-03-16T16:00:00Z",
+          "ratings": [
+            { "rater_agent_name": "Agent Alpha", "rater_agent_profile_id": "agent-1", "helpfulness_level": "HELPFUL", "created_at": "2026-03-16T16:30:00Z" },
+            { "rater_agent_name": "Agent Gamma", "rater_agent_profile_id": "agent-3", "helpfulness_level": "NOT_HELPFUL", "created_at": "2026-03-16T17:00:00Z" }
+          ]
+        }
+      },
+      {
+        "type": "simulation-detailed-notes",
+        "id": "note-3",
+        "attributes": {
+          "note_id": "note-3",
+          "summary": "Additional context needed for this claim.",
+          "classification": "not_misleading",
+          "status": "needs_more_ratings",
+          "helpfulness_score": 1.5,
+          "author_agent_name": "Agent Gamma",
+          "author_agent_profile_id": "agent-3",
+          "request_id": "req-2",
+          "message_metadata": null,
+          "created_at": "2026-03-17T10:00:00Z",
+          "ratings": [
+            { "rater_agent_name": "Agent Alpha", "rater_agent_profile_id": "agent-1", "helpfulness_level": "SOMEWHAT_HELPFUL", "created_at": "2026-03-17T11:00:00Z" }
+          ]
+        }
+      }
+    ],
+    "jsonapi": { "version": "1.1" },
+    "links": {
+      "self": "/api/v2/simulations/019ceaaf-487e-708f-bcae-e4a441d6e841/analysis/detailed?page%5Bnumber%5D=1&page%5Bsize%5D=10"
+    },
+    "meta": {
+      "count": 3,
+      "request_variance": {
+        "requests": [
+          { "request_id": "req-1", "content": "Is this claim about vaccines accurate?", "content_type": "text", "note_count": 2, "variance_score": 0.35 },
+          { "request_id": "req-2", "content": "Verify this economic statistic", "content_type": "text", "note_count": 1, "variance_score": 0.12 }
+        ],
+        "total_requests": 2
+      }
+    }
+  },
+  "timeline": {
+    "data": {
+      "type": "simulation-timeline",
+      "id": "019ceaaf-487e-708f-bcae-e4a441d6e841",
+      "attributes": {
+        "bucket_size": "4h",
+        "buckets": [
+          { "timestamp": "2026-03-15T12:00:00Z", "notes_by_status": { "helpful": 2, "not_helpful": 0, "needs_more_ratings": 3 }, "ratings_by_level": { "HELPFUL": 5, "SOMEWHAT_HELPFUL": 3, "NOT_HELPFUL": 1 } },
+          { "timestamp": "2026-03-15T16:00:00Z", "notes_by_status": { "helpful": 5, "not_helpful": 1, "needs_more_ratings": 5 }, "ratings_by_level": { "HELPFUL": 10, "SOMEWHAT_HELPFUL": 6, "NOT_HELPFUL": 3 } },
+          { "timestamp": "2026-03-16T12:00:00Z", "notes_by_status": { "helpful": 10, "not_helpful": 3, "needs_more_ratings": 7 }, "ratings_by_level": { "HELPFUL": 20, "SOMEWHAT_HELPFUL": 12, "NOT_HELPFUL": 5 } },
+          { "timestamp": "2026-03-16T16:00:00Z", "notes_by_status": { "helpful": 12, "not_helpful": 4, "needs_more_ratings": 8 }, "ratings_by_level": { "HELPFUL": 28, "SOMEWHAT_HELPFUL": 16, "NOT_HELPFUL": 7 } },
+          { "timestamp": "2026-03-17T12:00:00Z", "notes_by_status": { "helpful": 15, "not_helpful": 5, "needs_more_ratings": 8 }, "ratings_by_level": { "HELPFUL": 35, "SOMEWHAT_HELPFUL": 20, "NOT_HELPFUL": 10 } }
+        ],
+        "total_notes": 25,
+        "total_ratings": 65
+      }
+    },
+    "jsonapi": { "version": "1.1" }
+  }
+}

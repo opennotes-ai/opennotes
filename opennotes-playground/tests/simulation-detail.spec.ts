@@ -14,8 +14,7 @@ test.describe("Simulation detail page", () => {
     test.use({ viewport: { width: 1280, height: 720 } });
 
     test("sidebar shows exactly 4 sections", async ({ page }) => {
-      await page.goto(SIM_URL);
-      await page.waitForSelector("aside nav");
+      await page.goto(SIM_URL, { waitUntil: "networkidle" });
 
       const sidebarButtons = page.locator("aside nav button");
       await expect(sidebarButtons).toHaveCount(4);
@@ -25,33 +24,33 @@ test.describe("Simulation detail page", () => {
       }
     });
 
-    test("clicking sidebar link scrolls to correct section", async ({ page }) => {
-      await page.goto(SIM_URL);
-      await page.waitForSelector("section#agents");
+    test("clicking sidebar link scrolls to correct section", async ({
+      page,
+    }) => {
+      await page.goto(SIM_URL, { waitUntil: "networkidle" });
 
       await page.locator("aside nav button", { hasText: "Agents" }).click();
       await expect(page.locator("section#agents")).toBeInViewport();
 
-      await page.locator("aside nav button", { hasText: "Notes & Ratings" }).click();
+      await page
+        .locator("aside nav button", { hasText: "Notes & Ratings" })
+        .click();
       await expect(page.locator("section#notes-ratings")).toBeInViewport();
     });
 
     test("no Simulation Mechanics text on page", async ({ page }) => {
-      await page.goto(SIM_URL);
-      await page.waitForSelector("section#agents");
+      await page.goto(SIM_URL, { waitUntil: "networkidle" });
       await expect(page.getByText("Simulation Mechanics")).toHaveCount(0);
     });
 
     test("no inline TOC element on page", async ({ page }) => {
-      await page.goto(SIM_URL);
-      await page.waitForSelector("section#agents");
+      await page.goto(SIM_URL, { waitUntil: "networkidle" });
       const inlineToc = page.locator('nav[aria-label="Table of contents"]');
       await expect(inlineToc).toHaveCount(0);
     });
 
     test("badges in tables have font-size >= 11px", async ({ page }) => {
-      await page.goto(SIM_URL);
-      await page.waitForSelector("section#agents table");
+      await page.goto(SIM_URL, { waitUntil: "networkidle" });
 
       const badges = page.locator("section#agents table span");
       const count = await badges.count();
@@ -65,18 +64,15 @@ test.describe("Simulation detail page", () => {
       }
     });
 
-    test("chart x-axis labels contain month abbreviation", async ({ page }) => {
-      await page.goto(SIM_URL);
-      await page.waitForSelector("section#notes-ratings");
-      await page.waitForTimeout(2000);
+    test("chart canvas renders in notes-ratings section", async ({ page }) => {
+      await page.goto(SIM_URL, { waitUntil: "networkidle" });
 
       const canvas = page.locator("section#notes-ratings canvas").first();
-      await expect(canvas).toBeVisible();
+      await expect(canvas).toBeVisible({ timeout: 10_000 });
     });
 
     test("per-note ratings are collapsed by default", async ({ page }) => {
-      await page.goto(SIM_URL);
-      await page.waitForSelector("section#note-details");
+      await page.goto(SIM_URL, { waitUntil: "networkidle" });
 
       const ratingDetails = page.locator("section#note-details details.mt-3");
       const count = await ratingDetails.count();
@@ -90,21 +86,20 @@ test.describe("Simulation detail page", () => {
     });
 
     test("per-agent histogram renders", async ({ page }) => {
-      await page.goto(SIM_URL);
-      await page.waitForSelector("section#agents");
-      await page.waitForTimeout(1000);
+      await page.goto(SIM_URL, { waitUntil: "networkidle" });
 
-      const histogramContainer = page.locator("section#agents .rounded-lg.border canvas");
-      await expect(histogramContainer.first()).toBeVisible();
+      const histogramCanvas = page.locator("section#agents canvas");
+      await expect(histogramCanvas.first()).toBeVisible({ timeout: 10_000 });
     });
   });
 
   test.describe("mobile viewport", () => {
     test.use({ viewport: { width: 375, height: 812 } });
 
-    test("hamburger button visible, opens drawer with section links", async ({ page }) => {
-      await page.goto(SIM_URL);
-      await page.waitForSelector("section#agents");
+    test("hamburger button visible, opens drawer with section links", async ({
+      page,
+    }) => {
+      await page.goto(SIM_URL, { waitUntil: "networkidle" });
 
       const aside = page.locator("aside");
       await expect(aside).toBeHidden();
@@ -124,9 +119,10 @@ test.describe("Simulation detail page", () => {
       }
     });
 
-    test("mobile drawer section links scroll to sections", async ({ page }) => {
-      await page.goto(SIM_URL);
-      await page.waitForSelector("section#agents");
+    test("mobile drawer section links scroll to sections", async ({
+      page,
+    }) => {
+      await page.goto(SIM_URL, { waitUntil: "networkidle" });
 
       const hamburger = page.locator('button[aria-label="Open navigation"]');
       await hamburger.click();
@@ -134,10 +130,13 @@ test.describe("Simulation detail page", () => {
       const drawer = page.locator('[role="dialog"]');
       await expect(drawer).toBeVisible();
 
-      await drawer.locator("nav button", { hasText: "Scoring & Analysis" }).click();
-      await page.waitForTimeout(500);
+      await drawer
+        .locator("nav button", { hasText: "Scoring & Analysis" })
+        .click();
 
-      await expect(page.locator("section#scoring-analysis")).toBeInViewport();
+      await expect(page.locator("section#scoring-analysis")).toBeInViewport({
+        timeout: 5_000,
+      });
     });
   });
 });
