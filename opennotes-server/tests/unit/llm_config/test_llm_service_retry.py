@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from litellm.exceptions import BadRequestError
 
 from src.config import settings
 from src.llm_config.manager import LLMClientManager
@@ -493,6 +494,121 @@ class TestSanitizeEmbeddingText:
             )
             call_kwargs = mock_aembedding.call_args.kwargs
             assert call_kwargs["input"] == ["helloworld", "foobar"]
+
+
+def _make_bad_request_error(message: str = "invalid JSON") -> BadRequestError:
+    return BadRequestError(
+        message=message,
+        model="openai/text-embedding-3-small",
+        llm_provider="openai",
+    )
+
+
+class TestBadRequestErrorDiagnosticLogging:
+    """Tests for BadRequestError diagnostic logging in embedding methods."""
+
+    @pytest.fixture
+    def llm_service(self) -> LLMService:
+        mock_cm = MagicMock(spec=LLMClientManager)
+        return LLMService(client_manager=mock_cm)
+
+    @pytest.fixture
+    def mock_provider(self) -> MagicMock:
+        provider = MagicMock()
+        provider.api_key = "test-key"
+        return provider
+
+    @pytest.mark.asyncio
+    async def test_bad_request_error_is_reraised(
+        self, llm_service: LLMService, mock_provider: MagicMock
+    ) -> None:
+        llm_service.client_manager.get_client = AsyncMock(return_value=mock_provider)
+        with patch("src.llm_config.service.litellm") as mock_litellm:
+            mock_litellm.aembedding = AsyncMock(side_effect=_make_bad_request_error())
+            with pytest.raises(BadRequestError):
+                await llm_service.generate_embedding(
+                    db=AsyncMock(), text="test text", community_server_id=uuid4()
+                )
+
+    @pytest.mark.asyncio
+    async def test_bad_request_error_not_retried(
+        self, llm_service: LLMService, mock_provider: MagicMock
+    ) -> None:
+        llm_service.client_manager.get_client = AsyncMock(return_value=mock_provider)
+        with patch("src.llm_config.service.litellm") as mock_litellm:
+            mock_litellm.aembedding = AsyncMock(side_effect=_make_bad_request_error())
+            with pytest.raises(BadRequestError):
+                await llm_service.generate_embedding(
+                    db=AsyncMock(), text="test text", community_server_id=uuid4()
+                )
+            assert mock_litellm.aembedding.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_bad_request_error_logs_text_preview(
+        self, llm_service: LLMService, mock_provider: MagicMock
+    ) -> None:
+        llm_service.client_manager.get_client = AsyncMock(return_value=mock_provider)
+        community_id = uuid4()
+        with (
+            patch("src.llm_config.service.litellm") as mock_litellm,
+            patch("src.llm_config.service.logger") as mock_logger,
+        ):
+            mock_litellm.aembedding = AsyncMock(side_effect=_make_bad_request_error())
+            with pytest.raises(BadRequestError):
+                await llm_service.generate_embedding(
+                    db=AsyncMock(), text="some test text", community_server_id=community_id
+                )
+            mock_logger.error.assert_called_once()
+            call_kwargs = mock_logger.error.call_args
+            extra = call_kwargs.kwargs.get("extra") or call_kwargs[1].get("extra")
+            assert "text_preview" in extra
+            assert "text_length" in extra
+            assert extra["text_length"] == len("some test text")
+            assert extra["community_server_id"] == str(community_id)
+
+    @pytest.mark.asyncio
+    async def test_bad_request_error_truncates_long_text(
+        self, llm_service: LLMService, mock_provider: MagicMock
+    ) -> None:
+        llm_service.client_manager.get_client = AsyncMock(return_value=mock_provider)
+        long_text = "x" * 500
+        with (
+            patch("src.llm_config.service.litellm") as mock_litellm,
+            patch("src.llm_config.service.logger") as mock_logger,
+        ):
+            mock_litellm.aembedding = AsyncMock(side_effect=_make_bad_request_error())
+            with pytest.raises(BadRequestError):
+                await llm_service.generate_embedding(
+                    db=AsyncMock(), text=long_text, community_server_id=uuid4()
+                )
+            extra = mock_logger.error.call_args.kwargs.get("extra") or mock_logger.error.call_args[
+                1
+            ].get("extra")
+            assert len(extra["text_preview"]) <= 200
+
+    @pytest.mark.asyncio
+    async def test_bad_request_error_in_batch(
+        self, llm_service: LLMService, mock_provider: MagicMock
+    ) -> None:
+        llm_service.client_manager.get_client = AsyncMock(return_value=mock_provider)
+        with (
+            patch(
+                "src.llm_config.service.litellm.aembedding", new_callable=AsyncMock
+            ) as mock_aembedding,
+            patch("src.llm_config.service.logger") as mock_logger,
+        ):
+            mock_aembedding.side_effect = _make_bad_request_error()
+            with pytest.raises(BadRequestError):
+                await llm_service.generate_embeddings_batch(
+                    db=AsyncMock(),
+                    texts=["text one", "text two"],
+                    community_server_id=uuid4(),
+                )
+            mock_logger.error.assert_called_once()
+            extra = mock_logger.error.call_args.kwargs.get("extra") or mock_logger.error.call_args[
+                1
+            ].get("extra")
+            assert "text_preview" in extra
 
 
 class TestRetryDecoratorConfiguration:

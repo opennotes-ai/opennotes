@@ -14,6 +14,7 @@ import litellm
 from litellm.exceptions import (
     APIConnectionError,
     APIError,
+    BadRequestError,
     RateLimitError,
     ServiceUnavailableError,
     Timeout,
@@ -294,20 +295,34 @@ class LLMService:
                     },
                 )
 
-                response = await litellm.aembedding(
-                    model=embedding_model_str,
-                    input=[sanitized_text],
-                    api_key=llm_provider.api_key,
-                    encoding_format="float",
-                    timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
-                )
+                try:
+                    response = await litellm.aembedding(
+                        model=embedding_model_str,
+                        input=[sanitized_text],
+                        api_key=llm_provider.api_key,
+                        encoding_format="float",
+                        timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
+                    )
+                except BadRequestError:
+                    logger.error(
+                        "Embedding request rejected by provider (BadRequestError)",
+                        extra={
+                            "text_preview": sanitized_text[:200],
+                            "text_length": len(sanitized_text),
+                            "community_server_id": str(community_server_id)
+                            if community_server_id
+                            else None,
+                            "model": embedding_model_str,
+                        },
+                    )
+                    raise
 
                 embedding = response.data[0]["embedding"]
 
                 logger.info(
                     "Embedding generated successfully",
                     extra={
-                        "text_length": len(text),
+                        "text_length": len(sanitized_text),
                         "community_server_id": str(community_server_id)
                         if community_server_id
                         else None,
@@ -381,13 +396,28 @@ class LLMService:
             },
         )
 
-        response = await litellm.aembedding(
-            model=embedding_model_str,
-            input=sanitized_texts,
-            api_key=llm_provider.api_key,
-            encoding_format="float",
-            timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
-        )
+        try:
+            response = await litellm.aembedding(
+                model=embedding_model_str,
+                input=sanitized_texts,
+                api_key=llm_provider.api_key,
+                encoding_format="float",
+                timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
+            )
+        except BadRequestError:
+            logger.error(
+                "Batch embedding request rejected by provider (BadRequestError)",
+                extra={
+                    "text_preview": sanitized_texts[0][:200] if sanitized_texts else "",
+                    "text_count": len(sanitized_texts),
+                    "text_length": sum(len(t) for t in sanitized_texts),
+                    "community_server_id": str(community_server_id)
+                    if community_server_id
+                    else None,
+                    "model": embedding_model_str,
+                },
+            )
+            raise
 
         if len(response.data) != len(texts):
             raise ValueError(
