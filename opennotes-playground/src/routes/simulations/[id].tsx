@@ -19,6 +19,7 @@ import AgentsSection from "~/components/AgentsSection";
 import NotesRatingsSection from "~/components/NotesRatingsSection";
 import ScoringAnalysisSection from "~/components/ScoringAnalysisSection";
 import NoteDetails from "~/components/NoteDetails";
+import { SimChannelMessages } from "~/components/SimChannelMessages";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 
@@ -264,6 +265,13 @@ export default function SimulationDetailPage() {
                         Error: {attrs.error_message}
                       </div>
                     </Show>
+                  </section>
+
+                  <section id="sim-channel" class="mt-8 border-t border-border pt-8">
+                    <h2 class="mb-4 text-lg font-semibold">SIM Channel</h2>
+                    <Suspense fallback={<SectionSkeleton />}>
+                      <SimChannelMessages simulationId={params.id!} />
+                    </Suspense>
                   </section>
 
                   <Suspense fallback={<p class="mt-6 text-muted-foreground">Loading analysis...</p>}>
