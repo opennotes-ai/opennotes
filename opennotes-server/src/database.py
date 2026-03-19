@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import threading
 from collections.abc import AsyncGenerator
 from types import MappingProxyType
@@ -17,6 +18,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from src.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class EncryptedJSONB(TypeDecorator[dict[str, Any] | None]):
@@ -230,13 +233,23 @@ async def init_db() -> None:
 
 
 async def close_db() -> None:
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
     with _db_lock:
-        engines_to_dispose = list(_engines.values())
+        all_entries = list(_engines.items())
         _engines.clear()
         _session_makers.clear()
 
-    for engine, _ in engines_to_dispose:
-        await engine.dispose()
+    for _key, (engine, tracked_loop) in all_entries:
+        if tracked_loop is not None and tracked_loop is not current_loop:
+            continue
+        try:
+            await engine.dispose()
+        except Exception:
+            logger.warning("Error disposing engine", exc_info=True)
 
 
 def _reset_database_for_test_loop() -> None:  # pyright: ignore[reportUnusedFunction]
