@@ -320,13 +320,6 @@ export default function SimulationDetailPage() {
                     </Show>
                   </section>
 
-                  <section id="sim-channel" class="mt-8 border-t border-border pt-8">
-                    <h2 class="mb-4 text-lg font-semibold">Chat Channel</h2>
-                    <Suspense fallback={<SectionSkeleton />}>
-                      <SimChannelMessages simulationId={params.id!} />
-                    </Suspense>
-                  </section>
-
                   <Suspense fallback={<p class="mt-6 text-muted-foreground">Loading analysis...</p>}>
                     <Show
                       when={analysis()}
@@ -430,6 +423,13 @@ export default function SimulationDetailPage() {
                       }}
                     </Show>
                   </Suspense>
+
+                  <section id="sim-channel" class="mt-8 border-t border-border pt-8">
+                    <h2 class="mb-4 text-lg font-semibold">Chat Channel</h2>
+                    <Suspense fallback={<SectionSkeleton />}>
+                      <SimChannelMessages simulationId={params.id!} />
+                    </Suspense>
+                  </section>
                   </main>
                 </div>
               );
