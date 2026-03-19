@@ -50,6 +50,7 @@ def mock_db():
     db.flush = AsyncMock()
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = []
+    mock_result.scalar_one.return_value = 0
     db.execute = AsyncMock(return_value=mock_result)
     db.begin_nested = MagicMock(side_effect=lambda: _make_nested_ctx())
     return db

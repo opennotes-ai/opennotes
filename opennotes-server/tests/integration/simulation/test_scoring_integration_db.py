@@ -74,7 +74,7 @@ async def make_note_with_ratings(db, scoring_community):
         note = Note(
             author_id=author.id,
             community_server_id=scoring_community.id,
-            request_id=request.request_id if request else None,
+            request_id=request.id if request else None,
             summary="Test note summary for scoring",
             classification="NOT_MISLEADING",
             ai_generated=True,

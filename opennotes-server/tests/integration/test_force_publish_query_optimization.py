@@ -321,10 +321,11 @@ class TestForcePublishQueryOptimization:
             db.add(request)
             await db.commit()
             await db.refresh(request)
-            request_id = request.request_id
+            request_uuid = str(request.id)
+            request_id_str = request.request_id
 
         note_data = self._get_unique_note_data(force_publish_sample_note_data)
-        note_data["request_id"] = request_id
+        note_data["request_id"] = request_uuid
 
         create_response = await create_note_v2(force_publish_admin_client, note_data)
         assert create_response.status_code == 201, f"Failed to create note: {create_response.text}"
@@ -337,6 +338,6 @@ class TestForcePublishQueryOptimization:
         async with get_session_maker()() as db:
             from sqlalchemy import select
 
-            result = await db.execute(select(Request).where(Request.request_id == request_id))
+            result = await db.execute(select(Request).where(Request.request_id == request_id_str))
             updated_request = result.scalar_one()
             assert updated_request.status == "COMPLETED"

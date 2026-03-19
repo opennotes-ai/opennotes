@@ -97,7 +97,7 @@ async def create_note_with_request() -> tuple[Note, Request, CommunityServer]:
             classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
             status="NEEDS_MORE_RATINGS",
             community_server_id=community_server.id,
-            request_id=request.request_id,
+            request_id=request.id,
         )
         session.add(note)
         await session.commit()
@@ -456,7 +456,8 @@ class TestRequestStatusOnNoteCreation:
             session.add(request)
             await session.commit()
             await session.refresh(request)
-            request_id = request.request_id
+            request_uuid = str(request.id)
+            request_id_str = request.request_id
             community_server_id = community_server.id
 
         assert request.status == "PENDING"
@@ -474,7 +475,7 @@ class TestRequestStatusOnNoteCreation:
             "summary": f"Test note to verify IN_PROGRESS status {uuid4().hex[:8]}",
             "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
             "community_server_id": str(community_server_id),
-            "request_id": request_id,
+            "request_id": request_uuid,
         }
 
         transport = ASGITransport(app=app)
@@ -486,7 +487,7 @@ class TestRequestStatusOnNoteCreation:
 
         async with get_session_maker()() as session:
             request_result = await session.execute(
-                select(Request).where(Request.request_id == request_id)
+                select(Request).where(Request.request_id == request_id_str)
             )
             updated_request = request_result.scalar_one()
 
