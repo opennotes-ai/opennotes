@@ -75,8 +75,12 @@ export default function AgentsSection(props: {
   agents: AgentBehaviorData[];
   ratingDistribution: RatingDistributionData;
   pageSize: number;
+  anchorPage?: number;
 }) {
   const [page, setPage] = createSignal(1);
+  createEffect(() => {
+    if (props.anchorPage && props.anchorPage > 0) setPage(props.anchorPage);
+  });
   const [agentSort, setAgentSort] = createSignal<{ key: string; direction: SortDirection }>({ key: "", direction: null });
 
   const handleSort = (key: string, direction: SortDirection) => {

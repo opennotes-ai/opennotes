@@ -7,6 +7,7 @@ import {
   getSimulationTimeline,
 } from "~/lib/api-client.server";
 import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
+import { parseFragment, scrollToAndHighlight, findPageForItem } from "~/lib/anchor-scroll";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import { SectionSkeleton } from "~/components/ui/skeleton";
 import SimulationSidebar, { MobileSidebarToggle } from "~/components/SimulationSidebar";
@@ -162,6 +163,28 @@ export default function SimulationDetailPage() {
   createEffect(on(() => sortBy(), () => setNotesPage(1), { defer: true }));
   createEffect(on(() => [filterClassification(), filterStatus()], () => setNotesPage(1), { defer: true }));
 
+  const [anchorAgentPage, setAnchorAgentPage] = createSignal<number | undefined>(undefined);
+
+  createEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash;
+    if (!hash) return;
+    const a = analysis();
+    if (!a || !("data" in a)) return;
+    const agents = a.data.attributes.agent_behaviors;
+    if (hash.startsWith("#agent-")) {
+      const target = parseFragment(hash, agents.map(ag => ({ id: ag.agent_profile_id })), "agent");
+      if (target) {
+        const agentPage = findPageForItem(agents, target.id, pageSize(), (ag) => ag.agent_profile_id);
+        setAnchorAgentPage(agentPage);
+        scrollToAndHighlight(`agent-${target.id}`);
+      }
+    }
+    if (hash.startsWith("#note-") || hash.startsWith("#request-")) {
+      scrollToAndHighlight(hash.slice(1));
+    }
+  });
+
   const serverSortBy = () => (sortBy() === "has_score" ? "has_score" : "count") as "count" | "has_score";
   const detailed = createAsync(() => fetchDetailedAnalysis(
     params.id!, notesPage(), pageSize(), serverSortBy(), filterClassification(), filterStatus(),
@@ -259,6 +282,7 @@ export default function SimulationDetailPage() {
                                 agents={a.agent_behaviors}
                                 ratingDistribution={a.rating_distribution}
                                 pageSize={pageSize()}
+                                anchorPage={anchorAgentPage()}
                               />
                               <Show when={meta?.agentsTruncated && meta.totalAgents}>
                                 <AuthGateCTA
