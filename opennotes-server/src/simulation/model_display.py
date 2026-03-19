@@ -6,6 +6,8 @@ PROVIDER_PREFIXES = re.compile(
     r"^(vertex_ai|azure|bedrock|openrouter|azure_ai|together_ai|fireworks_ai|deepinfra|anyscale|palm)/"
 )
 
+PYDANTIC_AI_PREFIX = re.compile(r"^([a-z][a-z0-9_-]*):")
+
 VENDOR_DOT_PREFIX = re.compile(r"^(anthropic|google|meta|mistral|amazon|cohere|ai21)\.")
 
 FAMILY_RULES: list[tuple[re.Pattern[str], str]] = [
@@ -16,6 +18,16 @@ FAMILY_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^llama[-\s]", re.IGNORECASE), "Meta"),
     (re.compile(r"^command[-\s]", re.IGNORECASE), "Cohere"),
 ]
+
+PYDANTIC_AI_VENDOR: dict[str, str] = {
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "google-gla": "Google",
+    "google-vertex": "Google",
+    "mistral": "Mistral",
+    "groq": "Groq",
+    "cohere": "Cohere",
+}
 
 VENDOR_DISPLAY: dict[str, str] = {
     "anthropic": "Anthropic",
@@ -67,19 +79,30 @@ def humanize_model_name(raw: str) -> str:
     if not raw:
         return ""
 
-    name = PROVIDER_PREFIXES.sub("", raw)
-
+    name = raw
     vendor_prefix = ""
-    m = VENDOR_DOT_PREFIX.match(name)
-    if m:
-        vendor_prefix = VENDOR_DISPLAY.get(m.group(1), m.group(1).capitalize())
-        name = name[m.end() :]
 
-    if not vendor_prefix:
-        for pattern, vendor in FAMILY_RULES:
-            if pattern.search(name):
+    m_colon = PYDANTIC_AI_PREFIX.match(name)
+    if m_colon:
+        provider = m_colon.group(1)
+        vendor_prefix = PYDANTIC_AI_VENDOR.get(provider, provider.capitalize())
+        name = name[m_colon.end() :]
+    else:
+        name = PROVIDER_PREFIXES.sub("", name)
+
+        m = VENDOR_DOT_PREFIX.match(name)
+        if m:
+            vendor_prefix = VENDOR_DISPLAY.get(m.group(1), m.group(1).capitalize())
+            name = name[m.end() :]
+
+    for pattern, vendor in FAMILY_RULES:
+        if pattern.search(name):
+            if not vendor_prefix:
                 vendor_prefix = vendor
-                break
+            slug_lead = name.split("-", 1)[0].lower()
+            if slug_lead == vendor_prefix.lower():
+                name = pattern.sub("", name, count=1)
+            break
 
     if not vendor_prefix:
         return raw

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 from src.simulation.model_display import humanize_model_name
+
+pytestmark = pytest.mark.unit
 
 
 class TestHumanizeModelName:
@@ -46,3 +50,24 @@ class TestHumanizeModelName:
     def test_version_number_dot_separator(self):
         result = humanize_model_name("vertex_ai/gemini-1.5-flash")
         assert result == "Google Gemini 1.5 Flash"
+
+    def test_pydantic_ai_openai(self):
+        assert humanize_model_name("openai:gpt-4o-mini") == "OpenAI GPT 4o Mini"
+
+    def test_pydantic_ai_anthropic(self):
+        assert humanize_model_name("anthropic:claude-3-5-sonnet") == "Anthropic Claude 3.5 Sonnet"
+
+    def test_pydantic_ai_google_gla(self):
+        assert humanize_model_name("google-gla:gemini-2.0-flash") == "Google Gemini 2.0 Flash"
+
+    def test_pydantic_ai_google_vertex(self):
+        assert humanize_model_name("google-vertex:gemini-2.5-flash") == "Google Gemini 2.5 Flash"
+
+    def test_pydantic_ai_mistral(self):
+        assert humanize_model_name("mistral:mistral-large-latest") == "Mistral Large Latest"
+
+    def test_pydantic_ai_unknown_provider(self):
+        assert humanize_model_name("deepseek:deepseek-chat") == "Deepseek Deepseek Chat"
+
+    def test_mistral_bare_no_vendor_duplication(self):
+        assert humanize_model_name("mistral-large-latest") == "Mistral Large Latest"
