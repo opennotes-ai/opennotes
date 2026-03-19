@@ -292,7 +292,7 @@ async def _check_channel_dedup(
     )
     rate_result = await db.execute(rate_stmt)
     recent_count = rate_result.scalar_one()
-    if recent_count > CHANNEL_RATE_LIMIT_MAX:
+    if recent_count >= CHANNEL_RATE_LIMIT_MAX:
         return "Rate limit: please wait before posting again."
 
     sim_stmt = (

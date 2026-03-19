@@ -264,7 +264,7 @@ class TestPostToChannelRateLimit:
         sample_deps.db.add.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_allows_at_rate_limit_boundary(self, sample_deps):
+    async def test_rejects_at_rate_limit_boundary(self, sample_deps):
         sample_deps.db.execute = _make_dedup_execute(
             rate_count=CHANNEL_RATE_LIMIT_MAX, recent_texts=[]
         )
@@ -272,6 +272,20 @@ class TestPostToChannelRateLimit:
         ctx.deps = sample_deps
 
         result = await post_to_channel(ctx, message="Message at limit boundary")
+
+        assert "Rate limit" in result
+        assert "please wait" in result
+        sample_deps.db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_allows_below_rate_limit_boundary(self, sample_deps):
+        sample_deps.db.execute = _make_dedup_execute(
+            rate_count=CHANNEL_RATE_LIMIT_MAX - 1, recent_texts=[]
+        )
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message="Message below limit")
 
         assert result == "Posted to channel."
         sample_deps.db.add.assert_called_once()
