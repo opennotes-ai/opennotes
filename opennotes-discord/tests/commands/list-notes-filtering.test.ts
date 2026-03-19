@@ -294,7 +294,7 @@ describe('list notes filtering', () => {
             id: 'note-1',
             type: 'notes',
             attributes: {
-              summary: 'L'.repeat(260),
+              summary: 'L'.repeat(660),
               ratings_count: 0,
             },
           },
