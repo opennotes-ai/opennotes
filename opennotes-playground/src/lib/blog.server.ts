@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { renderMarkdown } from "./markdown";
+import { renderMarkdown, renderInlineMarkdown } from "./markdown";
 
 export type BlogPost = {
   id: string;
@@ -36,7 +36,7 @@ export async function fetchBlogPosts(
     bodyHtml: renderMarkdown(row.body_markdown),
     publishedAt: row.published_at,
     author: row.author ?? undefined,
-    authorHtml: row.author ? renderMarkdown(row.author) : undefined,
+    authorHtml: row.author ? renderInlineMarkdown(row.author) : undefined,
   }));
 
   return { posts, hasMore };

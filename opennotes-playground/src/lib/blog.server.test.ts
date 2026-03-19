@@ -3,9 +3,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 vi.mock("./markdown", () => ({
   renderMarkdown: vi.fn((src: string) => `<p>${src}</p>`),
+  renderInlineMarkdown: vi.fn((src: string) => src),
 }));
 
 import { renderMarkdown } from "./markdown";
+import { renderInlineMarkdown } from "./markdown";
 import { fetchBlogPosts } from "./blog.server";
 
 function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
@@ -34,6 +36,7 @@ function createMockSupabase(result: { data: unknown[] | null; error: unknown }) 
 
 beforeEach(() => {
   vi.mocked(renderMarkdown).mockClear();
+  vi.mocked(renderInlineMarkdown).mockClear();
 });
 
 describe("fetchBlogPosts", () => {
@@ -105,9 +108,9 @@ describe("fetchBlogPosts", () => {
 
     const { posts } = await fetchBlogPosts(client);
 
-    expect(renderMarkdown).toHaveBeenCalledWith("[Mike](https://example.com)");
+    expect(renderInlineMarkdown).toHaveBeenCalledWith("[Mike](https://example.com)");
     expect(posts[0].author).toBe("[Mike](https://example.com)");
-    expect(posts[0].authorHtml).toBe("<p>[Mike](https://example.com)</p>");
+    expect(posts[0].authorHtml).toBe("[Mike](https://example.com)");
   });
 
   it("leaves author undefined when null", async () => {
