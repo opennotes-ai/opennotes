@@ -9,14 +9,19 @@ const getInitialPosts = query(async () => {
   "use server";
   const event = getRequestEvent();
   if (!event) return { posts: [], hasMore: false };
-  const { fetchBlogPosts } = await import("~/lib/blog.server");
-  return fetchBlogPosts(event.locals.supabase, 0, 10);
+  try {
+    const { fetchBlogPosts } = await import("~/lib/blog.server");
+    return fetchBlogPosts(event.locals.supabase, 0, 10);
+  } catch (error) {
+    console.error("Failed to fetch blog posts:", error);
+    return { posts: [], hasMore: false };
+  }
 }, "blogPosts");
 
 export default function BlogFeed() {
   const initial = createAsync(() => getInitialPosts());
   const [extraPosts, setExtraPosts] = createSignal<BlogPostType[]>([]);
-  const [hasMore, setHasMore] = createSignal(true);
+  const [hasMore, setHasMore] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
