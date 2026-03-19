@@ -63,7 +63,7 @@ export function SimChannelMessages(props: { simulationId: string }) {
       ref={containerRef}
       class="h-[400px] overflow-y-auto rounded-lg border border-border bg-card lg:h-[500px]"
       role="log"
-      aria-label="SIM channel messages"
+      aria-label="Chat channel messages"
     >
       <Show when={initial() === undefined}>
         <div class="space-y-4 p-4">
