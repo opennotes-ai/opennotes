@@ -280,6 +280,7 @@ class AgentBehaviorData(SQLAlchemySchema):
     ratings_given: int
     turn_count: int
     state: str
+    display_model: str = ""
     helpfulness_trend: list[str]
     action_distribution: dict[str, int]
 

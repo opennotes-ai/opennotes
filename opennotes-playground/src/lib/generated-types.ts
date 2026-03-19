@@ -4007,6 +4007,11 @@ export interface components {
             turn_count: number;
             /** State */
             state: string;
+            /**
+             * Display Model
+             * @default
+             */
+            display_model: string;
             /** Helpfulness Trend */
             helpfulness_trend: string[];
             /** Action Distribution */

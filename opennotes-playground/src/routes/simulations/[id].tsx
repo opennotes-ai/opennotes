@@ -321,7 +321,7 @@ export default function SimulationDetailPage() {
                   </section>
 
                   <section id="sim-channel" class="mt-8 border-t border-border pt-8">
-                    <h2 class="mb-4 text-lg font-semibold">SIM Channel</h2>
+                    <h2 class="mb-4 text-lg font-semibold">Chat Channel</h2>
                     <Suspense fallback={<SectionSkeleton />}>
                       <SimChannelMessages simulationId={params.id!} />
                     </Suspense>

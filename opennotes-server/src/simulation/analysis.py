@@ -11,6 +11,7 @@ from sqlalchemy.orm import load_only, selectinload
 from src.monitoring import get_logger
 from src.notes import loaders
 from src.notes.models import Note, Rating, Request
+from src.simulation.model_display import humanize_model_name
 from src.simulation.models import SimAgentInstance, SimAgentMemory, SimulationRun
 from src.simulation.schemas import (
     AgentBehaviorData,
@@ -378,6 +379,9 @@ async def compute_agent_behavior_metrics(
                 ratings_given=total_ratings,
                 turn_count=total_turns,
                 state=latest.state,
+                display_model=humanize_model_name(
+                    latest.agent_profile.model_name if latest.agent_profile else ""
+                ),
                 helpfulness_trend=merged_trend,
                 action_distribution=dict(merged_actions),
             )
