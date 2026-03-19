@@ -16,4 +16,4 @@ fi
 
 # Start the API server
 echo "Starting API server..."
-exec python -m src.main
+exec uvicorn src.main:asgi_app --host 0.0.0.0 --port "${PORT:-8000}"

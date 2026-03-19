@@ -271,6 +271,7 @@ def setup_otel(
             )
             from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
             from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+            from opentelemetry.instrumentation.logging import LoggingInstrumentor
             from opentelemetry.instrumentation.redis import RedisInstrumentor
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
             from opentelemetry.propagators.composite import CompositePropagator
@@ -378,6 +379,7 @@ def setup_otel(
             HTTPXClientInstrumentor().instrument()
             RedisInstrumentor().instrument()
             SQLAlchemyInstrumentor().instrument(enable_commenter=True)
+            LoggingInstrumentor().instrument(set_logging_format=False)
 
             global _meter_provider
             try:
