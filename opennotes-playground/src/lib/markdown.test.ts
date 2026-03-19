@@ -29,4 +29,19 @@ describe("renderMarkdown", () => {
   it("returns empty string for empty input", () => {
     expect(renderMarkdown("")).toBe("");
   });
+
+  it("strips script tags from output", () => {
+    const result = renderMarkdown('<script>alert("xss")</script>');
+    expect(result).not.toContain("<script");
+  });
+
+  it("strips img onerror XSS vectors", () => {
+    const result = renderMarkdown('<img src=x onerror="alert(1)">');
+    expect(result).not.toContain("onerror");
+  });
+
+  it("strips iframe tags", () => {
+    const result = renderMarkdown('<iframe src="https://evil.com"></iframe>');
+    expect(result).not.toContain("<iframe");
+  });
 });

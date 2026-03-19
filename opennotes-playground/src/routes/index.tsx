@@ -24,7 +24,7 @@ export default function SimulationsPage() {
     <main class="mx-auto max-w-6xl px-4 py-8">
       <h1 class="text-2xl font-bold tracking-tight">OpenNotes</h1>
       <div class="mt-6 grid grid-cols-1 gap-8 md:grid-cols-[2fr_1fr]">
-        <div class="blog-serif:font-serif">
+        <div>
           <h2 class="text-lg font-semibold mb-4">Blog</h2>
           <Suspense fallback={<p class="text-muted-foreground">Loading posts...</p>}>
             <BlogFeed />

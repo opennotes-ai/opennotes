@@ -7,7 +7,10 @@ export default function FontToggle() {
 
   onMount(() => {
     const stored = localStorage.getItem("blog-font-preference");
-    if (stored === "serif") setSerif(true);
+    if (stored === "serif") {
+      setSerif(true);
+      document.documentElement.classList.add("blog-serif");
+    }
   });
 
   const toggle = () => {

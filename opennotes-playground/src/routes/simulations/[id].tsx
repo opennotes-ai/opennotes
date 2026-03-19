@@ -165,24 +165,27 @@ export default function SimulationDetailPage() {
 
   const [anchorAgentPage, setAnchorAgentPage] = createSignal<number | undefined>(undefined);
   const initialHash = typeof window !== "undefined" ? window.location.hash : "";
+  const [pendingAgentAnchor, setPendingAgentAnchor] = createSignal<boolean>(
+    initialHash.startsWith("#agent-"),
+  );
   const [pendingNoteAnchor, setPendingNoteAnchor] = createSignal<string | null>(
     initialHash.startsWith("#note-") || initialHash.startsWith("#request-") ? initialHash : null,
   );
 
   createEffect(() => {
     if (typeof window === "undefined") return;
+    if (!pendingAgentAnchor()) return;
     const hash = window.location.hash;
-    if (!hash) return;
+    if (!hash || !hash.startsWith("#agent-")) return;
     const a = analysis();
     if (!a || !("data" in a)) return;
     const agents = a.data.attributes.agent_behaviors;
-    if (hash.startsWith("#agent-")) {
-      const target = parseFragment(hash, agents.map(ag => ({ id: ag.agent_profile_id })), "agent");
-      if (target) {
-        const agentPage = findPageForItem(agents, target.id, pageSize(), (ag) => ag.agent_profile_id);
-        setAnchorAgentPage(agentPage);
-        scrollToAndHighlight(`agent-${target.id}`);
-      }
+    const target = parseFragment(hash, agents.map(ag => ({ id: ag.agent_profile_id })), "agent");
+    if (target) {
+      setPendingAgentAnchor(false);
+      const agentPage = findPageForItem(agents, target.id, pageSize(), (ag) => ag.agent_profile_id);
+      setAnchorAgentPage(agentPage);
+      scrollToAndHighlight(`agent-${target.id}`);
     }
   });
 
@@ -210,6 +213,11 @@ export default function SimulationDetailPage() {
     if (parsed) {
       setPendingNoteAnchor(null);
       scrollToAndHighlight(`${type}-${parsed.id}`);
+      return;
+    }
+
+    if (!d._authMeta?.isAuthenticated) {
+      setPendingNoteAnchor(null);
       return;
     }
 
