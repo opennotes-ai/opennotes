@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 
@@ -14,6 +15,9 @@ from src.simulation.schemas import (
     DetailedRequestData,
     RequestVarianceMeta,
 )
+
+TEST_UUID_1 = UUID("01936b43-8b5a-7000-8000-000000000001")
+TEST_UUID_3 = UUID("01936b43-8b5a-7000-8000-000000000003")
 
 
 @pytest.mark.unit
@@ -61,7 +65,7 @@ class TestDetailedNoteData:
             helpfulness_score=75,
             author_agent_name="Agent Alpha",
             author_agent_profile_id="inst-001",
-            request_id="req-001",
+            request_id=TEST_UUID_1,
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
             ratings=[
                 DetailedRatingData(
@@ -75,7 +79,7 @@ class TestDetailedNoteData:
         assert note.classification == "MISINFORMED_OR_POTENTIALLY_MISLEADING"
         assert note.helpfulness_score == 75
         assert note.author_agent_name == "Agent Alpha"
-        assert note.request_id == "req-001"
+        assert note.request_id == TEST_UUID_1
         assert len(note.ratings) == 1
 
     def test_note_data_defaults(self):
@@ -101,7 +105,7 @@ class TestDetailedNoteData:
             helpfulness_score=50,
             author_agent_name="Agent Gamma",
             author_agent_profile_id="inst-003",
-            request_id="req-003",
+            request_id=TEST_UUID_3,
         )
         dumped = note.model_dump(mode="json")
         assert dumped["note_id"] == "note-003"
@@ -356,7 +360,7 @@ class TestDetailedAnalysisResponse:
                         helpfulness_score=80,
                         author_agent_name="Agent Alpha",
                         author_agent_profile_id="inst-001",
-                        request_id="req-001",
+                        request_id=TEST_UUID_1,
                         ratings=[
                             DetailedRatingData(
                                 rater_agent_name="Agent Beta",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -10,6 +10,8 @@ from src.auth.dependencies import get_current_user_or_api_key
 from src.database import get_db
 from src.main import app
 from src.simulation.schemas import AgentProfileData, DetailedNoteData, DetailedRequestData
+
+TEST_REQUEST_UUID = UUID("01936b43-8b5a-7000-8000-000000000001")
 
 
 def _mock_admin_user():
@@ -150,7 +152,7 @@ class TestDetailedAnalysisEndpointHappyPath:
             helpfulness_score=80,
             author_agent_name="Agent Alpha",
             author_agent_profile_id="inst-001",
-            request_id="req-001",
+            request_id=TEST_REQUEST_UUID,
             ratings=[],
         )
         variance_data = DetailedRequestData(

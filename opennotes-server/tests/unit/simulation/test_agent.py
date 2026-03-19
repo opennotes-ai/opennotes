@@ -694,15 +694,18 @@ class TestDeps:
 
 class TestOutput:
     def test_sim_agent_action_schema(self):
+        from uuid import UUID
+
+        test_uuid = UUID("01936b43-8b5a-7000-8000-000000000001")
         action = SimAgentAction(
             action_type=SimActionType.WRITE_NOTE,
-            request_id="req-001",
+            request_id=test_uuid,
             summary="Test note",
             classification="NOT_MISLEADING",
             reasoning="Testing the schema",
         )
         assert action.action_type == SimActionType.WRITE_NOTE
-        assert action.request_id == "req-001"
+        assert action.request_id == test_uuid
         assert action.reasoning == "Testing the schema"
 
     def test_action_type_enum_values(self):

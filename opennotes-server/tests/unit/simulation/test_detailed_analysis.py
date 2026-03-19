@@ -33,7 +33,7 @@ def _make_agent_instance(
 def _make_note(
     note_id: UUID | None = None,
     author_id: UUID | None = None,
-    request_id: str | None = None,
+    request_id: UUID | None = None,
     classification: str = "NOT_MISLEADING",
     status: str = "NEEDS_MORE_RATINGS",
     helpfulness_score: float = 0,
@@ -218,7 +218,8 @@ class TestComputeDetailedNotes:
         profile_id = uuid4()
         inst = _make_agent_instance(profile_id=profile_id)
 
-        note = _make_note(author_id=profile_id, request_id="req-42")
+        test_uuid = uuid4()
+        note = _make_note(author_id=profile_id, request_id=test_uuid)
 
         mock_db = AsyncMock()
 
@@ -236,7 +237,7 @@ class TestComputeDetailedNotes:
         with patch("src.simulation.analysis._get_agent_instances", return_value=[inst]):
             result, _total = await compute_detailed_notes(sim_id, mock_db)
 
-        assert result[0].request_id == "req-42"
+        assert result[0].request_id == test_uuid
 
     @pytest.mark.asyncio
     async def test_pagination_offset_and_limit(self):
@@ -278,7 +279,7 @@ class TestComputeDetailedNotes:
         metadata = {"source_url": "https://example.com/article", "platform": "discord"}
         note = _make_note(
             author_id=profile_id,
-            request_id="req-meta",
+            request_id=uuid4(),
             message_metadata=metadata,
         )
 

@@ -117,7 +117,9 @@ class RatedNoteEntry(BaseModel):
 
 class SimAgentAction(BaseModel):
     action_type: SimActionType
-    request_id: str | None = Field(default=None, description="Request ID the note was written for")
+    request_id: UUID | None = Field(
+        default=None, description="Request ID the note was written for (UUID)"
+    )
     rated_notes: list[RatedNoteEntry] = Field(
         default_factory=list,
         description="List of rated notes if action was rate_notes",
@@ -350,7 +352,7 @@ class DetailedNoteData(SQLAlchemySchema):
     helpfulness_score: float
     author_agent_name: str
     author_agent_profile_id: str
-    request_id: str | None = None
+    request_id: UUID | None = None
     message_metadata: dict[str, Any] | None = None
     created_at: datetime | None = None
     ratings: list[DetailedRatingData] = Field(default_factory=list)

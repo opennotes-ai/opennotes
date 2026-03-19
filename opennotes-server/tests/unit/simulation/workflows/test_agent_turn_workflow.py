@@ -389,7 +389,7 @@ class TestBuildDepsStep:
         cs_id = str(uuid4())
 
         mock_request_1 = MagicMock()
-        mock_request_1.request_id = "req-limit-1"
+        mock_request_1.request_id = uuid4()
         mock_request_1.content = "test content"
         mock_request_1.status = "PENDING"
 
