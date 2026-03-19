@@ -5,6 +5,7 @@ Provides high-level methods for all LLM operations with automatic
 credential fallback and provider abstraction.
 """
 
+import re
 from collections.abc import AsyncGenerator
 from typing import Any, Literal
 from uuid import UUID
@@ -13,6 +14,7 @@ import litellm
 from litellm.exceptions import (
     APIConnectionError,
     APIError,
+    BadRequestError,
     RateLimitError,
     ServiceUnavailableError,
     Timeout,
@@ -22,6 +24,7 @@ from tenacity import (
     AsyncRetrying,
     retry,
     retry_if_exception_type,
+    retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
@@ -43,6 +46,10 @@ TRANSIENT_EXCEPTIONS = (
     ConnectionError,
     TimeoutError,
     EmptyLLMResponseError,
+)
+
+_RETRY_PREDICATE = retry_if_exception_type(TRANSIENT_EXCEPTIONS) & retry_if_not_exception_type(
+    BadRequestError
 )
 
 logger = get_logger(__name__)
@@ -67,9 +74,23 @@ class LLMService:
             client_manager: LLM client manager for provider access
         """
         self.client_manager = client_manager
+        self._control_char_re = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+    def _sanitize_embedding_text(self, text: str) -> str:
+        cleaned = self._control_char_re.sub("", text)
+        if len(cleaned) != len(text):
+            logger.debug(
+                "Stripped control characters from embedding input",
+                extra={
+                    "original_length": len(text),
+                    "cleaned_length": len(cleaned),
+                    "chars_removed": len(text) - len(cleaned),
+                },
+            )
+        return cleaned
 
     @retry(
-        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+        retry=_RETRY_PREDICATE,
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(2),
         reraise=True,
@@ -244,7 +265,7 @@ class LLMService:
             raise ValueError(f"retry_attempts must be >= 1, got {max_attempts}")
 
         async for attempt in AsyncRetrying(
-            retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+            retry=_RETRY_PREDICATE,
             wait=wait_exponential(multiplier=1, min=1, max=60),
             stop=stop_after_attempt(max_attempts),
             reraise=True,
@@ -265,10 +286,12 @@ class LLMService:
                 embedding_model = model or settings.EMBEDDING_MODEL
                 embedding_model_str = embedding_model.to_litellm()
 
+                sanitized_text = self._sanitize_embedding_text(text)
+
                 logger.debug(
                     "Generating embedding",
                     extra={
-                        "text_length": len(text),
+                        "text_length": len(sanitized_text),
                         "community_server_id": str(community_server_id)
                         if community_server_id
                         else None,
@@ -277,20 +300,34 @@ class LLMService:
                     },
                 )
 
-                response = await litellm.aembedding(
-                    model=embedding_model_str,
-                    input=[text],
-                    api_key=llm_provider.api_key,
-                    encoding_format="float",
-                    timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
-                )
+                try:
+                    response = await litellm.aembedding(
+                        model=embedding_model_str,
+                        input=[sanitized_text],
+                        api_key=llm_provider.api_key,
+                        encoding_format="float",
+                        timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
+                    )
+                except BadRequestError:
+                    logger.error(
+                        "Embedding request rejected by provider (BadRequestError)",
+                        extra={
+                            "text_preview": sanitized_text[:200],
+                            "text_length": len(sanitized_text),
+                            "community_server_id": str(community_server_id)
+                            if community_server_id
+                            else None,
+                            "model": embedding_model_str,
+                        },
+                    )
+                    raise
 
                 embedding = response.data[0]["embedding"]
 
                 logger.info(
                     "Embedding generated successfully",
                     extra={
-                        "text_length": len(text),
+                        "text_length": len(sanitized_text),
                         "community_server_id": str(community_server_id)
                         if community_server_id
                         else None,
@@ -304,7 +341,7 @@ class LLMService:
         raise RuntimeError("Embedding generation failed unexpectedly after retries")
 
     @retry(
-        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+        retry=_RETRY_PREDICATE,
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(5),
         reraise=True,
@@ -352,23 +389,40 @@ class LLMService:
         embedding_model = model or settings.EMBEDDING_MODEL
         embedding_model_str = embedding_model.to_litellm()
 
+        sanitized_texts = [self._sanitize_embedding_text(t) for t in texts]
+
         logger.debug(
             "Generating batch embeddings",
             extra={
-                "text_count": len(texts),
-                "total_text_length": sum(len(t) for t in texts),
+                "text_count": len(sanitized_texts),
+                "total_text_length": sum(len(t) for t in sanitized_texts),
                 "community_server_id": str(community_server_id) if community_server_id else None,
                 "model": embedding_model_str,
             },
         )
 
-        response = await litellm.aembedding(
-            model=embedding_model_str,
-            input=texts,
-            api_key=llm_provider.api_key,
-            encoding_format="float",
-            timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
-        )
+        try:
+            response = await litellm.aembedding(
+                model=embedding_model_str,
+                input=sanitized_texts,
+                api_key=llm_provider.api_key,
+                encoding_format="float",
+                timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
+            )
+        except BadRequestError:
+            logger.error(
+                "Batch embedding request rejected by provider (BadRequestError)",
+                extra={
+                    "text_preview": sanitized_texts[0][:200] if sanitized_texts else "",
+                    "text_count": len(sanitized_texts),
+                    "text_length": sum(len(t) for t in sanitized_texts),
+                    "community_server_id": str(community_server_id)
+                    if community_server_id
+                    else None,
+                    "model": embedding_model_str,
+                },
+            )
+            raise
 
         if len(response.data) != len(texts):
             raise ValueError(
@@ -393,7 +447,7 @@ class LLMService:
         return results
 
     @retry(
-        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+        retry=_RETRY_PREDICATE,
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(5),
         reraise=True,
