@@ -1,5 +1,5 @@
 import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
-import { Show, Switch, Match, Suspense, createSignal, createEffect, on } from "solid-js";
+import { Show, Switch, Match, Suspense, createSignal, createEffect, on, untrack } from "solid-js";
 import {
   getSimulation,
   getSimulationAnalysis,
@@ -164,6 +164,10 @@ export default function SimulationDetailPage() {
   createEffect(on(() => [filterClassification(), filterStatus()], () => setNotesPage(1), { defer: true }));
 
   const [anchorAgentPage, setAnchorAgentPage] = createSignal<number | undefined>(undefined);
+  const initialHash = typeof window !== "undefined" ? window.location.hash : "";
+  const [pendingNoteAnchor, setPendingNoteAnchor] = createSignal<string | null>(
+    initialHash.startsWith("#note-") || initialHash.startsWith("#request-") ? initialHash : null,
+  );
 
   createEffect(() => {
     if (typeof window === "undefined") return;
@@ -180,15 +184,43 @@ export default function SimulationDetailPage() {
         scrollToAndHighlight(`agent-${target.id}`);
       }
     }
-    if (hash.startsWith("#note-") || hash.startsWith("#request-")) {
-      scrollToAndHighlight(hash.slice(1));
-    }
   });
 
   const serverSortBy = () => (sortBy() === "has_score" ? "has_score" : "count") as "count" | "has_score";
   const detailed = createAsync(() => fetchDetailedAnalysis(
     params.id!, notesPage(), pageSize(), serverSortBy(), filterClassification(), filterStatus(),
   ));
+
+  createEffect(() => {
+    const anchor = pendingNoteAnchor();
+    if (!anchor) return;
+
+    const d = detailed();
+    if (!d || !("data" in d)) return;
+
+    const notes = d.data;
+    const type = anchor.startsWith("#note-") ? "note" as const : "request" as const;
+
+    const items: Array<{ id: string }> = type === "note"
+      ? notes.map(n => ({ id: n.attributes.note_id }))
+      : [...new Set(notes.map(n => n.attributes.request_id).filter(Boolean))].map(id => ({ id: id! }));
+
+    const parsed = parseFragment(anchor, items, type);
+
+    if (parsed) {
+      setPendingNoteAnchor(null);
+      scrollToAndHighlight(`${type}-${parsed.id}`);
+      return;
+    }
+
+    const totalPages = d._totalPages ?? 1;
+    const currentPage = untrack(() => notesPage());
+    if (currentPage < totalPages) {
+      setNotesPage(currentPage + 1);
+    } else {
+      setPendingNoteAnchor(null);
+    }
+  });
 
   const simError = () => {
     const r = simulation();
