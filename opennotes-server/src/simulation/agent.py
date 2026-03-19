@@ -1,9 +1,11 @@
 import logging
 import random
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Any
 from uuid import UUID
 
+import pendulum
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import UsageLimits
@@ -24,6 +26,10 @@ MAX_CONTEXT_REQUESTS: int = 5
 MAX_CONTEXT_NOTES: int = 10
 MAX_LINKED_NOTES_PER_REQUEST: int = 10
 MAX_CHANNEL_MESSAGE_LENGTH: int = 2000
+CHANNEL_RATE_LIMIT_WINDOW_SECONDS: int = 60
+CHANNEL_RATE_LIMIT_MAX: int = 3
+CHANNEL_SIMILARITY_THRESHOLD: float = 0.8
+CHANNEL_SIMILARITY_LOOKBACK: int = 5
 TOKEN_BUDGET: int = 4000
 MAX_RATE_NOTES_BATCH: int = 5
 
@@ -267,6 +273,45 @@ def pass_turn() -> str:
     return "Turn passed. No action taken."
 
 
+async def _check_channel_dedup(
+    db: AsyncSession,
+    agent_instance_id: UUID,
+    simulation_run_id: UUID,
+    message: str,
+) -> str | None:
+    cutoff = pendulum.now("UTC").subtract(seconds=CHANNEL_RATE_LIMIT_WINDOW_SECONDS)
+    rate_stmt = (
+        select(func.count())
+        .select_from(SimChannelMessage)
+        .where(
+            SimChannelMessage.agent_instance_id == agent_instance_id,
+            SimChannelMessage.simulation_run_id == simulation_run_id,
+            SimChannelMessage.created_at > cutoff,
+        )
+    )
+    rate_result = await db.execute(rate_stmt)
+    recent_count = rate_result.scalar_one()
+    if recent_count > CHANNEL_RATE_LIMIT_MAX:
+        return "Rate limit: please wait before posting again."
+
+    sim_stmt = (
+        select(SimChannelMessage.message_text)
+        .where(
+            SimChannelMessage.agent_instance_id == agent_instance_id,
+            SimChannelMessage.simulation_run_id == simulation_run_id,
+        )
+        .order_by(SimChannelMessage.created_at.desc())
+        .limit(CHANNEL_SIMILARITY_LOOKBACK)
+    )
+    sim_result = await db.execute(sim_stmt)
+    recent_texts = sim_result.scalars().all()
+    for recent_text in recent_texts:
+        if SequenceMatcher(None, message, recent_text).ratio() > CHANNEL_SIMILARITY_THRESHOLD:
+            return "Message too similar to a recent post. Try a different message."
+
+    return None
+
+
 @sim_agent.tool
 async def post_to_channel(
     ctx: RunContext[SimAgentDeps],
@@ -285,6 +330,15 @@ async def post_to_channel(
             f"Error: message too long ({len(message)} chars). "
             f"Maximum is {MAX_CHANNEL_MESSAGE_LENGTH} characters."
         )
+
+    dedup_error = await _check_channel_dedup(
+        ctx.deps.db,
+        ctx.deps.agent_instance_id,
+        ctx.deps.simulation_run_id,
+        message,
+    )
+    if dedup_error:
+        return dedup_error
 
     msg = SimChannelMessage(
         simulation_run_id=ctx.deps.simulation_run_id,
@@ -647,6 +701,10 @@ class OpenNotesSimAgent:
 
 
 __all__ = [
+    "CHANNEL_RATE_LIMIT_MAX",
+    "CHANNEL_RATE_LIMIT_WINDOW_SECONDS",
+    "CHANNEL_SIMILARITY_LOOKBACK",
+    "CHANNEL_SIMILARITY_THRESHOLD",
     "MAX_CHANNEL_MESSAGE_LENGTH",
     "MAX_CONTEXT_NOTES",
     "MAX_CONTEXT_REQUESTS",

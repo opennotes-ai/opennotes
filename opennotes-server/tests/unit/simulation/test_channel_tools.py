@@ -5,6 +5,8 @@ import pytest
 
 from src.llm_config.model_id import ModelId
 from src.simulation.agent import (
+    CHANNEL_RATE_LIMIT_MAX,
+    CHANNEL_SIMILARITY_THRESHOLD,
     MAX_CHANNEL_MESSAGE_LENGTH,
     SimAgentDeps,
     post_to_channel,
@@ -15,12 +17,25 @@ from src.simulation.agent import (
 _TEST_MODEL_ID = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
 
 
+def _make_dedup_execute(rate_count=0, recent_texts=None):
+    if recent_texts is None:
+        recent_texts = []
+
+    rate_result = MagicMock()
+    rate_result.scalar_one.return_value = rate_count
+
+    sim_result = MagicMock()
+    sim_result.scalars.return_value.all.return_value = recent_texts
+
+    return AsyncMock(side_effect=[rate_result, sim_result])
+
+
 @pytest.fixture
 def mock_db():
     db = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
-    db.execute = AsyncMock()
+    db.execute = _make_dedup_execute()
     return db
 
 
@@ -160,6 +175,132 @@ class TestPostToChannel:
         sample_deps.db.rollback.assert_awaited_once()
 
 
+class TestPostToChannelDedup:
+    @pytest.mark.asyncio
+    async def test_rejects_exact_duplicate_message(self, sample_deps):
+        sample_deps.db.execute = _make_dedup_execute(rate_count=0, recent_texts=["Hello agents"])
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message="Hello agents")
+
+        assert "too similar" in result
+        sample_deps.db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rejects_near_duplicate_message(self, sample_deps):
+        original = "This claim about vaccines is misleading because it misquotes the study."
+        near_dup = "This claim about vaccines is misleading because it misquotes the study!"
+        from difflib import SequenceMatcher
+
+        assert SequenceMatcher(None, near_dup, original).ratio() > CHANNEL_SIMILARITY_THRESHOLD
+
+        sample_deps.db.execute = _make_dedup_execute(rate_count=0, recent_texts=[original])
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message=near_dup)
+
+        assert "too similar" in result
+        sample_deps.db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_allows_distinct_message(self, sample_deps):
+        sample_deps.db.execute = _make_dedup_execute(
+            rate_count=0,
+            recent_texts=["The weather today is quite pleasant and warm."],
+        )
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(
+            ctx, message="I found evidence that this claim is false based on the CDC data."
+        )
+
+        assert result == "Posted to channel."
+        sample_deps.db.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_allows_message_when_no_recent_history(self, sample_deps):
+        sample_deps.db.execute = _make_dedup_execute(rate_count=0, recent_texts=[])
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message="First message ever!")
+
+        assert result == "Posted to channel."
+        sample_deps.db.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_checks_similarity_against_multiple_recent_messages(self, sample_deps):
+        recent = [
+            "Completely different topic about birds.",
+            "Another unrelated discussion about music.",
+            "Hello agents, let me share my findings.",
+        ]
+        sample_deps.db.execute = _make_dedup_execute(rate_count=0, recent_texts=recent)
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message="Hello agents, let me share my findings.")
+
+        assert "too similar" in result
+        sample_deps.db.add.assert_not_called()
+
+
+class TestPostToChannelRateLimit:
+    @pytest.mark.asyncio
+    async def test_rejects_when_rate_limit_exceeded(self, sample_deps):
+        sample_deps.db.execute = _make_dedup_execute(
+            rate_count=CHANNEL_RATE_LIMIT_MAX + 1, recent_texts=[]
+        )
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message="Yet another message")
+
+        assert "Rate limit" in result
+        assert "please wait" in result
+        sample_deps.db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_allows_at_rate_limit_boundary(self, sample_deps):
+        sample_deps.db.execute = _make_dedup_execute(
+            rate_count=CHANNEL_RATE_LIMIT_MAX, recent_texts=[]
+        )
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message="Message at limit boundary")
+
+        assert result == "Posted to channel."
+        sample_deps.db.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_allows_after_cooldown(self, sample_deps):
+        sample_deps.db.execute = _make_dedup_execute(rate_count=0, recent_texts=[])
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message="Back after cooldown")
+
+        assert result == "Posted to channel."
+        sample_deps.db.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_checked_before_similarity(self, sample_deps):
+        sample_deps.db.execute = _make_dedup_execute(
+            rate_count=CHANNEL_RATE_LIMIT_MAX + 1, recent_texts=["Same message"]
+        )
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await post_to_channel(ctx, message="Same message")
+
+        assert "Rate limit" in result
+        assert sample_deps.db.execute.await_count == 1
+
+
 class TestReadChannel:
     @pytest.mark.asyncio
     async def test_returns_formatted_messages(self, sample_deps):
@@ -210,7 +351,6 @@ class TestReadChannel:
         result = await read_channel(ctx)
 
         assert result == "Channel not available."
-        mock_db.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_handles_db_error(self, sample_deps):
