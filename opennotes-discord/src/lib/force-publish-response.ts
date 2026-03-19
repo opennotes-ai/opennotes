@@ -3,6 +3,7 @@ import type { NoteJSONAPIResponse } from './api-client.js';
 import { generateShortId } from './validation.js';
 import { storeViewFullContent } from './view-full-cache.js';
 import { buildViewFullCustomId, truncateWithMeta } from '../utils/v2-components.js';
+import { formatIdDisplay } from './proquint.js';
 
 const VIEW_FULL_TTL_SECONDS = 300;
 const SUMMARY_PREVIEW_LENGTH = 200;
@@ -49,7 +50,7 @@ export async function buildForcePublishSuccessReply(
 
   return {
     content:
-      `✅ **Note #${noteId} has been force-published**\n\n` +
+      `✅ **Note #${formatIdDisplay(noteId)} has been force-published**\n\n` +
       '⚠️ This note was manually published by an admin and will be marked as "Admin Published" when displayed.\n\n' +
       `**Note Summary:** ${summaryPreview.text}\n` +
       `**Status:** ${attrs.status}\n` +

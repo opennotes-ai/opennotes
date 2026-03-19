@@ -41,6 +41,7 @@ export interface QueueItemV2 {
   ratingButtons: ActionRowBuilder<ButtonBuilder>;
   viewFullButton?: ButtonBuilder;
   mediaUrls?: string[];
+  messageUrl?: string;
 }
 
 /**
@@ -279,7 +280,10 @@ export class QueueRendererV2 {
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      const content = `${item.urgencyEmoji} **${item.title}**\n${item.summary}`;
+      let content = `${item.urgencyEmoji} **${item.title}**\n${item.summary}`;
+      if (item.messageUrl) {
+        content += `\n[View Original Message](${item.messageUrl})`;
+      }
       if (item.viewFullButton) {
         container.addSectionComponents(createTextWithButton(content, item.viewFullButton));
       } else {

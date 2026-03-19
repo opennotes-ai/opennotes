@@ -159,6 +159,7 @@ class NoteJSONAPIAttributes(SQLAlchemySchema):
     updated_at: datetime | None = None
     request_id: UUID | None = None
     platform_message_id: str | None = None
+    platform_channel_id: str | None = None
     force_published_at: datetime | None = None
     ratings_count: int = 0
     community_server_id: str | None = None

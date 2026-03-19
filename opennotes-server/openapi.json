@@ -18409,6 +18409,17 @@
             ],
             "title": "Platform Message Id"
           },
+          "platform_channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform Channel Id"
+          },
           "force_published_at": {
             "anyOf": [
               {
@@ -22150,6 +22161,17 @@
               }
             ],
             "title": "Platform Message Id"
+          },
+          "platform_channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform Channel Id"
           },
           "metadata": {
             "anyOf": [

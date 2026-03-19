@@ -191,7 +191,7 @@ describe('note-force-publish command', () => {
       expect(mockInteraction.editReply).toHaveBeenCalled();
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      expect(editReplyCall.content).toContain(`Note #${TEST_UUID} has been force-published`);
+      expect(editReplyCall.content).toContain('Note #hajij-babab has been force-published');
       expect(editReplyCall.content).toContain('Admin Published');
     });
 
@@ -238,7 +238,7 @@ describe('note-force-publish command', () => {
       await execute(mockInteraction);
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      expect(editReplyCall.content).toContain(`Note #${TEST_UUID} has been force-published`);
+      expect(editReplyCall.content).toContain('Note #hajij-babab has been force-published');
       expect(editReplyCall.components).toBeUndefined();
     });
 
@@ -258,7 +258,7 @@ describe('note-force-publish command', () => {
       await execute(mockInteraction);
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      expect(editReplyCall.content).toContain(`Note #${TEST_UUID} has been force-published`);
+      expect(editReplyCall.content).toContain('Note #hajij-babab has been force-published');
       expect(editReplyCall.content).toContain('**Note Summary:**');
       expect(editReplyCall.content).toContain('...');
       expect(editReplyCall.components).toBeUndefined();
@@ -284,7 +284,7 @@ describe('note-force-publish command', () => {
       await execute(mockInteraction);
 
       expect(mockInteraction.reply).toHaveBeenCalledWith({
-        content: expect.stringContaining('Note ID must be a valid UUID format'),
+        content: expect.stringContaining('Note ID must be a valid UUID or ProQuint format'),
         flags: MessageFlags.Ephemeral,
       });
       expect(mockApiClient.forcePublishNote).not.toHaveBeenCalled();

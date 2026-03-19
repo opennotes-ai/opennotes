@@ -50,6 +50,7 @@ import { cache } from '../cache.js';
 import { TextPaginator } from '../lib/text-paginator.js';
 import { storeViewFullContent } from '../lib/view-full-cache.js';
 import { buildForcePublishSuccessReply } from '../lib/force-publish-response.js';
+import { formatIdDisplay } from '../lib/proquint.js';
 
 const configCache = new ConfigCache(apiClient);
 const lastUsage = new Map<string, number>();
@@ -114,7 +115,8 @@ function createSummaryV2(
 async function createNoteItemV2(
   note: JSONAPIResource<NoteAttributes>,
   thresholds: { min_ratings_needed: number; min_raters_per_note: number },
-  userMember?: GuildMember | null
+  userMember?: GuildMember | null,
+  guildId?: string | null
 ): Promise<QueueItemV2> {
   const urgency = calculateUrgency(note.attributes.ratings_count, thresholds.min_ratings_needed);
 
@@ -141,7 +143,7 @@ async function createNoteItemV2(
 
   const ratingButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
 
-  const truncatedSummary = truncateWithMeta(note.attributes.summary, 200);
+  const truncatedSummary = truncateWithMeta(note.attributes.summary, 600);
   let viewFullButton: ButtonBuilder | undefined;
   if (truncatedSummary.isTruncated) {
     const token = generateShortId();
@@ -161,13 +163,20 @@ async function createNoteItemV2(
     }
   }
 
+  const platformChannelId = note.attributes.platform_channel_id;
+  const platformMessageId = note.attributes.platform_message_id;
+  const messageUrl = (guildId && platformChannelId && platformMessageId)
+    ? `https://discord.com/channels/${guildId}/${platformChannelId}/${platformMessageId}`
+    : undefined;
+
   return {
     id: note.id,
-    title: `Note #${note.id}`,
+    title: `Note #${formatIdDisplay(note.id)}`,
     summary: truncatedSummary.text,
     urgencyEmoji: urgency.urgencyEmoji,
     ratingButtons,
     viewFullButton,
+    messageUrl,
   };
 }
 
@@ -360,7 +369,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
 
     const itemsV2: QueueItemV2[] = await Promise.all(
       notesResponse.data.map((note) =>
-        createNoteItemV2(note, thresholds, member)
+        createNoteItemV2(note, thresholds, member, guildId)
       )
     );
 
@@ -516,6 +525,7 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       status: status || undefined,
       myRequestsOnly,
       communityServerId: communityServerUuid,
+      guildId: guildId || undefined,
     });
 
     await interaction.editReply({
@@ -968,7 +978,7 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
     }
 
     await interaction.editReply({
-      content: `✅ **AI Note Generated**\n\nNote ID: \`${noteId}\`\n\n> ${notePreview.text}\n\nThe note has been created and will enter the rating queue.`,
+      content: `✅ **AI Note Generated**\n\nNote ID: \`${formatIdDisplay(noteId)}\`\n\n> ${notePreview.text}\n\nThe note has been created and will enter the rating queue.`,
       ...(components ? { components } : {}),
     });
 
@@ -1214,6 +1224,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
         status: undefined,
         myRequestsOnly: false,
         communityServerId: communityServerUuid,
+        guildId: guildId || undefined,
       });
 
       await interaction.editReply({
@@ -1243,7 +1254,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
 
       const itemsV2: QueueItemV2[] = await Promise.all(
         notesResponse.data.map((note) =>
-          createNoteItemV2(note, thresholds, member)
+          createNoteItemV2(note, thresholds, member, guildId)
         )
       );
 
@@ -1411,7 +1422,7 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
 
     const itemsV2: QueueItemV2[] = await Promise.all(
       newNotesResponse.data.map((note) =>
-        createNoteItemV2(note, state.thresholds, member)
+        createNoteItemV2(note, state.thresholds, member, state.guildId)
       )
     );
 
@@ -1640,6 +1651,7 @@ export async function handleRequestQueuePageButton(interaction: ButtonInteractio
       status: filterState.status,
       myRequestsOnly: filterState.myRequestsOnly,
       communityServerId: filterState.communityServerId,
+      guildId: interaction.guildId || undefined,
     });
 
     await interaction.editReply({
