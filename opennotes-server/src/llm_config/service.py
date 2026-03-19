@@ -5,6 +5,7 @@ Provides high-level methods for all LLM operations with automatic
 credential fallback and provider abstraction.
 """
 
+import re
 from collections.abc import AsyncGenerator
 from typing import Any, Literal
 from uuid import UUID
@@ -67,6 +68,20 @@ class LLMService:
             client_manager: LLM client manager for provider access
         """
         self.client_manager = client_manager
+        self._control_char_re = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+    def _sanitize_embedding_text(self, text: str) -> str:
+        cleaned = self._control_char_re.sub("", text)
+        if len(cleaned) != len(text):
+            logger.debug(
+                "Stripped control characters from embedding input",
+                extra={
+                    "original_length": len(text),
+                    "cleaned_length": len(cleaned),
+                    "chars_removed": len(text) - len(cleaned),
+                },
+            )
+        return cleaned
 
     @retry(
         retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
@@ -265,10 +280,12 @@ class LLMService:
                 embedding_model = model or settings.EMBEDDING_MODEL
                 embedding_model_str = embedding_model.to_litellm()
 
+                sanitized_text = self._sanitize_embedding_text(text)
+
                 logger.debug(
                     "Generating embedding",
                     extra={
-                        "text_length": len(text),
+                        "text_length": len(sanitized_text),
                         "community_server_id": str(community_server_id)
                         if community_server_id
                         else None,
@@ -279,7 +296,7 @@ class LLMService:
 
                 response = await litellm.aembedding(
                     model=embedding_model_str,
-                    input=[text],
+                    input=[sanitized_text],
                     api_key=llm_provider.api_key,
                     encoding_format="float",
                     timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
@@ -352,11 +369,13 @@ class LLMService:
         embedding_model = model or settings.EMBEDDING_MODEL
         embedding_model_str = embedding_model.to_litellm()
 
+        sanitized_texts = [self._sanitize_embedding_text(t) for t in texts]
+
         logger.debug(
             "Generating batch embeddings",
             extra={
-                "text_count": len(texts),
-                "total_text_length": sum(len(t) for t in texts),
+                "text_count": len(sanitized_texts),
+                "total_text_length": sum(len(t) for t in sanitized_texts),
                 "community_server_id": str(community_server_id) if community_server_id else None,
                 "model": embedding_model_str,
             },
@@ -364,7 +383,7 @@ class LLMService:
 
         response = await litellm.aembedding(
             model=embedding_model_str,
-            input=texts,
+            input=sanitized_texts,
             api_key=llm_provider.api_key,
             encoding_format="float",
             timeout=settings.EMBEDDING_TIMEOUT_SECONDS,

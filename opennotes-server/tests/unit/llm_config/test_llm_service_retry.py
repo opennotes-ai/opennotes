@@ -418,6 +418,83 @@ class TestLLMServiceDescribeImageRetry:
         assert mock_llm_provider.complete.call_count == 5
 
 
+class TestSanitizeEmbeddingText:
+    """Tests for LLMService._sanitize_embedding_text."""
+
+    @pytest.fixture
+    def llm_service(self) -> LLMService:
+        return LLMService(client_manager=MagicMock(spec=LLMClientManager))
+
+    def test_strips_null_byte(self, llm_service: LLMService) -> None:
+        assert llm_service._sanitize_embedding_text("hello\x00world") == "helloworld"
+
+    def test_strips_control_chars(self, llm_service: LLMService) -> None:
+        text = "a\x01b\x02c\x10d\x1fe"
+        assert llm_service._sanitize_embedding_text(text) == "abcde"
+
+    def test_preserves_tab_newline_cr(self, llm_service: LLMService) -> None:
+        text = "line1\n\tindented\r\nline2"
+        assert llm_service._sanitize_embedding_text(text) == text
+
+    def test_strips_del_and_c1_control_chars(self, llm_service: LLMService) -> None:
+        text = "a\x7fb\x80c\x9fd"
+        assert llm_service._sanitize_embedding_text(text) == "abcd"
+
+    def test_clean_text_passes_through(self, llm_service: LLMService) -> None:
+        text = "Hello, world! This is normal text with unicode: cafe\u0301"
+        assert llm_service._sanitize_embedding_text(text) == text
+
+    def test_empty_string(self, llm_service: LLMService) -> None:
+        assert llm_service._sanitize_embedding_text("") == ""
+
+    @pytest.mark.asyncio
+    async def test_generate_embedding_sanitizes_before_aembedding(self) -> None:
+        mock_client_manager = MagicMock(spec=LLMClientManager)
+        service = LLMService(client_manager=mock_client_manager)
+        mock_provider = MagicMock()
+        mock_provider.api_key = "test-key"
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        mock_response = MagicMock()
+        mock_response.data = [{"embedding": [0.1] * 1536}]
+        mock_response.usage = MagicMock(total_tokens=10)
+
+        with patch("src.llm_config.service.litellm") as mock_litellm:
+            mock_litellm.aembedding = AsyncMock(return_value=mock_response)
+            await service.generate_embedding(
+                db=AsyncMock(), text="hello\x00world", community_server_id=uuid4()
+            )
+            call_kwargs = mock_litellm.aembedding.call_args.kwargs
+            assert call_kwargs["input"] == ["helloworld"]
+
+    @pytest.mark.asyncio
+    async def test_generate_embeddings_batch_sanitizes_each_text(self) -> None:
+        mock_client_manager = MagicMock(spec=LLMClientManager)
+        service = LLMService(client_manager=mock_client_manager)
+        mock_provider = MagicMock()
+        mock_provider.api_key = "test-key"
+        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
+
+        mock_response = MagicMock()
+        mock_response.data = [
+            {"index": 0, "embedding": [0.1] * 1536},
+            {"index": 1, "embedding": [0.2] * 1536},
+        ]
+        mock_response.usage = MagicMock(total_tokens=20)
+
+        with patch(
+            "src.llm_config.service.litellm.aembedding", new_callable=AsyncMock
+        ) as mock_aembedding:
+            mock_aembedding.return_value = mock_response
+            await service.generate_embeddings_batch(
+                db=AsyncMock(),
+                texts=["hello\x00world", "foo\x01bar"],
+                community_server_id=uuid4(),
+            )
+            call_kwargs = mock_aembedding.call_args.kwargs
+            assert call_kwargs["input"] == ["helloworld", "foobar"]
+
+
 class TestRetryDecoratorConfiguration:
     """Tests to verify retry decorator configuration on static retry methods."""
 
