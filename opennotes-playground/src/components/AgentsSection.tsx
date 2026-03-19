@@ -50,7 +50,7 @@ function buildHistogramOption(perAgent: RatingDistributionData["per_agent"]): EC
   ));
 
   return {
-    grid: { left: 120, right: 20, top: 10, bottom: 30 },
+    grid: { left: 120, right: 20, top: 10, bottom: 50 },
     xAxis: { type: "value", max: maxTotal > 0 ? maxTotal : undefined },
     yAxis: { type: "category", data: [...agents].reverse() },
     series: keys.map((key) => ({
@@ -59,7 +59,7 @@ function buildHistogramOption(perAgent: RatingDistributionData["per_agent"]): EC
       stack: "total",
       data: [...perAgent].reverse().map((a) => a.distribution[key] ?? 0),
     })),
-    legend: { bottom: 0 },
+    legend: { bottom: 0, type: "scroll" },
     tooltip: { trigger: "axis" },
   };
 }

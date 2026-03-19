@@ -32,7 +32,7 @@ function buildOverallBarOption(overall: Record<string, number>): EChartsOption {
       label: { show: true, formatter: "{c}" },
     })),
     legend: { bottom: 0 },
-    tooltip: { trigger: "axis" },
+    tooltip: { trigger: "axis", axisPointer: { type: "none" } },
   };
 }
 
