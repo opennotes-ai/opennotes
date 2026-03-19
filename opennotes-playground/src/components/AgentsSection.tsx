@@ -106,6 +106,9 @@ export default function AgentsSection(props: {
       case "turns":
         agents.sort((a, b) => mult * (a.turn_count - b.turn_count));
         break;
+      case "model":
+        agents.sort((a, b) => mult * a.display_model.localeCompare(b.display_model));
+        break;
       case "state":
         agents.sort((a, b) => mult * a.state.localeCompare(b.state));
         break;
@@ -141,6 +144,7 @@ export default function AgentsSection(props: {
           <thead>
             <tr class="border-b-2 border-border bg-muted/50">
               <SortableHeader label="Agent" sortKey="agent" activeSort={agentSort()} onSort={handleSort} class="px-4 py-2.5 text-left font-medium" />
+              <SortableHeader label="Model" sortKey="model" activeSort={agentSort()} onSort={handleSort} class="px-4 py-2.5 text-left font-medium" />
               <th class="px-4 py-2.5 text-left font-medium">Persona</th>
               <SortableHeader label="Notes" sortKey="notes" activeSort={agentSort()} onSort={handleSort} class="px-4 py-2.5 text-right font-medium" />
               <SortableHeader label="Ratings" sortKey="ratings" activeSort={agentSort()} onSort={handleSort} class="px-4 py-2.5 text-right font-medium" />
@@ -162,6 +166,7 @@ export default function AgentsSection(props: {
                       <IdBadge idValue={agent.agent_profile_id} variant="muted" />
                     </div>
                   </td>
+                  <td class="px-4 py-2.5 text-sm text-muted-foreground">{agent.display_model}</td>
                   <td class="px-4 py-2.5">
                     <PersonalityCell text={agent.personality} />
                   </td>
