@@ -1731,7 +1731,7 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                         await asyncio.to_thread(
                             start_ai_note_workflow,
                             community_server_id=platform_id,
-                            request_id=request.request_id,
+                            request_id=str(request.id),
                             content=flagged_msg.content,
                             scan_type="similarity",
                             fact_check_item_id=str(first_match.fact_check_item_id)
@@ -1748,7 +1748,7 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                         await asyncio.to_thread(
                             start_ai_note_workflow,
                             community_server_id=platform_id,
-                            request_id=request.request_id,
+                            request_id=str(request.id),
                             content=flagged_msg.content,
                             scan_type="openai_moderation",
                             moderation_metadata=moderation_metadata,
@@ -1767,7 +1767,7 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                         await asyncio.to_thread(
                             start_ai_note_workflow,
                             community_server_id=platform_id,
-                            request_id=request.request_id,
+                            request_id=str(request.id),
                             content=flagged_msg.content,
                             scan_type="conversation_flashpoint",
                             moderation_metadata=flashpoint_metadata,

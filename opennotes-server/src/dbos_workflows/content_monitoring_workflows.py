@@ -179,8 +179,9 @@ def generate_ai_note_step(
 
                     response = await _call_llm()
 
+                    request_uuid = UUID(request_id)
                     existing = await session.execute(
-                        select(Note.id).where(Note.request_id == request_id)
+                        select(Note.id).where(Note.request_id == request_uuid)
                     )
                     if existing.scalar_one_or_none():
                         logger.info(
@@ -190,7 +191,7 @@ def generate_ai_note_step(
                         return {"status": "already_exists", "request_id": request_id}
 
                     note = Note(
-                        request_id=request_id,
+                        request_id=request_uuid,
                         author_id=PLACEHOLDER_USER_ID,
                         summary=response.content,
                         classification="NOT_MISLEADING",
