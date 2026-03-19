@@ -160,9 +160,9 @@ async def write_note(
     """Write a new community note for a request. Use this when you see a request
     that needs context or fact-checking. Classification must be one of:
     NOT_MISLEADING or MISINFORMED_OR_POTENTIALLY_MISLEADING."""
-    valid_ids = {str(r["request_id"]) for r in ctx.deps.available_requests}
+    valid_ids = {str(r["id"]) for r in ctx.deps.available_requests}
     if request_id not in valid_ids:
-        return f"Error: request_id '{request_id}' not found in available requests."
+        return f"Error: request id '{request_id}' not found in available requests."
 
     valid_classifications = {"NOT_MISLEADING", "MISINFORMED_OR_POTENTIALLY_MISLEADING"}
     if classification not in valid_classifications:
@@ -172,7 +172,7 @@ async def write_note(
         )
 
     note = Note(
-        request_id=request_id,
+        request_id=UUID(request_id),
         author_id=ctx.deps.user_profile_id,
         summary=summary,
         classification=classification,
@@ -194,7 +194,7 @@ async def write_note(
         logger.exception("Database error creating note for request %s", request_id)
         return "Error: could not create note due to a database error."
 
-    return f"Note created for request '{request_id}' with classification '{classification}'."
+    return f"Note created for request {request_id} with classification '{classification}'."
 
 
 @sim_agent.tool
@@ -669,7 +669,7 @@ class OpenNotesSimAgent:
             sections.append("== Available Requests ==")
             for req in requests:
                 block = (
-                    f"- Request ID: {req['request_id']}\n"
+                    f"- Request ID: {req['id']}\n"
                     f"  Content: {req.get('content', 'N/A')}\n"
                     f"  Status: {req.get('status', 'N/A')}"
                 )

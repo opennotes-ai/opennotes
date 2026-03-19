@@ -28,7 +28,8 @@ def sample_deps(mock_db):
         user_profile_id=uuid4(),
         available_requests=[
             {
-                "request_id": str(uuid4()),
+                "id": str(uuid4()),
+                "request_id": "prov-test",
                 "content": "Test content",
                 "status": "PENDING",
                 "notes": [],

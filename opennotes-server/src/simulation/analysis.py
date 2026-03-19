@@ -616,15 +616,11 @@ async def compute_request_variance(
     request_ids = {note.request_id for note in notes if note.request_id}
 
     request_result = await db.execute(
-        select(Request)
-        .where(Request.request_id.in_(request_ids))
-        .options(*loaders.request_with_archive())
+        select(Request).where(Request.id.in_(request_ids)).options(*loaders.request_with_archive())
     )
-    requests_by_id: dict[str, Request] = {
-        req.request_id: req for req in request_result.scalars().all()
-    }
+    requests_by_id: dict[UUID, Request] = {req.id: req for req in request_result.scalars().all()}
 
-    notes_by_request: dict[str, list[Note]] = defaultdict(list)
+    notes_by_request: dict[UUID, list[Note]] = defaultdict(list)
     for note in notes:
         if note.request_id:
             notes_by_request[note.request_id].append(note)
@@ -650,7 +646,7 @@ async def compute_request_variance(
 
         results.append(
             DetailedRequestData(
-                request_id=req_id,
+                request_id=str(req_id),
                 content=content,
                 content_type=content_type,
                 note_count=len(req_notes),

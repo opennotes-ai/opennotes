@@ -281,8 +281,10 @@ class TestBuildDepsStep:
 
         cs_id = str(uuid4())
         note_id = uuid4()
+        req_uuid = uuid4()
 
         mock_request = MagicMock()
+        mock_request.id = req_uuid
         mock_request.request_id = "req-001"
         mock_request.content = "Earth is flat"
         mock_request.status = "PENDING"
@@ -323,6 +325,7 @@ class TestBuildDepsStep:
             result = build_deps_step.__wrapped__(community_server_id=cs_id)
 
         assert len(result["available_requests"]) == 1
+        assert result["available_requests"][0]["id"] == str(req_uuid)
         assert result["available_requests"][0]["request_id"] == "req-001"
         assert result["available_requests"][0]["notes"] == []
         assert len(result["available_notes"]) == 1
@@ -333,15 +336,17 @@ class TestBuildDepsStep:
 
         cs_id = str(uuid4())
         linked_note_id = uuid4()
+        req_uuid = uuid4()
 
         mock_request = MagicMock()
+        mock_request.id = req_uuid
         mock_request.request_id = "req-002"
         mock_request.content = "Vaccines cause autism"
         mock_request.status = "PENDING"
 
         mock_linked_note = MagicMock()
         mock_linked_note.id = linked_note_id
-        mock_linked_note.request_id = "req-002"
+        mock_linked_note.request_id = req_uuid
         mock_linked_note.summary = "Vaccines do not cause autism"
         mock_linked_note.classification = "NOT_MISLEADING"
         mock_linked_note.status = "NEEDS_MORE_RATINGS"
@@ -389,7 +394,8 @@ class TestBuildDepsStep:
         cs_id = str(uuid4())
 
         mock_request_1 = MagicMock()
-        mock_request_1.request_id = uuid4()
+        mock_request_1.id = uuid4()
+        mock_request_1.request_id = "req-limit-test"
         mock_request_1.content = "test content"
         mock_request_1.status = "PENDING"
 
@@ -448,7 +454,12 @@ class TestExecuteAgentTurnStep:
         context = _make_context()
         deps_data = {
             "available_requests": [
-                {"request_id": "req-001", "content": "test", "status": "PENDING"}
+                {
+                    "id": str(uuid4()),
+                    "request_id": "req-001",
+                    "content": "test",
+                    "status": "PENDING",
+                }
             ],
             "available_notes": [],
         }
@@ -837,7 +848,12 @@ class TestSelectActionStep:
         context = _make_context()
         deps_data = {
             "available_requests": [
-                {"request_id": "req-001", "content": "test", "status": "PENDING"}
+                {
+                    "id": str(uuid4()),
+                    "request_id": "req-001",
+                    "content": "test",
+                    "status": "PENDING",
+                }
             ],
             "available_notes": [],
         }
@@ -1876,7 +1892,12 @@ class TestTwoPhaseFlow:
         context = _make_context()
         deps_data = {
             "available_requests": [
-                {"request_id": "req-001", "content": "test", "status": "PENDING"}
+                {
+                    "id": str(uuid4()),
+                    "request_id": "req-001",
+                    "content": "test",
+                    "status": "PENDING",
+                }
             ],
             "available_notes": [],
         }
@@ -2640,8 +2661,10 @@ class TestRequestTurnPersistence:
         from src.simulation.workflows.agent_turn_workflow import build_deps_step
 
         cs_id = str(uuid4())
+        req_uuid = uuid4()
 
         mock_request = MagicMock()
+        mock_request.id = req_uuid
         mock_request.request_id = "req-001"
         mock_request.content = "Test content"
         mock_request.status = "PENDING"
@@ -2676,19 +2699,23 @@ class TestRequestTurnPersistence:
             result = build_deps_step.__wrapped__(community_server_id=cs_id)
 
         assert "shown_request_ids" in result
-        assert result["shown_request_ids"] == ["req-001"]
+        assert result["shown_request_ids"] == [str(req_uuid)]
 
     def test_build_deps_queries_persisted_ids_first(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import build_deps_step
 
         cs_id = str(uuid4())
+        persisted_uuid = uuid4()
+        new_uuid = uuid4()
 
         mock_persisted_req = MagicMock()
+        mock_persisted_req.id = persisted_uuid
         mock_persisted_req.request_id = "req-persisted"
         mock_persisted_req.content = "Previously seen"
         mock_persisted_req.status = "PENDING"
 
         mock_new_req = MagicMock()
+        mock_new_req.id = new_uuid
         mock_new_req.request_id = "req-new"
         mock_new_req.content = "Newly drawn"
         mock_new_req.status = "PENDING"
@@ -2730,20 +2757,23 @@ class TestRequestTurnPersistence:
         ):
             result = build_deps_step.__wrapped__(
                 community_server_id=cs_id,
-                seen_request_ids=["req-persisted"],
+                seen_request_ids=[str(persisted_uuid)],
             )
 
         assert len(result["available_requests"]) == 2
         assert result["available_requests"][0]["request_id"] == "req-persisted"
         assert result["available_requests"][1]["request_id"] == "req-new"
-        assert result["shown_request_ids"] == ["req-persisted", "req-new"]
+        assert result["shown_request_ids"] == [str(persisted_uuid), str(new_uuid)]
 
     def test_build_deps_drops_completed_persisted_requests(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import build_deps_step
 
         cs_id = str(uuid4())
+        new_uuid = uuid4()
+        completed_uuid = uuid4()
 
         mock_new_req = MagicMock()
+        mock_new_req.id = new_uuid
         mock_new_req.request_id = "req-new"
         mock_new_req.content = "Replacement"
         mock_new_req.status = "PENDING"
@@ -2785,18 +2815,20 @@ class TestRequestTurnPersistence:
         ):
             result = build_deps_step.__wrapped__(
                 community_server_id=cs_id,
-                seen_request_ids=["req-completed"],
+                seen_request_ids=[str(completed_uuid)],
             )
 
-        assert "req-completed" not in result["shown_request_ids"]
-        assert result["shown_request_ids"] == ["req-new"]
+        assert str(completed_uuid) not in result["shown_request_ids"]
+        assert result["shown_request_ids"] == [str(new_uuid)]
 
     def test_build_deps_no_seen_ids_falls_back_to_random(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import build_deps_step
 
         cs_id = str(uuid4())
+        req_uuid = uuid4()
 
         mock_request = MagicMock()
+        mock_request.id = req_uuid
         mock_request.request_id = "req-random"
         mock_request.content = "Random draw"
         mock_request.status = "PENDING"
@@ -2834,7 +2866,7 @@ class TestRequestTurnPersistence:
             )
 
         assert mock_session.execute.await_count == 3
-        assert result["shown_request_ids"] == ["req-random"]
+        assert result["shown_request_ids"] == [str(req_uuid)]
 
     def test_load_agent_context_returns_seen_request_ids(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import load_agent_context_step
@@ -3031,7 +3063,13 @@ class TestRequestTurnPersistence:
             captured_build_kwargs.update(kwargs)
             return {
                 "available_requests": [
-                    {"request_id": "req-prev", "content": "old", "status": "PENDING", "notes": []}
+                    {
+                        "id": str(uuid4()),
+                        "request_id": "req-prev",
+                        "content": "old",
+                        "status": "PENDING",
+                        "notes": [],
+                    }
                 ],
                 "available_notes": [],
                 "shown_request_ids": ["req-prev"],

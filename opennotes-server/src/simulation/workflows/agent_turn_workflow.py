@@ -193,18 +193,18 @@ def build_deps_step(
             )
 
             persisted_requests: list[Any] = []
-            persisted_ids: set[str] = set()
+            persisted_ids: set[UUID] = set()
 
             if seen_request_ids:
                 persisted_query = select(Request).where(
                     Request.community_server_id == cs_id,
                     Request.status == "PENDING",
                     Request.deleted_at.is_(None),
-                    Request.request_id.in_(seen_request_ids),
+                    Request.id.in_([UUID(rid) for rid in seen_request_ids]),
                 )
                 persisted_result = await session.execute(persisted_query)
                 persisted_requests = list(persisted_result.scalars().all())
-                persisted_ids = {req.request_id for req in persisted_requests}
+                persisted_ids = {req.id for req in persisted_requests}
 
             remaining_slots = MAX_CONTEXT_REQUESTS - len(persisted_requests)
 
@@ -216,16 +216,16 @@ def build_deps_step(
                     Request.deleted_at.is_(None),
                 )
                 if persisted_ids:
-                    new_query = new_query.where(Request.request_id.notin_(persisted_ids))
+                    new_query = new_query.where(Request.id.notin_(persisted_ids))
                 new_query = new_query.order_by(func.random()).limit(remaining_slots)
                 new_result = await session.execute(new_query)
                 new_requests = list(new_result.scalars().all())
 
             requests = persisted_requests + new_requests
 
-            request_ids = [req.request_id for req in requests]
+            request_ids = [req.id for req in requests]
 
-            notes_by_request: dict[str, list[dict[str, Any]]] = {}
+            notes_by_request: dict[UUID, list[dict[str, Any]]] = {}
             if request_ids:
                 linked_note_query = (
                     select(Note)
@@ -251,10 +251,11 @@ def build_deps_step(
             for req in requests:
                 available_requests.append(
                     {
+                        "id": str(req.id),
                         "request_id": req.request_id,
                         "content": req.content,
                         "status": req.status,
-                        "notes": notes_by_request.get(req.request_id, []),
+                        "notes": notes_by_request.get(req.id, []),
                     }
                 )
 
@@ -279,7 +280,7 @@ def build_deps_step(
                     }
                 )
 
-        shown_request_ids = [req["request_id"] for req in available_requests]
+        shown_request_ids = [req["id"] for req in available_requests]
 
         return {
             "available_requests": available_requests,

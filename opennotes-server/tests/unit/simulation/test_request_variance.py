@@ -34,9 +34,10 @@ def _make_note(author_id=None, request_id=None, classification="NOT_MISLEADING",
     return n
 
 
-def _make_request(request_id, content_text=None, content_url=None, content_type="text"):
+def _make_request(req_uuid, content_text=None, content_url=None, content_type="text"):
     req = MagicMock()
-    req.request_id = request_id
+    req.id = req_uuid
+    req.request_id = f"provenance-{req_uuid}"
     ma = MagicMock()
     ma.content_type = content_type
     if content_type == "text":
@@ -137,13 +138,14 @@ class TestComputeRequestVariance:
         profile_id = uuid4()
         inst = _make_agent_instance(profile_id=profile_id)
 
+        req_uuid = uuid4()
         note = _make_note(
             author_id=profile_id,
-            request_id="req-1",
+            request_id=req_uuid,
             classification="NOT_MISLEADING",
             ratings=[_make_rating("HELPFUL")],
         )
-        req = _make_request("req-1", content_text="Some claim text")
+        req = _make_request(req_uuid, content_text="Some claim text")
 
         mock_db = AsyncMock()
         notes_scalars = MagicMock()
@@ -162,7 +164,7 @@ class TestComputeRequestVariance:
             result = await compute_request_variance(uuid4(), mock_db)
 
         assert len(result) == 1
-        assert result[0].request_id == "req-1"
+        assert result[0].request_id == str(req_uuid)
         assert result[0].variance_score == 0.0
         assert result[0].content == "Some claim text"
         assert result[0].note_count == 1
@@ -174,19 +176,20 @@ class TestComputeRequestVariance:
         profile_id = uuid4()
         inst = _make_agent_instance(profile_id=profile_id)
 
+        req_uuid = uuid4()
         note1 = _make_note(
             author_id=profile_id,
-            request_id="req-1",
+            request_id=req_uuid,
             classification="NOT_MISLEADING",
             ratings=[],
         )
         note2 = _make_note(
             author_id=profile_id,
-            request_id="req-1",
+            request_id=req_uuid,
             classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
             ratings=[],
         )
-        req = _make_request("req-1", content_text="Controversial claim")
+        req = _make_request(req_uuid, content_text="Controversial claim")
 
         mock_db = AsyncMock()
         notes_scalars = MagicMock()
@@ -215,27 +218,30 @@ class TestComputeRequestVariance:
         profile_id = uuid4()
         inst = _make_agent_instance(profile_id=profile_id)
 
+        req_low_uuid = uuid4()
+        req_high_uuid = uuid4()
+
         note_low = _make_note(
             author_id=profile_id,
-            request_id="req-low",
+            request_id=req_low_uuid,
             classification="NOT_MISLEADING",
             ratings=[],
         )
         note_high1 = _make_note(
             author_id=profile_id,
-            request_id="req-high",
+            request_id=req_high_uuid,
             classification="NOT_MISLEADING",
             ratings=[_make_rating("HELPFUL"), _make_rating("NOT_HELPFUL")],
         )
         note_high2 = _make_note(
             author_id=profile_id,
-            request_id="req-high",
+            request_id=req_high_uuid,
             classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
             ratings=[_make_rating("NOT_HELPFUL")],
         )
 
-        req_low = _make_request("req-low", content_text="Simple claim")
-        req_high = _make_request("req-high", content_text="Contested claim")
+        req_low = _make_request(req_low_uuid, content_text="Simple claim")
+        req_high = _make_request(req_high_uuid, content_text="Contested claim")
 
         mock_db = AsyncMock()
         notes_scalars = MagicMock()
@@ -254,8 +260,8 @@ class TestComputeRequestVariance:
             result = await compute_request_variance(uuid4(), mock_db)
 
         assert len(result) == 2
-        assert result[0].request_id == "req-high"
-        assert result[1].request_id == "req-low"
+        assert result[0].request_id == str(req_high_uuid)
+        assert result[1].request_id == str(req_low_uuid)
         assert result[0].variance_score > result[1].variance_score
 
     @pytest.mark.asyncio
@@ -265,9 +271,10 @@ class TestComputeRequestVariance:
         profile_id = uuid4()
         inst = _make_agent_instance(profile_id=profile_id)
 
-        note = _make_note(author_id=profile_id, request_id="req-url")
+        req_uuid = uuid4()
+        note = _make_note(author_id=profile_id, request_id=req_uuid)
         req = _make_request(
-            "req-url", content_url="https://example.com/image.png", content_type="image"
+            req_uuid, content_url="https://example.com/image.png", content_type="image"
         )
 
         mock_db = AsyncMock()
