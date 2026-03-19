@@ -40,6 +40,39 @@ function uuidSuffixToProquint(uuid: string): string {
   return `${encodeProquintWord(upperWord)}-${encodeProquintWord(lowerWord)}`;
 }
 
+function decodeProquintWord(pq: string): number {
+  let word = 0;
+  word |= PROQUINT_CONSONANTS.indexOf(pq[0]);
+  word |= PROQUINT_VOWELS.indexOf(pq[1]) << 4;
+  word |= PROQUINT_CONSONANTS.indexOf(pq[2]) << 6;
+  word |= PROQUINT_VOWELS.indexOf(pq[3]) << 10;
+  word |= PROQUINT_CONSONANTS.indexOf(pq[4]) << 12;
+  return word;
+}
+
+export function proquintToHexSuffix(proquint: string): string {
+  const [upper, lower] = proquint.split("-");
+  const upperWord = decodeProquintWord(upper);
+  const lowerWord = decodeProquintWord(lower);
+  return upperWord.toString(16).padStart(4, "0") + lowerWord.toString(16).padStart(4, "0");
+}
+
+export function resolveAnchorId(
+  anchor: string,
+  items: Array<{ id: string }>,
+  prefix: string,
+): string | null {
+  const stripped = anchor.startsWith(`${prefix}-`) ? anchor.slice(prefix.length + 1) : anchor;
+  const byUuid = items.find((item) => item.id === stripped);
+  if (byUuid) return byUuid.id;
+  if (/^[a-z]{5}-[a-z]{5}$/.test(stripped)) {
+    const hexSuffix = proquintToHexSuffix(stripped);
+    const byProquint = items.find((item) => item.id.replace(/-/g, "").endsWith(hexSuffix));
+    if (byProquint) return byProquint.id;
+  }
+  return null;
+}
+
 export function humanizeLabel(raw: string): string {
   return (
     LABEL_MAP[raw] ??
