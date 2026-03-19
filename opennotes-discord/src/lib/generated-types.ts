@@ -6912,6 +6912,8 @@ export interface components {
             request_id?: string | null;
             /** Platform Message Id */
             platform_message_id?: string | null;
+            /** Platform Channel Id */
+            platform_channel_id?: string | null;
             /** Force Published At */
             force_published_at?: string | null;
             /**

@@ -90,8 +90,10 @@ def get_ai_note_writer(http_request: HTTPRequest) -> "AINoteWriter":
 def note_to_resource(note: Note) -> NoteResource:
     """Convert a Note model to a JSON:API resource object."""
     platform_message_id = None
+    platform_channel_id = None
     if note.request and note.request.message_archive:
         platform_message_id = note.request.message_archive.platform_message_id
+        platform_channel_id = note.request.message_archive.platform_channel_id
 
     return NoteResource(
         type="notes",
@@ -111,6 +113,7 @@ def note_to_resource(note: Note) -> NoteResource:
             updated_at=note.updated_at,
             request_id=note.request_id,
             platform_message_id=platform_message_id,
+            platform_channel_id=platform_channel_id,
             ratings_count=len(note.ratings) if note.ratings else 0,
             community_server_id=str(note.community_server_id) if note.community_server_id else None,
         ),

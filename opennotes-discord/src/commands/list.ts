@@ -163,10 +163,10 @@ async function createNoteItemV2(
     }
   }
 
-  const channelId = note.attributes.channel_id;
+  const platformChannelId = note.attributes.platform_channel_id;
   const platformMessageId = note.attributes.platform_message_id;
-  const messageUrl = (guildId && channelId && platformMessageId)
-    ? `https://discord.com/channels/${guildId}/${channelId}/${platformMessageId}`
+  const messageUrl = (guildId && platformChannelId && platformMessageId)
+    ? `https://discord.com/channels/${guildId}/${platformChannelId}/${platformMessageId}`
     : undefined;
 
   return {
