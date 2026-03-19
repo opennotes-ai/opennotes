@@ -115,6 +115,9 @@ from src.services.vision_service import VisionService
 from src.simulation.orchestrators_jsonapi_router import router as orchestrators_jsonapi_router
 from src.simulation.playground_jsonapi_router import router as playground_jsonapi_router
 from src.simulation.sim_agents_jsonapi_router import router as sim_agents_jsonapi_router
+from src.simulation.sim_channel_messages_jsonapi_router import (
+    router as sim_channel_messages_jsonapi_router,
+)
 from src.simulation.simulations_jsonapi_router import router as simulations_jsonapi_router
 from src.startup_migrations import run_startup_migrations
 from src.startup_validation import run_startup_checks
@@ -603,6 +606,11 @@ async def _shutdown_services(app: FastAPI, is_dbos_worker: bool) -> None:
 
     _destroy_dbos(is_dbos_worker)
 
+    from src.database import dispose_background_engines
+
+    dispose_background_engines()
+    logger.info("Background engine(s) disposed")
+
     from src.utils.async_compat import shutdown as shutdown_bg_loop
 
     await asyncio.to_thread(shutdown_bg_loop)
@@ -780,6 +788,11 @@ app.include_router(
     playground_jsonapi_router,
     prefix=settings.API_V2_PREFIX,
     tags=["playground-jsonapi"],
+)
+app.include_router(
+    sim_channel_messages_jsonapi_router,
+    prefix=settings.API_V2_PREFIX,
+    tags=["sim-channel-messages-jsonapi"],
 )
 
 # API v1 routes

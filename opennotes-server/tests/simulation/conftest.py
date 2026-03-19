@@ -160,6 +160,7 @@ async def simulation_run_factory(playground_community, orchestrator):
         restart_count: int = 0,
         cumulative_turns: int = 0,
         generation: int = 1,
+        is_public: bool = False,
     ) -> dict:
         now = pendulum.now("UTC")
         async with get_session_maker()() as session:
@@ -170,6 +171,7 @@ async def simulation_run_factory(playground_community, orchestrator):
                 restart_count=restart_count,
                 cumulative_turns=cumulative_turns,
                 generation=generation,
+                is_public=is_public,
                 started_at=now.subtract(hours=1),
                 completed_at=now if status_val == "completed" else None,
             )
@@ -235,6 +237,28 @@ async def agent_instance_factory():
                 "state": inst.state,
                 "turn_count": inst.turn_count,
                 "cumulative_turn_count": inst.cumulative_turn_count,
+                "agent_profile_id": agent.id,
+                "agent_name": agent.name,
             }
+
+    return _create
+
+
+@pytest.fixture
+async def channel_message_factory():
+    from src.database import get_session_maker
+    from src.simulation.models import SimChannelMessage
+
+    async def _create(simulation_run_id, agent_instance_id, message_text="test message") -> dict:
+        async with get_session_maker()() as session:
+            msg = SimChannelMessage(
+                simulation_run_id=simulation_run_id,
+                agent_instance_id=agent_instance_id,
+                message_text=message_text,
+            )
+            session.add(msg)
+            await session.commit()
+            await session.refresh(msg)
+            return {"id": msg.id, "message_text": msg.message_text}
 
     return _create

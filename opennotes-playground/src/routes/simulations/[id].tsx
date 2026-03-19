@@ -5,6 +5,7 @@ import {
   getSimulationAnalysis,
   getSimulationDetailedAnalysis,
   getSimulationTimeline,
+  getSimulationChannelMessages,
 } from "~/lib/api-client.server";
 import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
 import { parseFragment, scrollToAndHighlight, findPageForItem } from "~/lib/anchor-scroll";
@@ -17,6 +18,7 @@ import AgentsSection from "~/components/AgentsSection";
 import NotesRatingsSection from "~/components/NotesRatingsSection";
 import ScoringAnalysisSection from "~/components/ScoringAnalysisSection";
 import NoteDetails from "~/components/NoteDetails";
+import { SimChannelMessages } from "~/components/SimChannelMessages";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 
@@ -112,6 +114,18 @@ const fetchTimeline = query(async (id: string) => {
     return null;
   }
 }, "timeline");
+
+const fetchChannelMessages = query(async (id: string, before?: string) => {
+  "use server";
+  try {
+    return await getSimulationChannelMessages(id, 20, before);
+  } catch (error) {
+    console.error("Failed to fetch channel messages:", error);
+    return null;
+  }
+}, "channel-messages");
+
+export { fetchChannelMessages };
 
 function isError(result: unknown): result is SimulationError {
   return result != null && typeof result === "object" && "_error" in result;
@@ -304,6 +318,13 @@ export default function SimulationDetailPage() {
                         Error: {attrs.error_message}
                       </div>
                     </Show>
+                  </section>
+
+                  <section id="sim-channel" class="mt-8 border-t border-border pt-8">
+                    <h2 class="mb-4 text-lg font-semibold">SIM Channel</h2>
+                    <Suspense fallback={<SectionSkeleton />}>
+                      <SimChannelMessages simulationId={params.id!} />
+                    </Suspense>
                   </section>
 
                   <Suspense fallback={<p class="mt-6 text-muted-foreground">Loading analysis...</p>}>

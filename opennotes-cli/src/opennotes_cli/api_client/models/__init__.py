@@ -584,6 +584,13 @@ from .sim_agent_update_attributes_tool_config_type_0 import (
 )
 from .sim_agent_update_data import SimAgentUpdateData
 from .sim_agent_update_request import SimAgentUpdateRequest
+from .sim_channel_message_attributes import SimChannelMessageAttributes
+from .sim_channel_message_list_meta import SimChannelMessageListMeta
+from .sim_channel_message_list_response import SimChannelMessageListResponse
+from .sim_channel_message_list_response_jsonapi import (
+    SimChannelMessageListResponseJsonapi,
+)
+from .sim_channel_message_resource import SimChannelMessageResource
 from .similarity_match import SimilarityMatch
 from .similarity_search_create_attributes import SimilaritySearchCreateAttributes
 from .similarity_search_create_data import SimilaritySearchCreateData
@@ -1080,6 +1087,11 @@ __all__ = (
     "SimAgentUpdateAttributesToolConfigType0",
     "SimAgentUpdateData",
     "SimAgentUpdateRequest",
+    "SimChannelMessageAttributes",
+    "SimChannelMessageListMeta",
+    "SimChannelMessageListResponse",
+    "SimChannelMessageListResponseJsonapi",
+    "SimChannelMessageResource",
     "SimilarityMatch",
     "SimilaritySearchCreateAttributes",
     "SimilaritySearchCreateData",

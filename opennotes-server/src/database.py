@@ -232,6 +232,30 @@ async def init_db() -> None:
         await conn.execute(text("SELECT 1"))
 
 
+def dispose_background_engines() -> None:
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    with _db_lock:
+        bg_entries = [
+            (k, eng, lp)
+            for k, (eng, lp) in _engines.items()
+            if lp is not None and lp is not current_loop and not lp.is_closed()
+        ]
+
+    for key, engine, loop in bg_entries:
+        try:
+            future = asyncio.run_coroutine_threadsafe(engine.dispose(), loop)
+            future.result(timeout=10)
+        except Exception:
+            logger.warning("Error disposing background engine", exc_info=True)
+        with _db_lock:
+            _engines.pop(key, None)
+            _session_makers.pop(key, None)
+
+
 async def close_db() -> None:
     try:
         current_loop = asyncio.get_running_loop()

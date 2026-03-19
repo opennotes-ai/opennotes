@@ -1,4 +1,5 @@
 export const SECTIONS = [
+  { id: "sim-channel", label: "SIM Channel" },
   { id: "agents", label: "Agents" },
   { id: "notes-ratings", label: "Notes & Ratings" },
   { id: "note-details", label: "Note Details" },
