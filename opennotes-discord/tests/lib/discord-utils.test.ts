@@ -95,7 +95,7 @@ describe('createForcePublishConfirmationButtons', () => {
     const shortId = 'abc12345';
     const result = createForcePublishConfirmationButtons(noteId, shortId);
 
-    expect(result.content).toContain(noteId);
+    expect(result.content).toContain('hajij-babab');
     expect(result.content).toContain('Confirm Force Publish');
     expect(result.content).toContain('Admin Published');
   });
@@ -206,7 +206,7 @@ describe('createForcePublishConfirmationButtonsV2', () => {
 
     const allContent = textDisplays.map((td: any) => td.content).join(' ');
     expect(allContent).toContain('Admin Published');
-    expect(allContent).toContain(noteId);
+    expect(allContent).toContain('hajij-babab');
   });
 
   it('should contain an ActionRow with Confirm and Cancel buttons', () => {

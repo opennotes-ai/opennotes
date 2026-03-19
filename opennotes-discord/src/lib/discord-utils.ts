@@ -14,6 +14,7 @@ import {
   createDivider,
   v2MessageFlags,
 } from '../utils/v2-components.js';
+import { formatIdDisplay } from './proquint.js';
 
 export interface ForcePublishConfirmationResult {
   content: string;
@@ -47,7 +48,7 @@ export function createForcePublishConfirmationButtons(
   const content = [
     '**Confirm Force Publish**',
     '',
-    `Are you sure you want to force publish Note #${noteId}?`,
+    `Are you sure you want to force publish Note #${formatIdDisplay(noteId)}?`,
     '',
     'This will:',
     '- Bypass the normal rating threshold requirements',
@@ -146,7 +147,7 @@ export function createForcePublishConfirmationButtonsV2(
   );
 
   const warningMessage = [
-    `Are you sure you want to force publish Note #${noteId}?`,
+    `Are you sure you want to force publish Note #${formatIdDisplay(noteId)}?`,
     '',
     'This will:',
     '- Bypass the normal rating threshold requirements',

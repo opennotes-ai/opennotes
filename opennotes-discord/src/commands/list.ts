@@ -978,7 +978,7 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
     }
 
     await interaction.editReply({
-      content: `✅ **AI Note Generated**\n\nNote ID: \`${noteId}\`\n\n> ${notePreview.text}\n\nThe note has been created and will enter the rating queue.`,
+      content: `✅ **AI Note Generated**\n\nNote ID: \`${formatIdDisplay(noteId)}\`\n\n> ${notePreview.text}\n\nThe note has been created and will enter the rating queue.`,
       ...(components ? { components } : {}),
     });
 

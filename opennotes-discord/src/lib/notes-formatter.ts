@@ -2,6 +2,7 @@ import { ContainerBuilder, TextDisplayBuilder } from 'discord.js';
 import { NoteStatus, NoteWithRatings, RatingThresholds } from './types.js';
 import { MessageInfo } from './message-fetcher.js';
 import { extractPlatformMessageId } from './discord-utils.js';
+import { formatIdDisplay } from './proquint.js';
 import {
   V2_COLORS,
   V2_ICONS,
@@ -63,7 +64,7 @@ export class NotesFormatter {
     const container = createContainer(urgency.urgencyColor);
 
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`${titlePrefix}**Note #${note.id}**`)
+      new TextDisplayBuilder().setContent(`${titlePrefix}**Note #${formatIdDisplay(note.id)}**`)
     );
 
     container.addSeparatorComponents(createSmallSeparator());
@@ -233,7 +234,7 @@ export class NotesFormatter {
     const container = createContainer(V2_COLORS.RATED);
 
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`${V2_ICONS.RATED} **Note #${note.id}**`)
+      new TextDisplayBuilder().setContent(`${V2_ICONS.RATED} **Note #${formatIdDisplay(note.id)}**`)
     );
 
     container.addSeparatorComponents(createSmallSeparator());
