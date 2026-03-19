@@ -78,4 +78,15 @@ describe("middleware onRequest", () => {
     expect(event.locals.supabase).toBe(mockReadOnlyClient);
     expect(mockCreateReadOnlyClient).toHaveBeenCalledWith(event.request);
   });
+
+  it("sets event.locals.supabase even when auth throws", async () => {
+    mockGetUser.mockRejectedValue(new Error("Auth failed"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const event = createMockEvent();
+    await capturedOnRequest(event);
+
+    expect(event.locals.supabase).toBe(mockReadOnlyClient);
+    expect(mockCreateReadOnlyClient).toHaveBeenCalledWith(event.request);
+  });
 });
