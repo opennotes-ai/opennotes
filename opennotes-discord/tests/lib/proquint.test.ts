@@ -79,8 +79,8 @@ describe('isProquint', () => {
     expect(isProquint(pq)).toBe(true);
   });
 
-  it('should accept "hello-world" since it matches the 5-5 lowercase pattern', () => {
-    expect(isProquint('hello-world')).toBe(true);
+  it('should reject "hello-world" since e, w, y are not in proquint alphabet', () => {
+    expect(isProquint('hello-world')).toBe(false);
   });
 
   it('should reject "helloo-world" (too many chars in first word)', () => {

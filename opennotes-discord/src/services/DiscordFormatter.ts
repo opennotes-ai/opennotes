@@ -539,7 +539,7 @@ export class DiscordFormatter {
       container.addSeparatorComponents(createSmallSeparator());
 
       const noteLines = [
-        `**${rank}. ${scoreColor} Note ${resource.id}**`,
+        `**${rank}. ${scoreColor} Note ${formatIdDisplay(resource.id)}**`,
         `**Score:** ${formattedScore} (0.0-1.0)`,
         `**Confidence:** ${confidenceEmoji} ${this.getConfidenceLabel(note.confidence as ScoreConfidence)}`,
         `**Ratings:** ${note.rating_count}`,
@@ -553,7 +553,7 @@ export class DiscordFormatter {
       if (options?.includeForcePublishButtons) {
         const forcePublishButton = new ButtonBuilder()
           .setCustomId(`force_publish:${resource.id}`)
-          .setLabel(`Force Publish Note ${resource.id}`)
+          .setLabel(`Force Publish Note ${formatIdDisplay(resource.id)}`)
           .setStyle(ButtonStyle.Danger);
         forcePublishButtonRows.push(
           new ActionRowBuilder<ButtonBuilder>().addComponents(forcePublishButton)

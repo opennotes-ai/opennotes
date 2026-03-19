@@ -206,7 +206,7 @@ export class NotesFormatter {
       lines.push(`**Note:** ${v2SanitizeMarkdown(v2Truncate(note.summary, 100))}`);
 
       const progressBar = formatProgressBar(note.ratings_count, thresholds.min_ratings_needed, 8);
-      lines.push(`**ID:** ${note.id} | ${progressBar} ${note.ratings_count}/${thresholds.min_ratings_needed} ratings | ${uniqueRaters}/${thresholds.min_raters_per_note} raters`);
+      lines.push(`**ID:** ${formatIdDisplay(note.id)} | ${progressBar} ${note.ratings_count}/${thresholds.min_ratings_needed} ratings | ${uniqueRaters}/${thresholds.min_raters_per_note} raters`);
       lines.push(`**Created:** <t:${createdTimestamp}:R> | **Type:** ${this.formatClassification(note.classification)}`);
 
       container.addTextDisplayComponents(

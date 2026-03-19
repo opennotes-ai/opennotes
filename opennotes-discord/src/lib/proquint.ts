@@ -1,7 +1,10 @@
 const UUID_LIKE_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const PROQUINT_RE = /^[a-z]{5}-[a-z]{5}$/;
+const PROQUINT_CONS = '[bdfghjklmnprstvz]';
+const PROQUINT_VOWL = '[aiou]';
+const PROQUINT_WORD = `${PROQUINT_CONS}${PROQUINT_VOWL}${PROQUINT_CONS}${PROQUINT_VOWL}${PROQUINT_CONS}`;
+const PROQUINT_RE = new RegExp(`^${PROQUINT_WORD}-${PROQUINT_WORD}$`);
 
 const PROQUINT_CONSONANTS = 'bdfghjklmnprstvz';
 const PROQUINT_VOWELS = 'aiou';

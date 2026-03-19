@@ -30,6 +30,15 @@ import { extractUserContext } from '../lib/user-context.js';
 import { buildForcePublishSuccessReply } from '../lib/force-publish-response.js';
 import { isProquint, proquintToHexSuffix, formatIdDisplay } from '../lib/proquint.js';
 
+async function resolveNoteByProquint(proquint: string): Promise<string | null> {
+  const hexSuffix = proquintToHexSuffix(proquint.trim());
+  const notesResponse = await apiClient.listNotes(1, 100);
+  const match = notesResponse.data.find(
+    (n: { id: string }) => n.id.replace(/-/g, '').endsWith(hexSuffix)
+  );
+  return match?.id ?? null;
+}
+
 export const data = new SlashCommandBuilder()
   .setName('note')
   .setDescription('Community notes commands')
@@ -730,12 +739,8 @@ async function handleScoreSubcommand(interaction: ChatInputCommandInteraction): 
     let resolvedNoteId = noteId;
 
     if (isProquint(noteId.trim())) {
-      const hexSuffix = proquintToHexSuffix(noteId.trim());
-      const notesResponse = await apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS', 1, 100, undefined);
-      const match = notesResponse.data.find(
-        (n: { id: string }) => n.id.replace(/-/g, '').endsWith(hexSuffix)
-      );
-      if (!match) {
+      const resolved = await resolveNoteByProquint(noteId);
+      if (!resolved) {
         await interaction.followUp({
           content: `Could not find a note matching ProQuint \`${noteId}\`. Try using the full UUID instead.`,
           flags: MessageFlags.Ephemeral,
@@ -743,7 +748,7 @@ async function handleScoreSubcommand(interaction: ChatInputCommandInteraction): 
         await interaction.deleteReply().catch(suppressExpectedDiscordErrors('delete_after_proquint_resolve'));
         return;
       }
-      resolvedNoteId = match.id;
+      resolvedNoteId = resolved;
     }
 
     const scoringService = serviceProvider.getScoringService();
@@ -852,10 +857,24 @@ async function handleRateSubcommand(interaction: ChatInputCommandInteraction): P
 
     await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
 
+    let resolvedNoteId = noteId;
+    if (isProquint(noteId.trim())) {
+      const resolved = await resolveNoteByProquint(noteId);
+      if (!resolved) {
+        await interaction.followUp({
+          content: `Could not find a note matching ProQuint \`${noteId}\`. Try using the full UUID instead.`,
+          flags: MessageFlags.Ephemeral,
+        });
+        await interaction.deleteReply().catch(suppressExpectedDiscordErrors('delete_after_rate_proquint'));
+        return;
+      }
+      resolvedNoteId = resolved;
+    }
+
     const userContext = extractUserContext(interaction.user, guildId, undefined, interaction.channelId);
     const rateNoteService = serviceProvider.getRateNoteService();
     const result = await rateNoteService.execute({
-      noteId,
+      noteId: resolvedNoteId,
       userId,
       helpful,
       username: userContext.username,
@@ -876,14 +895,14 @@ async function handleRateSubcommand(interaction: ChatInputCommandInteraction): P
       return;
     }
 
-    const response = DiscordFormatter.formatRateNoteSuccessV2(result.data!, noteId, helpful);
+    const response = DiscordFormatter.formatRateNoteSuccessV2(result.data!, resolvedNoteId, helpful);
     await interaction.editReply(response);
 
     logger.info('Rate-note completed successfully', {
       error_id: errorId,
       command: 'note rate',
       user_id: userId,
-      note_id: noteId,
+      note_id: resolvedNoteId,
       helpful,
     });
   } catch (error) {
@@ -957,6 +976,7 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
   }
 
   const member = interaction.member as GuildMember | null;
+  let resolvedNoteId = noteIdStr;
 
   try {
     logger.info('Executing note-force-publish command', {
@@ -969,9 +989,19 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
     });
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (isProquint(noteIdStr.trim())) {
+      const resolved = await resolveNoteByProquint(noteIdStr);
+      if (!resolved) {
+        await interaction.editReply({
+          content: `Could not find a note matching ProQuint \`${noteIdStr}\`. Try using the full UUID instead.`,
+        });
+        return;
+      }
+      resolvedNoteId = resolved;
+    }
 
     const userContext = extractUserContext(interaction.user, guildId, member, interaction.channelId);
-    const note = await apiClient.forcePublishNote(noteIdStr, userContext);
+    const note = await apiClient.forcePublishNote(resolvedNoteId, userContext);
 
     const attrs = note.data.attributes;
     logger.info('Note force-published successfully', {
@@ -979,15 +1009,16 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
       command: 'note force-publish',
       user_id: userId,
       community_server_id: guildId,
-      note_id: noteIdStr,
+      note_id: resolvedNoteId,
       force_published_at: attrs.force_published_at,
     });
 
-    const reply = await buildForcePublishSuccessReply(noteIdStr, note, 'note_force_publish');
+    const reply = await buildForcePublishSuccessReply(resolvedNoteId, note, 'note_force_publish');
     await interaction.editReply(reply);
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
 
+    const displayId = formatIdDisplay(resolvedNoteId);
     let errorMessage: string;
     if (error instanceof ApiError) {
       switch (error.statusCode) {
@@ -995,7 +1026,7 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
           errorMessage = `❌ **Permission Denied**\n\nYou need either:\n• Discord "Manage Server" permission, OR\n• Open Notes admin role for this server\n\nOnly admins can force-publish notes. Ask a server admin for help.`;
           break;
         case 404:
-          errorMessage = `❌ **Note Not Found**\n\nNote with ID \`${noteIdStr}\` does not exist or could not be found.`;
+          errorMessage = `❌ **Note Not Found**\n\nNote with ID \`${displayId}\` does not exist or could not be found.`;
           break;
         case 400: {
           const detail = typeof error.responseBody === 'object' && error.responseBody !== null && 'detail' in error.responseBody
@@ -1005,10 +1036,10 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
           break;
         }
         default:
-          errorMessage = formatErrorForUser(errorId, `Failed to force-publish note \`${noteIdStr}\`.`);
+          errorMessage = formatErrorForUser(errorId, `Failed to force-publish note \`${displayId}\`.`);
       }
     } else {
-      errorMessage = formatErrorForUser(errorId, `Failed to force-publish note \`${noteIdStr}\`.`);
+      errorMessage = formatErrorForUser(errorId, `Failed to force-publish note \`${displayId}\`.`);
     }
 
     logger.error('Error in note-force-publish command', {

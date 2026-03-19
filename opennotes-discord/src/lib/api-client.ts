@@ -647,6 +647,28 @@ export class ApiClient {
     };
   }
 
+  async listNotes(
+    page: number = 1,
+    size: number = 100,
+  ): Promise<NoteListJSONAPIResponseWithPagination> {
+    const query: Record<string, unknown> = {
+      'page[number]': page,
+      'page[size]': size,
+    };
+
+    const result = await this.client.GET('/api/v2/notes', {
+      params: { query: query },
+    });
+    const jsonApiResponse = handleError(result, '/api/v2/notes')
+
+    return {
+      ...jsonApiResponse,
+      total: jsonApiResponse.meta?.count ?? jsonApiResponse.data.length,
+      page,
+      size,
+    };
+  }
+
   async getRatingsForNote(noteId: string): Promise<RatingListJSONAPIResponse> {
     const result = await this.client.GET('/api/v2/notes/{note_id}/ratings', {
       params: { path: { note_id: noteId } },
