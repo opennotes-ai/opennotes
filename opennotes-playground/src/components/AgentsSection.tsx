@@ -19,12 +19,6 @@ const STATE_VARIANT: Record<string, BadgeVariant> = {
   error: "danger",
 };
 
-const HELPFULNESS_COLORS: Record<string, string> = {
-  HELPFUL: "#10b981",
-  SOMEWHAT_HELPFUL: "#f59e0b",
-  NOT_HELPFUL: "#ef4444",
-};
-
 function PersonalityCell(props: { text: string }) {
   const [expanded, setExpanded] = createSignal(false);
   const shouldTruncate = () => props.text.length > 120;
@@ -64,7 +58,6 @@ function buildHistogramOption(perAgent: RatingDistributionData["per_agent"]): EC
       type: "bar" as const,
       stack: "total",
       data: [...perAgent].reverse().map((a) => a.distribution[key] ?? 0),
-      itemStyle: { color: HELPFULNESS_COLORS[key] },
     })),
     legend: { bottom: 0 },
     tooltip: { trigger: "axis" },
