@@ -166,7 +166,7 @@ export default function AgentsSection(props: {
                       <IdBadge idValue={agent.agent_profile_id} variant="muted" />
                     </div>
                   </td>
-                  <td class="px-4 py-2.5 text-sm text-muted-foreground">{agent.display_model}</td>
+                  <td class="px-4 py-2.5 text-sm text-muted-foreground whitespace-nowrap">{agent.display_model}</td>
                   <td class="px-4 py-2.5">
                     <PersonalityCell text={agent.personality} />
                   </td>
