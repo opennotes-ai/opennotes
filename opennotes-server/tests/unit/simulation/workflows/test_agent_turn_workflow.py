@@ -2633,3 +2633,517 @@ class TestRunAgentTurnCancellation:
 
             with pytest.raises(DBOSWorkflowCancelledError):
                 run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+
+class TestRequestTurnPersistence:
+    def test_build_deps_returns_shown_request_ids(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+
+        mock_request = MagicMock()
+        mock_request.request_id = "req-001"
+        mock_request.content = "Test content"
+        mock_request.status = "PENDING"
+
+        mock_req_result = MagicMock()
+        mock_req_result.scalars.return_value.all.return_value = [mock_request]
+
+        mock_linked_note_result = MagicMock()
+        mock_linked_note_result.scalars.return_value.all.return_value = []
+
+        mock_note_result = MagicMock()
+        mock_note_result.scalars.return_value.all.return_value = []
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_req_result, mock_linked_note_result, mock_note_result]
+        )
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = build_deps_step.__wrapped__(community_server_id=cs_id)
+
+        assert "shown_request_ids" in result
+        assert result["shown_request_ids"] == ["req-001"]
+
+    def test_build_deps_queries_persisted_ids_first(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+
+        mock_persisted_req = MagicMock()
+        mock_persisted_req.request_id = "req-persisted"
+        mock_persisted_req.content = "Previously seen"
+        mock_persisted_req.status = "PENDING"
+
+        mock_new_req = MagicMock()
+        mock_new_req.request_id = "req-new"
+        mock_new_req.content = "Newly drawn"
+        mock_new_req.status = "PENDING"
+
+        mock_persisted_result = MagicMock()
+        mock_persisted_result.scalars.return_value.all.return_value = [mock_persisted_req]
+
+        mock_new_result = MagicMock()
+        mock_new_result.scalars.return_value.all.return_value = [mock_new_req]
+
+        mock_linked_note_result = MagicMock()
+        mock_linked_note_result.scalars.return_value.all.return_value = []
+
+        mock_note_result = MagicMock()
+        mock_note_result.scalars.return_value.all.return_value = []
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                mock_persisted_result,
+                mock_new_result,
+                mock_linked_note_result,
+                mock_note_result,
+            ]
+        )
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = build_deps_step.__wrapped__(
+                community_server_id=cs_id,
+                seen_request_ids=["req-persisted"],
+            )
+
+        assert len(result["available_requests"]) == 2
+        assert result["available_requests"][0]["request_id"] == "req-persisted"
+        assert result["available_requests"][1]["request_id"] == "req-new"
+        assert result["shown_request_ids"] == ["req-persisted", "req-new"]
+
+    def test_build_deps_drops_completed_persisted_requests(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+
+        mock_new_req = MagicMock()
+        mock_new_req.request_id = "req-new"
+        mock_new_req.content = "Replacement"
+        mock_new_req.status = "PENDING"
+
+        mock_persisted_result = MagicMock()
+        mock_persisted_result.scalars.return_value.all.return_value = []
+
+        mock_new_result = MagicMock()
+        mock_new_result.scalars.return_value.all.return_value = [mock_new_req]
+
+        mock_linked_note_result = MagicMock()
+        mock_linked_note_result.scalars.return_value.all.return_value = []
+
+        mock_note_result = MagicMock()
+        mock_note_result.scalars.return_value.all.return_value = []
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                mock_persisted_result,
+                mock_new_result,
+                mock_linked_note_result,
+                mock_note_result,
+            ]
+        )
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = build_deps_step.__wrapped__(
+                community_server_id=cs_id,
+                seen_request_ids=["req-completed"],
+            )
+
+        assert "req-completed" not in result["shown_request_ids"]
+        assert result["shown_request_ids"] == ["req-new"]
+
+    def test_build_deps_no_seen_ids_falls_back_to_random(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+
+        mock_request = MagicMock()
+        mock_request.request_id = "req-random"
+        mock_request.content = "Random draw"
+        mock_request.status = "PENDING"
+
+        mock_req_result = MagicMock()
+        mock_req_result.scalars.return_value.all.return_value = [mock_request]
+
+        mock_linked_note_result = MagicMock()
+        mock_linked_note_result.scalars.return_value.all.return_value = []
+
+        mock_note_result = MagicMock()
+        mock_note_result.scalars.return_value.all.return_value = []
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_req_result, mock_linked_note_result, mock_note_result]
+        )
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = build_deps_step.__wrapped__(
+                community_server_id=cs_id,
+                seen_request_ids=[],
+            )
+
+        assert mock_session.execute.await_count == 3
+        assert result["shown_request_ids"] == ["req-random"]
+
+    def test_load_agent_context_returns_seen_request_ids(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import load_agent_context_step
+
+        instance_id = uuid4()
+        memory_id = uuid4()
+
+        mock_profile = MagicMock()
+        mock_profile.personality = "Test"
+        mock_profile.model_name = "openai:gpt-4o-mini"
+        mock_profile.model_params = None
+        mock_profile.memory_compaction_strategy = "sliding_window"
+        mock_profile.memory_compaction_config = None
+        mock_profile.tool_config = None
+
+        mock_simulation_run = MagicMock()
+        mock_simulation_run.community_server_id = uuid4()
+
+        mock_instance = MagicMock()
+        mock_instance.id = instance_id
+        mock_instance.agent_profile_id = uuid4()
+        mock_instance.simulation_run_id = uuid4()
+        mock_instance.user_profile_id = uuid4()
+        mock_instance.turn_count = 5
+        mock_instance.agent_profile = mock_profile
+        mock_instance.simulation_run = mock_simulation_run
+
+        mock_memory = MagicMock()
+        mock_memory.id = memory_id
+        mock_memory.message_history = []
+        mock_memory.turn_count = 5
+        mock_memory.recent_actions = ["write_note"]
+        mock_memory.seen_request_ids = ["req-001", "req-002"]
+
+        mock_session = AsyncMock()
+        instance_result = MagicMock()
+        instance_result.scalar_one_or_none.return_value = mock_instance
+        memory_result = MagicMock()
+        memory_result.scalar_one_or_none.return_value = mock_memory
+        mock_session.execute = AsyncMock(side_effect=[instance_result, memory_result])
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = load_agent_context_step.__wrapped__(str(instance_id))
+
+        assert result["seen_request_ids"] == ["req-001", "req-002"]
+
+    def test_load_agent_context_returns_empty_seen_request_ids_when_no_memory(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import load_agent_context_step
+
+        instance_id = uuid4()
+
+        mock_profile = MagicMock()
+        mock_profile.personality = "Test"
+        mock_profile.model_name = "openai:gpt-4o-mini"
+        mock_profile.model_params = None
+        mock_profile.memory_compaction_strategy = "sliding_window"
+        mock_profile.memory_compaction_config = None
+        mock_profile.tool_config = None
+
+        mock_simulation_run = MagicMock()
+        mock_simulation_run.community_server_id = uuid4()
+
+        mock_instance = MagicMock()
+        mock_instance.id = instance_id
+        mock_instance.agent_profile_id = uuid4()
+        mock_instance.simulation_run_id = uuid4()
+        mock_instance.user_profile_id = uuid4()
+        mock_instance.turn_count = 0
+        mock_instance.agent_profile = mock_profile
+        mock_instance.simulation_run = mock_simulation_run
+
+        mock_session = AsyncMock()
+        instance_result = MagicMock()
+        instance_result.scalar_one_or_none.return_value = mock_instance
+        memory_result = MagicMock()
+        memory_result.scalar_one_or_none.return_value = None
+        mock_session.execute = AsyncMock(side_effect=[instance_result, memory_result])
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = load_agent_context_step.__wrapped__(str(instance_id))
+
+        assert result["seen_request_ids"] == []
+
+    def test_persist_state_saves_seen_request_ids(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import persist_state_step
+
+        agent_instance_id = str(uuid4())
+        memory_id = str(uuid4())
+        new_messages = [{"kind": "response", "parts": []}]
+        action = {"action_type": "write_note", "reasoning": "test"}
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            persist_state_step.__wrapped__(
+                agent_instance_id=agent_instance_id,
+                memory_id=memory_id,
+                new_messages=new_messages,
+                action=action,
+                seen_request_ids=["req-001", "req-002"],
+            )
+
+        memory_update_stmt = mock_session.execute.call_args_list[0].args[0]
+        compiled = memory_update_stmt.compile()
+        assert "seen_request_ids" in str(compiled)
+        assert compiled.params["seen_request_ids"] == ["req-001", "req-002"]
+
+    def test_persist_state_upsert_includes_seen_request_ids(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import persist_state_step
+
+        agent_instance_id = str(uuid4())
+        new_messages = [{"kind": "response", "parts": []}]
+        action = {"action_type": "write_note", "reasoning": "first turn"}
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            persist_state_step.__wrapped__(
+                agent_instance_id=agent_instance_id,
+                memory_id=None,
+                new_messages=new_messages,
+                action=action,
+                seen_request_ids=["req-x"],
+            )
+
+        upsert_stmt = mock_session.execute.call_args_list[0].args[0]
+        compiled = upsert_stmt.compile()
+        assert "seen_request_ids" in str(compiled)
+        assert compiled.params["seen_request_ids"] == ["req-x"]
+
+    def test_run_agent_turn_threads_seen_request_ids(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+        context["seen_request_ids"] = ["req-prev"]
+
+        captured_build_kwargs: dict = {}
+        captured_persist_kwargs: dict = {}
+
+        def capture_build(**kwargs):
+            captured_build_kwargs.update(kwargs)
+            return {
+                "available_requests": [
+                    {"request_id": "req-prev", "content": "old", "status": "PENDING", "notes": []}
+                ],
+                "available_notes": [],
+                "shown_request_ids": ["req-prev"],
+            }
+
+        def capture_persist(**kwargs):
+            captured_persist_kwargs.update(kwargs)
+            return {
+                "agent_instance_id": agent_instance_id,
+                "action_type": "write_note",
+                "persisted": True,
+            }
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                side_effect=capture_build,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "write_note",
+                    "reasoning": "Found work",
+                    "phase1_messages": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+                return_value={
+                    "action": {"action_type": "write_note", "reasoning": "wrote note"},
+                    "new_messages": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                side_effect=capture_persist,
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert captured_build_kwargs["seen_request_ids"] == ["req-prev"]
+        assert captured_persist_kwargs["seen_request_ids"] == ["req-prev"]
+
+    def test_run_agent_turn_pass_turn_persists_seen_request_ids(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+        context["seen_request_ids"] = ["req-a", "req-b"]
+
+        captured_persist_kwargs: dict = {}
+
+        def capture_persist(**kwargs):
+            captured_persist_kwargs.update(kwargs)
+            return {
+                "agent_instance_id": agent_instance_id,
+                "action_type": "pass_turn",
+                "persisted": True,
+            }
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={
+                    "available_requests": [],
+                    "available_notes": [],
+                    "shown_request_ids": ["req-a", "req-b"],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "pass_turn",
+                    "reasoning": "Nothing to do",
+                    "phase1_messages": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                side_effect=capture_persist,
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert captured_persist_kwargs["seen_request_ids"] == ["req-a", "req-b"]
