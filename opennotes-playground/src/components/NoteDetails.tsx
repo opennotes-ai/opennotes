@@ -151,7 +151,7 @@ export default function NoteDetails(props: {
         <div class="space-y-3">
           <For each={sortedGroups()}>
             {(group) => (
-              <details class="rounded-lg border border-border" open>
+              <details id={`request-${group.requestId}`} class="rounded-lg border border-border" open>
                 <summary class="flex cursor-pointer items-center justify-between gap-2 rounded-t-lg p-3 hover:bg-muted/50">
                   <span class="min-w-0 text-sm font-medium">
                     {group.sourceTitle
@@ -196,7 +196,7 @@ export default function NoteDetails(props: {
                     {(note) => {
                       const attrs = note.attributes;
                       return (
-                        <div class="rounded-lg border border-border bg-card p-4" data-testid="note-card">
+                        <div id={`note-${note.attributes.note_id}`} class="rounded-lg border border-border bg-card p-4" data-testid="note-card">
                           <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                             <div class="min-w-0 flex-1" data-testid="note-summary">
                               <div class="font-normal leading-snug">{attrs.summary}</div>

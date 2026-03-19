@@ -148,7 +148,7 @@ export default function AgentsSection(props: {
           <tbody>
             <For each={visibleAgents()}>
               {(agent) => (
-                <tr class="border-b border-border last:border-0 hover:bg-muted/30">
+                <tr id={`agent-${agent.agent_profile_id}`} class="border-b border-border last:border-0 hover:bg-muted/30">
                   <td class="px-4 py-2.5">
                     <div class="font-medium">{agent.agent_name}</div>
                     <Show when={agent.short_description}>
