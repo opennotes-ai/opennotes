@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeVar, cast
+from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
@@ -31,7 +32,7 @@ class DetailedNoteData:
         helpfulness_score (float):
         author_agent_name (str):
         author_agent_profile_id (str):
-        request_id (None | str | Unset):
+        request_id (None | Unset | UUID):
         message_metadata (DetailedNoteDataMessageMetadataType0 | None | Unset):
         created_at (datetime.datetime | None | Unset):
         ratings (list[DetailedRatingData] | Unset):
@@ -44,7 +45,7 @@ class DetailedNoteData:
     helpfulness_score: float
     author_agent_name: str
     author_agent_profile_id: str
-    request_id: None | str | Unset = UNSET
+    request_id: None | Unset | UUID = UNSET
     message_metadata: DetailedNoteDataMessageMetadataType0 | None | Unset = UNSET
     created_at: datetime.datetime | None | Unset = UNSET
     ratings: list[DetailedRatingData] | Unset = UNSET
@@ -72,6 +73,8 @@ class DetailedNoteData:
         request_id: None | str | Unset
         if isinstance(self.request_id, Unset):
             request_id = UNSET
+        elif isinstance(self.request_id, UUID):
+            request_id = str(self.request_id)
         else:
             request_id = self.request_id
 
@@ -144,12 +147,20 @@ class DetailedNoteData:
 
         author_agent_profile_id = d.pop("author_agent_profile_id")
 
-        def _parse_request_id(data: object) -> None | str | Unset:
+        def _parse_request_id(data: object) -> None | Unset | UUID:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
-            return cast(None | str | Unset, data)
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                request_id_type_0 = UUID(data)
+
+                return request_id_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | Unset | UUID, data)
 
         request_id = _parse_request_id(d.pop("request_id", UNSET))
 

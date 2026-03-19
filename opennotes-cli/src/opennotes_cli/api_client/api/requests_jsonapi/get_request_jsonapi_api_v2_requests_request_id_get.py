@@ -1,6 +1,7 @@
 from http import HTTPStatus
 from typing import Any, cast
 from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 
@@ -12,7 +13,7 @@ from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
-    request_id: str,
+    request_id: UUID,
     *,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
@@ -66,7 +67,7 @@ def _build_response(
 
 
 def sync_detailed(
-    request_id: str,
+    request_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
@@ -79,7 +80,7 @@ def sync_detailed(
     Returns JSON:API error format for 404 and other errors.
 
     Args:
-        request_id (str):
+        request_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -103,7 +104,7 @@ def sync_detailed(
 
 
 def sync(
-    request_id: str,
+    request_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
@@ -116,7 +117,7 @@ def sync(
     Returns JSON:API error format for 404 and other errors.
 
     Args:
-        request_id (str):
+        request_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -135,7 +136,7 @@ def sync(
 
 
 async def asyncio_detailed(
-    request_id: str,
+    request_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
@@ -148,7 +149,7 @@ async def asyncio_detailed(
     Returns JSON:API error format for 404 and other errors.
 
     Args:
-        request_id (str):
+        request_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -170,7 +171,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    request_id: str,
+    request_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
@@ -183,7 +184,7 @@ async def asyncio(
     Returns JSON:API error format for 404 and other errors.
 
     Args:
-        request_id (str):
+        request_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:

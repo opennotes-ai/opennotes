@@ -728,10 +728,10 @@ class TestJSONAPIAdvancedFilters:
             )
             await session.commit()
             await session.refresh(request)
-            request_id = request.request_id
+            request_uuid = str(request.id)
 
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        note_data["request_id"] = request_id
+        note_data["request_id"] = request_uuid
         note_data["summary"] = f"Note for platform_message_id filter test {unique_platform_msg_id}"
         create_resp = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_resp.status_code == 201

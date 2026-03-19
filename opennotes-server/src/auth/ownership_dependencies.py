@@ -190,7 +190,7 @@ async def verify_rating_ownership(
 
 
 async def verify_request_ownership(
-    request_id: str,
+    request_id: UUID,
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
     request: Request,
@@ -206,7 +206,7 @@ async def verify_request_ownership(
     Note: Request model only has legacy `requested_by` field (no profile_id).
 
     Args:
-        request_id: String request_id of the request to verify ownership for
+        request_id: UUID of the request to verify ownership for
         current_user: Current authenticated user
         db: Database session
         request: HTTP request (for Discord permission headers)
@@ -220,7 +220,7 @@ async def verify_request_ownership(
     result = await db.execute(
         select(NoteRequest)
         .options(*note_loaders.request_with_archive())
-        .where(NoteRequest.request_id == request_id, NoteRequest.deleted_at.is_(None))
+        .where(NoteRequest.id == request_id, NoteRequest.deleted_at.is_(None))
     )
     note_request = result.scalar_one_or_none()
 

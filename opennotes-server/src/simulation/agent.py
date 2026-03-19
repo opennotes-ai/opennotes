@@ -1,9 +1,11 @@
 import logging
 import random
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Any
 from uuid import UUID
 
+import pendulum
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import UsageLimits
@@ -13,7 +15,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.llm_config.model_id import ModelId
-from src.notes.models import Note, Rating
+from src.notes.models import Note, Rating, Request
 from src.simulation.models import SimChannelMessage
 from src.simulation.schemas import ActionSelectionResult, SimActionType, SimAgentAction
 
@@ -24,6 +26,10 @@ MAX_CONTEXT_REQUESTS: int = 5
 MAX_CONTEXT_NOTES: int = 10
 MAX_LINKED_NOTES_PER_REQUEST: int = 10
 MAX_CHANNEL_MESSAGE_LENGTH: int = 2000
+CHANNEL_RATE_LIMIT_WINDOW_SECONDS: int = 60
+CHANNEL_RATE_LIMIT_MAX: int = 3
+CHANNEL_SIMILARITY_THRESHOLD: float = 0.8
+CHANNEL_SIMILARITY_LOOKBACK: int = 5
 TOKEN_BUDGET: int = 4000
 MAX_RATE_NOTES_BATCH: int = 5
 
@@ -118,6 +124,7 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "Available actions:\n"
         "- write_note: Write a new community note for a request\n"
         "- rate_note: Rate existing community notes\n"
+        "- list_requests: List available requests with IDs and content\n"
         "- pass_turn: Do nothing this turn\n\n"
         "Choose the most appropriate action based on the available "
         "requests and notes. Always explain your reasoning."
@@ -154,9 +161,9 @@ async def write_note(
     """Write a new community note for a request. Use this when you see a request
     that needs context or fact-checking. Classification must be one of:
     NOT_MISLEADING or MISINFORMED_OR_POTENTIALLY_MISLEADING."""
-    valid_ids = {str(r["request_id"]) for r in ctx.deps.available_requests}
+    valid_ids = {str(r["id"]) for r in ctx.deps.available_requests}
     if request_id not in valid_ids:
-        return f"Error: request_id '{request_id}' not found in available requests."
+        return f"Error: request id '{request_id}' not found in available requests."
 
     valid_classifications = {"NOT_MISLEADING", "MISINFORMED_OR_POTENTIALLY_MISLEADING"}
     if classification not in valid_classifications:
@@ -166,7 +173,7 @@ async def write_note(
         )
 
     note = Note(
-        request_id=request_id,
+        request_id=UUID(request_id),
         author_id=ctx.deps.user_profile_id,
         summary=summary,
         classification=classification,
@@ -188,7 +195,7 @@ async def write_note(
         logger.exception("Database error creating note for request %s", request_id)
         return "Error: could not create note due to a database error."
 
-    return f"Note created for request '{request_id}' with classification '{classification}'."
+    return f"Note created for request {request_id} with classification '{classification}'."
 
 
 @sim_agent.tool
@@ -267,6 +274,45 @@ def pass_turn() -> str:
     return "Turn passed. No action taken."
 
 
+async def _check_channel_dedup(
+    db: AsyncSession,
+    agent_instance_id: UUID,
+    simulation_run_id: UUID,
+    message: str,
+) -> str | None:
+    cutoff = pendulum.now("UTC").subtract(seconds=CHANNEL_RATE_LIMIT_WINDOW_SECONDS)
+    rate_stmt = (
+        select(func.count())
+        .select_from(SimChannelMessage)
+        .where(
+            SimChannelMessage.agent_instance_id == agent_instance_id,
+            SimChannelMessage.simulation_run_id == simulation_run_id,
+            SimChannelMessage.created_at > cutoff,
+        )
+    )
+    rate_result = await db.execute(rate_stmt)
+    recent_count = rate_result.scalar_one()
+    if recent_count >= CHANNEL_RATE_LIMIT_MAX:
+        return "Rate limit: please wait before posting again."
+
+    sim_stmt = (
+        select(SimChannelMessage.message_text)
+        .where(
+            SimChannelMessage.agent_instance_id == agent_instance_id,
+            SimChannelMessage.simulation_run_id == simulation_run_id,
+        )
+        .order_by(SimChannelMessage.created_at.desc())
+        .limit(CHANNEL_SIMILARITY_LOOKBACK)
+    )
+    sim_result = await db.execute(sim_stmt)
+    recent_texts = sim_result.scalars().all()
+    for recent_text in recent_texts:
+        if SequenceMatcher(None, message, recent_text).ratio() > CHANNEL_SIMILARITY_THRESHOLD:
+            return "Message too similar to a recent post. Try a different message."
+
+    return None
+
+
 @sim_agent.tool
 async def post_to_channel(
     ctx: RunContext[SimAgentDeps],
@@ -285,6 +331,15 @@ async def post_to_channel(
             f"Error: message too long ({len(message)} chars). "
             f"Maximum is {MAX_CHANNEL_MESSAGE_LENGTH} characters."
         )
+
+    dedup_error = await _check_channel_dedup(
+        ctx.deps.db,
+        ctx.deps.agent_instance_id,
+        ctx.deps.simulation_run_id,
+        message,
+    )
+    if dedup_error:
+        return dedup_error
 
     msg = SimChannelMessage(
         simulation_run_id=ctx.deps.simulation_run_id,
@@ -330,6 +385,68 @@ async def read_channel(
     for msg in reversed(messages):
         short_id = str(msg.agent_instance_id)[:8]
         lines.append(f"[Agent {short_id}]: {msg.message_text}")
+    return "\n".join(lines)
+
+
+MAX_LIST_REQUESTS = 20
+
+VALID_REQUEST_STATUSES = frozenset({"PENDING", "IN_PROGRESS", "COMPLETED", "FAILED"})
+
+
+@sim_agent.tool
+async def list_requests(
+    ctx: RunContext[SimAgentDeps],
+    status: str = "PENDING",
+) -> str:
+    """List available content requests with their IDs and content preview.
+    Use the returned ID in write_note to create a community note.
+    Optional status filter (default: PENDING)."""
+    if status not in VALID_REQUEST_STATUSES:
+        return (
+            f"Error: invalid status '{status}'. "
+            f"Must be one of: {', '.join(sorted(VALID_REQUEST_STATUSES))}"
+        )
+
+    note_count_subq = (
+        select(func.count(Note.id))
+        .where(
+            Note.request_id == Request.id,
+            Note.deleted_at.is_(None),
+        )
+        .correlate(Request)
+        .scalar_subquery()
+        .label("note_count")
+    )
+
+    query = (
+        select(Request, note_count_subq)
+        .where(
+            Request.community_server_id == ctx.deps.community_server_id,
+            Request.status == status,
+            Request.deleted_at.is_(None),
+        )
+        .order_by(Request.created_at.desc())
+        .limit(MAX_LIST_REQUESTS)
+    )
+
+    try:
+        result = await ctx.deps.db.execute(query)
+        rows = result.all()
+    except SQLAlchemyError:
+        await ctx.deps.db.rollback()
+        logger.exception("Database error listing requests")
+        return "Error: could not list requests due to a database error."
+
+    if not rows:
+        return f"No {status} requests found."
+
+    lines = [f"{len(rows)} {status} request(s):\n"]
+    for req, note_count in rows:
+        content = req.content or ""
+        if len(content) > 100:
+            content = content[:100].rsplit(" ", 1)[0] + "..."
+        lines.append(f"- ID: {req.id}\n  Content: {content}\n  Notes: {note_count}")
+
     return "\n".join(lines)
 
 
@@ -615,7 +732,7 @@ class OpenNotesSimAgent:
             sections.append("== Available Requests ==")
             for req in requests:
                 block = (
-                    f"- Request ID: {req['request_id']}\n"
+                    f"- Request ID: {req['id']}\n"
                     f"  Content: {req.get('content', 'N/A')}\n"
                     f"  Status: {req.get('status', 'N/A')}"
                 )
@@ -647,6 +764,10 @@ class OpenNotesSimAgent:
 
 
 __all__ = [
+    "CHANNEL_RATE_LIMIT_MAX",
+    "CHANNEL_RATE_LIMIT_WINDOW_SECONDS",
+    "CHANNEL_SIMILARITY_LOOKBACK",
+    "CHANNEL_SIMILARITY_THRESHOLD",
     "MAX_CHANNEL_MESSAGE_LENGTH",
     "MAX_CONTEXT_NOTES",
     "MAX_CONTEXT_REQUESTS",
@@ -663,6 +784,7 @@ __all__ = [
     "build_action_selector_instructions",
     "build_queue_summary",
     "estimate_tokens",
+    "list_requests",
     "post_to_channel",
     "rate_notes",
     "read_channel",

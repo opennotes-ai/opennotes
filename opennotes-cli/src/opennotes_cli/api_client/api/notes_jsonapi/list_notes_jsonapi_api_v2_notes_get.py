@@ -23,7 +23,7 @@ def _get_kwargs(
     filterclassification: None | NoteClassification | Unset = UNSET,
     filtercommunity_server_id: None | Unset | UUID = UNSET,
     filterauthor_id: None | str | Unset = UNSET,
-    filterrequest_id: None | str | Unset = UNSET,
+    filterrequest_id: None | Unset | UUID = UNSET,
     filtercreated_at_gte: datetime.datetime | None | Unset = UNSET,
     filtercreated_at_lte: datetime.datetime | None | Unset = UNSET,
     filterrater_id_not_in: None | str | Unset = UNSET,
@@ -87,6 +87,8 @@ def _get_kwargs(
     json_filterrequest_id: None | str | Unset
     if isinstance(filterrequest_id, Unset):
         json_filterrequest_id = UNSET
+    elif isinstance(filterrequest_id, UUID):
+        json_filterrequest_id = str(filterrequest_id)
     else:
         json_filterrequest_id = filterrequest_id
     params["filter[request_id]"] = json_filterrequest_id
@@ -188,7 +190,7 @@ def sync_detailed(
     filterclassification: None | NoteClassification | Unset = UNSET,
     filtercommunity_server_id: None | Unset | UUID = UNSET,
     filterauthor_id: None | str | Unset = UNSET,
-    filterrequest_id: None | str | Unset = UNSET,
+    filterrequest_id: None | Unset | UUID = UNSET,
     filtercreated_at_gte: datetime.datetime | None | Unset = UNSET,
     filtercreated_at_lte: datetime.datetime | None | Unset = UNSET,
     filterrater_id_not_in: None | str | Unset = UNSET,
@@ -232,7 +234,7 @@ def sync_detailed(
         filterclassification (None | NoteClassification | Unset):
         filtercommunity_server_id (None | Unset | UUID):
         filterauthor_id (None | str | Unset):
-        filterrequest_id (None | str | Unset):
+        filterrequest_id (None | Unset | UUID):
         filtercreated_at_gte (datetime.datetime | None | Unset):
         filtercreated_at_lte (datetime.datetime | None | Unset):
         filterrater_id_not_in (None | str | Unset):
@@ -282,7 +284,7 @@ def sync(
     filterclassification: None | NoteClassification | Unset = UNSET,
     filtercommunity_server_id: None | Unset | UUID = UNSET,
     filterauthor_id: None | str | Unset = UNSET,
-    filterrequest_id: None | str | Unset = UNSET,
+    filterrequest_id: None | Unset | UUID = UNSET,
     filtercreated_at_gte: datetime.datetime | None | Unset = UNSET,
     filtercreated_at_lte: datetime.datetime | None | Unset = UNSET,
     filterrater_id_not_in: None | str | Unset = UNSET,
@@ -326,7 +328,7 @@ def sync(
         filterclassification (None | NoteClassification | Unset):
         filtercommunity_server_id (None | Unset | UUID):
         filterauthor_id (None | str | Unset):
-        filterrequest_id (None | str | Unset):
+        filterrequest_id (None | Unset | UUID):
         filtercreated_at_gte (datetime.datetime | None | Unset):
         filtercreated_at_lte (datetime.datetime | None | Unset):
         filterrater_id_not_in (None | str | Unset):
@@ -371,7 +373,7 @@ async def asyncio_detailed(
     filterclassification: None | NoteClassification | Unset = UNSET,
     filtercommunity_server_id: None | Unset | UUID = UNSET,
     filterauthor_id: None | str | Unset = UNSET,
-    filterrequest_id: None | str | Unset = UNSET,
+    filterrequest_id: None | Unset | UUID = UNSET,
     filtercreated_at_gte: datetime.datetime | None | Unset = UNSET,
     filtercreated_at_lte: datetime.datetime | None | Unset = UNSET,
     filterrater_id_not_in: None | str | Unset = UNSET,
@@ -415,7 +417,7 @@ async def asyncio_detailed(
         filterclassification (None | NoteClassification | Unset):
         filtercommunity_server_id (None | Unset | UUID):
         filterauthor_id (None | str | Unset):
-        filterrequest_id (None | str | Unset):
+        filterrequest_id (None | Unset | UUID):
         filtercreated_at_gte (datetime.datetime | None | Unset):
         filtercreated_at_lte (datetime.datetime | None | Unset):
         filterrater_id_not_in (None | str | Unset):
@@ -463,7 +465,7 @@ async def asyncio(
     filterclassification: None | NoteClassification | Unset = UNSET,
     filtercommunity_server_id: None | Unset | UUID = UNSET,
     filterauthor_id: None | str | Unset = UNSET,
-    filterrequest_id: None | str | Unset = UNSET,
+    filterrequest_id: None | Unset | UUID = UNSET,
     filtercreated_at_gte: datetime.datetime | None | Unset = UNSET,
     filtercreated_at_lte: datetime.datetime | None | Unset = UNSET,
     filterrater_id_not_in: None | str | Unset = UNSET,
@@ -507,7 +509,7 @@ async def asyncio(
         filterclassification (None | NoteClassification | Unset):
         filtercommunity_server_id (None | Unset | UUID):
         filterauthor_id (None | str | Unset):
-        filterrequest_id (None | str | Unset):
+        filterrequest_id (None | Unset | UUID):
         filtercreated_at_gte (datetime.datetime | None | Unset):
         filtercreated_at_lte (datetime.datetime | None | Unset):
         filterrater_id_not_in (None | str | Unset):

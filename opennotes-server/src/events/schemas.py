@@ -170,7 +170,7 @@ class NoteScoreUpdatedEvent(BaseEvent):
 
 class NoteRequestCreatedEvent(BaseEvent):
     event_type: EventType = EventType.NOTE_REQUEST_CREATED
-    request_id: str = Field(..., min_length=1, max_length=255, description="Note request ID")
+    request_id: UUID = Field(..., description="Note request ID (UUID)")
     platform_message_id: str | None = Field(
         None, max_length=255, description="Platform message ID from message archive"
     )
@@ -195,7 +195,7 @@ class NoteRequestCreatedEvent(BaseEvent):
 
 class RequestAutoCreatedEvent(BaseEvent):
     event_type: EventType = EventType.REQUEST_AUTO_CREATED
-    request_id: str = Field(..., min_length=1, max_length=255, description="Note request ID")
+    request_id: UUID = Field(..., description="Note request ID (UUID)")
     platform_message_id: str | None = Field(
         None, max_length=255, description="Platform message ID from message archive"
     )
@@ -231,9 +231,7 @@ class VisionDescriptionRequestedEvent(BaseEvent):
     community_server_id: str = Field(
         ..., min_length=1, max_length=255, description="Community server ID for API key lookup"
     )
-    request_id: str | None = Field(
-        None, min_length=1, max_length=255, description="Associated note request ID if applicable"
-    )
+    request_id: UUID | None = Field(None, description="Associated note request ID if applicable")
 
 
 class AuditLogCreatedEvent(BaseEvent):

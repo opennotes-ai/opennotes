@@ -110,7 +110,7 @@ async def test_generate_note_for_request_success(
         mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(True, 9))
 
         # Generate note
-        note = await ai_note_writer.generate_note_for_request(db_session, test_request.request_id)
+        note = await ai_note_writer.generate_note_for_request(db_session, test_request.id)
 
         # Verify rate limiter was called correctly
         mock_rate_limiter.check_rate_limit.assert_called_once()
@@ -141,7 +141,7 @@ async def test_generate_note_for_request_rate_limiter_tuple_return(
 
         # Should raise ValueError due to rate limit
         with pytest.raises(ValueError, match="Rate limit exceeded"):
-            await ai_note_writer.generate_note_for_request(db_session, test_request.request_id)
+            await ai_note_writer.generate_note_for_request(db_session, test_request.id)
 
         # Verify the return value was properly unpacked
         assert mock_rate_limiter.check_rate_limit.called
@@ -161,7 +161,7 @@ async def test_generate_note_for_request_uuid_type_handling(
         mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(True, 9))
 
         # This should NOT raise "invalid literal for int()" error
-        note = await ai_note_writer.generate_note_for_request(db_session, test_request.request_id)
+        note = await ai_note_writer.generate_note_for_request(db_session, test_request.id)
 
         assert note is not None
         # Fact check item lookup succeeded with UUID conversion
@@ -189,7 +189,7 @@ async def test_generate_note_for_request_llm_response_tokens_used(
         mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(True, 9))
 
         # This should NOT raise AttributeError about .usage
-        note = await ai_note_writer.generate_note_for_request(db_session, test_request.request_id)
+        note = await ai_note_writer.generate_note_for_request(db_session, test_request.id)
 
         assert note is not None
         assert mock_llm_service.complete.called
@@ -221,7 +221,7 @@ async def test_generate_note_for_request_disabled_for_server(
 async def test_generate_note_for_request_nonexistent_request(ai_note_writer, db_session):
     """Test that error is raised for non-existent request."""
     with pytest.raises(ValueError, match="Request not found"):
-        await ai_note_writer.generate_note_for_request(db_session, "nonexistent-request-id")
+        await ai_note_writer.generate_note_for_request(db_session, uuid4())
 
 
 @pytest.mark.asyncio
@@ -249,4 +249,4 @@ async def test_generate_note_for_request_invalid_fact_check_item_id(
         mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(True, 9))
 
         with pytest.raises(ValueError, match="Fact-check item not found"):
-            await ai_note_writer.generate_note_for_request(db_session, request.request_id)
+            await ai_note_writer.generate_note_for_request(db_session, request.id)

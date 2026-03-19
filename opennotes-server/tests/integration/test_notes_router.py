@@ -289,10 +289,11 @@ class TestNotesRouter:
             "community_server_id": test_community_server["platform_community_server_id"],
         }
         request_body = _create_request_jsonapi_body(request_data)
-        await auth_client.post("/api/v2/requests", json=request_body)
+        create_resp = await auth_client.post("/api/v2/requests", json=request_body)
+        request_uuid = create_resp.json()["data"]["id"]
 
         note_data = sample_note_data.copy()
-        note_data["request_id"] = "duplicate_test_request_1"
+        note_data["request_id"] = request_uuid
         body = _create_note_jsonapi_body(note_data)
         first_response = await auth_client.post("/api/v2/notes", json=body)
         assert first_response.status_code == 201
@@ -559,12 +560,12 @@ class TestRequestsRouter:
         }
         body = _create_request_jsonapi_body(request_data)
         create_response = await auth_client.post("/api/v2/requests", json=body)
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        request_uuid = create_response.json()["data"]["id"]
 
-        response = await auth_client.get(f"/api/v2/requests/{request_id}")
+        response = await auth_client.get(f"/api/v2/requests/{request_uuid}")
         assert response.status_code == 200
         data = response.json()
-        assert data["data"]["attributes"]["request_id"] == request_id
+        assert data["data"]["attributes"]["request_id"] == "req_get_test"
 
     @pytest.mark.asyncio
     async def test_update_request(self, auth_client, test_community_server, notes_registered_user):
@@ -577,17 +578,17 @@ class TestRequestsRouter:
         }
         body = _create_request_jsonapi_body(request_data)
         create_response = await auth_client.post("/api/v2/requests", json=body)
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        request_uuid = create_response.json()["data"]["id"]
 
         update_body = {
             "data": {
                 "type": "requests",
-                "id": request_id,
+                "id": request_uuid,
                 "attributes": {"status": "COMPLETED"},
             }
         }
 
-        response = await auth_client.patch(f"/api/v2/requests/{request_id}", json=update_body)
+        response = await auth_client.patch(f"/api/v2/requests/{request_uuid}", json=update_body)
         assert response.status_code == 200
 
 
@@ -661,9 +662,9 @@ class TestRequestsWithMessageArchive:
         body = _create_request_jsonapi_body(request_data)
         create_response = await auth_client.post("/api/v2/requests", json=body)
         assert create_response.status_code == 201
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        request_uuid = create_response.json()["data"]["id"]
 
-        get_response = await auth_client.get(f"/api/v2/requests/{request_id}")
+        get_response = await auth_client.get(f"/api/v2/requests/{request_uuid}")
         assert get_response.status_code == 200
 
         data = get_response.json()
@@ -711,17 +712,17 @@ class TestRequestsWithMessageArchive:
 
         body = _create_request_jsonapi_body(request_data)
         create_response = await auth_client.post("/api/v2/requests", json=body)
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        request_uuid = create_response.json()["data"]["id"]
 
         update_body = {
             "data": {
                 "type": "requests",
-                "id": request_id,
+                "id": request_uuid,
                 "attributes": {"status": "IN_PROGRESS"},
             }
         }
         update_response = await auth_client.patch(
-            f"/api/v2/requests/{request_id}", json=update_body
+            f"/api/v2/requests/{request_uuid}", json=update_body
         )
         assert update_response.status_code == 200
 
@@ -855,9 +856,9 @@ class TestRequestsWithMessageArchive:
         body = _create_request_jsonapi_body(request_data)
         create_response = await auth_client.post("/api/v2/requests", json=body)
         assert create_response.status_code == 201
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        request_uuid = create_response.json()["data"]["id"]
 
-        get_response = await auth_client.get(f"/api/v2/requests/{request_id}")
+        get_response = await auth_client.get(f"/api/v2/requests/{request_uuid}")
         assert get_response.status_code == 200
 
         data = get_response.json()
@@ -942,8 +943,9 @@ class TestRequestsViaAPI:
 
         response = await auth_client.post("/api/v2/requests", json=request_body)
         assert response.status_code == 201
+        request_uuid = response.json()["data"]["id"]
 
-        get_response = await auth_client.get("/api/v2/requests/api_req_1")
+        get_response = await auth_client.get(f"/api/v2/requests/{request_uuid}")
         assert get_response.status_code == 200
 
         data = get_response.json()

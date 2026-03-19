@@ -85,7 +85,7 @@ class NoteBase(BaseModel):
     channel_id: str | None = Field(
         None, description="Discord channel ID where the message is located"
     )
-    request_id: str | None = Field(None, description="Request ID this note responds to")
+    request_id: UUID | None = Field(None, description="Request ID this note responds to")
     summary: str = Field(..., description="Note summary text")
     classification: NoteClassification = Field(..., description="Note classification")
 
@@ -157,7 +157,7 @@ class NoteJSONAPIAttributes(SQLAlchemySchema):
     force_published: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
-    request_id: str | None = None
+    request_id: UUID | None = None
     platform_message_id: str | None = None
     force_published_at: datetime | None = None
     ratings_count: int = 0

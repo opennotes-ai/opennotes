@@ -2,7 +2,7 @@ import inspect
 import logging
 from dataclasses import fields
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic_ai import Agent, WebSearchTool
@@ -24,6 +24,7 @@ from src.simulation.agent import (
     build_action_selector_instructions,
     build_instructions,
     estimate_tokens,
+    list_requests,
     pass_turn,
     rate_notes,
     sim_agent,
@@ -49,6 +50,7 @@ def mock_db():
     db.flush = AsyncMock()
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = []
+    mock_result.scalar_one.return_value = 0
     db.execute = AsyncMock(return_value=mock_result)
     db.begin_nested = MagicMock(side_effect=lambda: _make_nested_ctx())
     return db
@@ -63,12 +65,14 @@ def sample_deps(mock_db):
         user_profile_id=uuid4(),
         available_requests=[
             {
-                "request_id": str(uuid4()),
+                "id": str(uuid4()),
+                "request_id": "playground-wf001-0",
                 "content": "The earth is flat",
                 "status": "PENDING",
             },
             {
-                "request_id": str(uuid4()),
+                "id": str(uuid4()),
+                "request_id": "playground-wf002-0",
                 "content": "Vaccines cause autism",
                 "status": "PENDING",
             },
@@ -128,8 +132,8 @@ class TestToolsRegistered:
     def test_pass_turn_tool_registered(self):
         assert "pass_turn" in self._get_tool_names()
 
-    def test_five_tools_total(self):
-        assert len(sim_agent._function_toolset.tools) == 5
+    def test_six_tools_total(self):
+        assert len(sim_agent._function_toolset.tools) == 6
 
 
 class TestWriteNoteTool:
@@ -138,7 +142,7 @@ class TestWriteNoteTool:
         ctx = MagicMock()
         ctx.deps = sample_deps
 
-        req_id = sample_deps.available_requests[0]["request_id"]
+        req_id = sample_deps.available_requests[0]["id"]
         result = await write_note(
             ctx,
             request_id=req_id,
@@ -149,7 +153,7 @@ class TestWriteNoteTool:
         sample_deps.db.add.assert_called_once()
         sample_deps.db.flush.assert_awaited_once()
         note = sample_deps.db.add.call_args[0][0]
-        assert note.request_id == req_id
+        assert note.request_id == UUID(req_id)
         assert note.summary == "The earth is actually round"
         assert note.classification == "NOT_MISLEADING"
         assert note.ai_generated is True
@@ -180,7 +184,7 @@ class TestWriteNoteTool:
         ctx = MagicMock()
         ctx.deps = sample_deps
 
-        req_id = sample_deps.available_requests[0]["request_id"]
+        req_id = sample_deps.available_requests[0]["id"]
         result = await write_note(
             ctx,
             request_id=req_id,
@@ -201,7 +205,12 @@ class TestWriteNoteTool:
             agent_instance_id=uuid4(),
             user_profile_id=uuid4(),
             available_requests=[
-                {"request_id": req_uuid, "content": "test", "status": "PENDING"},
+                {
+                    "id": req_uuid,
+                    "request_id": "provenance-str",
+                    "content": "test",
+                    "status": "PENDING",
+                },
             ],
             available_notes=[],
             agent_personality="test",
@@ -219,6 +228,8 @@ class TestWriteNoteTool:
 
         assert "Note created" in result
         mock_db.add.assert_called_once()
+        note = mock_db.add.call_args[0][0]
+        assert note.request_id == req_uuid
 
     @pytest.mark.asyncio
     async def test_write_note_handles_integrity_error(self, sample_deps):
@@ -226,7 +237,7 @@ class TestWriteNoteTool:
         ctx.deps = sample_deps
         sample_deps.db.flush = AsyncMock(side_effect=IntegrityError("duplicate", {}, None))
 
-        req_id = sample_deps.available_requests[0]["request_id"]
+        req_id = sample_deps.available_requests[0]["id"]
         result = await write_note(
             ctx,
             request_id=req_id,
@@ -242,7 +253,7 @@ class TestWriteNoteTool:
         ctx.deps = sample_deps
         sample_deps.db.flush = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
 
-        req_id = sample_deps.available_requests[0]["request_id"]
+        req_id = sample_deps.available_requests[0]["id"]
         result = await write_note(
             ctx,
             request_id=req_id,
@@ -260,7 +271,7 @@ class TestWriteNoteTool:
             side_effect=IntegrityError("ix_notes_author_request", {}, None)
         )
 
-        req_id = sample_deps.available_requests[0]["request_id"]
+        req_id = sample_deps.available_requests[0]["id"]
         result = await write_note(
             ctx,
             request_id=req_id,
@@ -277,7 +288,7 @@ class TestWriteNoteTool:
         sample_deps.db.flush = AsyncMock(side_effect=IntegrityError("duplicate", {}, None))
         sample_deps.db.rollback = AsyncMock()
 
-        req_id = sample_deps.available_requests[0]["request_id"]
+        req_id = sample_deps.available_requests[0]["id"]
         await write_note(ctx, request_id=req_id, summary="test", classification="NOT_MISLEADING")
 
         sample_deps.db.rollback.assert_awaited_once()
@@ -289,7 +300,7 @@ class TestWriteNoteTool:
         sample_deps.db.flush = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
         sample_deps.db.rollback = AsyncMock()
 
-        req_id = sample_deps.available_requests[0]["request_id"]
+        req_id = sample_deps.available_requests[0]["id"]
         await write_note(ctx, request_id=req_id, summary="test", classification="NOT_MISLEADING")
 
         sample_deps.db.rollback.assert_awaited_once()
@@ -694,15 +705,16 @@ class TestDeps:
 
 class TestOutput:
     def test_sim_agent_action_schema(self):
+        test_uuid = UUID("01936b43-8b5a-7000-8000-000000000001")
         action = SimAgentAction(
             action_type=SimActionType.WRITE_NOTE,
-            request_id="req-001",
+            request_id=test_uuid,
             summary="Test note",
             classification="NOT_MISLEADING",
             reasoning="Testing the schema",
         )
         assert action.action_type == SimActionType.WRITE_NOTE
-        assert action.request_id == "req-001"
+        assert action.request_id == test_uuid
         assert action.reasoning == "Testing the schema"
 
     def test_action_type_enum_values(self):
@@ -736,7 +748,7 @@ class TestBuildTurnPrompt:
         agent = OpenNotesSimAgent()
         prompt = agent._build_turn_prompt(sample_deps)
 
-        req_id = sample_deps.available_requests[0]["request_id"]
+        req_id = sample_deps.available_requests[0]["id"]
         assert req_id in prompt
         assert "The earth is flat" in prompt
 
@@ -773,6 +785,7 @@ class TestBuildTurnPrompt:
 
 class TestBuildTurnPromptWithLinkedNotes:
     def test_prompt_shows_linked_notes_under_request(self, mock_db):
+        req_id = str(uuid4())
         deps = SimAgentDeps(
             db=mock_db,
             community_server_id=uuid4(),
@@ -780,6 +793,7 @@ class TestBuildTurnPromptWithLinkedNotes:
             user_profile_id=uuid4(),
             available_requests=[
                 {
+                    "id": req_id,
                     "request_id": "req-100",
                     "content": "Earth is flat",
                     "status": "PENDING",
@@ -811,6 +825,7 @@ class TestBuildTurnPromptWithLinkedNotes:
         assert "[NOT_MISLEADING] This is not misleading" in prompt
 
     def test_prompt_omits_notes_section_when_request_has_none(self, mock_db):
+        req_id = str(uuid4())
         deps = SimAgentDeps(
             db=mock_db,
             community_server_id=uuid4(),
@@ -818,6 +833,7 @@ class TestBuildTurnPromptWithLinkedNotes:
             user_profile_id=uuid4(),
             available_requests=[
                 {
+                    "id": req_id,
                     "request_id": "req-200",
                     "content": "Some claim",
                     "status": "PENDING",
@@ -832,7 +848,7 @@ class TestBuildTurnPromptWithLinkedNotes:
         prompt = agent._build_turn_prompt(deps)
 
         assert "Existing notes" not in prompt
-        assert "req-200" in prompt
+        assert req_id in prompt
 
     def test_prompt_truncates_long_note_summaries(self, mock_db):
         long_summary = "word " * 50
@@ -843,6 +859,7 @@ class TestBuildTurnPromptWithLinkedNotes:
             user_profile_id=uuid4(),
             available_requests=[
                 {
+                    "id": str(uuid4()),
                     "request_id": "req-300",
                     "content": "A claim",
                     "status": "PENDING",
@@ -868,6 +885,7 @@ class TestBuildTurnPromptWithLinkedNotes:
         assert "..." in prompt
 
     def test_format_sections_handles_missing_notes_key(self, mock_db):
+        req_id = str(uuid4())
         deps = SimAgentDeps(
             db=mock_db,
             community_server_id=uuid4(),
@@ -875,6 +893,7 @@ class TestBuildTurnPromptWithLinkedNotes:
             user_profile_id=uuid4(),
             available_requests=[
                 {
+                    "id": req_id,
                     "request_id": "req-400",
                     "content": "Old format request",
                     "status": "PENDING",
@@ -887,7 +906,7 @@ class TestBuildTurnPromptWithLinkedNotes:
         agent = OpenNotesSimAgent()
         prompt = agent._build_turn_prompt(deps)
 
-        assert "req-400" in prompt
+        assert req_id in prompt
         assert "Existing notes" not in prompt
 
 
@@ -972,7 +991,12 @@ class TestBuildInstructionsPersonalityCap:
 class TestBuildTurnPromptTokenBudget:
     def test_limits_requests_to_max(self, mock_db):
         many_requests = [
-            {"request_id": str(uuid4()), "content": f"Content {i}", "status": "PENDING"}
+            {
+                "id": str(uuid4()),
+                "request_id": f"prov-{i}",
+                "content": f"Content {i}",
+                "status": "PENDING",
+            }
             for i in range(20)
         ]
         deps = SimAgentDeps(
@@ -1019,8 +1043,13 @@ class TestBuildTurnPromptTokenBudget:
 
     def test_trims_when_over_token_budget(self, mock_db):
         huge_requests = [
-            {"request_id": str(uuid4()), "content": "x" * 5000, "status": "PENDING"}
-            for _ in range(5)
+            {
+                "id": str(uuid4()),
+                "request_id": f"prov-{i}",
+                "content": "x" * 5000,
+                "status": "PENDING",
+            }
+            for i in range(5)
         ]
         deps = SimAgentDeps(
             db=mock_db,
@@ -1040,7 +1069,8 @@ class TestBuildTurnPromptTokenBudget:
     def test_fresh_turn_under_5000_tokens(self, mock_db):
         requests = [
             {
-                "request_id": str(uuid4()),
+                "id": str(uuid4()),
+                "request_id": f"prov-{i}",
                 "content": f"Some content about topic {i}",
                 "status": "PENDING",
             }
@@ -1077,7 +1107,12 @@ class TestBuildTurnPromptTokenBudget:
 
     def test_samples_different_items_when_many_available(self, mock_db):
         many_requests = [
-            {"request_id": str(uuid4()), "content": f"Content {i}", "status": "PENDING"}
+            {
+                "id": str(uuid4()),
+                "request_id": f"prov-{i}",
+                "content": f"Content {i}",
+                "status": "PENDING",
+            }
             for i in range(50)
         ]
         deps = SimAgentDeps(
@@ -1125,7 +1160,7 @@ class TestWebSearchToolGating:
             agent_instance_id=uuid4(),
             user_profile_id=uuid4(),
             available_requests=[
-                {"request_id": str(uuid4()), "content": "test", "status": "PENDING"}
+                {"id": str(uuid4()), "request_id": "prov-0", "content": "test", "status": "PENDING"}
             ],
             available_notes=[],
             agent_personality="test",
@@ -1162,7 +1197,7 @@ class TestWebSearchToolGating:
             agent_instance_id=uuid4(),
             user_profile_id=uuid4(),
             available_requests=[
-                {"request_id": str(uuid4()), "content": "test", "status": "PENDING"}
+                {"id": str(uuid4()), "request_id": "prov-0", "content": "test", "status": "PENDING"}
             ],
             available_notes=[],
             agent_personality="test",
@@ -1200,7 +1235,7 @@ class TestWebSearchToolGating:
             agent_instance_id=uuid4(),
             user_profile_id=uuid4(),
             available_requests=[
-                {"request_id": str(uuid4()), "content": "test", "status": "PENDING"}
+                {"id": str(uuid4()), "request_id": "prov-0", "content": "test", "status": "PENDING"}
             ],
             available_notes=[],
             agent_personality="test",
@@ -1369,3 +1404,122 @@ class TestAgentRetryConfiguration:
 
     def test_action_selector_has_retries_3(self):
         assert action_selector._max_result_retries == 3
+
+
+class TestListRequestsTool:
+    @staticmethod
+    def _make_mock_request(*, req_id=None, request_id="prov-str", content="Test", status="PENDING"):
+        req = MagicMock()
+        req.id = req_id or uuid4()
+        req.request_id = request_id
+        req.content = content
+        req.status = status
+        return req
+
+    @pytest.mark.asyncio
+    async def test_list_requests_returns_pending_requests(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        req = self._make_mock_request(content="Is the earth flat?")
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req, 2)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx)
+
+        assert "1 PENDING request(s)" in result
+        assert str(req.id) in result
+        assert "Is the earth flat?" in result
+        assert "Notes: 2" in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_no_results(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx)
+
+        assert "No PENDING requests found" in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_filters_by_status(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx, status="COMPLETED")
+
+        assert "No COMPLETED requests found" in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_rejects_invalid_status(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await list_requests(ctx, status="BOGUS")
+
+        assert "Error" in result
+        assert "BOGUS" in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_truncates_long_content(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        req = self._make_mock_request(content="A " * 80)
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req, 0)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx)
+
+        assert "..." in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_handles_db_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        sample_deps.db.execute = AsyncMock(side_effect=SQLAlchemyError("db down"))
+        sample_deps.db.rollback = AsyncMock()
+
+        result = await list_requests(ctx)
+
+        assert "Error" in result
+        sample_deps.db.rollback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_list_requests_id_usable_in_write_note(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        req = self._make_mock_request(content="Test content")
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req, 0)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx)
+
+        returned_id = str(req.id)
+        assert returned_id in result
+
+        sample_deps.available_requests = [
+            {"id": returned_id, "request_id": "prov-str", "content": "Test", "status": "PENDING"},
+        ]
+        sample_deps.db.flush = AsyncMock()
+        sample_deps.db.add = MagicMock()
+        write_result = await write_note(
+            ctx,
+            request_id=returned_id,
+            summary="Test note",
+            classification="NOT_MISLEADING",
+        )
+        assert "Note created" in write_result

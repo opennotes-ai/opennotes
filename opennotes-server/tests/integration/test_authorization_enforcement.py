@@ -370,7 +370,7 @@ class TestAuthorizationFixtures:
 
         note = Note(
             id=uuid4(),
-            request_id=request.request_id,
+            request_id=request.id,
             classification=NoteClassification.NOT_MISLEADING,
             summary="Test note in Community A for authorization tests",
             author_id=user_a_in_community_a["profile"].id,
@@ -412,7 +412,7 @@ class TestAuthorizationFixtures:
 
         note = Note(
             id=uuid4(),
-            request_id=request.request_id,
+            request_id=request.id,
             classification=NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING,
             summary="Test note in Community B for authorization tests",
             author_id=user_b_in_community_b["profile"].id,
@@ -537,7 +537,7 @@ class TestCrossCommunityAccessPrevention(TestAuthorizationFixtures):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(
-                f"/api/v2/requests/{request_in_community_a.request_id}",
+                f"/api/v2/requests/{request_in_community_a.id}",
                 headers=user_b_headers,
             )
 
@@ -761,12 +761,12 @@ class TestOwnershipEnforcement(TestAuthorizationFixtures):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.patch(
-                f"/api/v2/requests/{request_in_community_a.request_id}",
+                f"/api/v2/requests/{request_in_community_a.id}",
                 headers=user_b_headers,
                 json={
                     "data": {
                         "type": "requests",
-                        "id": request_in_community_a.request_id,
+                        "id": str(request_in_community_a.id),
                         "attributes": {"status": "IN_PROGRESS"},
                     }
                 },
@@ -873,12 +873,12 @@ class TestPositiveAuthorizationSuccess(TestAuthorizationFixtures):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.patch(
-                f"/api/v2/requests/{request_in_community_a.request_id}",
+                f"/api/v2/requests/{request_in_community_a.id}",
                 headers=user_a_headers,
                 json={
                     "data": {
                         "type": "requests",
-                        "id": request_in_community_a.request_id,
+                        "id": str(request_in_community_a.id),
                         "attributes": {"status": "IN_PROGRESS"},
                     }
                 },
@@ -966,12 +966,12 @@ class TestPositiveAuthorizationSuccess(TestAuthorizationFixtures):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.patch(
-                f"/api/v2/requests/{request_in_community_a.request_id}",
+                f"/api/v2/requests/{request_in_community_a.id}",
                 headers=admin_headers,
                 json={
                     "data": {
                         "type": "requests",
-                        "id": request_in_community_a.request_id,
+                        "id": str(request_in_community_a.id),
                         "attributes": {"status": "COMPLETED"},
                     }
                 },
@@ -1098,12 +1098,12 @@ class TestServiceAccountBypass(TestAuthorizationFixtures):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.patch(
-                f"/api/v2/requests/{request_in_community_a.request_id}",
+                f"/api/v2/requests/{request_in_community_a.id}",
                 headers=service_account_headers,
                 json={
                     "data": {
                         "type": "requests",
-                        "id": request_in_community_a.request_id,
+                        "id": str(request_in_community_a.id),
                         "attributes": {"status": "IN_PROGRESS"},
                     }
                 },
@@ -1123,7 +1123,7 @@ class TestServiceAccountBypass(TestAuthorizationFixtures):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(
-                f"/api/v2/requests/{request_in_community_a.request_id}",
+                f"/api/v2/requests/{request_in_community_a.id}",
                 headers=service_account_headers,
             )
 

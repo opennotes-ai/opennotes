@@ -11,13 +11,15 @@ from src.simulation.schemas import SimActionType
 def sample_requests():
     return [
         {
-            "request_id": str(uuid4()),
+            "id": str(uuid4()),
+            "request_id": "prov-flat-earth",
             "content": "Earth is flat claim",
             "status": "PENDING",
             "notes": [],
         },
         {
-            "request_id": str(uuid4()),
+            "id": str(uuid4()),
+            "request_id": "prov-vaccine",
             "content": "Vaccine myths",
             "status": "PENDING",
             "notes": [],
@@ -91,12 +93,13 @@ class TestPhase2PromptTokenBudget:
         agent = OpenNotesSimAgent()
         huge_requests = [
             {
-                "request_id": str(uuid4()),
+                "id": str(uuid4()),
+                "request_id": f"prov-{i}",
                 "content": "x" * 5000,
                 "status": "PENDING",
                 "notes": [],
             }
-            for _ in range(5)
+            for i in range(5)
         ]
         prompt = agent._build_phase2_prompt(
             SimActionType.WRITE_NOTE, huge_requests, [], token_budget=1000
@@ -123,7 +126,8 @@ class TestPhase2PromptTokenBudget:
         agent = OpenNotesSimAgent()
         many_requests = [
             {
-                "request_id": str(uuid4()),
+                "id": str(uuid4()),
+                "request_id": f"prov-{i}",
                 "content": f"Content {i}",
                 "status": "PENDING",
                 "notes": [],

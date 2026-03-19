@@ -90,6 +90,12 @@ class SimAgentMemory(Base, TimestampMixin):
     recent_actions: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
+    seen_request_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    acted_on_request_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
 
     agent_instance: Mapped[SimAgentInstance] = relationship(
         "SimAgentInstance", back_populates="memory", lazy="raise"

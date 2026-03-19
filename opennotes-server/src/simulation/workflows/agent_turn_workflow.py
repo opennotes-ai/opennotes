@@ -100,11 +100,15 @@ def load_agent_context_step(agent_instance_id: str) -> dict[str, Any]:
             memory_id: str | None = None
             memory_turn_count: int = 0
             recent_actions: list[str] = []
+            seen_request_ids: list[str] = []
+            acted_on_request_ids: list[str] = []
             if memory is not None:
                 message_history = memory.message_history or []
                 memory_id = str(memory.id)
                 memory_turn_count = memory.turn_count
                 recent_actions = memory.recent_actions or []
+                seen_request_ids = memory.seen_request_ids or []
+                acted_on_request_ids = memory.acted_on_request_ids or []
 
             return {
                 "agent_instance_id": str(instance.id),
@@ -123,6 +127,8 @@ def load_agent_context_step(agent_instance_id: str) -> dict[str, Any]:
                 "memory_turn_count": memory_turn_count,
                 "instance_turn_count": instance.turn_count,
                 "recent_actions": recent_actions,
+                "seen_request_ids": seen_request_ids,
+                "acted_on_request_ids": acted_on_request_ids,
             }
 
     return run_sync(_load())
@@ -171,6 +177,8 @@ def compact_memory_step(
 )
 def build_deps_step(
     community_server_id: str,
+    seen_request_ids: list[str] | None = None,
+    acted_on_request_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     from src.database import get_session_maker
     from src.notes.models import Note, Request
@@ -181,6 +189,9 @@ def build_deps_step(
 
         cs_id = UUID(community_server_id)
 
+        acted_on_set = set(acted_on_request_ids or [])
+        effective_seen = [rid for rid in (seen_request_ids or []) if rid not in acted_on_set]
+
         async with get_session_maker()() as session:
             from src.simulation.agent import (
                 MAX_CONTEXT_NOTES,
@@ -188,22 +199,40 @@ def build_deps_step(
                 MAX_LINKED_NOTES_PER_REQUEST,
             )
 
-            req_query = (
-                select(Request)
-                .where(
+            persisted_requests: list[Any] = []
+            persisted_ids: set[UUID] = set()
+
+            if effective_seen:
+                persisted_query = select(Request).where(
+                    Request.community_server_id == cs_id,
+                    Request.status == "PENDING",
+                    Request.deleted_at.is_(None),
+                    Request.id.in_([UUID(rid) for rid in effective_seen]),
+                )
+                persisted_result = await session.execute(persisted_query)
+                persisted_requests = list(persisted_result.scalars().all())
+                persisted_ids = {req.id for req in persisted_requests}
+
+            remaining_slots = MAX_CONTEXT_REQUESTS - len(persisted_requests)
+
+            new_requests: list[Any] = []
+            if remaining_slots > 0:
+                new_query = select(Request).where(
                     Request.community_server_id == cs_id,
                     Request.status == "PENDING",
                     Request.deleted_at.is_(None),
                 )
-                .order_by(func.random())
-                .limit(MAX_CONTEXT_REQUESTS)
-            )
-            req_result = await session.execute(req_query)
-            requests = req_result.scalars().all()
+                if persisted_ids:
+                    new_query = new_query.where(Request.id.notin_(persisted_ids))
+                new_query = new_query.order_by(func.random()).limit(remaining_slots)
+                new_result = await session.execute(new_query)
+                new_requests = list(new_result.scalars().all())
 
-            request_ids = [req.request_id for req in requests]
+            requests = persisted_requests + new_requests
 
-            notes_by_request: dict[str, list[dict[str, Any]]] = {}
+            request_ids = [req.id for req in requests]
+
+            notes_by_request: dict[UUID, list[dict[str, Any]]] = {}
             if request_ids:
                 linked_note_query = (
                     select(Note)
@@ -229,10 +258,11 @@ def build_deps_step(
             for req in requests:
                 available_requests.append(
                     {
+                        "id": str(req.id),
                         "request_id": req.request_id,
                         "content": req.content,
                         "status": req.status,
-                        "notes": notes_by_request.get(req.request_id, []),
+                        "notes": notes_by_request.get(req.id, []),
                     }
                 )
 
@@ -257,9 +287,12 @@ def build_deps_step(
                     }
                 )
 
+        shown_request_ids = [req["id"] for req in available_requests]
+
         return {
             "available_requests": available_requests,
             "available_notes": available_notes,
+            "shown_request_ids": shown_request_ids,
         }
 
     return run_sync(_build())
@@ -439,6 +472,8 @@ def persist_state_step(
     action: dict[str, Any],
     simulation_run_id: str | None = None,
     recent_actions: list[str] | None = None,
+    seen_request_ids: list[str] | None = None,
+    acted_on_request_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     from src.database import get_session_maker
 
@@ -452,6 +487,9 @@ def persist_state_step(
         updated_recent_actions.append(action.get("action_type", "unknown"))
         updated_recent_actions = updated_recent_actions[-5:]
 
+        updated_seen_request_ids = list(seen_request_ids or [])
+        updated_acted_on_request_ids = list(acted_on_request_ids or [])
+
         async with get_session_maker()() as session:
             if memory_id is not None:
                 await session.execute(
@@ -461,6 +499,8 @@ def persist_state_step(
                         message_history=new_messages,
                         turn_count=SimAgentMemory.turn_count + 1,
                         recent_actions=updated_recent_actions,
+                        seen_request_ids=updated_seen_request_ids,
+                        acted_on_request_ids=updated_acted_on_request_ids,
                     )
                 )
             else:
@@ -471,6 +511,8 @@ def persist_state_step(
                         message_history=new_messages,
                         turn_count=1,
                         recent_actions=updated_recent_actions,
+                        seen_request_ids=updated_seen_request_ids,
+                        acted_on_request_ids=updated_acted_on_request_ids,
                     )
                     .on_conflict_do_update(
                         index_elements=["agent_instance_id"],
@@ -478,6 +520,8 @@ def persist_state_step(
                             "message_history": new_messages,
                             "turn_count": SimAgentMemory.turn_count + 1,
                             "recent_actions": updated_recent_actions,
+                            "seen_request_ids": updated_seen_request_ids,
+                            "acted_on_request_ids": updated_acted_on_request_ids,
                         },
                     )
                 )
@@ -580,8 +624,12 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
                 cleaned = strip_orphaned_tool_messages(deserialized)
                 memory_result["messages"] = _serialize_messages(cleaned)
 
+        current_acted_on: list[str] = context.get("acted_on_request_ids", [])
+
         deps_data = build_deps_step(
             community_server_id=context["community_server_id"],
+            seen_request_ids=context.get("seen_request_ids", []),
+            acted_on_request_ids=current_acted_on,
         )
 
         selection = select_action_step(
@@ -603,6 +651,8 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
                 action=pass_action,
                 simulation_run_id=context.get("simulation_run_id"),
                 recent_actions=context.get("recent_actions", []),
+                seen_request_ids=deps_data.get("shown_request_ids", []),
+                acted_on_request_ids=current_acted_on,
             )
 
             logger.info(
@@ -629,6 +679,17 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             phase1_messages=selection["phase1_messages"],
         )
 
+        updated_acted_on = list(current_acted_on)
+        result_action = turn_result.get("action", {})
+        result_action_type = result_action.get("action_type", "")
+        if result_action_type in (
+            SimActionType.WRITE_NOTE.value,
+            SimActionType.RATE_NOTE.value,
+        ):
+            acted_request_id = result_action.get("request_id")
+            if acted_request_id and str(acted_request_id) not in set(updated_acted_on):
+                updated_acted_on.append(str(acted_request_id))
+
         persist_result = persist_state_step(
             agent_instance_id=agent_instance_id,
             memory_id=context.get("memory_id"),
@@ -636,6 +697,8 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             action=turn_result["action"],
             simulation_run_id=context.get("simulation_run_id"),
             recent_actions=context.get("recent_actions", []),
+            seen_request_ids=deps_data.get("shown_request_ids", []),
+            acted_on_request_ids=updated_acted_on,
         )
 
         logger.info(

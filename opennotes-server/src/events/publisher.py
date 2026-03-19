@@ -306,7 +306,7 @@ class EventPublisher:
 
     async def publish_note_request_created(
         self,
-        request_id: str,
+        request_id: UUID,
         platform_message_id: str | None,
         requested_by: str,
         status: str,

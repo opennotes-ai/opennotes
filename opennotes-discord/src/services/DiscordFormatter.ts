@@ -657,13 +657,13 @@ export class DiscordFormatter {
         const ttl = 300;
 
         try {
-          await cache.set(writeNoteNotMisleadingCacheKey, request.request_id, ttl);
-          await cache.set(writeNoteMisinformedCacheKey, request.request_id, ttl);
-          await cache.set(aiWriteNoteCacheKey, request.request_id, ttl);
+          await cache.set(writeNoteNotMisleadingCacheKey, request.id, ttl);
+          await cache.set(writeNoteMisinformedCacheKey, request.id, ttl);
+          await cache.set(aiWriteNoteCacheKey, request.id, ttl);
         } catch (error) {
           logger.error('Failed to store write note button state in cache', {
             error: error instanceof Error ? error.message : String(error),
-            request_id: request.request_id,
+            request_id: request.id,
           });
         }
 
