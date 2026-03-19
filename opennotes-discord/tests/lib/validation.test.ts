@@ -128,6 +128,18 @@ describe('validateNoteId', () => {
       expect(result.valid).toBe(true);
       expect(result.error).toBeUndefined();
     });
+
+    it('should accept valid ProQuint format', () => {
+      const result = validateNoteId('bafod-jusob');
+      expect(result.valid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should accept another valid ProQuint format', () => {
+      const result = validateNoteId('dabof-giruz');
+      expect(result.valid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
   });
 
   describe('invalid note IDs', () => {
@@ -146,31 +158,43 @@ describe('validateNoteId', () => {
     it('should reject numeric-only ID (not UUID format)', () => {
       const result = validateNoteId('12345');
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('Note ID must be a valid UUID format');
+      expect(result.error).toBe('Note ID must be a valid UUID or ProQuint format (e.g., bafod-jusob)');
     });
 
     it('should reject UUID without hyphens', () => {
       const result = validateNoteId('550e8400e29b41d4a716446655440000');
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('Note ID must be a valid UUID format');
+      expect(result.error).toBe('Note ID must be a valid UUID or ProQuint format (e.g., bafod-jusob)');
     });
 
     it('should reject UUID with wrong segment lengths', () => {
       const result = validateNoteId('550e840-0e29b-41d4-a716-446655440000');
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('Note ID must be a valid UUID format');
+      expect(result.error).toBe('Note ID must be a valid UUID or ProQuint format (e.g., bafod-jusob)');
     });
 
     it('should reject UUID with invalid characters', () => {
       const result = validateNoteId('550g8400-e29b-41d4-a716-446655440000');
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('Note ID must be a valid UUID format');
+      expect(result.error).toBe('Note ID must be a valid UUID or ProQuint format (e.g., bafod-jusob)');
     });
 
     it('should reject random string', () => {
       const result = validateNoteId('not-a-uuid');
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('Note ID must be a valid UUID format');
+      expect(result.error).toBe('Note ID must be a valid UUID or ProQuint format (e.g., bafod-jusob)');
+    });
+
+    it('should reject invalid ProQuint with numbers', () => {
+      const result = validateNoteId('baf0d-jusob');
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Note ID must be a valid UUID or ProQuint format (e.g., bafod-jusob)');
+    });
+
+    it('should reject too-short proquint-like strings', () => {
+      const result = validateNoteId('baf-jus');
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Note ID must be a valid UUID or ProQuint format (e.g., bafod-jusob)');
     });
   });
 });

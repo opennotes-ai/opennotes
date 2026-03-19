@@ -1,5 +1,6 @@
 import { logger } from '../logger.js';
 import { randomBytes } from 'crypto';
+import { isProquint } from './proquint.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -59,10 +60,10 @@ export function validateNoteId(noteId: string): ValidationResult {
 
   const trimmedId = noteId.trim();
 
-  if (!UUID_PATTERN.test(trimmedId)) {
+  if (!UUID_PATTERN.test(trimmedId) && !isProquint(trimmedId)) {
     return {
       valid: false,
-      error: 'Note ID must be a valid UUID format',
+      error: 'Note ID must be a valid UUID or ProQuint format (e.g., bafod-jusob)',
     };
   }
 

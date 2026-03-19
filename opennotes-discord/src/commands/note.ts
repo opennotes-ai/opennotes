@@ -28,6 +28,7 @@ import { suppressExpectedDiscordErrors } from '../lib/discord-utils.js';
 import { apiClient } from '../api-client.js';
 import { extractUserContext } from '../lib/user-context.js';
 import { buildForcePublishSuccessReply } from '../lib/force-publish-response.js';
+import { isProquint, proquintToHexSuffix, formatIdDisplay } from '../lib/proquint.js';
 
 export const data = new SlashCommandBuilder()
   .setName('note')
@@ -713,6 +714,8 @@ async function handleScoreSubcommand(interaction: ChatInputCommandInteraction): 
     return;
   }
 
+  const displayId = formatIdDisplay(noteId);
+
   try {
     logger.info('Executing note-score command', {
       error_id: errorId,
@@ -724,27 +727,46 @@ async function handleScoreSubcommand(interaction: ChatInputCommandInteraction): 
 
     await interaction.deferReply();
 
+    let resolvedNoteId = noteId;
+
+    if (isProquint(noteId.trim())) {
+      const hexSuffix = proquintToHexSuffix(noteId.trim());
+      const notesResponse = await apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS', 1, 100, undefined);
+      const match = notesResponse.data.find(
+        (n: { id: string }) => n.id.replace(/-/g, '').endsWith(hexSuffix)
+      );
+      if (!match) {
+        await interaction.followUp({
+          content: `Could not find a note matching ProQuint \`${noteId}\`. Try using the full UUID instead.`,
+          flags: MessageFlags.Ephemeral,
+        });
+        await interaction.deleteReply().catch(suppressExpectedDiscordErrors('delete_after_proquint_resolve'));
+        return;
+      }
+      resolvedNoteId = match.id;
+    }
+
     const scoringService = serviceProvider.getScoringService();
-    const result = await scoringService.getNoteScore(noteId);
+    const result = await scoringService.getNoteScore(resolvedNoteId);
 
     if (!result.success) {
       let errorMessage: string;
 
       switch (result.error?.code) {
         case 'NOT_FOUND':
-          errorMessage = `Note with ID \`${noteId}\` not found or score not available yet.`;
+          errorMessage = `Note with ID \`${displayId}\` not found or score not available yet.`;
           break;
         case 'SCORE_PENDING':
-          errorMessage = `Score calculation for note \`${noteId}\` is in progress. Please try again in a moment.`;
+          errorMessage = `Score calculation for note \`${displayId}\` is in progress. Please try again in a moment.`;
           break;
         case 'SERVICE_UNAVAILABLE':
           errorMessage = 'The scoring system is temporarily unavailable. Please try again later.';
           break;
         case 'VALIDATION_ERROR':
-          errorMessage = `Invalid note ID format: \`${noteId}\`. Note ID must be a number.`;
+          errorMessage = `Invalid note ID format: \`${displayId}\`. Note ID must be a number.`;
           break;
         default:
-          errorMessage = `Failed to retrieve score for note \`${noteId}\`. Please try again later.`;
+          errorMessage = `Failed to retrieve score for note \`${displayId}\`. Please try again later.`;
       }
 
       await interaction.followUp({
@@ -762,7 +784,7 @@ async function handleScoreSubcommand(interaction: ChatInputCommandInteraction): 
       error_id: errorId,
       command: 'note score',
       user_id: userId,
-      note_id: noteId,
+      note_id: resolvedNoteId,
       score: result.data!.data.attributes.score,
       confidence: result.data!.data.attributes.confidence,
     });
@@ -781,7 +803,7 @@ async function handleScoreSubcommand(interaction: ChatInputCommandInteraction): 
     });
 
     await interaction.followUp({
-      content: formatErrorForUser(errorId, `Failed to retrieve score for note \`${noteId}\`.`),
+      content: formatErrorForUser(errorId, `Failed to retrieve score for note \`${displayId}\`.`),
       flags: MessageFlags.Ephemeral,
     }).catch(suppressExpectedDiscordErrors('followup_score_error'));
     await interaction.deleteReply().catch(suppressExpectedDiscordErrors('delete_original_reply'));
