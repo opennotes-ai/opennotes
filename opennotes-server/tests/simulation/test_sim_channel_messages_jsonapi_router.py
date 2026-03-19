@@ -167,6 +167,58 @@ class TestChannelMessagesHasMore:
         assert body["meta"]["has_more"] is False
 
 
+class TestChannelMessagesHasMoreBoundary:
+    @pytest.mark.asyncio
+    async def test_has_more_false_when_exactly_page_size(
+        self,
+        admin_auth_client,
+        simulation_run_factory,
+        agent_instance_factory,
+        channel_message_factory,
+    ):
+        sim = await simulation_run_factory(status_val="running")
+        inst = await agent_instance_factory(sim["id"])
+
+        page_size = 5
+        for i in range(page_size):
+            await channel_message_factory(sim["id"], inst["id"], f"msg {i}")
+
+        response = await admin_auth_client.get(
+            f"{BASE_URL}/{sim['id']}/channel-messages",
+            params={"page[size]": page_size},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["data"]) == page_size
+        assert body["meta"]["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_has_more_true_when_more_than_page_size(
+        self,
+        admin_auth_client,
+        simulation_run_factory,
+        agent_instance_factory,
+        channel_message_factory,
+    ):
+        sim = await simulation_run_factory(status_val="running")
+        inst = await agent_instance_factory(sim["id"])
+
+        page_size = 5
+        for i in range(page_size + 1):
+            await channel_message_factory(sim["id"], inst["id"], f"msg {i}")
+
+        response = await admin_auth_client.get(
+            f"{BASE_URL}/{sim['id']}/channel-messages",
+            params={"page[size]": page_size},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["data"]) == page_size
+        assert body["meta"]["has_more"] is True
+
+
 class TestChannelMessagesScopedKey:
     @pytest.fixture
     async def service_account_scoped_client(self):

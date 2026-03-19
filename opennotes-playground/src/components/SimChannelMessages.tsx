@@ -48,6 +48,8 @@ export function SimChannelMessages(props: { simulationId: string }) {
             containerRef.scrollTop = containerRef.scrollHeight - oldScrollHeight;
           }
         });
+      } else {
+        setLoadMoreError(true);
       }
     } catch {
       setLoadMoreError(true);

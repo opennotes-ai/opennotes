@@ -86,10 +86,13 @@ async def list_channel_messages(
             .join(SimAgent, SimAgentInstance.agent_profile_id == SimAgent.id)
             .where(*filters)
             .order_by(SimChannelMessage.id.desc())
-            .limit(page_size)
+            .limit(page_size + 1)
         )
         result = await db.execute(query)
         rows = result.all()
+
+        has_more = len(rows) > page_size
+        rows = rows[:page_size]
 
         rows = list(reversed(rows))
 
@@ -105,8 +108,6 @@ async def list_channel_messages(
             )
             for msg, agent_name, agent_id in rows
         ]
-
-        has_more = len(rows) == page_size
 
         response = SimChannelMessageListResponse(
             data=resources,
