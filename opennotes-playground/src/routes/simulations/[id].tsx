@@ -1,14 +1,13 @@
 import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
-import { Show, Switch, Match, Suspense, createSignal, createEffect, on } from "solid-js";
-import { getRequestEvent } from "solid-js/web";
+import { Show, Switch, Match, Suspense, createSignal, createEffect, on, untrack } from "solid-js";
 import {
   getSimulation,
   getSimulationAnalysis,
   getSimulationDetailedAnalysis,
   getSimulationTimeline,
 } from "~/lib/api-client.server";
-import { createClient } from "~/lib/supabase-server";
 import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
+import { parseFragment, scrollToAndHighlight, findPageForItem } from "~/lib/anchor-scroll";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import { SectionSkeleton } from "~/components/ui/skeleton";
 import SimulationSidebar, { MobileSidebarToggle } from "~/components/SimulationSidebar";
@@ -26,18 +25,6 @@ type AuthMeta = {
   totalAgents?: number;
   agentsTruncated?: boolean;
 };
-
-async function checkAuth(): Promise<boolean> {
-  try {
-    const event = getRequestEvent();
-    if (!event) return false;
-    const supabase = createClient(event.request, event.response.headers);
-    const { data: { user } } = await supabase.auth.getUser();
-    return !!user;
-  } catch {
-    return false;
-  }
-}
 
 type SimulationError = { _error: "not_found" | "server_error" };
 
@@ -57,7 +44,9 @@ const fetchSimulation = query(async (id: string) => {
 const fetchAnalysis = query(async (id: string) => {
   "use server";
   try {
-    const isAuthenticated = await checkAuth();
+    const { getUser } = await import("~/lib/supabase-server");
+    const user = await getUser();
+    const isAuthenticated = !!user;
     const data = await getSimulationAnalysis(id);
 
     const behaviors = data.data.attributes.agent_behaviors ?? [];
@@ -94,7 +83,9 @@ const fetchDetailedAnalysis = query(async (
 ) => {
   "use server";
   try {
-    const isAuthenticated = await checkAuth();
+    const { getUser } = await import("~/lib/supabase-server");
+    const user = await getUser();
+    const isAuthenticated = !!user;
     const effectivePage = isAuthenticated ? page : 1;
     const data = await getSimulationDetailedAnalysis(
       id, effectivePage, pageSize, sortBy, filterClassification, filterStatus,
@@ -172,10 +163,72 @@ export default function SimulationDetailPage() {
   createEffect(on(() => sortBy(), () => setNotesPage(1), { defer: true }));
   createEffect(on(() => [filterClassification(), filterStatus()], () => setNotesPage(1), { defer: true }));
 
+  const [anchorAgentPage, setAnchorAgentPage] = createSignal<number | undefined>(undefined);
+  const initialHash = typeof window !== "undefined" ? window.location.hash : "";
+  const [pendingAgentAnchor, setPendingAgentAnchor] = createSignal<boolean>(
+    initialHash.startsWith("#agent-"),
+  );
+  const [pendingNoteAnchor, setPendingNoteAnchor] = createSignal<string | null>(
+    initialHash.startsWith("#note-") || initialHash.startsWith("#request-") ? initialHash : null,
+  );
+
+  createEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!pendingAgentAnchor()) return;
+    const hash = window.location.hash;
+    if (!hash || !hash.startsWith("#agent-")) return;
+    const a = analysis();
+    if (!a || !("data" in a)) return;
+    const agents = a.data.attributes.agent_behaviors;
+    const target = parseFragment(hash, agents.map(ag => ({ id: ag.agent_profile_id })), "agent");
+    if (target) {
+      setPendingAgentAnchor(false);
+      const agentPage = findPageForItem(agents, target.id, pageSize(), (ag) => ag.agent_profile_id);
+      setAnchorAgentPage(agentPage);
+      scrollToAndHighlight(`agent-${target.id}`);
+    }
+  });
+
   const serverSortBy = () => (sortBy() === "has_score" ? "has_score" : "count") as "count" | "has_score";
   const detailed = createAsync(() => fetchDetailedAnalysis(
     params.id!, notesPage(), pageSize(), serverSortBy(), filterClassification(), filterStatus(),
   ));
+
+  createEffect(() => {
+    const anchor = pendingNoteAnchor();
+    if (!anchor) return;
+
+    const d = detailed();
+    if (!d || !("data" in d)) return;
+
+    const notes = d.data;
+    const type = anchor.startsWith("#note-") ? "note" as const : "request" as const;
+
+    const items: Array<{ id: string }> = type === "note"
+      ? notes.map(n => ({ id: n.attributes.note_id }))
+      : [...new Set(notes.map(n => n.attributes.request_id).filter(Boolean))].map(id => ({ id: id! }));
+
+    const parsed = parseFragment(anchor, items, type);
+
+    if (parsed) {
+      setPendingNoteAnchor(null);
+      scrollToAndHighlight(`${type}-${parsed.id}`);
+      return;
+    }
+
+    if (!d._authMeta?.isAuthenticated) {
+      setPendingNoteAnchor(null);
+      return;
+    }
+
+    const totalPages = d._totalPages ?? 1;
+    const currentPage = untrack(() => notesPage());
+    if (currentPage < totalPages) {
+      setNotesPage(currentPage + 1);
+    } else {
+      setPendingNoteAnchor(null);
+    }
+  });
 
   const simError = () => {
     const r = simulation();
@@ -269,6 +322,7 @@ export default function SimulationDetailPage() {
                                 agents={a.agent_behaviors}
                                 ratingDistribution={a.rating_distribution}
                                 pageSize={pageSize()}
+                                anchorPage={anchorAgentPage()}
                               />
                               <Show when={meta?.agentsTruncated && meta.totalAgents}>
                                 <AuthGateCTA

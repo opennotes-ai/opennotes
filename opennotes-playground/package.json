@@ -19,10 +19,13 @@
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.98.0",
     "@tailwindcss/postcss": "^4.2.1",
+    "@tailwindcss/typography": "^0.5.19",
     "clsx": "^2.1.1",
     "cva": "1.0.0-beta.4",
     "echarts": "^6.0.0",
     "google-auth-library": "^10.6.1",
+    "isomorphic-dompurify": "^3.5.1",
+    "marked": "^17.0.4",
     "openapi-fetch": "^0.17.0",
     "postcss": "^8.5.8",
     "solid-js": "^1.9.5",
@@ -33,6 +36,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
+    "@types/dompurify": "^3.2.0",
     "openapi-typescript": "^7.13.0",
     "typescript": "^5.7.3",
     "vitest": "^4.0.18"
