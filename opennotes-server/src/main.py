@@ -607,6 +607,11 @@ async def _shutdown_services(app: FastAPI, is_dbos_worker: bool) -> None:
 
     _destroy_dbos(is_dbos_worker)
 
+    from src.utils.async_compat import shutdown as shutdown_bg_loop
+
+    await asyncio.to_thread(shutdown_bg_loop)
+    logger.info("Background event loop stopped")
+
     await close_db()
     logger.info(f"Shutting down {settings.PROJECT_NAME}")
 
