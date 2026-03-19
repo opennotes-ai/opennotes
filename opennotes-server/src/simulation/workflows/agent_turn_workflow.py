@@ -101,12 +101,14 @@ def load_agent_context_step(agent_instance_id: str) -> dict[str, Any]:
             memory_turn_count: int = 0
             recent_actions: list[str] = []
             seen_request_ids: list[str] = []
+            acted_on_request_ids: list[str] = []
             if memory is not None:
                 message_history = memory.message_history or []
                 memory_id = str(memory.id)
                 memory_turn_count = memory.turn_count
                 recent_actions = memory.recent_actions or []
                 seen_request_ids = memory.seen_request_ids or []
+                acted_on_request_ids = memory.acted_on_request_ids or []
 
             return {
                 "agent_instance_id": str(instance.id),
@@ -126,6 +128,7 @@ def load_agent_context_step(agent_instance_id: str) -> dict[str, Any]:
                 "instance_turn_count": instance.turn_count,
                 "recent_actions": recent_actions,
                 "seen_request_ids": seen_request_ids,
+                "acted_on_request_ids": acted_on_request_ids,
             }
 
     return run_sync(_load())
@@ -175,6 +178,7 @@ def compact_memory_step(
 def build_deps_step(
     community_server_id: str,
     seen_request_ids: list[str] | None = None,
+    acted_on_request_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     from src.database import get_session_maker
     from src.notes.models import Note, Request
@@ -184,6 +188,9 @@ def build_deps_step(
         available_notes: list[dict[str, Any]] = []
 
         cs_id = UUID(community_server_id)
+
+        acted_on_set = set(acted_on_request_ids or [])
+        effective_seen = [rid for rid in (seen_request_ids or []) if rid not in acted_on_set]
 
         async with get_session_maker()() as session:
             from src.simulation.agent import (
@@ -195,12 +202,12 @@ def build_deps_step(
             persisted_requests: list[Any] = []
             persisted_ids: set[UUID] = set()
 
-            if seen_request_ids:
+            if effective_seen:
                 persisted_query = select(Request).where(
                     Request.community_server_id == cs_id,
                     Request.status == "PENDING",
                     Request.deleted_at.is_(None),
-                    Request.id.in_([UUID(rid) for rid in seen_request_ids]),
+                    Request.id.in_([UUID(rid) for rid in effective_seen]),
                 )
                 persisted_result = await session.execute(persisted_query)
                 persisted_requests = list(persisted_result.scalars().all())
@@ -466,6 +473,7 @@ def persist_state_step(
     simulation_run_id: str | None = None,
     recent_actions: list[str] | None = None,
     seen_request_ids: list[str] | None = None,
+    acted_on_request_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     from src.database import get_session_maker
 
@@ -480,6 +488,7 @@ def persist_state_step(
         updated_recent_actions = updated_recent_actions[-5:]
 
         updated_seen_request_ids = list(seen_request_ids or [])
+        updated_acted_on_request_ids = list(acted_on_request_ids or [])
 
         async with get_session_maker()() as session:
             if memory_id is not None:
@@ -491,6 +500,7 @@ def persist_state_step(
                         turn_count=SimAgentMemory.turn_count + 1,
                         recent_actions=updated_recent_actions,
                         seen_request_ids=updated_seen_request_ids,
+                        acted_on_request_ids=updated_acted_on_request_ids,
                     )
                 )
             else:
@@ -502,6 +512,7 @@ def persist_state_step(
                         turn_count=1,
                         recent_actions=updated_recent_actions,
                         seen_request_ids=updated_seen_request_ids,
+                        acted_on_request_ids=updated_acted_on_request_ids,
                     )
                     .on_conflict_do_update(
                         index_elements=["agent_instance_id"],
@@ -510,6 +521,7 @@ def persist_state_step(
                             "turn_count": SimAgentMemory.turn_count + 1,
                             "recent_actions": updated_recent_actions,
                             "seen_request_ids": updated_seen_request_ids,
+                            "acted_on_request_ids": updated_acted_on_request_ids,
                         },
                     )
                 )
@@ -612,9 +624,12 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
                 cleaned = strip_orphaned_tool_messages(deserialized)
                 memory_result["messages"] = _serialize_messages(cleaned)
 
+        current_acted_on: list[str] = context.get("acted_on_request_ids", [])
+
         deps_data = build_deps_step(
             community_server_id=context["community_server_id"],
             seen_request_ids=context.get("seen_request_ids", []),
+            acted_on_request_ids=current_acted_on,
         )
 
         selection = select_action_step(
@@ -637,6 +652,7 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
                 simulation_run_id=context.get("simulation_run_id"),
                 recent_actions=context.get("recent_actions", []),
                 seen_request_ids=deps_data.get("shown_request_ids", []),
+                acted_on_request_ids=current_acted_on,
             )
 
             logger.info(
@@ -663,6 +679,17 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             phase1_messages=selection["phase1_messages"],
         )
 
+        updated_acted_on = list(current_acted_on)
+        result_action = turn_result.get("action", {})
+        result_action_type = result_action.get("action_type", "")
+        if result_action_type in (
+            SimActionType.WRITE_NOTE.value,
+            SimActionType.RATE_NOTE.value,
+        ):
+            acted_request_id = result_action.get("request_id")
+            if acted_request_id and str(acted_request_id) not in set(updated_acted_on):
+                updated_acted_on.append(str(acted_request_id))
+
         persist_result = persist_state_step(
             agent_instance_id=agent_instance_id,
             memory_id=context.get("memory_id"),
@@ -671,6 +698,7 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             simulation_run_id=context.get("simulation_run_id"),
             recent_actions=context.get("recent_actions", []),
             seen_request_ids=deps_data.get("shown_request_ids", []),
+            acted_on_request_ids=updated_acted_on,
         )
 
         logger.info(
