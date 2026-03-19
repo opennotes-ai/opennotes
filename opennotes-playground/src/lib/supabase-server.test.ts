@@ -3,6 +3,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 let capturedCookies: any = null;
 const mockClient = { auth: { getUser: vi.fn() } };
 
+const { mockGetRequestEvent } = vi.hoisted(() => ({
+  mockGetRequestEvent: vi.fn(),
+}));
+
 vi.mock("@supabase/ssr", () => ({
   createServerClient: vi.fn((_url: string, _key: string, opts: any) => {
     capturedCookies = opts.cookies;
@@ -19,11 +23,12 @@ vi.mock("@supabase/ssr", () => ({
 }));
 
 vi.mock("solid-js/web", () => ({
-  getRequestEvent: vi.fn(),
+  getRequestEvent: mockGetRequestEvent,
 }));
 
 beforeEach(() => {
   capturedCookies = null;
+  vi.clearAllMocks();
   vi.stubEnv("VITE_SUPABASE_URL", "https://test.supabase.co");
   vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "test-anon-key");
 });
@@ -69,5 +74,39 @@ describe("createReadOnlyClient", () => {
     expect(() => createReadOnlyClient(request)).toThrow(
       "Missing Supabase config"
     );
+  });
+});
+
+describe("getUser", () => {
+  it("returns user from event.locals when set", async () => {
+    const fakeUser = { id: "user-456", email: "hello@example.com" };
+    mockGetRequestEvent.mockReturnValue({
+      locals: { user: fakeUser },
+    });
+
+    const { getUser } = await import("./supabase-server");
+    const user = await getUser();
+
+    expect(user).toEqual(fakeUser);
+  });
+
+  it("returns null when event.locals.user is null", async () => {
+    mockGetRequestEvent.mockReturnValue({
+      locals: { user: null },
+    });
+
+    const { getUser } = await import("./supabase-server");
+    const user = await getUser();
+
+    expect(user).toBeNull();
+  });
+
+  it("returns null when getRequestEvent returns undefined", async () => {
+    mockGetRequestEvent.mockReturnValue(undefined);
+
+    const { getUser } = await import("./supabase-server");
+    const user = await getUser();
+
+    expect(user).toBeNull();
   });
 });

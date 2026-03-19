@@ -54,11 +54,8 @@ export function createReadOnlyClient(request: Request) {
 }
 
 export async function getUser() {
+  "use server";
   const event = getRequestEvent();
-  if (!event) throw new Error("No request event available");
-  const supabase = createClient(event.request, event.response.headers);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user;
+  if (!event) return null;
+  return event.locals.user ?? null;
 }
