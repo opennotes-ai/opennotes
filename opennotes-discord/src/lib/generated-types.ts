@@ -2253,6 +2253,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/simulations/{simulation_id}/channel-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Channel Messages */
+        get: operations["list_channel_messages_api_v2_simulations__simulation_id__channel_messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/webhooks/register": {
         parameters: {
             query?: never;
@@ -9614,6 +9631,50 @@ export interface components {
         SimAgentUpdateRequest: {
             data: components["schemas"]["SimAgentUpdateData"];
         };
+        /** SimChannelMessageAttributes */
+        SimChannelMessageAttributes: {
+            /** Message Text */
+            message_text: string;
+            /** Agent Name */
+            agent_name: string;
+            /** Agent Profile Id */
+            agent_profile_id: string;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /** SimChannelMessageListMeta */
+        SimChannelMessageListMeta: {
+            /** Count */
+            count: number;
+            /** Has More */
+            has_more: boolean;
+        };
+        /** SimChannelMessageListResponse */
+        SimChannelMessageListResponse: {
+            /** Data */
+            data: components["schemas"]["SimChannelMessageResource"][];
+            meta: components["schemas"]["SimChannelMessageListMeta"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+        };
+        /** SimChannelMessageResource */
+        SimChannelMessageResource: {
+            /**
+             * Type
+             * @default sim-channel-messages
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["SimChannelMessageAttributes"];
+        };
         /**
          * SimilarityMatch
          * @description Match result from similarity scan.
@@ -14408,6 +14469,42 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PlaygroundNoteRequestJobResponse"];
                     "application/vnd.api+json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_channel_messages_api_v2_simulations__simulation_id__channel_messages_get: {
+        parameters: {
+            query?: {
+                "page[size]"?: number;
+                before?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimChannelMessageListResponse"];
                 };
             };
             /** @description Validation Error */

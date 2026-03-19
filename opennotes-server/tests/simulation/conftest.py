@@ -235,6 +235,28 @@ async def agent_instance_factory():
                 "state": inst.state,
                 "turn_count": inst.turn_count,
                 "cumulative_turn_count": inst.cumulative_turn_count,
+                "agent_profile_id": agent.id,
+                "agent_name": agent.name,
             }
+
+    return _create
+
+
+@pytest.fixture
+async def channel_message_factory():
+    from src.database import get_session_maker
+    from src.simulation.models import SimChannelMessage
+
+    async def _create(simulation_run_id, agent_instance_id, message_text="test message") -> dict:
+        async with get_session_maker()() as session:
+            msg = SimChannelMessage(
+                simulation_run_id=simulation_run_id,
+                agent_instance_id=agent_instance_id,
+                message_text=message_text,
+            )
+            session.add(msg)
+            await session.commit()
+            await session.refresh(msg)
+            return {"id": msg.id, "message_text": msg.message_text}
 
     return _create

@@ -402,3 +402,29 @@ class DetailedAnalysisResponse(BaseModel):
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
     meta: DetailedAnalysisMeta | None = None
+
+
+class SimChannelMessageAttributes(SQLAlchemySchema):
+    message_text: str
+    agent_name: str
+    agent_profile_id: str
+    created_at: datetime | None = None
+
+
+class SimChannelMessageResource(BaseModel):
+    type: str = "sim-channel-messages"
+    id: str
+    attributes: SimChannelMessageAttributes
+
+
+class SimChannelMessageListMeta(BaseModel):
+    count: int
+    has_more: bool
+
+
+class SimChannelMessageListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    data: list[SimChannelMessageResource]
+    meta: SimChannelMessageListMeta
+    jsonapi: dict[str, str] = {"version": "1.1"}
