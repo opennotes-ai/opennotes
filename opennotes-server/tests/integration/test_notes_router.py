@@ -712,17 +712,17 @@ class TestRequestsWithMessageArchive:
 
         body = _create_request_jsonapi_body(request_data)
         create_response = await auth_client.post("/api/v2/requests", json=body)
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        request_uuid = create_response.json()["data"]["id"]
 
         update_body = {
             "data": {
                 "type": "requests",
-                "id": request_id,
+                "id": request_uuid,
                 "attributes": {"status": "IN_PROGRESS"},
             }
         }
         update_response = await auth_client.patch(
-            f"/api/v2/requests/{request_id}", json=update_body
+            f"/api/v2/requests/{request_uuid}", json=update_body
         )
         assert update_response.status_code == 200
 
@@ -856,9 +856,9 @@ class TestRequestsWithMessageArchive:
         body = _create_request_jsonapi_body(request_data)
         create_response = await auth_client.post("/api/v2/requests", json=body)
         assert create_response.status_code == 201
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        request_uuid = create_response.json()["data"]["id"]
 
-        get_response = await auth_client.get(f"/api/v2/requests/{request_id}")
+        get_response = await auth_client.get(f"/api/v2/requests/{request_uuid}")
         assert get_response.status_code == 200
 
         data = get_response.json()
@@ -943,8 +943,9 @@ class TestRequestsViaAPI:
 
         response = await auth_client.post("/api/v2/requests", json=request_body)
         assert response.status_code == 201
+        request_uuid = response.json()["data"]["id"]
 
-        get_response = await auth_client.get("/api/v2/requests/api_req_1")
+        get_response = await auth_client.get(f"/api/v2/requests/{request_uuid}")
         assert get_response.status_code == 200
 
         data = get_response.json()
