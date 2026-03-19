@@ -18,8 +18,6 @@ from src.config import get_settings
 _otel_settings = get_settings()
 
 if _otel_settings.ENABLE_TRACING and not _otel_settings.TESTING:
-    from opentelemetry.instrumentation.logging import LoggingInstrumentor
-
     from src.monitoring.otel import setup_otel
 
     setup_otel(
@@ -34,8 +32,6 @@ if _otel_settings.ENABLE_TRACING and not _otel_settings.TESTING:
         use_gcp_exporters=_otel_settings.USE_GCP_EXPORTERS,
         skip_batch_export=_otel_settings.TRACELOOP_ENABLED,
     )
-
-    LoggingInstrumentor().instrument(set_logging_format=False)
 
 from src.batch_jobs.router import router as batch_jobs_router
 from src.bulk_content_scan.jsonapi_router import router as bulk_content_scan_jsonapi_router
