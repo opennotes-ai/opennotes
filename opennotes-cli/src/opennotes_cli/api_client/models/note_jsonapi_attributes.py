@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Mapping
 from typing import Any, TypeVar, cast
+from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
@@ -30,7 +31,7 @@ class NoteJSONAPIAttributes:
         force_published (bool | Unset):  Default: False.
         created_at (datetime.datetime | None | Unset):
         updated_at (datetime.datetime | None | Unset):
-        request_id (None | str | Unset):
+        request_id (None | Unset | UUID):
         platform_message_id (None | str | Unset):
         force_published_at (datetime.datetime | None | Unset):
         ratings_count (int | Unset):  Default: 0.
@@ -49,7 +50,7 @@ class NoteJSONAPIAttributes:
     force_published: bool | Unset = False
     created_at: datetime.datetime | None | Unset = UNSET
     updated_at: datetime.datetime | None | Unset = UNSET
-    request_id: None | str | Unset = UNSET
+    request_id: None | Unset | UUID = UNSET
     platform_message_id: None | str | Unset = UNSET
     force_published_at: datetime.datetime | None | Unset = UNSET
     ratings_count: int | Unset = 0
@@ -108,6 +109,8 @@ class NoteJSONAPIAttributes:
         request_id: None | str | Unset
         if isinstance(self.request_id, Unset):
             request_id = UNSET
+        elif isinstance(self.request_id, UUID):
+            request_id = str(self.request_id)
         else:
             request_id = self.request_id
 
@@ -251,12 +254,20 @@ class NoteJSONAPIAttributes:
 
         updated_at = _parse_updated_at(d.pop("updated_at", UNSET))
 
-        def _parse_request_id(data: object) -> None | str | Unset:
+        def _parse_request_id(data: object) -> None | Unset | UUID:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
-            return cast(None | str | Unset, data)
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                request_id_type_0 = UUID(data)
+
+                return request_id_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | Unset | UUID, data)
 
         request_id = _parse_request_id(d.pop("request_id", UNSET))
 

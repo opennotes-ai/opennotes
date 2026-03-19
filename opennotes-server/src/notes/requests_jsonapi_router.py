@@ -430,7 +430,7 @@ async def list_requests_jsonapi(
     "/requests/{request_id}", response_class=JSONResponse, response_model=RequestSingleResponse
 )
 async def get_request_jsonapi(
-    request_id: str,
+    request_id: UUID,
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
@@ -444,7 +444,7 @@ async def get_request_jsonapi(
         result = await db.execute(
             select(Request)
             .options(*loaders.request_with_archive())
-            .where(Request.request_id == request_id, Request.deleted_at.is_(None))
+            .where(Request.id == request_id, Request.deleted_at.is_(None))
         )
         note_request = result.scalar_one_or_none()
 
@@ -593,7 +593,7 @@ async def create_request_jsonapi(
         request_resource = request_to_resource(note_request)
         response = RequestSingleResponse(
             data=request_resource,
-            links=JSONAPILinks(self_=f"{str(request.url).rstrip('/')}/{note_request.request_id}"),
+            links=JSONAPILinks(self_=f"{str(request.url).rstrip('/')}/{note_request.id!s}"),
         )
 
         return JSONResponse(
@@ -618,7 +618,7 @@ async def create_request_jsonapi(
     "/requests/{request_id}", response_class=JSONResponse, response_model=RequestSingleResponse
 )
 async def update_request_jsonapi(
-    request_id: str,
+    request_id: UUID,
     request: HTTPRequest,
     body: RequestUpdateRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -636,7 +636,7 @@ async def update_request_jsonapi(
     Returns JSON:API formatted response with data and jsonapi keys.
     """
     try:
-        if body.data.id != request_id:
+        if body.data.id != str(request_id):
             return create_error_response(
                 status.HTTP_409_CONFLICT,
                 "Conflict",
@@ -689,7 +689,7 @@ async def update_request_jsonapi(
 )
 @limiter.limit("5/minute;20/hour")
 async def generate_ai_note_jsonapi(  # noqa: PLR0911
-    request_id: str,
+    request_id: UUID,
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
@@ -712,7 +712,7 @@ async def generate_ai_note_jsonapi(  # noqa: PLR0911
         logger.info(
             f"Generating AI note for request {request_id} (JSON:API)",
             extra={
-                "request_id": request_id,
+                "request_id": str(request_id),
                 "user_id": current_user.id,
             },
         )
@@ -730,7 +730,7 @@ async def generate_ai_note_jsonapi(  # noqa: PLR0911
             f"Successfully generated AI note {note.id} for request {request_id} (JSON:API)",
             extra={
                 "note_id": note.id,
-                "request_id": request_id,
+                "request_id": str(request_id),
                 "user_id": current_user.id,
             },
         )
@@ -751,7 +751,7 @@ async def generate_ai_note_jsonapi(  # noqa: PLR0911
         logger.warning(
             f"Validation error generating AI note (JSON:API): {e}",
             extra={
-                "request_id": request_id,
+                "request_id": str(request_id),
                 "error": str(e),
             },
         )
@@ -766,7 +766,7 @@ async def generate_ai_note_jsonapi(  # noqa: PLR0911
         logger.error(
             f"OpenAI authentication failed for request {request_id} (JSON:API): {e}",
             extra={
-                "request_id": request_id,
+                "request_id": str(request_id),
                 "user_id": current_user.id,
             },
         )
@@ -779,7 +779,7 @@ async def generate_ai_note_jsonapi(  # noqa: PLR0911
         logger.warning(
             f"OpenAI rate limit exceeded for request {request_id} (JSON:API): {e}",
             extra={
-                "request_id": request_id,
+                "request_id": str(request_id),
                 "user_id": current_user.id,
             },
         )
@@ -792,7 +792,7 @@ async def generate_ai_note_jsonapi(  # noqa: PLR0911
         logger.error(
             f"OpenAI connection failed for request {request_id} (JSON:API): {e}",
             extra={
-                "request_id": request_id,
+                "request_id": str(request_id),
                 "user_id": current_user.id,
             },
         )
@@ -805,7 +805,7 @@ async def generate_ai_note_jsonapi(  # noqa: PLR0911
         logger.error(
             f"OpenAI API error for request {request_id} (JSON:API): {e}",
             extra={
-                "request_id": request_id,
+                "request_id": str(request_id),
                 "user_id": current_user.id,
             },
         )
@@ -818,7 +818,7 @@ async def generate_ai_note_jsonapi(  # noqa: PLR0911
         logger.exception(
             f"Failed to generate AI note for request {request_id} (JSON:API): {e}",
             extra={
-                "request_id": request_id,
+                "request_id": str(request_id),
                 "user_id": current_user.id,
             },
         )

@@ -285,9 +285,11 @@ class TestJSONAPIRequestsEndpoint:
             "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        created_data = create_response.json()["data"]
+        resource_id = created_data["id"]
+        request_id = created_data["attributes"]["request_id"]
 
-        response = await requests_jsonapi_auth_client.get(f"/api/v2/requests/{request_id}")
+        response = await requests_jsonapi_auth_client.get(f"/api/v2/requests/{resource_id}")
         assert response.status_code == 200
 
         data = response.json()
@@ -387,7 +389,7 @@ class TestJSONAPIRequestsEndpoint:
     @pytest.mark.asyncio
     async def test_request_not_found_jsonapi_error(self, requests_jsonapi_auth_client):
         """Test that 404 errors are returned in JSON:API error format."""
-        fake_id = f"nonexistent_request_{uuid4().hex}"
+        fake_id = str(uuid4())
         response = await requests_jsonapi_auth_client.get(f"/api/v2/requests/{fake_id}")
         assert response.status_code == 404
 
@@ -504,13 +506,14 @@ class TestRequestsWriteOperations:
         )
         assert create_response.status_code == 201
         created_request = create_response.json()
+        resource_id = created_request["data"]["id"]
         request_id = created_request["data"]["attributes"]["request_id"]
 
         updated_status = "IN_PROGRESS"
         request_body = {
             "data": {
                 "type": "requests",
-                "id": request_id,
+                "id": resource_id,
                 "attributes": {
                     "status": updated_status,
                 },
@@ -518,7 +521,7 @@ class TestRequestsWriteOperations:
         }
 
         response = await requests_jsonapi_auth_client.patch(
-            f"/api/v2/requests/{request_id}", json=request_body
+            f"/api/v2/requests/{resource_id}", json=request_body
         )
 
         assert response.status_code == 200, (
@@ -545,7 +548,7 @@ class TestRequestsWriteOperations:
             "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        resource_id = create_response.json()["data"]["id"]
 
         request_body = {
             "data": {
@@ -558,7 +561,7 @@ class TestRequestsWriteOperations:
         }
 
         response = await requests_jsonapi_auth_client.patch(
-            f"/api/v2/requests/{request_id}", json=request_body
+            f"/api/v2/requests/{resource_id}", json=request_body
         )
 
         assert response.status_code == 409, f"Expected 409, got {response.status_code}"

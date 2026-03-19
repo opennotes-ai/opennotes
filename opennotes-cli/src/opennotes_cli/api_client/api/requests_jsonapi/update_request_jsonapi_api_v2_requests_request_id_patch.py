@@ -1,6 +1,7 @@
 from http import HTTPStatus
 from typing import Any, cast
 from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 
@@ -13,7 +14,7 @@ from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
-    request_id: str,
+    request_id: UUID,
     *,
     body: RequestUpdateRequest,
     x_api_key: None | str | Unset = UNSET,
@@ -72,7 +73,7 @@ def _build_response(
 
 
 def sync_detailed(
-    request_id: str,
+    request_id: UUID,
     *,
     client: AuthenticatedClient,
     body: RequestUpdateRequest,
@@ -91,7 +92,7 @@ def sync_detailed(
     Returns JSON:API formatted response with data and jsonapi keys.
 
     Args:
-        request_id (str):
+        request_id (UUID):
         x_api_key (None | str | Unset):
         body (RequestUpdateRequest): JSON:API request body for updating a request.
 
@@ -117,7 +118,7 @@ def sync_detailed(
 
 
 def sync(
-    request_id: str,
+    request_id: UUID,
     *,
     client: AuthenticatedClient,
     body: RequestUpdateRequest,
@@ -136,7 +137,7 @@ def sync(
     Returns JSON:API formatted response with data and jsonapi keys.
 
     Args:
-        request_id (str):
+        request_id (UUID):
         x_api_key (None | str | Unset):
         body (RequestUpdateRequest): JSON:API request body for updating a request.
 
@@ -157,7 +158,7 @@ def sync(
 
 
 async def asyncio_detailed(
-    request_id: str,
+    request_id: UUID,
     *,
     client: AuthenticatedClient,
     body: RequestUpdateRequest,
@@ -176,7 +177,7 @@ async def asyncio_detailed(
     Returns JSON:API formatted response with data and jsonapi keys.
 
     Args:
-        request_id (str):
+        request_id (UUID):
         x_api_key (None | str | Unset):
         body (RequestUpdateRequest): JSON:API request body for updating a request.
 
@@ -200,7 +201,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    request_id: str,
+    request_id: UUID,
     *,
     client: AuthenticatedClient,
     body: RequestUpdateRequest,
@@ -219,7 +220,7 @@ async def asyncio(
     Returns JSON:API formatted response with data and jsonapi keys.
 
     Args:
-        request_id (str):
+        request_id (UUID):
         x_api_key (None | str | Unset):
         body (RequestUpdateRequest): JSON:API request body for updating a request.
 
