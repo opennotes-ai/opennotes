@@ -252,7 +252,7 @@ class AINoteWriter:
         return bool(settings.AI_NOTE_WRITING_ENABLED)
 
     async def _get_image_description(
-        self, db: AsyncSession, request: Request, request_id: str
+        self, db: AsyncSession, request: Request, request_id: UUID
     ) -> str | None:
         """
         Get image description for a request, generating synchronously if needed.
