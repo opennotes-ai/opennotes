@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
 from litellm.exceptions import BadRequestError
 
@@ -501,6 +502,7 @@ def _make_bad_request_error(message: str = "invalid JSON") -> BadRequestError:
         message=message,
         model="openai/text-embedding-3-small",
         llm_provider="openai",
+        response=httpx.Response(status_code=400),
     )
 
 

@@ -24,6 +24,7 @@ from tenacity import (
     AsyncRetrying,
     retry,
     retry_if_exception_type,
+    retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
@@ -45,6 +46,10 @@ TRANSIENT_EXCEPTIONS = (
     ConnectionError,
     TimeoutError,
     EmptyLLMResponseError,
+)
+
+_RETRY_PREDICATE = retry_if_exception_type(TRANSIENT_EXCEPTIONS) & retry_if_not_exception_type(
+    BadRequestError
 )
 
 logger = get_logger(__name__)
@@ -85,7 +90,7 @@ class LLMService:
         return cleaned
 
     @retry(
-        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+        retry=_RETRY_PREDICATE,
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(2),
         reraise=True,
@@ -260,7 +265,7 @@ class LLMService:
             raise ValueError(f"retry_attempts must be >= 1, got {max_attempts}")
 
         async for attempt in AsyncRetrying(
-            retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+            retry=_RETRY_PREDICATE,
             wait=wait_exponential(multiplier=1, min=1, max=60),
             stop=stop_after_attempt(max_attempts),
             reraise=True,
@@ -336,7 +341,7 @@ class LLMService:
         raise RuntimeError("Embedding generation failed unexpectedly after retries")
 
     @retry(
-        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+        retry=_RETRY_PREDICATE,
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(5),
         reraise=True,
@@ -442,7 +447,7 @@ class LLMService:
         return results
 
     @retry(
-        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+        retry=_RETRY_PREDICATE,
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(5),
         reraise=True,
