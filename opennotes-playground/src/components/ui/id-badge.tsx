@@ -12,7 +12,7 @@ export default function IdBadge(props: IdBadgeProps) {
   return (
     <Tooltip>
       <Tooltip.Trigger as="span" class="inline-flex align-middle">
-        <Badge variant={props.variant ?? "muted"} class={props.class}>
+        <Badge variant={props.variant ?? "muted"} class={`text-[0.8125rem] ${props.class ?? ""}`}>
           {formatIdBadgeLabel(props.idValue)}
         </Badge>
       </Tooltip.Trigger>

@@ -3,7 +3,7 @@ import type { VariantProps } from "cva";
 import { cva } from "~/lib/cva";
 
 export const badgeVariants = cva({
-  base: "inline-flex items-center rounded-md px-[0.5em] py-[0.15em] text-[clamp(0.6875rem,0.65em,0.875rem)] font-semibold transition-colors",
+  base: "inline-flex items-center rounded-md px-[0.55em] py-[0.175em] text-[clamp(0.75rem,0.72em,0.9375rem)] font-semibold transition-colors",
   variants: {
     variant: {
       default: "bg-primary/15 text-primary dark:bg-primary/25",
