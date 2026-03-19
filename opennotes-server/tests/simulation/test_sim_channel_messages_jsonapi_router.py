@@ -1,5 +1,9 @@
+from uuid import uuid4
+
+import pendulum
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from src.main import app
 
@@ -161,3 +165,88 @@ class TestChannelMessagesHasMore:
         body = response.json()
         assert len(body["data"]) == 3
         assert body["meta"]["has_more"] is False
+
+
+class TestChannelMessagesScopedKey:
+    @pytest.fixture
+    async def service_account_scoped_client(self):
+        from src.auth.models import APIKeyCreate
+        from src.database import get_session_maker
+        from src.users.crud import create_api_key
+        from src.users.models import User
+
+        unique = uuid4().hex[:8]
+        async with get_session_maker()() as session:
+            user = User(
+                username=f"svc_{unique}",
+                email=f"svc_{unique}@example.com",
+                hashed_password="unused-placeholder",
+                is_active=True,
+                is_service_account=True,
+            )
+            session.add(user)
+            await session.flush()
+
+            _, raw_key = await create_api_key(
+                db=session,
+                user_id=user.id,
+                api_key_create=APIKeyCreate(
+                    name="scoped-sim-key",
+                    expires_in_days=30,
+                    scopes=["simulations:read"],
+                ),
+            )
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.headers.update({"X-API-Key": raw_key})
+            yield client
+
+    @pytest.mark.asyncio
+    async def test_scoped_key_private_sim_returns_404(
+        self,
+        service_account_scoped_client,
+        simulation_run_factory,
+    ):
+        sim = await simulation_run_factory(status_val="running")
+
+        response = await service_account_scoped_client.get(
+            f"{BASE_URL}/{sim['id']}/channel-messages"
+        )
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_deleted_simulation_returns_404(
+        self,
+        admin_auth_client,
+        simulation_run_factory,
+    ):
+        from src.database import get_session_maker
+        from src.simulation.models import SimulationRun
+
+        sim = await simulation_run_factory(status_val="running")
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun).where(SimulationRun.id == sim["id"])
+            )
+            run = result.scalar_one()
+            run.deleted_at = pendulum.now("UTC")
+            await session.commit()
+
+        response = await admin_auth_client.get(f"{BASE_URL}/{sim['id']}/channel-messages")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_simulation_returns_404(
+        self,
+        admin_auth_client,
+    ):
+        random_id = uuid4()
+
+        response = await admin_auth_client.get(f"{BASE_URL}/{random_id}/channel-messages")
+
+        assert response.status_code == 404

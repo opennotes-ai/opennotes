@@ -14,7 +14,7 @@ from src.common.jsonapi import JSONAPI_CONTENT_TYPE
 from src.common.jsonapi import create_error_response as create_error_response_model
 from src.database import get_db
 from src.monitoring import get_logger
-from src.simulation.models import SimAgent, SimAgentInstance, SimChannelMessage
+from src.simulation.models import SimAgent, SimAgentInstance, SimChannelMessage, SimulationRun
 from src.simulation.schemas import (
     SimChannelMessageAttributes,
     SimChannelMessageListMeta,
@@ -58,9 +58,24 @@ async def list_channel_messages(
     page_size: int = Query(20, ge=1, le=100, alias="page[size]"),
     before: UUID | None = Query(None),
 ) -> JSONResponse:
-    require_scope_or_admin(current_user, request, "simulations:read")
+    scoped = require_scope_or_admin(current_user, request, "simulations:read")
 
     try:
+        sim_query = select(SimulationRun.id).where(
+            SimulationRun.id == simulation_id,
+            SimulationRun.deleted_at.is_(None),
+        )
+        if scoped:
+            sim_query = sim_query.where(SimulationRun.is_public == True)
+
+        sim_exists = await db.execute(sim_query)
+        if sim_exists.scalar_one_or_none() is None:
+            return _create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"SimulationRun {simulation_id} not found",
+            )
+
         filters = [SimChannelMessage.simulation_run_id == simulation_id]
         if before is not None:
             filters.append(SimChannelMessage.id < before)

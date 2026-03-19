@@ -14,6 +14,7 @@ export function SimChannelMessages(props: { simulationId: string }) {
   const [messages, setMessages] = createSignal<SimChannelMessageResource[]>([]);
   const [hasMore, setHasMore] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
+  const [loadMoreError, setLoadMoreError] = createSignal(false);
   let containerRef: HTMLDivElement | undefined;
 
   const initial = createAsync(() => fetchChannelMessages(props.simulationId));
@@ -33,6 +34,7 @@ export function SimChannelMessages(props: { simulationId: string }) {
     const msgs = messages();
     if (msgs.length === 0 || loading()) return;
     setLoading(true);
+    setLoadMoreError(false);
     const oldestId = msgs[0].id;
     const oldScrollHeight = containerRef?.scrollHeight ?? 0;
 
@@ -47,6 +49,8 @@ export function SimChannelMessages(props: { simulationId: string }) {
           }
         });
       }
+    } catch {
+      setLoadMoreError(true);
     } finally {
       setLoading(false);
     }
@@ -59,7 +63,7 @@ export function SimChannelMessages(props: { simulationId: string }) {
       role="log"
       aria-label="SIM channel messages"
     >
-      <Show when={!initial()}>
+      <Show when={initial() === undefined}>
         <div class="space-y-4 p-4">
           <For each={Array(5)}>
             {() => (
@@ -72,6 +76,12 @@ export function SimChannelMessages(props: { simulationId: string }) {
               </div>
             )}
           </For>
+        </div>
+      </Show>
+
+      <Show when={initial() === null}>
+        <div class="flex h-full items-center justify-center">
+          <p class="text-sm text-destructive">Failed to load messages</p>
         </div>
       </Show>
 
@@ -94,6 +104,10 @@ export function SimChannelMessages(props: { simulationId: string }) {
                 {loading() ? "Loading..." : "Load older messages"}
               </Button>
             </div>
+          </Show>
+
+          <Show when={loadMoreError()}>
+            <p class="text-center text-xs text-destructive">Failed to load older messages</p>
           </Show>
 
           <div class="space-y-3">
