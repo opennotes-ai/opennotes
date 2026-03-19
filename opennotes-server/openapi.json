@@ -12615,6 +12615,11 @@
             "type": "string",
             "title": "State"
           },
+          "display_model": {
+            "type": "string",
+            "title": "Display Model",
+            "default": ""
+          },
           "helpfulness_trend": {
             "items": {
               "type": "string"
