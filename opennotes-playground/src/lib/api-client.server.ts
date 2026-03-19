@@ -11,6 +11,8 @@ export type AnalysisResponse = components["schemas"]["AnalysisResponse"];
 export type DetailedAnalysisResponse =
   components["schemas"]["DetailedAnalysisResponse"];
 export type ResultsListResponse = components["schemas"]["ResultsListResponse"];
+export type SimChannelMessageListResponse =
+  components["schemas"]["SimChannelMessageListResponse"];
 
 const FETCH_TIMEOUT_MS = 10_000;
 const IDENTITY_TOKEN_MAX_RETRIES = 3;
@@ -199,5 +201,28 @@ export async function getSimulationResults(
     },
   );
   if (error) throw new PlaygroundApiError(`Failed to get simulation results ${id}: ${JSON.stringify(error)}`, response.status);
+  return data;
+}
+
+export async function getSimulationChannelMessages(
+  id: string,
+  pageSize = 20,
+  before?: string,
+) {
+  const client = getClient();
+  const query: Record<string, unknown> = { "page[size]": pageSize };
+  if (before) {
+    query.before = before;
+  }
+  const { data, error, response } = await client.GET(
+    "/api/v2/simulations/{simulation_id}/channel-messages",
+    {
+      params: {
+        path: { simulation_id: id },
+        query: query as { "page[size]"?: number; before?: string },
+      },
+    },
+  );
+  if (error) throw new PlaygroundApiError(`Failed to get channel messages ${id}: ${JSON.stringify(error)}`, response.status);
   return data;
 }

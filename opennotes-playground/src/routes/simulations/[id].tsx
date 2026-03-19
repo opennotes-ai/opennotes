@@ -6,6 +6,7 @@ import {
   getSimulationAnalysis,
   getSimulationDetailedAnalysis,
   getSimulationTimeline,
+  getSimulationChannelMessages,
 } from "~/lib/api-client.server";
 import { createClient } from "~/lib/supabase-server";
 import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
@@ -121,6 +122,18 @@ const fetchTimeline = query(async (id: string) => {
     return null;
   }
 }, "timeline");
+
+const fetchChannelMessages = query(async (id: string, before?: string) => {
+  "use server";
+  try {
+    return await getSimulationChannelMessages(id, 20, before);
+  } catch (error) {
+    console.error("Failed to fetch channel messages:", error);
+    return null;
+  }
+}, "channel-messages");
+
+export { fetchChannelMessages };
 
 function isError(result: unknown): result is SimulationError {
   return result != null && typeof result === "object" && "_error" in result;
