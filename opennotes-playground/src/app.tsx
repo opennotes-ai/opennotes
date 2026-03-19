@@ -4,6 +4,7 @@ import { FileRoutes } from "@solidjs/start/router";
 import { ErrorBoundary, Suspense } from "solid-js";
 import { MetaProvider } from "@solidjs/meta";
 import AuthStatus from "~/components/AuthStatus";
+import FontToggle from "~/components/FontToggle";
 import ModeToggle from "~/components/ModeToggle";
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
             </A>
             <span class="ml-auto flex items-center gap-2">
               <AuthStatus />
+              <FontToggle />
               <ModeToggle />
             </span>
           </nav>

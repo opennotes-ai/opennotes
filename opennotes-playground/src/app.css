@@ -98,3 +98,16 @@
     @apply bg-background text-foreground;
   }
 }
+
+.blog-serif .prose {
+  font-family: var(--font-serif);
+}
+
+@keyframes anchor-fade {
+  from { background-color: oklch(0.65 0.15 165 / 0.15); }
+  to { background-color: transparent; }
+}
+
+.anchor-highlight {
+  animation: anchor-fade 2s ease-out;
+}
