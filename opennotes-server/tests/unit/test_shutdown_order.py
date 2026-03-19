@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.main import _shutdown_services
+from src.utils.async_compat import reset as reset_bg_loop
 
 
 def _build_mock_app():
@@ -38,6 +39,12 @@ def _build_patches(call_order):
 
 
 class TestShutdownOrder:
+    def setup_method(self):
+        reset_bg_loop()
+
+    def teardown_method(self):
+        reset_bg_loop()
+
     @pytest.mark.asyncio
     async def test_shutdown_order_full_server(self):
         call_order: list[str] = []

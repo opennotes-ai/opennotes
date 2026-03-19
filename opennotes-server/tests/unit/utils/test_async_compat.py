@@ -12,6 +12,7 @@ import pytest
 from src.utils.async_compat import (
     _bg_state,
     _ensure_background_loop,
+    reset,
     run_sync,
     shutdown,
 )
@@ -192,10 +193,17 @@ class TestRunSync:
 
 
 class TestEnsureBackgroundLoopDoubleCheck:
+    def setup_method(self) -> None:
+        reset()
+
+    def teardown_method(self) -> None:
+        reset()
+
     def test_inner_lock_fast_path_when_another_thread_fixed_it(self) -> None:
         from unittest.mock import patch
 
         shutdown()
+        _bg_state["shutting_down"] = False
 
         healthy_loop = asyncio.new_event_loop()
         healthy_thread = threading.Thread(
@@ -232,10 +240,14 @@ class TestEnsureBackgroundLoopDoubleCheck:
         if not healthy_loop.is_closed():
             healthy_loop.close()
 
-        shutdown()
-
 
 class TestShutdownLocking:
+    def setup_method(self) -> None:
+        reset()
+
+    def teardown_method(self) -> None:
+        reset()
+
     def test_shutdown_acquires_bg_lock(self) -> None:
         async def noop() -> None:
             pass
@@ -255,6 +267,12 @@ class TestShutdownLocking:
 
 
 class TestRunSyncTimeout:
+    def setup_method(self) -> None:
+        reset()
+
+    def teardown_method(self) -> None:
+        reset()
+
     def test_run_sync_cancels_future_on_timeout(self) -> None:
         async def slow_coro() -> str:
             await asyncio.sleep(60)
@@ -276,6 +294,12 @@ class TestRunSyncTimeout:
 
 
 class TestEnsureBackgroundLoopDeadThread:
+    def setup_method(self) -> None:
+        reset()
+
+    def teardown_method(self) -> None:
+        reset()
+
     def test_ensure_background_loop_detects_dead_thread(self) -> None:
         async def noop() -> None:
             pass
@@ -303,10 +327,16 @@ class TestEnsureBackgroundLoopDeadThread:
         assert new_thread is not None
         assert new_thread.is_alive()
 
-        shutdown()
+        reset()
 
 
 class TestRunSyncReentrancy:
+    def setup_method(self) -> None:
+        reset()
+
+    def teardown_method(self) -> None:
+        reset()
+
     def test_run_sync_detects_reentrancy(self) -> None:
         bg_loop = _ensure_background_loop()
 
@@ -320,5 +350,3 @@ class TestRunSyncReentrancy:
 
         with pytest.raises(RuntimeError, match="deadlock"):
             future.result(timeout=5)
-
-        shutdown()
