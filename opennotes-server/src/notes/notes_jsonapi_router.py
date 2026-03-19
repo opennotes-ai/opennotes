@@ -84,7 +84,7 @@ class NoteCreateAttributes(StrictInputSchema):
     community_server_id: UUID = Field(..., description="Community server ID")
     author_id: UUID = Field(..., description="Author's user profile ID")
     channel_id: str | None = Field(None, description="Discord channel ID")
-    request_id: str | None = Field(None, description="Request ID this note responds to")
+    request_id: UUID | None = Field(None, description="Request ID this note responds to")
 
 
 class NoteCreateData(BaseModel):
@@ -211,7 +211,7 @@ def create_error_response(
 
 
 _platform_message_id_joins = [
-    JoinSpec(target=Request, onclause=Note.request_id == Request.request_id),
+    JoinSpec(target=Request, onclause=Note.request_id == Request.id),
     JoinSpec(target=MessageArchive, onclause=Request.message_archive_id == MessageArchive.id),
 ]
 
@@ -265,7 +265,7 @@ async def list_notes_jsonapi(
     filter_classification: NoteClassification | None = Query(None, alias="filter[classification]"),
     filter_community_server_id: UUID | None = Query(None, alias="filter[community_server_id]"),
     filter_author_id: str | None = Query(None, alias="filter[author_id]"),
-    filter_request_id: str | None = Query(None, alias="filter[request_id]"),
+    filter_request_id: UUID | None = Query(None, alias="filter[request_id]"),
     filter_created_at_gte: datetime | None = Query(None, alias="filter[created_at__gte]"),
     filter_created_at_lte: datetime | None = Query(None, alias="filter[created_at__lte]"),
     filter_rated_by_not_in: str | None = Query(None, alias="filter[rater_id__not_in]"),
@@ -498,7 +498,7 @@ async def create_note_jsonapi(
         if note_dict.get("request_id"):
             request_result = await db.execute(
                 select(Request).where(
-                    Request.request_id == note_dict["request_id"],
+                    Request.id == note_dict["request_id"],
                     Request.deleted_at.is_(None),
                 )
             )
@@ -711,9 +711,7 @@ async def force_publish_note_jsonapi(
 
         if note.request_id:
             request_result = await db.execute(
-                select(Request).where(
-                    Request.request_id == note.request_id, Request.deleted_at.is_(None)
-                )
+                select(Request).where(Request.id == note.request_id, Request.deleted_at.is_(None))
             )
             associated_request = request_result.scalar_one_or_none()
             if associated_request:

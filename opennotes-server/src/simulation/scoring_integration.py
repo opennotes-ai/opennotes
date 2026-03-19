@@ -554,7 +554,7 @@ async def score_community_server_notes(  # noqa: PLR0912
     helpful_note_for_request = (
         select(Note.id)
         .where(
-            Note.request_id == Request.request_id,
+            Note.request_id == Request.id,
             Note.community_server_id == community_server_id,
             Note.status == "CURRENTLY_RATED_HELPFUL",
             Note.deleted_at.is_(None),
@@ -730,7 +730,7 @@ async def trigger_scoring_for_simulation(
     helpful_note_for_request = (
         select(Note.id)
         .where(
-            Note.request_id == Request.request_id,
+            Note.request_id == Request.id,
             Note.community_server_id == community_server_id,
             Note.status == "CURRENTLY_RATED_HELPFUL",
             Note.deleted_at.is_(None),
