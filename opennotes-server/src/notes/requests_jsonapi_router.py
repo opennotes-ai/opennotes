@@ -193,6 +193,7 @@ class RequestAttributes(SQLAlchemySchema):
     updated_at: datetime | None = None
     content: str | None = None
     platform_message_id: str | None = None
+    platform_channel_id: str | None = None
     metadata: dict[str, Any] | None = None
     similarity_score: float | None = None
     dataset_name: str | None = None
@@ -240,6 +241,9 @@ def request_to_resource(req: Request) -> RequestResource:
             updated_at=req.updated_at,
             content=req.content,
             platform_message_id=req.message_archive.platform_message_id
+            if req.message_archive
+            else None,
+            platform_channel_id=req.message_archive.platform_channel_id
             if req.message_archive
             else None,
             metadata=req.request_metadata,

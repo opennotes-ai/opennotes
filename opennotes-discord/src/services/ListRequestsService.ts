@@ -51,6 +51,7 @@ export class ListRequestsService {
           created_at: resource.attributes.created_at ?? new Date().toISOString(),
           updated_at: resource.attributes.updated_at ?? undefined,
           platform_message_id: resource.attributes.platform_message_id ?? undefined,
+          platform_channel_id: resource.attributes.platform_channel_id ?? undefined,
           content: resource.attributes.content ?? undefined,
           community_server_id: resource.attributes.community_server_id ?? undefined,
           metadata: resource.attributes.metadata ?? undefined,

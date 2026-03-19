@@ -83,6 +83,7 @@ export interface RequestItem {
   created_at: string;
   updated_at?: string | null;
   platform_message_id?: string | null;
+  platform_channel_id?: string | null;
   content?: string | null;
   community_server_id?: string | null;
   metadata?: Record<string, unknown> | null;
