@@ -21,6 +21,7 @@ import { generateShortId } from '../lib/validation.js';
 import { logger } from '../logger.js';
 import { storeViewFullContent } from '../lib/view-full-cache.js';
 import { extractPlatformMessageId } from '../lib/discord-utils.js';
+import { formatIdDisplay } from '../lib/proquint.js';
 import {
   V2_COLORS,
   V2_ICONS,
@@ -202,7 +203,7 @@ export class DiscordFormatter {
     const metadataLines = [
       `**Message ID:** ${messageIdDisplay}`,
       `**Author:** <@${attrs.author_id}>`,
-      `**Note ID:** ${noteId}`,
+      `**Note ID:** ${formatIdDisplay(noteId)}`,
     ];
 
     const container = createContainer(V2_COLORS.HELPFUL)
@@ -255,7 +256,7 @@ export class DiscordFormatter {
       container.addSeparatorComponents(createSmallSeparator());
 
       const noteLines = [
-        `**Note #${note.id}**`,
+        `**Note #${formatIdDisplay(note.id)}**`,
         note.attributes.summary,
         '',
         `**Author:** <@${note.attributes.author_id}>`,
@@ -365,7 +366,7 @@ export class DiscordFormatter {
       .addSeparatorComponents(createDivider())
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent([
-          `**Note ID:** ${noteId}`,
+          `**Note ID:** ${formatIdDisplay(noteId)}`,
           `**Score:** ${formattedScore} (0.0-1.0)`,
           `**Confidence:** ${confidenceEmoji} ${confidenceLabel}`,
           `**Rating Count:** ${scoreData.rating_count}`,
@@ -404,7 +405,7 @@ export class DiscordFormatter {
       .addSeparatorComponents(createDivider())
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent([
-          `**Note ID:** ${noteId}`,
+          `**Note ID:** ${formatIdDisplay(noteId)}`,
           `**Rated by:** <@${result.rating.data.attributes.rater_id}>`,
         ].join('\n'))
       );
@@ -575,7 +576,7 @@ export class DiscordFormatter {
 
   static async formatListRequestsSuccessV2(
     result: ListRequestsResult,
-    options?: { status?: string; myRequestsOnly?: boolean; communityServerId?: string }
+    options?: { status?: string; myRequestsOnly?: boolean; communityServerId?: string; guildId?: string }
   ): Promise<{
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -622,20 +623,26 @@ export class DiscordFormatter {
 
       const timestamp = Math.floor(new Date(request.requested_at).getTime() / 1000);
       const requestedBy = `<@${request.requested_by}>`;
-      const noteInfo = request.note_id ? `Note: ${request.note_id}` : 'No note yet';
+      const noteInfo = request.note_id ? `Note: ${formatIdDisplay(request.note_id)}` : 'No note yet';
       const effectiveMessageId = extractPlatformMessageId(request.platform_message_id ?? null, request.request_id);
-      const messageIdDisplay = effectiveMessageId || 'No message ID';
 
       container.addSeparatorComponents(createDivider());
 
       const fieldLines = [
         `${statusEmoji} **${request.request_id}**`,
-        `**Message:** ${messageIdDisplay}`,
+      ];
+
+      if (effectiveMessageId && request.platform_channel_id && options?.guildId) {
+        const jumpUrl = `https://discord.com/channels/${options.guildId}/${request.platform_channel_id}/${effectiveMessageId}`;
+        fieldLines.push(`[View Original Message](${jumpUrl})`);
+      }
+
+      fieldLines.push(
         `**Status:** ${request.status}`,
         `**Requester:** ${requestedBy}`,
         `**Requested:** <t:${timestamp}:R>`,
         `**${noteInfo}**`,
-      ];
+      );
 
       await this.addRequestPreviewComponent(container, fieldLines, request);
 

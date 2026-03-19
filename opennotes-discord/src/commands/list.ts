@@ -525,6 +525,7 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       status: status || undefined,
       myRequestsOnly,
       communityServerId: communityServerUuid,
+      guildId: guildId || undefined,
     });
 
     await interaction.editReply({
@@ -1223,6 +1224,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
         status: undefined,
         myRequestsOnly: false,
         communityServerId: communityServerUuid,
+        guildId: guildId || undefined,
       });
 
       await interaction.editReply({
@@ -1649,6 +1651,7 @@ export async function handleRequestQueuePageButton(interaction: ButtonInteractio
       status: filterState.status,
       myRequestsOnly: filterState.myRequestsOnly,
       communityServerId: filterState.communityServerId,
+      guildId: interaction.guildId || undefined,
     });
 
     await interaction.editReply({
