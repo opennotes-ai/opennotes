@@ -24,6 +24,7 @@ from src.simulation.agent import (
     build_action_selector_instructions,
     build_instructions,
     estimate_tokens,
+    list_requests,
     pass_turn,
     rate_notes,
     sim_agent,
@@ -130,8 +131,8 @@ class TestToolsRegistered:
     def test_pass_turn_tool_registered(self):
         assert "pass_turn" in self._get_tool_names()
 
-    def test_five_tools_total(self):
-        assert len(sim_agent._function_toolset.tools) == 5
+    def test_six_tools_total(self):
+        assert len(sim_agent._function_toolset.tools) == 6
 
 
 class TestWriteNoteTool:
@@ -1402,3 +1403,122 @@ class TestAgentRetryConfiguration:
 
     def test_action_selector_has_retries_3(self):
         assert action_selector._max_result_retries == 3
+
+
+class TestListRequestsTool:
+    @staticmethod
+    def _make_mock_request(*, req_id=None, request_id="prov-str", content="Test", status="PENDING"):
+        req = MagicMock()
+        req.id = req_id or uuid4()
+        req.request_id = request_id
+        req.content = content
+        req.status = status
+        return req
+
+    @pytest.mark.asyncio
+    async def test_list_requests_returns_pending_requests(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        req = self._make_mock_request(content="Is the earth flat?")
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req, 2)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx)
+
+        assert "1 PENDING request(s)" in result
+        assert str(req.id) in result
+        assert "Is the earth flat?" in result
+        assert "Notes: 2" in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_no_results(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx)
+
+        assert "No PENDING requests found" in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_filters_by_status(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx, status="COMPLETED")
+
+        assert "No COMPLETED requests found" in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_rejects_invalid_status(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        result = await list_requests(ctx, status="BOGUS")
+
+        assert "Error" in result
+        assert "BOGUS" in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_truncates_long_content(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        req = self._make_mock_request(content="A " * 80)
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req, 0)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx)
+
+        assert "..." in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_handles_db_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        sample_deps.db.execute = AsyncMock(side_effect=SQLAlchemyError("db down"))
+        sample_deps.db.rollback = AsyncMock()
+
+        result = await list_requests(ctx)
+
+        assert "Error" in result
+        sample_deps.db.rollback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_list_requests_id_usable_in_write_note(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        req = self._make_mock_request(content="Test content")
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req, 0)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx)
+
+        returned_id = str(req.id)
+        assert returned_id in result
+
+        sample_deps.available_requests = [
+            {"id": returned_id, "request_id": "prov-str", "content": "Test", "status": "PENDING"},
+        ]
+        sample_deps.db.flush = AsyncMock()
+        sample_deps.db.add = MagicMock()
+        write_result = await write_note(
+            ctx,
+            request_id=returned_id,
+            summary="Test note",
+            classification="NOT_MISLEADING",
+        )
+        assert "Note created" in write_result

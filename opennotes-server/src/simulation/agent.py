@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.llm_config.model_id import ModelId
-from src.notes.models import Note, Rating
+from src.notes.models import Note, Rating, Request
 from src.simulation.models import SimChannelMessage
 from src.simulation.schemas import ActionSelectionResult, SimActionType, SimAgentAction
 
@@ -124,6 +124,7 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "Available actions:\n"
         "- write_note: Write a new community note for a request\n"
         "- rate_note: Rate existing community notes\n"
+        "- list_requests: List available requests with IDs and content\n"
         "- pass_turn: Do nothing this turn\n\n"
         "Choose the most appropriate action based on the available "
         "requests and notes. Always explain your reasoning."
@@ -384,6 +385,68 @@ async def read_channel(
     for msg in reversed(messages):
         short_id = str(msg.agent_instance_id)[:8]
         lines.append(f"[Agent {short_id}]: {msg.message_text}")
+    return "\n".join(lines)
+
+
+MAX_LIST_REQUESTS = 20
+
+VALID_REQUEST_STATUSES = frozenset({"PENDING", "IN_PROGRESS", "COMPLETED", "FAILED"})
+
+
+@sim_agent.tool
+async def list_requests(
+    ctx: RunContext[SimAgentDeps],
+    status: str = "PENDING",
+) -> str:
+    """List available content requests with their IDs and content preview.
+    Use the returned ID in write_note to create a community note.
+    Optional status filter (default: PENDING)."""
+    if status not in VALID_REQUEST_STATUSES:
+        return (
+            f"Error: invalid status '{status}'. "
+            f"Must be one of: {', '.join(sorted(VALID_REQUEST_STATUSES))}"
+        )
+
+    note_count_subq = (
+        select(func.count(Note.id))
+        .where(
+            Note.request_id == Request.id,
+            Note.deleted_at.is_(None),
+        )
+        .correlate(Request)
+        .scalar_subquery()
+        .label("note_count")
+    )
+
+    query = (
+        select(Request, note_count_subq)
+        .where(
+            Request.community_server_id == ctx.deps.community_server_id,
+            Request.status == status,
+            Request.deleted_at.is_(None),
+        )
+        .order_by(Request.created_at.desc())
+        .limit(MAX_LIST_REQUESTS)
+    )
+
+    try:
+        result = await ctx.deps.db.execute(query)
+        rows = result.all()
+    except SQLAlchemyError:
+        await ctx.deps.db.rollback()
+        logger.exception("Database error listing requests")
+        return "Error: could not list requests due to a database error."
+
+    if not rows:
+        return f"No {status} requests found."
+
+    lines = [f"{len(rows)} {status} request(s):\n"]
+    for req, note_count in rows:
+        content = req.content or ""
+        if len(content) > 100:
+            content = content[:100].rsplit(" ", 1)[0] + "..."
+        lines.append(f"- ID: {req.id}\n  Content: {content}\n  Notes: {note_count}")
+
     return "\n".join(lines)
 
 
@@ -721,6 +784,7 @@ __all__ = [
     "build_action_selector_instructions",
     "build_queue_summary",
     "estimate_tokens",
+    "list_requests",
     "post_to_channel",
     "rate_notes",
     "read_channel",
