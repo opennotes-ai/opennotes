@@ -160,6 +160,7 @@ async def simulation_run_factory(playground_community, orchestrator):
         restart_count: int = 0,
         cumulative_turns: int = 0,
         generation: int = 1,
+        is_public: bool = False,
     ) -> dict:
         now = pendulum.now("UTC")
         async with get_session_maker()() as session:
@@ -170,6 +171,7 @@ async def simulation_run_factory(playground_community, orchestrator):
                 restart_count=restart_count,
                 cumulative_turns=cumulative_turns,
                 generation=generation,
+                is_public=is_public,
                 started_at=now.subtract(hours=1),
                 completed_at=now if status_val == "completed" else None,
             )

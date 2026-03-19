@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
@@ -117,6 +117,8 @@ async def list_channel_messages(
             content=response.model_dump(by_alias=True, mode="json"),
             media_type=JSONAPI_CONTENT_TYPE,
         )
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Failed to list channel messages")
         return _create_error_response(

@@ -218,6 +218,27 @@ class TestChannelMessagesScopedKey:
         assert response.status_code == 404
 
     @pytest.mark.asyncio
+    async def test_scoped_key_public_sim_returns_200(
+        self,
+        service_account_scoped_client,
+        simulation_run_factory,
+        agent_instance_factory,
+        channel_message_factory,
+    ):
+        sim = await simulation_run_factory(status_val="running", is_public=True)
+        inst = await agent_instance_factory(sim["id"])
+        await channel_message_factory(sim["id"], inst["id"], "public msg")
+
+        response = await service_account_scoped_client.get(
+            f"{BASE_URL}/{sim['id']}/channel-messages"
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["data"]) == 1
+        assert body["data"][0]["attributes"]["message_text"] == "public msg"
+
+    @pytest.mark.asyncio
     async def test_deleted_simulation_returns_404(
         self,
         admin_auth_client,
