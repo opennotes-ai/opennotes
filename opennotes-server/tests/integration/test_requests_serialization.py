@@ -276,9 +276,9 @@ class TestRequestSerializationGetEndpoint:
         )
         create_response = await requests_auth_client.post("/api/v2/requests", json=request_data)
         assert create_response.status_code == 201
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        resource_id = create_response.json()["data"]["id"]
 
-        response = await requests_auth_client.get(f"/api/v2/requests/{request_id}")
+        response = await requests_auth_client.get(f"/api/v2/requests/{resource_id}")
 
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
@@ -302,9 +302,9 @@ class TestRequestSerializationGetEndpoint:
         )
         create_response = await requests_auth_client.post("/api/v2/requests", json=request_data)
         assert create_response.status_code == 201
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        resource_id = create_response.json()["data"]["id"]
 
-        response = await requests_auth_client.get(f"/api/v2/requests/{request_id}")
+        response = await requests_auth_client.get(f"/api/v2/requests/{resource_id}")
 
         assert response.status_code != 500, f"Should not return 500 error, got: {response.text}"
         assert response.status_code == 200
@@ -408,13 +408,13 @@ class TestRequestSerializationUpdateEndpoint:
         )
         create_response = await requests_auth_client.post("/api/v2/requests", json=request_data)
         assert create_response.status_code == 201
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        resource_id = create_response.json()["data"]["id"]
 
         update_data = {
-            "data": {"type": "requests", "id": request_id, "attributes": {"status": "IN_PROGRESS"}}
+            "data": {"type": "requests", "id": resource_id, "attributes": {"status": "IN_PROGRESS"}}
         }
         response = await requests_auth_client.patch(
-            f"/api/v2/requests/{request_id}", json=update_data
+            f"/api/v2/requests/{resource_id}", json=update_data
         )
 
         assert response.status_code == 200, (
@@ -443,13 +443,13 @@ class TestRequestSerializationUpdateEndpoint:
         )
         create_response = await requests_auth_client.post("/api/v2/requests", json=request_data)
         assert create_response.status_code == 201
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        resource_id = create_response.json()["data"]["id"]
 
         update_data = {
-            "data": {"type": "requests", "id": request_id, "attributes": {"status": "COMPLETED"}}
+            "data": {"type": "requests", "id": resource_id, "attributes": {"status": "COMPLETED"}}
         }
         response = await requests_auth_client.patch(
-            f"/api/v2/requests/{request_id}", json=update_data
+            f"/api/v2/requests/{resource_id}", json=update_data
         )
 
         assert response.status_code != 500, f"Should not return 500 error, got: {response.text}"
@@ -537,9 +537,9 @@ class TestRequestSerializationEdgeCases:
         )
         create_response = await requests_auth_client.post("/api/v2/requests", json=request_data)
         assert create_response.status_code == 201
-        request_id = create_response.json()["data"]["attributes"]["request_id"]
+        resource_id = create_response.json()["data"]["id"]
 
-        response = await requests_auth_client.get(f"/api/v2/requests/{request_id}")
+        response = await requests_auth_client.get(f"/api/v2/requests/{resource_id}")
         assert response.status_code == 200
         data = response.json()
         attrs = data["data"]["attributes"]
