@@ -1,13 +1,11 @@
 import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
 import { Show, Switch, Match, Suspense, createSignal, createEffect, on } from "solid-js";
-import { getRequestEvent } from "solid-js/web";
 import {
   getSimulation,
   getSimulationAnalysis,
   getSimulationDetailedAnalysis,
   getSimulationTimeline,
 } from "~/lib/api-client.server";
-import { createClient } from "~/lib/supabase-server";
 import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import { SectionSkeleton } from "~/components/ui/skeleton";
@@ -27,18 +25,6 @@ type AuthMeta = {
   agentsTruncated?: boolean;
 };
 
-async function checkAuth(): Promise<boolean> {
-  try {
-    const event = getRequestEvent();
-    if (!event) return false;
-    const supabase = createClient(event.request, event.response.headers);
-    const { data: { user } } = await supabase.auth.getUser();
-    return !!user;
-  } catch {
-    return false;
-  }
-}
-
 type SimulationError = { _error: "not_found" | "server_error" };
 
 const fetchSimulation = query(async (id: string) => {
@@ -57,7 +43,9 @@ const fetchSimulation = query(async (id: string) => {
 const fetchAnalysis = query(async (id: string) => {
   "use server";
   try {
-    const isAuthenticated = await checkAuth();
+    const { getUser } = await import("~/lib/supabase-server");
+    const user = await getUser();
+    const isAuthenticated = !!user;
     const data = await getSimulationAnalysis(id);
 
     const behaviors = data.data.attributes.agent_behaviors ?? [];
@@ -94,7 +82,9 @@ const fetchDetailedAnalysis = query(async (
 ) => {
   "use server";
   try {
-    const isAuthenticated = await checkAuth();
+    const { getUser } = await import("~/lib/supabase-server");
+    const user = await getUser();
+    const isAuthenticated = !!user;
     const effectivePage = isAuthenticated ? page : 1;
     const data = await getSimulationDetailedAnalysis(
       id, effectivePage, pageSize, sortBy, filterClassification, filterStatus,

@@ -6,12 +6,8 @@ import { Button } from "~/components/ui/button";
 
 const getAuthUser = query(async () => {
   "use server";
-  const event = getRequestEvent();
-  if (!event) return null;
-  const supabase = createClient(event.request, event.response.headers);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { getUser } = await import("~/lib/supabase-server");
+  const user = await getUser();
   if (!user) return null;
   return { email: user.email };
 }, "authUser");
