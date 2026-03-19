@@ -2,7 +2,7 @@ import asyncio
 import threading
 
 from src.database import _reset_database_for_test_loop, get_engine, get_session_maker
-from src.utils.async_compat import run_sync, shutdown
+from src.utils.async_compat import reset, run_sync
 
 
 class TestPerLoopEngineIntegration:
@@ -11,7 +11,7 @@ class TestPerLoopEngineIntegration:
 
     def teardown_method(self):
         _reset_database_for_test_loop()
-        shutdown()
+        reset()
 
     def test_run_sync_gets_different_engine_than_main_loop(self):
         async def get_engine_id_on_bg_loop() -> int:

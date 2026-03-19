@@ -8,7 +8,7 @@ from typing import Any, TypeVar
 
 T = TypeVar("T")
 
-_bg_state: dict[str, Any] = {"loop": None, "thread": None}
+_bg_state: dict[str, Any] = {"loop": None, "thread": None, "shutting_down": False}
 _bg_lock = threading.Lock()
 
 
@@ -25,11 +25,15 @@ def _is_loop_healthy(
 
 
 def _ensure_background_loop() -> asyncio.AbstractEventLoop:
+    if _bg_state["shutting_down"]:
+        raise RuntimeError("Background loop is shutting down")
     existing = _bg_state["loop"]
     thread = _bg_state["thread"]
     if _is_loop_healthy(existing, thread):
         return existing  # type: ignore[return-value]
     with _bg_lock:
+        if _bg_state["shutting_down"]:
+            raise RuntimeError("Background loop is shutting down")
         existing = _bg_state["loop"]
         thread = _bg_state["thread"]
         if _is_loop_healthy(existing, thread):
@@ -44,8 +48,9 @@ def _ensure_background_loop() -> asyncio.AbstractEventLoop:
         return loop
 
 
-def shutdown() -> None:
+def shutdown(timeout: float = 2.0) -> None:
     with _bg_lock:
+        _bg_state["shutting_down"] = True
         bg_loop = _bg_state["loop"]
         bg_thread = _bg_state["thread"]
         _bg_state["loop"] = None
@@ -53,9 +58,14 @@ def shutdown() -> None:
     if bg_loop is not None and not bg_loop.is_closed():
         bg_loop.call_soon_threadsafe(bg_loop.stop)
         if bg_thread is not None:
-            bg_thread.join(timeout=5)
+            bg_thread.join(timeout=timeout)
         if not bg_loop.is_closed():
             bg_loop.close()
+
+
+def reset() -> None:
+    shutdown()
+    _bg_state["shutting_down"] = False
 
 
 atexit.register(shutdown)
