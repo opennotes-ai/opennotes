@@ -34,6 +34,7 @@ class RequestAttributes:
         updated_at (datetime.datetime | None | Unset):
         content (None | str | Unset):
         platform_message_id (None | str | Unset):
+        platform_channel_id (None | str | Unset):
         metadata (None | RequestAttributesMetadataType0 | Unset):
         similarity_score (float | None | Unset):
         dataset_name (None | str | Unset):
@@ -50,6 +51,7 @@ class RequestAttributes:
     updated_at: datetime.datetime | None | Unset = UNSET
     content: None | str | Unset = UNSET
     platform_message_id: None | str | Unset = UNSET
+    platform_channel_id: None | str | Unset = UNSET
     metadata: None | RequestAttributesMetadataType0 | Unset = UNSET
     similarity_score: float | None | Unset = UNSET
     dataset_name: None | str | Unset = UNSET
@@ -115,6 +117,12 @@ class RequestAttributes:
         else:
             platform_message_id = self.platform_message_id
 
+        platform_channel_id: None | str | Unset
+        if isinstance(self.platform_channel_id, Unset):
+            platform_channel_id = UNSET
+        else:
+            platform_channel_id = self.platform_channel_id
+
         metadata: dict[str, Any] | None | Unset
         if isinstance(self.metadata, Unset):
             metadata = UNSET
@@ -165,6 +173,8 @@ class RequestAttributes:
             field_dict["content"] = content
         if platform_message_id is not UNSET:
             field_dict["platform_message_id"] = platform_message_id
+        if platform_channel_id is not UNSET:
+            field_dict["platform_channel_id"] = platform_channel_id
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
         if similarity_score is not UNSET:
@@ -280,6 +290,17 @@ class RequestAttributes:
             d.pop("platform_message_id", UNSET)
         )
 
+        def _parse_platform_channel_id(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        platform_channel_id = _parse_platform_channel_id(
+            d.pop("platform_channel_id", UNSET)
+        )
+
         def _parse_metadata(
             data: object,
         ) -> None | RequestAttributesMetadataType0 | Unset:
@@ -337,6 +358,7 @@ class RequestAttributes:
             updated_at=updated_at,
             content=content,
             platform_message_id=platform_message_id,
+            platform_channel_id=platform_channel_id,
             metadata=metadata,
             similarity_score=similarity_score,
             dataset_name=dataset_name,

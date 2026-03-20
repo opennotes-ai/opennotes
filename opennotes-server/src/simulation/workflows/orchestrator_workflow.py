@@ -490,11 +490,10 @@ def check_content_availability_step(community_server_id: str) -> dict[str, Any]:
                 .select_from(Request)
                 .where(
                     Request.community_server_id == cs_id,
-                    Request.status == "PENDING",
                     Request.deleted_at.is_(None),
                 )
             )
-            pending_requests = req_result.scalar() or 0
+            available_requests = req_result.scalar() or 0
 
             note_result = await session.execute(
                 select(func.count())
@@ -508,8 +507,8 @@ def check_content_availability_step(community_server_id: str) -> dict[str, Any]:
             unrated_notes = note_result.scalar() or 0
 
             return {
-                "has_content": pending_requests > 0 or unrated_notes > 0,
-                "pending_requests": pending_requests,
+                "has_content": available_requests > 0 or unrated_notes > 0,
+                "pending_requests": available_requests,
                 "unrated_notes": unrated_notes,
             }
 

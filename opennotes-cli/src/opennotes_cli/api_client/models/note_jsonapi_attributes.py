@@ -33,6 +33,7 @@ class NoteJSONAPIAttributes:
         updated_at (datetime.datetime | None | Unset):
         request_id (None | Unset | UUID):
         platform_message_id (None | str | Unset):
+        platform_channel_id (None | str | Unset):
         force_published_at (datetime.datetime | None | Unset):
         ratings_count (int | Unset):  Default: 0.
         community_server_id (None | str | Unset):
@@ -52,6 +53,7 @@ class NoteJSONAPIAttributes:
     updated_at: datetime.datetime | None | Unset = UNSET
     request_id: None | Unset | UUID = UNSET
     platform_message_id: None | str | Unset = UNSET
+    platform_channel_id: None | str | Unset = UNSET
     force_published_at: datetime.datetime | None | Unset = UNSET
     ratings_count: int | Unset = 0
     community_server_id: None | str | Unset = UNSET
@@ -120,6 +122,12 @@ class NoteJSONAPIAttributes:
         else:
             platform_message_id = self.platform_message_id
 
+        platform_channel_id: None | str | Unset
+        if isinstance(self.platform_channel_id, Unset):
+            platform_channel_id = UNSET
+        else:
+            platform_channel_id = self.platform_channel_id
+
         force_published_at: None | str | Unset
         if isinstance(self.force_published_at, Unset):
             force_published_at = UNSET
@@ -167,6 +175,8 @@ class NoteJSONAPIAttributes:
             field_dict["request_id"] = request_id
         if platform_message_id is not UNSET:
             field_dict["platform_message_id"] = platform_message_id
+        if platform_channel_id is not UNSET:
+            field_dict["platform_channel_id"] = platform_channel_id
         if force_published_at is not UNSET:
             field_dict["force_published_at"] = force_published_at
         if ratings_count is not UNSET:
@@ -282,6 +292,17 @@ class NoteJSONAPIAttributes:
             d.pop("platform_message_id", UNSET)
         )
 
+        def _parse_platform_channel_id(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        platform_channel_id = _parse_platform_channel_id(
+            d.pop("platform_channel_id", UNSET)
+        )
+
         def _parse_force_published_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
                 return data
@@ -329,6 +350,7 @@ class NoteJSONAPIAttributes:
             updated_at=updated_at,
             request_id=request_id,
             platform_message_id=platform_message_id,
+            platform_channel_id=platform_channel_id,
             force_published_at=force_published_at,
             ratings_count=ratings_count,
             community_server_id=community_server_id,

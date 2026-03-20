@@ -205,7 +205,6 @@ def build_deps_step(
             if effective_seen:
                 persisted_query = select(Request).where(
                     Request.community_server_id == cs_id,
-                    Request.status == "PENDING",
                     Request.deleted_at.is_(None),
                     Request.id.in_([UUID(rid) for rid in effective_seen]),
                 )
@@ -217,14 +216,24 @@ def build_deps_step(
 
             new_requests: list[Any] = []
             if remaining_slots > 0:
+                note_count_subq = (
+                    select(func.count(Note.id))
+                    .where(
+                        Note.request_id == Request.id,
+                        Note.deleted_at.is_(None),
+                    )
+                    .correlate(Request)
+                    .scalar_subquery()
+                )
                 new_query = select(Request).where(
                     Request.community_server_id == cs_id,
-                    Request.status == "PENDING",
                     Request.deleted_at.is_(None),
                 )
                 if persisted_ids:
                     new_query = new_query.where(Request.id.notin_(persisted_ids))
-                new_query = new_query.order_by(func.random()).limit(remaining_slots)
+                new_query = new_query.order_by(note_count_subq.asc(), func.random()).limit(
+                    remaining_slots
+                )
                 new_result = await session.execute(new_query)
                 new_requests = list(new_result.scalars().all())
 
