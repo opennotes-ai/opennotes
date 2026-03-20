@@ -2065,6 +2065,25 @@ class TestCreateSimulationName:
         data = response.json()
         assert data["data"]["attributes"]["name"] is None
 
+    @pytest.mark.asyncio
+    async def test_create_simulation_name_too_long(
+        self, admin_auth_client, playground_community, orchestrator
+    ):
+        request_body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {
+                    "orchestrator_id": str(orchestrator["id"]),
+                    "community_server_id": str(playground_community["id"]),
+                    "name": "x" * 256,
+                },
+            }
+        }
+
+        response = await admin_auth_client.post("/api/v2/simulations", json=request_body)
+
+        assert response.status_code == 422
+
 
 class TestUpdateSimulation:
     @pytest.mark.asyncio
@@ -2149,6 +2168,23 @@ class TestUpdateSimulation:
         )
 
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_patch_simulation_name_too_long(self, admin_auth_client, simulation_run_factory):
+        run = await simulation_run_factory("pending")
+
+        request_body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {"name": "x" * 256},
+            }
+        }
+
+        response = await admin_auth_client.patch(
+            f"/api/v2/simulations/{run['id']}", json=request_body
+        )
+
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_patch_simulation_unauthenticated(self):

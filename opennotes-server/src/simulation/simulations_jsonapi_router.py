@@ -152,7 +152,7 @@ class ResumeRequest(BaseModel):
 class SimulationCreateAttributes(StrictInputSchema):
     orchestrator_id: UUID
     community_server_id: UUID
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=255)
 
 
 class SimulationCreateData(BaseModel):
@@ -186,7 +186,7 @@ class SimulationAttributes(SQLAlchemySchema):
 
 
 class SimulationUpdateAttributes(StrictInputSchema):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=255)
 
 
 class SimulationUpdateData(BaseModel):
@@ -466,39 +466,51 @@ async def update_simulation(
 ) -> JSONResponse:
     require_admin(current_user)
 
-    result = await db.execute(
-        select(SimulationRun).where(
-            SimulationRun.id == simulation_id,
-            SimulationRun.deleted_at.is_(None),
+    try:
+        result = await db.execute(
+            select(SimulationRun).where(
+                SimulationRun.id == simulation_id,
+                SimulationRun.deleted_at.is_(None),
+            )
         )
-    )
-    simulation_run = result.scalar_one_or_none()
+        simulation_run = result.scalar_one_or_none()
 
-    if not simulation_run:
+        if not simulation_run:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Simulation {simulation_id} not found",
+            )
+
+        attrs = body.data.attributes
+        for field in attrs.model_fields_set:
+            setattr(simulation_run, field, getattr(attrs, field))
+        await db.commit()
+        await db.refresh(simulation_run)
+
+        resource = simulation_run_to_resource(simulation_run)
+        base_url = str(request.url).split("?")[0]
+        response = SimulationSingleResponse(
+            data=resource,
+            links=JSONAPILinks(self_=base_url),
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to update simulation")
+        await db.rollback()
         return create_error_response(
-            status.HTTP_404_NOT_FOUND,
-            "Not Found",
-            f"Simulation {simulation_id} not found",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to update simulation",
         )
-
-    attrs = body.data.attributes
-    for field in attrs.model_fields_set:
-        setattr(simulation_run, field, getattr(attrs, field))
-    await db.commit()
-    await db.refresh(simulation_run)
-
-    resource = simulation_run_to_resource(simulation_run)
-    base_url = str(request.url).split("?")[0]
-    response = SimulationSingleResponse(
-        data=resource,
-        links=JSONAPILinks(self_=base_url),
-    )
-
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content=response.model_dump(by_alias=True, mode="json"),
-        media_type=JSONAPI_CONTENT_TYPE,
-    )
 
 
 @router.get(
