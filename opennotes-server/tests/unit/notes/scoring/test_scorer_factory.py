@@ -226,10 +226,12 @@ class TestScorerFactoryCaching:
         assert (
             "community-123",
             ScoringTier.MINIMAL,
+            False,
         ) in factory._cache
         assert (
             "community-123",
             ScoringTier.LIMITED,
+            False,
         ) in factory._cache
 
 
@@ -290,6 +292,7 @@ class TestScorerFactoryTierOverride:
         assert (
             "community-123",
             ScoringTier.LIMITED,
+            False,
         ) in factory._cache
 
     def test_tier_override_none_uses_computed_tier(self):
@@ -321,6 +324,7 @@ class TestScorerFactoryIntegrationWithTierConfig:
         assert (
             "community-123",
             ScoringTier.MINIMAL,
+            False,
         ) in factory._cache
 
     def test_boundary_at_200_notes_yields_limited(self):
@@ -335,6 +339,7 @@ class TestScorerFactoryIntegrationWithTierConfig:
         assert (
             "community-123",
             ScoringTier.LIMITED,
+            False,
         ) in factory._cache
 
     def test_boundary_at_1000_notes_yields_basic(self):
@@ -349,6 +354,7 @@ class TestScorerFactoryIntegrationWithTierConfig:
         assert (
             "community-123",
             ScoringTier.BASIC,
+            False,
         ) in factory._cache
 
 
@@ -440,3 +446,166 @@ class TestScorerFactoryDataProvider:
 
         assert isinstance(scorer, MFCoreScorerAdapter)
         assert scorer._data_provider is mock_provider
+
+
+class TestScorerFactoryDiversitySelection:
+    """Tests for RaterDiversityScorerAdapter selection for MINIMAL tier (TASK-1347.03)."""
+
+    def _make_empty_provider(self):
+        from unittest.mock import MagicMock
+
+        import pyarrow as pa
+
+        empty_ratings = pa.table(
+            {
+                "rater_id": pa.array([], type=pa.string()),
+                "note_id": pa.array([], type=pa.string()),
+                "helpfulness_level": pa.array([], type=pa.string()),
+            }
+        )
+        mock_provider = MagicMock()
+        mock_provider.get_all_ratings.return_value = empty_ratings
+        return mock_provider
+
+    def test_returns_diversity_adapter_for_minimal_with_enough_notes_and_provider(self):
+        from src.notes.scoring.rater_diversity_scorer import RaterDiversityScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+
+        mock_provider = self._make_empty_provider()
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer(
+            "community-123",
+            note_count=15,
+            data_provider=mock_provider,
+            community_id="community-123",
+        )
+
+        assert isinstance(scorer, RaterDiversityScorerAdapter)
+
+    def test_returns_diversity_adapter_at_exactly_threshold(self):
+        from src.notes.scoring.rater_diversity_scorer import RaterDiversityScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+        from src.notes.scoring.tier_config import MINIMAL_DIVERSITY_THRESHOLD
+
+        mock_provider = self._make_empty_provider()
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer(
+            "community-123",
+            note_count=MINIMAL_DIVERSITY_THRESHOLD,
+            data_provider=mock_provider,
+            community_id="community-123",
+        )
+
+        assert isinstance(scorer, RaterDiversityScorerAdapter)
+
+    def test_returns_bayesian_for_minimal_below_threshold(self):
+        from unittest.mock import MagicMock
+
+        from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+
+        mock_provider = MagicMock()
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer(
+            "community-123",
+            note_count=14,
+            data_provider=mock_provider,
+            community_id="community-123",
+        )
+
+        assert isinstance(scorer, BayesianAverageScorerAdapter)
+
+    def test_returns_bayesian_when_data_provider_is_none(self):
+        from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer(
+            "community-123",
+            note_count=50,
+            data_provider=None,
+            community_id="community-123",
+        )
+
+        assert isinstance(scorer, BayesianAverageScorerAdapter)
+
+    def test_returns_bayesian_when_no_data_provider_passed(self):
+        from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer(
+            "community-123",
+            note_count=100,
+        )
+
+        assert isinstance(scorer, BayesianAverageScorerAdapter)
+
+    def test_cache_distinguishes_below_and_above_threshold(self):
+        from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
+        from src.notes.scoring.rater_diversity_scorer import RaterDiversityScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+
+        mock_provider = self._make_empty_provider()
+        factory = ScorerFactory()
+
+        scorer_below = factory.get_scorer(
+            "community-123",
+            note_count=10,
+            data_provider=None,
+            community_id="community-123",
+        )
+        scorer_above = factory.get_scorer(
+            "community-123",
+            note_count=50,
+            data_provider=mock_provider,
+            community_id="community-123",
+        )
+
+        assert isinstance(scorer_below, BayesianAverageScorerAdapter)
+        assert isinstance(scorer_above, RaterDiversityScorerAdapter)
+        assert scorer_below is not scorer_above
+
+    def test_diversity_adapter_cached_for_same_community(self):
+        from src.notes.scoring.rater_diversity_scorer import RaterDiversityScorerAdapter
+        from src.notes.scoring.scorer_factory import ScorerFactory
+
+        mock_provider = self._make_empty_provider()
+        factory = ScorerFactory()
+
+        scorer1 = factory.get_scorer(
+            "community-123",
+            note_count=50,
+            data_provider=mock_provider,
+            community_id="community-123",
+        )
+        scorer2 = factory.get_scorer(
+            "community-123",
+            note_count=100,
+            data_provider=mock_provider,
+            community_id="community-123",
+        )
+
+        assert isinstance(scorer1, RaterDiversityScorerAdapter)
+        assert scorer1 is scorer2
+
+    def test_diversity_adapter_is_scorer_protocol(self):
+        from src.notes.scoring.scorer_factory import ScorerFactory
+        from src.notes.scoring.scorer_protocol import ScorerProtocol
+
+        mock_provider = self._make_empty_provider()
+        factory = ScorerFactory()
+
+        scorer = factory.get_scorer(
+            "community-123",
+            note_count=50,
+            data_provider=mock_provider,
+            community_id="community-123",
+        )
+
+        assert isinstance(scorer, ScorerProtocol)

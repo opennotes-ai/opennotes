@@ -11,8 +11,13 @@ from typing import TYPE_CHECKING, Any
 from src.notes.scoring.bayesian_average_scorer import BayesianAverageScorer
 from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
 from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
+from src.notes.scoring.rater_diversity_scorer import RaterDiversityScorerAdapter
 from src.notes.scoring.scorer_protocol import ScorerProtocol
-from src.notes.scoring.tier_config import ScoringTier, get_tier_for_note_count
+from src.notes.scoring.tier_config import (
+    MINIMAL_DIVERSITY_THRESHOLD,
+    ScoringTier,
+    get_tier_for_note_count,
+)
 
 if TYPE_CHECKING:
     from src.notes.scoring.data_provider import CommunityDataProvider
@@ -84,7 +89,7 @@ class ScorerFactory:
 
     def __init__(self) -> None:
         """Initialize the factory with an empty cache."""
-        self._cache: dict[tuple[str, ScoringTier], ScorerProtocol] = {}
+        self._cache: dict[tuple[str, ScoringTier, bool], ScorerProtocol] = {}
 
     def get_scorer(
         self,
@@ -172,7 +177,12 @@ class ScorerFactory:
                     )
                     tier = max_viable
 
-        cache_key = (community_server_id, tier)
+        uses_diversity = (
+            tier == ScoringTier.MINIMAL
+            and note_count >= MINIMAL_DIVERSITY_THRESHOLD
+            and data_provider is not None
+        )
+        cache_key = (community_server_id, tier, uses_diversity)
 
         if cache_key in self._cache:
             logger.debug(
@@ -184,7 +194,7 @@ class ScorerFactory:
             )
             return self._cache[cache_key]
 
-        scorer = self._create_scorer_for_tier(tier, data_provider, community_id)
+        scorer = self._create_scorer_for_tier(tier, data_provider, community_id, note_count)
 
         self._cache[cache_key] = scorer
 
@@ -205,8 +215,11 @@ class ScorerFactory:
         tier: ScoringTier,
         data_provider: "CommunityDataProvider | None" = None,
         community_id: str | None = None,
+        note_count: int = 0,
     ) -> ScorerProtocol:
         if tier == ScoringTier.MINIMAL:
+            if note_count >= MINIMAL_DIVERSITY_THRESHOLD and data_provider is not None:
+                return RaterDiversityScorerAdapter(data_provider, community_id or "")
             bayesian_scorer = BayesianAverageScorer()
             return BayesianAverageScorerAdapter(bayesian_scorer)
 

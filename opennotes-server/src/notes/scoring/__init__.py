@@ -12,11 +12,16 @@ from src.notes.scoring.data_transforms import transform_community_data
 from src.notes.scoring.mf_scorer_adapter import MFCoreScorerAdapter
 from src.notes.scoring.models import ScoringSnapshot
 from src.notes.scoring.note_status_history_builder import NoteStatusHistoryBuilder
+from src.notes.scoring.rater_diversity_scorer import (
+    RaterDiversityScorer,
+    RaterDiversityScorerAdapter,
+)
 from src.notes.scoring.ratings_dataframe_builder import RatingsDataFrameBuilder
 from src.notes.scoring.scorer_factory import ScorerFactory
 from src.notes.scoring.scorer_protocol import ScorerProtocol, ScoringResult
 from src.notes.scoring.scoring_data_validator import ScoringDataValidator, ValidationResult
 from src.notes.scoring.tier_config import (
+    MINIMAL_DIVERSITY_THRESHOLD,
     TIER_CONFIGURATIONS,
     ScoringTier,
     TierThresholds,
@@ -26,6 +31,7 @@ from src.notes.scoring.tier_config import (
 from src.notes.scoring.user_enrollment_builder import UserEnrollmentBuilder
 
 __all__ = [
+    "MINIMAL_DIVERSITY_THRESHOLD",
     "TIER_CONFIGURATIONS",
     "AdaptiveScoringTierManager",
     "BatchScoringTrigger",
@@ -34,6 +40,8 @@ __all__ = [
     "CommunityDataProvider",
     "MFCoreScorerAdapter",
     "NoteStatusHistoryBuilder",
+    "RaterDiversityScorer",
+    "RaterDiversityScorerAdapter",
     "RatingsDataFrameBuilder",
     "ScorerFactory",
     "ScorerProtocol",
