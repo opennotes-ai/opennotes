@@ -211,13 +211,13 @@ class FakeDataProvider:
     def __init__(self, ratings_table: pa.Table) -> None:
         self._ratings = ratings_table
 
-    def get_all_ratings(self, _community_id: str) -> pa.Table:
+    def get_all_ratings(self, community_id: str) -> pa.Table:
         return self._ratings
 
-    def get_all_notes(self, _community_id: str) -> pa.Table:
+    def get_all_notes(self, community_id: str) -> pa.Table:
         return pa.table({})
 
-    def get_all_participants(self, _community_id: str) -> pa.Array:
+    def get_all_participants(self, community_id: str) -> pa.Array:
         return pa.array([])
 
 
