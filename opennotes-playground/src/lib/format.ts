@@ -97,17 +97,19 @@ export function isUuidLike(id: string | null | undefined): id is string {
   return typeof id === "string" && UUID_LIKE_RE.test(id);
 }
 
-export function formatIdBadgeLabel(id: string | null | undefined): string {
+export function formatIdBadgeLabel(id: string | null | undefined, name?: string | null): string {
+  if (name) return name;
   if (id == null) return UNKNOWN_ID_LABEL;
   if (!isUuidLike(id)) return id;
   return uuidSuffixToProquint(id);
 }
 
-export function formatIdBadgeTooltip(id: string | null | undefined): string {
+export function formatIdBadgeTooltip(id: string | null | undefined, name?: string | null): string {
   if (id == null) return UNKNOWN_ID_LABEL;
   if (!isUuidLike(id)) return id;
-  const label = formatIdBadgeLabel(id);
-  return `${label}\n${id}`;
+  const proquint = uuidSuffixToProquint(id);
+  if (name) return `${name}\n${proquint}\n${id}`;
+  return `${proquint}\n${id}`;
 }
 
 export function truncateId(id: string | null | undefined): string {

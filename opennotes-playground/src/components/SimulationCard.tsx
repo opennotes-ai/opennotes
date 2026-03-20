@@ -25,7 +25,7 @@ export default function SimulationCard(props: { simulation: SimulationResource }
     >
       <div class="flex items-center justify-between">
         <span class="text-base font-semibold">
-          Simulation <IdBadge idValue={sim().id} variant="muted" />
+          Simulation <IdBadge idValue={sim().id} name={attrs().name} variant="muted" />
         </span>
         <Badge variant={STATUS_VARIANT[attrs().status] ?? "muted"}>
           {humanizeLabel(attrs().status)}

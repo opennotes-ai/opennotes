@@ -270,13 +270,13 @@ export default function SimulationDetailPage() {
               const attrs = simResponse.data.attributes;
               return (
                 <div class="flex gap-8">
-                  <Title>Open Notes Playground - Simulation {formatIdBadgeLabel(simResponse.data.id)}</Title>
+                  <Title>Open Notes Playground - Simulation {formatIdBadgeLabel(simResponse.data.id, attrs.name)}</Title>
                   <SimulationSidebar />
                   <main class="min-w-0 flex-1">
                   <MobileSidebarToggle />
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <h1 class="text-2xl font-bold tracking-tight">
-                      Simulation <IdBadge idValue={simResponse.data.id} variant="muted" />
+                      Simulation <IdBadge idValue={simResponse.data.id} name={attrs.name} variant="muted" />
                     </h1>
                     <Badge variant={STATUS_VARIANT[attrs.status] ?? "muted"}>
                       {humanizeLabel(attrs.status)}
