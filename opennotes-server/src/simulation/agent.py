@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.llm_config.model_id import ModelId
 from src.notes.models import Note, Rating, Request
-from src.simulation.models import SimChannelMessage
+from src.simulation.models import SimAgentInstance, SimChannelMessage
 from src.simulation.schemas import ActionSelectionResult, SimActionType, SimAgentAction
 
 logger = logging.getLogger(__name__)
@@ -478,11 +478,21 @@ async def list_my_actions(
 ) -> str:
     """List requests you have already written notes for in this simulation."""
     try:
+        if ctx.deps.agent_profile_id and ctx.deps.simulation_run_id:
+            author_filter = Note.author_id.in_(
+                select(SimAgentInstance.user_profile_id).where(
+                    SimAgentInstance.agent_profile_id == ctx.deps.agent_profile_id,
+                    SimAgentInstance.simulation_run_id == ctx.deps.simulation_run_id,
+                )
+            )
+        else:
+            author_filter = Note.author_id == ctx.deps.user_profile_id
+
         query = (
             select(Note, Request)
             .join(Request, Note.request_id == Request.id)
             .where(
-                Note.author_id == ctx.deps.user_profile_id,
+                author_filter,
                 Note.deleted_at.is_(None),
                 Note.community_server_id == ctx.deps.community_server_id,
             )

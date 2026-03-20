@@ -195,6 +195,7 @@ def build_deps_step(
         effective_seen = [rid for rid in (seen_request_ids or []) if rid not in acted_on_set]
 
         sibling_ids_subq = None
+        sibling_noted_reqs = None
         if agent_profile_id and simulation_run_id:
             sibling_ids_subq = (
                 select(SimAgentInstance.user_profile_id)
@@ -203,6 +204,10 @@ def build_deps_step(
                     SimAgentInstance.simulation_run_id == UUID(simulation_run_id),
                 )
                 .scalar_subquery()
+            )
+            sibling_noted_reqs = select(Note.request_id).where(
+                Note.author_id.in_(sibling_ids_subq),
+                Note.deleted_at.is_(None),
             )
 
         async with get_session_maker()() as session:
@@ -250,6 +255,11 @@ def build_deps_step(
                     new_query = new_query.where(
                         Request.id.notin_([UUID(rid) for rid in acted_on_request_ids])
                     )
+                new_query = (
+                    new_query.where(Request.id.notin_(sibling_noted_reqs))
+                    if sibling_noted_reqs is not None
+                    else new_query
+                )
                 new_query = new_query.order_by(note_count_subq.asc(), func.random()).limit(
                     remaining_slots
                 )

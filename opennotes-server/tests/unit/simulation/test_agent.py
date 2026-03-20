@@ -1671,6 +1671,60 @@ class TestListMyActions:
         assert "database error" in result
         sample_deps.db.rollback.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_list_my_actions_uses_sibling_ids_after_respawn(self, sample_deps):
+        sample_deps.agent_profile_id = uuid4()
+        sample_deps.simulation_run_id = uuid4()
+        sample_deps.user_profile_id = uuid4()
+
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_note = MagicMock()
+        mock_note.id = uuid4()
+        mock_note.summary = "Note from prior incarnation"
+        mock_note.created_at = None
+
+        mock_request = MagicMock()
+        mock_request.id = uuid4()
+        mock_request.content = "Prior request content"
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(mock_note, mock_request)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_my_actions(ctx)
+
+        assert "1 note(s) you have written" in result
+        assert "Prior request content" in result
+
+        executed_query = sample_deps.db.execute.call_args[0][0]
+        compiled = str(executed_query.compile(compile_kwargs={"literal_binds": True}))
+        assert "sim_agent_instances" in compiled, (
+            f"Expected sibling subquery referencing sim_agent_instances, got: {compiled}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_my_actions_falls_back_without_agent_profile(self, sample_deps):
+        sample_deps.agent_profile_id = None
+        sample_deps.simulation_run_id = None
+
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_my_actions(ctx)
+
+        assert result == "You have not written any notes yet."
+        executed_query = sample_deps.db.execute.call_args[0][0]
+        compiled = str(executed_query.compile(compile_kwargs={"literal_binds": True}))
+        assert "sim_agent_instances" not in compiled, (
+            f"Expected direct user_profile_id filter without sibling subquery, got: {compiled}"
+        )
+
 
 class TestStatusLegendInPrompt:
     def test_status_legend_in_system_prompt(self, sample_deps):
