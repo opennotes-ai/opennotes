@@ -1317,7 +1317,11 @@ class TestRunAgentTurnWorkflow:
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
-                return_value={"available_requests": [], "available_notes": []},
+                return_value={
+                    "available_requests": [{"id": "req-1"}],
+                    "available_notes": [],
+                    "shown_request_ids": ["req-1"],
+                },
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.select_action_step",
@@ -1371,7 +1375,11 @@ class TestRunAgentTurnWorkflow:
 
         def track_build(*args, **kwargs):
             call_order.append("build")
-            return {"available_requests": [], "available_notes": []}
+            return {
+                "available_requests": [{"id": "req-1"}],
+                "available_notes": [],
+                "shown_request_ids": ["req-1"],
+            }
 
         def track_select(*args, **kwargs):
             call_order.append("select")
@@ -1467,7 +1475,11 @@ class TestRunAgentTurnWorkflow:
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
-                return_value={"available_requests": [], "available_notes": []},
+                return_value={
+                    "available_requests": [{"id": "req-1"}],
+                    "available_notes": [],
+                    "shown_request_ids": ["req-1"],
+                },
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.select_action_step",
@@ -1518,7 +1530,11 @@ class TestRunAgentTurnWorkflow:
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
-                return_value={"available_requests": [], "available_notes": []},
+                return_value={
+                    "available_requests": [{"id": "req-1"}],
+                    "available_notes": [],
+                    "shown_request_ids": ["req-1"],
+                },
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.select_action_step",
@@ -1955,7 +1971,11 @@ class TestRecentActions:
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
-                return_value={"available_requests": [], "available_notes": []},
+                return_value={
+                    "available_requests": [{"id": "req-1"}],
+                    "available_notes": [],
+                    "shown_request_ids": ["req-1"],
+                },
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.select_action_step",
@@ -2017,7 +2037,11 @@ class TestTwoPhaseFlow:
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
-                return_value={"available_requests": [], "available_notes": []},
+                return_value={
+                    "available_requests": [{"id": "req-1"}],
+                    "available_notes": [],
+                    "shown_request_ids": ["req-1"],
+                },
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.select_action_step",
@@ -2091,7 +2115,11 @@ class TestTwoPhaseFlow:
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
-                return_value={"available_requests": [], "available_notes": []},
+                return_value={
+                    "available_requests": [{"id": "req-1"}],
+                    "available_notes": [],
+                    "shown_request_ids": ["req-1"],
+                },
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.select_action_step",
@@ -2151,7 +2179,14 @@ class TestTwoPhaseFlow:
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
-                side_effect=track("build", {"available_requests": [], "available_notes": []}),
+                side_effect=track(
+                    "build",
+                    {
+                        "available_requests": [{"id": "req-1"}],
+                        "available_notes": [],
+                        "shown_request_ids": ["req-1"],
+                    },
+                ),
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.select_action_step",
@@ -2709,7 +2744,11 @@ class TestConfigurableDefaults:
             ) as mock_compact,
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
-                return_value={"available_requests": [], "available_notes": []},
+                return_value={
+                    "available_requests": [{"id": "req-1"}],
+                    "available_notes": [],
+                    "shown_request_ids": ["req-1"],
+                },
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.select_action_step",
@@ -2881,7 +2920,11 @@ class TestRunAgentTurnCancellation:
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
-                return_value={"available_requests": [], "available_notes": []},
+                return_value={
+                    "available_requests": [{"id": "req-1"}],
+                    "available_notes": [],
+                    "shown_request_ids": ["req-1"],
+                },
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.select_action_step",
@@ -3469,7 +3512,7 @@ class TestRequestTurnPersistence:
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
                 return_value={
-                    "available_requests": [],
+                    "available_requests": [{"id": "req-a"}],
                     "available_notes": [],
                     "shown_request_ids": ["req-a", "req-b"],
                 },
@@ -3493,3 +3536,214 @@ class TestRequestTurnPersistence:
             run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
 
         assert captured_persist_kwargs["seen_request_ids"] == ["req-a", "req-b"]
+
+
+class TestRunAgentTurnNoContentEarlyExit:
+    def test_returns_skipped_no_content_when_both_empty(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={
+                    "available_requests": [],
+                    "available_notes": [],
+                    "shown_request_ids": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+            ) as mock_select,
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+            ) as mock_execute,
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+            ) as mock_persist,
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test-no-content"
+
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert result == {
+            "agent_instance_id": agent_instance_id,
+            "status": "skipped_no_content",
+        }
+        mock_select.assert_not_called()
+        mock_execute.assert_not_called()
+        mock_persist.assert_not_called()
+
+    def test_does_not_skip_when_requests_available(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={
+                    "available_requests": [{"id": "req-1", "content": "test"}],
+                    "available_notes": [],
+                    "shown_request_ids": ["req-1"],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "write_note",
+                    "reasoning": "Found content",
+                    "phase1_messages": [],
+                },
+            ) as mock_select,
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+                return_value={
+                    "action": {"action_type": "write_note", "reasoning": "Done"},
+                    "new_messages": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                return_value={
+                    "agent_instance_id": agent_instance_id,
+                    "action_type": "write_note",
+                    "persisted": True,
+                },
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert result["status"] != "skipped_no_content" if "status" in result else True
+        mock_select.assert_called_once()
+
+    def test_does_not_skip_when_notes_available(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={
+                    "available_requests": [],
+                    "available_notes": [{"id": "note-1", "content": "test note"}],
+                    "shown_request_ids": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.select_action_step",
+                return_value={
+                    "action_type": "rate_note",
+                    "reasoning": "Found note",
+                    "phase1_messages": [],
+                },
+            ) as mock_select,
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.execute_agent_turn_step",
+                return_value={
+                    "action": {"action_type": "rate_note", "reasoning": "Rated"},
+                    "new_messages": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.persist_state_step",
+                return_value={
+                    "agent_instance_id": agent_instance_id,
+                    "action_type": "rate_note",
+                    "persisted": True,
+                },
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert result["status"] != "skipped_no_content" if "status" in result else True
+        mock_select.assert_called_once()
+
+    def test_token_gate_released_on_skip(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={
+                    "available_requests": [],
+                    "available_notes": [],
+                    "shown_request_ids": [],
+                },
+            ),
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate") as mock_gate_cls,
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            mock_gate = MagicMock()
+            mock_gate_cls.return_value = mock_gate
+
+            run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        mock_gate.release.assert_called_once()

@@ -694,6 +694,13 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             simulation_run_id=context.get("simulation_run_id"),
         )
 
+        if not deps_data["available_requests"] and not deps_data["available_notes"]:
+            logger.info(
+                "Agent turn skipped: no available content",
+                extra={"agent_instance_id": agent_instance_id},
+            )
+            return {"agent_instance_id": agent_instance_id, "status": "skipped_no_content"}
+
         selection = select_action_step(
             context=context,
             deps_data=deps_data,
