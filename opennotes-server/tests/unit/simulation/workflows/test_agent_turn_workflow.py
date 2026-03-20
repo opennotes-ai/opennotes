@@ -446,6 +446,314 @@ class TestBuildDepsStep:
 
         assert f"LIMIT {MAX_LINKED_NOTES_PER_REQUEST}" in compiled
 
+    def test_build_deps_accepts_new_sibling_parameters(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+        agent_profile_id = str(uuid4())
+        simulation_run_id = str(uuid4())
+
+        mock_req_result = MagicMock()
+        mock_req_result.scalars.return_value.all.return_value = []
+
+        mock_note_result = MagicMock()
+        mock_note_result.scalars.return_value.all.return_value = []
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=[mock_req_result, mock_note_result])
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            result = build_deps_step.__wrapped__(
+                community_server_id=cs_id,
+                agent_profile_id=agent_profile_id,
+                simulation_run_id=simulation_run_id,
+            )
+
+        assert "available_requests" in result
+        assert "available_notes" in result
+
+    def test_build_deps_excludes_failed_requests(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+
+        captured_queries: list = []
+        call_count = 0
+
+        mock_req_result = MagicMock()
+        mock_req_result.scalars.return_value.all.return_value = []
+
+        mock_note_result = MagicMock()
+        mock_note_result.scalars.return_value.all.return_value = []
+
+        side_effects = [mock_req_result, mock_note_result]
+
+        async def capture_execute(query, *args, **kwargs):
+            nonlocal call_count
+            captured_queries.append(query)
+            result = side_effects[call_count]
+            call_count += 1
+            return result
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=capture_execute)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            build_deps_step.__wrapped__(community_server_id=cs_id)
+
+        new_query = captured_queries[0]
+        compiled = str(new_query.compile(compile_kwargs={"literal_binds": True}))
+        assert (
+            "!= 'FAILED'" in compiled or '!= "FAILED"' in compiled or "NOT" in compiled.upper()
+        ), f"Expected FAILED exclusion filter (!=) in query, got: {compiled}"
+
+    def test_build_deps_hard_excludes_acted_on_from_new_query(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+        acted_on_id = str(uuid4())
+
+        captured_queries: list = []
+        call_count = 0
+
+        mock_req_result = MagicMock()
+        mock_req_result.scalars.return_value.all.return_value = []
+
+        mock_note_result = MagicMock()
+        mock_note_result.scalars.return_value.all.return_value = []
+
+        side_effects = [mock_req_result, mock_note_result]
+
+        async def capture_execute(query, *args, **kwargs):
+            nonlocal call_count
+            captured_queries.append(query)
+            result = side_effects[call_count]
+            call_count += 1
+            return result
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=capture_execute)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            build_deps_step.__wrapped__(
+                community_server_id=cs_id,
+                acted_on_request_ids=[acted_on_id],
+            )
+
+        new_query = captured_queries[0]
+        compiled = str(new_query.compile(compile_kwargs={"literal_binds": True}))
+        acted_on_id_no_dashes = acted_on_id.replace("-", "")
+        assert acted_on_id in compiled or acted_on_id_no_dashes in compiled, (
+            f"Expected acted_on_id {acted_on_id} excluded in new_query, got: {compiled}"
+        )
+
+    def test_build_deps_excludes_self_authored_notes(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+        agent_profile_id = str(uuid4())
+        simulation_run_id = str(uuid4())
+
+        captured_queries: list = []
+        call_count = 0
+
+        mock_req_result = MagicMock()
+        mock_req_result.scalars.return_value.all.return_value = []
+
+        mock_note_result = MagicMock()
+        mock_note_result.scalars.return_value.all.return_value = []
+
+        side_effects = [mock_req_result, mock_note_result]
+
+        async def capture_execute(query, *args, **kwargs):
+            nonlocal call_count
+            captured_queries.append(query)
+            result = side_effects[call_count]
+            call_count += 1
+            return result
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=capture_execute)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            build_deps_step.__wrapped__(
+                community_server_id=cs_id,
+                agent_profile_id=agent_profile_id,
+                simulation_run_id=simulation_run_id,
+            )
+
+        note_query = captured_queries[-1]
+        compiled = str(note_query.compile(compile_kwargs={"literal_binds": True}))
+        assert "author_id" in compiled, (
+            f"Expected note query to filter by author_id for sibling exclusion, got: {compiled}"
+        )
+        assert "sim_agent_instances" in compiled, (
+            f"Expected sibling subquery referencing sim_agent_instances, got: {compiled}"
+        )
+
+    def test_build_deps_excludes_already_rated_notes(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+        agent_profile_id = str(uuid4())
+        simulation_run_id = str(uuid4())
+
+        captured_queries: list = []
+        call_count = 0
+
+        mock_req_result = MagicMock()
+        mock_req_result.scalars.return_value.all.return_value = []
+
+        mock_note_result = MagicMock()
+        mock_note_result.scalars.return_value.all.return_value = []
+
+        side_effects = [mock_req_result, mock_note_result]
+
+        async def capture_execute(query, *args, **kwargs):
+            nonlocal call_count
+            captured_queries.append(query)
+            result = side_effects[call_count]
+            call_count += 1
+            return result
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=capture_execute)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            build_deps_step.__wrapped__(
+                community_server_id=cs_id,
+                agent_profile_id=agent_profile_id,
+                simulation_run_id=simulation_run_id,
+            )
+
+        note_query = captured_queries[-1]
+        compiled = str(note_query.compile(compile_kwargs={"literal_binds": True}))
+        assert "ratings" in compiled.lower(), (
+            f"Expected note query to have rating exclusion subquery, got: {compiled}"
+        )
+        assert "NOT (EXISTS" in compiled or "NOT EXISTS" in compiled, (
+            f"Expected NOT EXISTS subquery for already-rated notes, got: {compiled}"
+        )
+
+    def test_build_deps_excludes_sibling_acted_requests_from_new_query(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import build_deps_step
+
+        cs_id = str(uuid4())
+        agent_profile_id = str(uuid4())
+        simulation_run_id = str(uuid4())
+
+        captured_queries: list = []
+        call_count = 0
+
+        mock_req_result = MagicMock()
+        mock_req_result.scalars.return_value.all.return_value = []
+
+        mock_note_result = MagicMock()
+        mock_note_result.scalars.return_value.all.return_value = []
+
+        side_effects = [mock_req_result, mock_note_result]
+
+        async def capture_execute(query, *args, **kwargs):
+            nonlocal call_count
+            captured_queries.append(query)
+            result = side_effects[call_count]
+            call_count += 1
+            return result
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=capture_execute)
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.run_sync",
+                side_effect=lambda coro: __import__("asyncio")
+                .get_event_loop()
+                .run_until_complete(coro),
+            ),
+            patch("src.database.get_session_maker", return_value=lambda: mock_session_ctx),
+        ):
+            build_deps_step.__wrapped__(
+                community_server_id=cs_id,
+                agent_profile_id=agent_profile_id,
+                simulation_run_id=simulation_run_id,
+            )
+
+        new_query = captured_queries[0]
+        compiled = str(new_query.compile(compile_kwargs={"literal_binds": True}))
+        assert "notes" in compiled.lower(), (
+            f"Expected new_query to reference notes table for sibling exclusion, got: {compiled}"
+        )
+        assert "request_id" in compiled.lower(), (
+            f"Expected new_query to exclude sibling-noted request_ids, got: {compiled}"
+        )
+        assert "sim_agent_instances" in compiled, (
+            f"Expected sibling subquery referencing sim_agent_instances in new_query, got: {compiled}"
+        )
+
 
 class TestExecuteAgentTurnStep:
     def test_execute_agent_turn_returns_action_and_messages(self) -> None:

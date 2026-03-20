@@ -13,7 +13,12 @@ from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
-from src.simulation.models import SimAgentInstance, SimulationOrchestrator, SimulationRun
+from src.simulation.models import (
+    SimAgentInstance,
+    SimAgentMemory,
+    SimulationOrchestrator,
+    SimulationRun,
+)
 from src.simulation.restart import (
     FOR_CAUSE_REMOVAL_REASONS,
     MAX_RETRIES_EXCEEDED,
@@ -358,6 +363,30 @@ def spawn_agents_step(
                 session.add(instance)
                 await session.flush()
 
+                prior_memory_query = (
+                    select(SimAgentMemory.acted_on_request_ids)
+                    .join(
+                        SimAgentInstance,
+                        SimAgentMemory.agent_instance_id == SimAgentInstance.id,
+                    )
+                    .where(
+                        SimAgentInstance.simulation_run_id == run_uuid,
+                        SimAgentInstance.agent_profile_id == profile_uuid,
+                        SimAgentInstance.id != instance.id,
+                        SimAgentInstance.state == "removed",
+                    )
+                    .order_by(SimAgentInstance.created_at.desc())
+                    .limit(1)
+                )
+                prior_result = await session.execute(prior_memory_query)
+                prior_acted_on = prior_result.scalar_one_or_none() or []
+
+                new_memory = SimAgentMemory(
+                    agent_instance_id=instance.id,
+                    acted_on_request_ids=prior_acted_on,
+                )
+                session.add(new_memory)
+
                 new_instance_ids.append(str(instance.id))
 
             await session.commit()
@@ -490,11 +519,11 @@ def check_content_availability_step(community_server_id: str) -> dict[str, Any]:
                 .select_from(Request)
                 .where(
                     Request.community_server_id == cs_id,
-                    Request.status == "PENDING",
+                    Request.status != "FAILED",
                     Request.deleted_at.is_(None),
                 )
             )
-            pending_requests = req_result.scalar() or 0
+            available_requests = req_result.scalar() or 0
 
             note_result = await session.execute(
                 select(func.count())
@@ -508,8 +537,8 @@ def check_content_availability_step(community_server_id: str) -> dict[str, Any]:
             unrated_notes = note_result.scalar() or 0
 
             return {
-                "has_content": pending_requests > 0 or unrated_notes > 0,
-                "pending_requests": pending_requests,
+                "has_content": available_requests > 0 or unrated_notes > 0,
+                "pending_requests": available_requests,
                 "unrated_notes": unrated_notes,
             }
 

@@ -179,9 +179,11 @@ def build_deps_step(
     community_server_id: str,
     seen_request_ids: list[str] | None = None,
     acted_on_request_ids: list[str] | None = None,
+    agent_profile_id: str | None = None,
+    simulation_run_id: str | None = None,
 ) -> dict[str, Any]:
     from src.database import get_session_maker
-    from src.notes.models import Note, Request
+    from src.notes.models import Note, Rating, Request
 
     async def _build() -> dict[str, Any]:
         available_requests: list[dict[str, Any]] = []
@@ -191,6 +193,22 @@ def build_deps_step(
 
         acted_on_set = set(acted_on_request_ids or [])
         effective_seen = [rid for rid in (seen_request_ids or []) if rid not in acted_on_set]
+
+        sibling_ids_subq = None
+        sibling_noted_reqs = None
+        if agent_profile_id and simulation_run_id:
+            sibling_ids_subq = (
+                select(SimAgentInstance.user_profile_id)
+                .where(
+                    SimAgentInstance.agent_profile_id == UUID(agent_profile_id),
+                    SimAgentInstance.simulation_run_id == UUID(simulation_run_id),
+                )
+                .scalar_subquery()
+            )
+            sibling_noted_reqs = select(Note.request_id).where(
+                Note.author_id.in_(sibling_ids_subq),
+                Note.deleted_at.is_(None),
+            )
 
         async with get_session_maker()() as session:
             from src.simulation.agent import (
@@ -205,8 +223,8 @@ def build_deps_step(
             if effective_seen:
                 persisted_query = select(Request).where(
                     Request.community_server_id == cs_id,
-                    Request.status == "PENDING",
                     Request.deleted_at.is_(None),
+                    Request.status != "FAILED",
                     Request.id.in_([UUID(rid) for rid in effective_seen]),
                 )
                 persisted_result = await session.execute(persisted_query)
@@ -217,14 +235,34 @@ def build_deps_step(
 
             new_requests: list[Any] = []
             if remaining_slots > 0:
+                note_count_subq = (
+                    select(func.count(Note.id))
+                    .where(
+                        Note.request_id == Request.id,
+                        Note.deleted_at.is_(None),
+                    )
+                    .correlate(Request)
+                    .scalar_subquery()
+                )
                 new_query = select(Request).where(
                     Request.community_server_id == cs_id,
-                    Request.status == "PENDING",
                     Request.deleted_at.is_(None),
+                    Request.status != "FAILED",
                 )
                 if persisted_ids:
                     new_query = new_query.where(Request.id.notin_(persisted_ids))
-                new_query = new_query.order_by(func.random()).limit(remaining_slots)
+                if acted_on_request_ids:
+                    new_query = new_query.where(
+                        Request.id.notin_([UUID(rid) for rid in acted_on_request_ids])
+                    )
+                new_query = (
+                    new_query.where(Request.id.notin_(sibling_noted_reqs))
+                    if sibling_noted_reqs is not None
+                    else new_query
+                )
+                new_query = new_query.order_by(note_count_subq.asc(), func.random()).limit(
+                    remaining_slots
+                )
                 new_result = await session.execute(new_query)
                 new_requests = list(new_result.scalars().all())
 
@@ -242,6 +280,10 @@ def build_deps_step(
                     )
                     .limit(MAX_LINKED_NOTES_PER_REQUEST * len(request_ids))
                 )
+                if sibling_ids_subq is not None:
+                    linked_note_query = linked_note_query.where(
+                        Note.author_id.notin_(sibling_ids_subq)
+                    )
                 linked_note_result = await session.execute(linked_note_query)
                 for n in linked_note_result.scalars().all():
                     if n.request_id is None:
@@ -276,6 +318,18 @@ def build_deps_step(
                 .order_by(func.random())
                 .limit(MAX_CONTEXT_NOTES)
             )
+            if sibling_ids_subq is not None:
+                note_query = note_query.where(Note.author_id.notin_(sibling_ids_subq))
+                already_rated = (
+                    select(Rating.id)
+                    .where(
+                        Rating.note_id == Note.id,
+                        Rating.rater_id.in_(sibling_ids_subq),
+                    )
+                    .correlate(Note)
+                    .exists()
+                )
+                note_query = note_query.where(~already_rated)
             note_result = await session.execute(note_query)
             for note in note_result.scalars().all():
                 available_notes.append(
@@ -326,6 +380,9 @@ def select_action_step(
             tool_config=context.get("tool_config"),
             simulation_run_id=UUID(context["simulation_run_id"])
             if context.get("simulation_run_id")
+            else None,
+            agent_profile_id=UUID(context["agent_profile_id"])
+            if context.get("agent_profile_id")
             else None,
         )
 
@@ -414,6 +471,9 @@ def execute_agent_turn_step(
                 tool_config=context.get("tool_config"),
                 simulation_run_id=UUID(context["simulation_run_id"])
                 if context.get("simulation_run_id")
+                else None,
+                agent_profile_id=UUID(context["agent_profile_id"])
+                if context.get("agent_profile_id")
                 else None,
             )
 
@@ -630,6 +690,8 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             community_server_id=context["community_server_id"],
             seen_request_ids=context.get("seen_request_ids", []),
             acted_on_request_ids=current_acted_on,
+            agent_profile_id=context.get("agent_profile_id"),
+            simulation_run_id=context.get("simulation_run_id"),
         )
 
         selection = select_action_step(

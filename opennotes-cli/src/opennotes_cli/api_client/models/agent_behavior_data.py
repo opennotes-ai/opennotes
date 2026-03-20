@@ -31,6 +31,7 @@ class AgentBehaviorData:
         action_distribution (AgentBehaviorDataActionDistribution):
         personality (str | Unset):  Default: ''.
         short_description (None | str | Unset):
+        display_model (str | Unset):  Default: ''.
     """
 
     agent_profile_id: str
@@ -43,6 +44,7 @@ class AgentBehaviorData:
     action_distribution: AgentBehaviorDataActionDistribution
     personality: str | Unset = ""
     short_description: None | str | Unset = UNSET
+    display_model: str | Unset = ""
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -70,6 +72,8 @@ class AgentBehaviorData:
         else:
             short_description = self.short_description
 
+        display_model = self.display_model
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -88,6 +92,8 @@ class AgentBehaviorData:
             field_dict["personality"] = personality
         if short_description is not UNSET:
             field_dict["short_description"] = short_description
+        if display_model is not UNSET:
+            field_dict["display_model"] = display_model
 
         return field_dict
 
@@ -127,6 +133,8 @@ class AgentBehaviorData:
 
         short_description = _parse_short_description(d.pop("short_description", UNSET))
 
+        display_model = d.pop("display_model", UNSET)
+
         agent_behavior_data = cls(
             agent_profile_id=agent_profile_id,
             agent_name=agent_name,
@@ -138,6 +146,7 @@ class AgentBehaviorData:
             action_distribution=action_distribution,
             personality=personality,
             short_description=short_description,
+            display_model=display_model,
         )
 
         agent_behavior_data.additional_properties = d
