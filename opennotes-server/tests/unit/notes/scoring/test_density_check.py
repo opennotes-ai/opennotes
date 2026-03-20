@@ -114,8 +114,8 @@ class TestDensityCheckPromotion:
 
         factory.get_scorer("community-123", note_count=300, ratings_density=density)
 
-        assert ("community-123", ScoringTier.MINIMAL) in factory._cache
-        assert ("community-123", ScoringTier.LIMITED) not in factory._cache
+        assert ("community-123", ScoringTier.MINIMAL, False) in factory._cache
+        assert ("community-123", ScoringTier.LIMITED, False) not in factory._cache
 
     def test_missing_density_keys_treated_as_zero(self):
         factory = ScorerFactory()

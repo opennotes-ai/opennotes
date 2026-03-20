@@ -23,6 +23,7 @@ from src.notes.scoring.preloaded_data_provider import PreloadedDataProvider
 from src.notes.scoring.scorer_factory import ScorerFactory, record_tier_failure
 from src.notes.scoring.snapshot_persistence import persist_scoring_snapshot
 from src.notes.scoring.tier_config import (
+    MINIMAL_DIVERSITY_THRESHOLD,
     ScoringTier,
     get_tier_for_note_count,
 )
@@ -429,6 +430,8 @@ async def score_community_server_notes(  # noqa: PLR0912
     if tier != ScoringTier.MINIMAL:
         ratings_density = await _query_ratings_density(community_server_id, db)
         data_provider = await _prefetch_community_data(community_server_id, db)
+    elif note_count >= MINIMAL_DIVERSITY_THRESHOLD:
+        data_provider = await _prefetch_community_data(community_server_id, db)
 
     factory = ScorerFactory()
     scorer = factory.get_scorer(
@@ -652,6 +655,8 @@ async def trigger_scoring_for_simulation(
     data_provider = None
     if tier != ScoringTier.MINIMAL:
         ratings_density = await _query_ratings_density(community_server_id, db)
+        data_provider = await _prefetch_community_data(community_server_id, db)
+    elif note_count >= MINIMAL_DIVERSITY_THRESHOLD:
         data_provider = await _prefetch_community_data(community_server_id, db)
 
     factory = ScorerFactory()

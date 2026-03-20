@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
+MINIMAL_DIVERSITY_THRESHOLD = 15
+
 
 class ScoringTier(str, Enum):
     MINIMAL = "minimal"
