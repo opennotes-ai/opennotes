@@ -3,16 +3,17 @@ import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
 import { TIER_DESCRIPTIONS } from "~/lib/scoring-tiers";
 import { softHyphenate } from "~/lib/soft-hyphenate";
+import { Card } from "~/components/ui/card";
 
 type ConsensusMetricsData = components["schemas"]["ConsensusMetricsData"];
 type ScoringCoverageData = components["schemas"]["ScoringCoverageData"];
 
 function MetricCard(props: { label: string; value: string }) {
   return (
-    <div class="rounded-lg border border-border bg-card p-3">
+    <Card class="p-3">
       <div class="text-xs text-muted-foreground">{props.label}</div>
       <div class="mt-1 text-xl font-semibold">{props.value}</div>
-    </div>
+    </Card>
   );
 }
 
@@ -51,7 +52,7 @@ export default function ScoringAnalysisSection(props: {
       </Show>
 
       <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div class="rounded-lg border border-border bg-card p-4">
+        <Card class="p-4">
           <h3 class="mb-2 text-sm font-semibold">Tier Distribution</h3>
           <table class="w-full text-sm" aria-label="Tier distribution">
             <tbody>
@@ -70,8 +71,8 @@ export default function ScoringAnalysisSection(props: {
               </For>
             </tbody>
           </table>
-        </div>
-        <div class="rounded-lg border border-border bg-card p-4">
+        </Card>
+        <Card class="p-4">
           <h3 class="mb-2 text-sm font-semibold">Scorer Breakdown</h3>
           <table class="w-full text-sm" aria-label="Scorer breakdown">
             <tbody>
@@ -85,19 +86,19 @@ export default function ScoringAnalysisSection(props: {
               </For>
             </tbody>
           </table>
-        </div>
-        <div class="rounded-lg border border-border bg-card p-4">
+        </Card>
+        <Card class="p-4">
           <h3 class="mb-2 text-sm font-semibold">Tiers Reached</h3>
           <p class="text-sm text-muted-foreground">
             {props.scoring.tiers_reached.map(humanizeLabel).join(", ") || "None"}
           </p>
-        </div>
-        <div class="rounded-lg border border-border bg-card p-4">
+        </Card>
+        <Card class="p-4">
           <h3 class="mb-2 text-sm font-semibold">Scorers Exercised</h3>
           <p class="text-sm text-muted-foreground break-words">
             {props.scoring.scorers_exercised.map(softHyphenate).join(", ") || "None"}
           </p>
-        </div>
+        </Card>
       </div>
     </section>
   );
