@@ -514,7 +514,7 @@ async def list_requests(
         return f"No {label} requests found."
 
     acted_on_ids: set = set()
-    if sibling_noted_reqs is not None and include_acted_on:
+    if sibling_noted_reqs is not None and sibling_ids_subq is not None and include_acted_on:
         try:
             acted_result = await ctx.deps.db.execute(
                 select(Note.request_id).where(
