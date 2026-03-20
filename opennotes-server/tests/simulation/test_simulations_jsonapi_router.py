@@ -2009,3 +2009,130 @@ class TestScopedKeyFiltering:
         returned_ids = [item["id"] for item in data["data"]]
         assert str(run_a["id"]) in returned_ids
         assert str(run_b["id"]) in returned_ids
+
+
+class TestCreateSimulationName:
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_create_simulation_with_name(
+        self, mock_dispatch, admin_auth_client, playground_community, orchestrator
+    ):
+        mock_dispatch.return_value = "wf-name"
+
+        request_body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {
+                    "orchestrator_id": str(orchestrator["id"]),
+                    "community_server_id": str(playground_community["id"]),
+                    "name": "My Test Run",
+                },
+            }
+        }
+
+        response = await admin_auth_client.post("/api/v2/simulations", json=request_body)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["data"]["attributes"]["name"] == "My Test Run"
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.simulation.simulations_jsonapi_router.dispatch_orchestrator",
+        new_callable=AsyncMock,
+    )
+    async def test_create_simulation_without_name(
+        self, mock_dispatch, admin_auth_client, playground_community, orchestrator
+    ):
+        mock_dispatch.return_value = "wf-noname"
+
+        request_body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {
+                    "orchestrator_id": str(orchestrator["id"]),
+                    "community_server_id": str(playground_community["id"]),
+                },
+            }
+        }
+
+        response = await admin_auth_client.post("/api/v2/simulations", json=request_body)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["data"]["attributes"]["name"] is None
+
+
+class TestUpdateSimulation:
+    @pytest.mark.asyncio
+    async def test_patch_simulation_name(self, admin_auth_client, simulation_run_factory):
+        run = await simulation_run_factory("pending")
+
+        request_body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {"name": "Updated Name"},
+            }
+        }
+
+        response = await admin_auth_client.patch(
+            f"/api/v2/simulations/{run['id']}", json=request_body
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["name"] == "Updated Name"
+
+    @pytest.mark.asyncio
+    async def test_patch_simulation_clear_name(self, admin_auth_client, simulation_run_factory):
+        run = await simulation_run_factory("pending")
+
+        request_body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {"name": "Temp Name"},
+            }
+        }
+        await admin_auth_client.patch(f"/api/v2/simulations/{run['id']}", json=request_body)
+
+        request_body["data"]["attributes"]["name"] = None
+        response = await admin_auth_client.patch(
+            f"/api/v2/simulations/{run['id']}", json=request_body
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["name"] is None
+
+    @pytest.mark.asyncio
+    async def test_patch_simulation_not_found(self, admin_auth_client):
+        request_body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {"name": "Ghost"},
+            }
+        }
+
+        response = await admin_auth_client.patch(
+            f"/api/v2/simulations/{uuid4()}", json=request_body
+        )
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_patch_simulation_unauthenticated(self):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.patch(
+                f"/api/v2/simulations/{uuid4()}",
+                json={
+                    "data": {
+                        "type": "simulations",
+                        "attributes": {"name": "nope"},
+                    }
+                },
+            )
+            assert response.status_code == 401

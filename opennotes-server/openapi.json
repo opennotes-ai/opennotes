@@ -10984,6 +10984,78 @@
       }
     },
     "/api/v2/simulations/{simulation_id}": {
+      "patch": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Update Simulation",
+        "operationId": "update_simulation_api_v2_simulations__simulation_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulationUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "simulations-jsonapi"
@@ -24592,6 +24664,17 @@
             "title": "Is Public",
             "default": false
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "created_at": {
             "anyOf": [
               {
@@ -24636,6 +24719,17 @@
             "type": "string",
             "format": "uuid",
             "title": "Community Server Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           }
         },
         "additionalProperties": false,
@@ -24778,6 +24872,57 @@
           "data"
         ],
         "title": "SimulationSingleResponse"
+      },
+      "SimulationUpdateAttributes": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SimulationUpdateAttributes"
+      },
+      "SimulationUpdateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "simulations",
+            "title": "Type",
+            "description": "Resource type must be 'simulations'"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/SimulationUpdateAttributes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "SimulationUpdateData"
+      },
+      "SimulationUpdateRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SimulationUpdateData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SimulationUpdateRequest"
       },
       "TierInfo": {
         "properties": {

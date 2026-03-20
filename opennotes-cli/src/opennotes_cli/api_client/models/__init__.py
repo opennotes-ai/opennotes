@@ -611,6 +611,9 @@ from .simulation_list_response_jsonapi import SimulationListResponseJsonapi
 from .simulation_resource import SimulationResource
 from .simulation_single_response import SimulationSingleResponse
 from .simulation_single_response_jsonapi import SimulationSingleResponseJsonapi
+from .simulation_update_attributes import SimulationUpdateAttributes
+from .simulation_update_data import SimulationUpdateData
+from .simulation_update_request import SimulationUpdateRequest
 from .tier_info import TierInfo
 from .tier_threshold import TierThreshold
 from .timeline_attributes import TimelineAttributes
@@ -1110,6 +1113,9 @@ __all__ = (
     "SimulationResource",
     "SimulationSingleResponse",
     "SimulationSingleResponseJsonapi",
+    "SimulationUpdateAttributes",
+    "SimulationUpdateData",
+    "SimulationUpdateRequest",
     "TierInfo",
     "TierThreshold",
     "TimelineAttributes",
