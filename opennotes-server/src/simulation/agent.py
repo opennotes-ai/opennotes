@@ -160,7 +160,7 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
 
 
 @sim_agent.tool
-async def write_note(
+async def write_note(  # noqa: PLR0911
     ctx: RunContext[SimAgentDeps],
     request_id: str,
     summary: str,
@@ -169,9 +169,40 @@ async def write_note(
     """Write a new community note for a request. Use this when you see a request
     that needs context or fact-checking. Classification must be one of:
     NOT_MISLEADING or MISINFORMED_OR_POTENTIALLY_MISLEADING."""
-    valid_ids = {str(r["id"]) for r in ctx.deps.available_requests}
-    if request_id not in valid_ids:
-        return f"Error: request id '{request_id}' not found in available requests."
+    try:
+        req_result = await ctx.deps.db.execute(
+            select(Request.id).where(
+                Request.id == UUID(request_id),
+                Request.community_server_id == ctx.deps.community_server_id,
+                Request.status != "FAILED",
+                Request.deleted_at.is_(None),
+            )
+        )
+        if req_result.scalar_one_or_none() is None:
+            return f"Error: request id '{request_id}' not found or is not available."
+    except (ValueError, SQLAlchemyError):
+        return f"Error: request id '{request_id}' not found or is not available."
+
+    if ctx.deps.agent_profile_id and ctx.deps.simulation_run_id:
+        sibling_ids_subq = (
+            select(SimAgentInstance.user_profile_id)
+            .where(
+                SimAgentInstance.agent_profile_id == ctx.deps.agent_profile_id,
+                SimAgentInstance.simulation_run_id == ctx.deps.simulation_run_id,
+            )
+            .scalar_subquery()
+        )
+        existing_note = await ctx.deps.db.execute(
+            select(Note.id)
+            .where(
+                Note.request_id == UUID(request_id),
+                Note.author_id.in_(sibling_ids_subq),
+                Note.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+        if existing_note.scalar_one_or_none() is not None:
+            return "Error: you have already written a note for this request."
 
     valid_classifications = {"NOT_MISLEADING", "MISINFORMED_OR_POTENTIALLY_MISLEADING"}
     if classification not in valid_classifications:
@@ -405,14 +436,32 @@ VALID_REQUEST_STATUSES = frozenset({"PENDING", "IN_PROGRESS", "COMPLETED", "FAIL
 async def list_requests(
     ctx: RunContext[SimAgentDeps],
     status: str = "",
+    include_acted_on: str = "",
 ) -> str:
     """List available content requests with their IDs and content preview.
     Use the returned ID in write_note to create a community note.
-    Optional status filter (default: all non-FAILED)."""
+    Optional status filter (default: all non-FAILED).
+    Set include_acted_on to 'true' to also show requests you already wrote notes for."""
     if status and status not in VALID_REQUEST_STATUSES:
         return (
             f"Error: invalid status '{status}'. "
             f"Must be one of: {', '.join(sorted(VALID_REQUEST_STATUSES))}"
+        )
+
+    sibling_noted_reqs = None
+    sibling_ids_subq = None
+    if ctx.deps.agent_profile_id and ctx.deps.simulation_run_id:
+        sibling_ids_subq = (
+            select(SimAgentInstance.user_profile_id)
+            .where(
+                SimAgentInstance.agent_profile_id == ctx.deps.agent_profile_id,
+                SimAgentInstance.simulation_run_id == ctx.deps.simulation_run_id,
+            )
+            .scalar_subquery()
+        )
+        sibling_noted_reqs = select(Note.request_id).where(
+            Note.author_id.in_(sibling_ids_subq),
+            Note.deleted_at.is_(None),
         )
 
     note_count_subq = (
@@ -449,6 +498,9 @@ async def list_requests(
             .limit(MAX_LIST_REQUESTS)
         )
 
+    if sibling_noted_reqs is not None and not include_acted_on:
+        query = query.where(Request.id.notin_(sibling_noted_reqs))
+
     try:
         result = await ctx.deps.db.execute(query)
         rows = result.all()
@@ -461,13 +513,27 @@ async def list_requests(
         label = status if status else "non-FAILED"
         return f"No {label} requests found."
 
+    acted_on_ids: set = set()
+    if sibling_noted_reqs is not None and include_acted_on:
+        try:
+            acted_result = await ctx.deps.db.execute(
+                select(Note.request_id).where(
+                    Note.author_id.in_(sibling_ids_subq),
+                    Note.deleted_at.is_(None),
+                )
+            )
+            acted_on_ids = {row[0] for row in acted_result.all()}
+        except SQLAlchemyError:
+            logger.exception("Database error fetching acted-on requests")
+
     label = status if status else "available"
     lines = [f"{len(rows)} {label} request(s):\n"]
     for req, note_count in rows:
         content = req.content or ""
         if len(content) > 100:
             content = content[:100].rsplit(" ", 1)[0] + "..."
-        lines.append(f"- ID: {req.id}\n  Content: {content}\n  Notes: {note_count}")
+        suffix = " (acted on)" if req.id in acted_on_ids else ""
+        lines.append(f"- ID: {req.id}{suffix}\n  Content: {content}\n  Notes: {note_count}")
 
     return "\n".join(lines)
 
