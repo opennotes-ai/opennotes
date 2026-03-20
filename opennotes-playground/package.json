@@ -23,6 +23,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "echarts": "^6.0.0",
+    "feed": "^5.2.0",
     "google-auth-library": "^10.6.1",
     "isomorphic-dompurify": "^3.5.1",
     "marked": "^17.0.4",
