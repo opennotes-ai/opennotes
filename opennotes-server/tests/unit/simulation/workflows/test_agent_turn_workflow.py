@@ -49,7 +49,7 @@ def _make_context(
         "user_profile_id": str(uuid4()),
         "personality": "You are a skeptical fact-checker.",
         "model_name": "openai:gpt-4o-mini",
-        "model_params": {"request_limit": 3, "total_tokens_limit": 4000},
+        "model_params": {"request_limit": 3, "total_tokens_limit": 80000},
         "memory_compaction_strategy": "sliding_window",
         "memory_compaction_config": None,
         "tool_config": tool_config,
@@ -2578,7 +2578,7 @@ class TestConfigurableDefaults:
         from src.config import get_settings
 
         settings = get_settings()
-        assert settings.SIMULATION_DEFAULT_TOKEN_LIMIT == 4000
+        assert settings.SIMULATION_DEFAULT_TOKEN_LIMIT == 80000
 
     def test_settings_has_simulation_compaction_interval(self) -> None:
         from src.config import get_settings
@@ -2839,7 +2839,7 @@ class TestResearchLimits:
         limits = _run_execute_step_and_capture_limits(context)
 
         assert limits.request_limit == 3
-        assert limits.total_tokens_limit == 4000
+        assert limits.total_tokens_limit == 80000
 
     def test_default_limits_when_research_disabled(self) -> None:
         context = _make_context()
@@ -2852,7 +2852,7 @@ class TestResearchLimits:
         limits = _run_execute_step_and_capture_limits(context)
 
         assert limits.request_limit == 3
-        assert limits.total_tokens_limit == 4000
+        assert limits.total_tokens_limit == 80000
 
     def test_partial_tool_config_uses_defaults_for_missing(self) -> None:
         context = _make_context()
