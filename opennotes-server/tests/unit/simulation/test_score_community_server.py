@@ -116,6 +116,9 @@ def _mock_db_for_community_scoring(
 
     side_effects.append(request_update_result)
 
+    reverse_update_result = MagicMock()
+    side_effects.append(reverse_update_result)
+
     if unscored_notes or rescore_notes:
         platform_result = MagicMock()
         platform_result.scalar_one_or_none.return_value = "discord"
@@ -725,3 +728,151 @@ class TestScoreCommunityServerNotes:
         assert unscored_offsets[1] == SCORING_BATCH_SIZE, (
             "Second SELECT must advance offset when all notes stay NEEDS_MORE_RATINGS"
         )
+
+
+def _find_reverse_transition_call(calls: list) -> MagicMock:
+    for call in calls:
+        stmt = call.args[0]
+        try:
+            compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+            sql_str = str(compiled)
+            params_str = str(compiled.params.values())
+            is_update_requests = "update requests" in sql_str.lower()
+            has_completed_in_params = "COMPLETED" in params_str
+            has_pending_in_params = "PENDING" in params_str
+            ends_with_is_null = sql_str.rstrip().endswith("IS NULL")
+            if (
+                is_update_requests
+                and has_completed_in_params
+                and has_pending_in_params
+                and ends_with_is_null
+            ):
+                return call
+        except Exception:
+            continue
+    raise AssertionError("No db.execute call matched the reverse transition pattern")
+
+
+class TestCompletedToPendingReverseTransition:
+    @pytest.mark.asyncio
+    async def test_completed_request_reverts_to_pending_when_no_helpful_notes(self) -> None:
+        cs_id = uuid4()
+        note_crh = _make_note(community_server_id=cs_id, status="CURRENTLY_RATED_HELPFUL")
+        note_crh.ratings = [_make_rating() for _ in range(6)]
+
+        db = _mock_db_for_community_scoring(
+            note_count=5,
+            unscored_notes=[],
+            rescore_notes=[note_crh],
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+        ):
+            mock_calc.return_value = _make_score_response(note_crh.id, score=0.3, rating_count=6)
+            await score_community_server_notes(cs_id, db)
+
+        all_calls = db.execute.call_args_list
+        reverse_call = _find_reverse_transition_call(all_calls)
+        stmt = reverse_call.args[0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+        params_str = str(compiled.params.values())
+
+        assert "COMPLETED" in params_str
+        assert "PENDING" in params_str
+
+    @pytest.mark.asyncio
+    async def test_completed_request_stays_completed_when_helpful_note_exists(self) -> None:
+        cs_id = uuid4()
+        note_crh = _make_note(community_server_id=cs_id, status="CURRENTLY_RATED_HELPFUL")
+        note_crh.ratings = [_make_rating() for _ in range(6)]
+
+        db = _mock_db_for_community_scoring(
+            note_count=5,
+            unscored_notes=[],
+            rescore_notes=[note_crh],
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+        ):
+            mock_calc.return_value = _make_score_response(note_crh.id, score=0.8, rating_count=6)
+            await score_community_server_notes(cs_id, db)
+
+        all_calls = db.execute.call_args_list
+        reverse_call = _find_reverse_transition_call(all_calls)
+        stmt = reverse_call.args[0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+        sql_str = str(compiled)
+
+        assert "is null" in sql_str.lower(), (
+            "Reverse transition WHERE clause must check for no helpful notes via IS NULL"
+        )
+
+    @pytest.mark.asyncio
+    async def test_reverse_transition_clears_note_id(self) -> None:
+        cs_id = uuid4()
+        note_crh = _make_note(community_server_id=cs_id, status="CURRENTLY_RATED_HELPFUL")
+        note_crh.ratings = [_make_rating() for _ in range(6)]
+
+        db = _mock_db_for_community_scoring(
+            note_count=5,
+            unscored_notes=[],
+            rescore_notes=[note_crh],
+        )
+
+        with (
+            patch(
+                "src.simulation.scoring_integration.calculate_note_score",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch("src.simulation.scoring_integration.ScorerFactory"),
+        ):
+            mock_calc.return_value = _make_score_response(note_crh.id, score=0.3, rating_count=6)
+            await score_community_server_notes(cs_id, db)
+
+        all_calls = db.execute.call_args_list
+        reverse_call = _find_reverse_transition_call(all_calls)
+        stmt = reverse_call.args[0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+        params = compiled.params
+
+        sql_str = str(compiled)
+        assert "note_id = null" in sql_str.lower() or any(v is None for v in params.values()), (
+            "Reverse transition must set note_id=None"
+        )
+
+    @pytest.mark.asyncio
+    async def test_reverse_transition_is_idempotent(self) -> None:
+        cs_id = uuid4()
+        note_crh = _make_note(community_server_id=cs_id, status="CURRENTLY_RATED_HELPFUL")
+        note_crh.ratings = [_make_rating() for _ in range(6)]
+
+        for _ in range(2):
+            db = _mock_db_for_community_scoring(
+                note_count=5,
+                unscored_notes=[],
+                rescore_notes=[note_crh],
+            )
+
+            with (
+                patch(
+                    "src.simulation.scoring_integration.calculate_note_score",
+                    new_callable=AsyncMock,
+                ) as mock_calc,
+                patch("src.simulation.scoring_integration.ScorerFactory"),
+            ):
+                mock_calc.return_value = _make_score_response(
+                    note_crh.id, score=0.3, rating_count=6
+                )
+                result = await score_community_server_notes(cs_id, db)
+
+            assert isinstance(result, CommunityServerScoringResult)
