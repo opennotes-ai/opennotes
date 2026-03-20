@@ -1,4 +1,5 @@
 import { createSignal, createMemo, createEffect, on, For, Show } from "solid-js";
+import { Popover } from "@kobalte/core/popover";
 import type { EChartsOption } from "echarts";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
@@ -20,22 +21,26 @@ const STATE_VARIANT: Record<string, BadgeVariant> = {
 };
 
 function PersonalityCell(props: { text: string }) {
-  const [expanded, setExpanded] = createSignal(false);
-  const shouldTruncate = () => props.text.length > 120;
+  const shouldTruncate = () => props.text.length > 200;
 
   return (
-    <div class="max-w-xs text-sm text-muted-foreground">
+    <div class="max-w-sm text-sm text-muted-foreground">
       <Show when={props.text} fallback={<span class="italic text-xs">No persona</span>}>
-        <p class={expanded() ? "whitespace-pre-line" : "line-clamp-2 whitespace-pre-line"}>
+        <p class="line-clamp-3 whitespace-pre-line">
           {props.text}
         </p>
         <Show when={shouldTruncate()}>
-          <button
-            class="text-xs text-primary hover:underline mt-1"
-            onClick={() => setExpanded(!expanded())}
-          >
-            {expanded() ? "Show less" : "Show more"}
-          </button>
+          <Popover>
+            <Popover.Trigger class="text-xs text-primary hover:underline mt-1 cursor-pointer">
+              Show more
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content class="z-50 max-w-md max-h-72 overflow-y-auto rounded-lg border border-border bg-popover p-4 text-sm text-popover-foreground shadow-lg">
+                <Popover.Arrow class="fill-popover" />
+                <p class="whitespace-pre-line leading-relaxed">{props.text}</p>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover>
         </Show>
       </Show>
     </div>
@@ -150,7 +155,7 @@ export default function AgentsSection(props: {
             <For each={visibleAgents()}>
               {(agent) => (
                 <tr id={`agent-${agent.agent_profile_id}`} class="border-b border-border last:border-0 hover:bg-muted/30">
-                  <td class="px-4 py-2.5">
+                  <td class="px-4 py-2.5 min-w-48">
                     <div class="font-medium">{agent.agent_name}</div>
                     <Show when={agent.short_description}>
                       <div class="text-xs text-muted-foreground">{agent.short_description}</div>
@@ -159,7 +164,7 @@ export default function AgentsSection(props: {
                       <IdBadge idValue={agent.agent_profile_id} variant="muted" />
                     </div>
                   </td>
-                  <td class="px-4 py-2.5 text-sm text-muted-foreground whitespace-nowrap">{agent.display_model}</td>
+                  <td class="px-4 py-2.5 text-sm text-muted-foreground max-w-32 break-words">{agent.display_model}</td>
                   <td class="px-4 py-2.5">
                     <PersonalityCell text={agent.personality} />
                   </td>
