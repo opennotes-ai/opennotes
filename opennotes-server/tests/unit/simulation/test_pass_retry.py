@@ -265,23 +265,17 @@ class TestSelectAction:
 
     @pytest.mark.asyncio
     async def test_no_soft_guard_when_nothing_available_legacy(self, sample_deps):
-        """No third retry when both notes and requests are empty (legitimate pass)."""
+        """No retries when both notes and requests are empty (legitimate pass)."""
         agent = OpenNotesSimAgent()
         pass_result1 = ActionSelectionResult(
             action_type=SimActionType.PASS_TURN, reasoning="nothing"
-        )
-        pass_result2 = ActionSelectionResult(
-            action_type=SimActionType.PASS_TURN, reasoning="still nothing"
         )
 
         with patch.object(
             agent._action_selector,
             "run",
             new_callable=AsyncMock,
-            side_effect=[
-                _make_run_result(pass_result1),
-                _make_run_result(pass_result2),
-            ],
+            return_value=_make_run_result(pass_result1),
         ) as mock_run:
             result, _ = await agent.select_action(
                 deps=sample_deps,
@@ -290,7 +284,7 @@ class TestSelectAction:
                 notes=[],
             )
             assert result.action_type == SimActionType.PASS_TURN
-            assert mock_run.call_count == 2
+            assert mock_run.call_count == 1
 
     @pytest.mark.asyncio
     async def test_soft_guard_fires_for_requests_only(self, sample_deps):
@@ -329,7 +323,7 @@ class TestSelectAction:
 
     @pytest.mark.asyncio
     async def test_no_soft_guard_when_nothing_available(self, sample_deps):
-        """No third retry when both notes and requests are empty."""
+        """No retries when both notes and requests are empty."""
         agent = OpenNotesSimAgent()
         pass_result = ActionSelectionResult(
             action_type=SimActionType.PASS_TURN, reasoning="nothing"
@@ -339,10 +333,7 @@ class TestSelectAction:
             agent._action_selector,
             "run",
             new_callable=AsyncMock,
-            side_effect=[
-                _make_run_result(pass_result),
-                _make_run_result(pass_result),
-            ],
+            return_value=_make_run_result(pass_result),
         ) as mock_run:
             result, _ = await agent.select_action(
                 deps=sample_deps,
@@ -351,7 +342,7 @@ class TestSelectAction:
                 notes=[],
             )
             assert result.action_type == SimActionType.PASS_TURN
-            assert mock_run.call_count == 2
+            assert mock_run.call_count == 1
 
     @pytest.mark.asyncio
     async def test_soft_guard_prompt_mentions_notes(self, sample_deps):
@@ -383,3 +374,47 @@ class TestSelectAction:
                 third_call.args[0] if third_call.args else third_call.kwargs.get("user_prompt", "")
             )
             assert "notes available" in prompt.lower() or "1 note" in prompt.lower()
+
+    @pytest.mark.asyncio
+    async def test_empty_work_skips_all_retries(self, sample_deps):
+        """When requests and notes are both empty, no retries fire."""
+        agent = OpenNotesSimAgent()
+        pass_result = ActionSelectionResult(
+            action_type=SimActionType.PASS_TURN, reasoning="nothing to do"
+        )
+
+        with patch.object(
+            agent._action_selector,
+            "run",
+            new_callable=AsyncMock,
+            return_value=_make_run_result(pass_result),
+        ) as mock_run:
+            _result, _messages = await agent.select_action(
+                deps=sample_deps,
+                recent_actions=[],
+                requests=[],
+                notes=[],
+            )
+            assert mock_run.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_work_returns_pass_turn_immediately(self, sample_deps):
+        """When requests and notes are both empty, PASS_TURN is returned immediately."""
+        agent = OpenNotesSimAgent()
+        pass_result = ActionSelectionResult(
+            action_type=SimActionType.PASS_TURN, reasoning="nothing to do"
+        )
+
+        with patch.object(
+            agent._action_selector,
+            "run",
+            new_callable=AsyncMock,
+            return_value=_make_run_result(pass_result),
+        ):
+            result, _messages = await agent.select_action(
+                deps=sample_deps,
+                recent_actions=[],
+                requests=[],
+                notes=[],
+            )
+            assert result.action_type == SimActionType.PASS_TURN

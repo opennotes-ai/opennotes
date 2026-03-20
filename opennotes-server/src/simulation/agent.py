@@ -30,7 +30,7 @@ CHANNEL_RATE_LIMIT_WINDOW_SECONDS: int = 60
 CHANNEL_RATE_LIMIT_MAX: int = 3
 CHANNEL_SIMILARITY_THRESHOLD: float = 0.8
 CHANNEL_SIMILARITY_LOOKBACK: int = 5
-TOKEN_BUDGET: int = 4000
+TOKEN_BUDGET: int = 16000
 MAX_RATE_NOTES_BATCH: int = 5
 
 
@@ -623,6 +623,10 @@ class OpenNotesSimAgent:
             model=self._model.to_pydantic_ai(),
         )
 
+        has_work = len(requests) > 0 or len(notes) > 0
+        if not has_work:
+            return result.output, result.all_messages()
+
         if result.output.action_type == SimActionType.PASS_TURN:
             verbose_summary = build_queue_summary(requests, notes, verbose=True)
             retry_prompt = self._build_phase1_prompt(
@@ -684,7 +688,7 @@ class OpenNotesSimAgent:
             "deps": deps,
             "message_history": message_history,
             "model": self._model.to_pydantic_ai(),
-            "usage_limits": usage_limits or UsageLimits(request_limit=3, total_tokens_limit=4000),
+            "usage_limits": usage_limits or UsageLimits(request_limit=3, total_tokens_limit=16000),
         }
 
         if _is_research_available(deps):
@@ -789,7 +793,10 @@ class OpenNotesSimAgent:
                     "You passed last turn but there is work available. "
                     "Please write a note or rate one instead of passing."
                 )
-        parts.append(f"\nAvailable work:\n{queue_summary}")
+        if has_work:
+            parts.append(f"\nAvailable work:\n{queue_summary}")
+        else:
+            parts.append("\nNo work is currently available.")
         parts.append(
             "\nWhat would you like to do this turn? Choose: write_note, rate_note, or pass_turn."
         )
