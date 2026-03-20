@@ -1,5 +1,5 @@
 import { For, createSignal } from "solid-js";
-import { Dialog } from "@kobalte/core/dialog";
+import { Sheet, SheetContent, SheetTitle } from "~/components/ui/sheet";
 import { SECTIONS } from "./sections";
 
 function SidebarNav(props: { onSectionClick?: () => void }) {
@@ -47,22 +47,14 @@ export function MobileSidebarToggle() {
         </svg>
       </button>
 
-      <Dialog open={open()} onOpenChange={setOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay class="fixed inset-0 z-40 bg-black/50" />
-          <Dialog.Content class="fixed inset-y-0 left-0 z-50 w-64 bg-background p-4 shadow-lg">
-            <div class="mb-4 flex items-center justify-between">
-              <Dialog.Title class="text-sm font-semibold">Sections</Dialog.Title>
-              <Dialog.CloseButton class="rounded p-1 hover:bg-muted">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </Dialog.CloseButton>
-            </div>
-            <SidebarNav onSectionClick={() => setOpen(false)} />
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog>
+      <Sheet open={open()} onOpenChange={setOpen}>
+        <SheetContent position="left" class="w-64 p-4">
+          <div class="mb-4">
+            <SheetTitle class="text-sm font-semibold">Sections</SheetTitle>
+          </div>
+          <SidebarNav onSectionClick={() => setOpen(false)} />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

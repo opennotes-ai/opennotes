@@ -1,5 +1,13 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show } from "solid-js";
 import { cn } from "~/lib/cn";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuGroupLabel,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+} from "~/components/ui/dropdown-menu";
 
 type FilterGroup = {
   label: string;
@@ -37,8 +45,6 @@ export default function NoteFilter(props: {
   status: string[];
   onChange: (values: NoteFilterValues) => void;
 }) {
-  const [open, setOpen] = createSignal(false);
-
   const activeCount = () => props.classification.length + props.status.length;
 
   function toggle(group: string, value: string) {
@@ -65,8 +71,8 @@ export default function NoteFilter(props: {
   }
 
   return (
-    <div class="relative">
-      <button
+    <DropdownMenu>
+      <DropdownMenuTrigger
         data-testid="note-filter-toggle"
         class={cn(
           "flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
@@ -74,8 +80,6 @@ export default function NoteFilter(props: {
             ? "border-primary bg-primary/10 text-primary"
             : "border-input hover:bg-muted",
         )}
-        onClick={() => setOpen(!open())}
-        aria-expanded={open()}
       >
         Filter
         <Show when={activeCount() > 0}>
@@ -83,48 +87,39 @@ export default function NoteFilter(props: {
             {activeCount()}
           </span>
         </Show>
-      </button>
-
-      <Show when={open()}>
-        <div
-          data-testid="note-filter-panel"
-          class="absolute right-0 top-full z-10 mt-1 w-72 rounded-lg border border-border bg-card p-3 shadow-lg"
-        >
-          <div class="mb-2 flex items-center justify-between">
-            <span class="text-xs font-semibold text-muted-foreground">Filters</span>
-            <Show when={activeCount() > 0}>
-              <button
-                class="text-xs text-primary hover:underline"
-                onClick={clearAll}
-              >
-                Clear all
-              </button>
-            </Show>
-          </div>
-
-          <For each={FILTER_GROUPS}>
-            {(group) => (
-              <div class="mt-2">
-                <div class="mb-1 text-xs font-medium text-muted-foreground">{group.label}</div>
-                <For each={group.options}>
-                  {(option) => (
-                    <label class="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-muted/50">
-                      <input
-                        type="checkbox"
-                        data-testid={`filter-${group.key}-${option.value}`}
-                        checked={isChecked(group.key, option.value)}
-                        onChange={() => toggle(group.key, option.value)}
-                        class="h-3.5 w-3.5 rounded border-input"
-                      />
-                      {option.label}
-                    </label>
-                  )}
-                </For>
-              </div>
-            )}
-          </For>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent class="w-72" data-testid="note-filter-panel">
+        <div class="mb-1 flex items-center justify-between px-2 py-1">
+          <span class="text-xs font-semibold text-muted-foreground">Filters</span>
+          <Show when={activeCount() > 0}>
+            <button class="text-xs text-primary hover:underline" onClick={clearAll}>
+              Clear all
+            </button>
+          </Show>
         </div>
-      </Show>
-    </div>
+        <For each={FILTER_GROUPS}>
+          {(group, i) => (
+            <>
+              <Show when={i() > 0}>
+                <DropdownMenuSeparator />
+              </Show>
+              <DropdownMenuGroupLabel>{group.label}</DropdownMenuGroupLabel>
+              <For each={group.options}>
+                {(option) => (
+                  <DropdownMenuCheckboxItem
+                    data-testid={`filter-${group.key}-${option.value}`}
+                    checked={isChecked(group.key, option.value)}
+                    onChange={() => toggle(group.key, option.value)}
+                    closeOnSelect={false}
+                  >
+                    {option.label}
+                  </DropdownMenuCheckboxItem>
+                )}
+              </For>
+            </>
+          )}
+        </For>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
