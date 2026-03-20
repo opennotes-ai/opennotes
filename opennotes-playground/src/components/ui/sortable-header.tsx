@@ -10,6 +10,29 @@ interface SortableHeaderProps {
   class?: string;
 }
 
+function SortIcon(props: { direction: SortDirection; active: boolean }) {
+  if (!props.active || !props.direction) {
+    return (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-0.5 inline size-3.5 text-muted-foreground">
+        <path d="M7 15l5 5l5 -5" />
+        <path d="M7 9l5 -5l5 5" />
+      </svg>
+    );
+  }
+  if (props.direction === "desc") {
+    return (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-0.5 inline size-3.5 text-foreground">
+        <path d="M6 15l6 6l6 -6" />
+      </svg>
+    );
+  }
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-0.5 inline size-3.5 text-foreground">
+      <path d="M6 9l6 -6l6 6" />
+    </svg>
+  );
+}
+
 const SortableHeader: Component<SortableHeaderProps> = (props) => {
   const isActive = () => props.activeSort.key === props.sortKey;
   const direction = () => (isActive() ? props.activeSort.direction : null);
@@ -18,11 +41,6 @@ const SortableHeader: Component<SortableHeaderProps> = (props) => {
     const nextDir =
       direction() === null ? "desc" : direction() === "desc" ? "asc" : null;
     props.onSort(props.sortKey, nextDir);
-  };
-
-  const arrow = () => {
-    if (!isActive() || !direction()) return "\u2195";
-    return direction() === "desc" ? "\u2193" : "\u2191";
   };
 
   return (
@@ -35,8 +53,8 @@ const SortableHeader: Component<SortableHeaderProps> = (props) => {
       data-sort-direction={direction() ?? undefined}
       onClick={handleClick}
     >
-      {props.label}{" "}
-      <span class="ml-0.5 text-muted-foreground">{arrow()}</span>
+      {props.label}
+      <SortIcon direction={direction()} active={isActive()} />
     </th>
   );
 };
