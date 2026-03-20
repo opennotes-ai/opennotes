@@ -49,6 +49,7 @@ class SimAgentDeps:
     model_name: ModelId
     tool_config: dict[str, Any] | None = field(default=None)
     simulation_run_id: UUID | None = None
+    agent_profile_id: UUID | None = None
 
 
 WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "google", "groq"})
@@ -125,9 +126,16 @@ def build_instructions(ctx: RunContext[SimAgentDeps]) -> str:
         "- write_note: Write a new community note for a request\n"
         "- rate_note: Rate existing community notes\n"
         "- list_requests: List available requests with IDs and content\n"
+        "- list_my_actions: List requests you've already written notes for\n"
         "- pass_turn: Do nothing this turn\n\n"
         "Choose the most appropriate action based on the available "
         "requests and notes. Always explain your reasoning."
+    )
+
+    base += (
+        "\n\nRequest statuses: PENDING — needs notes, "
+        "IN_PROGRESS — being worked on, "
+        "COMPLETED — has helpful note but more perspectives welcome.\n"
     )
 
     if ctx.deps.simulation_run_id is not None:
@@ -396,12 +404,12 @@ VALID_REQUEST_STATUSES = frozenset({"PENDING", "IN_PROGRESS", "COMPLETED", "FAIL
 @sim_agent.tool
 async def list_requests(
     ctx: RunContext[SimAgentDeps],
-    status: str = "PENDING",
+    status: str = "",
 ) -> str:
     """List available content requests with their IDs and content preview.
     Use the returned ID in write_note to create a community note.
-    Optional status filter (default: PENDING)."""
-    if status not in VALID_REQUEST_STATUSES:
+    Optional status filter (default: all non-FAILED)."""
+    if status and status not in VALID_REQUEST_STATUSES:
         return (
             f"Error: invalid status '{status}'. "
             f"Must be one of: {', '.join(sorted(VALID_REQUEST_STATUSES))}"
@@ -418,16 +426,28 @@ async def list_requests(
         .label("note_count")
     )
 
-    query = (
-        select(Request, note_count_subq)
-        .where(
-            Request.community_server_id == ctx.deps.community_server_id,
-            Request.status == status,
-            Request.deleted_at.is_(None),
+    if status:
+        query = (
+            select(Request, note_count_subq)
+            .where(
+                Request.community_server_id == ctx.deps.community_server_id,
+                Request.status == status,
+                Request.deleted_at.is_(None),
+            )
+            .order_by(Request.created_at.desc())
+            .limit(MAX_LIST_REQUESTS)
         )
-        .order_by(Request.created_at.desc())
-        .limit(MAX_LIST_REQUESTS)
-    )
+    else:
+        query = (
+            select(Request, note_count_subq)
+            .where(
+                Request.community_server_id == ctx.deps.community_server_id,
+                Request.status != "FAILED",
+                Request.deleted_at.is_(None),
+            )
+            .order_by(Request.created_at.desc())
+            .limit(MAX_LIST_REQUESTS)
+        )
 
     try:
         result = await ctx.deps.db.execute(query)
@@ -438,15 +458,55 @@ async def list_requests(
         return "Error: could not list requests due to a database error."
 
     if not rows:
-        return f"No {status} requests found."
+        label = status if status else "non-FAILED"
+        return f"No {label} requests found."
 
-    lines = [f"{len(rows)} {status} request(s):\n"]
+    label = status if status else "available"
+    lines = [f"{len(rows)} {label} request(s):\n"]
     for req, note_count in rows:
         content = req.content or ""
         if len(content) > 100:
             content = content[:100].rsplit(" ", 1)[0] + "..."
         lines.append(f"- ID: {req.id}\n  Content: {content}\n  Notes: {note_count}")
 
+    return "\n".join(lines)
+
+
+@sim_agent.tool
+async def list_my_actions(
+    ctx: RunContext[SimAgentDeps],
+) -> str:
+    """List requests you have already written notes for in this simulation."""
+    try:
+        query = (
+            select(Note, Request)
+            .join(Request, Note.request_id == Request.id)
+            .where(
+                Note.author_id == ctx.deps.user_profile_id,
+                Note.deleted_at.is_(None),
+                Note.community_server_id == ctx.deps.community_server_id,
+            )
+            .order_by(Note.created_at.desc())
+            .limit(MAX_LIST_REQUESTS)
+        )
+        result = await ctx.deps.db.execute(query)
+        rows = result.all()
+    except SQLAlchemyError:
+        await ctx.deps.db.rollback()
+        logger.exception("Database error listing my actions")
+        return "Error: could not list your actions due to a database error."
+
+    if not rows:
+        return "You have not written any notes yet."
+
+    lines = [f"{len(rows)} note(s) you have written:\n"]
+    for note, req in rows:
+        content = (req.content or "")[:80]
+        if len(req.content or "") > 80:
+            content = content.rsplit(" ", 1)[0] + "..."
+        lines.append(
+            f"- Request: {req.id}\n  Content: {content}\n  Your note: {(note.summary or '')[:60]}"
+        )
     return "\n".join(lines)
 
 
@@ -784,6 +844,7 @@ __all__ = [
     "build_action_selector_instructions",
     "build_queue_summary",
     "estimate_tokens",
+    "list_my_actions",
     "list_requests",
     "post_to_channel",
     "rate_notes",

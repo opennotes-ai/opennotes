@@ -24,6 +24,7 @@ from src.simulation.agent import (
     build_action_selector_instructions,
     build_instructions,
     estimate_tokens,
+    list_my_actions,
     list_requests,
     pass_turn,
     rate_notes,
@@ -132,8 +133,8 @@ class TestToolsRegistered:
     def test_pass_turn_tool_registered(self):
         assert "pass_turn" in self._get_tool_names()
 
-    def test_six_tools_total(self):
-        assert len(sim_agent._function_toolset.tools) == 6
+    def test_seven_tools_total(self):
+        assert len(sim_agent._function_toolset.tools) == 7
 
 
 class TestWriteNoteTool:
@@ -1428,7 +1429,7 @@ class TestListRequestsTool:
 
         result = await list_requests(ctx)
 
-        assert "1 PENDING request(s)" in result
+        assert "1 available request(s)" in result
         assert str(req.id) in result
         assert "Is the earth flat?" in result
         assert "Notes: 2" in result
@@ -1444,7 +1445,7 @@ class TestListRequestsTool:
 
         result = await list_requests(ctx)
 
-        assert "No PENDING requests found" in result
+        assert "No non-FAILED requests found" in result
 
     @pytest.mark.asyncio
     async def test_list_requests_filters_by_status(self, sample_deps):
@@ -1523,3 +1524,170 @@ class TestListRequestsTool:
             classification="NOT_MISLEADING",
         )
         assert "Note created" in write_result
+
+
+class TestListRequestsDefaultFilter:
+    @staticmethod
+    def _make_mock_request(*, content="Test", status="PENDING"):
+        req = MagicMock()
+        req.id = uuid4()
+        req.content = content
+        req.status = status
+        return req
+
+    @pytest.mark.asyncio
+    async def test_list_requests_default_shows_all_non_failed(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        req1 = self._make_mock_request(content="Pending claim", status="PENDING")
+        req2 = self._make_mock_request(content="Completed claim", status="COMPLETED")
+        req3 = self._make_mock_request(content="In progress claim", status="IN_PROGRESS")
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req1, 0), (req2, 1), (req3, 0)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx)
+
+        assert "3 available request(s)" in result
+        assert str(req1.id) in result
+        assert str(req2.id) in result
+        assert str(req3.id) in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_default_no_results(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx)
+
+        assert "No non-FAILED requests found" in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_with_explicit_status_filters(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        req = self._make_mock_request(content="Test content", status="COMPLETED")
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req, 1)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx, status="COMPLETED")
+
+        assert "1 COMPLETED request(s)" in result
+        assert str(req.id) in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_explicit_empty_string_shows_non_failed(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_requests(ctx, status="")
+
+        assert "No non-FAILED requests found" in result
+
+
+class TestListMyActions:
+    @pytest.mark.asyncio
+    async def test_list_my_actions_returns_authored_notes(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_note = MagicMock()
+        mock_note.id = uuid4()
+        mock_note.summary = "Test note summary"
+        mock_note.created_at = None
+
+        mock_request = MagicMock()
+        mock_request.id = uuid4()
+        mock_request.content = "Test content for a claim"
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(mock_note, mock_request)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_my_actions(ctx)
+
+        assert "1 note(s) you have written" in result
+        assert str(mock_request.id) in result
+        assert "Test content for a claim" in result
+        assert "Test note summary" in result
+
+    @pytest.mark.asyncio
+    async def test_list_my_actions_empty(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_my_actions(ctx)
+
+        assert result == "You have not written any notes yet."
+
+    @pytest.mark.asyncio
+    async def test_list_my_actions_truncates_long_content(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        mock_note = MagicMock()
+        mock_note.id = uuid4()
+        mock_note.summary = "A note"
+        mock_note.created_at = None
+
+        mock_request = MagicMock()
+        mock_request.id = uuid4()
+        mock_request.content = "word " * 30
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(mock_note, mock_request)]
+        sample_deps.db.execute = AsyncMock(return_value=mock_result)
+
+        result = await list_my_actions(ctx)
+
+        assert "..." in result
+
+    @pytest.mark.asyncio
+    async def test_list_my_actions_handles_db_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        sample_deps.db.execute = AsyncMock(side_effect=SQLAlchemyError("db down"))
+        sample_deps.db.rollback = AsyncMock()
+
+        result = await list_my_actions(ctx)
+
+        assert "Error" in result
+        assert "database error" in result
+        sample_deps.db.rollback.assert_awaited_once()
+
+
+class TestStatusLegendInPrompt:
+    def test_status_legend_in_system_prompt(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        instructions = build_instructions(ctx)
+
+        assert "Request statuses:" in instructions
+        assert "PENDING" in instructions
+        assert "IN_PROGRESS" in instructions
+        assert "COMPLETED" in instructions
+
+    def test_list_my_actions_in_available_actions(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        instructions = build_instructions(ctx)
+
+        assert "list_my_actions" in instructions
