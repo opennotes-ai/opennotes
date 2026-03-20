@@ -448,6 +448,8 @@ async def list_requests(
             f"Must be one of: {', '.join(sorted(VALID_REQUEST_STATUSES))}"
         )
 
+    show_acted_on = include_acted_on.lower() == "true"
+
     sibling_noted_reqs = None
     sibling_ids_subq = None
     if ctx.deps.agent_profile_id and ctx.deps.simulation_run_id:
@@ -498,7 +500,7 @@ async def list_requests(
             .limit(MAX_LIST_REQUESTS)
         )
 
-    if sibling_noted_reqs is not None and not include_acted_on:
+    if sibling_noted_reqs is not None and not show_acted_on:
         query = query.where(Request.id.notin_(sibling_noted_reqs))
 
     try:
@@ -514,7 +516,7 @@ async def list_requests(
         return f"No {label} requests found."
 
     acted_on_ids: set = set()
-    if sibling_noted_reqs is not None and sibling_ids_subq is not None and include_acted_on:
+    if sibling_noted_reqs is not None and sibling_ids_subq is not None and show_acted_on:
         try:
             acted_result = await ctx.deps.db.execute(
                 select(Note.request_id).where(
