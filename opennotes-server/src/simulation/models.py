@@ -256,6 +256,7 @@ class SimulationRun(Base, TimestampMixin):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    name: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     orchestrator: Mapped[SimulationOrchestrator] = relationship(
         "SimulationOrchestrator", lazy="raise"
