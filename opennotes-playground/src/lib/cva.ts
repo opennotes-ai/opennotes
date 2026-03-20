@@ -1,8 +1,2 @@
-import { defineConfig } from "cva";
-import { twMerge } from "tailwind-merge";
-
-export const { cva, cx, compose } = defineConfig({
-  hooks: {
-    onComplete: (className) => twMerge(className),
-  },
-});
+export { cva, cx } from "class-variance-authority";
+export type { VariantProps } from "class-variance-authority";
