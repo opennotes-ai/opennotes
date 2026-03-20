@@ -35,6 +35,8 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --animate-content-show: content-show 150ms ease-out;
+  --animate-content-hide: content-hide 150ms ease-in;
 }
 
 :root {
@@ -104,16 +106,6 @@
 
 .blog-serif .prose {
   font-family: var(--font-serif);
-}
-
-@keyframes accordion-down {
-  from { height: 0; }
-  to { height: var(--kb-accordion-content-height); }
-}
-
-@keyframes accordion-up {
-  from { height: var(--kb-accordion-content-height); }
-  to { height: 0; }
 }
 
 @keyframes content-show {
