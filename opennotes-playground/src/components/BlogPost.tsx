@@ -17,16 +17,18 @@ export default function BlogPost(props: { post: BlogPostType }) {
           {props.post.title}
         </h3>
       </div>
-      <time class="mt-1 block text-sm text-muted-foreground" datetime={props.post.publishedAt}>
-        {formatDate(props.post.publishedAt)}
-      </time>
-      <Show when={props.post.authorHtml}>
-        {(html) => (
-          <span class="mt-1 block text-sm text-muted-foreground">
-            posted by <span innerHTML={html()} />
-          </span>
-        )}
-      </Show>
+      <div class="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
+        <time datetime={props.post.publishedAt}>
+          {formatDate(props.post.publishedAt)}
+        </time>
+        <Show when={props.post.authorHtml}>
+          {(html) => (
+            <span>
+              posted by <span innerHTML={html()} />
+            </span>
+          )}
+        </Show>
+      </div>
       <div class="prose prose-sm mt-3 max-w-none dark:prose-invert" innerHTML={props.post.bodyHtml} />
     </article>
   );
