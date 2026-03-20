@@ -5,19 +5,20 @@ const SIM_URL = "/simulations/019ceaaf-487e-708f-bcae-e4a441d6e841";
 const EXPECTED_SECTIONS = [
   "Agents",
   "Notes & Ratings",
-  "Note Details",
   "Scoring & Analysis",
+  "Note Details",
+  "Chat Channel",
 ];
 
 test.describe("Simulation detail page", () => {
   test.describe("desktop viewport", () => {
     test.use({ viewport: { width: 1280, height: 720 } });
 
-    test("sidebar shows exactly 4 sections", async ({ page }) => {
+    test("sidebar shows exactly 5 sections", async ({ page }) => {
       await page.goto(SIM_URL, { waitUntil: "networkidle" });
 
       const sidebarButtons = page.locator("aside nav button");
-      await expect(sidebarButtons).toHaveCount(4);
+      await expect(sidebarButtons).toHaveCount(5);
 
       for (let i = 0; i < EXPECTED_SECTIONS.length; i++) {
         await expect(sidebarButtons.nth(i)).toHaveText(EXPECTED_SECTIONS[i]);
@@ -112,7 +113,7 @@ test.describe("Simulation detail page", () => {
       await expect(drawer).toBeVisible();
 
       const drawerButtons = drawer.locator("nav button");
-      await expect(drawerButtons).toHaveCount(4);
+      await expect(drawerButtons).toHaveCount(5);
 
       for (let i = 0; i < EXPECTED_SECTIONS.length; i++) {
         await expect(drawerButtons.nth(i)).toHaveText(EXPECTED_SECTIONS[i]);

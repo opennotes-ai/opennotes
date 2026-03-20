@@ -4,6 +4,7 @@ import { listSimulations } from "~/lib/api-client.server";
 import SimulationCard from "~/components/SimulationCard";
 import Pagination from "~/components/Pagination";
 import BlogFeed from "~/components/BlogFeed";
+import FontToggle from "~/components/FontToggle";
 
 const getSimulations = query(async (page: number) => {
   "use server";
@@ -22,10 +23,11 @@ export default function SimulationsPage() {
 
   return (
     <main class="mx-auto max-w-6xl px-4 py-8">
-      <h1 class="text-2xl font-bold tracking-tight">OpenNotes</h1>
-      <div class="mt-6 grid grid-cols-1 gap-8 md:grid-cols-[2fr_1fr]">
+      <div class="grid grid-cols-1 gap-8 md:grid-cols-[2fr_1fr]">
         <div>
-          <h2 class="text-lg font-semibold mb-4">Blog</h2>
+          <div class="flex items-center justify-end mb-4">
+            <FontToggle />
+          </div>
           <Suspense fallback={<p class="text-muted-foreground">Loading posts...</p>}>
             <BlogFeed />
           </Suspense>

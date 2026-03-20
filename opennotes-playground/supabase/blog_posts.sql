@@ -3,6 +3,7 @@ CREATE TABLE blog_posts (
   title text NOT NULL,
   slug text NOT NULL UNIQUE,
   body_markdown text NOT NULL,
+  author text,
   published_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()

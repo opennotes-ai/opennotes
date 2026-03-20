@@ -3,9 +3,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 vi.mock("./markdown", () => ({
   renderMarkdown: vi.fn((src: string) => `<p>${src}</p>`),
+  renderInlineMarkdown: vi.fn((src: string) => src),
 }));
 
 import { renderMarkdown } from "./markdown";
+import { renderInlineMarkdown } from "./markdown";
 import { fetchBlogPosts } from "./blog.server";
 
 function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
@@ -15,6 +17,7 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     slug: "test-post",
     body_markdown: "# Hello",
     published_at: "2026-03-01T00:00:00Z",
+    author: null,
     ...overrides,
   };
 }
@@ -33,6 +36,7 @@ function createMockSupabase(result: { data: unknown[] | null; error: unknown }) 
 
 beforeEach(() => {
   vi.mocked(renderMarkdown).mockClear();
+  vi.mocked(renderInlineMarkdown).mockClear();
 });
 
 describe("fetchBlogPosts", () => {
@@ -44,7 +48,7 @@ describe("fetchBlogPosts", () => {
 
     expect(mocks.from).toHaveBeenCalledWith("blog_posts");
     expect(mocks.select).toHaveBeenCalledWith(
-      "id, title, slug, body_markdown, published_at",
+      "id, title, slug, body_markdown, published_at, author",
     );
     expect(mocks.not).toHaveBeenCalledWith("published_at", "is", null);
     expect(mocks.order).toHaveBeenCalledWith("published_at", {
@@ -96,6 +100,27 @@ describe("fetchBlogPosts", () => {
 
     expect(posts).toEqual([]);
     expect(hasMore).toBe(false);
+  });
+
+  it("maps author through renderMarkdown when present", async () => {
+    const row = makeRow({ author: "[Mike](https://example.com)" });
+    const { client } = createMockSupabase({ data: [row], error: null });
+
+    const { posts } = await fetchBlogPosts(client);
+
+    expect(renderInlineMarkdown).toHaveBeenCalledWith("[Mike](https://example.com)");
+    expect(posts[0].author).toBe("[Mike](https://example.com)");
+    expect(posts[0].authorHtml).toBe("[Mike](https://example.com)");
+  });
+
+  it("leaves author undefined when null", async () => {
+    const row = makeRow({ author: null });
+    const { client } = createMockSupabase({ data: [row], error: null });
+
+    const { posts } = await fetchBlogPosts(client);
+
+    expect(posts[0].author).toBeUndefined();
+    expect(posts[0].authorHtml).toBeUndefined();
   });
 
   it("throws when Supabase returns an error", async () => {

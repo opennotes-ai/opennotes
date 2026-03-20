@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { renderMarkdown } from "./markdown";
+import { renderMarkdown, renderInlineMarkdown } from "./markdown";
 
 export type BlogPost = {
   id: string;
@@ -7,6 +7,8 @@ export type BlogPost = {
   slug: string;
   bodyHtml: string;
   publishedAt: string;
+  author?: string;
+  authorHtml?: string;
 };
 
 export async function fetchBlogPosts(
@@ -16,7 +18,7 @@ export async function fetchBlogPosts(
 ): Promise<{ posts: BlogPost[]; hasMore: boolean }> {
   const { data, error } = await supabase
     .from("blog_posts")
-    .select("id, title, slug, body_markdown, published_at")
+    .select("id, title, slug, body_markdown, published_at, author")
     .not("published_at", "is", null)
     .order("published_at", { ascending: false })
     .range(offset, offset + limit);
@@ -33,6 +35,8 @@ export async function fetchBlogPosts(
     slug: row.slug,
     bodyHtml: renderMarkdown(row.body_markdown),
     publishedAt: row.published_at,
+    author: row.author ?? undefined,
+    authorHtml: row.author ? renderInlineMarkdown(row.author) : undefined,
   }));
 
   return { posts, hasMore };

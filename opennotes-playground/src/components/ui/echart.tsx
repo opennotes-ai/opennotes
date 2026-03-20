@@ -20,8 +20,14 @@ echarts.use([
   CanvasRenderer,
 ]);
 
+const VINTAGE_THEME = {
+  color: ["#d87c7c", "#919e8b", "#d7ab82", "#6e7074", "#61a0a8", "#efa18d", "#787464", "#cc7e63", "#724e58", "#4b565b"],
+};
+echarts.registerTheme("vintage", VINTAGE_THEME);
+
 interface EChartProps {
   option: EChartsOption;
+  theme?: string;
   height?: string;
   class?: string;
 }
@@ -31,7 +37,7 @@ export function EChart(props: EChartProps) {
   let chart: echarts.ECharts | undefined;
 
   onMount(() => {
-    chart = echarts.init(containerRef);
+    chart = echarts.init(containerRef, props.theme ?? "vintage");
 
     const handleResize = () => chart?.resize();
     window.addEventListener("resize", handleResize);

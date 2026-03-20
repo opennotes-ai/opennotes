@@ -2,6 +2,7 @@ import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
 import { TIER_DESCRIPTIONS } from "~/lib/scoring-tiers";
+import { softHyphenate } from "~/lib/soft-hyphenate";
 
 type ConsensusMetricsData = components["schemas"]["ConsensusMetricsData"];
 type ScoringCoverageData = components["schemas"]["ScoringCoverageData"];
@@ -77,7 +78,7 @@ export default function ScoringAnalysisSection(props: {
               <For each={scorerBreakdown()}>
                 {([scorer, count]) => (
                   <tr class="border-b border-border last:border-0">
-                    <td class="py-1 text-muted-foreground">{scorer}</td>
+                    <td class="py-1 text-muted-foreground break-words">{softHyphenate(scorer)}</td>
                     <td class="py-1 text-right font-medium">{count}</td>
                   </tr>
                 )}
@@ -93,8 +94,8 @@ export default function ScoringAnalysisSection(props: {
         </div>
         <div class="rounded-lg border border-border bg-card p-4">
           <h3 class="mb-2 text-sm font-semibold">Scorers Exercised</h3>
-          <p class="text-sm text-muted-foreground">
-            {props.scoring.scorers_exercised.join(", ") || "None"}
+          <p class="text-sm text-muted-foreground break-words">
+            {props.scoring.scorers_exercised.map(softHyphenate).join(", ") || "None"}
           </p>
         </div>
       </div>
