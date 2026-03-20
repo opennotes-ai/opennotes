@@ -352,6 +352,28 @@ def build_deps_step(
     return run_sync(_build())
 
 
+@DBOS.step()
+def increment_no_content_skip_step(simulation_run_id: str) -> None:
+    from src.database import get_session_maker
+
+    async def _increment():
+        run_uuid = UUID(simulation_run_id)
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun.metrics).where(SimulationRun.id == run_uuid)
+            )
+            current_metrics = result.scalar_one_or_none() or {}
+            current_metrics["skipped_no_content"] = current_metrics.get("skipped_no_content", 0) + 1
+            await session.execute(
+                update(SimulationRun)
+                .where(SimulationRun.id == run_uuid)
+                .values(metrics=current_metrics)
+            )
+            await session.commit()
+
+    return run_sync(_increment())
+
+
 @DBOS.step(retries_allowed=False)
 def select_action_step(
     context: dict[str, Any],
@@ -699,6 +721,8 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
                 "Agent turn skipped: no available content",
                 extra={"agent_instance_id": agent_instance_id},
             )
+            if context.get("simulation_run_id"):
+                increment_no_content_skip_step(context["simulation_run_id"])
             return {"agent_instance_id": agent_instance_id, "status": "skipped_no_content"}
 
         selection = select_action_step(

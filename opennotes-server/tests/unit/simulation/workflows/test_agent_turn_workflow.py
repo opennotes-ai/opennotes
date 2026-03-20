@@ -3575,6 +3575,9 @@ class TestRunAgentTurnNoContentEarlyExit:
             patch(
                 "src.simulation.workflows.agent_turn_workflow.persist_state_step",
             ) as mock_persist,
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.increment_no_content_skip_step",
+            ),
             patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
             patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
         ):
@@ -3737,6 +3740,9 @@ class TestRunAgentTurnNoContentEarlyExit:
                     "shown_request_ids": [],
                 },
             ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.increment_no_content_skip_step",
+            ),
             patch("src.simulation.workflows.agent_turn_workflow.TokenGate") as mock_gate_cls,
             patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
         ):
@@ -3747,3 +3753,88 @@ class TestRunAgentTurnNoContentEarlyExit:
             run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
 
         mock_gate.release.assert_called_once()
+
+
+class TestNoContentSkipIncrementsMetrics:
+    def test_no_content_skip_increments_metrics_counter(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        sim_run_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+        context["simulation_run_id"] = sim_run_id
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={
+                    "available_requests": [],
+                    "available_notes": [],
+                    "shown_request_ids": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.increment_no_content_skip_step",
+            ) as mock_increment,
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test-no-content-inc"
+
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert result["status"] == "skipped_no_content"
+        mock_increment.assert_called_once_with(sim_run_id)
+
+    def test_no_content_skip_without_simulation_run_id_skips_increment(self) -> None:
+        from src.simulation.workflows.agent_turn_workflow import run_agent_turn
+
+        agent_instance_id = str(uuid4())
+        context = _make_context(agent_instance_id=agent_instance_id)
+        context["simulation_run_id"] = None
+
+        with (
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.check_simulation_active_step",
+                return_value=True,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.load_agent_context_step",
+                return_value=context,
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.compact_memory_step",
+                return_value={"messages": [], "was_compacted": False},
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.build_deps_step",
+                return_value={
+                    "available_requests": [],
+                    "available_notes": [],
+                    "shown_request_ids": [],
+                },
+            ),
+            patch(
+                "src.simulation.workflows.agent_turn_workflow.increment_no_content_skip_step",
+            ) as mock_increment,
+            patch("src.simulation.workflows.agent_turn_workflow.TokenGate"),
+            patch("src.simulation.workflows.agent_turn_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test-no-sim-run"
+
+            result = run_agent_turn.__wrapped__(agent_instance_id=agent_instance_id)
+
+        assert result["status"] == "skipped_no_content"
+        mock_increment.assert_not_called()

@@ -640,6 +640,8 @@ def update_metrics_step(
             )
             turns_completed = completed_result.scalar() or 0
 
+            skipped_no_content = current_metrics.pop("skipped_no_content", 0)
+
             updated_metrics = dict(current_metrics)
             updated_metrics.update(
                 {
@@ -650,6 +652,7 @@ def update_metrics_step(
                     "agents_spawned": current_metrics.get("agents_spawned", 0) + spawned_count,
                     "agents_removed": current_metrics.get("agents_removed", 0) + removed_count,
                     "iterations": current_metrics.get("iterations", 0) + 1,
+                    "skipped_no_content": 0,
                 }
             )
 
@@ -660,7 +663,7 @@ def update_metrics_step(
             )
             await session.commit()
 
-            return updated_metrics
+            return {**updated_metrics, "_skipped_no_content": skipped_no_content}
 
     return run_sync(_update())
 
@@ -918,7 +921,6 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                         continue
                     DBOS.sleep(config["turn_cadence_seconds"])
                     continue
-                consecutive_empty = 0
             except Exception:
                 logger.exception("Failed to check content availability")
                 consecutive_empty = 0
@@ -989,12 +991,30 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 circuit_breaker.record_failure()
 
             try:
-                update_metrics_step(
+                metrics_result = update_metrics_step(
                     simulation_run_id,
                     dispatched_count=dispatched_count,
                     spawned_count=len(spawned_ids),
                     removed_count=len(removed_ids) + removed_for_retries,
                 )
+                skipped_no_content = metrics_result.get("_skipped_no_content", 0)
+                if dispatched_count > 0 and skipped_no_content >= dispatched_count:
+                    consecutive_empty += 1
+                    if consecutive_empty >= MAX_CONSECUTIVE_EMPTY:
+                        logger.warning(
+                            "All dispatched agents skipped for %d consecutive iterations, auto-pausing",
+                            consecutive_empty,
+                            extra={"simulation_run_id": simulation_run_id},
+                        )
+                        try:
+                            set_run_status_step(
+                                simulation_run_id, "paused", expected_status="running"
+                            )
+                        except Exception:
+                            logger.exception("Failed to set paused status")
+                        consecutive_empty = 0
+                else:
+                    consecutive_empty = 0
             except Exception:
                 logger.exception("Failed to update metrics")
 
