@@ -1,4 +1,5 @@
 import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
+import { Title } from "@solidjs/meta";
 import { Show, Switch, Match, Suspense, createSignal, createEffect, on, untrack } from "solid-js";
 import {
   getSimulation,
@@ -7,7 +8,7 @@ import {
   getSimulationTimeline,
   getSimulationChannelMessages,
 } from "~/lib/api-client.server";
-import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
+import { formatDate, formatIdBadgeLabel, getMetric, humanizeLabel } from "~/lib/format";
 import { parseFragment, scrollToAndHighlight, findPageForItem } from "~/lib/anchor-scroll";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import { SectionSkeleton } from "~/components/ui/skeleton";
@@ -269,6 +270,7 @@ export default function SimulationDetailPage() {
               const attrs = simResponse.data.attributes;
               return (
                 <div class="flex gap-8">
+                  <Title>Open Notes Playground - Simulation {formatIdBadgeLabel(simResponse.data.id)}</Title>
                   <SimulationSidebar />
                   <main class="min-w-0 flex-1">
                   <MobileSidebarToggle />

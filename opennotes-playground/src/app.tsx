@@ -2,7 +2,7 @@ import "./app.css";
 import { Router, A } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { ErrorBoundary, Suspense } from "solid-js";
-import { MetaProvider } from "@solidjs/meta";
+import { MetaProvider, Title } from "@solidjs/meta";
 import AuthStatus from "~/components/AuthStatus";
 import ModeToggle from "~/components/ModeToggle";
 
@@ -11,6 +11,7 @@ export default function App() {
     <Router
       root={(props) => (
         <MetaProvider>
+          <Title>Open Notes Playground</Title>
           <nav class="flex h-16 items-center gap-4 border-b border-border bg-background/80 backdrop-blur-lg px-4 sm:px-6 lg:px-8">
             <A href="/" class="flex items-center">
               <img
