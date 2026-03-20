@@ -1777,7 +1777,7 @@ class TestListRequestsDefaultFilter:
         mock_result.all.return_value = [(req, 0)]
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        result = await list_requests(ctx)
+        await list_requests(ctx)
 
         call_args = mock_db.execute.call_args_list
         assert len(call_args) == 1
@@ -1841,7 +1841,7 @@ class TestListRequestsDefaultFilter:
         mock_result.all.return_value = [(req, 0)]
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        result = await list_requests(ctx)
+        await list_requests(ctx)
 
         assert mock_db.execute.await_count == 1
         query_str = str(mock_db.execute.call_args_list[0][0][0])
@@ -1869,7 +1869,7 @@ class TestListRequestsDefaultFilter:
         mock_result.all.return_value = [(req, 0)]
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        result = await list_requests(ctx)
+        await list_requests(ctx)
 
         assert mock_db.execute.await_count == 1
         query_str = str(mock_db.execute.call_args_list[0][0][0])

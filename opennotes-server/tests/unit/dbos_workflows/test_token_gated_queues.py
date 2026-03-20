@@ -353,7 +353,7 @@ class TestSimulationTurnTokenGated:
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.build_deps_step",
-                return_value={"available_requests": [], "available_notes": []},
+                return_value={"available_requests": ["req-1"], "available_notes": []},
             ),
             patch(
                 "src.simulation.workflows.agent_turn_workflow.select_action_step",
