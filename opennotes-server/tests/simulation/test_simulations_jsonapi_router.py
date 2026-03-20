@@ -2108,6 +2108,34 @@ class TestUpdateSimulation:
         assert data["data"]["attributes"]["name"] is None
 
     @pytest.mark.asyncio
+    async def test_patch_simulation_empty_attributes_preserves_name(
+        self, admin_auth_client, simulation_run_factory
+    ):
+        run = await simulation_run_factory("pending")
+
+        set_body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {"name": "Keep Me"},
+            }
+        }
+        await admin_auth_client.patch(f"/api/v2/simulations/{run['id']}", json=set_body)
+
+        empty_body = {
+            "data": {
+                "type": "simulations",
+                "attributes": {},
+            }
+        }
+        response = await admin_auth_client.patch(
+            f"/api/v2/simulations/{run['id']}", json=empty_body
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["attributes"]["name"] == "Keep Me"
+
+    @pytest.mark.asyncio
     async def test_patch_simulation_not_found(self, admin_auth_client):
         request_body = {
             "data": {

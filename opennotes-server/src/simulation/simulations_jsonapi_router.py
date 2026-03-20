@@ -482,7 +482,8 @@ async def update_simulation(
         )
 
     attrs = body.data.attributes
-    simulation_run.name = attrs.name
+    for field in attrs.model_fields_set:
+        setattr(simulation_run, field, getattr(attrs, field))
     await db.commit()
     await db.refresh(simulation_run)
 
