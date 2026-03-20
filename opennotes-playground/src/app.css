@@ -13,6 +13,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -34,6 +35,8 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --animate-content-show: content-show 150ms ease-out;
+  --animate-content-hide: content-hide 150ms ease-in;
 }
 
 :root {
@@ -53,6 +56,7 @@
   --accent: oklch(0.75 0.12 165);
   --accent-foreground: oklch(0.99 0.005 160);
   --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.99 0.005 160);
   --border: oklch(0.90 0.01 160);
   --input: oklch(0.90 0.01 160);
   --ring: oklch(0.65 0.15 165);
@@ -79,6 +83,7 @@
   --accent: oklch(0.35 0.05 165);
   --accent-foreground: oklch(0.95 0.005 160);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.99 0.005 160);
   --border: oklch(0.30 0.01 160);
   --input: oklch(0.30 0.01 160);
   --ring: oklch(0.70 0.15 165);
@@ -101,6 +106,16 @@
 
 .blog-serif .prose {
   font-family: var(--font-serif);
+}
+
+@keyframes content-show {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes content-hide {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
 }
 
 @keyframes anchor-fade {

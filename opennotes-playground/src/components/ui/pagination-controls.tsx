@@ -1,5 +1,12 @@
-import { Show } from "solid-js";
+import { For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 
 interface PaginationControlsProps {
   currentPage: number;
@@ -41,16 +48,26 @@ export default function PaginationControls(props: PaginationControlsProps) {
       <Show when={props.onPageSizeChange && props.pageSizeOptions}>
         <div class="flex items-center gap-2 text-sm text-muted-foreground">
           <span>Show</span>
-          <select
-            data-testid="page-size-selector"
-            class="rounded border border-border bg-background px-2 py-1 text-sm"
-            value={props.pageSize}
-            onChange={(e) => props.onPageSizeChange!(Number(e.currentTarget.value))}
+          <Select
+            value={String(props.pageSize)}
+            onChange={(value) => {
+              if (value) props.onPageSizeChange!(Number(value));
+            }}
+            options={props.pageSizeOptions!.map(String)}
+            itemComponent={(itemProps) => (
+              <SelectItem item={itemProps.item}>
+                {itemProps.item.rawValue}
+              </SelectItem>
+            )}
           >
-            {props.pageSizeOptions!.map((opt) => (
-              <option value={opt}>{opt}</option>
-            ))}
-          </select>
+            <SelectTrigger
+              class="h-8 w-[70px]"
+              data-testid="page-size-selector"
+            >
+              <SelectValue<string>>{(state) => state.selectedOption()}</SelectValue>
+            </SelectTrigger>
+            <SelectContent />
+          </Select>
           <span>per page</span>
         </div>
       </Show>

@@ -1,29 +1,32 @@
 import type { ComponentProps } from "solid-js";
-import type { VariantProps } from "cva";
-import { cva } from "~/lib/cva";
+import type { VariantProps } from "class-variance-authority";
+import { cva } from "class-variance-authority";
+import { cn } from "~/lib/cn";
 
-export const badgeVariants = cva({
-  base: "inline-flex items-center rounded-md px-[0.55em] py-[0.175em] text-[clamp(0.75rem,0.72em,0.9375rem)] font-semibold transition-colors",
-  variants: {
-    variant: {
-      default: "bg-primary/15 text-primary dark:bg-primary/25",
-      success:
-        "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
-      warning:
-        "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-      danger:
-        "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
-      info: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
-      muted:
-        "bg-muted text-muted-foreground",
-      indigo:
-        "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300",
+export const badgeVariants = cva(
+  "inline-flex items-center rounded-md px-[0.55em] py-[0.175em] text-[clamp(0.75rem,0.72em,0.9375rem)] font-semibold transition-colors",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary/15 text-primary dark:bg-primary/25",
+        success:
+          "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+        warning:
+          "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+        danger:
+          "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
+        info: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
+        muted:
+          "bg-muted text-muted-foreground",
+        indigo:
+          "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300",
+      },
     },
-  },
-  defaultVariants: {
-    variant: "default",
-  },
-});
+    defaultVariants: {
+      variant: "default",
+    },
+  }
+);
 
 export type BadgeVariant = NonNullable<
   VariantProps<typeof badgeVariants>["variant"]
@@ -34,7 +37,7 @@ export function Badge(
 ) {
   return (
     <span
-      class={badgeVariants({ variant: props.variant, class: props.class })}
+      class={cn(badgeVariants({ variant: props.variant }), props.class)}
     >
       {props.children}
     </span>

@@ -1,0 +1,12 @@
+{
+  "tsx": true,
+  "tailwind": {
+    "css": "src/app.css",
+    "config": "",
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "~/components/ui",
+    "utils": "~/lib/cn"
+  }
+}

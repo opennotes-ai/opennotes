@@ -6,6 +6,7 @@ import IdBadge from "~/components/ui/id-badge";
 import { getHelpfulnessTooltip } from "~/lib/scoring-tiers";
 import { cn } from "~/lib/cn";
 import NoteFilter, { type NoteFilterValues } from "~/components/ui/note-filter";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 
 type DetailedNoteResource = components["schemas"]["DetailedNoteResource"];
 
@@ -100,41 +101,22 @@ export default function NoteDetails(props: {
         <Show when={props.notes.length > 1 || props.filterClassification.length > 0 || props.filterStatus.length > 0}>
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium text-muted-foreground">Sort by:</span>
-            <div class="flex overflow-hidden rounded-md border border-input">
-              <button
-                data-testid="sort-count"
-                class={cn(
-                  "px-3 py-1.5 text-xs font-medium transition-colors",
-                  props.sortBy === "count" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
-                )}
-                aria-pressed={props.sortBy === "count"}
-                onClick={() => props.onSortChange("count")}
-              >
-                Note Count {props.sortBy === "count" ? "\u2193" : ""}
-              </button>
-              <button
-                data-testid="sort-disagreement"
-                class={cn(
-                  "border-l border-input px-3 py-1.5 text-xs font-medium transition-colors",
-                  props.sortBy === "disagreement" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
-                )}
-                aria-pressed={props.sortBy === "disagreement"}
-                onClick={() => props.onSortChange("disagreement")}
-              >
-                Disagreement {props.sortBy === "disagreement" ? "\u2193" : ""}
-              </button>
-              <button
-                data-testid="sort-has-score"
-                class={cn(
-                  "border-l border-input px-3 py-1.5 text-xs font-medium transition-colors",
-                  props.sortBy === "has_score" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
-                )}
-                aria-pressed={props.sortBy === "has_score"}
-                onClick={() => props.onSortChange("has_score")}
-              >
-                Has Score {props.sortBy === "has_score" ? "\u2193" : ""}
-              </button>
-            </div>
+            <ToggleGroup
+              value={props.sortBy}
+              onChange={(value) => { if (value) props.onSortChange(value as SortMode); }}
+              class="rounded-md border border-input"
+              size="sm"
+            >
+              <ToggleGroupItem value="count" data-testid="sort-count" class="px-3 py-1.5 text-xs font-medium">
+                Note Count
+              </ToggleGroupItem>
+              <ToggleGroupItem value="disagreement" data-testid="sort-disagreement" class="px-3 py-1.5 text-xs font-medium">
+                Disagreement
+              </ToggleGroupItem>
+              <ToggleGroupItem value="has_score" data-testid="sort-has-score" class="px-3 py-1.5 text-xs font-medium">
+                Has Score
+              </ToggleGroupItem>
+            </ToggleGroup>
             <NoteFilter
               classification={props.filterClassification}
               status={props.filterStatus}

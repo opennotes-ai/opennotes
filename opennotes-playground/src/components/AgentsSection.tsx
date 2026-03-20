@@ -1,5 +1,5 @@
 import { createSignal, createMemo, createEffect, on, For, Show } from "solid-js";
-import { Popover } from "@kobalte/core/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import type { EChartsOption } from "echarts";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
@@ -31,15 +31,12 @@ function PersonalityCell(props: { text: string }) {
         </p>
         <Show when={shouldTruncate()}>
           <Popover>
-            <Popover.Trigger class="text-xs text-primary hover:underline mt-1 cursor-pointer">
+            <PopoverTrigger class="text-xs text-primary hover:underline mt-1 cursor-pointer">
               Show more
-            </Popover.Trigger>
-            <Popover.Portal>
-              <Popover.Content class="z-50 max-w-md max-h-72 overflow-y-auto rounded-lg border border-border bg-popover p-4 text-sm text-popover-foreground shadow-lg">
-                <Popover.Arrow class="fill-popover" />
-                <p class="whitespace-pre-line leading-relaxed">{props.text}</p>
-              </Popover.Content>
-            </Popover.Portal>
+            </PopoverTrigger>
+            <PopoverContent class="z-50 max-w-md max-h-72 overflow-y-auto rounded-lg border border-border bg-popover p-4 text-sm text-popover-foreground shadow-lg">
+              <p class="whitespace-pre-line leading-relaxed">{props.text}</p>
+            </PopoverContent>
           </Popover>
         </Show>
       </Show>
