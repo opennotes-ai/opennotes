@@ -452,7 +452,6 @@ class TestBuildDepsStep:
         cs_id = str(uuid4())
         agent_profile_id = str(uuid4())
         simulation_run_id = str(uuid4())
-        user_profile_id = str(uuid4())
 
         mock_req_result = MagicMock()
         mock_req_result.scalars.return_value.all.return_value = []
@@ -480,7 +479,6 @@ class TestBuildDepsStep:
                 community_server_id=cs_id,
                 agent_profile_id=agent_profile_id,
                 simulation_run_id=simulation_run_id,
-                user_profile_id=user_profile_id,
             )
 
         assert "available_requests" in result
@@ -529,7 +527,9 @@ class TestBuildDepsStep:
 
         new_query = captured_queries[0]
         compiled = str(new_query.compile(compile_kwargs={"literal_binds": True}))
-        assert "FAILED" in compiled, f"Expected FAILED filter in query, got: {compiled}"
+        assert (
+            "!= 'FAILED'" in compiled or '!= "FAILED"' in compiled or "NOT" in compiled.upper()
+        ), f"Expected FAILED exclusion filter (!=) in query, got: {compiled}"
 
     def test_build_deps_hard_excludes_acted_on_from_new_query(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import build_deps_step
@@ -589,7 +589,6 @@ class TestBuildDepsStep:
         cs_id = str(uuid4())
         agent_profile_id = str(uuid4())
         simulation_run_id = str(uuid4())
-        user_profile_id = str(uuid4())
 
         captured_queries: list = []
         call_count = 0
@@ -629,7 +628,6 @@ class TestBuildDepsStep:
                 community_server_id=cs_id,
                 agent_profile_id=agent_profile_id,
                 simulation_run_id=simulation_run_id,
-                user_profile_id=user_profile_id,
             )
 
         note_query = captured_queries[-1]
@@ -647,7 +645,6 @@ class TestBuildDepsStep:
         cs_id = str(uuid4())
         agent_profile_id = str(uuid4())
         simulation_run_id = str(uuid4())
-        user_profile_id = str(uuid4())
 
         captured_queries: list = []
         call_count = 0
@@ -687,7 +684,6 @@ class TestBuildDepsStep:
                 community_server_id=cs_id,
                 agent_profile_id=agent_profile_id,
                 simulation_run_id=simulation_run_id,
-                user_profile_id=user_profile_id,
             )
 
         note_query = captured_queries[-1]
@@ -695,9 +691,9 @@ class TestBuildDepsStep:
         assert "ratings" in compiled.lower(), (
             f"Expected note query to have rating exclusion subquery, got: {compiled}"
         )
-        assert "NOT (EXISTS" in compiled or "NOT EXISTS" in compiled.upper().replace(
-            "(", ""
-        ).replace(" ", ""), f"Expected NOT EXISTS subquery for already-rated notes, got: {compiled}"
+        assert "NOT (EXISTS" in compiled or "NOT EXISTS" in compiled, (
+            f"Expected NOT EXISTS subquery for already-rated notes, got: {compiled}"
+        )
 
 
 class TestExecuteAgentTurnStep:

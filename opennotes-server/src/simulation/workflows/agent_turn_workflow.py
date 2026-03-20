@@ -181,7 +181,6 @@ def build_deps_step(
     acted_on_request_ids: list[str] | None = None,
     agent_profile_id: str | None = None,
     simulation_run_id: str | None = None,
-    user_profile_id: str | None = None,
 ) -> dict[str, Any]:
     from src.database import get_session_maker
     from src.notes.models import Note, Rating, Request
@@ -372,6 +371,9 @@ def select_action_step(
             simulation_run_id=UUID(context["simulation_run_id"])
             if context.get("simulation_run_id")
             else None,
+            agent_profile_id=UUID(context["agent_profile_id"])
+            if context.get("agent_profile_id")
+            else None,
         )
 
         selection, phase1_messages = await agent.select_action(
@@ -459,6 +461,9 @@ def execute_agent_turn_step(
                 tool_config=context.get("tool_config"),
                 simulation_run_id=UUID(context["simulation_run_id"])
                 if context.get("simulation_run_id")
+                else None,
+                agent_profile_id=UUID(context["agent_profile_id"])
+                if context.get("agent_profile_id")
                 else None,
             )
 
@@ -677,7 +682,6 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             acted_on_request_ids=current_acted_on,
             agent_profile_id=context.get("agent_profile_id"),
             simulation_run_id=context.get("simulation_run_id"),
-            user_profile_id=context.get("user_profile_id"),
         )
 
         selection = select_action_step(

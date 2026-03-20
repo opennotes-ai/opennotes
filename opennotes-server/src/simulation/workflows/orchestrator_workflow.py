@@ -519,6 +519,7 @@ def check_content_availability_step(community_server_id: str) -> dict[str, Any]:
                 .select_from(Request)
                 .where(
                     Request.community_server_id == cs_id,
+                    Request.status != "FAILED",
                     Request.deleted_at.is_(None),
                 )
             )
