@@ -1,9 +1,17 @@
 import logging
 from collections import defaultdict
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
+import pyarrow.compute as pc
 from sklearn.metrics import pairwise_distances
+
+from src.notes.scoring.bayesian_average_scorer import BayesianAverageScorer
+from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
+from src.notes.scoring.data_provider import CommunityDataProvider
+from src.notes.scoring.data_transforms import _map_helpfulness
+from src.notes.scoring.scorer_protocol import ScoringResult
 
 logger = logging.getLogger(__name__)
 
@@ -116,3 +124,81 @@ class RaterDiversityScorer:
         ]
 
         return self.compute_diversity(supporter_ids, rater_profiles, note_ids)
+
+
+class RaterDiversityScorerAdapter:
+    def __init__(
+        self,
+        data_provider: CommunityDataProvider,
+        community_id: str,
+        diversity_bonus: float = 0.3,
+    ) -> None:
+        self._diversity_bonus = diversity_bonus
+        self._diversity = RaterDiversityScorer()
+        self._bayesian = BayesianAverageScorerAdapter(BayesianAverageScorer())
+
+        ratings_table = data_provider.get_all_ratings(community_id)
+
+        self._note_ratings_index: dict[str, list[tuple[str, float]]] = defaultdict(list)
+        all_rating_triples: list[tuple[str, str, float]] = []
+
+        if ratings_table.num_rows > 0:
+            rater_ids = ratings_table.column("rater_id").to_pylist()
+            note_ids = ratings_table.column("note_id").to_pylist()
+            numeric_ratings = pc.cast(
+                _map_helpfulness(ratings_table.column("helpfulness_level")),
+                "float64",
+            ).to_pylist()
+
+            for rater_id, note_id, rating in zip(rater_ids, note_ids, numeric_ratings, strict=True):
+                self._note_ratings_index[note_id].append((rater_id, rating))
+                all_rating_triples.append((rater_id, note_id, rating))
+
+        self._rater_profiles, self._note_ids = self._diversity.build_rater_profiles(
+            all_rating_triples
+        )
+
+    def score_note(self, note_id: str, ratings: Sequence[float]) -> ScoringResult:
+        bayesian_result = self._bayesian.score_note(note_id, ratings)
+
+        note_rater_ratings = self._note_ratings_index.get(note_id)
+
+        if not note_rater_ratings:
+            metadata = {
+                **bayesian_result.metadata,
+                "diversity_score": 0.0,
+                "supporter_count": 0,
+                "mean_pairwise_distance": 0.0,
+                "blend_weight": self._diversity_bonus,
+                "diversity_signal": "insufficient",
+                "valid_pair_count": 0,
+                "total_pair_count": 0,
+                "pair_coverage_ratio": 0.0,
+                "bayesian_base_score": bayesian_result.score,
+            }
+            return ScoringResult(
+                score=bayesian_result.score,
+                confidence_level=bayesian_result.confidence_level,
+                metadata=metadata,
+            )
+
+        diversity_score, diversity_metadata = self._diversity.score_note_diversity(
+            note_id, note_rater_ratings, self._rater_profiles, self._note_ids
+        )
+
+        raw_score = bayesian_result.score * (1.0 + self._diversity_bonus * diversity_score)
+        final_score = min(max(raw_score, 0.0), 1.0)
+
+        metadata = {
+            **bayesian_result.metadata,
+            "diversity_score": diversity_score,
+            "blend_weight": self._diversity_bonus,
+            "bayesian_base_score": bayesian_result.score,
+            **diversity_metadata,
+        }
+
+        return ScoringResult(
+            score=final_score,
+            confidence_level=bayesian_result.confidence_level,
+            metadata=metadata,
+        )

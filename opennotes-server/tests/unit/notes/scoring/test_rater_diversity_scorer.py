@@ -1,8 +1,15 @@
 import math
 
 import numpy as np
+import pyarrow as pa
 
-from src.notes.scoring.rater_diversity_scorer import RaterDiversityScorer
+from src.notes.scoring.bayesian_average_scorer import BayesianAverageScorer
+from src.notes.scoring.bayesian_scorer_adapter import BayesianAverageScorerAdapter
+from src.notes.scoring.rater_diversity_scorer import (
+    RaterDiversityScorer,
+    RaterDiversityScorerAdapter,
+)
+from src.notes.scoring.scorer_protocol import ScorerProtocol, ScoringResult
 
 
 class TestBuildRaterProfiles:
@@ -179,3 +186,189 @@ class TestScoreNoteDiversity:
 
         assert diversity == 0.0
         assert metadata["diversity_signal"] == "insufficient"
+
+
+def _make_ratings_table(
+    rater_ids: list[str],
+    note_ids: list[str],
+    helpfulness_levels: list[str],
+) -> pa.Table:
+    n = len(rater_ids)
+    timestamps = pa.array([1735689600000000] * n, type=pa.int64()).cast(
+        pa.timestamp("us", tz="UTC")
+    )
+    return pa.table(
+        {
+            "rater_id": pa.array(rater_ids, type=pa.string()),
+            "note_id": pa.array(note_ids, type=pa.string()),
+            "helpfulness_level": pa.array(helpfulness_levels, type=pa.string()),
+            "created_at": timestamps,
+        }
+    )
+
+
+class FakeDataProvider:
+    def __init__(self, ratings_table: pa.Table) -> None:
+        self._ratings = ratings_table
+
+    def get_all_ratings(self, community_id: str) -> pa.Table:
+        return self._ratings
+
+    def get_all_notes(self, community_id: str) -> pa.Table:
+        return pa.table({})
+
+    def get_all_participants(self, community_id: str) -> pa.Array:
+        return pa.array([])
+
+
+class TestRaterDiversityScorerAdapterProtocol:
+    def test_satisfies_scorer_protocol(self):
+        table = _make_ratings_table(
+            ["r1", "r2"],
+            ["n1", "n1"],
+            ["HELPFUL", "NOT_HELPFUL"],
+        )
+        provider = FakeDataProvider(table)
+        adapter = RaterDiversityScorerAdapter(provider, "community_1")
+
+        assert isinstance(adapter, ScorerProtocol)
+
+    def test_score_note_returns_scoring_result(self):
+        table = _make_ratings_table(
+            ["r1", "r2"],
+            ["n1", "n1"],
+            ["HELPFUL", "NOT_HELPFUL"],
+        )
+        provider = FakeDataProvider(table)
+        adapter = RaterDiversityScorerAdapter(provider, "community_1")
+
+        result = adapter.score_note("n1", [1.0, 0.0])
+
+        assert isinstance(result, ScoringResult)
+        assert 0.0 <= result.score <= 1.0
+
+
+class TestRaterDiversityScorerAdapterBlending:
+    def test_blending_formula_applies_diversity_bonus(self):
+        table = _make_ratings_table(
+            ["r_a", "r_a", "r_b", "r_b", "r_c", "r_c", "r_d", "r_d"],
+            ["n1", "n2", "n1", "n2", "n1", "n2", "n1", "n2"],
+            [
+                "HELPFUL",
+                "NOT_HELPFUL",
+                "HELPFUL",
+                "HELPFUL",
+                "HELPFUL",
+                "NOT_HELPFUL",
+                "HELPFUL",
+                "HELPFUL",
+            ],
+        )
+        provider = FakeDataProvider(table)
+        adapter = RaterDiversityScorerAdapter(provider, "c1", diversity_bonus=0.3)
+
+        result = adapter.score_note("n1", [1.0, 1.0, 1.0, 1.0])
+
+        bayesian_adapter = BayesianAverageScorerAdapter(BayesianAverageScorer())
+        bayesian_result = bayesian_adapter.score_note("n1", [1.0, 1.0, 1.0, 1.0])
+
+        assert result.score >= bayesian_result.score
+        assert "diversity_score" in result.metadata
+        assert "bayesian_base_score" in result.metadata
+
+    def test_zero_diversity_returns_bayesian_score(self):
+        table = _make_ratings_table(
+            ["r_a", "r_a", "r_b", "r_b"],
+            ["n1", "n2", "n1", "n2"],
+            ["HELPFUL", "NOT_HELPFUL", "HELPFUL", "NOT_HELPFUL"],
+        )
+        provider = FakeDataProvider(table)
+        adapter = RaterDiversityScorerAdapter(provider, "c1", diversity_bonus=0.3)
+
+        result = adapter.score_note("n1", [1.0, 1.0])
+
+        bayesian_adapter = BayesianAverageScorerAdapter(BayesianAverageScorer())
+        bayesian_result = bayesian_adapter.score_note("n1", [1.0, 1.0])
+
+        assert math.isclose(result.score, bayesian_result.score, rel_tol=1e-6)
+
+    def test_score_clamped_to_one(self):
+        table = _make_ratings_table(
+            ["r_a", "r_a", "r_b", "r_b"],
+            ["n1", "n2", "n1", "n2"],
+            ["HELPFUL", "NOT_HELPFUL", "NOT_HELPFUL", "HELPFUL"],
+        )
+        provider = FakeDataProvider(table)
+        adapter = RaterDiversityScorerAdapter(provider, "c1", diversity_bonus=100.0)
+
+        result = adapter.score_note("n1", [1.0, 1.0])
+
+        assert result.score <= 1.0
+
+
+class TestRaterDiversityScorerAdapterPyArrow:
+    def test_converts_helpfulness_levels_to_numeric(self):
+        table = _make_ratings_table(
+            ["r1", "r2", "r3"],
+            ["n1", "n1", "n1"],
+            ["HELPFUL", "SOMEWHAT_HELPFUL", "NOT_HELPFUL"],
+        )
+        provider = FakeDataProvider(table)
+        adapter = RaterDiversityScorerAdapter(provider, "c1")
+
+        assert "n1" in adapter._note_ratings_index
+        ratings_for_n1 = adapter._note_ratings_index["n1"]
+        numeric_values = dict(ratings_for_n1)
+        assert math.isclose(numeric_values["r1"], 1.0)
+        assert math.isclose(numeric_values["r2"], 0.5)
+        assert math.isclose(numeric_values["r3"], 0.0)
+
+    def test_empty_table_produces_empty_index(self):
+        table = _make_ratings_table([], [], [])
+        provider = FakeDataProvider(table)
+        adapter = RaterDiversityScorerAdapter(provider, "c1")
+
+        assert adapter._note_ratings_index == {}
+
+
+class TestRaterDiversityScorerAdapterFallback:
+    def test_unknown_note_falls_back_to_bayesian_only(self):
+        table = _make_ratings_table(
+            ["r1", "r2"],
+            ["n1", "n1"],
+            ["HELPFUL", "NOT_HELPFUL"],
+        )
+        provider = FakeDataProvider(table)
+        adapter = RaterDiversityScorerAdapter(provider, "c1")
+
+        result = adapter.score_note("unknown_note", [0.8, 0.6])
+
+        bayesian_adapter = BayesianAverageScorerAdapter(BayesianAverageScorer())
+        bayesian_result = bayesian_adapter.score_note("unknown_note", [0.8, 0.6])
+
+        assert math.isclose(result.score, bayesian_result.score, rel_tol=1e-6)
+        assert result.metadata["diversity_score"] == 0.0
+
+    def test_metadata_contains_all_required_keys(self):
+        table = _make_ratings_table(
+            ["r_a", "r_a", "r_b", "r_b"],
+            ["n1", "n2", "n1", "n2"],
+            ["HELPFUL", "NOT_HELPFUL", "NOT_HELPFUL", "HELPFUL"],
+        )
+        provider = FakeDataProvider(table)
+        adapter = RaterDiversityScorerAdapter(provider, "c1")
+
+        result = adapter.score_note("n1", [1.0, 0.0])
+
+        required_keys = {
+            "diversity_score",
+            "supporter_count",
+            "mean_pairwise_distance",
+            "blend_weight",
+            "diversity_signal",
+            "valid_pair_count",
+            "total_pair_count",
+            "pair_coverage_ratio",
+            "bayesian_base_score",
+        }
+        assert required_keys.issubset(set(result.metadata.keys()))
