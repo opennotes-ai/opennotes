@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pendulum
 from dbos import DBOS, Queue
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import selectinload
 
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
@@ -616,6 +616,57 @@ def schedule_turns_step(
 
 
 @DBOS.step()
+def set_current_iteration_step(simulation_run_id: str, *, iteration: int) -> None:
+    from src.database import get_session_maker
+
+    async def _set():
+        run_uuid = UUID(simulation_run_id)
+        async with get_session_maker()() as session:
+            await session.execute(
+                text(
+                    "UPDATE simulation_runs "
+                    "SET metrics = jsonb_set("
+                    "  COALESCE(metrics, '{}'::jsonb),"
+                    "  '{current_iteration}',"
+                    "  :iteration::jsonb"
+                    ") "
+                    "WHERE id = :run_id"
+                ),
+                {"iteration": str(iteration), "run_id": str(run_uuid)},
+            )
+            await session.commit()
+
+    return run_sync(_set())
+
+
+@DBOS.step()
+def read_iteration_skip_count_step(simulation_run_id: str, *, iteration: int) -> int:
+    from src.database import get_session_maker
+
+    async def _read() -> int:
+        run_uuid = UUID(simulation_run_id)
+        key = f"skipped_no_content_iter_{iteration}"
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun.metrics).where(SimulationRun.id == run_uuid)
+            )
+            current_metrics = result.scalar_one_or_none() or {}
+            count = current_metrics.get(key, 0)
+
+            if count > 0:
+                await session.execute(
+                    text("UPDATE simulation_runs SET metrics = metrics - :key WHERE id = :run_id"),
+                    {"key": key, "run_id": str(run_uuid)},
+                )
+                await session.commit()
+
+            return count
+
+    return run_sync(_read())
+
+
+@DBOS.step()
 def update_metrics_step(
     simulation_run_id: str,
     dispatched_count: int,
@@ -918,10 +969,10 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                         continue
                     DBOS.sleep(config["turn_cadence_seconds"])
                     continue
-                consecutive_empty = 0
             except Exception:
                 logger.exception("Failed to check content availability")
-                consecutive_empty = 0
+                DBOS.sleep(config["turn_cadence_seconds"])
+                continue
 
             try:
                 snapshot = get_population_snapshot_step(simulation_run_id)
@@ -955,6 +1006,11 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                 detect_stuck_agents_step(simulation_run_id, generation=config.get("generation", 1))
             except Exception:
                 logger.exception("Failed to detect stuck agents")
+
+            try:
+                set_current_iteration_step(simulation_run_id, iteration=iteration)
+            except Exception:
+                logger.exception("Failed to set current iteration in metrics")
 
             dispatched_count = 0
             removed_for_retries = 0
@@ -1016,6 +1072,31 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
                     )
 
             DBOS.sleep(config["turn_cadence_seconds"])
+
+            if dispatched_count > 0:
+                try:
+                    skipped_no_content = read_iteration_skip_count_step(
+                        simulation_run_id, iteration=iteration
+                    )
+                    if skipped_no_content >= dispatched_count:
+                        consecutive_empty += 1
+                        if consecutive_empty >= MAX_CONSECUTIVE_EMPTY:
+                            logger.warning(
+                                "All dispatched agents skipped for %d consecutive iterations, auto-pausing",
+                                consecutive_empty,
+                                extra={"simulation_run_id": simulation_run_id},
+                            )
+                            try:
+                                set_run_status_step(
+                                    simulation_run_id, "paused", expected_status="running"
+                                )
+                            except Exception:
+                                logger.exception("Failed to set paused status")
+                            consecutive_empty = 0
+                    else:
+                        consecutive_empty = 0
+                except Exception:
+                    logger.exception("Failed to read iteration skip count")
 
         if iteration >= MAX_ITERATIONS:
             logger.warning(

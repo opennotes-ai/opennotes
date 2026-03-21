@@ -574,6 +574,28 @@ async def score_community_server_notes(  # noqa: PLR0912
         .values(status="COMPLETED", note_id=helpful_note_for_request)
     )
 
+    helpful_note_exists = (
+        select(Note.id)
+        .where(
+            Note.request_id == Request.id,
+            Note.community_server_id == community_server_id,
+            Note.status == "CURRENTLY_RATED_HELPFUL",
+            Note.deleted_at.is_(None),
+        )
+        .correlate(Request)
+        .limit(1)
+        .scalar_subquery()
+    )
+    await db.execute(
+        update(Request)
+        .where(
+            Request.community_server_id == community_server_id,
+            Request.status == "COMPLETED",
+            helpful_note_exists.is_(None),
+        )
+        .values(status="PENDING", note_id=None)
+    )
+
     if total_scores_computed == 0 and note_count > 0 and tier != ScoringTier.MINIMAL:
         record_tier_failure(
             str(community_server_id),
@@ -748,6 +770,28 @@ async def trigger_scoring_for_simulation(
             helpful_note_for_request.isnot(None),
         )
         .values(status="COMPLETED", note_id=helpful_note_for_request)
+    )
+
+    helpful_note_exists = (
+        select(Note.id)
+        .where(
+            Note.request_id == Request.id,
+            Note.community_server_id == community_server_id,
+            Note.status == "CURRENTLY_RATED_HELPFUL",
+            Note.deleted_at.is_(None),
+        )
+        .correlate(Request)
+        .limit(1)
+        .scalar_subquery()
+    )
+    await db.execute(
+        update(Request)
+        .where(
+            Request.community_server_id == community_server_id,
+            Request.status == "COMPLETED",
+            helpful_note_exists.is_(None),
+        )
+        .values(status="PENDING", note_id=None)
     )
 
     gcs_snapshot = await _persist_snapshot_or_raise(

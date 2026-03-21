@@ -138,12 +138,26 @@ class TestToolsRegistered:
 
 
 class TestWriteNoteTool:
+    @staticmethod
+    def _mock_db_for_request_found(mock_db, req_id):
+        found_result = MagicMock()
+        found_result.scalar_one_or_none.return_value = UUID(str(req_id))
+        mock_db.execute = AsyncMock(return_value=found_result)
+
+    @staticmethod
+    def _mock_db_for_request_not_found(mock_db):
+        not_found_result = MagicMock()
+        not_found_result.scalar_one_or_none.return_value = None
+        mock_db.execute = AsyncMock(return_value=not_found_result)
+
     @pytest.mark.asyncio
     async def test_write_note_creates_note(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
 
         req_id = sample_deps.available_requests[0]["id"]
+        self._mock_db_for_request_found(sample_deps.db, req_id)
+
         result = await write_note(
             ctx,
             request_id=req_id,
@@ -152,7 +166,6 @@ class TestWriteNoteTool:
         )
 
         sample_deps.db.add.assert_called_once()
-        sample_deps.db.flush.assert_awaited_once()
         note = sample_deps.db.add.call_args[0][0]
         assert note.request_id == UUID(req_id)
         assert note.summary == "The earth is actually round"
@@ -168,6 +181,7 @@ class TestWriteNoteTool:
     async def test_write_note_validates_request_id(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
+        self._mock_db_for_request_not_found(sample_deps.db)
 
         result = await write_note(
             ctx,
@@ -178,6 +192,7 @@ class TestWriteNoteTool:
 
         assert "Error" in result
         assert "nonexistent" in result
+        assert "not found or is not available" in result
         sample_deps.db.add.assert_not_called()
 
     @pytest.mark.asyncio
@@ -186,6 +201,8 @@ class TestWriteNoteTool:
         ctx.deps = sample_deps
 
         req_id = sample_deps.available_requests[0]["id"]
+        self._mock_db_for_request_found(sample_deps.db, req_id)
+
         result = await write_note(
             ctx,
             request_id=req_id,
@@ -220,6 +237,8 @@ class TestWriteNoteTool:
         ctx = MagicMock()
         ctx.deps = deps
 
+        self._mock_db_for_request_found(mock_db, req_uuid)
+
         result = await write_note(
             ctx,
             request_id=str(req_uuid),
@@ -233,9 +252,136 @@ class TestWriteNoteTool:
         assert note.request_id == req_uuid
 
     @pytest.mark.asyncio
+    async def test_write_note_accepts_valid_request_not_in_available_requests(self, mock_db):
+        req_uuid = uuid4()
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        self._mock_db_for_request_found(mock_db, req_uuid)
+
+        result = await write_note(
+            ctx,
+            request_id=str(req_uuid),
+            summary="test note from DB lookup",
+            classification="NOT_MISLEADING",
+        )
+
+        assert "Note created" in result
+        mock_db.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_write_note_rejects_acted_on_request(self, mock_db):
+        req_uuid = uuid4()
+        agent_profile_id = uuid4()
+        simulation_run_id = uuid4()
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+            simulation_run_id=simulation_run_id,
+            agent_profile_id=agent_profile_id,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        request_found_result = MagicMock()
+        request_found_result.scalar_one_or_none.return_value = req_uuid
+        existing_note_result = MagicMock()
+        existing_note_result.scalar_one_or_none.return_value = uuid4()
+        mock_db.execute = AsyncMock(side_effect=[request_found_result, existing_note_result])
+
+        result = await write_note(
+            ctx,
+            request_id=str(req_uuid),
+            summary="duplicate note",
+            classification="NOT_MISLEADING",
+        )
+
+        assert "you have already written a note for this request" in result
+        mock_db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_write_note_skips_acted_on_check_without_agent_profile(self, mock_db):
+        req_uuid = uuid4()
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+            simulation_run_id=uuid4(),
+            agent_profile_id=None,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        self._mock_db_for_request_found(mock_db, req_uuid)
+
+        result = await write_note(
+            ctx,
+            request_id=str(req_uuid),
+            summary="note without agent profile",
+            classification="NOT_MISLEADING",
+        )
+
+        assert "Note created" in result
+        mock_db.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_write_note_rejects_failed_request(self, mock_db):
+        req_uuid = uuid4()
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        self._mock_db_for_request_not_found(mock_db)
+
+        result = await write_note(
+            ctx,
+            request_id=str(req_uuid),
+            summary="note for failed request",
+            classification="NOT_MISLEADING",
+        )
+
+        assert "Error" in result
+        assert "not found or is not available" in result
+        mock_db.add.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_write_note_handles_integrity_error(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
+        req_id = sample_deps.available_requests[0]["id"]
+        request_found_result = MagicMock()
+        request_found_result.scalar_one_or_none.return_value = UUID(req_id)
+        sample_deps.db.execute = AsyncMock(return_value=request_found_result)
         sample_deps.db.flush = AsyncMock(side_effect=IntegrityError("duplicate", {}, None))
 
         req_id = sample_deps.available_requests[0]["id"]
@@ -252,9 +398,12 @@ class TestWriteNoteTool:
     async def test_write_note_handles_sqlalchemy_error(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
+        req_id = sample_deps.available_requests[0]["id"]
+        request_found_result = MagicMock()
+        request_found_result.scalar_one_or_none.return_value = UUID(req_id)
+        sample_deps.db.execute = AsyncMock(return_value=request_found_result)
         sample_deps.db.flush = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
 
-        req_id = sample_deps.available_requests[0]["id"]
         result = await write_note(
             ctx,
             request_id=req_id,
@@ -268,11 +417,14 @@ class TestWriteNoteTool:
     async def test_write_note_integrity_error_does_not_leak_details(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
+        req_id = sample_deps.available_requests[0]["id"]
+        request_found_result = MagicMock()
+        request_found_result.scalar_one_or_none.return_value = UUID(req_id)
+        sample_deps.db.execute = AsyncMock(return_value=request_found_result)
         sample_deps.db.flush = AsyncMock(
             side_effect=IntegrityError("ix_notes_author_request", {}, None)
         )
 
-        req_id = sample_deps.available_requests[0]["id"]
         result = await write_note(
             ctx,
             request_id=req_id,
@@ -286,10 +438,13 @@ class TestWriteNoteTool:
     async def test_write_note_rolls_back_on_integrity_error(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
+        req_id = sample_deps.available_requests[0]["id"]
+        request_found_result = MagicMock()
+        request_found_result.scalar_one_or_none.return_value = UUID(req_id)
+        sample_deps.db.execute = AsyncMock(return_value=request_found_result)
         sample_deps.db.flush = AsyncMock(side_effect=IntegrityError("duplicate", {}, None))
         sample_deps.db.rollback = AsyncMock()
 
-        req_id = sample_deps.available_requests[0]["id"]
         await write_note(ctx, request_id=req_id, summary="test", classification="NOT_MISLEADING")
 
         sample_deps.db.rollback.assert_awaited_once()
@@ -298,10 +453,13 @@ class TestWriteNoteTool:
     async def test_write_note_rolls_back_on_sqlalchemy_error(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
+        req_id = sample_deps.available_requests[0]["id"]
+        request_found_result = MagicMock()
+        request_found_result.scalar_one_or_none.return_value = UUID(req_id)
+        sample_deps.db.execute = AsyncMock(return_value=request_found_result)
         sample_deps.db.flush = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
         sample_deps.db.rollback = AsyncMock()
 
-        req_id = sample_deps.available_requests[0]["id"]
         await write_note(ctx, request_id=req_id, summary="test", classification="NOT_MISLEADING")
 
         sample_deps.db.rollback.assert_awaited_once()
@@ -1594,6 +1752,128 @@ class TestListRequestsDefaultFilter:
         result = await list_requests(ctx, status="")
 
         assert "No non-FAILED requests found" in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_excludes_sibling_acted_on(self, mock_db):
+        agent_profile_id = uuid4()
+        simulation_run_id = uuid4()
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+            simulation_run_id=simulation_run_id,
+            agent_profile_id=agent_profile_id,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        req = self._make_mock_request(content="Acted-on claim")
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req, 0)]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        await list_requests(ctx)
+
+        call_args = mock_db.execute.call_args_list
+        assert len(call_args) == 1
+        query_str = str(call_args[0][0][0])
+        assert "NOT IN" in query_str.upper() or "notin" in query_str.lower()
+
+    @pytest.mark.asyncio
+    async def test_list_requests_include_acted_on_shows_annotated(self, mock_db):
+        agent_profile_id = uuid4()
+        simulation_run_id = uuid4()
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+            simulation_run_id=simulation_run_id,
+            agent_profile_id=agent_profile_id,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        req = self._make_mock_request(content="Acted-on claim")
+        acted_on_id = req.id
+
+        main_result = MagicMock()
+        main_result.all.return_value = [(req, 1)]
+
+        acted_result = MagicMock()
+        acted_result.all.return_value = [(acted_on_id,)]
+
+        mock_db.execute = AsyncMock(side_effect=[main_result, acted_result])
+
+        result = await list_requests(ctx, include_acted_on="true")
+
+        assert "(acted on)" in result
+        assert str(acted_on_id) in result
+
+    @pytest.mark.asyncio
+    async def test_list_requests_no_filtering_without_agent_profile(self, mock_db):
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+            simulation_run_id=uuid4(),
+            agent_profile_id=None,
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        req = self._make_mock_request(content="Unfiltered claim")
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req, 0)]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        await list_requests(ctx)
+
+        assert mock_db.execute.await_count == 1
+        query_str = str(mock_db.execute.call_args_list[0][0][0])
+        assert "NOT IN" not in query_str.upper()
+
+    @pytest.mark.asyncio
+    async def test_list_requests_no_filtering_without_simulation_run(self, mock_db):
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=_GENERIC_MODEL_ID,
+            simulation_run_id=None,
+            agent_profile_id=uuid4(),
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        req = self._make_mock_request(content="Unfiltered claim")
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(req, 0)]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        await list_requests(ctx)
+
+        assert mock_db.execute.await_count == 1
+        query_str = str(mock_db.execute.call_args_list[0][0][0])
+        assert "NOT IN" not in query_str.upper()
 
 
 class TestListMyActions:

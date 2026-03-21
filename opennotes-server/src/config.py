@@ -921,7 +921,7 @@ class Settings(BaseSettings):
         description="Default LLM request limit per simulation agent turn (env: SIMULATION_DEFAULT_REQUEST_LIMIT)",
     )
     SIMULATION_DEFAULT_TOKEN_LIMIT: int = Field(
-        default=4000,
+        default=80000,
         ge=1,
         description="Default token budget per simulation agent turn (env: SIMULATION_DEFAULT_TOKEN_LIMIT)",
     )

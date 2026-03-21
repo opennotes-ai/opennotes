@@ -158,6 +158,28 @@ class TestPhase2PromptTokenBudget:
         assert note_count <= MAX_CONTEXT_NOTES
 
 
+class TestPhase1PromptWorkHeading:
+    def test_phase1_prompt_no_work_shows_no_work_available(self):
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_phase1_prompt(
+            recent_actions=[],
+            queue_summary="",
+            requests_count=0,
+            notes_count=0,
+        )
+        assert "No work is currently available." in prompt
+
+    def test_phase1_prompt_with_work_shows_available_work(self):
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_phase1_prompt(
+            recent_actions=[],
+            queue_summary="1 request, 0 notes",
+            requests_count=1,
+            notes_count=0,
+        )
+        assert "Available work:" in prompt
+
+
 class TestRunTurnWithActionType:
     def test_run_turn_accepts_chosen_action_type(self):
         agent = OpenNotesSimAgent()

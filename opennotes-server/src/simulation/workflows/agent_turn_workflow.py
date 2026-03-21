@@ -8,7 +8,7 @@ from dbos import DBOS, Queue
 from pydantic import TypeAdapter
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import UsageLimits
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import selectinload
 
 from src.config import get_settings
@@ -352,6 +352,37 @@ def build_deps_step(
     return run_sync(_build())
 
 
+@DBOS.step()
+def increment_no_content_skip_step(simulation_run_id: str) -> None:
+    from src.database import get_session_maker
+
+    async def _increment():
+        run_uuid = UUID(simulation_run_id)
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun.metrics).where(SimulationRun.id == run_uuid)
+            )
+            current_metrics = result.scalar_one_or_none() or {}
+            iteration = current_metrics.get("current_iteration", 0)
+            key = f"skipped_no_content_iter_{iteration}"
+
+            await session.execute(
+                text(
+                    "UPDATE simulation_runs "
+                    "SET metrics = jsonb_set("
+                    "  COALESCE(metrics, '{}'::jsonb),"
+                    "  ARRAY[:key],"
+                    "  to_jsonb(COALESCE((metrics->>:key)::int, 0) + 1)"
+                    ") "
+                    "WHERE id = :run_id"
+                ),
+                {"key": key, "run_id": str(run_uuid)},
+            )
+            await session.commit()
+
+    return run_sync(_increment())
+
+
 @DBOS.step(retries_allowed=False)
 def select_action_step(
     context: dict[str, Any],
@@ -693,6 +724,15 @@ def run_agent_turn(agent_instance_id: str) -> dict[str, Any]:
             agent_profile_id=context.get("agent_profile_id"),
             simulation_run_id=context.get("simulation_run_id"),
         )
+
+        if not deps_data["available_requests"] and not deps_data["available_notes"]:
+            logger.info(
+                "Agent turn skipped: no available content",
+                extra={"agent_instance_id": agent_instance_id},
+            )
+            if context.get("simulation_run_id"):
+                increment_no_content_skip_step(context["simulation_run_id"])
+            return {"agent_instance_id": agent_instance_id, "status": "skipped_no_content"}
 
         selection = select_action_step(
             context=context,

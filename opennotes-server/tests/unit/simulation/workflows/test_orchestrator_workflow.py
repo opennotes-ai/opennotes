@@ -1208,6 +1208,97 @@ class TestUpdateMetricsStep:
         assert result["tier_distribution"] == {"MINIMAL": 10, "BASIC": 32}
         assert result["scorer_breakdown"] == {"BayesianAverageScorer": 42}
 
+    def test_update_metrics_preserves_iteration_skip_keys(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import update_metrics_step
+
+        mock_session = AsyncMock()
+        metrics_result = MagicMock()
+        metrics_result.scalar_one_or_none.return_value = {
+            "turns_dispatched": 10,
+            "agents_spawned": 5,
+            "agents_removed": 0,
+            "iterations": 3,
+            "skipped_no_content_iter_3": 4,
+        }
+        completed_result = MagicMock()
+        completed_result.scalar.return_value = 8
+        mock_session.execute = AsyncMock(side_effect=[metrics_result, completed_result, None])
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = update_metrics_step.__wrapped__(
+                str(uuid4()),
+                dispatched_count=2,
+                spawned_count=0,
+                removed_count=0,
+            )
+
+        assert "_skipped_no_content" not in result
+        assert "skipped_no_content_iter_3" in result
+        assert result["skipped_no_content_iter_3"] == 4
+
+
+class TestSetCurrentIterationStep:
+    def test_set_current_iteration_executes_sql_update(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_current_iteration_step
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=None)
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            set_current_iteration_step.__wrapped__(str(uuid4()), iteration=7)
+
+        assert mock_session.execute.await_count == 1
+        assert mock_session.commit.await_count == 1
+
+
+class TestReadIterationSkipCountStep:
+    def test_reads_count_and_deletes_key(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import read_iteration_skip_count_step
+
+        mock_session = AsyncMock()
+        metrics_result = MagicMock()
+        metrics_result.scalar_one_or_none.return_value = {
+            "skipped_no_content_iter_5": 3,
+            "turns_dispatched": 10,
+        }
+        mock_session.execute = AsyncMock(side_effect=[metrics_result, None])
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            count = read_iteration_skip_count_step.__wrapped__(str(uuid4()), iteration=5)
+
+        assert count == 3
+        assert mock_session.execute.await_count == 2
+        assert mock_session.commit.await_count == 1
+
+    def test_returns_zero_when_key_missing(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import read_iteration_skip_count_step
+
+        mock_session = AsyncMock()
+        metrics_result = MagicMock()
+        metrics_result.scalar_one_or_none.return_value = {
+            "turns_dispatched": 10,
+        }
+        mock_session.execute = AsyncMock(side_effect=[metrics_result])
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            count = read_iteration_skip_count_step.__wrapped__(str(uuid4()), iteration=5)
+
+        assert count == 0
+        assert mock_session.execute.await_count == 1
+        assert mock_session.commit.await_count == 0
+
 
 class TestFinalizeRunStep:
     def test_finalize_run_sets_completed_status(self) -> None:
@@ -2200,7 +2291,7 @@ class TestRetryExhaustedRemovalMetrics:
 
 
 class TestConsecutiveEmptyResetOnException:
-    def test_consecutive_empty_resets_on_content_check_exception(self) -> None:
+    def test_exception_preserves_consecutive_empty_and_triggers_auto_pause(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import run_orchestrator
 
         run_id = str(uuid4())
@@ -2210,21 +2301,23 @@ class TestConsecutiveEmptyResetOnException:
 
         def mock_content_check(_):
             content_call_count[0] += 1
-            if content_call_count[0] <= 2:
+            if content_call_count[0] <= 9:
                 return {"has_content": False, "pending_requests": 0, "unrated_notes": 0}
-            if content_call_count[0] == 3:
+            if content_call_count[0] == 10:
                 raise RuntimeError("DB connection lost")
-            if content_call_count[0] <= 12:
-                return {"has_content": False, "pending_requests": 0, "unrated_notes": 0}
-            return {"has_content": True, "pending_requests": 1, "unrated_notes": 0}
+            return {"has_content": False, "pending_requests": 0, "unrated_notes": 0}
 
-        status_call_count = [0]
+        paused = [False]
 
         def mock_status(_):
-            status_call_count[0] += 1
-            if status_call_count[0] > 14:
+            if paused[0]:
                 return "cancelled"
             return "running"
+
+        def mock_set_status(run_id, status, expected_status=None):
+            if status == "paused":
+                paused[0] = True
+            return True
 
         with (
             patch(
@@ -2241,7 +2334,8 @@ class TestConsecutiveEmptyResetOnException:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
-            ),
+                side_effect=mock_set_status,
+            ) as mock_pause,
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
                 return_value={
@@ -2286,7 +2380,8 @@ class TestConsecutiveEmptyResetOnException:
             result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
 
         assert result["status"] == "cancelled"
-        assert content_call_count[0] > 10
+        mock_pause.assert_any_call(run_id, "paused", expected_status="running")
+        assert content_call_count[0] == 11
 
 
 class TestRefreshConfigStep:
@@ -2731,3 +2826,163 @@ class TestGenerationGuard:
         mock_content.assert_not_called()
         mock_finalize.assert_not_called()
         assert result["status"] == "superseded"
+
+
+class TestSkippedNoContentConsecutiveEmpty:
+    def test_all_agents_skipped_increments_consecutive_empty(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
+
+        run_id = str(uuid4())
+        config = _make_config()
+
+        status_calls = iter(["running", "running", "running", "paused", "cancelled"])
+
+        with (
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
+                return_value=config,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
+                side_effect=lambda _: next(status_calls),
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
+                return_value={"has_content": True, "pending_requests": 5, "unrated_notes": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
+                return_value={
+                    "active_count": 3,
+                    "total_spawned": 3,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
+                return_value={"retried": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.set_current_iteration_step",
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
+                return_value={"dispatched_count": 3, "skipped_count": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
+                return_value={
+                    "turns_dispatched": 3,
+                    "iterations": 1,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.read_iteration_skip_count_step",
+                return_value=3,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
+            ) as mock_set_status,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
+                return_value={"final_status": "cancelled", "instances_finalized": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.MAX_CONSECUTIVE_EMPTY",
+                3,
+            ),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "wf-test-skip-empty"
+
+            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
+
+        mock_set_status.assert_called_once_with(run_id, "paused", expected_status="running")
+        assert result["status"] == "cancelled"
+
+    def test_some_agents_not_skipped_does_not_increment(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
+
+        run_id = str(uuid4())
+        config = _make_config()
+
+        status_calls = iter(["running", "cancelled"])
+
+        with (
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
+                return_value=config,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
+                side_effect=lambda _: next(status_calls),
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_content_availability_step",
+                return_value={"has_content": True, "pending_requests": 5, "unrated_notes": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
+                return_value={
+                    "active_count": 3,
+                    "total_spawned": 3,
+                    "total_removed_for_cause": 0,
+                    "total_removed_by_rate": 0,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.spawn_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.remove_agents_step",
+                return_value=[],
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.detect_stuck_agents_step",
+                return_value={"retried": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.set_current_iteration_step",
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
+                return_value={"dispatched_count": 3, "skipped_count": 0},
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.update_metrics_step",
+                return_value={
+                    "turns_dispatched": 3,
+                    "iterations": 1,
+                },
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.read_iteration_skip_count_step",
+                return_value=1,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
+            ) as mock_set_status,
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
+                return_value={"final_status": "cancelled", "instances_finalized": 0},
+            ),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+            patch("src.simulation.workflows.orchestrator_workflow.TokenGate"),
+        ):
+            mock_dbos.workflow_id = "wf-test-partial-skip"
+
+            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
+
+        mock_set_status.assert_not_called()
+        assert result["status"] == "cancelled"
