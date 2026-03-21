@@ -628,7 +628,7 @@ def set_current_iteration_step(simulation_run_id: str, *, iteration: int) -> Non
                     "SET metrics = jsonb_set("
                     "  COALESCE(metrics, '{}'::jsonb),"
                     "  '{current_iteration}',"
-                    "  :iteration::jsonb"
+                    "  CAST(:iteration AS jsonb)"
                     ") "
                     "WHERE id = :run_id"
                 ),
