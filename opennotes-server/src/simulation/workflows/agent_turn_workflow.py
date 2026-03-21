@@ -8,7 +8,7 @@ from dbos import DBOS, Queue
 from pydantic import TypeAdapter
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import UsageLimits
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import selectinload
 
 from src.config import get_settings
@@ -363,11 +363,20 @@ def increment_no_content_skip_step(simulation_run_id: str) -> None:
                 select(SimulationRun.metrics).where(SimulationRun.id == run_uuid)
             )
             current_metrics = result.scalar_one_or_none() or {}
-            current_metrics["skipped_no_content"] = current_metrics.get("skipped_no_content", 0) + 1
+            iteration = current_metrics.get("current_iteration", 0)
+            key = f"skipped_no_content_iter_{iteration}"
+
             await session.execute(
-                update(SimulationRun)
-                .where(SimulationRun.id == run_uuid)
-                .values(metrics=current_metrics)
+                text(
+                    "UPDATE simulation_runs "
+                    "SET metrics = jsonb_set("
+                    "  COALESCE(metrics, '{}'::jsonb),"
+                    "  ARRAY[:key],"
+                    "  to_jsonb(COALESCE((metrics->>:key)::int, 0) + 1)"
+                    ") "
+                    "WHERE id = :run_id"
+                ),
+                {"key": key, "run_id": str(run_uuid)},
             )
             await session.commit()
 

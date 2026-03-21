@@ -1208,7 +1208,7 @@ class TestUpdateMetricsStep:
         assert result["tier_distribution"] == {"MINIMAL": 10, "BASIC": 32}
         assert result["scorer_breakdown"] == {"BayesianAverageScorer": 42}
 
-    def test_update_metrics_reads_and_resets_skipped_no_content(self) -> None:
+    def test_update_metrics_preserves_iteration_skip_keys(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import update_metrics_step
 
         mock_session = AsyncMock()
@@ -1218,7 +1218,7 @@ class TestUpdateMetricsStep:
             "agents_spawned": 5,
             "agents_removed": 0,
             "iterations": 3,
-            "skipped_no_content": 4,
+            "skipped_no_content_iter_3": 4,
         }
         completed_result = MagicMock()
         completed_result.scalar.return_value = 8
@@ -1235,37 +1235,69 @@ class TestUpdateMetricsStep:
                 removed_count=0,
             )
 
-        assert result["_skipped_no_content"] == 4
-        assert result["skipped_no_content"] == 0
+        assert "_skipped_no_content" not in result
+        assert "skipped_no_content_iter_3" in result
+        assert result["skipped_no_content_iter_3"] == 4
 
-    def test_update_metrics_skipped_no_content_defaults_to_zero(self) -> None:
-        from src.simulation.workflows.orchestrator_workflow import update_metrics_step
+
+class TestSetCurrentIterationStep:
+    def test_set_current_iteration_executes_sql_update(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import set_current_iteration_step
 
         mock_session = AsyncMock()
-        metrics_result = MagicMock()
-        metrics_result.scalar_one_or_none.return_value = {
-            "turns_dispatched": 5,
-            "agents_spawned": 2,
-            "agents_removed": 0,
-            "iterations": 1,
-        }
-        completed_result = MagicMock()
-        completed_result.scalar.return_value = 3
-        mock_session.execute = AsyncMock(side_effect=[metrics_result, completed_result, None])
+        mock_session.execute = AsyncMock(return_value=None)
         mock_session.commit = AsyncMock()
 
         mock_session_ctx = _make_mock_session_ctx(mock_session)
 
         with _patch_run_sync(), _patch_session(mock_session_ctx):
-            result = update_metrics_step.__wrapped__(
-                str(uuid4()),
-                dispatched_count=1,
-                spawned_count=0,
-                removed_count=0,
-            )
+            set_current_iteration_step.__wrapped__(str(uuid4()), iteration=7)
 
-        assert result["_skipped_no_content"] == 0
-        assert result["skipped_no_content"] == 0
+        assert mock_session.execute.await_count == 1
+        assert mock_session.commit.await_count == 1
+
+
+class TestReadIterationSkipCountStep:
+    def test_reads_count_and_deletes_key(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import read_iteration_skip_count_step
+
+        mock_session = AsyncMock()
+        metrics_result = MagicMock()
+        metrics_result.scalar_one_or_none.return_value = {
+            "skipped_no_content_iter_5": 3,
+            "turns_dispatched": 10,
+        }
+        mock_session.execute = AsyncMock(side_effect=[metrics_result, None])
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            count = read_iteration_skip_count_step.__wrapped__(str(uuid4()), iteration=5)
+
+        assert count == 3
+        assert mock_session.execute.await_count == 2
+        assert mock_session.commit.await_count == 1
+
+    def test_returns_zero_when_key_missing(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import read_iteration_skip_count_step
+
+        mock_session = AsyncMock()
+        metrics_result = MagicMock()
+        metrics_result.scalar_one_or_none.return_value = {
+            "turns_dispatched": 10,
+        }
+        mock_session.execute = AsyncMock(side_effect=[metrics_result])
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            count = read_iteration_skip_count_step.__wrapped__(str(uuid4()), iteration=5)
+
+        assert count == 0
+        assert mock_session.execute.await_count == 1
+        assert mock_session.commit.await_count == 0
 
 
 class TestFinalizeRunStep:
@@ -2259,7 +2291,7 @@ class TestRetryExhaustedRemovalMetrics:
 
 
 class TestConsecutiveEmptyResetOnException:
-    def test_consecutive_empty_resets_on_content_check_exception(self) -> None:
+    def test_exception_preserves_consecutive_empty_and_triggers_auto_pause(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import run_orchestrator
 
         run_id = str(uuid4())
@@ -2269,21 +2301,23 @@ class TestConsecutiveEmptyResetOnException:
 
         def mock_content_check(_):
             content_call_count[0] += 1
-            if content_call_count[0] <= 2:
+            if content_call_count[0] <= 9:
                 return {"has_content": False, "pending_requests": 0, "unrated_notes": 0}
-            if content_call_count[0] == 3:
+            if content_call_count[0] == 10:
                 raise RuntimeError("DB connection lost")
-            if content_call_count[0] <= 12:
-                return {"has_content": False, "pending_requests": 0, "unrated_notes": 0}
-            return {"has_content": True, "pending_requests": 1, "unrated_notes": 0}
+            return {"has_content": False, "pending_requests": 0, "unrated_notes": 0}
 
-        status_call_count = [0]
+        paused = [False]
 
         def mock_status(_):
-            status_call_count[0] += 1
-            if status_call_count[0] > 14:
+            if paused[0]:
                 return "cancelled"
             return "running"
+
+        def mock_set_status(run_id, status, expected_status=None):
+            if status == "paused":
+                paused[0] = True
+            return True
 
         with (
             patch(
@@ -2300,7 +2334,8 @@ class TestConsecutiveEmptyResetOnException:
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
-            ),
+                side_effect=mock_set_status,
+            ) as mock_pause,
             patch(
                 "src.simulation.workflows.orchestrator_workflow.get_population_snapshot_step",
                 return_value={
@@ -2345,7 +2380,8 @@ class TestConsecutiveEmptyResetOnException:
             result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
 
         assert result["status"] == "cancelled"
-        assert content_call_count[0] > 10
+        mock_pause.assert_any_call(run_id, "paused", expected_status="running")
+        assert content_call_count[0] == 11
 
 
 class TestRefreshConfigStep:
@@ -2836,6 +2872,9 @@ class TestSkippedNoContentConsecutiveEmpty:
                 return_value={"retried": 0},
             ),
             patch(
+                "src.simulation.workflows.orchestrator_workflow.set_current_iteration_step",
+            ),
+            patch(
                 "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
                 return_value={"dispatched_count": 3, "skipped_count": 0},
             ),
@@ -2844,9 +2883,11 @@ class TestSkippedNoContentConsecutiveEmpty:
                 return_value={
                     "turns_dispatched": 3,
                     "iterations": 1,
-                    "_skipped_no_content": 3,
-                    "skipped_no_content": 0,
                 },
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.read_iteration_skip_count_step",
+                return_value=3,
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
@@ -2912,6 +2953,9 @@ class TestSkippedNoContentConsecutiveEmpty:
                 return_value={"retried": 0},
             ),
             patch(
+                "src.simulation.workflows.orchestrator_workflow.set_current_iteration_step",
+            ),
+            patch(
                 "src.simulation.workflows.orchestrator_workflow.schedule_turns_step",
                 return_value={"dispatched_count": 3, "skipped_count": 0},
             ),
@@ -2920,8 +2964,11 @@ class TestSkippedNoContentConsecutiveEmpty:
                 return_value={
                     "turns_dispatched": 3,
                     "iterations": 1,
-                    "_skipped_no_content": 1,
                 },
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.read_iteration_skip_count_step",
+                return_value=1,
             ),
             patch(
                 "src.simulation.workflows.orchestrator_workflow.set_run_status_step",
