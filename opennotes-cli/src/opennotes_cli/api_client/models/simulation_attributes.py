@@ -34,6 +34,7 @@ class SimulationAttributes:
         restart_count (int | Unset):  Default: 0.
         cumulative_turns (int | Unset):  Default: 0.
         is_public (bool | Unset):  Default: False.
+        name (None | str | Unset):
         created_at (datetime.datetime | None | Unset):
         updated_at (datetime.datetime | None | Unset):
     """
@@ -49,6 +50,7 @@ class SimulationAttributes:
     restart_count: int | Unset = 0
     cumulative_turns: int | Unset = 0
     is_public: bool | Unset = False
+    name: None | str | Unset = UNSET
     created_at: datetime.datetime | None | Unset = UNSET
     updated_at: datetime.datetime | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -108,6 +110,12 @@ class SimulationAttributes:
 
         is_public = self.is_public
 
+        name: None | str | Unset
+        if isinstance(self.name, Unset):
+            name = UNSET
+        else:
+            name = self.name
+
         created_at: None | str | Unset
         if isinstance(self.created_at, Unset):
             created_at = UNSET
@@ -149,6 +157,8 @@ class SimulationAttributes:
             field_dict["cumulative_turns"] = cumulative_turns
         if is_public is not UNSET:
             field_dict["is_public"] = is_public
+        if name is not UNSET:
+            field_dict["name"] = name
         if created_at is not UNSET:
             field_dict["created_at"] = created_at
         if updated_at is not UNSET:
@@ -254,6 +264,15 @@ class SimulationAttributes:
 
         is_public = d.pop("is_public", UNSET)
 
+        def _parse_name(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        name = _parse_name(d.pop("name", UNSET))
+
         def _parse_created_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
                 return data
@@ -300,6 +319,7 @@ class SimulationAttributes:
             restart_count=restart_count,
             cumulative_turns=cumulative_turns,
             is_public=is_public,
+            name=name,
             created_at=created_at,
             updated_at=updated_at,
         )

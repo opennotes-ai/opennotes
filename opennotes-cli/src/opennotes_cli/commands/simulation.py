@@ -60,6 +60,7 @@ def simulation_list(ctx: click.Context, page: int, page_size: int) -> None:
 
     table = Table(show_header=True, header_style="bold")
     table.add_column("ID")
+    table.add_column("Name")
     table.add_column("Status", width=12)
     table.add_column("Orchestrator ID")
     table.add_column("Community Server ID")
@@ -73,6 +74,7 @@ def simulation_list(ctx: click.Context, page: int, page_size: int) -> None:
 
         table.add_row(
             format_id(item.get("id", "N/A"), cli_ctx.use_huuid),
+            attrs.get("name", ""),
             f"[{color}]{symbol} {status}[/{color}]",
             format_id(attrs.get("orchestrator_id", "N/A"), cli_ctx.use_huuid),
             format_id(attrs.get("community_server_id", "N/A"), cli_ctx.use_huuid),
@@ -118,6 +120,11 @@ def simulation_status(ctx: click.Context, simulation_id: str) -> None:
 
     panel_content = (
         f"[bold]ID:[/bold] {format_id(result.get('data', {}).get('id', 'N/A'), cli_ctx.use_huuid)}\n"
+    )
+    sim_name = attrs.get("name")
+    if sim_name:
+        panel_content += f"[bold]Name:[/bold] {sim_name}\n"
+    panel_content += (
         f"[bold]Status:[/bold] [{color}]{symbol} {status}[/{color}]\n"
         f"[bold]Orchestrator:[/bold] {format_id(attrs.get('orchestrator_id', 'N/A'), cli_ctx.use_huuid)}\n"
         f"[bold]Community Server:[/bold] {format_id(attrs.get('community_server_id', 'N/A'), cli_ctx.use_huuid)}"
@@ -165,17 +172,76 @@ def simulation_status(ctx: click.Context, simulation_id: str) -> None:
     console.print(Panel(panel_content, title="[bold]Simulation Run[/bold]"))
 
 
+@simulation.command("edit")
+@click.argument("simulation_id")
+@click.option("--name", default=None, help="Set simulation name.")
+@click.pass_context
+def simulation_edit(ctx: click.Context, simulation_id: str, name: str | None) -> None:
+    """Update a simulation run."""
+    try:
+        simulation_id = resolve_id(simulation_id)
+    except click.BadParameter as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    if name is None:
+        error_console.print("[red]Error:[/red] Provide at least one option to update (e.g. --name).")
+        sys.exit(1)
+
+    cli_ctx: CliContext = ctx.obj
+    base_url = cli_ctx.base_url
+    client = cli_ctx.client
+
+    csrf_token = get_csrf_token(client, base_url, cli_ctx.auth)
+    headers = add_csrf(cli_ctx.auth.get_jsonapi_headers(), csrf_token)
+
+    update_attributes: dict[str, Any] = {}
+    if name is not None:
+        update_attributes["name"] = name
+
+    payload = {
+        "data": {
+            "type": "simulations",
+            "attributes": update_attributes,
+        }
+    }
+
+    response = client.patch(
+        f"{base_url}/api/v2/simulations/{simulation_id}",
+        headers=headers,
+        json=payload,
+    )
+    handle_jsonapi_error(response)
+
+    result = response.json()
+
+    if cli_ctx.json_output:
+        console.print(json.dumps(result, indent=2, default=str))
+        return
+
+    attrs = result.get("data", {}).get("attributes", {})
+    status = attrs.get("status", "unknown")
+    color, symbol = get_status_style(status)
+    console.print(
+        f"[{color}]{symbol}[/{color}] Simulation {format_id(simulation_id, cli_ctx.use_huuid)} updated"
+    )
+    updated_name = attrs.get("name")
+    if updated_name:
+        console.print(f"  [bold]Name:[/bold] {updated_name}")
+
+
 @simulation.command("create")
 @click.option("--orchestrator-id", required=True, help="Orchestrator UUID.")
 @click.option(
     "--community-server-id", required=True,
     help="Community server UUID (must be playground).",
 )
+@click.option("--name", default=None, help="Simulation name.")
 @click.option("--wait", is_flag=True, help="Poll until simulation reaches a terminal state.")
 @click.option("--copy-requests-from", default=None, help="Copy requests from this community server ID before creating simulation.")
 @click.pass_context
 def simulation_create(
-    ctx: click.Context, orchestrator_id: str, community_server_id: str, wait: bool, copy_requests_from: str | None
+    ctx: click.Context, orchestrator_id: str, community_server_id: str, name: str | None, wait: bool, copy_requests_from: str | None
 ) -> None:
     """Create and start a simulation run."""
     try:
@@ -228,13 +294,17 @@ def simulation_create(
         if not cli_ctx.json_output:
             console.print("[green]\u2713[/green] Requests copied successfully")
 
+    sim_attributes: dict[str, Any] = {
+        "orchestrator_id": orchestrator_id,
+        "community_server_id": community_server_id,
+    }
+    if name is not None:
+        sim_attributes["name"] = name
+
     payload = {
         "data": {
             "type": "simulations",
-            "attributes": {
-                "orchestrator_id": orchestrator_id,
-                "community_server_id": community_server_id,
-            },
+            "attributes": sim_attributes,
         }
     }
 
@@ -701,6 +771,7 @@ def simulation_launch(
             "attributes": {
                 "orchestrator_id": orch_id,
                 "community_server_id": cs_id,
+                "name": name,
             },
         }
     }

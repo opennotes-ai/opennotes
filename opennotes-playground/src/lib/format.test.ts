@@ -35,6 +35,50 @@ describe("id badge formatting", () => {
     expect(formatIdBadgeLabel(null)).toBe("<Unspecified>");
     expect(formatIdBadgeTooltip(undefined)).toBe("<Unspecified>");
   });
+
+  it("returns name as label when name is provided", () => {
+    expect(formatIdBadgeLabel(UUID_SAMPLE, "My Run")).toBe("My Run");
+  });
+
+  it("falls back to proquint when name is null", () => {
+    const withNull = formatIdBadgeLabel(UUID_SAMPLE, null);
+    const withoutName = formatIdBadgeLabel(UUID_SAMPLE);
+    expect(withNull).toBe(withoutName);
+    expect(withNull).toMatch(/^[a-z]{5}-[a-z]{5}$/);
+  });
+
+  it("falls back to proquint when name is undefined", () => {
+    const withUndef = formatIdBadgeLabel(UUID_SAMPLE, undefined);
+    expect(withUndef).toMatch(/^[a-z]{5}-[a-z]{5}$/);
+  });
+
+  it("falls back to proquint when name is empty string", () => {
+    const withEmpty = formatIdBadgeLabel(UUID_SAMPLE, "");
+    expect(withEmpty).toMatch(/^[a-z]{5}-[a-z]{5}$/);
+  });
+
+  it("returns three-line tooltip when name is provided", () => {
+    const tooltip = formatIdBadgeTooltip(UUID_SAMPLE, "My Run");
+    const lines = tooltip.split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe("My Run");
+    expect(lines[1]).toMatch(/^[a-z]{5}-[a-z]{5}$/);
+    expect(lines[2]).toBe(UUID_SAMPLE);
+  });
+
+  it("returns two-line tooltip when name is null", () => {
+    const tooltip = formatIdBadgeTooltip(UUID_SAMPLE, null);
+    const lines = tooltip.split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/^[a-z]{5}-[a-z]{5}$/);
+    expect(lines[1]).toBe(UUID_SAMPLE);
+  });
+
+  it("returns two-line tooltip when name is empty string", () => {
+    const tooltip = formatIdBadgeTooltip(UUID_SAMPLE, "");
+    const lines = tooltip.split("\n");
+    expect(lines).toHaveLength(2);
+  });
 });
 
 describe("proquint reverse lookup", () => {

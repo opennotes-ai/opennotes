@@ -2,33 +2,24 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any, TypeVar, cast
-from uuid import UUID
 
 from attrs import define as _attrs_define
 
 from ..types import UNSET, Unset
 
-T = TypeVar("T", bound="SimulationCreateAttributes")
+T = TypeVar("T", bound="SimulationUpdateAttributes")
 
 
 @_attrs_define
-class SimulationCreateAttributes:
+class SimulationUpdateAttributes:
     """
     Attributes:
-        orchestrator_id (UUID):
-        community_server_id (UUID):
         name (None | str | Unset):
     """
 
-    orchestrator_id: UUID
-    community_server_id: UUID
     name: None | str | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
-        orchestrator_id = str(self.orchestrator_id)
-
-        community_server_id = str(self.community_server_id)
-
         name: None | str | Unset
         if isinstance(self.name, Unset):
             name = UNSET
@@ -37,12 +28,7 @@ class SimulationCreateAttributes:
 
         field_dict: dict[str, Any] = {}
 
-        field_dict.update(
-            {
-                "orchestrator_id": orchestrator_id,
-                "community_server_id": community_server_id,
-            }
-        )
+        field_dict.update({})
         if name is not UNSET:
             field_dict["name"] = name
 
@@ -51,9 +37,6 @@ class SimulationCreateAttributes:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        orchestrator_id = UUID(d.pop("orchestrator_id"))
-
-        community_server_id = UUID(d.pop("community_server_id"))
 
         def _parse_name(data: object) -> None | str | Unset:
             if data is None:
@@ -64,10 +47,8 @@ class SimulationCreateAttributes:
 
         name = _parse_name(d.pop("name", UNSET))
 
-        simulation_create_attributes = cls(
-            orchestrator_id=orchestrator_id,
-            community_server_id=community_server_id,
+        simulation_update_attributes = cls(
             name=name,
         )
 
-        return simulation_create_attributes
+        return simulation_update_attributes

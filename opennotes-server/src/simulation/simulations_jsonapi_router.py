@@ -152,6 +152,7 @@ class ResumeRequest(BaseModel):
 class SimulationCreateAttributes(StrictInputSchema):
     orchestrator_id: UUID
     community_server_id: UUID
+    name: str | None = Field(default=None, max_length=255)
 
 
 class SimulationCreateData(BaseModel):
@@ -179,8 +180,24 @@ class SimulationAttributes(SQLAlchemySchema):
     restart_count: int = 0
     cumulative_turns: int = 0
     is_public: bool = False
+    name: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class SimulationUpdateAttributes(StrictInputSchema):
+    name: str | None = Field(default=None, max_length=255)
+
+
+class SimulationUpdateData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["simulations"] = Field(..., description="Resource type must be 'simulations'")
+    attributes: SimulationUpdateAttributes
+
+
+class SimulationUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    data: SimulationUpdateData
 
 
 class SimulationResource(BaseModel):
@@ -290,6 +307,7 @@ def simulation_run_to_resource(
             restart_count=run.restart_count,
             cumulative_turns=run.cumulative_turns,
             is_public=run.is_public,
+            name=run.name,
             created_at=run.created_at,
             updated_at=run.updated_at,
         ),
@@ -371,6 +389,7 @@ async def create_simulation(
             orchestrator_id=attrs.orchestrator_id,
             community_server_id=attrs.community_server_id,
             status="pending",
+            name=attrs.name,
         )
         db.add(simulation_run)
         await db.commit()
@@ -430,6 +449,67 @@ async def create_simulation(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             "Failed to create simulation",
+        )
+
+
+@router.patch(
+    "/simulations/{simulation_id}",
+    response_class=JSONResponse,
+    response_model=SimulationSingleResponse,
+)
+async def update_simulation(
+    request: HTTPRequest,
+    simulation_id: UUID,
+    body: SimulationUpdateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    require_admin(current_user)
+
+    try:
+        result = await db.execute(
+            select(SimulationRun).where(
+                SimulationRun.id == simulation_id,
+                SimulationRun.deleted_at.is_(None),
+            )
+        )
+        simulation_run = result.scalar_one_or_none()
+
+        if not simulation_run:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Simulation {simulation_id} not found",
+            )
+
+        attrs = body.data.attributes
+        for field in attrs.model_fields_set:
+            setattr(simulation_run, field, getattr(attrs, field))
+        await db.commit()
+        await db.refresh(simulation_run)
+
+        resource = simulation_run_to_resource(simulation_run)
+        base_url = str(request.url).split("?")[0]
+        response = SimulationSingleResponse(
+            data=resource,
+            links=JSONAPILinks(self_=base_url),
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to update simulation")
+        await db.rollback()
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to update simulation",
         )
 
 

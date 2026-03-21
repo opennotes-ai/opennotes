@@ -3349,7 +3349,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Simulation */
+        patch: operations["update_simulation_api_v2_simulations__simulation_id__patch"];
         trace?: never;
     };
     "/api/v2/simulations/{simulation_id}/pause": {
@@ -9875,6 +9876,8 @@ export interface components {
              * @default false
              */
             is_public: boolean;
+            /** Name */
+            name?: string | null;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -9892,6 +9895,8 @@ export interface components {
              * Format: uuid
              */
             community_server_id: string;
+            /** Name */
+            name?: string | null;
         };
         /** SimulationCreateData */
         SimulationCreateData: {
@@ -9947,6 +9952,25 @@ export interface components {
                 [key: string]: string;
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /** SimulationUpdateAttributes */
+        SimulationUpdateAttributes: {
+            /** Name */
+            name?: string | null;
+        };
+        /** SimulationUpdateData */
+        SimulationUpdateData: {
+            /**
+             * Type
+             * @description Resource type must be 'simulations'
+             * @constant
+             */
+            type: "simulations";
+            attributes: components["schemas"]["SimulationUpdateAttributes"];
+        };
+        /** SimulationUpdateRequest */
+        SimulationUpdateRequest: {
+            data: components["schemas"]["SimulationUpdateData"];
         };
         /** TierInfo */
         TierInfo: {
@@ -16792,6 +16816,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_simulation_api_v2_simulations__simulation_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulationUpdateRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
