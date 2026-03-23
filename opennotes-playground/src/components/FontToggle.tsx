@@ -22,9 +22,9 @@ export default function FontToggle() {
   };
 
   return (
-    <ToggleGroup value={serif() ? "serif" : "sans"} onChange={handleChange}>
-      <ToggleGroupItem value="sans" class="font-sans text-sm">Aa</ToggleGroupItem>
-      <ToggleGroupItem value="serif" class="font-serif text-sm">Aa</ToggleGroupItem>
+    <ToggleGroup value={serif() ? "serif" : "sans"} onChange={handleChange} aria-label="Font preference">
+      <ToggleGroupItem value="sans" class="font-sans text-sm" aria-label="Sans-serif font">Aa</ToggleGroupItem>
+      <ToggleGroupItem value="serif" class="font-serif text-sm" aria-label="Serif font">Aa</ToggleGroupItem>
     </ToggleGroup>
   );
 }
