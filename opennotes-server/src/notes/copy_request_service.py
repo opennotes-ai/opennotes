@@ -10,7 +10,6 @@ from sqlalchemy import select
 
 from src.monitoring import get_logger
 from src.notes.models import Request
-from src.notes.request_service import RequestService
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -48,20 +47,10 @@ class CopyRequestService:
 
         total = len(source_requests)
         copied = 0
-        skipped = 0
         failed = 0
 
         for i, source_req in enumerate(source_requests):
             try:
-                if source_req.message_archive is None:
-                    skipped += 1
-                    if on_progress:
-                        _res = on_progress(i + 1, total)
-                        if inspect.isawaitable(_res):
-                            await _res
-                    continue
-
-                content = source_req.message_archive.get_content() or ""
                 new_request_id = str(uuid7())
 
                 metadata: dict[str, Any] = {
@@ -69,16 +58,11 @@ class CopyRequestService:
                     "copied_from": str(source_req.id),
                 }
 
-                await RequestService.create_from_message(
-                    db=db,
+                new_request = Request(
                     request_id=new_request_id,
-                    content=content,
                     community_server_id=target_community_server_id,
+                    message_archive_id=source_req.message_archive_id,
                     requested_by=source_req.requested_by,
-                    platform_message_id=source_req.message_archive.platform_message_id,
-                    platform_channel_id=source_req.message_archive.platform_channel_id,
-                    platform_author_id=source_req.message_archive.platform_author_id,
-                    platform_timestamp=source_req.message_archive.platform_timestamp,
                     dataset_item_id=source_req.dataset_item_id,
                     similarity_score=source_req.similarity_score,
                     dataset_name=source_req.dataset_name,
@@ -86,6 +70,7 @@ class CopyRequestService:
                     note_id=None,
                     request_metadata=metadata,
                 )
+                db.add(new_request)
                 copied += 1
 
             except Exception as e:
@@ -100,4 +85,4 @@ class CopyRequestService:
                 if inspect.isawaitable(_res):
                     await _res
 
-        return CopyResult(total_copied=copied, total_skipped=skipped, total_failed=failed)
+        return CopyResult(total_copied=copied, total_skipped=0, total_failed=failed)
