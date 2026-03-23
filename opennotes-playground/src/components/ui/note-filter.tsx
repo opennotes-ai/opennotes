@@ -4,6 +4,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuGroupLabel,
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
@@ -103,19 +104,21 @@ export default function NoteFilter(props: {
               <Show when={i() > 0}>
                 <DropdownMenuSeparator />
               </Show>
-              <DropdownMenuGroupLabel>{group.label}</DropdownMenuGroupLabel>
-              <For each={group.options}>
-                {(option) => (
-                  <DropdownMenuCheckboxItem
-                    data-testid={`filter-${group.key}-${option.value}`}
-                    checked={isChecked(group.key, option.value)}
-                    onChange={() => toggle(group.key, option.value)}
-                    closeOnSelect={false}
-                  >
-                    {option.label}
-                  </DropdownMenuCheckboxItem>
-                )}
-              </For>
+              <DropdownMenuGroup>
+                <DropdownMenuGroupLabel>{group.label}</DropdownMenuGroupLabel>
+                <For each={group.options}>
+                  {(option) => (
+                    <DropdownMenuCheckboxItem
+                      data-testid={`filter-${group.key}-${option.value}`}
+                      checked={isChecked(group.key, option.value)}
+                      onChange={() => toggle(group.key, option.value)}
+                      closeOnSelect={false}
+                    >
+                      {option.label}
+                    </DropdownMenuCheckboxItem>
+                  )}
+                </For>
+              </DropdownMenuGroup>
             </>
           )}
         </For>
