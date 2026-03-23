@@ -259,13 +259,17 @@ class MessageArchiveService:
         if not dry_run and base["archive_deleted"]:
             archive.soft_delete()
 
-        request = (
-            await db.execute(
-                select(Request).where(Request.message_archive_id == message_archive_id)
+        requests = (
+            (
+                await db.execute(
+                    select(Request).where(Request.message_archive_id == message_archive_id)
+                )
             )
-        ).scalar_one_or_none()
+            .scalars()
+            .all()
+        )
 
-        if request is not None:
+        for request in requests:
             base["request_id"] = str(request.request_id)
             base.update(await MessageArchiveService._resolve_request_cascade(db, request, dry_run))
 
