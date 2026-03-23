@@ -25,8 +25,10 @@ export default function SimulationsPage() {
     <main class="mx-auto max-w-6xl px-4 py-8">
       <div class="grid grid-cols-1 gap-8 md:grid-cols-[2fr_1fr]">
         <div>
-          <div class="flex items-center justify-end mb-4">
-            <FontToggle />
+          <div class="relative">
+            <div class="absolute right-0 top-8 z-10">
+              <FontToggle />
+            </div>
           </div>
           <Suspense fallback={<p class="text-muted-foreground">Loading posts...</p>}>
             <BlogFeed />
