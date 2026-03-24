@@ -8,7 +8,7 @@ export default function BlogPost(props: { post: BlogPostType }) {
       <div class="group relative">
         <a
           href={`#${props.post.slug}`}
-          class="absolute -left-6 top-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          class="absolute -left-6 top-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
           aria-label="Link to this post"
         >
           #
