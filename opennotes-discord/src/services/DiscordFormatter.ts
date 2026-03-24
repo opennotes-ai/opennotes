@@ -629,7 +629,7 @@ export class DiscordFormatter {
       container.addSeparatorComponents(createDivider());
 
       const fieldLines = [
-        `${statusEmoji} **${request.request_id}**`,
+        `${statusEmoji} **Request #${formatIdDisplay(request.id)}**`,
       ];
 
       if (effectiveMessageId && request.platform_channel_id && options?.guildId) {
