@@ -230,6 +230,11 @@ class TestScoreCommunityServerNotes:
                 new_callable=AsyncMock,
             ) as mock_calc,
             patch("src.simulation.scoring_integration.ScorerFactory"),
+            patch(
+                "src.simulation.scoring_integration._prefetch_community_data",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
         ):
             mock_calc.side_effect = [
                 _make_score_response(unscored.id, score=0.6, rating_count=5),
@@ -257,6 +262,11 @@ class TestScoreCommunityServerNotes:
                 new_callable=AsyncMock,
             ),
             patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
+            patch(
+                "src.simulation.scoring_integration._prefetch_community_data",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
         ):
             mock_scorer = MagicMock()
             type(mock_scorer).__name__ = "BayesianAverageScorerAdapter"
