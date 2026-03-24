@@ -205,7 +205,7 @@ class TestCopyRequestsE2E:
                 assert req.dataset_name == snap["dataset_name"]
                 assert req.similarity_score == snap["similarity_score"]
 
-    async def test_copied_message_archives_are_independent(
+    async def test_copied_requests_share_source_archives(
         self,
         source_community_server,
         target_community_server,
@@ -235,13 +235,12 @@ class TestCopyRequestsE2E:
             target_reqs = target_result.scalars().all()
             target_archive_ids = {req.message_archive_id for req in target_reqs}
 
-            assert len(target_archive_ids) == 4
-            assert source_archive_ids.isdisjoint(target_archive_ids)
+            assert target_archive_ids == source_archive_ids
 
             total_archives = (
                 await db.execute(select(func.count()).select_from(MessageArchive))
             ).scalar()
-            assert total_archives == 9  # 5 source + 4 copied
+            assert total_archives == 5  # source only, no copies created
 
     async def test_copy_preserves_dataset_metadata(
         self,
