@@ -576,7 +576,7 @@ export class DiscordFormatter {
 
   static async formatListRequestsSuccessV2(
     result: ListRequestsResult,
-    options?: { status?: string; myRequestsOnly?: boolean; communityServerId?: string; guildId?: string }
+    options?: { status?: string; myRequestsOnly?: boolean; communityServerId?: string; guildId?: string; isAdmin?: boolean }
   ): Promise<{
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -639,7 +639,11 @@ export class DiscordFormatter {
 
       fieldLines.push(
         `**Status:** ${request.status}`,
-        `**Requester:** ${requestedBy}`,
+      );
+      if (options?.isAdmin) {
+        fieldLines.push(`**Requester (only visible to admins):** ${requestedBy}`);
+      }
+      fieldLines.push(
         `**Requested:** <t:${timestamp}:R>`,
         `**${noteInfo}**`,
       );

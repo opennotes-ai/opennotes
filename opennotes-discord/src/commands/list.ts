@@ -521,11 +521,13 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       return;
     }
 
+    const member = interaction.guild?.members.cache.get(userId) || null;
     const formattedData = await DiscordFormatter.formatListRequestsSuccessV2(result.data, {
       status: status || undefined,
       myRequestsOnly,
       communityServerId: communityServerUuid,
       guildId: guildId || undefined,
+      isAdmin: hasManageGuildPermission(member),
     });
 
     await interaction.editReply({
@@ -1220,11 +1222,13 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
         return;
       }
 
+      const member = interaction.guild?.members.cache.get(userId) || null;
       const formattedData = await DiscordFormatter.formatListRequestsSuccessV2(result.data, {
         status: undefined,
         myRequestsOnly: false,
         communityServerId: communityServerUuid,
         guildId: guildId || undefined,
+        isAdmin: hasManageGuildPermission(member),
       });
 
       await interaction.editReply({
@@ -1647,11 +1651,13 @@ export async function handleRequestQueuePageButton(interaction: ButtonInteractio
       return;
     }
 
+    const member = interaction.guild?.members.cache.get(interaction.user.id) || null;
     const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result.data, {
       status: filterState.status,
       myRequestsOnly: filterState.myRequestsOnly,
       communityServerId: filterState.communityServerId,
       guildId: interaction.guildId || undefined,
+      isAdmin: hasManageGuildPermission(member),
     });
 
     await interaction.editReply({

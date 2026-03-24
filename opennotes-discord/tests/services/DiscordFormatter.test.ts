@@ -800,7 +800,42 @@ describe('DiscordFormatter', () => {
 
       expect(allContent).toContain('Request #');
       expect(allContent).not.toContain('discord-123-0');
+    });
+
+    it('should show Requester field when isAdmin is true', async () => {
+      const result = createMockListRequestsResult();
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result, { isAdmin: true });
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c) => c.type === 10);
+      const allContent = textComponents.map((c) => (c as { content?: string }).content).join(' ');
+
+      expect(allContent).toContain('Requester (only visible to admins):');
       expect(allContent).toContain('user_0');
+    });
+
+    it('should hide Requester field when isAdmin is false', async () => {
+      const result = createMockListRequestsResult();
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result, { isAdmin: false });
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c) => c.type === 10);
+      const allContent = textComponents.map((c) => (c as { content?: string }).content).join(' ');
+
+      expect(allContent).not.toContain('Requester');
+      expect(allContent).not.toContain('user_0');
+    });
+
+    it('should hide Requester field when isAdmin is not provided', async () => {
+      const result = createMockListRequestsResult();
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c) => c.type === 10);
+      const allContent = textComponents.map((c) => (c as { content?: string }).content).join(' ');
+
+      expect(allContent).not.toContain('Requester');
+      expect(allContent).not.toContain('user_0');
     });
 
     it('should display proquint-based request ID instead of raw request_id', async () => {
