@@ -27,6 +27,7 @@ import { extractUserContext } from '../lib/user-context.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { serviceProvider } from '../services/index.js';
 import { ConfigKey } from '../lib/config-schema.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 interface VibecheckPaginationState {
   scanId: string;
@@ -445,6 +446,8 @@ async function displayFlaggedResults(
     components.push(paginatedResult.actionButtons);
   }
 
+  components.push(buildContextualNav('vibecheck:scan'));
+
   await interaction.editReply({
     content: fullContent,
     components,
@@ -524,6 +527,8 @@ async function handleVibecheckButton(
     if (paginatedResult.actionButtons) {
       components.push(paginatedResult.actionButtons);
     }
+
+    components.push(buildContextualNav('vibecheck:scan'));
 
     await buttonInteraction.update({
       content: fullContent,
@@ -613,9 +618,11 @@ async function showAiGenerationPrompt(
           }
         }
 
-        const components = buttons.length > 0
+        const components: ActionRowBuilder<ButtonBuilder>[] = buttons.length > 0
           ? [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)]
           : [];
+
+        components.push(buildContextualNav('vibecheck:create-requests'));
 
         await aiButtonInteraction.update({
           content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}` +
@@ -740,6 +747,8 @@ async function handleStatusSubcommand(
       components.push(paginationRow);
     }
 
+    components.push(buildContextualNav('vibecheck:status'));
+
     await interaction.editReply({
       content: fullContent,
       components,
@@ -840,6 +849,8 @@ async function handleStatusPaginationButton(
     components.push(paginationRow);
   }
 
+  components.push(buildContextualNav('vibecheck:status'));
+
   await buttonInteraction.update({
     content: fullContent,
     components,
@@ -892,9 +903,11 @@ async function handleCreateRequestsSubcommand(
 
     const createdCount = result.data.attributes.created_count;
 
-    const components = createdCount > 0
+    const components: ActionRowBuilder<ButtonBuilder>[] = createdCount > 0
       ? [new ActionRowBuilder<ButtonBuilder>().addComponents(createListRequestsButton())]
       : [];
+
+    components.push(buildContextualNav('vibecheck:create-requests'));
 
     await interaction.editReply({
       content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}.`,
