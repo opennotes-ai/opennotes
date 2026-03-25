@@ -3,7 +3,7 @@ import type { EChartsOption } from "echarts";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
 import { EChart } from "~/components/ui/echart";
-import { Card } from "~/components/ui/card";
+import SectionHeader from "~/components/ui/section-header";
 
 type NoteQualityData = components["schemas"]["NoteQualityData"];
 type RatingDistributionData = components["schemas"]["RatingDistributionData"];
@@ -97,28 +97,28 @@ export default function NotesRatingsSection(props: {
 
   return (
     <section id="notes-ratings">
-      <h2 class="mb-4 text-xl font-semibold">Notes & Ratings</h2>
+      <SectionHeader title="Notes & Ratings" subtitle="What was written and how the community received it" />
 
-      <h3 class="mt-6 text-sm font-medium text-muted-foreground">Overview</h3>
-      <div class="mt-2 grid gap-4 sm:grid-cols-3">
-        <Card class="p-4">
-          <h4 class="text-sm font-semibold">Avg Helpfulness Score</h4>
-          <div class="mt-2 text-3xl font-bold">
+      <div class="mt-4 flex flex-wrap gap-3">
+        <div class="rounded-lg bg-muted/50 p-3">
+          <div class="text-xs font-medium text-muted-foreground">Avg Helpfulness</div>
+          <div class="mt-1 text-2xl font-bold">
             {props.noteQuality.avg_helpfulness_score?.toFixed(2) ?? "N/A"}
           </div>
-        </Card>
-        <Card class="col-span-2 p-4">
-          <h4 class="mb-2 text-sm font-semibold">Overall Rating Distribution</h4>
-          <p class="mb-2 text-xs text-muted-foreground">
-            Total ratings: {props.ratingDistribution.total_ratings}
-          </p>
-          <EChart option={overallBarOption()} height="80px" />
-        </Card>
+        </div>
+        <div class="rounded-lg bg-muted/50 p-3">
+          <div class="text-xs font-medium text-muted-foreground">Total Ratings</div>
+          <div class="mt-1 text-2xl font-bold">{props.ratingDistribution.total_ratings}</div>
+        </div>
+        <div class="min-w-[200px] flex-1 rounded-lg bg-muted/50 p-3">
+          <div class="mb-1 text-xs font-medium text-muted-foreground">Overall Distribution</div>
+          <EChart option={overallBarOption()} height="60px" />
+        </div>
       </div>
 
       <h3 class="mt-6 text-sm font-medium text-muted-foreground">Breakdown</h3>
       <div class="mt-2 grid gap-4 sm:grid-cols-2">
-        <Card class="p-4">
+        <div class="rounded-lg border border-border p-4">
           <h4 class="mb-2 text-sm font-semibold">Notes by Status</h4>
           <table class="w-full text-sm" aria-label="Notes by status">
             <tbody>
@@ -132,8 +132,8 @@ export default function NotesRatingsSection(props: {
               </For>
             </tbody>
           </table>
-        </Card>
-        <Card class="p-4">
+        </div>
+        <div class="rounded-lg border border-border p-4">
           <h4 class="mb-2 text-sm font-semibold">Notes by Classification</h4>
           <table class="w-full text-sm" aria-label="Notes by classification">
             <tbody>
@@ -147,7 +147,7 @@ export default function NotesRatingsSection(props: {
               </For>
             </tbody>
           </table>
-        </Card>
+        </div>
       </div>
 
       <Show when={props.buckets && props.buckets.length > 0}>
@@ -155,18 +155,18 @@ export default function NotesRatingsSection(props: {
         <div class="mt-2 space-y-4">
           <Show when={notesOption()}>
             {(option) => (
-              <Card class="p-4">
+              <div class="rounded-lg bg-muted/20 p-6">
                 <h4 class="mb-2 text-sm font-medium text-muted-foreground">Cumulative Notes</h4>
                 <EChart option={option()} height="350px" />
-              </Card>
+              </div>
             )}
           </Show>
           <Show when={ratingsOption()}>
             {(option) => (
-              <Card class="p-4">
+              <div class="rounded-lg bg-muted/20 p-6">
                 <h4 class="mb-2 text-sm font-medium text-muted-foreground">Cumulative Ratings</h4>
                 <EChart option={option()} height="350px" />
-              </Card>
+              </div>
             )}
           </Show>
         </div>
