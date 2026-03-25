@@ -759,7 +759,7 @@ describe('DiscordFormatter', () => {
   describe('formatListRequestsSuccessV2', () => {
     const createMockListRequestsResult = (requestCount: number = 2): import('../../src/services/types.js').ListRequestsResult => ({
       requests: Array.from({ length: requestCount }, (_, i) => ({
-        id: String(100 + i),
+        id: `01934567-0123-7890-abcd-01234567890${i}`,
         request_id: `discord-123-${i}`,
         requested_by: `user_${i}`,
         requested_at: '2025-10-28T12:00:00Z',
@@ -798,8 +798,56 @@ describe('DiscordFormatter', () => {
       const textComponents = container.components.filter((c) => c.type === 10);
       const allContent = textComponents.map((c) => (c as { content?: string }).content).join(' ');
 
-      expect(allContent).toContain('discord-123-0');
+      expect(allContent).toContain('Request #');
+      expect(allContent).not.toContain('discord-123-0');
+    });
+
+    it('should show Requester field when isAdmin is true', async () => {
+      const result = createMockListRequestsResult();
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result, { isAdmin: true });
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c) => c.type === 10);
+      const allContent = textComponents.map((c) => (c as { content?: string }).content).join(' ');
+
+      expect(allContent).toContain('Requester (only visible to admins):');
       expect(allContent).toContain('user_0');
+    });
+
+    it('should hide Requester field when isAdmin is false', async () => {
+      const result = createMockListRequestsResult();
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result, { isAdmin: false });
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c) => c.type === 10);
+      const allContent = textComponents.map((c) => (c as { content?: string }).content).join(' ');
+
+      expect(allContent).not.toContain('Requester');
+      expect(allContent).not.toContain('user_0');
+    });
+
+    it('should hide Requester field when isAdmin is not provided', async () => {
+      const result = createMockListRequestsResult();
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c) => c.type === 10);
+      const allContent = textComponents.map((c) => (c as { content?: string }).content).join(' ');
+
+      expect(allContent).not.toContain('Requester');
+      expect(allContent).not.toContain('user_0');
+    });
+
+    it('should display proquint-based request ID instead of raw request_id', async () => {
+      const result = createMockListRequestsResult(1);
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c) => c.type === 10);
+      const allContent = textComponents.map((c) => (c as { content?: string }).content).join(' ');
+
+      expect(allContent).toMatch(/Request #[a-z]+-[a-z]+/);
+      expect(allContent).not.toContain('discord-123-0');
     });
 
     it('should handle empty requests list', async () => {
@@ -913,7 +961,7 @@ describe('DiscordFormatter', () => {
       let actionRowIndices: number[] = [];
 
       components.forEach((c: { type: number; content?: string }, idx: number) => {
-        if (c.type === 10 && c.content?.includes('discord-123-')) {
+        if (c.type === 10 && c.content?.includes('Request #')) {
           requestTextIndices.push(idx);
         }
         if (c.type === 1) {
