@@ -38,7 +38,7 @@ interface VibecheckPaginationState {
   warningMessage?: string;
 }
 
-const PAGINATION_STATE_TTL = 300;
+const PAGINATION_STATE_TTL = 900;
 
 export const VIBECHECK_COOLDOWN_MS = 1 * 60 * 1000;
 

@@ -6,7 +6,7 @@ import { buildViewFullCustomId, truncateWithMeta } from '../utils/v2-components.
 import { formatIdDisplay } from './proquint.js';
 import { buildContextualNav } from './navigation-components.js';
 
-const VIEW_FULL_TTL_SECONDS = 300;
+const VIEW_FULL_TTL_SECONDS = 900;
 const SUMMARY_PREVIEW_LENGTH = 200;
 
 export async function buildForcePublishSuccessReply(

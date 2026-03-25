@@ -38,7 +38,7 @@ import {
 } from '../utils/v2-components.js';
 
 export class DiscordFormatter {
-  private static readonly VIEW_FULL_TTL_SECONDS = 300;
+  private static readonly VIEW_FULL_TTL_SECONDS = 900;
 
   private static formatMessageIdLink(messageId: string, guildId?: string, channelId?: string): string {
     if (guildId && channelId) {
@@ -665,7 +665,7 @@ export class DiscordFormatter {
         const writeNoteNotMisleadingCacheKey = `write_note_state:${writeNoteNotMisleadingShortId}`;
         const writeNoteMisinformedCacheKey = `write_note_state:${writeNoteMisinformedShortId}`;
         const aiWriteNoteCacheKey = `write_note_state:${aiWriteNoteShortId}`;
-        const ttl = 300;
+        const ttl = 900;
 
         try {
           await cache.set(writeNoteNotMisleadingCacheKey, request.id, ttl);
@@ -711,7 +711,7 @@ export class DiscordFormatter {
       };
 
       const cacheKey = `pagination:${stateId}`;
-      const ttl = 300;
+      const ttl = 900;
 
       try {
         await cache.set(cacheKey, filterState, ttl);

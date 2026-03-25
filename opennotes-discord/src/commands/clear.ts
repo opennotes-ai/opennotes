@@ -27,7 +27,7 @@ interface ClearConfirmationState {
   wouldDeleteCount: number;
 }
 
-const CONFIRMATION_STATE_TTL = 300;
+const CONFIRMATION_STATE_TTL = 900;
 
 export const data = new SlashCommandBuilder()
   .setName('clear')

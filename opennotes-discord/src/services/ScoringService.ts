@@ -39,7 +39,7 @@ export interface ScoringServiceResult<T> {
 
 export class ScoringService {
   private apiClient: ApiClient;
-  private readonly CACHE_TTL = 300;
+  private readonly CACHE_TTL = 900;
 
   constructor(apiClient: ApiClient) {
     this.apiClient = apiClient;

@@ -7,6 +7,7 @@ const mockLogger = loggerFactory.build();
 const mockCacheGet = jest.fn<(...args: any[]) => Promise<any>>();
 const mockCacheSet = jest.fn<(...args: any[]) => Promise<boolean>>().mockResolvedValue(true);
 const mockCacheDelete = jest.fn<(...args: any[]) => Promise<boolean>>().mockResolvedValue(true);
+const mockCacheExpire = jest.fn<(...args: any[]) => Promise<boolean>>().mockResolvedValue(true);
 
 const mockExecuteBulkScan = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
   scanId: 'scan-123',
@@ -26,6 +27,7 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
     get: mockCacheGet,
     set: mockCacheSet,
     delete: mockCacheDelete,
+    expire: mockCacheExpire,
   },
 }));
 
@@ -116,7 +118,7 @@ describe('vibecheck-prompt-handler', () => {
       expect(mockCacheSet).toHaveBeenCalledWith(
         'vibecheck_prompt_state:message-123',
         state,
-        300
+        900
       );
     });
 
@@ -189,10 +191,14 @@ describe('vibecheck-prompt-handler', () => {
         });
         await handleVibecheckPromptInteraction(interaction as any);
 
+        expect(mockCacheExpire).toHaveBeenCalledWith(
+          'vibecheck_prompt_state:message-123',
+          900
+        );
         expect(mockCacheSet).toHaveBeenCalledWith(
           'vibecheck_prompt_state:message-123',
           expect.objectContaining({ selectedDays: 7 }),
-          300
+          900
         );
         expect(interaction.update).toHaveBeenCalledWith(
           expect.objectContaining({

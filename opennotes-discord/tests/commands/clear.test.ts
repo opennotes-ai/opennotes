@@ -349,7 +349,7 @@ describe('clear command', () => {
             mode: 'all',
             wouldDeleteCount: 15,
           }),
-          300
+          900
         );
       });
 

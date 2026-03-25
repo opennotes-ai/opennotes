@@ -18,7 +18,7 @@ import { executeBulkScan } from '../lib/bulk-scan-executor.js';
 import { recordStalledScan } from '../lib/vibecheck-stalled-scan.js';
 import { createStallWarningController } from '../lib/vibecheck-stall-warning.js';
 
-const VIBECHECK_PROMPT_TTL_SECONDS = 300;
+const VIBECHECK_PROMPT_TTL_SECONDS = 900;
 
 export interface VibecheckPromptState {
   guildId: string;
@@ -86,6 +86,8 @@ export async function handleVibecheckPromptInteraction(
       });
       return;
     }
+
+    await cache.expire(getCacheKey(messageId), VIBECHECK_PROMPT_TTL_SECONDS);
 
     if (interaction.isStringSelectMenu()) {
       await handleDaysSelect(interaction, state, messageId, errorId);

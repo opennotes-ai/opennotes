@@ -847,10 +847,12 @@ export async function handleWriteNoteButton(interaction: ButtonInteraction): Pro
       return;
     }
 
+    await cache.expire(cacheKey, 900);
+
     const modalShortId = generateShortId();
     const modalCacheKey = `write_note_modal_state:${modalShortId}`;
     const classificationCacheKey = `write_note_classification:${modalShortId}`;
-    const ttl = 300;
+    const ttl = 900;
 
     await cache.set(modalCacheKey, requestId, ttl);
     await cache.set(classificationCacheKey, classification, ttl);
@@ -933,6 +935,8 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
       });
       return;
     }
+
+    await cache.expire(cacheKey, 900);
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -1044,6 +1048,8 @@ export async function handleViewFullButton(interaction: ButtonInteraction): Prom
       });
       return;
     }
+
+    await cache.expire(cacheKey, 900);
 
     await replyWithPaginatedEphemeralContent(interaction, fullText);
   } catch (error) {
@@ -1630,6 +1636,8 @@ export async function handleRequestQueuePageButton(interaction: ButtonInteractio
       });
       return;
     }
+
+    await cache.expire(cacheKey, 900);
 
     await interaction.deferUpdate();
 
