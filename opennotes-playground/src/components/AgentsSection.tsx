@@ -9,6 +9,7 @@ import IdBadge from "~/components/ui/id-badge";
 import PaginationControls from "~/components/ui/pagination-controls";
 import SortableHeader, { type SortDirection } from "~/components/ui/sortable-header";
 import { EChart } from "~/components/ui/echart";
+import SectionHeader from "~/components/ui/section-header";
 
 type AgentBehaviorData = components["schemas"]["AgentBehaviorData"];
 type RatingDistributionData = components["schemas"]["RatingDistributionData"];
@@ -133,7 +134,7 @@ export default function AgentsSection(props: {
 
   return (
     <section id="agents">
-      <h2 class="mb-4 text-xl font-semibold">Agents</h2>
+      <SectionHeader title="The Agents" subtitle="Who participated, what they believed, and how they acted" />
       <div class="overflow-x-auto rounded-lg border border-border">
         <table class="w-full text-sm" aria-label="Agent profiles">
           <thead>
@@ -202,7 +203,7 @@ export default function AgentsSection(props: {
 
       <Show when={histogramOption()}>
         {(option) => (
-          <div class="mt-6 rounded-lg border border-border bg-card p-4">
+          <div class="mt-6 rounded-lg bg-muted/30 p-4">
             <h3 class="mb-2 text-sm font-medium text-muted-foreground">Per-Agent Rating Distribution</h3>
             <EChart option={option()} height={histogramHeight()} />
           </div>
