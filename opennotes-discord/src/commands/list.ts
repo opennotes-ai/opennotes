@@ -43,8 +43,7 @@ import {
   truncateWithMeta,
   buildViewFullCustomId,
 } from '../utils/v2-components.js';
-import type { ScoreConfidence } from '../services/ScoringService.js';
-import { suppressExpectedDiscordErrors, extractPlatformMessageId } from '../lib/discord-utils.js';
+import { extractPlatformMessageId } from '../lib/discord-utils.js';
 import { resolveUserProfileId } from '../lib/user-profile-resolver.js';
 import { cache } from '../cache.js';
 import { TextPaginator } from '../lib/text-paginator.js';
@@ -226,38 +225,7 @@ export const data = new SlashCommandBuilder()
           .setMaxValue(100)
       )
   )
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('top-notes')
-      .setDescription('View the top-scored community notes')
-      .addIntegerOption(option =>
-        option
-          .setName('limit')
-          .setDescription('Number of notes to display (default: 10, max: 50)')
-          .setMinValue(1)
-          .setMaxValue(50)
-          .setRequired(false)
-      )
-      .addStringOption(option =>
-        option
-          .setName('confidence')
-          .setDescription('Filter by minimum confidence level')
-          .addChoices(
-            { name: 'Standard (5+ ratings)', value: 'standard' },
-            { name: 'Provisional (<5 ratings)', value: 'provisional' },
-            { name: 'No data (0 ratings)', value: 'no_data' }
-          )
-          .setRequired(false)
-      )
-      .addIntegerOption(option =>
-        option
-          .setName('tier')
-          .setDescription('Filter by scoring tier (0-5)')
-          .setMinValue(0)
-          .setMaxValue(5)
-          .setRequired(false)
-      )
-  );
+  ;
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   const subcommand = interaction.options.getSubcommand();
@@ -267,8 +235,6 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       return handleNotesSubcommand(interaction);
     case 'requests':
       return handleRequestsSubcommand(interaction);
-    case 'top-notes':
-      return handleTopNotesSubcommand(interaction);
     default:
       await interaction.reply({
         content: 'Unknown subcommand.',
@@ -302,7 +268,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
   lastUsage.set(userId, Date.now());
 
   try {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     const botChannelService = new BotChannelService();
     const guildConfigService = serviceProvider.getGuildConfigService();
@@ -394,7 +360,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
           }
         : undefined;
 
-    const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination);
+    const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination, 'list:notes');
 
     if (containers.length === 0) {
       await interaction.editReply({
@@ -465,7 +431,7 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       my_requests_only: myRequestsOnly,
     });
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     const botChannelService = new BotChannelService();
     const guildConfigService = serviceProvider.getGuildConfigService();
@@ -528,7 +494,7 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       communityServerId: communityServerUuid,
       guildId: guildId || undefined,
       isAdmin: hasManageGuildPermission(member),
-    });
+    }, 'list:requests');
 
     await interaction.editReply({
       components: [formattedData.container.toJSON()],
@@ -567,113 +533,6 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
     await interaction.editReply({
       content: formatErrorForUser(errorId, 'Failed to retrieve request list.'),
     });
-  }
-}
-
-async function handleTopNotesSubcommand(interaction: ChatInputCommandInteraction): Promise<void> {
-  const errorId = generateErrorId();
-  const limit = interaction.options.getInteger('limit') || 10;
-  const confidence = interaction.options.getString('confidence') as ScoreConfidence | null;
-  const tier = interaction.options.getInteger('tier');
-  const userId = interaction.user.id;
-  const guildId = interaction.guildId;
-
-  try {
-    logger.info('Executing list top-notes subcommand', {
-      error_id: errorId,
-      command: 'list top-notes',
-      user_id: userId,
-      community_server_id: guildId,
-      limit,
-      confidence,
-      tier,
-    });
-
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-    const botChannelService = new BotChannelService();
-    const guildConfigService = serviceProvider.getGuildConfigService();
-    const permissionModeService = new PermissionModeService();
-    const { shouldProceed } = await getBotChannelOrRedirect(
-      interaction,
-      botChannelService,
-      guildConfigService,
-      permissionModeService
-    );
-
-    if (!shouldProceed) {
-      return;
-    }
-
-    const scoringService = serviceProvider.getScoringService();
-    const result = await scoringService.getTopNotes({
-      limit,
-      minConfidence: confidence || undefined,
-      tier: tier || undefined,
-    });
-
-    if (!result.success) {
-      let errorMessage: string;
-
-      switch (result.error?.code) {
-        case 'SERVICE_UNAVAILABLE':
-          errorMessage = 'The scoring system is temporarily unavailable. Please try again later.';
-          break;
-        default:
-          errorMessage = 'Failed to retrieve top notes. Please try again later.';
-      }
-
-      await interaction.editReply({
-        content: errorMessage,
-      });
-      return;
-    }
-
-    if (result.data!.data.length === 0) {
-      await interaction.editReply({
-        content: 'No notes found matching the specified criteria.',
-      });
-      return;
-    }
-
-    const member = interaction.guild?.members.cache.get(userId) || null;
-    const hasAdminButtons = member && hasManageGuildPermission(member);
-
-    const formattedData = DiscordFormatter.formatTopNotesForQueueV2(result.data!, 1, limit, {
-      includeForcePublishButtons: hasAdminButtons ?? false,
-    });
-
-    await interaction.editReply({
-      components: [formattedData.container.toJSON()],
-      flags: formattedData.flags,
-    });
-
-    logger.info('Top notes rendered as ephemeral message', {
-      error_id: errorId,
-      command: 'list top-notes',
-      user_id: userId,
-      note_count: result.data!.data.length,
-      total_count: result.data!.meta?.total_count ?? result.data!.data.length,
-    });
-  } catch (error) {
-    const errorDetails = extractErrorDetails(error);
-
-    logger.error('Unexpected error in list top-notes subcommand', {
-      error_id: errorId,
-      command: 'list top-notes',
-      user_id: userId,
-      community_server_id: guildId,
-      limit,
-      confidence,
-      tier,
-      error: errorDetails.message,
-      error_type: errorDetails.type,
-      stack: errorDetails.stack,
-    });
-
-    await interaction.editReply({
-      content: formatErrorForUser(errorId, 'Failed to retrieve top notes.'),
-    }).catch(suppressExpectedDiscordErrors('edit_reply_top_notes_error'));
   }
 }
 
@@ -732,7 +591,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       return;
     }
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     const requestResponse = await apiClient.getRequest(requestId);
 
@@ -773,7 +632,8 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       result.data!,
       messageId,
       interaction.guildId || undefined,
-      interaction.channelId || undefined
+      interaction.channelId || undefined,
+      'note:write'
     );
     await interaction.editReply({
       components: response.components,
@@ -846,10 +706,12 @@ export async function handleWriteNoteButton(interaction: ButtonInteraction): Pro
       return;
     }
 
+    await cache.expire(cacheKey, 900);
+
     const modalShortId = generateShortId();
     const modalCacheKey = `write_note_modal_state:${modalShortId}`;
     const classificationCacheKey = `write_note_classification:${modalShortId}`;
-    const ttl = 300;
+    const ttl = 900;
 
     await cache.set(modalCacheKey, requestId, ttl);
     await cache.set(classificationCacheKey, classification, ttl);
@@ -933,7 +795,9 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
       return;
     }
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await cache.expire(cacheKey, 900);
+
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     logger.info('Generating AI note', {
       error_id: errorId,
@@ -1044,6 +908,8 @@ export async function handleViewFullButton(interaction: ButtonInteraction): Prom
       return;
     }
 
+    await cache.expire(cacheKey, 900);
+
     await replyWithPaginatedEphemeralContent(interaction, fullText);
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
@@ -1087,7 +953,7 @@ export async function handleRateNoteButton(interaction: ButtonInteraction): Prom
     const ratingType = parts[2];
     const isHelpful = ratingType === 'helpful';
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     logger.info('Rating note', {
       error_id: errorId,
@@ -1139,195 +1005,6 @@ export async function handleRateNoteButton(interaction: ButtonInteraction): Prom
     } else if (!interaction.replied) {
       await interaction.reply({
         content: formatErrorForUser(errorId, 'Failed to submit rating.'),
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-  }
-}
-
-export async function handleRequestReplyButton(interaction: ButtonInteraction): Promise<void> {
-  const errorId = generateErrorId();
-  const userId = interaction.user.id;
-  const guildId = interaction.guildId;
-  const customId = interaction.customId;
-
-  try {
-    logger.info('Handling request reply button', {
-      error_id: errorId,
-      custom_id: customId,
-      user_id: userId,
-      community_server_id: guildId,
-    });
-
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-    if (!guildId) {
-      await interaction.editReply({
-        content: 'This button can only be used in a server.',
-      });
-      return;
-    }
-
-    let profileUuid: string | undefined;
-    try {
-      profileUuid = await resolveUserProfileId(userId, apiClient);
-    } catch (error) {
-      logger.error('Failed to resolve user profile UUID', {
-        error_id: errorId,
-        user_id: userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      await interaction.editReply({
-        content: 'Could not find your user profile. Please try again later.',
-      });
-      return;
-    }
-
-    let communityServerUuid: string | undefined;
-    try {
-      const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-      communityServerUuid = communityServer.data.id;
-    } catch (error) {
-      logger.error('Failed to fetch community server UUID', {
-        error_id: errorId,
-        guild_id: guildId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    if (customId === 'request_reply:list_requests') {
-      const listRequestsService = serviceProvider.getListRequestsService();
-      const result = await listRequestsService.execute({
-        userId,
-        page: 1,
-        size: LIST_COMMAND_LIMITS.REQUESTS_PER_PAGE,
-        status: undefined,
-        myRequestsOnly: false,
-        communityServerId: communityServerUuid,
-      });
-
-      if (!result.success) {
-        const errorResponse = DiscordFormatter.formatErrorV2(result);
-        await interaction.editReply({
-          components: errorResponse.components,
-          flags: errorResponse.flags,
-        });
-        return;
-      }
-
-      if (!result.data) {
-        await interaction.editReply({
-          content: 'No data returned from the service.',
-        });
-        return;
-      }
-
-      const member = interaction.guild?.members.cache.get(userId) || null;
-      const formattedData = await DiscordFormatter.formatListRequestsSuccessV2(result.data, {
-        status: undefined,
-        myRequestsOnly: false,
-        communityServerId: communityServerUuid,
-        guildId: guildId || undefined,
-        isAdmin: hasManageGuildPermission(member),
-      });
-
-      await interaction.editReply({
-        components: [formattedData.container.toJSON()],
-        flags: formattedData.flags,
-      });
-
-      logger.info('List requests from button rendered as ephemeral', {
-        error_id: errorId,
-        user_id: userId,
-        result_count: result.data.requests.length,
-        total: result.data.total,
-      });
-    } else if (customId === 'request_reply:list_notes') {
-      const notesPerPage = LIST_COMMAND_LIMITS.NOTES_PER_PAGE;
-      const [thresholds, notesResponse] = await Promise.all([
-        configCache.getRatingThresholds(),
-        apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS', 1, notesPerPage, communityServerUuid, profileUuid),
-      ]);
-
-      const totalPages = Math.ceil(notesResponse.total / notesPerPage);
-      const hasNotes = notesResponse.total > 0;
-
-      const summaryV2 = createSummaryV2(1, notesResponse.total, notesPerPage);
-
-      const member = interaction.guild?.members.cache.get(userId) || null;
-
-      const itemsV2: QueueItemV2[] = await Promise.all(
-        notesResponse.data.map((note) =>
-          createNoteItemV2(note, thresholds, member, guildId)
-        )
-      );
-
-      const queueStateId = generateShortId();
-      await cache.set(`queue_state:${queueStateId}`, {
-        userId,
-        profileUuid,
-        guildId,
-        communityServerUuid,
-        currentPage: 1,
-        thresholds,
-        isAdmin: member && hasManageGuildPermission(member),
-      }, LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS);
-
-      const pagination: PaginationConfig | undefined =
-        hasNotes && totalPages > 1
-          ? {
-              currentPage: 1,
-              totalPages,
-              previousButtonId: `queue:previous:${queueStateId}`,
-              nextButtonId: `queue:next:${queueStateId}`,
-            }
-          : undefined;
-
-      const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination);
-
-      if (containers.length === 0) {
-        await interaction.editReply({
-          content: 'No containers built for the notes queue.',
-        });
-        return;
-      }
-
-      await interaction.editReply({
-        components: [containers[0]],
-        flags: v2MessageFlags(),
-      });
-
-      logger.info('List notes from button rendered as ephemeral', {
-        error_id: errorId,
-        user_id: userId,
-        total_notes: notesResponse.total,
-        queue_state_id: queueStateId,
-      });
-    } else {
-      await interaction.editReply({
-        content: 'Unknown button action.',
-      });
-    }
-  } catch (error) {
-    const errorDetails = extractErrorDetails(error);
-
-    logger.error('Error handling request reply button', {
-      error_id: errorId,
-      custom_id: customId,
-      user_id: userId,
-      community_server_id: guildId,
-      error: errorDetails.message,
-      error_type: errorDetails.type,
-      stack: errorDetails.stack,
-    });
-
-    if (interaction.deferred) {
-      await interaction.editReply({
-        content: formatErrorForUser(errorId, 'Failed to process button click.'),
-      });
-    } else {
-      await interaction.reply({
-        content: formatErrorForUser(errorId, 'Failed to process button click.'),
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -1437,7 +1114,7 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
       nextButtonId: `queue:next:${stateId}`,
     };
 
-    const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination);
+    const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination, 'list:notes');
 
     if (containers.length === 0) {
       await interaction.update({
@@ -1521,7 +1198,7 @@ export async function handleForcePublishButton(interaction: ButtonInteraction): 
 
     const noteId = parts[1];
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     logger.info('Force publishing note', {
       error_id: errorId,
@@ -1539,7 +1216,7 @@ export async function handleForcePublishButton(interaction: ButtonInteraction): 
     };
 
     const note = await apiClient.forcePublishNote(noteId, userContext);
-    const reply = await buildForcePublishSuccessReply(noteId, note, 'list_force_publish');
+    const reply = await buildForcePublishSuccessReply(noteId, note, 'list_force_publish', 'list:notes');
     await interaction.editReply(reply);
 
     logger.info('Note force published successfully', {
@@ -1630,6 +1307,8 @@ export async function handleRequestQueuePageButton(interaction: ButtonInteractio
       return;
     }
 
+    await cache.expire(cacheKey, 900);
+
     await interaction.deferUpdate();
 
     const listRequestsService = serviceProvider.getListRequestsService();
@@ -1658,10 +1337,10 @@ export async function handleRequestQueuePageButton(interaction: ButtonInteractio
       communityServerId: filterState.communityServerId,
       guildId: interaction.guildId || undefined,
       isAdmin: hasManageGuildPermission(member),
-    });
+    }, 'list:requests');
 
     await interaction.editReply({
-      components: formatted.components,
+      components: [formatted.container.toJSON()],
       flags: formatted.flags,
     });
 

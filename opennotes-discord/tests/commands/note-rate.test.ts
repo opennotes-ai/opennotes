@@ -13,6 +13,7 @@ import {
 import { ErrorCode } from '../../src/services/types.js';
 import { TEST_NOTE_UUID } from '../test-constants.js';
 import type { RatingJSONAPIResponse } from '../../src/lib/api-client.js';
+import { v2MessageFlags } from '../../src/utils/v2-components.js';
 
 function createMockRatingJSONAPIResponse(overrides: {
   id?: string;
@@ -173,6 +174,56 @@ describe('note-rate command', () => {
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 
+    it('should include contextual nav row with Menu and List Notes buttons', async () => {
+      mockRateNoteService.execute.mockResolvedValue(
+        createSuccessResult({
+          rating: createMockRatingJSONAPIResponse({
+            noteId: TEST_NOTE_UUID,
+            userId: 'user456',
+            helpfulnessLevel: 'HELPFUL',
+          }),
+        })
+      );
+
+      mockDiscordFormatter.formatRateNoteSuccessV2.mockReturnValue({
+        components: [{ type: 17, components: [] }],
+        flags: 1 << 15,
+      });
+
+      const mockInteraction = {
+        user: {
+          id: 'user456',
+          username: 'testuser',
+          displayName: 'Test User',
+          globalName: 'Test User',
+          displayAvatarURL: jest.fn(() => 'https://example.com/avatar.png'),
+        },
+        guildId: 'guild789',
+        options: {
+          getSubcommand: jest.fn<() => string>().mockReturnValue('rate'),
+          getString: jest.fn((name: string) => {
+            if (name === 'note-id') return TEST_NOTE_UUID;
+            return null;
+          }),
+          getBoolean: jest.fn<() => boolean>().mockReturnValue(true),
+        },
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        followUp: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+        deleteReply: jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
+
+      await execute(mockInteraction as any);
+
+      expect(mockDiscordFormatter.formatRateNoteSuccessV2).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        'note:rate'
+      );
+    });
+
     it('should rate note as not helpful', async () => {
       mockRateNoteService.execute.mockResolvedValue(
         createSuccessResult({
@@ -257,7 +308,7 @@ describe('note-rate command', () => {
       await execute(mockInteraction as any);
 
       expect(mockGuildConfigService.get).toHaveBeenCalledWith('guild789', ConfigKey.RATE_NOTE_EPHEMERAL);
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 

@@ -26,9 +26,10 @@ import { TIMEOUTS } from '../lib/constants.js';
 import { logger } from '../logger.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
 import { config } from '../config.js';
-import { v2MessageFlags, V2_COLORS, createDivider, createSmallSeparator } from '../utils/v2-components.js';
+import { v2MessageFlags, V2_COLORS, createDivider, createSmallSeparator, createContainer, createTextSection } from '../utils/v2-components.js';
 import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 const configService = new GuildConfigService(apiClient);
 const guildSetupService = new GuildSetupService();
@@ -405,6 +406,8 @@ async function handleAdminSet(
         )
       );
 
+    container.addActionRowComponents(buildContextualNav('config'));
+
     await interaction.editReply({
       components: [container.toJSON()],
       flags: v2MessageFlags({ ephemeral: true }),
@@ -465,6 +468,8 @@ async function handleAdminRemove(
           `**User:** <@${user.id}>\n**Discord ID:** ${user.id}`
         )
       );
+
+    container.addActionRowComponents(buildContextualNav('config'));
 
     await interaction.editReply({
       components: [container.toJSON()],
@@ -547,6 +552,8 @@ async function handleAdminList(
       );
       container.addSeparatorComponents(createSmallSeparator());
     }
+
+    container.addActionRowComponents(buildContextualNav('config'));
 
     await interaction.editReply({
       components: [container.toJSON()],
@@ -868,6 +875,8 @@ async function handleOpennotesView(
       )
     );
 
+    container.addActionRowComponents(buildContextualNav('config'));
+
     return container;
   };
 
@@ -897,6 +906,8 @@ async function handleOpennotesView(
         )
       );
 
+    container.addActionRowComponents(buildContextualNav('config'));
+
     return container;
   };
 
@@ -909,6 +920,7 @@ async function handleOpennotesView(
 
   const collector = message.createMessageComponentCollector({
     componentType: ComponentType.Button,
+    filter: (i) => !i.customId.startsWith('nav:'),
     time: TIMEOUTS.COLLECTOR_TIMEOUT_MS,
   });
 
@@ -1324,6 +1336,8 @@ async function handleContentMonitorEnableAll(
       )
     );
 
+  container.addActionRowComponents(buildContextualNav('config'));
+
   await interaction.editReply({
     components: [container.toJSON()],
     flags: v2MessageFlags({ ephemeral: true }),
@@ -1370,6 +1384,8 @@ async function handleContentMonitorFlashpoint(
           )
         );
 
+      container.addActionRowComponents(buildContextualNav('config'));
+
       await interaction.editReply({
         components: [container.toJSON()],
         flags: v2MessageFlags({ ephemeral: true }),
@@ -1404,6 +1420,8 @@ async function handleContentMonitorFlashpoint(
                 'Use `/config content-monitor flashpoint action:Enable` to re-enable.'
           )
         );
+
+      container.addActionRowComponents(buildContextualNav('config'));
 
       await interaction.editReply({
         components: [container.toJSON()],
@@ -1477,12 +1495,19 @@ async function handleNotePublisherEnable(
 ): Promise<void> {
   await notePublisherConfigService.setConfig(guildId, true, undefined, undefined, interaction.user.id);
 
-  await interaction.editReply({
-    content:
+  const container = createContainer(V2_COLORS.INFO);
+  container.addTextDisplayComponents(
+    createTextSection(
       '✅ **Note publishering enabled** for this server.\n\n' +
-      'High-quality notes (score ≥ threshold with ≥5 ratings) will be automatically posted as replies.\n\n' +
-      `Use \`/config note-publisher threshold\` to adjust the score threshold.\n` +
-      `Use \`/config note-publisher disable-channel\` to opt-out specific channels.`,
+        'High-quality notes (score ≥ threshold with ≥5 ratings) will be automatically posted as replies.\n\n' +
+        `Use \`/config note-publisher threshold\` to adjust the score threshold.\n` +
+        `Use \`/config note-publisher disable-channel\` to opt-out specific channels.`
+    )
+  );
+  container.addActionRowComponents(buildContextualNav('config'));
+  await interaction.editReply({
+    components: [container.toJSON()],
+    flags: v2MessageFlags({ ephemeral: true }),
   });
 }
 
@@ -1492,10 +1517,17 @@ async function handleNotePublisherDisable(
 ): Promise<void> {
   await notePublisherConfigService.setConfig(guildId, false, undefined, undefined, interaction.user.id);
 
-  await interaction.editReply({
-    content:
+  const container = createContainer(V2_COLORS.INFO);
+  container.addTextDisplayComponents(
+    createTextSection(
       '✅ **Note publishering disabled** for this server.\n\n' +
-      'Notes will no longer be automatically posted. Use `/config note-publisher enable` to re-enable.',
+        'Notes will no longer be automatically posted. Use `/config note-publisher enable` to re-enable.'
+    )
+  );
+  container.addActionRowComponents(buildContextualNav('config'));
+  await interaction.editReply({
+    components: [container.toJSON()],
+    flags: v2MessageFlags({ ephemeral: true }),
   });
 }
 
@@ -1509,10 +1541,17 @@ async function handleNotePublisherThreshold(
 
   const percentage = (threshold * 100).toFixed(0);
 
-  await interaction.editReply({
-    content:
+  const container = createContainer(V2_COLORS.INFO);
+  container.addTextDisplayComponents(
+    createTextSection(
       `✅ **Threshold updated** to **${percentage}%** (${threshold}).\n\n` +
-      `Notes must reach this score with standard confidence (≥5 ratings) to be note-publishered.`,
+        `Notes must reach this score with standard confidence (≥5 ratings) to be note-publishered.`
+    )
+  );
+  container.addActionRowComponents(buildContextualNav('config'));
+  await interaction.editReply({
+    components: [container.toJSON()],
+    flags: v2MessageFlags({ ephemeral: true }),
   });
 }
 
@@ -1528,8 +1567,14 @@ async function handleNotePublisherEnableChannel(
 
   await notePublisherConfigService.enableChannel(guildId, channel.id, interaction.user.id);
 
+  const container = createContainer(V2_COLORS.INFO);
+  container.addTextDisplayComponents(
+    createTextSection(`✅ **Note publishering enabled** in <#${channel.id}>.`)
+  );
+  container.addActionRowComponents(buildContextualNav('config'));
   await interaction.editReply({
-    content: `✅ **Note publishering enabled** in <#${channel.id}>.`,
+    components: [container.toJSON()],
+    flags: v2MessageFlags({ ephemeral: true }),
   });
 }
 
@@ -1545,11 +1590,18 @@ async function handleNotePublisherDisableChannel(
 
   await notePublisherConfigService.disableChannel(guildId, channel.id, interaction.user.id);
 
-  await interaction.editReply({
-    content:
+  const container = createContainer(V2_COLORS.INFO);
+  container.addTextDisplayComponents(
+    createTextSection(
       `✅ **Note publishering disabled** in <#${channel.id}>.\n\n` +
-      `High-quality notes will not be automatically posted in this channel.\n` +
-      `Use \`/config note-publisher enable-channel\` to re-enable.`,
+        `High-quality notes will not be automatically posted in this channel.\n` +
+        `Use \`/config note-publisher enable-channel\` to re-enable.`
+    )
+  );
+  container.addActionRowComponents(buildContextualNav('config'));
+  await interaction.editReply({
+    components: [container.toJSON()],
+    flags: v2MessageFlags({ ephemeral: true }),
   });
 }
 
@@ -1577,5 +1629,11 @@ async function handleNotePublisherStatus(
     message += `Note publishering is currently disabled. Use \`/config note-publisher enable\` to enable.`;
   }
 
-  await interaction.editReply({ content: message });
+  const container = createContainer(V2_COLORS.INFO);
+  container.addTextDisplayComponents(createTextSection(message));
+  container.addActionRowComponents(buildContextualNav('config'));
+  await interaction.editReply({
+    components: [container.toJSON()],
+    flags: v2MessageFlags({ ephemeral: true }),
+  });
 }

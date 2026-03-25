@@ -7,6 +7,7 @@ import { DiscordFormatter } from '../services/DiscordFormatter.js';
 import { logger } from '../logger.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 export const data = new SlashCommandBuilder()
   .setName('status-bot')
@@ -52,6 +53,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         .addSeparatorComponents(scoringV2.separator)
         .addTextDisplayComponents(scoringV2.textDisplay);
     }
+
+    response.container.addActionRowComponents(buildContextualNav('status-bot'));
 
     await interaction.editReply({
       components: [response.container.toJSON()],

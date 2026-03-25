@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { Client, Collection, ChannelType, EmbedBuilder } from 'discord.js';
+import { Client, Collection, ChannelType } from 'discord.js';
 import type { BulkScanProgressEvent } from '../../src/types/bulk-scan.js';
 import { ConfigKey } from '../../src/lib/config-schema.js';
 
@@ -117,6 +117,23 @@ function createMockClient(guilds: ReturnType<typeof createMockGuild>[] = []) {
   } as unknown as Client;
 }
 
+function getContainerData(mockChannel: ReturnType<typeof createMockChannel>) {
+  const sendCall = mockChannel.send.mock.calls[0][0] as { components: any[]; flags: number };
+  expect(sendCall.components).toBeDefined();
+  expect(sendCall.components.length).toBe(1);
+  return sendCall.components[0].toJSON();
+}
+
+function getAllTextContent(containerData: any): string {
+  const texts: string[] = [];
+  for (const component of containerData.components ?? []) {
+    if (component.type === 10 && component.content) {
+      texts.push(component.content);
+    }
+  }
+  return texts.join('\n');
+}
+
 describe('VibecheckProgressService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -161,8 +178,8 @@ describe('VibecheckProgressService', () => {
       const event = createMockProgressEvent();
 
       mockGuildConfigService.get
-        .mockResolvedValueOnce(true) // debug mode enabled
-        .mockResolvedValueOnce('opennotes-bot'); // channel name
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
       mockBotChannelService.findChannel.mockReturnValue(undefined);
 
       await service.handleProgressEvent(event);
@@ -173,7 +190,7 @@ describe('VibecheckProgressService', () => {
       );
     });
 
-    it('should send progress embed when debug mode is enabled', async () => {
+    it('should send v2 container when debug mode is enabled', async () => {
       const mockGuild = createMockGuild('guild-123');
       const mockChannel = createMockChannel();
       const mockClient = createMockClient([mockGuild]);
@@ -181,15 +198,17 @@ describe('VibecheckProgressService', () => {
       const event = createMockProgressEvent();
 
       mockGuildConfigService.get
-        .mockResolvedValueOnce(true) // debug mode enabled
-        .mockResolvedValueOnce('opennotes-bot'); // channel name
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
       mockBotChannelService.findChannel.mockReturnValue(mockChannel);
 
       await service.handleProgressEvent(event);
 
-      expect(mockChannel.send).toHaveBeenCalledWith({
-        embeds: expect.arrayContaining([expect.any(EmbedBuilder)]),
-      });
+      const sendCall = mockChannel.send.mock.calls[0][0] as { components: any[]; flags: number };
+      expect(sendCall.components).toBeDefined();
+      expect(sendCall.components.length).toBeGreaterThan(0);
+      expect(sendCall.components[0].toJSON().type).toBe(17);
+      expect(sendCall.flags).toBeDefined();
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Sent vibecheck progress to bot channel',
         expect.objectContaining({
@@ -225,8 +244,8 @@ describe('VibecheckProgressService', () => {
     });
   });
 
-  describe('formatProgressEmbed', () => {
-    it('should format embed with correct title and batch number', async () => {
+  describe('formatProgressContainer', () => {
+    it('should format container with correct title and batch number', async () => {
       const mockGuild = createMockGuild('guild-123');
       const mockChannel = createMockChannel();
       const mockClient = createMockClient([mockGuild]);
@@ -240,12 +259,11 @@ describe('VibecheckProgressService', () => {
 
       await service.handleProgressEvent(event);
 
-      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
-      const embed = sendCall.embeds[0];
-      expect(embed.data.title).toContain('Batch 5');
+      const allText = getAllTextContent(getContainerData(mockChannel));
+      expect(allText).toContain('Batch 5');
     });
 
-    it('should show orange color when there are flagged messages', async () => {
+    it('should use orange accent color when there are flagged messages', async () => {
       const mockGuild = createMockGuild('guild-123');
       const mockChannel = createMockChannel();
       const mockClient = createMockClient([mockGuild]);
@@ -263,12 +281,11 @@ describe('VibecheckProgressService', () => {
 
       await service.handleProgressEvent(event);
 
-      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
-      const embed = sendCall.embeds[0];
-      expect(embed.data.color).toBe(0xff9900); // orange
+      const containerData = getContainerData(mockChannel);
+      expect(containerData.accent_color).toBe(0xff9900);
     });
 
-    it('should show green color when no messages are flagged', async () => {
+    it('should use green accent color when no messages are flagged', async () => {
       const mockGuild = createMockGuild('guild-123');
       const mockChannel = createMockChannel();
       const mockClient = createMockClient([mockGuild]);
@@ -286,12 +303,11 @@ describe('VibecheckProgressService', () => {
 
       await service.handleProgressEvent(event);
 
-      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
-      const embed = sendCall.embeds[0];
-      expect(embed.data.color).toBe(0x00aa00); // green
+      const containerData = getContainerData(mockChannel);
+      expect(containerData.accent_color).toBe(0x00aa00);
     });
 
-    it('should include threshold in description', async () => {
+    it('should include threshold in text content', async () => {
       const mockGuild = createMockGuild('guild-123');
       const mockChannel = createMockChannel();
       const mockClient = createMockClient([mockGuild]);
@@ -305,12 +321,11 @@ describe('VibecheckProgressService', () => {
 
       await service.handleProgressEvent(event);
 
-      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
-      const embed = sendCall.embeds[0];
-      expect(embed.data.description).toContain('80%');
+      const allText = getAllTextContent(getContainerData(mockChannel));
+      expect(allText).toContain('80%');
     });
 
-    it('should include scan ID in footer', async () => {
+    it('should include scan ID in footer text', async () => {
       const mockGuild = createMockGuild('guild-123');
       const mockChannel = createMockChannel();
       const mockClient = createMockClient([mockGuild]);
@@ -324,14 +339,12 @@ describe('VibecheckProgressService', () => {
 
       await service.handleProgressEvent(event);
 
-      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
-      const embed = sendCall.embeds[0];
-      expect(embed.data.footer?.text).toContain('abcd1234'); // first 8 chars
+      const allText = getAllTextContent(getContainerData(mockChannel));
+      expect(allText).toContain('abcd1234');
     });
 
-    it('should show channel names in description (AC #4)', async () => {
+    it('should show channel names in text content', async () => {
       const mockGuild = createMockGuild('guild-123');
-      // Add channels to the guild's cache
       mockGuild.channels.cache.set('ch-123', { id: 'ch-123', name: 'general' });
       mockGuild.channels.cache.set('ch-456', { id: 'ch-456', name: 'random' });
 
@@ -350,16 +363,14 @@ describe('VibecheckProgressService', () => {
 
       await service.handleProgressEvent(event);
 
-      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
-      const embed = sendCall.embeds[0];
-      expect(embed.data.description).toContain('#general');
-      expect(embed.data.description).toContain('#random');
-      expect(embed.data.description).toContain('250 messages');
+      const allText = getAllTextContent(getContainerData(mockChannel));
+      expect(allText).toContain('#general');
+      expect(allText).toContain('#random');
+      expect(allText).toContain('250 messages');
     });
 
     it('should handle missing channels gracefully', async () => {
       const mockGuild = createMockGuild('guild-123');
-      // Only add one channel, leave the other missing
       mockGuild.channels.cache.set('ch-123', { id: 'ch-123', name: 'general' });
 
       const mockChannel = createMockChannel();
@@ -377,11 +388,9 @@ describe('VibecheckProgressService', () => {
 
       await service.handleProgressEvent(event);
 
-      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
-      const embed = sendCall.embeds[0];
-      // Should still show the channel that exists
-      expect(embed.data.description).toContain('#general');
-      expect(embed.data.description).toContain('100 messages');
+      const allText = getAllTextContent(getContainerData(mockChannel));
+      expect(allText).toContain('#general');
+      expect(allText).toContain('100 messages');
     });
 
     it('should truncate when more than 3 channels', async () => {
@@ -406,14 +415,12 @@ describe('VibecheckProgressService', () => {
 
       await service.handleProgressEvent(event);
 
-      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
-      const embed = sendCall.embeds[0];
-      // Should show first 3 channels and ellipsis
-      expect(embed.data.description).toContain('#general');
-      expect(embed.data.description).toContain('#random');
-      expect(embed.data.description).toContain('#announcements');
-      expect(embed.data.description).toContain('...');
-      expect(embed.data.description).not.toContain('#off-topic');
+      const allText = getAllTextContent(getContainerData(mockChannel));
+      expect(allText).toContain('#general');
+      expect(allText).toContain('#random');
+      expect(allText).toContain('#announcements');
+      expect(allText).toContain('...');
+      expect(allText).not.toContain('#off-topic');
     });
 
     it('should include View Original Message link for clipped flagged claims', async () => {
@@ -443,15 +450,14 @@ describe('VibecheckProgressService', () => {
 
       await service.handleProgressEvent(event);
 
-      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
-      const embed = sendCall.embeds[0];
-      expect(embed.data.fields?.[0]?.value).toContain('View Original Message');
-      expect(embed.data.fields?.[0]?.value).toContain(
+      const allText = getAllTextContent(getContainerData(mockChannel));
+      expect(allText).toContain('View Original Message');
+      expect(allText).toContain(
         'https://discord.com/channels/guild-123/ch-123/123456789012345678'
       );
     });
 
-    it('should rebatch score lines so each embed field stays within Discord limits', async () => {
+    it('should rebatch score lines so each text block stays within limits', async () => {
       const mockGuild = createMockGuild('guild-123');
       mockGuild.channels.cache.set('ch-123', { id: 'ch-123', name: 'general' });
 
@@ -477,11 +483,13 @@ describe('VibecheckProgressService', () => {
       await service.handleProgressEvent(event);
 
       expect(mockChannel.send).toHaveBeenCalled();
-      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
-      const embed = sendCall.embeds[0];
-      expect(embed.data.fields && embed.data.fields.length).toBeGreaterThan(1);
-      for (const field of embed.data.fields ?? []) {
-        expect(field.value.length).toBeLessThanOrEqual(1024);
+      const containerData = getContainerData(mockChannel);
+      const textComponents = (containerData.components ?? []).filter(
+        (c: any) => c.type === 10
+      );
+      expect(textComponents.length).toBeGreaterThan(1);
+      for (const tc of textComponents) {
+        expect((tc.content as string).length).toBeLessThanOrEqual(1200);
       }
     });
   });

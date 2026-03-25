@@ -162,6 +162,47 @@ describe('note-view command', () => {
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 
+    it('should pass navContext to formatter for contextual nav', async () => {
+      const mockNotesResponse = createMockNoteListJSONAPIResponse([
+        { id: '1', summary: 'This is a community note', authorParticipantId: 'author1' },
+      ]);
+
+      mockViewNotesService.execute.mockResolvedValue(
+        createSuccessResult({ notes: mockNotesResponse })
+      );
+
+      mockScoringService.getBatchNoteScores.mockResolvedValue(
+        createSuccessResult({
+          data: [
+            { type: 'note_score', id: '1', attributes: { score: TEST_SCORE_ABOVE_THRESHOLD, confidence: 'standard', tier: 4, tier_name: 'Tier 4', algorithm: 'MFCoreScorer', rating_count: 10 } },
+          ],
+          jsonapi: { version: '1.1' },
+        })
+      );
+
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        options: {
+          getSubcommand: jest.fn<() => string>().mockReturnValue('view'),
+          getString: jest.fn<() => string>().mockReturnValue('12345678901234567'),
+        },
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        followUp: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+        deleteReply: jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
+
+      await execute(mockInteraction as any);
+
+      expect(mockDiscordFormatter.formatViewNotesSuccessV2).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'note:view'
+      );
+    });
+
     it('should handle empty notes list', async () => {
       const emptyNotesResponse = createMockNoteListJSONAPIResponse([]);
       mockViewNotesService.execute.mockResolvedValue(

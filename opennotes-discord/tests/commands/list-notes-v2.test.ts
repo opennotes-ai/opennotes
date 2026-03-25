@@ -1,6 +1,7 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { V2_ICONS, calculateUrgency } from '../../src/utils/v2-components.js';
+import { buildContextualNav, NAV_GRAPH } from '../../src/lib/navigation-components.js';
 
 describe('list notes v2 helper functions', () => {
   describe('v2 helper utilities', () => {
@@ -187,6 +188,56 @@ describe('list notes v2 helper functions', () => {
 
       expect(prevButtonId.startsWith('queue:')).toBe(true);
       expect(nextButtonId.startsWith('queue:')).toBe(true);
+    });
+  });
+
+  describe('Navigation buttons for list command responses', () => {
+    it('should include Menu button in all nav rows', () => {
+      const contexts = ['list:notes', 'list:requests'];
+      for (const ctx of contexts) {
+        const navRow = buildContextualNav(ctx);
+        const json = navRow.toJSON();
+        const menuButton = json.components[0] as { custom_id: string; label: string };
+        expect(menuButton.custom_id).toBe('nav:menu');
+        expect(menuButton.label).toBe('Menu');
+      }
+    });
+
+    it('should build list:notes nav with List Requests and Write Note buttons', () => {
+      const navRow = buildContextualNav('list:notes');
+      const json = navRow.toJSON();
+      const customIds = json.components.map((c: any) => c.custom_id);
+      expect(customIds).toContain('nav:menu');
+      expect(customIds).toContain('nav:list:requests');
+      expect(customIds).toContain('nav:note:write');
+      expect(json.components).toHaveLength(3);
+    });
+
+    it('should build list:requests nav with List Notes and Write Note buttons', () => {
+      const navRow = buildContextualNav('list:requests');
+      const json = navRow.toJSON();
+      const customIds = json.components.map((c: any) => c.custom_id);
+      expect(customIds).toContain('nav:menu');
+      expect(customIds).toContain('nav:list:notes');
+      expect(customIds).toContain('nav:note:write');
+      expect(json.components).toHaveLength(3);
+    });
+
+    it('should have NAV_GRAPH entries for all list contexts', () => {
+      expect(NAV_GRAPH['list:notes']).toBeDefined();
+      expect(NAV_GRAPH['list:requests']).toBeDefined();
+    });
+
+    it('should keep all nav button custom IDs under 100 characters', () => {
+      const contexts = ['list:notes', 'list:requests'];
+      for (const ctx of contexts) {
+        const navRow = buildContextualNav(ctx);
+        const json = navRow.toJSON();
+        for (const component of json.components) {
+          const btn = component as { custom_id: string };
+          expect(btn.custom_id.length).toBeLessThan(100);
+        }
+      }
     });
   });
 });

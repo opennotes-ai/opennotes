@@ -10,7 +10,6 @@ import { ServiceResult, WriteNoteResult, ViewNotesResult, RateNoteResult, Status
 import type { RequestStatus } from '../lib/types.js';
 import type {
   NoteScoreJSONAPIResponse,
-  TopNotesJSONAPIResponse,
   ScoringStatusJSONAPIResponse,
   ScoreConfidence,
   NoteScoreAttributes,
@@ -24,7 +23,6 @@ import { extractPlatformMessageId } from '../lib/discord-utils.js';
 import { formatIdDisplay } from '../lib/proquint.js';
 import {
   V2_COLORS,
-  V2_ICONS,
   createContainer,
   createSmallSeparator,
   createDivider,
@@ -36,9 +34,10 @@ import {
   truncateWithMeta,
   buildViewFullCustomId,
 } from '../utils/v2-components.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 export class DiscordFormatter {
-  private static readonly VIEW_FULL_TTL_SECONDS = 300;
+  private static readonly VIEW_FULL_TTL_SECONDS = 900;
 
   private static formatMessageIdLink(messageId: string, guildId?: string, channelId?: string): string {
     if (guildId && channelId) {
@@ -190,7 +189,8 @@ export class DiscordFormatter {
     result: WriteNoteResult,
     messageId: string,
     guildId?: string,
-    channelId?: string
+    channelId?: string,
+    navContext?: string
   ): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -219,6 +219,10 @@ export class DiscordFormatter {
         new TextDisplayBuilder().setContent(metadataLines.join('\n'))
       );
 
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
+    }
+
     return {
       container,
       components: [container.toJSON()],
@@ -228,7 +232,8 @@ export class DiscordFormatter {
 
   static formatViewNotesSuccessV2(
     result: ViewNotesResult,
-    scoresMap?: Map<string, NoteScoreAttributes>
+    scoresMap?: Map<string, NoteScoreAttributes>,
+    navContext?: string
   ): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -240,6 +245,10 @@ export class DiscordFormatter {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent('## Community Notes\n\nNo notes found for this message.')
       );
+
+      if (navContext) {
+        container.addActionRowComponents(buildContextualNav(navContext));
+      }
 
       return {
         container,
@@ -280,6 +289,10 @@ export class DiscordFormatter {
           container.addMediaGalleryComponents(gallery);
         }
       }
+    }
+
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
     }
 
     return {
@@ -343,7 +356,7 @@ export class DiscordFormatter {
     };
   }
 
-  static formatNoteScoreV2(response: NoteScoreJSONAPIResponse): {
+  static formatNoteScoreV2(response: NoteScoreJSONAPIResponse, navContext?: string): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
     flags: number;
@@ -375,6 +388,10 @@ export class DiscordFormatter {
         ].join('\n'))
       );
 
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
+    }
+
     return {
       container,
       components: [container.toJSON()],
@@ -385,7 +402,8 @@ export class DiscordFormatter {
   static formatRateNoteSuccessV2(
     result: RateNoteResult,
     noteId: string,
-    helpful: boolean
+    helpful: boolean,
+    navContext?: string
   ): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -410,6 +428,10 @@ export class DiscordFormatter {
         ].join('\n'))
       );
 
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
+    }
+
     return {
       container,
       components: [container.toJSON()],
@@ -422,12 +444,12 @@ export class DiscordFormatter {
     userId: string,
     reason?: string,
     guildId?: string,
-    channelId?: string
+    channelId?: string,
+    navContext?: string
   ): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
     flags: number;
-    actionRow: ActionRowBuilder<ButtonBuilder>;
   } {
     const messageIdDisplay = this.formatMessageIdLink(messageId, guildId, channelId);
 
@@ -440,17 +462,6 @@ export class DiscordFormatter {
       metadataLines.push(`**Reason:** ${reason}`);
     }
 
-    const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId('request_reply:list_requests')
-        .setLabel('See other requests')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('request_reply:list_notes')
-        .setLabel('Rate some notes')
-        .setStyle(ButtonStyle.Primary)
-    );
-
     const container = createContainer(V2_COLORS.HELPFUL)
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent('## Note Request Submitted')
@@ -462,121 +473,23 @@ export class DiscordFormatter {
       .addSeparatorComponents(createDivider())
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent(metadataLines.join('\n'))
-      )
-      .addSeparatorComponents(createSmallSeparator())
-      .addActionRowComponents(actionRow);
+      );
+
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
+    }
 
     return {
       container,
       components: [container.toJSON()],
       flags: v2MessageFlags(),
-      actionRow,
-    };
-  }
-
-  static formatTopNotesForQueueV2(
-    response: TopNotesJSONAPIResponse,
-    page: number = 1,
-    pageSize: number = 10,
-    options?: { includeForcePublishButtons?: boolean }
-  ): {
-    container: ContainerBuilder;
-    components: ReturnType<ContainerBuilder['toJSON']>[];
-    flags: number;
-    forcePublishButtonRows: ActionRowBuilder<ButtonBuilder>[];
-  } {
-    const totalCount = response.meta?.total_count ?? response.data.length;
-    const totalPages = Math.ceil(totalCount / pageSize);
-    const forcePublishButtonRows: ActionRowBuilder<ButtonBuilder>[] = [];
-
-    const container = createContainer(V2_COLORS.INFO);
-
-    if (response.data.length === 0) {
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `## ${V2_ICONS.STANDARD} Top Scored Notes\n\nNo notes found matching the criteria.\n\n*Page ${page} of ${totalPages} | Total: ${totalCount} notes*`
-        )
-      );
-      return {
-        container,
-        components: [container.toJSON()],
-        flags: v2MessageFlags(),
-        forcePublishButtonRows,
-      };
-    }
-
-    const headerLines = [`## ${V2_ICONS.STANDARD} Top Scored Notes`];
-
-    const filterDescription: string[] = [];
-    if (response.meta?.filters_applied) {
-      if (String(response.meta.filters_applied.min_confidence)) {
-        filterDescription.push(`Min Confidence: ${String(response.meta.filters_applied.min_confidence)}`);
-      }
-      if (response.meta.filters_applied.tier !== undefined) {
-        filterDescription.push(`Tier: ${String(response.meta.filters_applied.tier)}`);
-      }
-    }
-
-    headerLines.push(
-      `Showing notes ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, totalCount)} of ${totalCount}`
-    );
-
-    if (filterDescription.length > 0) {
-      headerLines.push(`**Filters:** ${filterDescription.join(' | ')}`);
-    }
-
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(headerLines.join('\n'))
-    );
-
-    for (const [index, resource] of response.data.entries()) {
-      const rank = (page - 1) * pageSize + index + 1;
-      const note = resource.attributes;
-      const scoreColor = note.score >= 0.7 ? V2_ICONS.SCORE_HIGH : note.score >= 0.4 ? V2_ICONS.SCORE_MID : V2_ICONS.SCORE_LOW;
-      const confidenceEmoji = this.getConfidenceEmoji(note.confidence as ScoreConfidence);
-      const formattedScore = this.formatScore(note.score);
-
-      container.addSeparatorComponents(createSmallSeparator());
-
-      const noteLines = [
-        `**${rank}. ${scoreColor} Note ${formatIdDisplay(resource.id)}**`,
-        `**Score:** ${formattedScore} (0.0-1.0)`,
-        `**Confidence:** ${confidenceEmoji} ${this.getConfidenceLabel(note.confidence as ScoreConfidence)}`,
-        `**Ratings:** ${note.rating_count}`,
-        `**Tier:** ${note.tier} | **Algorithm:** ${note.algorithm}`,
-      ];
-
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(noteLines.join('\n'))
-      );
-
-      if (options?.includeForcePublishButtons) {
-        const forcePublishButton = new ButtonBuilder()
-          .setCustomId(`force_publish:${resource.id}`)
-          .setLabel(`Force Publish Note ${formatIdDisplay(resource.id)}`)
-          .setStyle(ButtonStyle.Danger);
-        forcePublishButtonRows.push(
-          new ActionRowBuilder<ButtonBuilder>().addComponents(forcePublishButton)
-        );
-      }
-    }
-
-    container.addSeparatorComponents(createDivider());
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`*Page ${page} of ${totalPages} | Total: ${totalCount} notes*`)
-    );
-
-    return {
-      container,
-      components: [container.toJSON()],
-      flags: v2MessageFlags(),
-      forcePublishButtonRows,
     };
   }
 
   static async formatListRequestsSuccessV2(
     result: ListRequestsResult,
-    options?: { status?: string; myRequestsOnly?: boolean; communityServerId?: string; guildId?: string; isAdmin?: boolean }
+    options?: { status?: string; myRequestsOnly?: boolean; communityServerId?: string; guildId?: string; isAdmin?: boolean },
+    navContext?: string
   ): Promise<{
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -592,6 +505,9 @@ export class DiscordFormatter {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent('## Note Requests\n\nNo requests found.')
       );
+      if (navContext) {
+        container.addActionRowComponents(buildContextualNav(navContext));
+      }
       return {
         container,
         components: [container.toJSON()],
@@ -665,7 +581,7 @@ export class DiscordFormatter {
         const writeNoteNotMisleadingCacheKey = `write_note_state:${writeNoteNotMisleadingShortId}`;
         const writeNoteMisinformedCacheKey = `write_note_state:${writeNoteMisinformedShortId}`;
         const aiWriteNoteCacheKey = `write_note_state:${aiWriteNoteShortId}`;
-        const ttl = 300;
+        const ttl = 900;
 
         try {
           await cache.set(writeNoteNotMisleadingCacheKey, request.id, ttl);
@@ -678,21 +594,41 @@ export class DiscordFormatter {
           });
         }
 
-        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`write_note:NOT_MISLEADING:${writeNoteNotMisleadingShortId}`)
-            .setLabel('Not Misleading')
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId(`write_note:MISINFORMED_OR_POTENTIALLY_MISLEADING:${writeNoteMisinformedShortId}`)
-            .setLabel('Misinformed or Misleading')
-            .setStyle(ButtonStyle.Danger),
-          new ButtonBuilder()
-            .setCustomId(`ai_write_note:${aiWriteNoteShortId}`)
-            .setLabel('AI Generate')
-            .setStyle(ButtonStyle.Primary)
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent('**Write a note yourself.** The original message is:')
         );
-        container.addActionRowComponents(row);
+        container.addActionRowComponents(
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`write_note:NOT_MISLEADING:${writeNoteNotMisleadingShortId}`)
+              .setLabel('Not Misleading')
+              .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+              .setCustomId(`write_note:MISINFORMED_OR_POTENTIALLY_MISLEADING:${writeNoteMisinformedShortId}`)
+              .setLabel('Misinformed or Misleading')
+              .setStyle(ButtonStyle.Danger),
+          )
+        );
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent('Let AI write the note:')
+        );
+        container.addActionRowComponents(
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`ai_write_note:${aiWriteNoteShortId}`)
+              .setLabel('AI')
+              .setEmoji({ name: '✨' })
+              .setStyle(ButtonStyle.Primary),
+          )
+        );
+      } else if (request.status === 'COMPLETED') {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent('*Notes have been written for this request.*')
+        );
+      } else if (request.status === 'IN_PROGRESS') {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent('*A note is being written for this request.*')
+        );
       }
     }
 
@@ -711,7 +647,7 @@ export class DiscordFormatter {
       };
 
       const cacheKey = `pagination:${stateId}`;
-      const ttl = 300;
+      const ttl = 900;
 
       try {
         await cache.set(cacheKey, filterState, ttl);
@@ -740,6 +676,10 @@ export class DiscordFormatter {
           .setDisabled(result.page >= totalPages)
       );
       container.addActionRowComponents(paginationRow);
+    }
+
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
     }
 
     return {

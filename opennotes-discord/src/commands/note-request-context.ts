@@ -56,12 +56,13 @@ export async function execute(interaction: MessageContextMenuCommandInteraction)
     const result = await createNoteRequest({
       messageId,
       message: targetMessage,
-      reason: undefined, // Context menu doesn't have reason field
+      reason: undefined,
       userId,
-      community_server_id: guildId, // Required: Discord guild/server ID
+      community_server_id: guildId,
       channel: interaction.channel,
       errorId,
       user: interaction.user,
+      navContext: 'note-request-context',
     });
 
     if (!result.success) {

@@ -40,7 +40,6 @@ Good notes should:
 \`/note score <note-id>\` - View a note's score
 \`/list notes\` - Browse notes awaiting your rating
 \`/list requests\` - Browse pending note requests
-\`/list top-notes\` - View highest-scored notes
 
 **:dart: Scoring System**
 Community members rate notes as helpful or not helpful. Notes with high ratings are more visible and help moderate content collaboratively.
@@ -92,8 +91,7 @@ export function buildWelcomeContainer(): ContainerBuilder {
         '`/note rate <note-id> <helpful>` - Rate a note\n' +
         '`/note score <note-id>` - View a note\'s score\n' +
         '`/list notes` - Browse notes awaiting your rating\n' +
-        '`/list requests` - Browse pending note requests\n' +
-        '`/list top-notes` - View highest-scored notes'
+        '`/list requests` - Browse pending note requests'
       )
     )
     .addSeparatorComponents(createSmallSeparator())

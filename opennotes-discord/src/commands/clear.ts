@@ -16,6 +16,7 @@ import { cache } from '../cache.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser } from '../lib/errors.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
 import { apiClient } from '../api-client.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 interface ClearConfirmationState {
   type: 'requests' | 'notes';
@@ -26,7 +27,7 @@ interface ClearConfirmationState {
   wouldDeleteCount: number;
 }
 
-const CONFIRMATION_STATE_TTL = 300;
+const CONFIRMATION_STATE_TTL = 900;
 
 export const data = new SlashCommandBuilder()
   .setName('clear')
@@ -224,10 +225,11 @@ async function showConfirmationPrompt(
     .setStyle(ButtonStyle.Secondary);
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(confirmButton, cancelButton);
+  const navRow = buildContextualNav(`clear:${type}`);
 
   await interaction.editReply({
     content: `**Warning:** This will permanently delete **${wouldDeleteCount}** ${itemType} (${modeDescription}).${warningMessage}\n\nAre you sure you want to proceed?`,
-    components: [row],
+    components: [row, navRow],
   });
 
   const reply = await interaction.fetchReply();
@@ -246,9 +248,8 @@ async function showConfirmationPrompt(
     if (reason === 'time') {
       interaction.editReply({
         content: 'Confirmation timed out. Please run the command again if you still want to proceed.',
-        components: [],
+        components: [buildContextualNav(`clear:${type}`)],
       }).catch(() => {
-        /* Silently ignore - interaction may have expired */
       });
     }
   });
@@ -280,7 +281,7 @@ async function handleConfirmationButton(
   if (action === 'clear_cancel') {
     await buttonInteraction.update({
       content: 'Clear operation cancelled.',
-      components: [],
+      components: [buildContextualNav(`clear:${state.type}`)],
     });
     collector.stop();
     return;
@@ -305,7 +306,7 @@ async function handleConfirmationButton(
 
       await buttonInteraction.editReply({
         content: `Successfully deleted **${result.deletedCount}** ${itemType}.`,
-        components: [],
+        components: [buildContextualNav(`clear:${state.type}`)],
       });
     } catch (error) {
       const errorId = generateErrorId();
@@ -325,7 +326,7 @@ async function handleConfirmationButton(
 
       await buttonInteraction.editReply({
         content: formatErrorForUser(errorId, 'Failed to complete the clear operation. Please try again later.'),
-        components: [],
+        components: [buildContextualNav(`clear:${state.type}`)],
       });
     }
 

@@ -4,6 +4,7 @@ import {
   loggerFactory,
   chatInputCommandInteractionFactory,
 } from '../factories/index.js';
+import { v2MessageFlags } from '../../src/utils/v2-components.js';
 
 const mockLogger = loggerFactory.build();
 
@@ -173,7 +174,7 @@ describe('note-force-publish command', () => {
   });
 
   describe('successful execution', () => {
-    it('should force-publish a note successfully', async () => {
+    it('should force-publish a note with v2 container response', async () => {
       const mockNote = createMockNoteJSONAPIResponse({
         id: TEST_UUID,
         summary: 'This is a test note',
@@ -186,13 +187,43 @@ describe('note-force-publish command', () => {
 
       await execute(mockInteraction);
 
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
       expect(mockApiClient.forcePublishNote).toHaveBeenCalledWith(TEST_UUID, expect.any(Object));
       expect(mockInteraction.editReply).toHaveBeenCalled();
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      expect(editReplyCall.content).toContain('Note #hajij-babab has been force-published');
-      expect(editReplyCall.content).toContain('Admin Published');
+      expect(editReplyCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
+      expect(editReplyCall.components).toHaveLength(1);
+
+      const containerJson = editReplyCall.components[0];
+      expect(containerJson.type).toBe(17);
+
+      const allContent = JSON.stringify(containerJson.components);
+      expect(allContent).toContain('Force-Published');
+      expect(allContent).toContain('hajij-babab');
+      expect(allContent).toContain('Admin Published');
+    });
+
+    it('should include contextual nav row inside container with Menu and List Notes buttons', async () => {
+      const mockNote = createMockNoteJSONAPIResponse({
+        id: TEST_UUID,
+        summary: 'Short note summary',
+        status: 'PUBLISHED',
+        forcePublished: true,
+        forcePublishedAt: new Date().toISOString(),
+      });
+
+      mockApiClient.forcePublishNote.mockResolvedValue(mockNote);
+
+      await execute(mockInteraction);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      const containerJson = editReplyCall.components[0];
+      const actionRows = containerJson.components.filter((c: any) => c.type === 1);
+      const lastRow = actionRows[actionRows.length - 1];
+      const customIds = lastRow.components.map((c: any) => c.custom_id);
+      expect(customIds).toContain('nav:menu');
+      expect(customIds).toContain('nav:list:notes');
     });
 
     it('should add a View Full fallback button for long summaries', async () => {
@@ -210,14 +241,19 @@ describe('note-force-publish command', () => {
       await execute(mockInteraction);
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      expect(editReplyCall.components).toBeDefined();
+      const containerJson = editReplyCall.components[0];
+      const actionRows = containerJson.components.filter((c: any) => c.type === 1);
+      const viewFullRow = actionRows.find((row: any) =>
+        row.components.some((c: any) => c.label === 'View Full')
+      );
+      expect(viewFullRow).toBeDefined();
 
       const viewFullCacheCall = mockCache.set.mock.calls.find(
         (call) => typeof call[0] === 'string' && call[0].startsWith('view_full:')
       );
       expect(viewFullCacheCall).toBeDefined();
       expect(viewFullCacheCall?.[1]).toBe(longSummary);
-      expect(viewFullCacheCall?.[2]).toBe(300);
+      expect(viewFullCacheCall?.[2]).toBe(900);
     });
 
     it('should fall back to the truncated preview when storing View Full state fails', async () => {
@@ -238,8 +274,14 @@ describe('note-force-publish command', () => {
       await execute(mockInteraction);
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      expect(editReplyCall.content).toContain('Note #hajij-babab has been force-published');
-      expect(editReplyCall.components).toBeUndefined();
+      const containerJson = editReplyCall.components[0];
+      const allContent = JSON.stringify(containerJson.components);
+      expect(allContent).toContain('Force-Published');
+      expect(allContent).toContain('hajij-babab');
+
+      const actionRows = containerJson.components.filter((c: any) => c.type === 1);
+      expect(actionRows).toHaveLength(1);
+      expect(actionRows[0].components[0].custom_id).toBe('nav:menu');
     });
 
     it('should fall back to the truncated preview when cache.set resolves false', async () => {
@@ -258,10 +300,16 @@ describe('note-force-publish command', () => {
       await execute(mockInteraction);
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      expect(editReplyCall.content).toContain('Note #hajij-babab has been force-published');
-      expect(editReplyCall.content).toContain('**Note Summary:**');
-      expect(editReplyCall.content).toContain('...');
-      expect(editReplyCall.components).toBeUndefined();
+      const containerJson = editReplyCall.components[0];
+      const allContent = JSON.stringify(containerJson.components);
+      expect(allContent).toContain('Force-Published');
+      expect(allContent).toContain('hajij-babab');
+      expect(allContent).toContain('Note Summary');
+      expect(allContent).toContain('...');
+
+      const actionRows = containerJson.components.filter((c: any) => c.type === 1);
+      expect(actionRows).toHaveLength(1);
+      expect(actionRows[0].components[0].custom_id).toBe('nav:menu');
     });
   });
 

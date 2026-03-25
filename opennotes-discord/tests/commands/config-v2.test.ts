@@ -852,6 +852,86 @@ describe('config command v2 components migration', () => {
       expect(editReplyCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
     });
   });
+
+  describe('Navigation buttons', () => {
+    it('should include contextual nav row with Menu, Status, and About buttons in admin list response', async () => {
+      const mockAdmins = [
+        {
+          profile_id: 'profile-1',
+          display_name: 'Admin One',
+          avatar_url: null,
+          discord_id: 'user111',
+          admin_sources: ['community_role'],
+          is_opennotes_admin: false,
+          community_role: 'admin',
+        },
+      ];
+
+      mockApiClient.listCommunityAdmins.mockResolvedValue(mockAdmins);
+
+      const mockInteraction = {
+        user: { id: 'admin456' },
+        guildId: 'guild789',
+        options: {
+          getSubcommandGroup: jest.fn<() => string>().mockReturnValue('admin'),
+          getSubcommand: jest.fn<() => string>().mockReturnValue('list'),
+        },
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<void>>(),
+      };
+
+      await execute(mockInteraction as any);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      const containerJson = editReplyCall.components[0];
+
+      const actionRows = containerJson.components.filter((c: any) => c.type === 1);
+      expect(actionRows.length).toBeGreaterThanOrEqual(1);
+
+      const navRow = actionRows[actionRows.length - 1];
+      const buttonCustomIds = navRow.components.map((btn: any) => btn.custom_id);
+      expect(buttonCustomIds).toContain('nav:menu');
+      expect(buttonCustomIds).toContain('nav:status-bot');
+      expect(buttonCustomIds).toContain('nav:about-opennotes');
+    });
+
+    it('should exclude nav: prefixed interactions from the config collector filter', async () => {
+      mockGuildConfigService.getAll.mockResolvedValue({});
+
+      const mockCollector = {
+        on: jest.fn<(event: string, handler: any) => any>().mockReturnThis(),
+      };
+
+      const mockMessage = {
+        createMessageComponentCollector: jest.fn<() => any>().mockReturnValue(mockCollector),
+      };
+
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        options: {
+          getSubcommandGroup: jest.fn<() => string>().mockReturnValue('opennotes'),
+          getSubcommand: jest.fn<() => string>().mockReturnValue('view'),
+          getString: jest.fn<(name: string) => string | null>(),
+        },
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue(mockMessage),
+      };
+
+      await execute(mockInteraction as any);
+
+      const collectorCall = (mockMessage.createMessageComponentCollector as any).mock.calls[0][0];
+      expect(collectorCall.filter).toBeDefined();
+
+      const navInteraction = { customId: 'nav:menu' };
+      const configInteraction = { customId: 'config:toggle:notes_enabled' };
+      const navStatusInteraction = { customId: 'nav:status-bot' };
+
+      expect(collectorCall.filter(navInteraction)).toBe(false);
+      expect(collectorCall.filter(navStatusInteraction)).toBe(false);
+      expect(collectorCall.filter(configInteraction)).toBe(true);
+    });
+  });
 });
 
 function extractAllCustomIds(components: any[]): string[] {

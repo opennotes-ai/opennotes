@@ -76,6 +76,10 @@ export const V2_ICONS = {
 
   NAV_PREVIOUS: '\u25C0',
   NAV_NEXT: '\u25B6',
+
+  NAV_MENU: '\u{1F4D6}',
+  NAV_BACK: '\u25C0',
+  NAV_HOME: '\u{1F3E0}',
 } as const;
 
 /**
@@ -91,7 +95,6 @@ export const V2_ICONS = {
 export const V2_LIMITS = {
   MAX_COMPONENTS_PER_CONTAINER: 40,
   MAX_TEXT_DISPLAY_LENGTH: 4000,
-  MAX_ACTION_ROWS: 5,
   MAX_NOTES_PER_QUEUE_PAGE: 4,
 } as const;
 

@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import { MessageFlags } from 'discord.js';
 import { loggerFactory } from '../factories/index.js';
+import { v2MessageFlags } from '../../src/utils/v2-components.js';
 
 const mockLogger = loggerFactory.build();
 
@@ -9,6 +10,7 @@ const mockCache = {
   get: jest.fn<(key: string) => Promise<unknown>>(),
   set: jest.fn<(key: string, value: unknown, ttl?: number) => Promise<boolean>>(),
   delete: jest.fn<(key: string) => Promise<boolean>>(),
+  expire: jest.fn<(key: string, ttl: number) => Promise<boolean>>(),
   clear: jest.fn<() => Promise<number>>(),
   start: jest.fn<() => void>(),
   stop: jest.fn<() => void>(),
@@ -25,6 +27,9 @@ function setupCacheImplementations() {
   });
   mockCache.delete.mockImplementation(async (key: string) => {
     return cacheStore.delete(key);
+  });
+  mockCache.expire.mockImplementation(async (key: string, _ttl: number) => {
+    return cacheStore.has(key);
   });
   mockCache.clear.mockImplementation(async () => {
     const count = cacheStore.size;
@@ -108,7 +113,7 @@ jest.unstable_mockModule('../../src/lib/validation.js', () => ({
 jest.unstable_mockModule('../../src/lib/constants.js', () => ({
   LIST_COMMAND_LIMITS: {
     REQUESTS_PER_PAGE: 5,
-    STATE_CACHE_TTL_SECONDS: 300,
+    STATE_CACHE_TTL_SECONDS: 3600,
   },
 }));
 
@@ -163,7 +168,7 @@ describe('list command - Button Handlers', () => {
 
       await handleRateNoteButton(interaction as any);
 
-      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
       expect(mockApiClient.rateNote).toHaveBeenCalledWith(
         {
           noteId: 'note123',
@@ -245,18 +250,18 @@ describe('list command - Button Handlers', () => {
 
       await handleForcePublishButton(interaction as any);
 
-      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
       expect(mockApiClient.forcePublishNote).toHaveBeenCalledWith(
         'note-uuid-123',
         expect.objectContaining({
           userId: 'user123',
         })
       );
-      expect(interaction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringContaining('Note #note-uuid-123 has been force-published'),
-        })
-      );
+      const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
+      expect(editReplyCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
+      const allContent = JSON.stringify(editReplyCall.components[0]);
+      expect(allContent).toContain('Force-Published');
+      expect(allContent).toContain('note-uuid-123');
     });
 
     it('should reuse the note force-publish summary preview for long summaries', async () => {
@@ -279,10 +284,12 @@ describe('list command - Button Handlers', () => {
       await handleForcePublishButton(interaction as any);
 
       const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
-      expect(editReplyCall.content).toContain('Note #note-uuid-123 has been force-published');
-      expect(editReplyCall.content).toContain('Admin Published');
-      expect(editReplyCall.content).toContain('**Note Summary:**');
-      expect(editReplyCall.content).toContain('...');
+      expect(editReplyCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
+      const allContent = JSON.stringify(editReplyCall.components[0]);
+      expect(allContent).toContain('Force-Published');
+      expect(allContent).toContain('Admin Published');
+      expect(allContent).toContain('Note Summary');
+      expect(allContent).toContain('...');
       expect(editReplyCall.components).toBeDefined();
     });
 
@@ -307,9 +314,15 @@ describe('list command - Button Handlers', () => {
       await handleForcePublishButton(interaction as any);
 
       const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
-      expect(editReplyCall.content).toContain('**Note Summary:**');
-      expect(editReplyCall.content).toContain('...');
-      expect(editReplyCall.components).toBeUndefined();
+      const allContent = JSON.stringify(editReplyCall.components[0]);
+      expect(allContent).toContain('Note Summary');
+      expect(allContent).toContain('...');
+      const containerJson = editReplyCall.components[0];
+      const actionRows = containerJson.components.filter((c: any) => c.type === 1);
+      const viewFullRow = actionRows.find((row: any) =>
+        row.components.some((c: any) => c.custom_id?.startsWith('view_full:'))
+      );
+      expect(viewFullRow).toBeUndefined();
     });
 
     it('should handle invalid customId format', async () => {
@@ -365,6 +378,10 @@ describe('list command - Button Handlers', () => {
       });
 
       MockDiscordFormatter.formatListRequestsSuccessV2.mockResolvedValue({
+        container: {
+          addActionRowComponents: jest.fn().mockReturnThis(),
+          toJSON: () => ({ type: 17 }),
+        },
         components: [{ type: 17 }],
         flags: MessageFlags.IsComponentsV2,
       });
@@ -372,6 +389,7 @@ describe('list command - Button Handlers', () => {
       await handleRequestQueuePageButton(interaction as any);
 
       expect(interaction.deferUpdate).toHaveBeenCalled();
+      expect(mockCache.expire).toHaveBeenCalledWith('pagination:state123', 900);
       expect(mockListRequestsService.execute).toHaveBeenCalledWith({
         userId: 'user123',
         page: 2,
@@ -427,6 +445,7 @@ describe('list command - Button Handlers', () => {
       await handleWriteNoteButton(interaction as any);
 
       expect(mockCache.get).toHaveBeenCalledWith('write_note_state:short123');
+      expect(mockCache.expire).toHaveBeenCalledWith('write_note_state:short123', 900);
       expect(interaction.showModal).toHaveBeenCalled();
     });
 
@@ -485,7 +504,8 @@ describe('list command - Button Handlers', () => {
 
       await handleAiWriteNoteButton(interaction as any);
 
-      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
+      expect(mockCache.expire).toHaveBeenCalledWith('write_note_state:ai12345', 900);
       expect(mockApiClient.generateAiNote).toHaveBeenCalledWith(requestId, expect.any(Object));
       expect(interaction.editReply).toHaveBeenCalledWith({
         content: expect.stringContaining('AI Note Generated'),
@@ -513,7 +533,7 @@ describe('list command - Button Handlers', () => {
       expect(mockCache.set).toHaveBeenCalledWith(
         'view_full:test1234',
         longSummary,
-        300
+        3600
       );
       expect(interaction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -622,6 +642,7 @@ describe('list command - Button Handlers', () => {
 
       await handleViewFullButton(interaction as any);
 
+      expect(mockCache.expire).toHaveBeenCalledWith('view_full:abc123', 900);
       expect(interaction.reply).toHaveBeenCalledWith({
         content: 'Full note text for expansion',
         flags: MessageFlags.Ephemeral,

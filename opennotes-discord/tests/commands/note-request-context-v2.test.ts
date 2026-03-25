@@ -432,4 +432,42 @@ describe('note-request-context v2 components', () => {
       );
     });
   });
+
+  describe('Navigation buttons', () => {
+    it('should pass navContext to createNoteRequest for contextual nav', async () => {
+      mockCreateNoteRequest.mockResolvedValue({
+        success: true,
+        response: {
+          components: [{ type: 17 }],
+          flags: MessageFlags.IsComponentsV2,
+        },
+      });
+
+      const mockTargetMessage = {
+        id: 'msg123',
+        content: 'Original message',
+        embeds: [],
+        attachments: new Map(),
+      };
+
+      const mockInteraction = {
+        user: { id: 'user456' },
+        guildId: 'guild789',
+        targetMessage: mockTargetMessage,
+        channel: null,
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        followUp: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+        deleteReply: jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
+
+      await execute(mockInteraction as any);
+
+      expect(mockCreateNoteRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          navContext: 'note-request-context',
+        })
+      );
+    });
+  });
 });

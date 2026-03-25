@@ -56,7 +56,7 @@ export interface MessageWithMatches extends MessageContent {
  */
 export class MessageMonitorService {
   private static readonly DISCORD_MESSAGE_CONTENT_LIMIT = 2000;
-  private static readonly VIEW_FULL_TTL_SECONDS = 300;
+  private static readonly VIEW_FULL_TTL_SECONDS = 900;
   private monitoredChannelService: MonitoredChannelService;
   private redisQueue: RedisQueue<MessageContent>;
   private processingInterval?: NodeJS.Timeout;

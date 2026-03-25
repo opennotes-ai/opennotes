@@ -15,6 +15,7 @@ import {
   PermissionFlagsBits,
   type APIContainerComponent,
 } from 'discord.js';
+import { v2MessageFlags } from '../utils/v2-components.js';
 import { serviceProvider } from '../services/index.js';
 import { DiscordFormatter } from '../services/DiscordFormatter.js';
 import { ConfigKey } from '../lib/config-schema.js';
@@ -282,7 +283,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       ephemeral = await configService.get(guildId, ConfigKey.WRITE_NOTE_EPHEMERAL) as boolean;
     }
 
-    await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
+    await interaction.deferReply(ephemeral ? { flags: v2MessageFlags({ ephemeral: true }) } : {});
 
     const userContext = extractUserContext(interaction.user, guildId, undefined, interaction.channelId);
     const writeNoteService = serviceProvider.getWriteNoteService();
@@ -312,7 +313,8 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       result.data!,
       messageId,
       guildId || undefined,
-      interaction.channelId || undefined
+      interaction.channelId || undefined,
+      'note:write'
     );
     await interaction.editReply(response);
 
@@ -358,8 +360,9 @@ export async function createNoteRequest(params: {
   channel?: TextBasedChannel | null;
   errorId: string;
   user?: User;
+  navContext?: string;
 }): Promise<{ success: boolean; response: { components?: APIContainerComponent[]; flags?: number; content?: string } }> {
-  const { messageId, message, reason, userId, community_server_id, channel, errorId, user } = params;
+  const { messageId, message, reason, userId, community_server_id, channel, errorId, user, navContext } = params;
 
   let originalMessageContent: string | undefined;
   let attachmentUrl: string | undefined;
@@ -491,7 +494,8 @@ export async function createNoteRequest(params: {
       userId,
       reason,
       community_server_id,
-      channel?.id
+      channel?.id,
+      navContext
     ),
   };
 }
@@ -536,7 +540,7 @@ async function handleRequestSubcommand(interaction: ChatInputCommandInteraction)
       ephemeral = await configService.get(guildId, ConfigKey.REQUEST_NOTE_EPHEMERAL) as boolean;
     }
 
-    await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
+    await interaction.deferReply(ephemeral ? { flags: v2MessageFlags({ ephemeral: true }) } : {});
 
     if (!guildId) {
       logger.error('Missing guild ID for note request', { error_id: errorId, user_id: userId });
@@ -554,6 +558,7 @@ async function handleRequestSubcommand(interaction: ChatInputCommandInteraction)
       channel: interaction.channel,
       errorId,
       user: interaction.user,
+      navContext: 'note:request',
     });
 
     if (!result.success) {
@@ -663,7 +668,7 @@ async function handleViewSubcommand(interaction: ChatInputCommandInteraction): P
       }
     }
 
-    const response = DiscordFormatter.formatViewNotesSuccessV2(result.data!, scoresMap);
+    const response = DiscordFormatter.formatViewNotesSuccessV2(result.data!, scoresMap, 'note:view');
     await interaction.editReply(response);
 
     logger.info('View-notes completed successfully', {
@@ -782,7 +787,7 @@ async function handleScoreSubcommand(interaction: ChatInputCommandInteraction): 
       return;
     }
 
-    const response = DiscordFormatter.formatNoteScoreV2(result.data!);
+    const response = DiscordFormatter.formatNoteScoreV2(result.data!, 'note:score');
     await interaction.editReply(response);
 
     logger.info('Note score retrieved successfully', {
@@ -855,7 +860,7 @@ async function handleRateSubcommand(interaction: ChatInputCommandInteraction): P
       ephemeral = await configService.get(guildId, ConfigKey.RATE_NOTE_EPHEMERAL) as boolean;
     }
 
-    await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
+    await interaction.deferReply(ephemeral ? { flags: v2MessageFlags({ ephemeral: true }) } : {});
 
     let resolvedNoteId = noteId;
     if (isProquint(noteId.trim())) {
@@ -895,7 +900,7 @@ async function handleRateSubcommand(interaction: ChatInputCommandInteraction): P
       return;
     }
 
-    const response = DiscordFormatter.formatRateNoteSuccessV2(result.data!, resolvedNoteId, helpful);
+    const response = DiscordFormatter.formatRateNoteSuccessV2(result.data!, resolvedNoteId, helpful, 'note:rate');
     await interaction.editReply(response);
 
     logger.info('Rate-note completed successfully', {
@@ -988,7 +993,7 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
       has_manage_server: member?.permissions.has(PermissionFlagsBits.ManageGuild) ?? false,
     });
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
     if (isProquint(noteIdStr.trim())) {
       const resolved = await resolveNoteByProquint(noteIdStr);
       if (!resolved) {
@@ -1013,7 +1018,7 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
       force_published_at: attrs.force_published_at,
     });
 
-    const reply = await buildForcePublishSuccessReply(resolvedNoteId, note, 'note_force_publish');
+    const reply = await buildForcePublishSuccessReply(resolvedNoteId, note, 'note_force_publish', 'note:write');
     await interaction.editReply(reply);
   } catch (error) {
     const errorDetails = extractErrorDetails(error);

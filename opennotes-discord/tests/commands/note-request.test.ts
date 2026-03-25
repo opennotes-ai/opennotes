@@ -10,6 +10,7 @@ import {
   chatInputCommandInteractionFactory,
 } from '../factories/index.js';
 import { ErrorCode } from '../../src/services/types.js';
+import { v2MessageFlags } from '../../src/utils/v2-components.js';
 
 const mockLogger = loggerFactory.build();
 const mockRequestNoteService = {
@@ -154,6 +155,62 @@ describe('note-request command', () => {
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 
+    it('should pass navContext to formatter for contextual nav', async () => {
+      mockRequestNoteService.execute.mockResolvedValue(
+        createSuccessResult({ requestId: 'req123' })
+      );
+
+      mockDiscordFormatter.formatRequestNoteSuccessV2.mockReturnValue({
+        components: [{ type: 17, components: [] }],
+        flags: 1 << 15,
+      });
+
+      const mockChannel = {
+        messages: {
+          fetch: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+            content: 'Original message content',
+          }),
+        },
+        isTextBased: () => true,
+      };
+
+      const mockInteraction = {
+        user: {
+          id: 'user456',
+          username: 'testuser',
+          displayName: 'Test User',
+          globalName: 'Test User',
+          displayAvatarURL: jest.fn(() => 'https://example.com/avatar.png'),
+        },
+        guildId: 'guild789',
+        channel: mockChannel,
+        options: {
+          getSubcommand: jest.fn<() => string>().mockReturnValue('request'),
+          getString: jest.fn((name: string) => {
+            if (name === 'message-id') return '12345678901234567';
+            if (name === 'reason') return null;
+            return null;
+          }),
+        },
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        followUp: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+        deleteReply: jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
+
+      await execute(mockInteraction as any);
+
+      expect(mockDiscordFormatter.formatRequestNoteSuccessV2).toHaveBeenCalledWith(
+        '12345678901234567',
+        'user456',
+        undefined,
+        'guild789',
+        undefined,
+        'note:request'
+      );
+    });
+
     it('should create note request with reason', async () => {
       mockRequestNoteService.execute.mockResolvedValue(
         createSuccessResult({ requestId: 'req123' })
@@ -233,7 +290,7 @@ describe('note-request command', () => {
       await execute(mockInteraction as any);
 
       expect(mockGuildConfigService.get).toHaveBeenCalledWith('guild789', ConfigKey.REQUEST_NOTE_EPHEMERAL);
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
     });
 
     it('should work without guildId', async () => {

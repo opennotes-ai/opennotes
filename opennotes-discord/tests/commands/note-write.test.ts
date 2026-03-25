@@ -207,9 +207,58 @@ describe('note-write command', () => {
         mockNote,
         '12345678901234567',
         undefined,
-        undefined
+        undefined,
+        'note:write'
       );
       expect(mockInteraction.editReply).toHaveBeenCalled();
+    });
+
+    it('should pass navContext to formatter for contextual nav', async () => {
+      const mockNote = {
+        id: '123',
+        messageId: '12345678901234567',
+        authorId: 'user789',
+        content: 'Test note content',
+        createdAt: Date.now(),
+        helpfulCount: 0,
+        notHelpfulCount: 0,
+      };
+
+      mockWriteNoteService.execute.mockResolvedValue({
+        success: true,
+        data: mockNote,
+      });
+
+      mockDiscordFormatter.formatWriteNoteSuccessV2.mockReturnValue({
+        components: [{ type: 17, components: [] }],
+        flags: 1 << 15,
+      });
+
+      const mockInteraction = {
+        customId: 'note-write:12345678901234567',
+        user: {
+          id: 'user789',
+          username: 'testuser',
+          displayName: 'Test User',
+          globalName: 'Test User',
+          displayAvatarURL: jest.fn(() => 'https://example.com/avatar.png'),
+        },
+        guildId: null,
+        channelId: null,
+        fields: {
+          getTextInputValue: jest.fn<() => string>().mockReturnValue('Test note content'),
+        },
+        deferReply: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        followUp: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deleteReply: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      };
+
+      await handleModalSubmit(mockInteraction as any);
+
+      const formatCall = mockDiscordFormatter.formatWriteNoteSuccessV2.mock.calls[0];
+      expect(formatCall[formatCall.length - 1]).toBe('note:write');
     });
 
     it('should handle creation errors gracefully', async () => {

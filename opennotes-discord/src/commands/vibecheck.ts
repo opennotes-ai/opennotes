@@ -27,6 +27,7 @@ import { extractUserContext } from '../lib/user-context.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { serviceProvider } from '../services/index.js';
 import { ConfigKey } from '../lib/config-schema.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 interface VibecheckPaginationState {
   scanId: string;
@@ -37,7 +38,7 @@ interface VibecheckPaginationState {
   warningMessage?: string;
 }
 
-const PAGINATION_STATE_TTL = 300;
+const PAGINATION_STATE_TTL = 900;
 
 export const VIBECHECK_COOLDOWN_MS = 1 * 60 * 1000;
 
@@ -47,20 +48,6 @@ const EXPLANATION_CACHE_TTL = 28800;
 
 export function getExplanationsCacheKey(scanId: string): string {
   return `vibecheck:explanations:${scanId}`;
-}
-
-function createListRequestsButton(): ButtonBuilder {
-  return new ButtonBuilder()
-    .setCustomId('request_reply:list_requests')
-    .setLabel('List Requests')
-    .setStyle(ButtonStyle.Primary);
-}
-
-function createListNotesButton(): ButtonBuilder {
-  return new ButtonBuilder()
-    .setCustomId('request_reply:list_notes')
-    .setLabel('List Notes')
-    .setStyle(ButtonStyle.Secondary);
 }
 
 async function fetchExplanations(
@@ -445,6 +432,8 @@ async function displayFlaggedResults(
     components.push(paginatedResult.actionButtons);
   }
 
+  components.push(buildContextualNav('vibecheck:scan'));
+
   await interaction.editReply({
     content: fullContent,
     components,
@@ -455,7 +444,7 @@ async function displayFlaggedResults(
   const collector = reply.createMessageComponentCollector({
     componentType: ComponentType.Button,
     time: 300000,
-    filter: (i) => i.user.id === originalUserId,
+    filter: (i) => i.user.id === originalUserId && !i.customId.startsWith('nav:'),
   });
 
   collector.on('collect', (buttonInteraction: ButtonInteraction) => {
@@ -524,6 +513,8 @@ async function handleVibecheckButton(
     if (paginatedResult.actionButtons) {
       components.push(paginatedResult.actionButtons);
     }
+
+    components.push(buildContextualNav('vibecheck:scan'));
 
     await buttonInteraction.update({
       content: fullContent,
@@ -605,17 +596,7 @@ async function showAiGenerationPrompt(
         );
         const createdCount = result.data.attributes.created_count;
 
-        const buttons: ButtonBuilder[] = [];
-        if (createdCount > 0) {
-          buttons.push(createListRequestsButton());
-          if (generateAiNotes) {
-            buttons.push(createListNotesButton());
-          }
-        }
-
-        const components = buttons.length > 0
-          ? [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)]
-          : [];
+        const components: ActionRowBuilder<ButtonBuilder>[] = [buildContextualNav('vibecheck:create-requests')];
 
         await aiButtonInteraction.update({
           content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}` +
@@ -740,6 +721,8 @@ async function handleStatusSubcommand(
       components.push(paginationRow);
     }
 
+    components.push(buildContextualNav('vibecheck:status'));
+
     await interaction.editReply({
       content: fullContent,
       components,
@@ -751,7 +734,7 @@ async function handleStatusSubcommand(
       const collector = reply.createMessageComponentCollector({
         componentType: ComponentType.Button,
         time: 300000,
-        filter: (i) => i.user.id === originalUserId,
+        filter: (i) => i.user.id === originalUserId && !i.customId.startsWith('nav:'),
       });
 
       collector.on('collect', (buttonInteraction: ButtonInteraction) => {
@@ -840,6 +823,8 @@ async function handleStatusPaginationButton(
     components.push(paginationRow);
   }
 
+  components.push(buildContextualNav('vibecheck:status'));
+
   await buttonInteraction.update({
     content: fullContent,
     components,
@@ -892,9 +877,7 @@ async function handleCreateRequestsSubcommand(
 
     const createdCount = result.data.attributes.created_count;
 
-    const components = createdCount > 0
-      ? [new ActionRowBuilder<ButtonBuilder>().addComponents(createListRequestsButton())]
-      : [];
+    const components: ActionRowBuilder<ButtonBuilder>[] = [buildContextualNav('vibecheck:create-requests')];
 
     await interaction.editReply({
       content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}.`,

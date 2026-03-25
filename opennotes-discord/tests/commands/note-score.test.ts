@@ -134,6 +134,46 @@ describe('note-score command', () => {
         })
       );
     });
+
+    it('should include contextual nav row with Menu and List Notes buttons', async () => {
+      const mockScoreResponse = createMockNoteScoreJSONAPIResponse({
+        noteId: TEST_NOTE_UUID,
+        score: TEST_SCORE_ABOVE_THRESHOLD,
+        confidence: 'standard',
+        tier: 4,
+        ratingCount: 15,
+      });
+
+      mockScoringService.getNoteScore.mockResolvedValue(
+        createSuccessResult(mockScoreResponse)
+      );
+
+      mockDiscordFormatter.formatNoteScoreV2.mockReturnValue({
+        components: [{ type: 17, components: [] }],
+        flags: 1 << 15,
+      });
+
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        options: {
+          getSubcommand: jest.fn<() => string>().mockReturnValue('score'),
+          getString: jest.fn<() => string>().mockReturnValue(TEST_NOTE_UUID),
+        },
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        followUp: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+        deleteReply: jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
+
+      await execute(mockInteraction as any);
+
+      expect(mockDiscordFormatter.formatNoteScoreV2).toHaveBeenCalledWith(
+        expect.anything(),
+        'note:score'
+      );
+    });
   });
 
   describe('error handling', () => {

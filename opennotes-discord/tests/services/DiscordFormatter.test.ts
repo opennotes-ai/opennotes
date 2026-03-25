@@ -1,7 +1,8 @@
+import { jest } from '@jest/globals';
 import { DiscordFormatter } from '../../src/services/DiscordFormatter.js';
 import { cache } from '../../src/cache.js';
 import { ErrorCode, ServiceResult, ListRequestsResult, StatusResult } from '../../src/services/types.js';
-import type { TopNotesJSONAPIResponse, ScoringStatusJSONAPIResponse, ScoreConfidence, NoteScoreAttributes, NoteScoreJSONAPIResponse } from '../../src/services/ScoringService.js';
+import type { ScoringStatusJSONAPIResponse, ScoreConfidence, NoteScoreAttributes, NoteScoreJSONAPIResponse } from '../../src/services/ScoringService.js';
 import { Colors, ButtonStyle, MessageFlags, type APIButtonComponentWithCustomId } from 'discord.js';
 import type { RequestItem } from '../../src/lib/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
@@ -634,128 +635,6 @@ describe('DiscordFormatter', () => {
     });
   });
 
-  describe('formatTopNotesForQueueV2', () => {
-    const mockTopNotesResponse: TopNotesJSONAPIResponse = {
-      data: [
-        {
-          type: 'note_score',
-          id: '123',
-          attributes: {
-            score: TEST_SCORE_ABOVE_THRESHOLD,
-            confidence: 'standard',
-            algorithm: 'MFCoreScorer',
-            rating_count: 15,
-            tier: 2,
-            tier_name: 'Tier 2',
-            calculated_at: '2025-10-28T12:00:00Z',
-          },
-        },
-        {
-          type: 'note_score',
-          id: '456',
-          attributes: {
-            score: 0.72,
-            confidence: 'standard',
-            algorithm: 'MFCoreScorer',
-            rating_count: 12,
-            tier: 2,
-            tier_name: 'Tier 2',
-            calculated_at: '2025-10-28T12:00:00Z',
-          },
-        },
-      ],
-      meta: {
-        total_count: 50,
-        current_tier: 2,
-      },
-      jsonapi: { version: '1.1' },
-    };
-
-    it('should return container with v2 message flags', () => {
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(mockTopNotesResponse, 1, 10);
-
-      expect(formatted.flags & MessageFlags.IsComponentsV2).toBeTruthy();
-    });
-
-    it('should return components array with container', () => {
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(mockTopNotesResponse, 1, 10);
-
-      expect(formatted.components).toHaveLength(1);
-      expect(formatted.components[0]).toHaveProperty('type', 17);
-    });
-
-    it('should include ranking indicators for each note', () => {
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(mockTopNotesResponse, 1, 10);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toMatch(/1\./);
-      expect(allContent).toMatch(/2\./);
-    });
-
-    it('should include score color indicators', () => {
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(mockTopNotesResponse, 1, 10);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toContain('\u{1F7E2}');
-    });
-
-    it('should include pagination info in footer', () => {
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(mockTopNotesResponse, 1, 10);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toContain('Page 1');
-      expect(allContent).toContain('50');
-    });
-
-    it('should handle empty notes list', () => {
-      const emptyResponse: TopNotesJSONAPIResponse = {
-        data: [],
-        meta: {
-          total_count: 0,
-          current_tier: 0,
-        },
-        jsonapi: { version: '1.1' },
-      };
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(emptyResponse, 1, 10);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toContain('No notes found');
-    });
-
-    it('should include filters in content when provided', () => {
-      const responseWithFilters: TopNotesJSONAPIResponse = {
-        ...mockTopNotesResponse,
-        meta: {
-          ...mockTopNotesResponse.meta,
-          filters_applied: {
-            min_confidence: 'standard',
-            tier: 2,
-          },
-        },
-      };
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(responseWithFilters, 1, 10);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toContain('standard');
-      expect(allContent).toContain('2');
-    });
-  });
-
   describe('formatListRequestsSuccessV2', () => {
     const createMockListRequestsResult = (requestCount: number = 2): import('../../src/services/types.js').ListRequestsResult => ({
       requests: Array.from({ length: requestCount }, (_, i) => ({
@@ -868,7 +747,7 @@ describe('DiscordFormatter', () => {
 
       const container = formatted.container.toJSON();
       const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
-      expect(actionRowComponents.length).toBeGreaterThan(0);
+      expect(actionRowComponents).toHaveLength(2);
       expect(formatted.actionRows).toHaveLength(0);
     });
 
@@ -881,6 +760,28 @@ describe('DiscordFormatter', () => {
       const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
       expect(actionRowComponents).toHaveLength(0);
       expect(formatted.actionRows).toHaveLength(0);
+    });
+
+    it('should show status text for COMPLETED requests', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'COMPLETED';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c: any) => c.type === 10);
+      const allContent = textComponents.map((c: any) => c.content).join(' ');
+      expect(allContent).toContain('Notes have been written for this request');
+    });
+
+    it('should show status text for IN_PROGRESS requests', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'IN_PROGRESS';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c: any) => c.type === 10);
+      const allContent = textComponents.map((c: any) => c.content).join(' ');
+      expect(allContent).toContain('A note is being written for this request');
     });
 
     it('should include content preview when available', async () => {
@@ -896,34 +797,52 @@ describe('DiscordFormatter', () => {
     });
 
     it('should truncate oversized request content and add a View Full affordance', async () => {
-      const result = createMockListRequestsResult(1);
-      const longContent = `${'A'.repeat(4500)}ENDMARKER`;
-      result.requests[0].content = longContent;
-      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+      const setSpy = jest.spyOn(cache, 'set').mockResolvedValue(true);
+      try {
+        const result = createMockListRequestsResult(1);
+        const longContent = `${'A'.repeat(4500)}ENDMARKER`;
+        result.requests[0].content = longContent;
+        const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
 
-      const container = formatted.container.toJSON();
-      const containerJson = JSON.stringify(container);
+        const container = formatted.container.toJSON();
+        const containerJson = JSON.stringify(container);
 
-      expect(containerJson).toContain('View Full');
-      expect(containerJson).not.toContain('ENDMARKER');
+        expect(containerJson).toContain('View Full');
+        expect(containerJson).not.toContain('ENDMARKER');
+      } finally {
+        setSpy.mockRestore();
+      }
     });
 
     it('should cache canonical request text for View Full expansions', async () => {
-      const result = createMockListRequestsResult(1);
-      const canonicalContent = 'Line 1\n\n```ts\nconst x = 1;\n```\nLine 2';
-      result.requests[0].content = `${canonicalContent}\n${'Q'.repeat(4300)}`;
+      const storedValues = new Map<string, unknown>();
+      const setSpy = jest.spyOn(cache, 'set').mockImplementation(async (key: string, value: unknown) => {
+        storedValues.set(key, value);
+        return true;
+      });
+      const getSpy = jest.spyOn(cache, 'get').mockImplementation(async <T>(key: string) => {
+        return storedValues.get(key) as T;
+      });
+      try {
+        const result = createMockListRequestsResult(1);
+        const canonicalContent = 'Line 1\n\n```ts\nconst x = 1;\n```\nLine 2';
+        result.requests[0].content = `${canonicalContent}\n${'Q'.repeat(4300)}`;
 
-      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
-      const container = formatted.container.toJSON();
-      const containerJson = JSON.stringify(container);
-      const customId = containerJson.match(/"custom_id":"(view_full:[^"]+)"/)?.[1];
+        const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+        const container = formatted.container.toJSON();
+        const containerJson = JSON.stringify(container);
+        const customId = containerJson.match(/"custom_id":"(view_full:[^"]+)"/)?.[1];
 
-      expect(customId).toBeTruthy();
+        expect(customId).toBeTruthy();
 
-      const cachedContent = await cache.get<string>(customId!);
-      expect(cachedContent).toContain(canonicalContent);
-      expect(cachedContent).toContain('```ts');
-      expect(cachedContent).toContain('Line 1\n\n```ts');
+        const cachedContent = await cache.get<string>(customId!);
+        expect(cachedContent).toContain(canonicalContent);
+        expect(cachedContent).toContain('```ts');
+        expect(cachedContent).toContain('Line 1\n\n```ts');
+      } finally {
+        setSpy.mockRestore();
+        getSpy.mockRestore();
+      }
     });
 
     it('should include media gallery for image URLs', async () => {
@@ -945,10 +864,10 @@ describe('DiscordFormatter', () => {
       const container = formatted.container.toJSON();
       const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
 
-      expect(actionRowComponents.length).toBeGreaterThan(0);
+      expect(actionRowComponents).toHaveLength(2);
     });
 
-    it('should place action row immediately after its associated request entry', async () => {
+    it('should place action rows immediately after its associated request entry', async () => {
       const result = createMockListRequestsResult(2);
       result.requests[0].status = 'PENDING';
       result.requests[1].status = 'PENDING';
@@ -969,15 +888,15 @@ describe('DiscordFormatter', () => {
         }
       });
 
-      expect(actionRowIndices.length).toBe(2);
-      actionRowIndices.forEach((arIdx, i) => {
+      expect(actionRowIndices.length).toBe(4);
+      for (let i = 0; i < requestTextIndices.length; i++) {
         const requestIdx = requestTextIndices[i];
-        expect(arIdx).toBeGreaterThan(requestIdx);
         const nextRequestIdx = requestTextIndices[i + 1];
-        if (nextRequestIdx !== undefined) {
-          expect(arIdx).toBeLessThan(nextRequestIdx);
-        }
-      });
+        const rowsForRequest = actionRowIndices.filter(
+          (arIdx) => arIdx > requestIdx && (nextRequestIdx === undefined || arIdx < nextRequestIdx)
+        );
+        expect(rowsForRequest).toHaveLength(2);
+      }
     });
 
     it('should not return separate actionRows array when rows are embedded', async () => {
@@ -986,6 +905,43 @@ describe('DiscordFormatter', () => {
       const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
 
       expect(formatted.actionRows).toHaveLength(0);
+    });
+
+    it('should include TextDisplay labels before button rows for pending requests', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'PENDING';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c: any) => c.type === 10);
+      const allContent = textComponents.map((c: any) => c.content).join(' ');
+      expect(allContent).toContain('Write a note yourself');
+      expect(allContent).toContain('Let AI write the note');
+    });
+
+    it('should use sparkles emoji and AI label on AI button', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'PENDING';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const actionRows = container.components.filter((c: any) => c.type === 1);
+      const aiRow = actionRows[1] as any;
+      const aiButton = aiRow.components[0];
+      expect(aiButton.label).toBe('AI');
+      expect(aiButton.emoji).toEqual({ name: '✨' });
+    });
+
+    it('should split write buttons and AI button into separate action rows', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'PENDING';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const actionRows = container.components.filter((c: any) => c.type === 1);
+      expect(actionRows).toHaveLength(2);
+      expect((actionRows[0] as any).components).toHaveLength(2);
+      expect((actionRows[1] as any).components).toHaveLength(1);
     });
   });
 
@@ -1170,61 +1126,5 @@ describe('DiscordFormatter', () => {
       expect(allContent).not.toContain('Reason');
     });
 
-    it('should include action row with buttons', () => {
-      const formatted = DiscordFormatter.formatRequestNoteSuccessV2(
-        'msg_123',
-        'user_456',
-        undefined,
-        'guild_789',
-        'channel_012'
-      );
-
-      expect(formatted.actionRow).toBeDefined();
-      const actionRowJson = formatted.actionRow.toJSON();
-      expect(actionRowJson.type).toBe(1);
-      expect(actionRowJson.components).toHaveLength(2);
-
-      const containerJson = formatted.container.toJSON();
-      const actionRowsInContainer = containerJson.components.filter(c => c.type === 1);
-      expect(actionRowsInContainer).toHaveLength(1);
-    });
-
-    it('should include "See other requests" button with Secondary style', () => {
-      const formatted = DiscordFormatter.formatRequestNoteSuccessV2(
-        'msg_123',
-        'user_456',
-        undefined,
-        'guild_789',
-        'channel_012'
-      );
-
-      const actionRowJson = formatted.actionRow.toJSON();
-      const seeRequestsButton = actionRowJson.components.find(
-        (c) => 'custom_id' in c && c.custom_id === 'request_reply:list_requests'
-      ) as { custom_id: string; label: string; style: number } | undefined;
-
-      expect(seeRequestsButton).toBeDefined();
-      expect(seeRequestsButton!.label).toBe('See other requests');
-      expect(seeRequestsButton!.style).toBe(2);
-    });
-
-    it('should include "Rate some notes" button with Primary style', () => {
-      const formatted = DiscordFormatter.formatRequestNoteSuccessV2(
-        'msg_123',
-        'user_456',
-        undefined,
-        'guild_789',
-        'channel_012'
-      );
-
-      const actionRowJson = formatted.actionRow.toJSON();
-      const rateNotesButton = actionRowJson.components.find(
-        (c) => 'custom_id' in c && c.custom_id === 'request_reply:list_notes'
-      ) as { custom_id: string; label: string; style: number } | undefined;
-
-      expect(rateNotesButton).toBeDefined();
-      expect(rateNotesButton!.label).toBe('Rate some notes');
-      expect(rateNotesButton!.style).toBe(1);
-    });
   });
 });

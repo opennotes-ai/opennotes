@@ -32,6 +32,7 @@ import * as aboutOpenNotesCommand from './commands/about-opennotes.js';
 import * as statusBotCommand from './commands/status-bot.js';
 import * as vibecheckCommand from './commands/vibecheck.js';
 import * as clearCommand from './commands/clear.js';
+import * as openNotesCommand from './commands/open-notes.js';
 
 // Context menu command imports
 import * as noteRequestContextCommand from './commands/note-request-context.js';
@@ -42,6 +43,7 @@ import {
   isVibecheckPromptInteraction,
   handleVibecheckPromptInteraction,
 } from './handlers/vibecheck-prompt-handler.js';
+import { handleNavInteraction } from './handlers/navigation-handler.js';
 import { NotePublisherService } from './services/NotePublisherService.js';
 import { NoteContextService } from './services/NoteContextService.js';
 import { NotePublisherConfigService } from './services/NotePublisherConfigService.js';
@@ -112,6 +114,7 @@ export class Bot {
       statusBotCommand,
       vibecheckCommand,
       clearCommand,
+      openNotesCommand,
       // Context menu commands
       noteRequestContextCommand,
     ];
@@ -243,13 +246,30 @@ export class Bot {
         }
       }
     } else if (interaction.isButton()) {
-      if (interaction.customId.startsWith('request_reply:')) {
+      if (interaction.customId.startsWith('nav:')) {
         try {
-          await listCommand.handleRequestReplyButton(interaction);
+          await handleNavInteraction(interaction);
         } catch (error) {
-          logger.error('Request reply button failed', { error });
+          logger.error('Navigation button failed', { error });
+          try {
+            if (interaction.deferred || interaction.replied) {
+              await interaction.followUp({
+                content: 'Navigation failed. Please try again.',
+                flags: MessageFlags.Ephemeral,
+              });
+            } else {
+              await interaction.reply({
+                content: 'Navigation failed. Please try again.',
+                flags: MessageFlags.Ephemeral,
+              });
+            }
+          } catch {
+          }
         }
-      } else if (
+        return;
+      }
+
+      if (
         interaction.customId.startsWith('queue:previous:') ||
         interaction.customId.startsWith('queue:next:')
       ) {
@@ -299,14 +319,6 @@ export class Bot {
           await handleVibecheckPromptInteraction(interaction);
         } catch (error) {
           logger.error('Vibecheck prompt button failed', { error });
-        }
-      }
-    } else if (interaction.isStringSelectMenu()) {
-      if (isVibecheckPromptInteraction(interaction.customId)) {
-        try {
-          await handleVibecheckPromptInteraction(interaction);
-        } catch (error) {
-          logger.error('Vibecheck prompt select menu failed', { error });
         }
       }
     } else if (interaction.isModalSubmit()) {

@@ -207,6 +207,24 @@ jest.unstable_mockModule('../../src/lib/text-paginator.js', () => ({
   TextPaginator: MockTextPaginator,
 }));
 
+const mockBuildContextualNav = jest.fn<(context: string) => any>().mockImplementation((context: string) => ({
+  type: 1,
+  components: [
+    { type: 2, custom_id: 'nav:menu', label: 'Menu', style: 2 },
+  ],
+  toJSON: () => ({
+    type: 1,
+    components: [
+      { type: 2, custom_id: 'nav:menu', label: 'Menu', style: 2 },
+    ],
+  }),
+  _navContext: context,
+}));
+
+jest.unstable_mockModule('../../src/lib/navigation-components.js', () => ({
+  buildContextualNav: mockBuildContextualNav,
+}));
+
 const MockBotChannelServiceConstructor = jest.fn().mockImplementation(() => mockBotChannelService);
 
 jest.unstable_mockModule('../../src/services/BotChannelService.js', () => ({
@@ -897,9 +915,12 @@ describe('vibecheck command', () => {
       const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
 
       expect(lastEditCall.components).toBeDefined();
-      expect(lastEditCall.components.length).toBeGreaterThan(0);
+      expect(lastEditCall.components.length).toBeGreaterThan(1);
 
-      const buttonRow = lastEditCall.components[lastEditCall.components.length - 1];
+      const buttonRow = lastEditCall.components.find((c: any) => {
+        const comps = c.components || c.toJSON?.()?.components;
+        return comps?.some((b: any) => (b.label || b.data?.label) === 'Create Note Requests');
+      });
       const buttons = buttonRow.components || buttonRow.toJSON?.()?.components;
 
       expect(buttons.length).toBe(2);
@@ -2840,6 +2861,165 @@ describe('vibecheck command', () => {
       const editContents = interaction.editReply.mock.calls.map(([arg]: any[]) => String(arg.content ?? ''));
       expect(editContents.some((content: string) => content.includes('Scan complete! No flagged content found.'))).toBe(true);
       expect(editContents.at(-1)).not.toContain('taking longer than we can keep updated');
+    });
+  });
+
+  describe('contextual navigation', () => {
+    it('should include vibecheck:scan nav row in scan results with flagged messages', async () => {
+      const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
+      const mockCollector = {
+        on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
+          collectHandlers.set(event, handler);
+          return mockCollector;
+        }),
+        stop: jest.fn(),
+      };
+
+      const mockFetchReply = jest.fn<() => Promise<any>>().mockResolvedValue({
+        createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
+      });
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: {
+          permissions: {
+            has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+          },
+        },
+        guildId: 'guild789',
+        guild: {
+          id: 'guild789',
+          name: 'Test Guild',
+          channels: { cache: new Map() },
+        },
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        fetchReply: mockFetchReply,
+      };
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Misinformation content', 0.85, 'False claim'),
+      ];
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-nav-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages,
+      });
+
+      mockFormatScanStatusPaginated.mockReturnValueOnce({
+        pages: { pages: ['Flagged content'], totalPages: 1 },
+        header: '**Scan Complete**\n',
+        actionButtons: undefined,
+        scanId: 'scan-nav-123',
+      });
+
+      await execute(mockInteraction as any);
+
+      expect(mockBuildContextualNav).toHaveBeenCalledWith('vibecheck:scan');
+    });
+
+    it('should include vibecheck:status nav row in status response', async () => {
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: {
+          permissions: {
+            has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+          },
+        },
+        guildId: 'guild789',
+        guild: {
+          id: 'guild789',
+          name: 'Test Guild',
+          channels: { cache: new Map() },
+        },
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('status'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      expect(mockBuildContextualNav).toHaveBeenCalledWith('vibecheck:status');
+    });
+
+    it('should include vibecheck:create-requests nav row in create-requests response', async () => {
+      const mockInteraction = {
+        user: {
+          id: 'admin123',
+          username: 'adminuser',
+          displayName: 'Admin User',
+          globalName: 'Admin User',
+          displayAvatarURL: jest.fn(() => 'https://cdn.test/avatar.png'),
+        },
+        member: {
+          permissions: {
+            has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+          },
+        },
+        guildId: 'guild789',
+        channelId: 'channel-555',
+        guild: {
+          id: 'guild789',
+          name: 'Test Guild',
+          channels: { cache: new Map() },
+        },
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getString: jest.fn<(name: string, required: boolean) => string>().mockReturnValue('scan-123'),
+          getSubcommand: jest.fn().mockReturnValue('create-requests'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Misinformation content', 0.85, 'False claim'),
+      ];
+
+      mockApiClient.getBulkScanResults.mockResolvedValueOnce({
+        data: {
+          type: 'bulk-scans',
+          id: 'scan-123',
+          attributes: {
+            status: 'completed',
+            initiated_at: new Date().toISOString(),
+            messages_scanned: 100,
+            messages_flagged: 1,
+            community_server_id: 'community-server-uuid-123',
+          },
+        },
+        included: flaggedMessages,
+        jsonapi: { version: '1.1' },
+      });
+
+      mockApiClient.createNoteRequestsFromScan.mockResolvedValueOnce(
+        createNoteRequestsResultResponse(1)
+      );
+
+      await execute(mockInteraction as any);
+
+      expect(mockBuildContextualNav).toHaveBeenCalledWith('vibecheck:create-requests');
     });
   });
 });

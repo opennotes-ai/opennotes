@@ -63,30 +63,6 @@ describe('Scoring Commands Integration Tests', () => {
       expect(scoreSubcommand.options[0].required).toBe(true);
     });
 
-    it('list command should have top-notes subcommand with optional filters', () => {
-      const listCommand = bot.commands.get('list');
-      const commandData = listCommand.data.toJSON();
-
-      expect(commandData.options).toBeDefined();
-
-      const topNotesSubcommand = commandData.options.find((opt: any) => opt.name === 'top-notes');
-      expect(topNotesSubcommand).toBeDefined();
-      expect(topNotesSubcommand.description).toBeTruthy();
-      expect(topNotesSubcommand.options.length).toBeGreaterThan(0);
-
-      const limitOption = topNotesSubcommand.options.find((opt: any) => opt.name === 'limit');
-      expect(limitOption).toBeDefined();
-      expect(limitOption.required).toBe(false);
-
-      const confidenceOption = topNotesSubcommand.options.find((opt: any) => opt.name === 'confidence');
-      expect(confidenceOption).toBeDefined();
-      expect(confidenceOption.required).toBe(false);
-      expect(confidenceOption.choices).toHaveLength(3);
-
-      const tierOption = topNotesSubcommand.options.find((opt: any) => opt.name === 'tier');
-      expect(tierOption).toBeDefined();
-      expect(tierOption.required).toBe(false);
-    });
   });
 
   describe('Score Display Integration', () => {
@@ -130,7 +106,6 @@ describe('Scoring Service Integration', () => {
       const { DiscordFormatter } = await import('../../src/services/DiscordFormatter.js');
 
       expect(typeof DiscordFormatter.formatNoteScoreV2).toBe('function');
-      expect(typeof DiscordFormatter.formatTopNotesForQueueV2).toBe('function');
       expect(typeof DiscordFormatter.formatScoringStatusV2).toBe('function');
       expect(typeof DiscordFormatter.getConfidenceEmoji).toBe('function');
       expect(typeof DiscordFormatter.getConfidenceLabel).toBe('function');

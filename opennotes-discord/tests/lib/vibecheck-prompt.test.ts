@@ -27,37 +27,61 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
 
 const {
   sendVibeCheckPrompt,
-  createDaysSelectMenu,
+  createDaysButtons,
   createPromptButtons,
   VIBECHECK_PROMPT_CUSTOM_IDS,
 } = await import('../../src/lib/vibecheck-prompt.js');
+
+function extractTextFromContainer(containerJson: any): string {
+  if (!containerJson || !containerJson.components) return '';
+  return containerJson.components
+    .filter((c: any) => c.type === 10)
+    .map((c: any) => c.content || '')
+    .join('\n');
+}
 
 describe('vibecheck-prompt', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('createDaysSelectMenu', () => {
-    it('should create a select menu with all days options', () => {
-      const menu = createDaysSelectMenu();
-      const json = menu.toJSON();
+  describe('createDaysButtons', () => {
+    it('should create buttons for all days options', () => {
+      const row = createDaysButtons();
+      const json = row.toJSON();
 
-      expect(json.type).toBe(ComponentType.StringSelect);
-      expect(json.custom_id).toBe(VIBECHECK_PROMPT_CUSTOM_IDS.DAYS_SELECT);
-      expect(json.options).toHaveLength(VIBE_CHECK_DAYS_OPTIONS.length);
+      expect(json.type).toBe(ComponentType.ActionRow);
+      expect(json.components).toHaveLength(VIBE_CHECK_DAYS_OPTIONS.length);
 
       VIBE_CHECK_DAYS_OPTIONS.forEach((option, index) => {
-        expect(json.options[index].label).toBe(option.name);
-        expect(json.options[index].value).toBe(option.value.toString());
+        const button = json.components[index] as APIButtonComponentWithCustomId;
+        expect(button.label).toBe(option.name);
+        expect(button.custom_id).toBe(`${VIBECHECK_PROMPT_CUSTOM_IDS.DAYS_PREFIX}${option.value}`);
+        expect(button.style).toBe(ButtonStyle.Secondary);
       });
     });
 
-    it('should have a placeholder text', () => {
-      const menu = createDaysSelectMenu();
-      const json = menu.toJSON();
+    it('should highlight the selected day button', () => {
+      const row = createDaysButtons(7);
+      const json = row.toJSON();
 
-      expect(json.placeholder).toBeDefined();
-      expect(json.placeholder).toContain('days');
+      VIBE_CHECK_DAYS_OPTIONS.forEach((option, index) => {
+        const button = json.components[index] as APIButtonComponentWithCustomId;
+        if (option.value === 7) {
+          expect(button.style).toBe(ButtonStyle.Primary);
+        } else {
+          expect(button.style).toBe(ButtonStyle.Secondary);
+        }
+      });
+    });
+
+    it('should use Secondary style for all when no selection', () => {
+      const row = createDaysButtons(null);
+      const json = row.toJSON();
+
+      json.components.forEach((button: any) => {
+        expect(button.style).toBe(ButtonStyle.Secondary);
+      });
     });
   });
 
@@ -150,7 +174,7 @@ describe('vibecheck-prompt', () => {
       };
     };
 
-    it('should send message to bot channel (not DM) with days select and buttons', async () => {
+    it('should send v2 container to bot channel with days buttons and prompt buttons', async () => {
       const { mockAdmin, mockBotChannel } = createMockSetup();
 
       await sendVibeCheckPrompt({
@@ -163,12 +187,15 @@ describe('vibecheck-prompt', () => {
       expect(mockBotChannel.send).toHaveBeenCalledTimes(1);
 
       const sendCall = mockBotChannel.send.mock.calls[0][0];
-      expect(sendCall.content).toBeDefined();
-      expect(sendCall.content).toContain('Vibe Check');
-      expect(sendCall.components).toHaveLength(2);
+      expect(sendCall.components).toBeDefined();
+      expect(sendCall.flags).toBeDefined();
+      const container = sendCall.components[0];
+      expect(container.type).toBe(17);
+      const text = extractTextFromContainer(container);
+      expect(text).toContain('Vibe Check');
     });
 
-    it('should include @mention of the admin in the message', async () => {
+    it('should include @mention of the admin in the container text', async () => {
       const { mockAdmin, mockBotChannel } = createMockSetup();
 
       await sendVibeCheckPrompt({
@@ -178,7 +205,9 @@ describe('vibecheck-prompt', () => {
       });
 
       const sendCall = mockBotChannel.send.mock.calls[0][0];
-      expect(sendCall.content).toContain('<@admin-123>');
+      const container = sendCall.components[0];
+      const text = extractTextFromContainer(container);
+      expect(text).toContain('<@admin-123>');
     });
 
     it('should include introductory text explaining the vibe check feature', async () => {
@@ -191,8 +220,10 @@ describe('vibecheck-prompt', () => {
       });
 
       const sendCall = mockBotChannel.send.mock.calls[0][0];
-      expect(sendCall.content.toLowerCase()).toContain('scan');
-      expect(sendCall.content.toLowerCase()).toContain('misinformation');
+      const container = sendCall.components[0];
+      const text = extractTextFromContainer(container);
+      expect(text.toLowerCase()).toContain('scan');
+      expect(text.toLowerCase()).toContain('misinformation');
     });
 
     it('should store prompt state in Redis after sending message', async () => {
@@ -234,7 +265,7 @@ describe('vibecheck-prompt', () => {
       );
     });
 
-    it('should edit message to show error when state storage fails', async () => {
+    it('should edit message to show error container when state storage fails', async () => {
       const { mockAdmin, mockBotChannel, mockPromptMessage } = createMockSetup();
       mockSetVibecheckPromptState.mockRejectedValue(new Error('Redis error'));
 
@@ -251,10 +282,13 @@ describe('vibecheck-prompt', () => {
           error: 'Redis error',
         })
       );
-      expect(mockPromptMessage.edit).toHaveBeenCalledWith({
-        content: expect.stringContaining('Failed to set up vibe check prompt'),
-        components: [],
-      });
+      expect(mockPromptMessage.edit).toHaveBeenCalled();
+      const editCall = mockPromptMessage.edit.mock.calls[0][0];
+      expect(editCall.components).toBeDefined();
+      expect(editCall.flags).toBeDefined();
+      const container = editCall.components[0];
+      const text = extractTextFromContainer(container);
+      expect(text).toContain('Failed to set up vibe check prompt');
     });
 
     it('should handle message edit failure after state storage failure gracefully', async () => {
