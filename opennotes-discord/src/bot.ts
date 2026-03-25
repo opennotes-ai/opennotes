@@ -269,13 +269,7 @@ export class Bot {
         return;
       }
 
-      if (interaction.customId.startsWith('request_reply:')) {
-        try {
-          await listCommand.handleRequestReplyButton(interaction);
-        } catch (error) {
-          logger.error('Request reply button failed', { error });
-        }
-      } else if (
+      if (
         interaction.customId.startsWith('queue:previous:') ||
         interaction.customId.startsWith('queue:next:')
       ) {

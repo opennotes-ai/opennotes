@@ -182,7 +182,6 @@ jest.unstable_mockModule('../../src/lib/discord-utils.js', () => ({
 const {
   execute,
   handlePaginationButton,
-  handleRequestReplyButton,
   handleRequestQueuePageButton,
 } = await import('../../src/commands/list.js');
 
@@ -416,62 +415,6 @@ describe('list command - Navigation button integration', () => {
       const updateArg = interaction.update.mock.calls[0][0];
       const navIds = getNavCustomIds(updateArg.components);
       expect(navIds).toContain('nav:menu');
-    }, 10000);
-  });
-
-  describe('handleRequestReplyButton - list_requests', () => {
-    it('should include nav buttons in request reply list_requests response', async () => {
-      const requestsContainer = new ContainerBuilder();
-      MockDiscordFormatter.formatListRequestsSuccessV2.mockResolvedValue({
-        container: requestsContainer,
-        components: [requestsContainer.toJSON()],
-        flags: MessageFlags.IsComponentsV2,
-        actionRows: [],
-      });
-
-      mockListRequestsService.execute.mockResolvedValue({
-        success: true,
-        data: {
-          requests: [{ id: 'req-1', status: 'PENDING' }],
-          total: 1,
-          page: 1,
-          size: 5,
-        },
-      });
-
-      const interaction = createMockButtonInteraction('request_reply:list_requests');
-      await handleRequestReplyButton(interaction as any);
-
-      expect(interaction.editReply).toHaveBeenCalled();
-      const editReplyArg = interaction.editReply.mock.calls[0][0];
-      const navIds = getNavCustomIds(editReplyArg.components);
-      expect(navIds).toContain('nav:menu');
-      expect(navIds).toContain('nav:list:notes');
-    }, 10000);
-  });
-
-  describe('handleRequestReplyButton - list_notes', () => {
-    it('should include nav buttons in request reply list_notes response', async () => {
-      mockApiClient.listNotesWithStatus.mockResolvedValue({
-        data: [
-          {
-            id: 'note-1',
-            type: 'notes',
-            attributes: { summary: 'Test note', ratings_count: 0 },
-          },
-        ],
-        total: 1,
-      });
-
-      const interaction = createMockButtonInteraction('request_reply:list_notes');
-      await handleRequestReplyButton(interaction as any);
-
-      expect(interaction.editReply).toHaveBeenCalled();
-      const editReplyArg = interaction.editReply.mock.calls[0][0];
-      const navIds = getNavCustomIds(editReplyArg.components);
-      expect(navIds).toContain('nav:menu');
-      expect(navIds).toContain('nav:list:requests');
-      expect(navIds).toContain('nav:note:write');
     }, 10000);
   });
 

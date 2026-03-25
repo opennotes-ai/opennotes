@@ -425,7 +425,6 @@ export class DiscordFormatter {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
     flags: number;
-    actionRow: ActionRowBuilder<ButtonBuilder>;
   } {
     const messageIdDisplay = this.formatMessageIdLink(messageId, guildId, channelId);
 
@@ -438,17 +437,6 @@ export class DiscordFormatter {
       metadataLines.push(`**Reason:** ${reason}`);
     }
 
-    const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId('request_reply:list_requests')
-        .setLabel('See other requests')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('request_reply:list_notes')
-        .setLabel('Rate some notes')
-        .setStyle(ButtonStyle.Primary)
-    );
-
     const container = createContainer(V2_COLORS.HELPFUL)
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent('## Note Request Submitted')
@@ -460,15 +448,12 @@ export class DiscordFormatter {
       .addSeparatorComponents(createDivider())
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent(metadataLines.join('\n'))
-      )
-      .addSeparatorComponents(createSmallSeparator())
-      .addActionRowComponents(actionRow);
+      );
 
     return {
       container,
       components: [container.toJSON()],
       flags: v2MessageFlags(),
-      actionRow,
     };
   }
 
