@@ -76,7 +76,6 @@ describe('navigation-components', () => {
     const expectedContexts = [
       'list:notes',
       'list:requests',
-      'list:top-notes',
       'vibecheck:scan',
       'vibecheck:status',
       'vibecheck:create-requests',
@@ -178,8 +177,8 @@ describe('navigation-components', () => {
   });
 
   describe('HUB_ACTIONS', () => {
-    it('should contain 7 hub actions', () => {
-      expect(HUB_ACTIONS).toHaveLength(7);
+    it('should contain 6 hub actions', () => {
+      expect(HUB_ACTIONS).toHaveLength(6);
     });
 
     it('should have valid NavAction shape for all entries', () => {
@@ -244,7 +243,7 @@ describe('navigation-components', () => {
 
       expect(rows.length).toBe(2);
       expect(rowButtons(rows[0])).toHaveLength(5);
-      expect(rowButtons(rows[1])).toHaveLength(2);
+      expect(rowButtons(rows[1])).toHaveLength(1);
     });
 
     it('should set emoji on hub buttons', () => {

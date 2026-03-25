@@ -60,21 +60,15 @@ const mockListRequestsService = {
   execute: jest.fn<() => Promise<any>>(),
 };
 
-const mockScoringService = {
-  getTopNotes: jest.fn<() => Promise<any>>(),
-};
-
 const mockServiceProvider = {
   getGuildConfigService: jest.fn(() => mockGuildConfigService),
   getListRequestsService: jest.fn(() => mockListRequestsService),
-  getScoringService: jest.fn(() => mockScoringService),
   getWriteNoteService: jest.fn(),
 };
 
 class MockDiscordFormatter {
   static formatListRequestsSuccessV2 = jest.fn<() => Promise<any>>();
   static formatErrorV2 = jest.fn<() => any>();
-  static formatTopNotesForQueueV2 = jest.fn<() => any>();
   static formatWriteNoteSuccessV2 = jest.fn<() => any>();
 }
 
@@ -295,7 +289,6 @@ function setupDefaultMocks() {
 
   mockServiceProvider.getGuildConfigService.mockReturnValue(mockGuildConfigService);
   mockServiceProvider.getListRequestsService.mockReturnValue(mockListRequestsService);
-  mockServiceProvider.getScoringService.mockReturnValue(mockScoringService);
 
   mockGetBotChannelOrRedirect.mockResolvedValue({
     shouldProceed: true,
@@ -387,46 +380,6 @@ describe('list command - Navigation button integration', () => {
       expect(navIds).toContain('nav:menu');
       expect(navIds).toContain('nav:list:notes');
       expect(navIds).toContain('nav:note:write');
-    }, 10000);
-  });
-
-  describe('list top-notes subcommand', () => {
-    it('should include nav buttons with Menu, List Notes, and List Requests in response', async () => {
-      const topNotesContainer = new ContainerBuilder();
-      MockDiscordFormatter.formatTopNotesForQueueV2.mockReturnValue({
-        container: topNotesContainer,
-        components: [topNotesContainer.toJSON()],
-        flags: MessageFlags.IsComponentsV2,
-      });
-
-      mockScoringService.getTopNotes.mockResolvedValue({
-        success: true,
-        data: {
-          data: [
-            {
-              id: 'note-1',
-              type: 'note_scores',
-              attributes: {
-                note_id: 'note-1',
-                score: 0.85,
-                tier: 5,
-                confidence: 'standard',
-              },
-            },
-          ],
-          meta: { total_count: 1 },
-        },
-      });
-
-      const interaction = createMockInteraction('top-notes', 'user-top-1');
-      await execute(interaction as any);
-
-      expect(interaction.editReply).toHaveBeenCalled();
-      const editReplyArg = interaction.editReply.mock.calls[0][0];
-      const navIds = getNavCustomIds(editReplyArg.components);
-      expect(navIds).toContain('nav:menu');
-      expect(navIds).toContain('nav:list:notes');
-      expect(navIds).toContain('nav:list:requests');
     }, 10000);
   });
 

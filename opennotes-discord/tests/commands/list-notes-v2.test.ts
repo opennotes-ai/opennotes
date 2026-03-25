@@ -193,7 +193,7 @@ describe('list notes v2 helper functions', () => {
 
   describe('Navigation buttons for list command responses', () => {
     it('should include Menu button in all nav rows', () => {
-      const contexts = ['list:notes', 'list:requests', 'list:top-notes'];
+      const contexts = ['list:notes', 'list:requests'];
       for (const ctx of contexts) {
         const navRow = buildContextualNav(ctx);
         const json = navRow.toJSON();
@@ -223,24 +223,13 @@ describe('list notes v2 helper functions', () => {
       expect(json.components).toHaveLength(3);
     });
 
-    it('should build list:top-notes nav with List Notes and List Requests buttons', () => {
-      const navRow = buildContextualNav('list:top-notes');
-      const json = navRow.toJSON();
-      const customIds = json.components.map((c: any) => c.custom_id);
-      expect(customIds).toContain('nav:menu');
-      expect(customIds).toContain('nav:list:notes');
-      expect(customIds).toContain('nav:list:requests');
-      expect(json.components).toHaveLength(3);
-    });
-
     it('should have NAV_GRAPH entries for all list contexts', () => {
       expect(NAV_GRAPH['list:notes']).toBeDefined();
       expect(NAV_GRAPH['list:requests']).toBeDefined();
-      expect(NAV_GRAPH['list:top-notes']).toBeDefined();
     });
 
     it('should keep all nav button custom IDs under 100 characters', () => {
-      const contexts = ['list:notes', 'list:requests', 'list:top-notes'];
+      const contexts = ['list:notes', 'list:requests'];
       for (const ctx of contexts) {
         const navRow = buildContextualNav(ctx);
         const json = navRow.toJSON();

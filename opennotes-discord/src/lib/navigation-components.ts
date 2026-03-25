@@ -15,10 +15,6 @@ export const NAV_GRAPH: Record<string, NavAction[]> = {
     { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
     { label: 'Write Note', customId: 'nav:note:write', emoji: '\u270F\uFE0F' },
   ],
-  'list:top-notes': [
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
-    { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
-  ],
   'vibecheck:scan': [
     { label: 'Status', customId: 'nav:vibecheck:status', emoji: '\u{1F4CA}' },
     { label: 'Create Requests', customId: 'nav:vibecheck:create-requests', emoji: '\u{1F4E8}' },
@@ -43,7 +39,6 @@ export const NAV_GRAPH: Record<string, NavAction[]> = {
   ],
   'note:score': [
     { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
-    { label: 'Top Notes', customId: 'nav:list:top-notes', emoji: '\u{1F3C6}' },
   ],
   'note:rate': [
     { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
@@ -117,7 +112,6 @@ export function buildContextualNav(commandContext: string): ActionRowBuilder<But
 export const HUB_ACTIONS: NavAction[] = [
   { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
   { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
-  { label: 'Top Notes', customId: 'nav:list:top-notes', emoji: '\u{1F3C6}' },
   { label: 'Write Note', customId: 'nav:note:write', emoji: '\u270F\uFE0F' },
   { label: 'Vibecheck Scan', customId: 'nav:vibecheck:scan', emoji: '\u{1F50D}' },
   { label: 'Status', customId: 'nav:status-bot', emoji: '\u{1F4CA}' },

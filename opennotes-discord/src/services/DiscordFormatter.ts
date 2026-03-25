@@ -10,7 +10,6 @@ import { ServiceResult, WriteNoteResult, ViewNotesResult, RateNoteResult, Status
 import type { RequestStatus } from '../lib/types.js';
 import type {
   NoteScoreJSONAPIResponse,
-  TopNotesJSONAPIResponse,
   ScoringStatusJSONAPIResponse,
   ScoreConfidence,
   NoteScoreAttributes,
@@ -24,7 +23,6 @@ import { extractPlatformMessageId } from '../lib/discord-utils.js';
 import { formatIdDisplay } from '../lib/proquint.js';
 import {
   V2_COLORS,
-  V2_ICONS,
   createContainer,
   createSmallSeparator,
   createDivider,
@@ -471,103 +469,6 @@ export class DiscordFormatter {
       components: [container.toJSON()],
       flags: v2MessageFlags(),
       actionRow,
-    };
-  }
-
-  static formatTopNotesForQueueV2(
-    response: TopNotesJSONAPIResponse,
-    page: number = 1,
-    pageSize: number = 10,
-    options?: { includeForcePublishButtons?: boolean }
-  ): {
-    container: ContainerBuilder;
-    components: ReturnType<ContainerBuilder['toJSON']>[];
-    flags: number;
-  } {
-    const totalCount = response.meta?.total_count ?? response.data.length;
-    const totalPages = Math.ceil(totalCount / pageSize);
-
-    const container = createContainer(V2_COLORS.INFO);
-
-    if (response.data.length === 0) {
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `## ${V2_ICONS.STANDARD} Top Scored Notes\n\nNo notes found matching the criteria.\n\n*Page ${page} of ${totalPages} | Total: ${totalCount} notes*`
-        )
-      );
-      return {
-        container,
-        components: [container.toJSON()],
-        flags: v2MessageFlags(),
-      };
-    }
-
-    const headerLines = [`## ${V2_ICONS.STANDARD} Top Scored Notes`];
-
-    const filterDescription: string[] = [];
-    if (response.meta?.filters_applied) {
-      if (String(response.meta.filters_applied.min_confidence)) {
-        filterDescription.push(`Min Confidence: ${String(response.meta.filters_applied.min_confidence)}`);
-      }
-      if (response.meta.filters_applied.tier !== undefined) {
-        filterDescription.push(`Tier: ${String(response.meta.filters_applied.tier)}`);
-      }
-    }
-
-    headerLines.push(
-      `Showing notes ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, totalCount)} of ${totalCount}`
-    );
-
-    if (filterDescription.length > 0) {
-      headerLines.push(`**Filters:** ${filterDescription.join(' | ')}`);
-    }
-
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(headerLines.join('\n'))
-    );
-
-    for (const [index, resource] of response.data.entries()) {
-      const rank = (page - 1) * pageSize + index + 1;
-      const note = resource.attributes;
-      const scoreColor = note.score >= 0.7 ? V2_ICONS.SCORE_HIGH : note.score >= 0.4 ? V2_ICONS.SCORE_MID : V2_ICONS.SCORE_LOW;
-      const confidenceEmoji = this.getConfidenceEmoji(note.confidence as ScoreConfidence);
-      const formattedScore = this.formatScore(note.score);
-
-      container.addSeparatorComponents(createSmallSeparator());
-
-      const noteLines = [
-        `**${rank}. ${scoreColor} Note ${formatIdDisplay(resource.id)}**`,
-        `**Score:** ${formattedScore} (0.0-1.0)`,
-        `**Confidence:** ${confidenceEmoji} ${this.getConfidenceLabel(note.confidence as ScoreConfidence)}`,
-        `**Ratings:** ${note.rating_count}`,
-        `**Tier:** ${note.tier} | **Algorithm:** ${note.algorithm}`,
-      ];
-
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(noteLines.join('\n'))
-      );
-
-      if (options?.includeForcePublishButtons) {
-        container.addActionRowComponents(
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`force_publish:${resource.id}`)
-              .setLabel(`Force Publish Note ${formatIdDisplay(resource.id)}`)
-              .setStyle(ButtonStyle.Danger)
-          )
-        );
-      }
-    }
-
-    container.addSeparatorComponents(createDivider());
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`*Page ${page} of ${totalPages} | Total: ${totalCount} notes*`)
-    );
-
-    return {
-      container,
-      components: [container.toJSON()],
-      flags: v2MessageFlags(),
     };
   }
 

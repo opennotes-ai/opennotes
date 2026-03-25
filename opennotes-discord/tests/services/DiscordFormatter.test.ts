@@ -2,7 +2,7 @@ import { jest } from '@jest/globals';
 import { DiscordFormatter } from '../../src/services/DiscordFormatter.js';
 import { cache } from '../../src/cache.js';
 import { ErrorCode, ServiceResult, ListRequestsResult, StatusResult } from '../../src/services/types.js';
-import type { TopNotesJSONAPIResponse, ScoringStatusJSONAPIResponse, ScoreConfidence, NoteScoreAttributes, NoteScoreJSONAPIResponse } from '../../src/services/ScoringService.js';
+import type { ScoringStatusJSONAPIResponse, ScoreConfidence, NoteScoreAttributes, NoteScoreJSONAPIResponse } from '../../src/services/ScoringService.js';
 import { Colors, ButtonStyle, MessageFlags, type APIButtonComponentWithCustomId } from 'discord.js';
 import type { RequestItem } from '../../src/lib/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
@@ -632,128 +632,6 @@ describe('DiscordFormatter', () => {
       const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
 
       expect(allContent).toContain('10');
-    });
-  });
-
-  describe('formatTopNotesForQueueV2', () => {
-    const mockTopNotesResponse: TopNotesJSONAPIResponse = {
-      data: [
-        {
-          type: 'note_score',
-          id: '123',
-          attributes: {
-            score: TEST_SCORE_ABOVE_THRESHOLD,
-            confidence: 'standard',
-            algorithm: 'MFCoreScorer',
-            rating_count: 15,
-            tier: 2,
-            tier_name: 'Tier 2',
-            calculated_at: '2025-10-28T12:00:00Z',
-          },
-        },
-        {
-          type: 'note_score',
-          id: '456',
-          attributes: {
-            score: 0.72,
-            confidence: 'standard',
-            algorithm: 'MFCoreScorer',
-            rating_count: 12,
-            tier: 2,
-            tier_name: 'Tier 2',
-            calculated_at: '2025-10-28T12:00:00Z',
-          },
-        },
-      ],
-      meta: {
-        total_count: 50,
-        current_tier: 2,
-      },
-      jsonapi: { version: '1.1' },
-    };
-
-    it('should return container with v2 message flags', () => {
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(mockTopNotesResponse, 1, 10);
-
-      expect(formatted.flags & MessageFlags.IsComponentsV2).toBeTruthy();
-    });
-
-    it('should return components array with container', () => {
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(mockTopNotesResponse, 1, 10);
-
-      expect(formatted.components).toHaveLength(1);
-      expect(formatted.components[0]).toHaveProperty('type', 17);
-    });
-
-    it('should include ranking indicators for each note', () => {
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(mockTopNotesResponse, 1, 10);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toMatch(/1\./);
-      expect(allContent).toMatch(/2\./);
-    });
-
-    it('should include score color indicators', () => {
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(mockTopNotesResponse, 1, 10);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toContain('\u{1F7E2}');
-    });
-
-    it('should include pagination info in footer', () => {
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(mockTopNotesResponse, 1, 10);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toContain('Page 1');
-      expect(allContent).toContain('50');
-    });
-
-    it('should handle empty notes list', () => {
-      const emptyResponse: TopNotesJSONAPIResponse = {
-        data: [],
-        meta: {
-          total_count: 0,
-          current_tier: 0,
-        },
-        jsonapi: { version: '1.1' },
-      };
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(emptyResponse, 1, 10);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toContain('No notes found');
-    });
-
-    it('should include filters in content when provided', () => {
-      const responseWithFilters: TopNotesJSONAPIResponse = {
-        ...mockTopNotesResponse,
-        meta: {
-          ...mockTopNotesResponse.meta,
-          filters_applied: {
-            min_confidence: 'standard',
-            tier: 2,
-          },
-        },
-      };
-      const formatted = DiscordFormatter.formatTopNotesForQueueV2(responseWithFilters, 1, 10);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toContain('standard');
-      expect(allContent).toContain('2');
     });
   });
 

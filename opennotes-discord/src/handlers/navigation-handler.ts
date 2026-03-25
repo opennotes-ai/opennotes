@@ -140,7 +140,6 @@ const ACTION_HANDLERS: Record<string, NavActionHandler> = {
   'status-bot': handleStatusBot,
   'list:notes': handleListNotes,
   'list:requests': handleListRequests,
-  'list:top-notes': handleListTopNotes,
 };
 
 async function handleNavAction(interaction: ButtonInteraction): Promise<void> {
@@ -323,40 +322,6 @@ async function handleListRequests(interaction: ButtonInteraction): Promise<void>
     });
     await interaction.editReply({
       content: 'Failed to load requests. Please try `/list requests` instead.',
-    });
-  }
-}
-
-async function handleListTopNotes(interaction: ButtonInteraction): Promise<void> {
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-  try {
-    const scoringService = serviceProvider.getScoringService();
-    const result = await scoringService.getTopNotes({ limit: 10 });
-
-    if (!result.success) {
-      const errorResponse = DiscordFormatter.formatErrorV2(result);
-      await interaction.editReply({
-        components: errorResponse.components,
-        flags: errorResponse.flags,
-      });
-      return;
-    }
-
-    const formatted = DiscordFormatter.formatTopNotesForQueueV2(result.data!, 1, 10);
-
-    formatted.container.addActionRowComponents(buildContextualNav('list:top-notes'));
-
-    await interaction.editReply({
-      components: [formatted.container.toJSON()],
-      flags: formatted.flags,
-    });
-  } catch (error) {
-    logger.error('Failed to handle nav list:top-notes', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    await interaction.editReply({
-      content: 'Failed to load top notes. Please try `/list top-notes` instead.',
     });
   }
 }

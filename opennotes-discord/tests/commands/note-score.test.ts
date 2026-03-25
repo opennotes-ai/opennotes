@@ -135,7 +135,7 @@ describe('note-score command', () => {
       );
     });
 
-    it('should include contextual nav row with Menu, List Notes, and Top Notes buttons', async () => {
+    it('should include contextual nav row with Menu and List Notes buttons', async () => {
       const mockScoreResponse = createMockNoteScoreJSONAPIResponse({
         noteId: TEST_NOTE_UUID,
         score: TEST_SCORE_ABOVE_THRESHOLD,
@@ -174,7 +174,6 @@ describe('note-score command', () => {
       const customIds = lastComponent.components.map((c: any) => c.custom_id);
       expect(customIds).toContain('nav:menu');
       expect(customIds).toContain('nav:list:notes');
-      expect(customIds).toContain('nav:list:top-notes');
     });
   });
 

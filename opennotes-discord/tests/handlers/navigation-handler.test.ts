@@ -42,14 +42,12 @@ jest.unstable_mockModule('../../src/lib/welcome-content.js', () => ({
 
 const mockStatusExecute = jest.fn<(...args: any[]) => Promise<any>>();
 const mockGetScoringStatus = jest.fn<(...args: any[]) => Promise<any>>();
-const mockGetTopNotes = jest.fn<(...args: any[]) => Promise<any>>();
 const mockListRequestsExecute = jest.fn<(...args: any[]) => Promise<any>>();
 
 const mockServiceProvider = {
   getStatusService: jest.fn().mockReturnValue({ execute: mockStatusExecute }),
   getScoringService: jest.fn().mockReturnValue({
     getScoringStatus: mockGetScoringStatus,
-    getTopNotes: mockGetTopNotes,
   }),
   getListRequestsService: jest.fn().mockReturnValue({ execute: mockListRequestsExecute }),
 };
@@ -75,14 +73,6 @@ const mockFormatErrorV2 = jest.fn().mockReturnValue({
   components: [{ type: 17, components: [] }],
   flags: 32768,
 });
-const mockFormatTopNotesForQueueV2 = jest.fn().mockReturnValue({
-  container: {
-    addActionRowComponents: jest.fn().mockReturnThis(),
-    toJSON: jest.fn().mockReturnValue({ type: 17, components: [] }),
-  },
-  components: [{ type: 17, components: [] }],
-  flags: 32768,
-});
 const mockFormatListRequestsSuccessV2 = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
   container: {
     addActionRowComponents: jest.fn().mockReturnThis(),
@@ -98,7 +88,6 @@ jest.unstable_mockModule('../../src/services/DiscordFormatter.js', () => ({
     formatStatusSuccessV2: mockFormatStatusSuccessV2,
     formatScoringStatusV2: mockFormatScoringStatusV2,
     formatErrorV2: mockFormatErrorV2,
-    formatTopNotesForQueueV2: mockFormatTopNotesForQueueV2,
     formatListRequestsSuccessV2: mockFormatListRequestsSuccessV2,
   },
 }));
@@ -163,7 +152,6 @@ describe('navigation-handler', () => {
     mockServiceProvider.getStatusService.mockReturnValue({ execute: mockStatusExecute });
     mockServiceProvider.getScoringService.mockReturnValue({
       getScoringStatus: mockGetScoringStatus,
-      getTopNotes: mockGetTopNotes,
     });
     mockServiceProvider.getListRequestsService.mockReturnValue({ execute: mockListRequestsExecute });
 
@@ -174,10 +162,6 @@ describe('navigation-handler', () => {
     mockGetScoringStatus.mockResolvedValue({
       success: true,
       data: { scoring: 'ok' },
-    });
-    mockGetTopNotes.mockResolvedValue({
-      success: true,
-      data: { data: [], meta: { total_count: 0 } },
     });
     mockListRequestsExecute.mockResolvedValue({
       success: true,
@@ -201,14 +185,6 @@ describe('navigation-handler', () => {
       components: [{ type: 17, components: [] }],
       flags: 32768,
     });
-    mockFormatTopNotesForQueueV2.mockReturnValue({
-      container: {
-        addActionRowComponents: jest.fn().mockReturnThis(),
-        toJSON: jest.fn().mockReturnValue({ type: 17, components: [] }),
-      },
-      components: [{ type: 17, components: [] }],
-      flags: 32768,
-        });
     mockFormatListRequestsSuccessV2.mockResolvedValue({
       container: {
         addActionRowComponents: jest.fn().mockReturnThis(),
@@ -401,17 +377,6 @@ describe('navigation-handler', () => {
       expect(interaction.editReply).toHaveBeenCalledTimes(1);
     });
 
-    it('should dispatch list:top-notes to scoring service', async () => {
-      const interaction = buildMockInteraction({ customId: 'nav:list:top-notes' });
-
-      await handleNavInteraction(interaction);
-
-      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
-      expect(mockGetTopNotes).toHaveBeenCalledWith({ limit: 10 });
-      expect(mockFormatTopNotesForQueueV2).toHaveBeenCalled();
-      expect(interaction.editReply).toHaveBeenCalledTimes(1);
-    });
-
     it('should dispatch list:notes with deferReply and editReply', async () => {
       const interaction = buildMockInteraction({ customId: 'nav:list:notes' });
 
@@ -501,21 +466,6 @@ describe('navigation-handler', () => {
       });
 
       const interaction = buildMockInteraction({ customId: 'nav:list:requests' });
-
-      await handleNavInteraction(interaction);
-
-      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
-      expect(mockFormatErrorV2).toHaveBeenCalled();
-      expect(interaction.editReply).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle top notes service errors gracefully', async () => {
-      mockGetTopNotes.mockResolvedValueOnce({
-        success: false,
-        error: { code: 'API_ERROR', message: 'Service unavailable' },
-      });
-
-      const interaction = buildMockInteraction({ customId: 'nav:list:top-notes' });
 
       await handleNavInteraction(interaction);
 

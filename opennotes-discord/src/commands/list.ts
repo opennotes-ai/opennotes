@@ -43,8 +43,7 @@ import {
   truncateWithMeta,
   buildViewFullCustomId,
 } from '../utils/v2-components.js';
-import type { ScoreConfidence } from '../services/ScoringService.js';
-import { suppressExpectedDiscordErrors, extractPlatformMessageId } from '../lib/discord-utils.js';
+import { extractPlatformMessageId } from '../lib/discord-utils.js';
 import { resolveUserProfileId } from '../lib/user-profile-resolver.js';
 import { cache } from '../cache.js';
 import { TextPaginator } from '../lib/text-paginator.js';
@@ -227,38 +226,7 @@ export const data = new SlashCommandBuilder()
           .setMaxValue(100)
       )
   )
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('top-notes')
-      .setDescription('View the top-scored community notes')
-      .addIntegerOption(option =>
-        option
-          .setName('limit')
-          .setDescription('Number of notes to display (default: 10, max: 50)')
-          .setMinValue(1)
-          .setMaxValue(50)
-          .setRequired(false)
-      )
-      .addStringOption(option =>
-        option
-          .setName('confidence')
-          .setDescription('Filter by minimum confidence level')
-          .addChoices(
-            { name: 'Standard (5+ ratings)', value: 'standard' },
-            { name: 'Provisional (<5 ratings)', value: 'provisional' },
-            { name: 'No data (0 ratings)', value: 'no_data' }
-          )
-          .setRequired(false)
-      )
-      .addIntegerOption(option =>
-        option
-          .setName('tier')
-          .setDescription('Filter by scoring tier (0-5)')
-          .setMinValue(0)
-          .setMaxValue(5)
-          .setRequired(false)
-      )
-  );
+  ;
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   const subcommand = interaction.options.getSubcommand();
@@ -268,8 +236,6 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       return handleNotesSubcommand(interaction);
     case 'requests':
       return handleRequestsSubcommand(interaction);
-    case 'top-notes':
-      return handleTopNotesSubcommand(interaction);
     default:
       await interaction.reply({
         content: 'Unknown subcommand.',
@@ -572,115 +538,6 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
     await interaction.editReply({
       content: formatErrorForUser(errorId, 'Failed to retrieve request list.'),
     });
-  }
-}
-
-async function handleTopNotesSubcommand(interaction: ChatInputCommandInteraction): Promise<void> {
-  const errorId = generateErrorId();
-  const limit = interaction.options.getInteger('limit') || 10;
-  const confidence = interaction.options.getString('confidence') as ScoreConfidence | null;
-  const tier = interaction.options.getInteger('tier');
-  const userId = interaction.user.id;
-  const guildId = interaction.guildId;
-
-  try {
-    logger.info('Executing list top-notes subcommand', {
-      error_id: errorId,
-      command: 'list top-notes',
-      user_id: userId,
-      community_server_id: guildId,
-      limit,
-      confidence,
-      tier,
-    });
-
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-    const botChannelService = new BotChannelService();
-    const guildConfigService = serviceProvider.getGuildConfigService();
-    const permissionModeService = new PermissionModeService();
-    const { shouldProceed } = await getBotChannelOrRedirect(
-      interaction,
-      botChannelService,
-      guildConfigService,
-      permissionModeService
-    );
-
-    if (!shouldProceed) {
-      return;
-    }
-
-    const scoringService = serviceProvider.getScoringService();
-    const result = await scoringService.getTopNotes({
-      limit,
-      minConfidence: confidence || undefined,
-      tier: tier || undefined,
-    });
-
-    if (!result.success) {
-      let errorMessage: string;
-
-      switch (result.error?.code) {
-        case 'SERVICE_UNAVAILABLE':
-          errorMessage = 'The scoring system is temporarily unavailable. Please try again later.';
-          break;
-        default:
-          errorMessage = 'Failed to retrieve top notes. Please try again later.';
-      }
-
-      await interaction.editReply({
-        content: errorMessage,
-      });
-      return;
-    }
-
-    if (result.data!.data.length === 0) {
-      await interaction.editReply({
-        content: 'No notes found matching the specified criteria.',
-      });
-      return;
-    }
-
-    const member = interaction.guild?.members.cache.get(userId) || null;
-    const hasAdminButtons = member && hasManageGuildPermission(member);
-
-    const formattedData = DiscordFormatter.formatTopNotesForQueueV2(result.data!, 1, limit, {
-      includeForcePublishButtons: hasAdminButtons ?? false,
-    });
-
-    formattedData.container.addActionRowComponents(buildContextualNav('list:top-notes'));
-
-    await interaction.editReply({
-      components: [formattedData.container.toJSON()],
-      flags: formattedData.flags,
-    });
-
-    logger.info('Top notes rendered as ephemeral message', {
-      error_id: errorId,
-      command: 'list top-notes',
-      user_id: userId,
-      note_count: result.data!.data.length,
-      total_count: result.data!.meta?.total_count ?? result.data!.data.length,
-    });
-  } catch (error) {
-    const errorDetails = extractErrorDetails(error);
-
-    logger.error('Unexpected error in list top-notes subcommand', {
-      error_id: errorId,
-      command: 'list top-notes',
-      user_id: userId,
-      community_server_id: guildId,
-      limit,
-      confidence,
-      tier,
-      error: errorDetails.message,
-      error_type: errorDetails.type,
-      stack: errorDetails.stack,
-    });
-
-    await interaction.editReply({
-      content: formatErrorForUser(errorId, 'Failed to retrieve top notes.'),
-    }).catch(suppressExpectedDiscordErrors('edit_reply_top_notes_error'));
   }
 }
 
