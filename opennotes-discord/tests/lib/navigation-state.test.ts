@@ -219,6 +219,28 @@ describe('NavigationStateManager', () => {
   });
 
   describe('ScreenState serialization', () => {
+    it('should support content in screen state', async () => {
+      mockCache.get.mockResolvedValue(null);
+      const state = buildScreenState({ content: 'Some message content here' });
+
+      await manager.push('user1', 'msg1', state);
+
+      const setCall = mockCache.set.mock.calls[0];
+      const savedStack = setCall[1] as ScreenState[];
+      expect(savedStack[0].content).toBe('Some message content here');
+    });
+
+    it('should support omitting content field', async () => {
+      mockCache.get.mockResolvedValue(null);
+      const state = buildScreenState();
+
+      await manager.push('user1', 'msg1', state);
+
+      const setCall = mockCache.set.mock.calls[0];
+      const savedStack = setCall[1] as ScreenState[];
+      expect(savedStack[0].content).toBeUndefined();
+    });
+
     it('should support metadata in screen state', async () => {
       mockCache.get.mockResolvedValue(null);
       const state = buildScreenState({

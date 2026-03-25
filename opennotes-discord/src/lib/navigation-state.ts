@@ -7,6 +7,7 @@ export interface ScreenState {
   commandContext: string;
   components: unknown[];
   flags: number;
+  content?: string;
   metadata?: Record<string, unknown>;
 }
 

@@ -121,6 +121,7 @@ function buildMockInteraction(overrides: Record<string, any> = {}): ButtonIntera
     user: { id: 'user-123' },
     message: {
       id: 'msg-456',
+      content: '',
       components: [
         { toJSON: () => ({ type: 1, components: [{ type: 2, label: 'Old Button' }] }) },
       ],
@@ -251,6 +252,38 @@ describe('navigation-handler', () => {
       expect(savedState.flags).toBe(32768);
     });
 
+    it('should capture message content when non-empty', async () => {
+      const interaction = buildMockInteraction({
+        customId: 'nav:menu',
+        message: {
+          id: 'msg-456',
+          content: 'Some vibecheck result text',
+          components: [
+            { toJSON: () => ({ type: 1, components: [{ type: 2, label: 'Old Button' }] }) },
+          ],
+          flags: { bitfield: 32768 },
+        },
+      });
+
+      await handleNavInteraction(interaction);
+
+      const setCalls = mockCacheSet.mock.calls;
+      const savedStack = setCalls[0][1] as any[];
+      const savedState = savedStack[0];
+      expect(savedState.content).toBe('Some vibecheck result text');
+    });
+
+    it('should not store content when message content is empty', async () => {
+      const interaction = buildMockInteraction({ customId: 'nav:menu' });
+
+      await handleNavInteraction(interaction);
+
+      const setCalls = mockCacheSet.mock.calls;
+      const savedStack = setCalls[0][1] as any[];
+      const savedState = savedStack[0];
+      expect(savedState.content).toBeUndefined();
+    });
+
     it('should update the message with contextual hub content', async () => {
       const interaction = buildMockInteraction({ customId: 'nav:menu' });
 
@@ -299,6 +332,41 @@ describe('navigation-handler', () => {
         [],
         900,
       );
+    });
+
+    it('should restore content when present in saved state', async () => {
+      const savedState = {
+        commandContext: 'vibecheck:status',
+        content: 'Vibecheck scan completed with 3 flagged messages.',
+        components: [{ type: 1, components: [{ type: 2, label: 'Restored Button' }] }],
+        flags: 32768,
+      };
+      mockCacheGet.mockResolvedValueOnce([savedState]);
+
+      const interaction = buildMockInteraction({ customId: 'nav:back' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.update).toHaveBeenCalledTimes(1);
+      const updateCall = (interaction.update as any).mock.calls[0][0] as Record<string, any>;
+      expect(updateCall.content).toBe('Vibecheck scan completed with 3 flagged messages.');
+    });
+
+    it('should restore empty string content when state has no content', async () => {
+      const savedState = {
+        commandContext: 'list:notes',
+        components: [{ type: 1, components: [] }],
+        flags: 32768,
+      };
+      mockCacheGet.mockResolvedValueOnce([savedState]);
+
+      const interaction = buildMockInteraction({ customId: 'nav:back' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.update).toHaveBeenCalledTimes(1);
+      const updateCall = (interaction.update as any).mock.calls[0][0] as Record<string, any>;
+      expect(updateCall.content).toBe('');
     });
 
     it('should reply with "Nothing to go back to" when stack is empty', async () => {

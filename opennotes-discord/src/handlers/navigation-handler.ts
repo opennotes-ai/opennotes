@@ -56,11 +56,13 @@ async function handleMenuButton(interaction: ButtonInteraction): Promise<void> {
 
   const components = interaction.message.components.map(c => c.toJSON());
   const flags = interaction.message.flags.bitfield;
+  const content = interaction.message.content;
 
   const screenState: ScreenState = {
     commandContext: detectCommandContext(interaction.message.components),
     components,
     flags,
+    ...(content ? { content } : {}),
   };
 
   await navState.push(userId, messageId, screenState);
@@ -94,6 +96,7 @@ async function handleBackButton(interaction: ButtonInteraction): Promise<void> {
   }
 
   await interaction.update({
+    content: state.content ?? '',
     components: state.components as APIMessageTopLevelComponent[],
     flags: state.flags,
   });
