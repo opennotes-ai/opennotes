@@ -47,15 +47,21 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
 
 jest.unstable_mockModule('../../src/lib/vibecheck-prompt.js', () => ({
   VIBECHECK_PROMPT_CUSTOM_IDS: {
-    DAYS_SELECT: 'vibecheck_prompt_days',
+    DAYS_PREFIX: 'vibecheck_days:',
     START: 'vibecheck_prompt_start',
     NO_THANKS: 'vibecheck_prompt_no_thanks',
   },
-  createDaysSelectMenu: jest.fn().mockReturnValue({
-    toJSON: () => ({ type: 3, custom_id: 'vibecheck_prompt_days' }),
+  createDaysButtons: jest.fn().mockReturnValue({
+    toJSON: () => ({ type: 1, components: [] }),
   }),
   createPromptButtons: jest.fn().mockReturnValue({
-    toJSON: () => ({ components: [] }),
+    toJSON: () => ({ type: 1, components: [] }),
+  }),
+}));
+
+jest.unstable_mockModule('../../src/lib/navigation-components.js', () => ({
+  buildContextualNav: jest.fn().mockReturnValue({
+    toJSON: () => ({ type: 1, components: [] }),
   }),
 }));
 
@@ -67,14 +73,32 @@ const {
   deleteVibecheckPromptState,
 } = await import('../../src/handlers/vibecheck-prompt-handler.js');
 
+function extractTextFromContainer(containerJson: any): string {
+  if (!containerJson || !containerJson.components) return '';
+  return containerJson.components
+    .filter((c: any) => c.type === 10)
+    .map((c: any) => c.content || '')
+    .join('\n');
+}
+
+function getContainerText(callArgs: any): string {
+  const components = callArgs?.components;
+  if (!components || components.length === 0) return '';
+  const first = components[0];
+  const json = typeof first?.toJSON === 'function' ? first.toJSON() : first;
+  return extractTextFromContainer(json);
+}
+
 describe('vibecheck-prompt-handler', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   describe('isVibecheckPromptInteraction', () => {
-    it('should return true for days select custom ID', () => {
-      expect(isVibecheckPromptInteraction('vibecheck_prompt_days')).toBe(true);
+    it('should return true for days button custom IDs', () => {
+      expect(isVibecheckPromptInteraction('vibecheck_days:1')).toBe(true);
+      expect(isVibecheckPromptInteraction('vibecheck_days:7')).toBe(true);
+      expect(isVibecheckPromptInteraction('vibecheck_days:30')).toBe(true);
     });
 
     it('should return true for start button custom ID', () => {
@@ -133,9 +157,9 @@ describe('vibecheck-prompt-handler', () => {
     const createMockInteraction = (overrides: any = {}) => ({
       message: { id: 'message-123', edit: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}) },
       user: { id: 'admin-123' },
-      customId: 'vibecheck_prompt_days',
+      customId: 'vibecheck_days:7',
       isStringSelectMenu: () => false,
-      isButton: () => false,
+      isButton: () => true,
       update: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
       reply: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
       followUp: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
@@ -150,10 +174,10 @@ describe('vibecheck-prompt-handler', () => {
       const interaction = createMockInteraction();
       await handleVibecheckPromptInteraction(interaction as any);
 
-      expect(interaction.update).toHaveBeenCalledWith({
-        content: expect.stringContaining('expired'),
-        components: [],
-      });
+      expect(interaction.update).toHaveBeenCalled();
+      const callArgs = interaction.update.mock.calls[0][0];
+      const text = getContainerText(callArgs);
+      expect(text).toContain('expired');
     });
 
     it('should reject interaction from non-admin user', async () => {
@@ -169,13 +193,14 @@ describe('vibecheck-prompt-handler', () => {
       });
       await handleVibecheckPromptInteraction(interaction as any);
 
-      expect(interaction.reply).toHaveBeenCalledWith({
-        content: expect.stringContaining('Only the server admin'),
-        ephemeral: true,
-      });
+      expect(interaction.reply).toHaveBeenCalled();
+      const callArgs = interaction.reply.mock.calls[0][0];
+      const text = getContainerText(callArgs);
+      expect(text).toContain('Only the server admin');
+      expect(callArgs.flags).toBeTruthy();
     });
 
-    describe('days select interaction', () => {
+    describe('days button interaction', () => {
       it('should update state when days are selected', async () => {
         mockCacheGet.mockResolvedValue({
           guildId: 'guild-123',
@@ -185,9 +210,8 @@ describe('vibecheck-prompt-handler', () => {
         });
 
         const interaction = createMockInteraction({
-          customId: 'vibecheck_prompt_days',
-          isStringSelectMenu: () => true,
-          values: ['7'],
+          customId: 'vibecheck_days:7',
+          isButton: () => true,
         });
         await handleVibecheckPromptInteraction(interaction as any);
 
@@ -200,11 +224,10 @@ describe('vibecheck-prompt-handler', () => {
           expect.objectContaining({ selectedDays: 7 }),
           900
         );
-        expect(interaction.update).toHaveBeenCalledWith(
-          expect.objectContaining({
-            content: expect.stringContaining('7 days'),
-          })
-        );
+        expect(interaction.update).toHaveBeenCalled();
+        const callArgs = interaction.update.mock.calls[0][0];
+        const text = getContainerText(callArgs);
+        expect(text).toContain('7 days');
       });
     });
 
@@ -224,10 +247,10 @@ describe('vibecheck-prompt-handler', () => {
         await handleVibecheckPromptInteraction(interaction as any);
 
         expect(mockCacheDelete).toHaveBeenCalledWith('vibecheck_prompt_state:message-123');
-        expect(interaction.update).toHaveBeenCalledWith({
-          content: expect.stringContaining('dismissed'),
-          components: [],
-        });
+        expect(interaction.update).toHaveBeenCalled();
+        const callArgs = interaction.update.mock.calls[0][0];
+        const text = getContainerText(callArgs);
+        expect(text).toContain('dismissed');
       });
     });
 
@@ -247,10 +270,10 @@ describe('vibecheck-prompt-handler', () => {
         await handleVibecheckPromptInteraction(interaction as any);
 
         expect(mockExecuteBulkScan).not.toHaveBeenCalled();
-        expect(interaction.reply).toHaveBeenCalledWith({
-          content: expect.stringContaining('select the number of days'),
-          ephemeral: true,
-        });
+        expect(interaction.reply).toHaveBeenCalled();
+        const callArgs = interaction.reply.mock.calls[0][0];
+        const text = getContainerText(callArgs);
+        expect(text).toContain('select the number of days');
       });
 
       it('should start scan when days are selected', async () => {
@@ -320,9 +343,10 @@ describe('vibecheck-prompt-handler', () => {
 
         await handleVibecheckPromptInteraction(interaction as any);
 
-        expect(interaction.message.edit).toHaveBeenCalledWith({
-          content: expect.stringContaining('No accessible text channels'),
-        });
+        expect(interaction.message.edit).toHaveBeenCalled();
+        const lastCall = interaction.message.edit.mock.calls.at(-1)?.[0];
+        const text = extractTextFromContainer(lastCall.components[0]);
+        expect(text).toContain('No accessible text channels');
       });
 
       it('should handle scan execution failure', async () => {
@@ -355,9 +379,10 @@ describe('vibecheck-prompt-handler', () => {
             error: 'NATS connection failed',
           })
         );
-        expect(interaction.message.edit).toHaveBeenCalledWith({
-          content: expect.stringContaining('encountered an error'),
-        });
+        expect(interaction.message.edit).toHaveBeenCalled();
+        const lastCall = interaction.message.edit.mock.calls.at(-1)?.[0];
+        const text = extractTextFromContainer(lastCall.components[0]);
+        expect(text).toContain('encountered an error');
       });
 
       it('should handle zero-message scan with failed status', async () => {
@@ -392,9 +417,9 @@ describe('vibecheck-prompt-handler', () => {
 
         await handleVibecheckPromptInteraction(interaction as any);
 
-        expect(interaction.message.edit).toHaveBeenLastCalledWith({
-          content: expect.stringContaining('Scan analysis failed'),
-        });
+        const lastCall = interaction.message.edit.mock.calls.at(-1)?.[0];
+        const text = extractTextFromContainer(lastCall.components[0]);
+        expect(text).toContain('Scan analysis failed');
       });
 
       it('should handle scan with timeout status', async () => {
@@ -428,9 +453,9 @@ describe('vibecheck-prompt-handler', () => {
 
         await handleVibecheckPromptInteraction(interaction as any);
 
-        expect(interaction.message.edit).toHaveBeenLastCalledWith({
-          content: expect.stringContaining('may still be running'),
-        });
+        const lastCall = interaction.message.edit.mock.calls.at(-1)?.[0];
+        const text = extractTextFromContainer(lastCall.components[0]);
+        expect(text).toContain('may still be running');
       });
 
       it('freezes the prompt message after a stall warning and records cache metadata', async () => {
@@ -468,12 +493,11 @@ describe('vibecheck-prompt-handler', () => {
 
         await handleVibecheckPromptInteraction(interaction as any);
 
-        expect(interaction.message.edit).toHaveBeenLastCalledWith({
-          content: expect.stringContaining('scan-prompt-123'),
-        });
-        const lastEditCall = interaction.message.edit.mock.calls.at(-1)?.[0];
-        expect(lastEditCall.content).toContain('taking longer than we can keep updated');
-        expect(lastEditCall.content).toContain('scan_id:scan-prompt-123');
+        const lastCall = interaction.message.edit.mock.calls.at(-1)?.[0];
+        const text = extractTextFromContainer(lastCall.components[0]);
+        expect(text).toContain('scan-prompt-123');
+        expect(text).toContain('taking longer than we can keep updated');
+        expect(text).toContain('scan_id:scan-prompt-123');
         expect(mockCacheSet).toHaveBeenCalledWith(
           'vibecheck:stalled:scan-prompt-123',
           expect.objectContaining({
@@ -522,7 +546,9 @@ describe('vibecheck-prompt-handler', () => {
 
         await handleVibecheckPromptInteraction(interaction as any);
 
-        const editContents = interaction.message.edit.mock.calls.map(([arg]: any[]) => String(arg.content ?? ''));
+        const editContents = interaction.message.edit.mock.calls.map(([arg]: any[]) => {
+          return extractTextFromContainer(arg.components?.[0] ?? {});
+        });
         expect(editContents.some((content: string) => content.includes('**Scan Complete**'))).toBe(true);
         expect(editContents.at(-1)).not.toContain('taking longer than we can keep updated');
       });
@@ -562,9 +588,9 @@ describe('vibecheck-prompt-handler', () => {
 
         await handleVibecheckPromptInteraction(interaction as any);
 
-        expect(interaction.message.edit).toHaveBeenLastCalledWith({
-          content: expect.stringContaining('Flagged:** 3'),
-        });
+        const lastCall = interaction.message.edit.mock.calls.at(-1)?.[0];
+        const text = extractTextFromContainer(lastCall.components[0]);
+        expect(text).toContain('Flagged:** 3');
       });
 
       it('should reject invalid days selection', async () => {
@@ -576,9 +602,8 @@ describe('vibecheck-prompt-handler', () => {
         });
 
         const interaction = createMockInteraction({
-          customId: 'vibecheck_prompt_days',
-          isStringSelectMenu: () => true,
-          values: ['invalid'],
+          customId: 'vibecheck_days:invalid',
+          isButton: () => true,
         });
 
         await handleVibecheckPromptInteraction(interaction as any);
@@ -589,10 +614,10 @@ describe('vibecheck-prompt-handler', () => {
             raw_value: 'invalid',
           })
         );
-        expect(interaction.reply).toHaveBeenCalledWith({
-          content: expect.stringContaining('Invalid selection'),
-          ephemeral: true,
-        });
+        expect(interaction.reply).toHaveBeenCalled();
+        const callArgs = interaction.reply.mock.calls[0][0];
+        const text = getContainerText(callArgs);
+        expect(text).toContain('Invalid selection');
       });
     });
   });

@@ -327,14 +327,6 @@ export class Bot {
           logger.error('Vibecheck prompt button failed', { error });
         }
       }
-    } else if (interaction.isStringSelectMenu()) {
-      if (isVibecheckPromptInteraction(interaction.customId)) {
-        try {
-          await handleVibecheckPromptInteraction(interaction);
-        } catch (error) {
-          logger.error('Vibecheck prompt select menu failed', { error });
-        }
-      }
     } else if (interaction.isModalSubmit()) {
       if (interaction.customId.startsWith('note-write:')) {
         try {

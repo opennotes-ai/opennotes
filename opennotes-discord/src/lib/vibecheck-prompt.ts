@@ -1,6 +1,5 @@
 import {
   TextChannel,
-  StringSelectMenuBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -11,9 +10,15 @@ import { logger } from '../logger.js';
 import { generateErrorId } from './errors.js';
 import { VIBE_CHECK_DAYS_OPTIONS } from '../types/bulk-scan.js';
 import { setVibecheckPromptState } from '../handlers/vibecheck-prompt-handler.js';
+import {
+  createContainer,
+  createTextSection,
+  V2_COLORS,
+  v2MessageFlags,
+} from '../utils/v2-components.js';
 
 export const VIBECHECK_PROMPT_CUSTOM_IDS = {
-  DAYS_SELECT: 'vibecheck_prompt_days',
+  DAYS_PREFIX: 'vibecheck_days:',
   START: 'vibecheck_prompt_start',
   NO_THANKS: 'vibecheck_prompt_no_thanks',
 } as const;
@@ -24,17 +29,17 @@ export interface VibeCheckPromptOptions {
   guildId: string;
 }
 
-export function createDaysSelectMenu(): StringSelectMenuBuilder {
-  return new StringSelectMenuBuilder()
-    .setCustomId(VIBECHECK_PROMPT_CUSTOM_IDS.DAYS_SELECT)
-    .setPlaceholder('Select number of days to scan')
-    .addOptions(
-      VIBE_CHECK_DAYS_OPTIONS.map((option) => ({
-        label: option.name,
-        value: option.value.toString(),
-        description: `Scan messages from the last ${option.value} day${option.value === 1 ? '' : 's'}`,
-      }))
-    );
+export function createDaysButtons(selectedDays: number | null = null): ActionRowBuilder<ButtonBuilder> {
+  const row = new ActionRowBuilder<ButtonBuilder>();
+  for (const option of VIBE_CHECK_DAYS_OPTIONS) {
+    const isSelected = option.value === selectedDays;
+    const button = new ButtonBuilder()
+      .setCustomId(`${VIBECHECK_PROMPT_CUSTOM_IDS.DAYS_PREFIX}${option.value}`)
+      .setLabel(option.name)
+      .setStyle(isSelected ? ButtonStyle.Primary : ButtonStyle.Secondary);
+    row.addComponents(button);
+  }
+  return row;
 }
 
 export function createPromptButtons(startEnabled = false): ActionRowBuilder<ButtonBuilder> {
@@ -63,22 +68,18 @@ export async function sendVibeCheckPrompt(options: VibeCheckPromptOptions): Prom
     guild_id: guildId,
   });
 
-  const content = `<@${admin.id}> **Vibe Check Available**
+  const promptText = `<@${admin.id}> **Vibe Check Available**\n\nWould you like to scan your server for potential misinformation? This will check recent messages against known fact-checking databases.\n\nSelect how many days back you'd like to scan:`;
 
-Would you like to scan your server for potential misinformation? This will check recent messages against known fact-checking databases.
-
-Select how many days back you'd like to scan:`;
-
-  const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-    createDaysSelectMenu()
-  );
-  const buttonRow = createPromptButtons(false);
+  const container = createContainer(V2_COLORS.INFO);
+  container.addTextDisplayComponents(createTextSection(promptText));
+  container.addActionRowComponents(createDaysButtons());
+  container.addActionRowComponents(createPromptButtons(false));
 
   let message: DiscordMessage;
   try {
     message = await botChannel.send({
-      content,
-      components: [selectRow, buttonRow],
+      components: [container.toJSON()],
+      flags: v2MessageFlags(),
     });
   } catch (sendError) {
     logger.warn('Failed to send vibe check prompt in bot channel', {
@@ -112,11 +113,14 @@ Select how many days back you'd like to scan:`;
       error: cacheError instanceof Error ? cacheError.message : String(cacheError),
     });
 
-    // Edit the message to indicate the error since interactions won't work
     try {
+      const errorContainer = createContainer(V2_COLORS.CRITICAL);
+      errorContainer.addTextDisplayComponents(
+        createTextSection('Failed to set up vibe check prompt. Please use `/vibecheck` instead.')
+      );
       await message.edit({
-        content: 'Failed to set up vibe check prompt. Please use `/vibecheck` instead.',
-        components: [],
+        components: [errorContainer.toJSON()],
+        flags: v2MessageFlags(),
       });
     } catch (editError) {
       logger.debug('Failed to edit message after state storage failure', {
