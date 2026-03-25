@@ -76,6 +76,10 @@ export const V2_ICONS = {
 
   NAV_PREVIOUS: '\u25C0',
   NAV_NEXT: '\u25B6',
+
+  NAV_MENU: '\u{1F4D6}',
+  NAV_BACK: '\u25C0',
+  NAV_HOME: '\u{1F3E0}',
 } as const;
 
 /**
