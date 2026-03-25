@@ -5,6 +5,8 @@ import { ErrorBoundary, Suspense } from "solid-js";
 import { MetaProvider, Title } from "@solidjs/meta";
 import AuthStatus from "~/components/AuthStatus";
 import ModeToggle from "~/components/ModeToggle";
+import EmptyState from "~/components/ui/empty-state";
+import { AlertCircle } from "~/components/ui/icons";
 
 export default function App() {
   return (
@@ -32,15 +34,15 @@ export default function App() {
           </nav>
           <ErrorBoundary
             fallback={(err, reset) => (
-              <div class="p-8 text-center">
-                <h1 class="text-xl font-bold">Something went wrong</h1>
-                <p class="mt-2 text-muted-foreground">{err.message}</p>
-                <button
-                  onClick={reset}
-                  class="mt-4 rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
-                >
-                  Try again
-                </button>
+              <div class="p-8">
+                <EmptyState
+                  variant="error"
+                  icon={<AlertCircle class="size-6" />}
+                  message="Something went wrong"
+                  description={err.message}
+                  actionLabel="Try again"
+                  onAction={reset}
+                />
               </div>
             )}
           >

@@ -1,6 +1,8 @@
 import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import { Show, Switch, Match, Suspense, createSignal, createEffect, on, untrack } from "solid-js";
+import EmptyState from "~/components/ui/empty-state";
+import { AlertCircle, Search } from "~/components/ui/icons";
 import {
   getSimulation,
   getSimulationAnalysis,
@@ -304,7 +306,15 @@ export default function SimulationDetailPage() {
                     <Show
                       when={analysis()}
                       keyed
-                      fallback={<p class="mt-6 italic text-muted-foreground">Analysis unavailable.</p>}
+                      fallback={
+                        <div class="mt-6">
+                          <EmptyState
+                            icon={<AlertCircle class="size-6" />}
+                            message="Analysis unavailable"
+                            description="Analysis data for this simulation couldn't be loaded."
+                          />
+                        </div>
+                      }
                     >
                       {(analysisResponse) => {
                         const a = analysisResponse.data.attributes;
@@ -349,7 +359,15 @@ export default function SimulationDetailPage() {
                     <Show
                       when={detailed()}
                       keyed
-                      fallback={<p class="mt-6 italic text-muted-foreground">Loading detailed analysis...</p>}
+                      fallback={
+                        <div class="mt-6">
+                          <EmptyState
+                            icon={<AlertCircle class="size-6" />}
+                            message="Detailed analysis unavailable"
+                            description="Per-note breakdown data couldn't be loaded."
+                          />
+                        </div>
+                      }
                     >
                       {(detailedResponse) => {
                         const authMeta = detailedResponse._authMeta;
@@ -423,26 +441,29 @@ export default function SimulationDetailPage() {
 
 function NotFound() {
   return (
-    <div class="mt-16 text-center">
-      <h1 class="text-4xl font-bold">404</h1>
-      <p class="mt-2 text-muted-foreground">Simulation not found.</p>
-      <a href="/" class="mt-4 inline-block text-primary hover:underline">
-        Back to simulations
-      </a>
+    <div class="mt-16">
+      <EmptyState
+        icon={<Search class="size-6" />}
+        message="Simulation not found"
+        description="This simulation may have been removed, or the link might be outdated."
+        actionLabel="Back to home"
+        actionHref="/"
+      />
     </div>
   );
 }
 
 function ServerError() {
   return (
-    <div class="mt-16 text-center">
-      <h1 class="text-2xl font-bold text-red-700 dark:text-red-400">Server Error</h1>
-      <p class="mt-2 text-muted-foreground">
-        Something went wrong while loading this simulation. The API may be unreachable.
-      </p>
-      <a href="/" class="mt-4 inline-block text-primary hover:underline">
-        Back to simulations
-      </a>
+    <div class="mt-16">
+      <EmptyState
+        variant="error"
+        icon={<AlertCircle class="size-6" />}
+        message="Something went wrong"
+        description="We had trouble loading this simulation. The server may be temporarily unavailable."
+        actionLabel="Back to home"
+        actionHref="/"
+      />
     </div>
   );
 }

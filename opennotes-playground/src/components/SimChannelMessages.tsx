@@ -6,6 +6,8 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { Button } from "~/components/ui/button";
 import { fetchChannelMessages } from "~/routes/simulations/[id]";
 import type { components } from "~/lib/generated-types";
+import EmptyState from "~/components/ui/empty-state";
+import { MessageCircle, AlertTriangle } from "~/components/ui/icons";
 
 type SimChannelMessageResource =
   components["schemas"]["SimChannelMessageResource"];
@@ -83,13 +85,22 @@ export function SimChannelMessages(props: { simulationId: string }) {
 
       <Show when={initial() === null}>
         <div class="flex h-full items-center justify-center">
-          <p class="text-sm text-destructive">Failed to load messages</p>
+          <EmptyState
+            variant="error"
+            icon={<AlertTriangle class="size-6" />}
+            message="Couldn't load messages"
+            description="The chat history may be temporarily unavailable."
+          />
         </div>
       </Show>
 
       <Show when={initial() && messages().length === 0}>
         <div class="flex h-full items-center justify-center">
-          <p class="text-sm italic text-muted-foreground">No messages yet</p>
+          <EmptyState
+            icon={<MessageCircle class="size-6" />}
+            message="No messages yet"
+            description="Chat messages appear here once agents start discussing in the channel."
+          />
         </div>
       </Show>
 
