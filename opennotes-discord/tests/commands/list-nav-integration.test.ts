@@ -416,8 +416,6 @@ describe('list command - Navigation button integration', () => {
       const updateArg = interaction.update.mock.calls[0][0];
       const navIds = getNavCustomIds(updateArg.components);
       expect(navIds).toContain('nav:menu');
-      expect(navIds).toContain('nav:list:requests');
-      expect(navIds).toContain('nav:note:write');
     }, 10000);
   });
 

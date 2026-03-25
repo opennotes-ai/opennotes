@@ -361,7 +361,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
           }
         : undefined;
 
-    const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination);
+    const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination, 'list:notes');
 
     if (containers.length === 0) {
       await interaction.editReply({
@@ -369,8 +369,6 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
       });
       return;
     }
-
-    containers[0].addActionRowComponents(buildContextualNav('list:notes'));
 
     await interaction.editReply({
       components: [containers[0]],
@@ -1155,7 +1153,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
             }
           : undefined;
 
-      const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination);
+      const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination, 'list:notes');
 
       if (containers.length === 0) {
         await interaction.editReply({
@@ -1163,8 +1161,6 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
         });
         return;
       }
-
-      containers[0].addActionRowComponents(buildContextualNav('list:notes'));
 
       await interaction.editReply({
         components: [containers[0]],
@@ -1311,7 +1307,7 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
       nextButtonId: `queue:next:${stateId}`,
     };
 
-    const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination);
+    const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination, 'list:notes');
 
     if (containers.length === 0) {
       await interaction.update({
@@ -1320,8 +1316,6 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
       });
       return;
     }
-
-    containers[0].addActionRowComponents(buildContextualNav('list:notes'));
 
     await interaction.update({
       components: [containers[0]],

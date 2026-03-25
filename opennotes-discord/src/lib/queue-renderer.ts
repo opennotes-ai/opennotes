@@ -17,6 +17,7 @@ import {
   createTextWithButton,
   V2_LIMITS,
 } from '../utils/v2-components.js';
+import { buildMenuButton, buildContextualNav } from './navigation-components.js';
 
 /**
  * Configuration for pagination controls
@@ -213,7 +214,8 @@ export class QueueRendererV2 {
   static buildContainers(
     summary: QueueSummaryV2,
     items: QueueItemV2[],
-    pagination?: PaginationConfig
+    pagination?: PaginationConfig,
+    navContext?: string
   ): ContainerBuilder[] {
     const batches = this.batchItems(items, pagination);
     const containers: ContainerBuilder[] = [];
@@ -226,7 +228,8 @@ export class QueueRendererV2 {
       const container = this.buildContainer(
         isFirstBatch ? summary : undefined,
         batch,
-        isLastBatch ? pagination : undefined
+        isLastBatch ? pagination : undefined,
+        navContext
       );
 
       containers.push(container);
@@ -265,7 +268,8 @@ export class QueueRendererV2 {
   private static buildContainer(
     summary: QueueSummaryV2 | undefined,
     items: QueueItemV2[],
-    pagination?: PaginationConfig
+    pagination?: PaginationConfig,
+    navContext?: string
   ): ContainerBuilder {
     const container = new ContainerBuilder().setAccentColor(V2_COLORS.PRIMARY);
 
@@ -300,6 +304,9 @@ export class QueueRendererV2 {
     if (pagination && pagination.totalPages > 1) {
       container.addSeparatorComponents(createDivider());
       container.addActionRowComponents(this.createPaginationRow(pagination));
+    } else if (navContext) {
+      container.addSeparatorComponents(createDivider());
+      container.addActionRowComponents(buildContextualNav(navContext));
     }
 
     return container;
@@ -332,7 +339,8 @@ export class QueueRendererV2 {
     return new ActionRowBuilder<ButtonBuilder>().addComponents(
       previousButton,
       pageIndicator,
-      nextButton
+      nextButton,
+      buildMenuButton()
     );
   }
 }
