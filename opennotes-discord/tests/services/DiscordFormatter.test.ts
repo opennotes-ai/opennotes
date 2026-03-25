@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { DiscordFormatter } from '../../src/services/DiscordFormatter.js';
 import { cache } from '../../src/cache.js';
 import { ErrorCode, ServiceResult, ListRequestsResult, StatusResult } from '../../src/services/types.js';
@@ -918,34 +919,52 @@ describe('DiscordFormatter', () => {
     });
 
     it('should truncate oversized request content and add a View Full affordance', async () => {
-      const result = createMockListRequestsResult(1);
-      const longContent = `${'A'.repeat(4500)}ENDMARKER`;
-      result.requests[0].content = longContent;
-      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+      const setSpy = jest.spyOn(cache, 'set').mockResolvedValue(true);
+      try {
+        const result = createMockListRequestsResult(1);
+        const longContent = `${'A'.repeat(4500)}ENDMARKER`;
+        result.requests[0].content = longContent;
+        const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
 
-      const container = formatted.container.toJSON();
-      const containerJson = JSON.stringify(container);
+        const container = formatted.container.toJSON();
+        const containerJson = JSON.stringify(container);
 
-      expect(containerJson).toContain('View Full');
-      expect(containerJson).not.toContain('ENDMARKER');
+        expect(containerJson).toContain('View Full');
+        expect(containerJson).not.toContain('ENDMARKER');
+      } finally {
+        setSpy.mockRestore();
+      }
     });
 
     it('should cache canonical request text for View Full expansions', async () => {
-      const result = createMockListRequestsResult(1);
-      const canonicalContent = 'Line 1\n\n```ts\nconst x = 1;\n```\nLine 2';
-      result.requests[0].content = `${canonicalContent}\n${'Q'.repeat(4300)}`;
+      const storedValues = new Map<string, unknown>();
+      const setSpy = jest.spyOn(cache, 'set').mockImplementation(async (key: string, value: unknown) => {
+        storedValues.set(key, value);
+        return true;
+      });
+      const getSpy = jest.spyOn(cache, 'get').mockImplementation(async <T>(key: string) => {
+        return storedValues.get(key) as T;
+      });
+      try {
+        const result = createMockListRequestsResult(1);
+        const canonicalContent = 'Line 1\n\n```ts\nconst x = 1;\n```\nLine 2';
+        result.requests[0].content = `${canonicalContent}\n${'Q'.repeat(4300)}`;
 
-      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
-      const container = formatted.container.toJSON();
-      const containerJson = JSON.stringify(container);
-      const customId = containerJson.match(/"custom_id":"(view_full:[^"]+)"/)?.[1];
+        const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+        const container = formatted.container.toJSON();
+        const containerJson = JSON.stringify(container);
+        const customId = containerJson.match(/"custom_id":"(view_full:[^"]+)"/)?.[1];
 
-      expect(customId).toBeTruthy();
+        expect(customId).toBeTruthy();
 
-      const cachedContent = await cache.get<string>(customId!);
-      expect(cachedContent).toContain(canonicalContent);
-      expect(cachedContent).toContain('```ts');
-      expect(cachedContent).toContain('Line 1\n\n```ts');
+        const cachedContent = await cache.get<string>(customId!);
+        expect(cachedContent).toContain(canonicalContent);
+        expect(cachedContent).toContain('```ts');
+        expect(cachedContent).toContain('Line 1\n\n```ts');
+      } finally {
+        setSpy.mockRestore();
+        getSpy.mockRestore();
+      }
     });
 
     it('should include media gallery for image URLs', async () => {
