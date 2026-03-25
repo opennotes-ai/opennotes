@@ -1,4 +1,4 @@
-import { Client, EmbedBuilder, Guild } from 'discord.js';
+import { Client, Guild } from 'discord.js';
 import { logger } from '../logger.js';
 import { BotChannelService } from './BotChannelService.js';
 import { GuildConfigService } from './GuildConfigService.js';
@@ -6,9 +6,16 @@ import { ConfigKey } from '../lib/config-schema.js';
 import { apiClient } from '../api-client.js';
 import { formatMessageLink, truncateContentWithMeta } from '../lib/bulk-scan-executor.js';
 import type { BulkScanProgressEvent, MessageScoreInfo } from '../types/bulk-scan.js';
+import { ContainerBuilder } from 'discord.js';
+import {
+  createContainer,
+  createTextSection,
+  createDivider,
+  v2MessageFlags,
+} from '../utils/v2-components.js';
 
 export class VibecheckProgressService {
-  private static readonly MAX_EMBED_FIELD_LENGTH = 1024;
+  private static readonly MAX_SCORE_TEXT_LENGTH = 1024;
   private readonly client: Client;
   private readonly guildConfigService: GuildConfigService;
   private readonly botChannelService: BotChannelService;
@@ -59,8 +66,8 @@ export class VibecheckProgressService {
     }
 
     try {
-      const embed = this.formatProgressEmbed(event, guild);
-      await channel.send({ embeds: [embed] });
+      const container = this.formatProgressContainer(event, guild);
+      await channel.send({ components: [container], flags: v2MessageFlags() });
 
       logger.debug('Sent vibecheck progress to bot channel', {
         guildId: guild.id,
@@ -77,19 +84,17 @@ export class VibecheckProgressService {
     }
   }
 
-  private formatProgressEmbed(event: BulkScanProgressEvent, guild: Guild): EmbedBuilder {
+  private formatProgressContainer(event: BulkScanProgressEvent, guild: Guild): ContainerBuilder {
     const { batch_number, messages_in_batch, message_scores, threshold_used, channel_ids, messages_processed } = event;
 
     const flaggedCount = message_scores.filter((s) => s.is_flagged).length;
     const shortScanId = event.scan_id.substring(0, 8);
 
-    // Resolve channel IDs to names
     const channelNames = channel_ids
       .map((id) => guild.channels.cache.get(id)?.name)
       .filter((name): name is string => Boolean(name))
       .map((name) => `#${name}`);
 
-    // Format channel display: show up to 3 channels, then ellipsis
     let channelDisplay = '';
     if (channelNames.length > 0) {
       const displayNames = channelNames.slice(0, 3);
@@ -99,24 +104,40 @@ export class VibecheckProgressService {
     }
 
     const messageCount = messages_processed > 0 ? messages_processed : messages_in_batch;
+    const now = new Date();
+    const timestamp = `<t:${Math.floor(now.getTime() / 1000)}:R>`;
 
-    const embed = new EmbedBuilder()
-      .setTitle(`🔍 Vibecheck Progress - Batch ${batch_number}`)
-      .setColor(flaggedCount > 0 ? 0xff9900 : 0x00aa00)
-      .setDescription(
+    const container = createContainer(flaggedCount > 0 ? 0xff9900 : 0x00aa00);
+
+    container.addTextDisplayComponents(
+      createTextSection(`## 🔍 Vibecheck Progress - Batch ${batch_number}`)
+    );
+
+    container.addTextDisplayComponents(
+      createTextSection(
         `${channelDisplay} (${messageCount} messages) | Threshold: ${(threshold_used * 100).toFixed(0)}%`
       )
-      .setFooter({ text: `Scan ID: ${shortScanId}` })
-      .setTimestamp();
+    );
 
     const scoreLines = this.formatScoreLines(message_scores, threshold_used, guild.id);
     if (scoreLines.length > 0) {
       const truncated = scoreLines.slice(0, 10);
       const remaining = scoreLines.length - truncated.length;
-      embed.addFields(...this.buildScoreFields(truncated, remaining, flaggedCount));
+      const scoreBlocks = this.buildScoreBlocks(truncated, remaining, flaggedCount);
+
+      container.addSeparatorComponents(createDivider());
+
+      for (const block of scoreBlocks) {
+        container.addTextDisplayComponents(createTextSection(block));
+      }
     }
 
-    return embed;
+    container.addSeparatorComponents(createDivider());
+    container.addTextDisplayComponents(
+      createTextSection(`*Scan ID: ${shortScanId}* ${timestamp}`)
+    );
+
+    return container;
   }
 
   private formatScoreLines(scores: MessageScoreInfo[], threshold: number, guildId: string): string[] {
@@ -140,26 +161,25 @@ export class VibecheckProgressService {
     });
   }
 
-  private buildScoreFields(
+  private buildScoreBlocks(
     scoreLines: string[],
     remainingCount: number,
     flaggedCount: number
-  ): Array<{ name: string; value: string; inline: false }> {
-    const fields: Array<{ name: string; value: string; inline: false }> = [];
+  ): string[] {
+    const blocks: string[] = [];
     let currentLines: string[] = [];
     let currentLength = 0;
+    let isFirst = true;
 
-    const flushField = (): void => {
+    const flushBlock = (): void => {
       if (currentLines.length === 0) {
         return;
       }
-      fields.push({
-        name: fields.length === 0
-          ? `Message Scores (${flaggedCount} flagged)`
-          : 'Message Scores (continued)',
-        value: currentLines.join('\n'),
-        inline: false,
-      });
+      const header = isFirst
+        ? `**Message Scores (${flaggedCount} flagged)**`
+        : '**Message Scores (continued)**';
+      blocks.push(`${header}\n${currentLines.join('\n')}`);
+      isFirst = false;
       currentLines = [];
       currentLength = 0;
     };
@@ -168,9 +188,9 @@ export class VibecheckProgressService {
       const lineLength = line.length + (currentLines.length > 0 ? 1 : 0);
       if (
         currentLines.length > 0 &&
-        currentLength + lineLength > VibecheckProgressService.MAX_EMBED_FIELD_LENGTH
+        currentLength + lineLength > VibecheckProgressService.MAX_SCORE_TEXT_LENGTH
       ) {
-        flushField();
+        flushBlock();
       }
 
       currentLines.push(line);
@@ -182,14 +202,14 @@ export class VibecheckProgressService {
       const remainderLength = remainderLine.length + (currentLines.length > 0 ? 1 : 0);
       if (
         currentLines.length > 0 &&
-        currentLength + remainderLength > VibecheckProgressService.MAX_EMBED_FIELD_LENGTH
+        currentLength + remainderLength > VibecheckProgressService.MAX_SCORE_TEXT_LENGTH
       ) {
-        flushField();
+        flushBlock();
       }
       currentLines.push(remainderLine);
     }
 
-    flushField();
-    return fields;
+    flushBlock();
+    return blocks;
   }
 }
