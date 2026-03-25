@@ -97,7 +97,10 @@ export default function NoteDetails(props: {
   return (
     <section>
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h2 id="per-note-breakdown" class="text-xl font-semibold">Per-Note Breakdown</h2>
+        <div>
+          <h2 id="per-note-breakdown" class="text-xl font-semibold">Per-Note Breakdown</h2>
+          <p class="mt-1 text-sm text-muted-foreground">Each note examined — who wrote it, how it was rated, and whether consensus emerged</p>
+        </div>
         <Show when={props.notes.length > 1 || props.filterClassification.length > 0 || props.filterStatus.length > 0}>
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium text-muted-foreground">Sort by:</span>
