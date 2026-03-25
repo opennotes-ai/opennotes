@@ -3,19 +3,10 @@ import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
 import { TIER_DESCRIPTIONS } from "~/lib/scoring-tiers";
 import { softHyphenate } from "~/lib/soft-hyphenate";
-import { Card } from "~/components/ui/card";
+import SectionHeader from "~/components/ui/section-header";
 
 type ConsensusMetricsData = components["schemas"]["ConsensusMetricsData"];
 type ScoringCoverageData = components["schemas"]["ScoringCoverageData"];
-
-function MetricCard(props: { label: string; value: string }) {
-  return (
-    <Card class="p-3">
-      <div class="text-xs text-muted-foreground">{props.label}</div>
-      <div class="mt-1 text-xl font-semibold">{props.value}</div>
-    </Card>
-  );
-}
 
 export default function ScoringAnalysisSection(props: {
   consensus: ConsensusMetricsData;
@@ -26,21 +17,20 @@ export default function ScoringAnalysisSection(props: {
 
   return (
     <section id="scoring-analysis">
-      <h2 class="mb-4 text-xl font-semibold">Scoring & Analysis</h2>
+      <SectionHeader title="Scoring & Consensus" subtitle="How the community reached (or failed to reach) agreement" />
 
-      <h3 class="mt-6 text-sm font-medium text-muted-foreground">Consensus</h3>
-      <div class="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
-        <MetricCard label="Mean Agreement" value={props.consensus.mean_agreement.toFixed(3)} />
-        <MetricCard label="Polarization Index" value={props.consensus.polarization_index.toFixed(3)} />
-        <MetricCard label="With Consensus" value={String(props.consensus.notes_with_consensus)} />
-        <MetricCard label="With Disagreement" value={String(props.consensus.notes_with_disagreement)} />
-        <MetricCard label="Total Rated" value={String(props.consensus.total_notes_rated)} />
+      <div class="mt-4 flex flex-wrap gap-2">
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="text-muted-foreground">Agreement:</span> <strong>{props.consensus.mean_agreement.toFixed(3)}</strong></span>
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="text-muted-foreground">Polarization:</span> <strong>{props.consensus.polarization_index.toFixed(3)}</strong></span>
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="text-muted-foreground">Consensus:</span> <strong>{props.consensus.notes_with_consensus}</strong></span>
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="text-muted-foreground">Disagreement:</span> <strong>{props.consensus.notes_with_disagreement}</strong></span>
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="text-muted-foreground">Total Rated:</span> <strong>{props.consensus.total_notes_rated}</strong></span>
       </div>
 
       <h3 class="mt-6 text-sm font-medium text-muted-foreground">Scoring Coverage</h3>
-      <div class="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-        <MetricCard label="Current Tier" value={humanizeLabel(props.scoring.current_tier)} />
-        <MetricCard label="Scores Computed" value={String(props.scoring.total_scores_computed)} />
+      <div class="mt-2 flex flex-wrap gap-2">
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="text-muted-foreground">Tier:</span> <strong>{humanizeLabel(props.scoring.current_tier)}</strong></span>
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="text-muted-foreground">Scores:</span> <strong>{props.scoring.total_scores_computed}</strong></span>
       </div>
       <Show when={TIER_DESCRIPTIONS[props.scoring.current_tier]}>
         {(tierInfo) => (
@@ -52,7 +42,7 @@ export default function ScoringAnalysisSection(props: {
       </Show>
 
       <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card class="p-4">
+        <div class="rounded-lg border border-border p-4">
           <h3 class="mb-2 text-sm font-semibold">Tier Distribution</h3>
           <table class="w-full text-sm" aria-label="Tier distribution">
             <tbody>
@@ -71,8 +61,8 @@ export default function ScoringAnalysisSection(props: {
               </For>
             </tbody>
           </table>
-        </Card>
-        <Card class="p-4">
+        </div>
+        <div class="rounded-lg border border-border p-4">
           <h3 class="mb-2 text-sm font-semibold">Scorer Breakdown</h3>
           <table class="w-full text-sm" aria-label="Scorer breakdown">
             <tbody>
@@ -86,19 +76,19 @@ export default function ScoringAnalysisSection(props: {
               </For>
             </tbody>
           </table>
-        </Card>
-        <Card class="p-4">
+        </div>
+        <div class="rounded-lg border border-border p-4">
           <h3 class="mb-2 text-sm font-semibold">Tiers Reached</h3>
           <p class="text-sm text-muted-foreground">
             {props.scoring.tiers_reached.map(humanizeLabel).join(", ") || "None"}
           </p>
-        </Card>
-        <Card class="p-4">
+        </div>
+        <div class="rounded-lg border border-border p-4">
           <h3 class="mb-2 text-sm font-semibold">Scorers Exercised</h3>
           <p class="text-sm text-muted-foreground break-words">
             {props.scoring.scorers_exercised.map(softHyphenate).join(", ") || "None"}
           </p>
-        </Card>
+        </div>
       </div>
     </section>
   );
