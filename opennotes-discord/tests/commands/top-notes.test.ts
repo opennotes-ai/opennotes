@@ -27,10 +27,12 @@ const mockDiscordFormatter = {
     items: [],
   }),
   formatTopNotesForQueueV2: jest.fn().mockReturnValue({
-    container: { toJSON: () => ({}) },
+    container: {
+      addActionRowComponents: jest.fn().mockReturnThis(),
+      toJSON: () => ({}),
+    },
     components: [{}],
     flags: MessageFlags.IsComponentsV2,
-    forcePublishButtonRows: [],
   }),
   formatError: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
 };
@@ -187,10 +189,12 @@ describe('top-notes command', () => {
       items: [],
     });
     mockDiscordFormatter.formatTopNotesForQueueV2.mockReturnValue({
-      container: { toJSON: () => ({}) },
+      container: {
+        addActionRowComponents: jest.fn().mockReturnThis(),
+        toJSON: () => ({}),
+      },
       components: [{}],
       flags: MessageFlags.IsComponentsV2,
-      forcePublishButtonRows: [],
     });
     mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
     mockQueueRenderer.render.mockResolvedValue({

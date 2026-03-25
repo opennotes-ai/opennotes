@@ -377,6 +377,10 @@ describe('list command - Button Handlers', () => {
       });
 
       MockDiscordFormatter.formatListRequestsSuccessV2.mockResolvedValue({
+        container: {
+          addActionRowComponents: jest.fn().mockReturnThis(),
+          toJSON: () => ({ type: 17 }),
+        },
         components: [{ type: 17 }],
         flags: MessageFlags.IsComponentsV2,
       });

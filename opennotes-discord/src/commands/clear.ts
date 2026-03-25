@@ -248,9 +248,8 @@ async function showConfirmationPrompt(
     if (reason === 'time') {
       interaction.editReply({
         content: 'Confirmation timed out. Please run the command again if you still want to proceed.',
-        components: [],
+        components: [buildContextualNav(`clear:${type}`)],
       }).catch(() => {
-        /* Silently ignore - interaction may have expired */
       });
     }
   });
@@ -282,7 +281,7 @@ async function handleConfirmationButton(
   if (action === 'clear_cancel') {
     await buttonInteraction.update({
       content: 'Clear operation cancelled.',
-      components: [],
+      components: [buildContextualNav(`clear:${state.type}`)],
     });
     collector.stop();
     return;
@@ -307,7 +306,7 @@ async function handleConfirmationButton(
 
       await buttonInteraction.editReply({
         content: `Successfully deleted **${result.deletedCount}** ${itemType}.`,
-        components: [],
+        components: [buildContextualNav(`clear:${state.type}`)],
       });
     } catch (error) {
       const errorId = generateErrorId();
@@ -327,7 +326,7 @@ async function handleConfirmationButton(
 
       await buttonInteraction.editReply({
         content: formatErrorForUser(errorId, 'Failed to complete the clear operation. Please try again later.'),
-        components: [],
+        components: [buildContextualNav(`clear:${state.type}`)],
       });
     }
 

@@ -397,7 +397,6 @@ describe('list command - Navigation button integration', () => {
         container: topNotesContainer,
         components: [topNotesContainer.toJSON()],
         flags: MessageFlags.IsComponentsV2,
-        forcePublishButtonRows: [],
       });
 
       mockScoringService.getTopNotes.mockResolvedValue({

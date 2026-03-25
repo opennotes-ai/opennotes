@@ -404,8 +404,10 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
       return;
     }
 
+    containers[0].addActionRowComponents(buildContextualNav('list:notes'));
+
     await interaction.editReply({
-      components: [containers[0], buildContextualNav('list:notes')],
+      components: [containers[0]],
       flags: v2MessageFlags(),
     });
 
@@ -531,8 +533,10 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       isAdmin: hasManageGuildPermission(member),
     });
 
+    formattedData.container.addActionRowComponents(buildContextualNav('list:requests'));
+
     await interaction.editReply({
-      components: [formattedData.container.toJSON(), buildContextualNav('list:requests')],
+      components: [formattedData.container.toJSON()],
       flags: formattedData.flags,
     });
 
@@ -644,8 +648,10 @@ async function handleTopNotesSubcommand(interaction: ChatInputCommandInteraction
       includeForcePublishButtons: hasAdminButtons ?? false,
     });
 
+    formattedData.container.addActionRowComponents(buildContextualNav('list:top-notes'));
+
     await interaction.editReply({
-      components: [formattedData.container.toJSON(), buildContextualNav('list:top-notes')],
+      components: [formattedData.container.toJSON()],
       flags: formattedData.flags,
     });
 
@@ -1238,8 +1244,10 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
         isAdmin: hasManageGuildPermission(member),
       });
 
+      formattedData.container.addActionRowComponents(buildContextualNav('list:requests'));
+
       await interaction.editReply({
-        components: [formattedData.container.toJSON(), buildContextualNav('list:requests')],
+        components: [formattedData.container.toJSON()],
         flags: formattedData.flags,
       });
 
@@ -1299,8 +1307,10 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
         return;
       }
 
+      containers[0].addActionRowComponents(buildContextualNav('list:notes'));
+
       await interaction.editReply({
-        components: [containers[0], buildContextualNav('list:notes')],
+        components: [containers[0]],
         flags: v2MessageFlags(),
       });
 
@@ -1454,8 +1464,10 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
       return;
     }
 
+    containers[0].addActionRowComponents(buildContextualNav('list:notes'));
+
     await interaction.update({
-      components: [containers[0], buildContextualNav('list:notes')],
+      components: [containers[0]],
       flags: v2MessageFlags(),
     });
 
@@ -1669,8 +1681,10 @@ export async function handleRequestQueuePageButton(interaction: ButtonInteractio
       isAdmin: hasManageGuildPermission(member),
     });
 
+    formatted.container.addActionRowComponents(buildContextualNav('list:requests'));
+
     await interaction.editReply({
-      components: [...formatted.components, buildContextualNav('list:requests')],
+      components: [formatted.container.toJSON()],
       flags: formatted.flags,
     });
 

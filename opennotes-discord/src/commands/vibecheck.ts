@@ -50,20 +50,6 @@ export function getExplanationsCacheKey(scanId: string): string {
   return `vibecheck:explanations:${scanId}`;
 }
 
-function createListRequestsButton(): ButtonBuilder {
-  return new ButtonBuilder()
-    .setCustomId('request_reply:list_requests')
-    .setLabel('List Requests')
-    .setStyle(ButtonStyle.Primary);
-}
-
-function createListNotesButton(): ButtonBuilder {
-  return new ButtonBuilder()
-    .setCustomId('request_reply:list_notes')
-    .setLabel('List Notes')
-    .setStyle(ButtonStyle.Secondary);
-}
-
 async function fetchExplanations(
   flaggedMessages: FlaggedMessageResource[],
   communityServerId: string
@@ -610,19 +596,7 @@ async function showAiGenerationPrompt(
         );
         const createdCount = result.data.attributes.created_count;
 
-        const buttons: ButtonBuilder[] = [];
-        if (createdCount > 0) {
-          buttons.push(createListRequestsButton());
-          if (generateAiNotes) {
-            buttons.push(createListNotesButton());
-          }
-        }
-
-        const components: ActionRowBuilder<ButtonBuilder>[] = buttons.length > 0
-          ? [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)]
-          : [];
-
-        components.push(buildContextualNav('vibecheck:create-requests'));
+        const components: ActionRowBuilder<ButtonBuilder>[] = [buildContextualNav('vibecheck:create-requests')];
 
         await aiButtonInteraction.update({
           content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}` +
@@ -903,11 +877,7 @@ async function handleCreateRequestsSubcommand(
 
     const createdCount = result.data.attributes.created_count;
 
-    const components: ActionRowBuilder<ButtonBuilder>[] = createdCount > 0
-      ? [new ActionRowBuilder<ButtonBuilder>().addComponents(createListRequestsButton())]
-      : [];
-
-    components.push(buildContextualNav('vibecheck:create-requests'));
+    const components: ActionRowBuilder<ButtonBuilder>[] = [buildContextualNav('vibecheck:create-requests')];
 
     await interaction.editReply({
       content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}.`,

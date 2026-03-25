@@ -251,6 +251,20 @@ export class Bot {
           await handleNavInteraction(interaction);
         } catch (error) {
           logger.error('Navigation button failed', { error });
+          try {
+            if (interaction.deferred || interaction.replied) {
+              await interaction.followUp({
+                content: 'Navigation failed. Please try again.',
+                flags: MessageFlags.Ephemeral,
+              });
+            } else {
+              await interaction.reply({
+                content: 'Navigation failed. Please try again.',
+                flags: MessageFlags.Ephemeral,
+              });
+            }
+          } catch {
+          }
         }
         return;
       }

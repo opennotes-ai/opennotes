@@ -82,7 +82,6 @@ const mockFormatTopNotesForQueueV2 = jest.fn().mockReturnValue({
   },
   components: [{ type: 17, components: [] }],
   flags: 32768,
-  forcePublishButtonRows: [],
 });
 const mockFormatListRequestsSuccessV2 = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
   container: {
@@ -209,8 +208,7 @@ describe('navigation-handler', () => {
       },
       components: [{ type: 17, components: [] }],
       flags: 32768,
-      forcePublishButtonRows: [],
-    });
+        });
     mockFormatListRequestsSuccessV2.mockResolvedValue({
       container: {
         addActionRowComponents: jest.fn().mockReturnThis(),

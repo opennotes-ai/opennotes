@@ -2,7 +2,7 @@ import { ButtonInteraction, MessageFlags, ActionRowBuilder, ButtonBuilder, Conta
 import { cache } from '../cache.js';
 import { logger } from '../logger.js';
 import { NavigationStateManager, ScreenState } from '../lib/navigation-state.js';
-import { buildNavHub, buildBackButton, buildFullMenuButton, buildContextualNav } from '../lib/navigation-components.js';
+import { buildNavHub, buildBackButton, buildFullMenuButton, buildContextualNav, NAV_GRAPH } from '../lib/navigation-components.js';
 import { v2MessageFlags, createContainer, createTextSection, createDivider, V2_COLORS } from '../utils/v2-components.js';
 import { buildWelcomeContainer } from '../lib/welcome-content.js';
 import { serviceProvider } from '../services/index.js';
@@ -11,6 +11,30 @@ import { apiClient } from '../api-client.js';
 import { resolveUserProfileId } from '../lib/user-profile-resolver.js';
 
 const navState = new NavigationStateManager(cache);
+
+function detectCommandContext(components: readonly { toJSON: () => unknown }[]): string {
+  const navCustomIds = new Set<string>();
+  for (const row of components) {
+    const rowData = row.toJSON() as { components?: { custom_id?: string }[] };
+    if (rowData.components) {
+      for (const comp of rowData.components) {
+        if (comp.custom_id?.startsWith('nav:') && comp.custom_id !== 'nav:menu') {
+          navCustomIds.add(comp.custom_id);
+        }
+      }
+    }
+  }
+
+  for (const [context, actions] of Object.entries(NAV_GRAPH)) {
+    const expectedIds = new Set(actions.map(a => a.customId));
+    if (expectedIds.size === navCustomIds.size &&
+        [...expectedIds].every(id => navCustomIds.has(id))) {
+      return context;
+    }
+  }
+
+  return 'unknown';
+}
 
 export async function handleNavInteraction(interaction: ButtonInteraction): Promise<void> {
   const customId = interaction.customId;
@@ -34,7 +58,7 @@ async function handleMenuButton(interaction: ButtonInteraction): Promise<void> {
   const flags = interaction.message.flags.bitfield;
 
   const screenState: ScreenState = {
-    commandContext: 'unknown',
+    commandContext: detectCommandContext(interaction.message.components),
     components,
     flags,
   };

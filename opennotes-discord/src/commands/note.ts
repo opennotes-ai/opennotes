@@ -13,6 +13,7 @@ import {
   User,
   GuildMember,
   PermissionFlagsBits,
+  ContainerBuilder,
   type APIContainerComponent,
 } from 'discord.js';
 import { serviceProvider } from '../services/index.js';
@@ -32,11 +33,14 @@ import { isProquint, proquintToHexSuffix, formatIdDisplay } from '../lib/proquin
 import { buildContextualNav } from '../lib/navigation-components.js';
 
 function appendNavRow(response: Record<string, unknown>, context: string): void {
-  const navRow = buildContextualNav(context).toJSON();
-  if (Array.isArray(response.components)) {
-    response.components.push(navRow);
+  const navRow = buildContextualNav(context);
+  if (response.container instanceof ContainerBuilder) {
+    response.container.addActionRowComponents(navRow);
+    response.components = [response.container.toJSON()];
+  } else if (Array.isArray(response.components)) {
+    response.components.push(navRow.toJSON());
   } else {
-    response.components = [navRow];
+    response.components = [navRow.toJSON()];
   }
 }
 

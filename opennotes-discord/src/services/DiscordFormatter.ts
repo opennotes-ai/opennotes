@@ -483,11 +483,9 @@ export class DiscordFormatter {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
     flags: number;
-    forcePublishButtonRows: ActionRowBuilder<ButtonBuilder>[];
   } {
     const totalCount = response.meta?.total_count ?? response.data.length;
     const totalPages = Math.ceil(totalCount / pageSize);
-    const forcePublishButtonRows: ActionRowBuilder<ButtonBuilder>[] = [];
 
     const container = createContainer(V2_COLORS.INFO);
 
@@ -501,7 +499,6 @@ export class DiscordFormatter {
         container,
         components: [container.toJSON()],
         flags: v2MessageFlags(),
-        forcePublishButtonRows,
       };
     }
 
@@ -551,12 +548,13 @@ export class DiscordFormatter {
       );
 
       if (options?.includeForcePublishButtons) {
-        const forcePublishButton = new ButtonBuilder()
-          .setCustomId(`force_publish:${resource.id}`)
-          .setLabel(`Force Publish Note ${formatIdDisplay(resource.id)}`)
-          .setStyle(ButtonStyle.Danger);
-        forcePublishButtonRows.push(
-          new ActionRowBuilder<ButtonBuilder>().addComponents(forcePublishButton)
+        container.addActionRowComponents(
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`force_publish:${resource.id}`)
+              .setLabel(`Force Publish Note ${formatIdDisplay(resource.id)}`)
+              .setStyle(ButtonStyle.Danger)
+          )
         );
       }
     }
@@ -570,7 +568,6 @@ export class DiscordFormatter {
       container,
       components: [container.toJSON()],
       flags: v2MessageFlags(),
-      forcePublishButtonRows,
     };
   }
 
