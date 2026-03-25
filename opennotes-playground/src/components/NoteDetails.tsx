@@ -7,6 +7,8 @@ import { getHelpfulnessTooltip } from "~/lib/scoring-tiers";
 import { cn } from "~/lib/cn";
 import NoteFilter, { type NoteFilterValues } from "~/components/ui/note-filter";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import EmptyState from "~/components/ui/empty-state";
+import { ClipboardList } from "~/components/ui/icons";
 
 type DetailedNoteResource = components["schemas"]["DetailedNoteResource"];
 
@@ -131,7 +133,13 @@ export default function NoteDetails(props: {
 
       <Show
         when={props.notes.length > 0}
-        fallback={<p class="text-muted-foreground">No notes available.</p>}
+        fallback={
+          <EmptyState
+            icon={<ClipboardList class="size-6" />}
+            message="No notes available"
+            description="Notes appear once agents begin writing and rating."
+          />
+        }
       >
         <div class="space-y-3">
           <For each={sortedGroups()}>

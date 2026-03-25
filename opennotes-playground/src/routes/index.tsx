@@ -5,6 +5,8 @@ import SimulationCard from "~/components/SimulationCard";
 import Pagination from "~/components/Pagination";
 import BlogFeed from "~/components/BlogFeed";
 import FontToggle from "~/components/FontToggle";
+import EmptyState from "~/components/ui/empty-state";
+import { BarChart3, AlertTriangle } from "~/components/ui/icons";
 
 const getSimulations = query(async (page: number) => {
   "use server";
@@ -41,12 +43,14 @@ export default function SimulationsPage() {
               when={data()}
               keyed
               fallback={
-                <div class="rounded-lg bg-red-100 p-6 text-center dark:bg-red-900/30">
-                  <p class="font-medium text-red-800 dark:text-red-300">
-                    Failed to load simulations. The API may be unreachable.
-                  </p>
-                  <a href="/" class="mt-2 inline-block text-primary hover:underline">Try again</a>
-                </div>
+                <EmptyState
+                  variant="error"
+                  icon={<AlertTriangle class="size-6" />}
+                  message="Couldn't reach the API"
+                  description="The server may be temporarily unavailable."
+                  actionLabel="Try again"
+                  actionHref="/"
+                />
               }
             >
               {(response) => (
@@ -60,7 +64,13 @@ export default function SimulationsPage() {
                   </Show>
                   <Show
                     when={response.data.length > 0}
-                    fallback={<p class="text-muted-foreground">No simulations found.</p>}
+                    fallback={
+                      <EmptyState
+                        icon={<BarChart3 class="size-6" />}
+                        message="No simulations yet"
+                        description="Simulations appear here once they're created and completed."
+                      />
+                    }
                   >
                     <div class="space-y-3">
                       <For each={response.data}>

@@ -4,6 +4,8 @@ import { getRequestEvent } from "solid-js/web";
 import BlogPost from "./BlogPost";
 import type { BlogPost as BlogPostType } from "~/lib/blog.server";
 import { Button } from "~/components/ui/button";
+import EmptyState from "~/components/ui/empty-state";
+import { FileText } from "~/components/ui/icons";
 
 const getInitialPosts = query(async () => {
   "use server";
@@ -49,7 +51,13 @@ export default function BlogFeed() {
       <Show when={initial() !== undefined} fallback={<p class="text-muted-foreground">Loading posts...</p>}>
         <Show
           when={allPosts().length > 0}
-          fallback={<p class="text-muted-foreground">No posts yet.</p>}
+          fallback={
+            <EmptyState
+              icon={<FileText class="size-6" />}
+              message="No posts yet"
+              description="Blog posts will appear here as they're published."
+            />
+          }
         >
           <div class="divide-y divide-dashed divide-border">
             <For each={allPosts()}>
