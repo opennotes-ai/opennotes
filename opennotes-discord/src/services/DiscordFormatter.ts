@@ -678,21 +678,41 @@ export class DiscordFormatter {
           });
         }
 
-        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`write_note:NOT_MISLEADING:${writeNoteNotMisleadingShortId}`)
-            .setLabel('Not Misleading')
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId(`write_note:MISINFORMED_OR_POTENTIALLY_MISLEADING:${writeNoteMisinformedShortId}`)
-            .setLabel('Misinformed or Misleading')
-            .setStyle(ButtonStyle.Danger),
-          new ButtonBuilder()
-            .setCustomId(`ai_write_note:${aiWriteNoteShortId}`)
-            .setLabel('AI Generate')
-            .setStyle(ButtonStyle.Primary)
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent('**Write a note yourself.** The original message is:')
         );
-        container.addActionRowComponents(row);
+        container.addActionRowComponents(
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`write_note:NOT_MISLEADING:${writeNoteNotMisleadingShortId}`)
+              .setLabel('Not Misleading')
+              .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+              .setCustomId(`write_note:MISINFORMED_OR_POTENTIALLY_MISLEADING:${writeNoteMisinformedShortId}`)
+              .setLabel('Misinformed or Misleading')
+              .setStyle(ButtonStyle.Danger),
+          )
+        );
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent('Let AI write the note:')
+        );
+        container.addActionRowComponents(
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`ai_write_note:${aiWriteNoteShortId}`)
+              .setLabel('AI')
+              .setEmoji({ name: '✨' })
+              .setStyle(ButtonStyle.Primary),
+          )
+        );
+      } else if (request.status === 'COMPLETED') {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent('*Notes have been written for this request.*')
+        );
+      } else if (request.status === 'IN_PROGRESS') {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent('*A note is being written for this request.*')
+        );
       }
     }
 

@@ -868,7 +868,7 @@ describe('DiscordFormatter', () => {
 
       const container = formatted.container.toJSON();
       const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
-      expect(actionRowComponents.length).toBeGreaterThan(0);
+      expect(actionRowComponents).toHaveLength(2);
       expect(formatted.actionRows).toHaveLength(0);
     });
 
@@ -881,6 +881,28 @@ describe('DiscordFormatter', () => {
       const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
       expect(actionRowComponents).toHaveLength(0);
       expect(formatted.actionRows).toHaveLength(0);
+    });
+
+    it('should show status text for COMPLETED requests', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'COMPLETED';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c: any) => c.type === 10);
+      const allContent = textComponents.map((c: any) => c.content).join(' ');
+      expect(allContent).toContain('Notes have been written for this request');
+    });
+
+    it('should show status text for IN_PROGRESS requests', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'IN_PROGRESS';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c: any) => c.type === 10);
+      const allContent = textComponents.map((c: any) => c.content).join(' ');
+      expect(allContent).toContain('A note is being written for this request');
     });
 
     it('should include content preview when available', async () => {
@@ -945,10 +967,10 @@ describe('DiscordFormatter', () => {
       const container = formatted.container.toJSON();
       const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
 
-      expect(actionRowComponents.length).toBeGreaterThan(0);
+      expect(actionRowComponents).toHaveLength(2);
     });
 
-    it('should place action row immediately after its associated request entry', async () => {
+    it('should place action rows immediately after its associated request entry', async () => {
       const result = createMockListRequestsResult(2);
       result.requests[0].status = 'PENDING';
       result.requests[1].status = 'PENDING';
@@ -969,15 +991,15 @@ describe('DiscordFormatter', () => {
         }
       });
 
-      expect(actionRowIndices.length).toBe(2);
-      actionRowIndices.forEach((arIdx, i) => {
+      expect(actionRowIndices.length).toBe(4);
+      for (let i = 0; i < requestTextIndices.length; i++) {
         const requestIdx = requestTextIndices[i];
-        expect(arIdx).toBeGreaterThan(requestIdx);
         const nextRequestIdx = requestTextIndices[i + 1];
-        if (nextRequestIdx !== undefined) {
-          expect(arIdx).toBeLessThan(nextRequestIdx);
-        }
-      });
+        const rowsForRequest = actionRowIndices.filter(
+          (arIdx) => arIdx > requestIdx && (nextRequestIdx === undefined || arIdx < nextRequestIdx)
+        );
+        expect(rowsForRequest).toHaveLength(2);
+      }
     });
 
     it('should not return separate actionRows array when rows are embedded', async () => {
@@ -986,6 +1008,43 @@ describe('DiscordFormatter', () => {
       const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
 
       expect(formatted.actionRows).toHaveLength(0);
+    });
+
+    it('should include TextDisplay labels before button rows for pending requests', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'PENDING';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const textComponents = container.components.filter((c: any) => c.type === 10);
+      const allContent = textComponents.map((c: any) => c.content).join(' ');
+      expect(allContent).toContain('Write a note yourself');
+      expect(allContent).toContain('Let AI write the note');
+    });
+
+    it('should use sparkles emoji and AI label on AI button', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'PENDING';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const actionRows = container.components.filter((c: any) => c.type === 1);
+      const aiRow = actionRows[1] as any;
+      const aiButton = aiRow.components[0];
+      expect(aiButton.label).toBe('AI');
+      expect(aiButton.emoji).toEqual({ name: '✨' });
+    });
+
+    it('should split write buttons and AI button into separate action rows', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'PENDING';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const actionRows = container.components.filter((c: any) => c.type === 1);
+      expect(actionRows).toHaveLength(2);
+      expect((actionRows[0] as any).components).toHaveLength(2);
+      expect((actionRows[1] as any).components).toHaveLength(1);
     });
   });
 
