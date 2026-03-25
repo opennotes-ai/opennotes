@@ -439,7 +439,7 @@ describe('navigation-handler', () => {
         expect.objectContaining({
           userId: 'user-123',
           page: 1,
-          size: 5,
+          size: 4,
         })
       );
       expect(interaction.editReply).toHaveBeenCalledTimes(1);

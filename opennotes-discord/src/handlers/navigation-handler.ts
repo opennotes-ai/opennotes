@@ -9,6 +9,7 @@ import { serviceProvider } from '../services/index.js';
 import { DiscordFormatter } from '../services/DiscordFormatter.js';
 import { apiClient } from '../api-client.js';
 import { resolveUserProfileId } from '../lib/user-profile-resolver.js';
+import { LIST_COMMAND_LIMITS } from '../lib/constants.js';
 
 const navState = new NavigationStateManager(cache);
 
@@ -296,7 +297,7 @@ async function handleListRequests(interaction: ButtonInteraction): Promise<void>
     const result = await listRequestsService.execute({
       userId: interaction.user.id,
       page: 1,
-      size: 5,
+      size: LIST_COMMAND_LIMITS.REQUESTS_PER_PAGE,
     });
 
     if (!result.success) {

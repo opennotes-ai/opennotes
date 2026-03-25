@@ -34,7 +34,7 @@ import {
   truncateWithMeta,
   buildViewFullCustomId,
 } from '../utils/v2-components.js';
-import { buildContextualNav } from '../lib/navigation-components.js';
+import { buildContextualNav, buildMenuButton } from '../lib/navigation-components.js';
 
 export class DiscordFormatter {
   private static readonly VIEW_FULL_TTL_SECONDS = 900;
@@ -528,7 +528,7 @@ export class DiscordFormatter {
       )
     );
 
-    for (const request of result.requests.slice(0, 5)) {
+    for (const request of result.requests.slice(0, 4)) {
       const statusEmojiMap: Record<RequestStatus, string> = {
         PENDING: '\u{23F3}',
         IN_PROGRESS: '\u{1F504}',
@@ -673,12 +673,11 @@ export class DiscordFormatter {
           .setCustomId(`request_queue_page:${result.page + 1}:${stateId}`)
           .setLabel('\u25B6')
           .setStyle(ButtonStyle.Secondary)
-          .setDisabled(result.page >= totalPages)
+          .setDisabled(result.page >= totalPages),
+        buildMenuButton()
       );
       container.addActionRowComponents(paginationRow);
-    }
-
-    if (navContext) {
+    } else if (navContext) {
       container.addActionRowComponents(buildContextualNav(navContext));
     }
 
