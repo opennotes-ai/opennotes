@@ -27,8 +27,10 @@ export default function SimulationsPage() {
     <main class="mx-auto max-w-6xl px-4 py-8">
       <div class="grid grid-cols-1 gap-8 md:grid-cols-[2fr_1fr]">
         <div>
-          <div class="relative">
-            <div class="absolute right-0 top-8 z-10">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Posts</h2>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-muted-foreground">Font:</span>
               <FontToggle />
             </div>
           </div>
