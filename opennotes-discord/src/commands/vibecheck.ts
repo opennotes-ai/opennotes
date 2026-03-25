@@ -444,7 +444,7 @@ async function displayFlaggedResults(
   const collector = reply.createMessageComponentCollector({
     componentType: ComponentType.Button,
     time: 300000,
-    filter: (i) => i.user.id === originalUserId,
+    filter: (i) => i.user.id === originalUserId && !i.customId.startsWith('nav:'),
   });
 
   collector.on('collect', (buttonInteraction: ButtonInteraction) => {
@@ -734,7 +734,7 @@ async function handleStatusSubcommand(
       const collector = reply.createMessageComponentCollector({
         componentType: ComponentType.Button,
         time: 300000,
-        filter: (i) => i.user.id === originalUserId,
+        filter: (i) => i.user.id === originalUserId && !i.customId.startsWith('nav:'),
       });
 
       collector.on('collect', (buttonInteraction: ButtonInteraction) => {

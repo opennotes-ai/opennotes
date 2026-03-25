@@ -185,38 +185,47 @@ async function handleAboutOpennotes(interaction: ButtonInteraction): Promise<voi
 async function handleStatusBot(interaction: ButtonInteraction): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const guilds = interaction.client.guilds.cache.size;
-  const statusService = serviceProvider.getStatusService();
-  const scoringService = serviceProvider.getScoringService();
+  try {
+    const guilds = interaction.client.guilds.cache.size;
+    const statusService = serviceProvider.getStatusService();
+    const scoringService = serviceProvider.getScoringService();
 
-  const result = await statusService.execute(guilds);
+    const result = await statusService.execute(guilds);
 
-  if (!result.success) {
-    const errorResponse = DiscordFormatter.formatErrorV2(result);
+    if (!result.success) {
+      const errorResponse = DiscordFormatter.formatErrorV2(result);
+      await interaction.editReply({
+        components: errorResponse.components,
+        flags: errorResponse.flags,
+      });
+      return;
+    }
+
+    const scoringResult = await scoringService.getScoringStatus();
+
+    const response = DiscordFormatter.formatStatusSuccessV2(result.data!);
+
+    if (scoringResult.success && scoringResult.data) {
+      const scoringV2 = DiscordFormatter.formatScoringStatusV2(scoringResult.data);
+      response.container
+        .addSeparatorComponents(scoringV2.separator)
+        .addTextDisplayComponents(scoringV2.textDisplay);
+    }
+
+    response.container.addActionRowComponents(buildContextualNav('status-bot'));
+
     await interaction.editReply({
-      components: errorResponse.components,
-      flags: errorResponse.flags,
+      components: [response.container.toJSON()],
+      flags: response.flags,
     });
-    return;
+  } catch (error) {
+    logger.error('Failed to handle nav status-bot', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await interaction.editReply({
+      content: 'Failed to load bot status. Please try `/vibecheck` instead.',
+    });
   }
-
-  const scoringResult = await scoringService.getScoringStatus();
-
-  const response = DiscordFormatter.formatStatusSuccessV2(result.data!);
-
-  if (scoringResult.success && scoringResult.data) {
-    const scoringV2 = DiscordFormatter.formatScoringStatusV2(scoringResult.data);
-    response.container
-      .addSeparatorComponents(scoringV2.separator)
-      .addTextDisplayComponents(scoringV2.textDisplay);
-  }
-
-  response.container.addActionRowComponents(buildContextualNav('status-bot'));
-
-  await interaction.editReply({
-    components: [response.container.toJSON()],
-    flags: response.flags,
-  });
 }
 
 async function handleListNotes(interaction: ButtonInteraction): Promise<void> {
@@ -280,58 +289,76 @@ async function handleListNotes(interaction: ButtonInteraction): Promise<void> {
 async function handleListRequests(interaction: ButtonInteraction): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const listRequestsService = serviceProvider.getListRequestsService();
-  const result = await listRequestsService.execute({
-    userId: interaction.user.id,
-    page: 1,
-    size: 5,
-  });
-
-  if (!result.success) {
-    const errorResponse = DiscordFormatter.formatErrorV2(result);
-    await interaction.editReply({
-      components: errorResponse.components,
-      flags: errorResponse.flags,
+  try {
+    const listRequestsService = serviceProvider.getListRequestsService();
+    const result = await listRequestsService.execute({
+      userId: interaction.user.id,
+      page: 1,
+      size: 5,
     });
-    return;
+
+    if (!result.success) {
+      const errorResponse = DiscordFormatter.formatErrorV2(result);
+      await interaction.editReply({
+        components: errorResponse.components,
+        flags: errorResponse.flags,
+      });
+      return;
+    }
+
+    const formatted = await DiscordFormatter.formatListRequestsSuccessV2(
+      result.data!,
+      { guildId: interaction.guildId ?? undefined }
+    );
+
+    formatted.container.addActionRowComponents(buildContextualNav('list:requests'));
+
+    await interaction.editReply({
+      components: [formatted.container.toJSON()],
+      flags: formatted.flags,
+    });
+  } catch (error) {
+    logger.error('Failed to handle nav list:requests', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await interaction.editReply({
+      content: 'Failed to load requests. Please try `/list requests` instead.',
+    });
   }
-
-  const formatted = await DiscordFormatter.formatListRequestsSuccessV2(
-    result.data!,
-    { guildId: interaction.guildId ?? undefined }
-  );
-
-  formatted.container.addActionRowComponents(buildContextualNav('list:requests'));
-
-  await interaction.editReply({
-    components: [formatted.container.toJSON()],
-    flags: formatted.flags,
-  });
 }
 
 async function handleListTopNotes(interaction: ButtonInteraction): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const scoringService = serviceProvider.getScoringService();
-  const result = await scoringService.getTopNotes({ limit: 10 });
+  try {
+    const scoringService = serviceProvider.getScoringService();
+    const result = await scoringService.getTopNotes({ limit: 10 });
 
-  if (!result.success) {
-    const errorResponse = DiscordFormatter.formatErrorV2(result);
+    if (!result.success) {
+      const errorResponse = DiscordFormatter.formatErrorV2(result);
+      await interaction.editReply({
+        components: errorResponse.components,
+        flags: errorResponse.flags,
+      });
+      return;
+    }
+
+    const formatted = DiscordFormatter.formatTopNotesForQueueV2(result.data!, 1, 10);
+
+    formatted.container.addActionRowComponents(buildContextualNav('list:top-notes'));
+
     await interaction.editReply({
-      components: errorResponse.components,
-      flags: errorResponse.flags,
+      components: [formatted.container.toJSON()],
+      flags: formatted.flags,
     });
-    return;
+  } catch (error) {
+    logger.error('Failed to handle nav list:top-notes', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await interaction.editReply({
+      content: 'Failed to load top notes. Please try `/list top-notes` instead.',
+    });
   }
-
-  const formatted = DiscordFormatter.formatTopNotesForQueueV2(result.data!, 1, 10);
-
-  formatted.container.addActionRowComponents(buildContextualNav('list:top-notes'));
-
-  await interaction.editReply({
-    components: [formatted.container.toJSON()],
-    flags: formatted.flags,
-  });
 }
 
 function buildHubContainer(): ContainerBuilder {
