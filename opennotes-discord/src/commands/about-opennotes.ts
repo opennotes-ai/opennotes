@@ -6,6 +6,7 @@ import { logger } from '../logger.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser } from '../lib/errors.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
 import { buildWelcomeContainer } from '../lib/welcome-content.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 export const data = new SlashCommandBuilder()
   .setName('about-opennotes')
@@ -27,6 +28,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     const container = buildWelcomeContainer();
+    container.addActionRowComponents(buildContextualNav('about-opennotes'));
 
     await interaction.editReply({
       components: [container],

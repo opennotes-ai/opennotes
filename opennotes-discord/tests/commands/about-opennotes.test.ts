@@ -215,6 +215,30 @@ describe('about-opennotes command', () => {
       const textDisplays = container.components.filter((c: any) => c.type === 10);
       expect(textDisplays.length).toBeGreaterThanOrEqual(5);
     });
+
+    it('should include contextual nav row with Menu, List Notes, and List Requests buttons', async () => {
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      const containerBuilder = editReplyCall.components[0];
+      const container = containerBuilder.toJSON();
+
+      const actionRows = container.components.filter((c: any) => c.type === 1);
+      expect(actionRows.length).toBeGreaterThanOrEqual(1);
+
+      const navRow = actionRows[actionRows.length - 1];
+      const buttonCustomIds = navRow.components.map((btn: any) => btn.custom_id);
+      expect(buttonCustomIds).toContain('nav:menu');
+      expect(buttonCustomIds).toContain('nav:list:notes');
+      expect(buttonCustomIds).toContain('nav:list:requests');
+    });
   });
 
   describe('Components v2 flags', () => {

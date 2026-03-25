@@ -22,6 +22,7 @@ const createMockContainer = () => {
     toJSON: jest.fn().mockReturnValue(containerJson),
     addSeparatorComponents: jest.fn().mockReturnThis(),
     addTextDisplayComponents: jest.fn().mockReturnThis(),
+    addActionRowComponents: jest.fn().mockReturnThis(),
   };
 };
 
@@ -202,6 +203,46 @@ describe('status-bot command', () => {
           flags: expect.any(Number),
         })
       );
+    });
+
+    it('should include contextual nav row with Menu, List Notes, and About buttons', async () => {
+      const mockContainer = createMockContainer();
+      mockDiscordFormatter.formatStatusSuccessV2.mockImplementation(() => ({
+        container: mockContainer,
+        components: [mockContainer.toJSON()],
+        flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+      }));
+
+      mockStatusService.execute.mockResolvedValue(
+        createSuccessResult({
+          bot: { uptime: 3600, cacheSize: 10, guilds: 5 },
+          server: { status: 'healthy', version: '1.0.0', latency: 50 },
+        })
+      );
+
+      mockScoringService.getScoringStatus.mockResolvedValue(
+        createSuccessResult({ status: 'healthy' })
+      );
+
+      const mockClient = { guilds: { cache: { size: 5 } } };
+
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        client: mockClient,
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      expect(mockContainer.addActionRowComponents).toHaveBeenCalled();
+      const navRowArg = mockContainer.addActionRowComponents.mock.calls[0][0] as any;
+      const navRowJson = navRowArg.toJSON();
+      const buttonCustomIds = navRowJson.components.map((btn: any) => btn.custom_id);
+      expect(buttonCustomIds).toContain('nav:menu');
+      expect(buttonCustomIds).toContain('nav:list:notes');
+      expect(buttonCustomIds).toContain('nav:about-opennotes');
     });
 
     it('should include IsComponentsV2 flag in response', async () => {

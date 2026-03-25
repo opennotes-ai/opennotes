@@ -432,4 +432,51 @@ describe('note-request-context v2 components', () => {
       );
     });
   });
+
+  describe('Navigation buttons', () => {
+    it('should include contextual nav row with Menu and List Requests buttons on success', async () => {
+      const { ContainerBuilder: RealContainerBuilder } = await import('discord.js');
+      const mockContainer = new RealContainerBuilder();
+
+      mockCreateNoteRequest.mockResolvedValue({
+        success: true,
+        response: {
+          container: mockContainer,
+          components: [mockContainer.toJSON()],
+          flags: MessageFlags.IsComponentsV2,
+        },
+      });
+
+      const mockTargetMessage = {
+        id: 'msg123',
+        content: 'Original message',
+        embeds: [],
+        attachments: new Map(),
+      };
+
+      const mockInteraction = {
+        user: { id: 'user456' },
+        guildId: 'guild789',
+        targetMessage: mockTargetMessage,
+        channel: null,
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        followUp: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+        deleteReply: jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
+
+      await execute(mockInteraction as any);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      const containerJson = editReplyCall.components[0];
+
+      const actionRows = containerJson.components?.filter((c: any) => c.type === 1) ?? [];
+      expect(actionRows.length).toBeGreaterThanOrEqual(1);
+
+      const navRow = actionRows[actionRows.length - 1];
+      const buttonCustomIds = navRow.components.map((btn: any) => btn.custom_id);
+      expect(buttonCustomIds).toContain('nav:menu');
+      expect(buttonCustomIds).toContain('nav:list:requests');
+    });
+  });
 });

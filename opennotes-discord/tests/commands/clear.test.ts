@@ -352,6 +352,94 @@ describe('clear command', () => {
           300
         );
       });
+
+      it('should include nav row with Menu, List Notes, and List Requests buttons for requests subcommand', async () => {
+        mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+          data: { id: 'community-uuid' },
+        });
+        mockApiClient.getClearPreview.mockResolvedValue({
+          wouldDeleteCount: 5,
+          message: 'Would delete 5 requests',
+        });
+
+        const mockCollector = {
+          on: jest.fn<(event: string, handler: any) => any>(),
+        };
+
+        const mockReply = {
+          createMessageComponentCollector: jest.fn<() => any>().mockReturnValue(mockCollector),
+        };
+
+        const mockInteraction = {
+          user: { id: 'user123' },
+          guildId: 'guild456',
+          guild: { name: 'Test Guild' },
+          member: adminMemberFactory.build(),
+          options: {
+            getSubcommand: jest.fn<() => string>().mockReturnValue('requests'),
+            getString: jest.fn<(name: string, required: boolean) => string>().mockReturnValue('all'),
+          },
+          deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+          editReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+          fetchReply: jest.fn<() => Promise<any>>().mockResolvedValue(mockReply),
+        };
+
+        await execute(mockInteraction as any);
+
+        const editReplyCall = mockInteraction.editReply.mock.calls[0][0] as any;
+        const components = editReplyCall.components;
+        expect(components.length).toBeGreaterThanOrEqual(2);
+
+        const navRow = components[components.length - 1];
+        const navRowJson = navRow.toJSON();
+        const buttonCustomIds = navRowJson.components.map((btn: any) => btn.custom_id);
+        expect(buttonCustomIds).toContain('nav:menu');
+        expect(buttonCustomIds).toContain('nav:list:notes');
+        expect(buttonCustomIds).toContain('nav:list:requests');
+      });
+
+      it('should include nav row for notes subcommand', async () => {
+        mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+          data: { id: 'community-uuid' },
+        });
+        mockApiClient.getClearPreview.mockResolvedValue({
+          wouldDeleteCount: 3,
+          message: 'Would delete 3 notes',
+        });
+
+        const mockCollector = {
+          on: jest.fn<(event: string, handler: any) => any>(),
+        };
+
+        const mockReply = {
+          createMessageComponentCollector: jest.fn<() => any>().mockReturnValue(mockCollector),
+        };
+
+        const mockInteraction = {
+          user: { id: 'user123' },
+          guildId: 'guild456',
+          guild: { name: 'Test Guild' },
+          member: adminMemberFactory.build(),
+          options: {
+            getSubcommand: jest.fn<() => string>().mockReturnValue('notes'),
+            getString: jest.fn<(name: string, required: boolean) => string>().mockReturnValue('all'),
+          },
+          deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+          editReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+          fetchReply: jest.fn<() => Promise<any>>().mockResolvedValue(mockReply),
+        };
+
+        await execute(mockInteraction as any);
+
+        const editReplyCall = mockInteraction.editReply.mock.calls[0][0] as any;
+        const components = editReplyCall.components;
+        const navRow = components[components.length - 1];
+        const navRowJson = navRow.toJSON();
+        const buttonCustomIds = navRowJson.components.map((btn: any) => btn.custom_id);
+        expect(buttonCustomIds).toContain('nav:menu');
+        expect(buttonCustomIds).toContain('nav:list:notes');
+        expect(buttonCustomIds).toContain('nav:list:requests');
+      });
     });
   });
 });

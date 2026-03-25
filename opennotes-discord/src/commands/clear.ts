@@ -16,6 +16,7 @@ import { cache } from '../cache.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser } from '../lib/errors.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
 import { apiClient } from '../api-client.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 interface ClearConfirmationState {
   type: 'requests' | 'notes';
@@ -224,10 +225,11 @@ async function showConfirmationPrompt(
     .setStyle(ButtonStyle.Secondary);
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(confirmButton, cancelButton);
+  const navRow = buildContextualNav(`clear:${type}`);
 
   await interaction.editReply({
     content: `**Warning:** This will permanently delete **${wouldDeleteCount}** ${itemType} (${modeDescription}).${warningMessage}\n\nAre you sure you want to proceed?`,
-    components: [row],
+    components: [row, navRow],
   });
 
   const reply = await interaction.fetchReply();

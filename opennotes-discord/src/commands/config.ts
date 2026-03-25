@@ -29,6 +29,7 @@ import { config } from '../config.js';
 import { v2MessageFlags, V2_COLORS, createDivider, createSmallSeparator } from '../utils/v2-components.js';
 import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 const configService = new GuildConfigService(apiClient);
 const guildSetupService = new GuildSetupService();
@@ -405,6 +406,8 @@ async function handleAdminSet(
         )
       );
 
+    container.addActionRowComponents(buildContextualNav('config'));
+
     await interaction.editReply({
       components: [container.toJSON()],
       flags: v2MessageFlags({ ephemeral: true }),
@@ -465,6 +468,8 @@ async function handleAdminRemove(
           `**User:** <@${user.id}>\n**Discord ID:** ${user.id}`
         )
       );
+
+    container.addActionRowComponents(buildContextualNav('config'));
 
     await interaction.editReply({
       components: [container.toJSON()],
@@ -547,6 +552,8 @@ async function handleAdminList(
       );
       container.addSeparatorComponents(createSmallSeparator());
     }
+
+    container.addActionRowComponents(buildContextualNav('config'));
 
     await interaction.editReply({
       components: [container.toJSON()],
@@ -868,6 +875,8 @@ async function handleOpennotesView(
       )
     );
 
+    container.addActionRowComponents(buildContextualNav('config'));
+
     return container;
   };
 
@@ -896,6 +905,8 @@ async function handleOpennotesView(
             .setStyle(ButtonStyle.Secondary)
         )
       );
+
+    container.addActionRowComponents(buildContextualNav('config'));
 
     return container;
   };
@@ -1324,6 +1335,8 @@ async function handleContentMonitorEnableAll(
       )
     );
 
+  container.addActionRowComponents(buildContextualNav('config'));
+
   await interaction.editReply({
     components: [container.toJSON()],
     flags: v2MessageFlags({ ephemeral: true }),
@@ -1370,6 +1383,8 @@ async function handleContentMonitorFlashpoint(
           )
         );
 
+      container.addActionRowComponents(buildContextualNav('config'));
+
       await interaction.editReply({
         components: [container.toJSON()],
         flags: v2MessageFlags({ ephemeral: true }),
@@ -1404,6 +1419,8 @@ async function handleContentMonitorFlashpoint(
                 'Use `/config content-monitor flashpoint action:Enable` to re-enable.'
           )
         );
+
+      container.addActionRowComponents(buildContextualNav('config'));
 
       await interaction.editReply({
         components: [container.toJSON()],
