@@ -1409,7 +1409,7 @@ export async function handleForcePublishButton(interaction: ButtonInteraction): 
     };
 
     const note = await apiClient.forcePublishNote(noteId, userContext);
-    const reply = await buildForcePublishSuccessReply(noteId, note, 'list_force_publish');
+    const reply = await buildForcePublishSuccessReply(noteId, note, 'list_force_publish', 'list:notes');
     await interaction.editReply(reply);
 
     logger.info('Note force published successfully', {

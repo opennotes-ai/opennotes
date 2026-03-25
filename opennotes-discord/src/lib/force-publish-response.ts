@@ -25,7 +25,8 @@ const SUMMARY_PREVIEW_LENGTH = 200;
 export async function buildForcePublishSuccessReply(
   noteId: string,
   note: NoteJSONAPIResponse,
-  surface: string
+  surface: string,
+  navContext: string = 'note:write'
 ): Promise<{
   components: ReturnType<ContainerBuilder['toJSON']>[];
   flags: number;
@@ -80,7 +81,7 @@ export async function buildForcePublishSuccessReply(
     }
   }
 
-  container.addActionRowComponents(buildContextualNav('note:write'));
+  container.addActionRowComponents(buildContextualNav(navContext));
 
   return {
     components: [container.toJSON()],

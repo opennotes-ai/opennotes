@@ -1032,7 +1032,7 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
       force_published_at: attrs.force_published_at,
     });
 
-    const reply = await buildForcePublishSuccessReply(resolvedNoteId, note, 'note_force_publish');
+    const reply = await buildForcePublishSuccessReply(resolvedNoteId, note, 'note_force_publish', 'note:write');
     await interaction.editReply(reply);
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
