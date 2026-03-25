@@ -153,7 +153,7 @@ async function handleNavAction(interaction: ButtonInteraction): Promise<void> {
 
   const redirectMessage = REDIRECT_MESSAGES[action];
   if (redirectMessage) {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
     await interaction.editReply({ content: redirectMessage });
     return;
   }
@@ -170,7 +170,7 @@ async function handleNavAction(interaction: ButtonInteraction): Promise<void> {
 }
 
 async function handleAboutOpennotes(interaction: ButtonInteraction): Promise<void> {
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
   const container = buildWelcomeContainer();
   container.addActionRowComponents(buildContextualNav('about-opennotes'));
@@ -182,7 +182,7 @@ async function handleAboutOpennotes(interaction: ButtonInteraction): Promise<voi
 }
 
 async function handleStatusBot(interaction: ButtonInteraction): Promise<void> {
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
   try {
     const guilds = interaction.client.guilds.cache.size;
@@ -228,7 +228,7 @@ async function handleStatusBot(interaction: ButtonInteraction): Promise<void> {
 }
 
 async function handleListNotes(interaction: ButtonInteraction): Promise<void> {
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
   try {
     const userId = interaction.user.id;
@@ -286,7 +286,7 @@ async function handleListNotes(interaction: ButtonInteraction): Promise<void> {
 }
 
 async function handleListRequests(interaction: ButtonInteraction): Promise<void> {
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
   try {
     const listRequestsService = serviceProvider.getListRequestsService();
