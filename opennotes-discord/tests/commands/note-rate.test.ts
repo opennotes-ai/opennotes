@@ -173,6 +173,55 @@ describe('note-rate command', () => {
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 
+    it('should include contextual nav row with Menu and List Notes buttons', async () => {
+      mockRateNoteService.execute.mockResolvedValue(
+        createSuccessResult({
+          rating: createMockRatingJSONAPIResponse({
+            noteId: TEST_NOTE_UUID,
+            userId: 'user456',
+            helpfulnessLevel: 'HELPFUL',
+          }),
+        })
+      );
+
+      mockDiscordFormatter.formatRateNoteSuccessV2.mockReturnValue({
+        components: [{ type: 17, components: [] }],
+        flags: 1 << 15,
+      });
+
+      const mockInteraction = {
+        user: {
+          id: 'user456',
+          username: 'testuser',
+          displayName: 'Test User',
+          globalName: 'Test User',
+          displayAvatarURL: jest.fn(() => 'https://example.com/avatar.png'),
+        },
+        guildId: 'guild789',
+        options: {
+          getSubcommand: jest.fn<() => string>().mockReturnValue('rate'),
+          getString: jest.fn((name: string) => {
+            if (name === 'note-id') return TEST_NOTE_UUID;
+            return null;
+          }),
+          getBoolean: jest.fn<() => boolean>().mockReturnValue(true),
+        },
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        followUp: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+        deleteReply: jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined),
+      };
+
+      await execute(mockInteraction as any);
+
+      const editReplyArg = mockInteraction.editReply.mock.calls[0][0];
+      const lastComponent = editReplyArg.components[editReplyArg.components.length - 1];
+      const customIds = lastComponent.components.map((c: any) => c.custom_id);
+      expect(customIds).toContain('nav:menu');
+      expect(customIds).toContain('nav:list:notes');
+    });
+
     it('should rate note as not helpful', async () => {
       mockRateNoteService.execute.mockResolvedValue(
         createSuccessResult({

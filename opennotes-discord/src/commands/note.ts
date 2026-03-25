@@ -29,6 +29,16 @@ import { apiClient } from '../api-client.js';
 import { extractUserContext } from '../lib/user-context.js';
 import { buildForcePublishSuccessReply } from '../lib/force-publish-response.js';
 import { isProquint, proquintToHexSuffix, formatIdDisplay } from '../lib/proquint.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
+
+function appendNavRow(response: Record<string, unknown>, context: string): void {
+  const navRow = buildContextualNav(context).toJSON();
+  if (Array.isArray(response.components)) {
+    response.components.push(navRow);
+  } else {
+    response.components = [navRow];
+  }
+}
 
 async function resolveNoteByProquint(proquint: string): Promise<string | null> {
   const hexSuffix = proquintToHexSuffix(proquint.trim());
@@ -314,6 +324,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       guildId || undefined,
       interaction.channelId || undefined
     );
+    appendNavRow(response, 'note:write');
     await interaction.editReply(response);
 
     logger.info('Write-note completed successfully', {
@@ -566,6 +577,7 @@ async function handleRequestSubcommand(interaction: ChatInputCommandInteraction)
       return;
     }
 
+    appendNavRow(result.response, 'note:request');
     await interaction.editReply(result.response);
 
     logger.info('Request-note completed successfully', {
@@ -664,6 +676,7 @@ async function handleViewSubcommand(interaction: ChatInputCommandInteraction): P
     }
 
     const response = DiscordFormatter.formatViewNotesSuccessV2(result.data!, scoresMap);
+    appendNavRow(response, 'note:view');
     await interaction.editReply(response);
 
     logger.info('View-notes completed successfully', {
@@ -783,6 +796,7 @@ async function handleScoreSubcommand(interaction: ChatInputCommandInteraction): 
     }
 
     const response = DiscordFormatter.formatNoteScoreV2(result.data!);
+    appendNavRow(response, 'note:score');
     await interaction.editReply(response);
 
     logger.info('Note score retrieved successfully', {
@@ -896,6 +910,7 @@ async function handleRateSubcommand(interaction: ChatInputCommandInteraction): P
     }
 
     const response = DiscordFormatter.formatRateNoteSuccessV2(result.data!, resolvedNoteId, helpful);
+    appendNavRow(response, 'note:rate');
     await interaction.editReply(response);
 
     logger.info('Rate-note completed successfully', {

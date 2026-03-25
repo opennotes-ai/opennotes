@@ -212,6 +212,57 @@ describe('note-write command', () => {
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 
+    it('should include contextual nav row with Menu and List Notes buttons', async () => {
+      const mockNote = {
+        id: '123',
+        messageId: '12345678901234567',
+        authorId: 'user789',
+        content: 'Test note content',
+        createdAt: Date.now(),
+        helpfulCount: 0,
+        notHelpfulCount: 0,
+      };
+
+      mockWriteNoteService.execute.mockResolvedValue({
+        success: true,
+        data: mockNote,
+      });
+
+      mockDiscordFormatter.formatWriteNoteSuccessV2.mockReturnValue({
+        components: [{ type: 17, components: [] }],
+        flags: 1 << 15,
+      });
+
+      const mockInteraction = {
+        customId: 'note-write:12345678901234567',
+        user: {
+          id: 'user789',
+          username: 'testuser',
+          displayName: 'Test User',
+          globalName: 'Test User',
+          displayAvatarURL: jest.fn(() => 'https://example.com/avatar.png'),
+        },
+        guildId: null,
+        channelId: null,
+        fields: {
+          getTextInputValue: jest.fn<() => string>().mockReturnValue('Test note content'),
+        },
+        deferReply: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        followUp: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deleteReply: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      };
+
+      await handleModalSubmit(mockInteraction as any);
+
+      const editReplyArg = mockInteraction.editReply.mock.calls[0][0];
+      const lastComponent = editReplyArg.components[editReplyArg.components.length - 1];
+      const customIds = lastComponent.components.map((c: any) => c.custom_id);
+      expect(customIds).toContain('nav:menu');
+      expect(customIds).toContain('nav:list:notes');
+    });
+
     it('should handle creation errors gracefully', async () => {
       mockWriteNoteService.execute.mockResolvedValue({
         success: false,

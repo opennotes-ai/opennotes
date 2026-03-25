@@ -4,6 +4,7 @@ import { generateShortId } from './validation.js';
 import { storeViewFullContent } from './view-full-cache.js';
 import { buildViewFullCustomId, truncateWithMeta } from '../utils/v2-components.js';
 import { formatIdDisplay } from './proquint.js';
+import { buildContextualNav } from './navigation-components.js';
 
 const VIEW_FULL_TTL_SECONDS = 300;
 const SUMMARY_PREVIEW_LENGTH = 200;
@@ -14,12 +15,12 @@ export async function buildForcePublishSuccessReply(
   surface: string
 ): Promise<{
   content: string;
-  components?: ActionRowBuilder<ButtonBuilder>[];
+  components: ActionRowBuilder<ButtonBuilder>[];
 }> {
   const attrs = note.data.attributes;
   const summaryPreview = truncateWithMeta(attrs.summary ?? '', SUMMARY_PREVIEW_LENGTH);
 
-  let components: ActionRowBuilder<ButtonBuilder>[] | undefined;
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
   if (summaryPreview.isTruncated) {
     const token = generateShortId();
     const customId = buildViewFullCustomId(token);
@@ -31,16 +32,18 @@ export async function buildForcePublishSuccessReply(
       'Failed to store force-publish view_full state in cache'
     );
     if (stored) {
-      components = [
+      components.push(
         new ActionRowBuilder<ButtonBuilder>().addComponents(
           new ButtonBuilder()
             .setCustomId(customId)
             .setLabel('View Full')
             .setStyle(ButtonStyle.Secondary)
         ),
-      ];
+      );
     }
   }
+
+  components.push(buildContextualNav('note:write'));
 
   const publishedAt = Math.floor(
     new Date(
@@ -55,6 +58,6 @@ export async function buildForcePublishSuccessReply(
       `**Note Summary:** ${summaryPreview.text}\n` +
       `**Status:** ${attrs.status}\n` +
       `**Published At:** <t:${publishedAt}:F>`,
-    ...(components ? { components } : {}),
+    components,
   };
 }

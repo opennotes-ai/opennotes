@@ -195,6 +195,28 @@ describe('note-force-publish command', () => {
       expect(editReplyCall.content).toContain('Admin Published');
     });
 
+    it('should include contextual nav row with Menu and List Notes buttons', async () => {
+      const mockNote = createMockNoteJSONAPIResponse({
+        id: TEST_UUID,
+        summary: 'Short note summary',
+        status: 'PUBLISHED',
+        forcePublished: true,
+        forcePublishedAt: new Date().toISOString(),
+      });
+
+      mockApiClient.forcePublishNote.mockResolvedValue(mockNote);
+
+      await execute(mockInteraction);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.components).toBeDefined();
+      const lastRow = editReplyCall.components[editReplyCall.components.length - 1];
+      const json = lastRow.toJSON();
+      const customIds = json.components.map((c: any) => c.custom_id);
+      expect(customIds).toContain('nav:menu');
+      expect(customIds).toContain('nav:list:notes');
+    });
+
     it('should add a View Full fallback button for long summaries', async () => {
       const longSummary = 'A'.repeat(260);
       const mockNote = createMockNoteJSONAPIResponse({
@@ -239,7 +261,9 @@ describe('note-force-publish command', () => {
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
       expect(editReplyCall.content).toContain('Note #hajij-babab has been force-published');
-      expect(editReplyCall.components).toBeUndefined();
+      expect(editReplyCall.components).toHaveLength(1);
+      const navRow = editReplyCall.components[0].toJSON();
+      expect(navRow.components[0].custom_id).toBe('nav:menu');
     });
 
     it('should fall back to the truncated preview when cache.set resolves false', async () => {
@@ -261,7 +285,9 @@ describe('note-force-publish command', () => {
       expect(editReplyCall.content).toContain('Note #hajij-babab has been force-published');
       expect(editReplyCall.content).toContain('**Note Summary:**');
       expect(editReplyCall.content).toContain('...');
-      expect(editReplyCall.components).toBeUndefined();
+      expect(editReplyCall.components).toHaveLength(1);
+      const navRow2 = editReplyCall.components[0].toJSON();
+      expect(navRow2.components[0].custom_id).toBe('nav:menu');
     });
   });
 
