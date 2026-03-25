@@ -4,6 +4,7 @@ import {
   loggerFactory,
   chatInputCommandInteractionFactory,
 } from '../factories/index.js';
+import { v2MessageFlags } from '../../src/utils/v2-components.js';
 
 const mockLogger = loggerFactory.build();
 
@@ -186,7 +187,7 @@ describe('note-force-publish command', () => {
 
       await execute(mockInteraction);
 
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
       expect(mockApiClient.forcePublishNote).toHaveBeenCalledWith(TEST_UUID, expect.any(Object));
       expect(mockInteraction.editReply).toHaveBeenCalled();
 

@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import { MessageFlags } from 'discord.js';
 import { loggerFactory } from '../factories/index.js';
+import { v2MessageFlags } from '../../src/utils/v2-components.js';
 
 const mockLogger = loggerFactory.build();
 
@@ -167,7 +168,7 @@ describe('list command - Button Handlers', () => {
 
       await handleRateNoteButton(interaction as any);
 
-      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
       expect(mockApiClient.rateNote).toHaveBeenCalledWith(
         {
           noteId: 'note123',
@@ -249,7 +250,7 @@ describe('list command - Button Handlers', () => {
 
       await handleForcePublishButton(interaction as any);
 
-      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
       expect(mockApiClient.forcePublishNote).toHaveBeenCalledWith(
         'note-uuid-123',
         expect.objectContaining({
@@ -503,7 +504,7 @@ describe('list command - Button Handlers', () => {
 
       await handleAiWriteNoteButton(interaction as any);
 
-      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(interaction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
       expect(mockCache.expire).toHaveBeenCalledWith('write_note_state:ai12345', 900);
       expect(mockApiClient.generateAiNote).toHaveBeenCalledWith(requestId, expect.any(Object));
       expect(interaction.editReply).toHaveBeenCalledWith({

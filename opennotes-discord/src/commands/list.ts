@@ -268,7 +268,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
   lastUsage.set(userId, Date.now());
 
   try {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     const botChannelService = new BotChannelService();
     const guildConfigService = serviceProvider.getGuildConfigService();
@@ -431,7 +431,7 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       my_requests_only: myRequestsOnly,
     });
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     const botChannelService = new BotChannelService();
     const guildConfigService = serviceProvider.getGuildConfigService();
@@ -591,7 +591,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       return;
     }
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     const requestResponse = await apiClient.getRequest(requestId);
 
@@ -797,7 +797,7 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
 
     await cache.expire(cacheKey, 900);
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     logger.info('Generating AI note', {
       error_id: errorId,
@@ -953,7 +953,7 @@ export async function handleRateNoteButton(interaction: ButtonInteraction): Prom
     const ratingType = parts[2];
     const isHelpful = ratingType === 'helpful';
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     logger.info('Rating note', {
       error_id: errorId,
@@ -1198,7 +1198,7 @@ export async function handleForcePublishButton(interaction: ButtonInteraction): 
 
     const noteId = parts[1];
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     logger.info('Force publishing note', {
       error_id: errorId,

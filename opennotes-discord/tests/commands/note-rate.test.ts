@@ -13,6 +13,7 @@ import {
 import { ErrorCode } from '../../src/services/types.js';
 import { TEST_NOTE_UUID } from '../test-constants.js';
 import type { RatingJSONAPIResponse } from '../../src/lib/api-client.js';
+import { v2MessageFlags } from '../../src/utils/v2-components.js';
 
 function createMockRatingJSONAPIResponse(overrides: {
   id?: string;
@@ -307,7 +308,7 @@ describe('note-rate command', () => {
       await execute(mockInteraction as any);
 
       expect(mockGuildConfigService.get).toHaveBeenCalledWith('guild789', ConfigKey.RATE_NOTE_EPHEMERAL);
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 

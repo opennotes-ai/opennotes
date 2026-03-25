@@ -3,6 +3,7 @@ import { MessageFlags, TextChannel } from 'discord.js';
 import { createSuccessResult, createErrorResult } from '../utils/service-mocks.js';
 import { ErrorCode } from '../../src/services/types.js';
 import { loggerFactory, cacheFactory } from '../factories/index.js';
+import { v2MessageFlags } from '../../src/utils/v2-components.js';
 
 const mockLogger = loggerFactory.build();
 const mockListRequestsService = {
@@ -192,7 +193,7 @@ describe('request-queue command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
       expect(mockInteraction.editReply).toHaveBeenCalled();
 
       expect(mockListRequestsService.execute).toHaveBeenCalledWith({

@@ -10,6 +10,7 @@ import {
   chatInputCommandInteractionFactory,
 } from '../factories/index.js';
 import { ErrorCode } from '../../src/services/types.js';
+import { v2MessageFlags } from '../../src/utils/v2-components.js';
 
 const mockLogger = loggerFactory.build();
 const mockRequestNoteService = {
@@ -289,7 +290,7 @@ describe('note-request command', () => {
       await execute(mockInteraction as any);
 
       expect(mockGuildConfigService.get).toHaveBeenCalledWith('guild789', ConfigKey.REQUEST_NOTE_EPHEMERAL);
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2MessageFlags({ ephemeral: true }) });
     });
 
     it('should work without guildId', async () => {

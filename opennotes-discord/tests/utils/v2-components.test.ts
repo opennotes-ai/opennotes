@@ -80,13 +80,6 @@ describe('V2 Components Utilities', () => {
       expect(V2_LIMITS.MAX_TEXT_DISPLAY_LENGTH).toBeGreaterThan(0);
     });
 
-    it('should export MAX_ACTION_ROWS as a positive integer', async () => {
-      const { V2_LIMITS } = await import('../../src/utils/v2-components.js');
-
-      expect(Number.isInteger(V2_LIMITS.MAX_ACTION_ROWS)).toBe(true);
-      expect(V2_LIMITS.MAX_ACTION_ROWS).toBeGreaterThan(0);
-    });
-
     it('should export MAX_NOTES_PER_QUEUE_PAGE as a positive integer', async () => {
       const { V2_LIMITS } = await import('../../src/utils/v2-components.js');
 

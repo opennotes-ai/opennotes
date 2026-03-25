@@ -15,6 +15,7 @@ import {
   PermissionFlagsBits,
   type APIContainerComponent,
 } from 'discord.js';
+import { v2MessageFlags } from '../utils/v2-components.js';
 import { serviceProvider } from '../services/index.js';
 import { DiscordFormatter } from '../services/DiscordFormatter.js';
 import { ConfigKey } from '../lib/config-schema.js';
@@ -282,7 +283,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       ephemeral = await configService.get(guildId, ConfigKey.WRITE_NOTE_EPHEMERAL) as boolean;
     }
 
-    await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
+    await interaction.deferReply(ephemeral ? { flags: v2MessageFlags({ ephemeral: true }) } : {});
 
     const userContext = extractUserContext(interaction.user, guildId, undefined, interaction.channelId);
     const writeNoteService = serviceProvider.getWriteNoteService();
@@ -539,7 +540,7 @@ async function handleRequestSubcommand(interaction: ChatInputCommandInteraction)
       ephemeral = await configService.get(guildId, ConfigKey.REQUEST_NOTE_EPHEMERAL) as boolean;
     }
 
-    await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
+    await interaction.deferReply(ephemeral ? { flags: v2MessageFlags({ ephemeral: true }) } : {});
 
     if (!guildId) {
       logger.error('Missing guild ID for note request', { error_id: errorId, user_id: userId });
@@ -859,7 +860,7 @@ async function handleRateSubcommand(interaction: ChatInputCommandInteraction): P
       ephemeral = await configService.get(guildId, ConfigKey.RATE_NOTE_EPHEMERAL) as boolean;
     }
 
-    await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
+    await interaction.deferReply(ephemeral ? { flags: v2MessageFlags({ ephemeral: true }) } : {});
 
     let resolvedNoteId = noteId;
     if (isProquint(noteId.trim())) {
@@ -992,7 +993,7 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
       has_manage_server: member?.permissions.has(PermissionFlagsBits.ManageGuild) ?? false,
     });
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
     if (isProquint(noteIdStr.trim())) {
       const resolved = await resolveNoteByProquint(noteIdStr);
       if (!resolved) {
