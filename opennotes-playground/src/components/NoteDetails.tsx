@@ -3,7 +3,7 @@ import type { components } from "~/lib/generated-types";
 import { formatDate, humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import IdBadge from "~/components/ui/id-badge";
-import { getHelpfulnessTooltip } from "~/lib/scoring-tiers";
+import { getHelpfulnessTooltip, TERM_DESCRIPTIONS } from "~/lib/scoring-tiers";
 import { cn } from "~/lib/cn";
 import NoteFilter, { type NoteFilterValues } from "~/components/ui/note-filter";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
@@ -200,10 +200,10 @@ export default function NoteDetails(props: {
                               </div>
                             </div>
                             <div class="flex items-center gap-1.5" data-testid="note-badges">
-                              <Badge variant={CLASSIFICATION_VARIANT[attrs.classification] ?? "indigo"}>
+                              <Badge variant={CLASSIFICATION_VARIANT[attrs.classification] ?? "indigo"} title={TERM_DESCRIPTIONS[attrs.classification]}>
                                 {humanizeLabel(attrs.classification)}
                               </Badge>
-                              <Badge variant={STATUS_VARIANT[attrs.status] ?? "muted"}>
+                              <Badge variant={STATUS_VARIANT[attrs.status] ?? "muted"} title={TERM_DESCRIPTIONS[attrs.status]}>
                                 {humanizeLabel(attrs.status)}
                               </Badge>
                             </div>
@@ -226,7 +226,7 @@ export default function NoteDetails(props: {
                                   }, {})
                                 )}>
                                   {([level, count]) => (
-                                    <Badge variant={HELPFULNESS_VARIANT[level] ?? "muted"} class="text-xs">
+                                    <Badge variant={HELPFULNESS_VARIANT[level] ?? "muted"} class="text-xs" title={TERM_DESCRIPTIONS[level]}>
                                       {humanizeLabel(level)}: {count}
                                     </Badge>
                                   )}
@@ -244,7 +244,7 @@ export default function NoteDetails(props: {
                               <div class="mt-1.5 flex flex-wrap gap-1.5">
                                 <For each={attrs.ratings}>
                                   {(rating) => (
-                                    <Badge variant={HELPFULNESS_VARIANT[rating.helpfulness_level] ?? "muted"}>
+                                    <Badge variant={HELPFULNESS_VARIANT[rating.helpfulness_level] ?? "muted"} title={TERM_DESCRIPTIONS[rating.helpfulness_level]}>
                                       {rating.rater_agent_name}: {humanizeLabel(rating.helpfulness_level)}
                                     </Badge>
                                   )}
