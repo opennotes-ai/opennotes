@@ -30,6 +30,101 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
   },
 }));
 
+const mockBuildWelcomeContainer = jest.fn().mockReturnValue({
+  addActionRowComponents: jest.fn().mockReturnThis(),
+  toJSON: jest.fn().mockReturnValue({ type: 17, components: [] }),
+});
+
+jest.unstable_mockModule('../../src/lib/welcome-content.js', () => ({
+  buildWelcomeContainer: mockBuildWelcomeContainer,
+  WELCOME_MESSAGE_REVISION: '2025-12-24.1',
+}));
+
+const mockStatusExecute = jest.fn<(...args: any[]) => Promise<any>>();
+const mockGetScoringStatus = jest.fn<(...args: any[]) => Promise<any>>();
+const mockGetTopNotes = jest.fn<(...args: any[]) => Promise<any>>();
+const mockListRequestsExecute = jest.fn<(...args: any[]) => Promise<any>>();
+
+const mockServiceProvider = {
+  getStatusService: jest.fn().mockReturnValue({ execute: mockStatusExecute }),
+  getScoringService: jest.fn().mockReturnValue({
+    getScoringStatus: mockGetScoringStatus,
+    getTopNotes: mockGetTopNotes,
+  }),
+  getListRequestsService: jest.fn().mockReturnValue({ execute: mockListRequestsExecute }),
+};
+
+jest.unstable_mockModule('../../src/services/index.js', () => ({
+  serviceProvider: mockServiceProvider,
+}));
+
+const mockFormatStatusSuccessV2 = jest.fn().mockReturnValue({
+  container: {
+    addSeparatorComponents: jest.fn().mockReturnThis(),
+    addTextDisplayComponents: jest.fn().mockReturnThis(),
+    addActionRowComponents: jest.fn().mockReturnThis(),
+    toJSON: jest.fn().mockReturnValue({ type: 17, components: [] }),
+  },
+  flags: 32768,
+});
+const mockFormatScoringStatusV2 = jest.fn().mockReturnValue({
+  separator: {},
+  textDisplay: {},
+});
+const mockFormatErrorV2 = jest.fn().mockReturnValue({
+  components: [{ type: 17, components: [] }],
+  flags: 32768,
+});
+const mockFormatTopNotesForQueueV2 = jest.fn().mockReturnValue({
+  container: {
+    addActionRowComponents: jest.fn().mockReturnThis(),
+    toJSON: jest.fn().mockReturnValue({ type: 17, components: [] }),
+  },
+  components: [{ type: 17, components: [] }],
+  flags: 32768,
+  forcePublishButtonRows: [],
+});
+const mockFormatListRequestsSuccessV2 = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+  container: {
+    addActionRowComponents: jest.fn().mockReturnThis(),
+    toJSON: jest.fn().mockReturnValue({ type: 17, components: [] }),
+  },
+  components: [{ type: 17, components: [] }],
+  flags: 32768,
+  actionRows: [],
+});
+
+jest.unstable_mockModule('../../src/services/DiscordFormatter.js', () => ({
+  DiscordFormatter: {
+    formatStatusSuccessV2: mockFormatStatusSuccessV2,
+    formatScoringStatusV2: mockFormatScoringStatusV2,
+    formatErrorV2: mockFormatErrorV2,
+    formatTopNotesForQueueV2: mockFormatTopNotesForQueueV2,
+    formatListRequestsSuccessV2: mockFormatListRequestsSuccessV2,
+  },
+}));
+
+const mockResolveUserProfileId = jest.fn<(...args: any[]) => Promise<string>>().mockResolvedValue('profile-uuid-123');
+
+jest.unstable_mockModule('../../src/lib/user-profile-resolver.js', () => ({
+  resolveUserProfileId: mockResolveUserProfileId,
+}));
+
+const mockGetCommunityServerByPlatformId = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+  data: { id: 'community-server-uuid-456' },
+});
+const mockListNotesWithStatus = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+  data: [],
+  total: 0,
+});
+
+jest.unstable_mockModule('../../src/api-client.js', () => ({
+  apiClient: {
+    getCommunityServerByPlatformId: mockGetCommunityServerByPlatformId,
+    listNotesWithStatus: mockListNotesWithStatus,
+  },
+}));
+
 const { handleNavInteraction } = await import('../../src/handlers/navigation-handler.js');
 
 function buildMockInteraction(overrides: Record<string, any> = {}): ButtonInteraction {
@@ -48,6 +143,7 @@ function buildMockInteraction(overrides: Record<string, any> = {}): ButtonIntera
     editReply: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     deferReply: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     guildId: 'guild-789',
+    client: { guilds: { cache: { size: 5 } } },
     isButton: () => true,
     ...overrides,
   } as unknown as ButtonInteraction;
@@ -57,6 +153,82 @@ describe('navigation-handler', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCacheGet.mockResolvedValue(null);
+    mockCacheSet.mockResolvedValue(true);
+    mockCacheDelete.mockResolvedValue(true);
+
+    mockBuildWelcomeContainer.mockReturnValue({
+      addActionRowComponents: jest.fn().mockReturnThis(),
+      toJSON: jest.fn().mockReturnValue({ type: 17, components: [] }),
+    });
+
+    mockServiceProvider.getStatusService.mockReturnValue({ execute: mockStatusExecute });
+    mockServiceProvider.getScoringService.mockReturnValue({
+      getScoringStatus: mockGetScoringStatus,
+      getTopNotes: mockGetTopNotes,
+    });
+    mockServiceProvider.getListRequestsService.mockReturnValue({ execute: mockListRequestsExecute });
+
+    mockStatusExecute.mockResolvedValue({
+      success: true,
+      data: { status: 'ok' },
+    });
+    mockGetScoringStatus.mockResolvedValue({
+      success: true,
+      data: { scoring: 'ok' },
+    });
+    mockGetTopNotes.mockResolvedValue({
+      success: true,
+      data: { data: [], meta: { total_count: 0 } },
+    });
+    mockListRequestsExecute.mockResolvedValue({
+      success: true,
+      data: { requests: [], total: 0, page: 1, size: 20 },
+    });
+
+    mockFormatStatusSuccessV2.mockReturnValue({
+      container: {
+        addSeparatorComponents: jest.fn().mockReturnThis(),
+        addTextDisplayComponents: jest.fn().mockReturnThis(),
+        addActionRowComponents: jest.fn().mockReturnThis(),
+        toJSON: jest.fn().mockReturnValue({ type: 17, components: [] }),
+      },
+      flags: 32768,
+    });
+    mockFormatScoringStatusV2.mockReturnValue({
+      separator: {},
+      textDisplay: {},
+    });
+    mockFormatErrorV2.mockReturnValue({
+      components: [{ type: 17, components: [] }],
+      flags: 32768,
+    });
+    mockFormatTopNotesForQueueV2.mockReturnValue({
+      container: {
+        addActionRowComponents: jest.fn().mockReturnThis(),
+        toJSON: jest.fn().mockReturnValue({ type: 17, components: [] }),
+      },
+      components: [{ type: 17, components: [] }],
+      flags: 32768,
+      forcePublishButtonRows: [],
+    });
+    mockFormatListRequestsSuccessV2.mockResolvedValue({
+      container: {
+        addActionRowComponents: jest.fn().mockReturnThis(),
+        toJSON: jest.fn().mockReturnValue({ type: 17, components: [] }),
+      },
+      components: [{ type: 17, components: [] }],
+      flags: 32768,
+      actionRows: [],
+    });
+
+    mockResolveUserProfileId.mockResolvedValue('profile-uuid-123');
+    mockGetCommunityServerByPlatformId.mockResolvedValue({
+      data: { id: 'community-server-uuid-456' },
+    });
+    mockListNotesWithStatus.mockResolvedValue({
+      data: [],
+      total: 0,
+    });
   });
 
   describe('nav:menu', () => {
@@ -192,15 +364,188 @@ describe('navigation-handler', () => {
     });
   });
 
-  describe('nav:{action} routes', () => {
-    it('should show the full hub for unrecognized nav actions', async () => {
+  describe('nav:{action} dispatch routing', () => {
+    it('should dispatch about-opennotes to welcome container', async () => {
+      const interaction = buildMockInteraction({ customId: 'nav:about-opennotes' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+      expect(mockBuildWelcomeContainer).toHaveBeenCalledTimes(1);
+      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    });
+
+    it('should dispatch status-bot to status service', async () => {
+      const interaction = buildMockInteraction({ customId: 'nav:status-bot' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+      expect(mockStatusExecute).toHaveBeenCalledWith(5);
+      expect(mockGetScoringStatus).toHaveBeenCalledTimes(1);
+      expect(mockFormatStatusSuccessV2).toHaveBeenCalled();
+      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    });
+
+    it('should dispatch list:requests to list requests service', async () => {
+      const interaction = buildMockInteraction({ customId: 'nav:list:requests' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+      expect(mockListRequestsExecute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-123',
+          page: 1,
+          size: 5,
+        })
+      );
+      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    });
+
+    it('should dispatch list:top-notes to scoring service', async () => {
+      const interaction = buildMockInteraction({ customId: 'nav:list:top-notes' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+      expect(mockGetTopNotes).toHaveBeenCalledWith({ limit: 10 });
+      expect(mockFormatTopNotesForQueueV2).toHaveBeenCalled();
+      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    });
+
+    it('should dispatch list:notes with deferReply and editReply', async () => {
       const interaction = buildMockInteraction({ customId: 'nav:list:notes' });
 
       await handleNavInteraction(interaction);
 
+      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    });
+
+    it('should show redirect message for note:write', async () => {
+      const interaction = buildMockInteraction({ customId: 'nav:note:write' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+      const editCall = (interaction.editReply as any).mock.calls[0][0] as Record<string, any>;
+      expect(editCall.content).toContain('/note write');
+    });
+
+    it('should show redirect message for vibecheck:scan', async () => {
+      const interaction = buildMockInteraction({ customId: 'nav:vibecheck:scan' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+      const editCall = (interaction.editReply as any).mock.calls[0][0] as Record<string, any>;
+      expect(editCall.content).toContain('/vibecheck scan');
+    });
+
+    it('should show redirect for contextual actions without context', async () => {
+      const contextualActions = [
+        { action: 'note:rate', command: '/note rate' },
+        { action: 'note:view', command: '/note view' },
+        { action: 'note:request', command: '/note request' },
+        { action: 'note:score', command: '/note score' },
+        { action: 'vibecheck:status', command: '/vibecheck' },
+        { action: 'vibecheck:create-requests', command: '/vibecheck' },
+        { action: 'clear:notes', command: '/clear' },
+        { action: 'clear:requests', command: '/clear' },
+        { action: 'config', command: '/config' },
+        { action: 'note-request-context', command: 'Apps' },
+      ];
+
+      for (const { action, command } of contextualActions) {
+        jest.clearAllMocks();
+        const interaction = buildMockInteraction({ customId: `nav:${action}` });
+
+        await handleNavInteraction(interaction);
+
+        expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+        expect(interaction.editReply).toHaveBeenCalledTimes(1);
+        const editCall = (interaction.editReply as any).mock.calls[0][0] as Record<string, any>;
+        expect(editCall.content).toContain(command);
+      }
+    });
+
+    it('should fall back to hub for completely unknown actions', async () => {
+      const interaction = buildMockInteraction({ customId: 'nav:unknown:action' });
+
+      await handleNavInteraction(interaction);
+
       expect(interaction.update).toHaveBeenCalledTimes(1);
-      const updateCall = (interaction.update as any).mock.calls[0][0] as Record<string, any>;
-      expect(updateCall).toHaveProperty('components');
+      expect(interaction.deferReply).not.toHaveBeenCalled();
+    });
+
+    it('should handle status service errors gracefully', async () => {
+      mockStatusExecute.mockResolvedValueOnce({
+        success: false,
+        error: { code: 'API_ERROR', message: 'Service unavailable' },
+      });
+
+      const interaction = buildMockInteraction({ customId: 'nav:status-bot' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+      expect(mockFormatErrorV2).toHaveBeenCalled();
+      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle list requests service errors gracefully', async () => {
+      mockListRequestsExecute.mockResolvedValueOnce({
+        success: false,
+        error: { code: 'API_ERROR', message: 'Service unavailable' },
+      });
+
+      const interaction = buildMockInteraction({ customId: 'nav:list:requests' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+      expect(mockFormatErrorV2).toHaveBeenCalled();
+      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle top notes service errors gracefully', async () => {
+      mockGetTopNotes.mockResolvedValueOnce({
+        success: false,
+        error: { code: 'API_ERROR', message: 'Service unavailable' },
+      });
+
+      const interaction = buildMockInteraction({ customId: 'nav:list:top-notes' });
+
+      await handleNavInteraction(interaction);
+
+      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+      expect(mockFormatErrorV2).toHaveBeenCalled();
+      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    });
+
+    it('should add scoring status to status-bot when available', async () => {
+      const interaction = buildMockInteraction({ customId: 'nav:status-bot' });
+
+      await handleNavInteraction(interaction);
+
+      expect(mockGetScoringStatus).toHaveBeenCalledTimes(1);
+      expect(mockFormatScoringStatusV2).toHaveBeenCalled();
+    });
+
+    it('should not add scoring section when scoring status fails', async () => {
+      mockGetScoringStatus.mockResolvedValueOnce({
+        success: false,
+        error: { code: 'API_ERROR', message: 'Failed' },
+      });
+
+      const interaction = buildMockInteraction({ customId: 'nav:status-bot' });
+
+      await handleNavInteraction(interaction);
+
+      expect(mockFormatScoringStatusV2).not.toHaveBeenCalled();
     });
   });
 });
