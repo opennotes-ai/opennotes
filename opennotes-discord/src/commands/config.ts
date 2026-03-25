@@ -920,6 +920,7 @@ async function handleOpennotesView(
 
   const collector = message.createMessageComponentCollector({
     componentType: ComponentType.Button,
+    filter: (i) => !i.customId.startsWith('nav:'),
     time: TIMEOUTS.COLLECTOR_TIMEOUT_MS,
   });
 
