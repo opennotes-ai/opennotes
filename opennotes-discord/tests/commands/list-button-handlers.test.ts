@@ -309,7 +309,11 @@ describe('list command - Button Handlers', () => {
       const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
       expect(editReplyCall.content).toContain('**Note Summary:**');
       expect(editReplyCall.content).toContain('...');
-      expect(editReplyCall.components).toBeUndefined();
+      const viewFullButtons = (editReplyCall.components ?? []).filter((row: any) => {
+        const json = typeof row.toJSON === 'function' ? row.toJSON() : row;
+        return json.components?.some((btn: any) => btn.custom_id?.startsWith('view_full:'));
+      });
+      expect(viewFullButtons).toHaveLength(0);
     });
 
     it('should handle invalid customId format', async () => {

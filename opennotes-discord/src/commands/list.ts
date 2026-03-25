@@ -51,6 +51,7 @@ import { TextPaginator } from '../lib/text-paginator.js';
 import { storeViewFullContent } from '../lib/view-full-cache.js';
 import { buildForcePublishSuccessReply } from '../lib/force-publish-response.js';
 import { formatIdDisplay } from '../lib/proquint.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 const configCache = new ConfigCache(apiClient);
 const lastUsage = new Map<string, number>();
@@ -404,7 +405,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
     }
 
     await interaction.editReply({
-      components: [containers[0]],
+      components: [containers[0], buildContextualNav('list:notes')],
       flags: v2MessageFlags(),
     });
 
@@ -531,7 +532,7 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
     });
 
     await interaction.editReply({
-      components: [formattedData.container.toJSON()],
+      components: [formattedData.container.toJSON(), buildContextualNav('list:requests')],
       flags: formattedData.flags,
     });
 
@@ -644,7 +645,7 @@ async function handleTopNotesSubcommand(interaction: ChatInputCommandInteraction
     });
 
     await interaction.editReply({
-      components: [formattedData.container.toJSON()],
+      components: [formattedData.container.toJSON(), buildContextualNav('list:top-notes')],
       flags: formattedData.flags,
     });
 
@@ -1232,7 +1233,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
       });
 
       await interaction.editReply({
-        components: [formattedData.container.toJSON()],
+        components: [formattedData.container.toJSON(), buildContextualNav('list:requests')],
         flags: formattedData.flags,
       });
 
@@ -1293,7 +1294,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
       }
 
       await interaction.editReply({
-        components: [containers[0]],
+        components: [containers[0], buildContextualNav('list:notes')],
         flags: v2MessageFlags(),
       });
 
@@ -1448,7 +1449,7 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
     }
 
     await interaction.update({
-      components: [containers[0]],
+      components: [containers[0], buildContextualNav('list:notes')],
       flags: v2MessageFlags(),
     });
 
@@ -1661,7 +1662,7 @@ export async function handleRequestQueuePageButton(interaction: ButtonInteractio
     });
 
     await interaction.editReply({
-      components: formatted.components,
+      components: [...formatted.components, buildContextualNav('list:requests')],
       flags: formatted.flags,
     });
 
