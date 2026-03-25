@@ -55,11 +55,8 @@ describe('config-note-publisher command', () => {
         undefined,
         'user123'
       );
-      expect(mockInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringContaining('Note publishering enabled'),
-        })
-      );
+      const call = mockInteraction.editReply.mock.calls[0][0] as any;
+      expect(call.components[0].components[0].content).toContain('Note publishering enabled');
     });
   });
 
@@ -87,11 +84,8 @@ describe('config-note-publisher command', () => {
         undefined,
         'user123'
       );
-      expect(mockInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringContaining('Note publishering disabled'),
-        })
-      );
+      const call = mockInteraction.editReply.mock.calls[0][0] as any;
+      expect(call.components[0].components[0].content).toContain('Note publishering disabled');
     });
   });
 
@@ -119,11 +113,8 @@ describe('config-note-publisher command', () => {
         undefined,
         'user123'
       );
-      expect(mockInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringMatching(/Threshold updated.*80%/),
-        })
-      );
+      const call = mockInteraction.editReply.mock.calls[0][0] as any;
+      expect(call.components[0].components[0].content).toMatch(/Threshold updated.*80%/);
     });
   });
 
@@ -150,11 +141,8 @@ describe('config-note-publisher command', () => {
         'channel789',
         'user123'
       );
-      expect(mockInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringContaining('Note publishering enabled'),
-        })
-      );
+      const call = mockInteraction.editReply.mock.calls[0][0] as any;
+      expect(call.components[0].components[0].content).toContain('Note publishering enabled');
     });
 
     it('should handle invalid channel', async () => {
@@ -200,11 +188,8 @@ describe('config-note-publisher command', () => {
         'channel789',
         'user123'
       );
-      expect(mockInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringContaining('Note publishering disabled'),
-        })
-      );
+      const call = mockInteraction.editReply.mock.calls[0][0] as any;
+      expect(call.components[0].components[0].content).toContain('Note publishering disabled');
     });
   });
 
@@ -230,11 +215,8 @@ describe('config-note-publisher command', () => {
       await execute(mockInteraction as any);
 
       expect(mockNotePublisherConfigService.getConfig).toHaveBeenCalledWith('guild456', undefined);
-      expect(mockInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringMatching(/Auto-Post Configuration.*Enabled.*75%/s),
-        })
-      );
+      const call = mockInteraction.editReply.mock.calls[0][0] as any;
+      expect(call.components[0].components[0].content).toMatch(/Auto-Post Configuration.*Enabled.*75%/s);
     });
 
     it('should show channel-specific status', async () => {
@@ -258,11 +240,8 @@ describe('config-note-publisher command', () => {
       await execute(mockInteraction as any);
 
       expect(mockNotePublisherConfigService.getConfig).toHaveBeenCalledWith('guild456', 'channel789');
-      expect(mockInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringMatching(/Disabled/),
-        })
-      );
+      const call = mockInteraction.editReply.mock.calls[0][0] as any;
+      expect(call.components[0].components[0].content).toMatch(/Disabled/);
     });
   });
 
