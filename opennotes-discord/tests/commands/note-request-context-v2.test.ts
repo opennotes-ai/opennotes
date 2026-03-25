@@ -434,15 +434,11 @@ describe('note-request-context v2 components', () => {
   });
 
   describe('Navigation buttons', () => {
-    it('should include contextual nav row with Menu and List Requests buttons on success', async () => {
-      const { ContainerBuilder: RealContainerBuilder } = await import('discord.js');
-      const mockContainer = new RealContainerBuilder();
-
+    it('should pass navContext to createNoteRequest for contextual nav', async () => {
       mockCreateNoteRequest.mockResolvedValue({
         success: true,
         response: {
-          container: mockContainer,
-          components: [mockContainer.toJSON()],
+          components: [{ type: 17 }],
           flags: MessageFlags.IsComponentsV2,
         },
       });
@@ -467,16 +463,11 @@ describe('note-request-context v2 components', () => {
 
       await execute(mockInteraction as any);
 
-      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      const containerJson = editReplyCall.components[0];
-
-      const actionRows = containerJson.components?.filter((c: any) => c.type === 1) ?? [];
-      expect(actionRows.length).toBeGreaterThanOrEqual(1);
-
-      const navRow = actionRows[actionRows.length - 1];
-      const buttonCustomIds = navRow.components.map((btn: any) => btn.custom_id);
-      expect(buttonCustomIds).toContain('nav:menu');
-      expect(buttonCustomIds).toContain('nav:list:requests');
+      expect(mockCreateNoteRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          navContext: 'note-request-context',
+        })
+      );
     });
   });
 });

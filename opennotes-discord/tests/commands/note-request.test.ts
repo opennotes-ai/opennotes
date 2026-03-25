@@ -154,7 +154,7 @@ describe('note-request command', () => {
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 
-    it('should include contextual nav row with Menu and List Requests buttons', async () => {
+    it('should pass navContext to formatter for contextual nav', async () => {
       mockRequestNoteService.execute.mockResolvedValue(
         createSuccessResult({ requestId: 'req123' })
       );
@@ -200,11 +200,14 @@ describe('note-request command', () => {
 
       await execute(mockInteraction as any);
 
-      const editReplyArg = mockInteraction.editReply.mock.calls[0][0];
-      const lastComponent = editReplyArg.components[editReplyArg.components.length - 1];
-      const customIds = lastComponent.components.map((c: any) => c.custom_id);
-      expect(customIds).toContain('nav:menu');
-      expect(customIds).toContain('nav:list:requests');
+      expect(mockDiscordFormatter.formatRequestNoteSuccessV2).toHaveBeenCalledWith(
+        '12345678901234567',
+        'user456',
+        undefined,
+        'guild789',
+        undefined,
+        'note:request'
+      );
     });
 
     it('should create note request with reason', async () => {

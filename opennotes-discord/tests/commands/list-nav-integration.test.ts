@@ -351,7 +351,7 @@ describe('list command - Navigation button integration', () => {
   });
 
   describe('list requests subcommand', () => {
-    it('should include nav buttons with Menu, List Notes, and Write Note in response', async () => {
+    it('should pass navContext to formatter for contextual nav', async () => {
       const requestsContainer = new ContainerBuilder();
       MockDiscordFormatter.formatListRequestsSuccessV2.mockResolvedValue({
         container: requestsContainer,
@@ -373,12 +373,11 @@ describe('list command - Navigation button integration', () => {
       const interaction = createMockInteraction('requests', 'user-req-1');
       await execute(interaction as any);
 
-      expect(interaction.editReply).toHaveBeenCalled();
-      const editReplyArg = interaction.editReply.mock.calls[0][0];
-      const navIds = getNavCustomIds(editReplyArg.components);
-      expect(navIds).toContain('nav:menu');
-      expect(navIds).toContain('nav:list:notes');
-      expect(navIds).toContain('nav:note:write');
+      expect(MockDiscordFormatter.formatListRequestsSuccessV2).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'list:requests'
+      );
     }, 10000);
   });
 
@@ -419,7 +418,7 @@ describe('list command - Navigation button integration', () => {
   });
 
   describe('handleRequestQueuePageButton', () => {
-    it('should include nav buttons in paginated requests response', async () => {
+    it('should pass navContext to formatter for paginated requests', async () => {
       const filterState = {
         status: 'PENDING',
         myRequestsOnly: false,
@@ -448,11 +447,11 @@ describe('list command - Navigation button integration', () => {
       const interaction = createMockButtonInteraction('request_queue_page:2:state123');
       await handleRequestQueuePageButton(interaction as any);
 
-      expect(interaction.editReply).toHaveBeenCalled();
-      const editReplyArg = interaction.editReply.mock.calls[0][0];
-      const navIds = getNavCustomIds(editReplyArg.components);
-      expect(navIds).toContain('nav:menu');
-      expect(navIds).toContain('nav:list:notes');
+      expect(MockDiscordFormatter.formatListRequestsSuccessV2).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'list:requests'
+      );
     }, 10000);
   });
 });

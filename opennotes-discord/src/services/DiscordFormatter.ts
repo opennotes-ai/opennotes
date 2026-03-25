@@ -34,6 +34,7 @@ import {
   truncateWithMeta,
   buildViewFullCustomId,
 } from '../utils/v2-components.js';
+import { buildContextualNav } from '../lib/navigation-components.js';
 
 export class DiscordFormatter {
   private static readonly VIEW_FULL_TTL_SECONDS = 900;
@@ -188,7 +189,8 @@ export class DiscordFormatter {
     result: WriteNoteResult,
     messageId: string,
     guildId?: string,
-    channelId?: string
+    channelId?: string,
+    navContext?: string
   ): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -217,6 +219,10 @@ export class DiscordFormatter {
         new TextDisplayBuilder().setContent(metadataLines.join('\n'))
       );
 
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
+    }
+
     return {
       container,
       components: [container.toJSON()],
@@ -226,7 +232,8 @@ export class DiscordFormatter {
 
   static formatViewNotesSuccessV2(
     result: ViewNotesResult,
-    scoresMap?: Map<string, NoteScoreAttributes>
+    scoresMap?: Map<string, NoteScoreAttributes>,
+    navContext?: string
   ): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -238,6 +245,10 @@ export class DiscordFormatter {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent('## Community Notes\n\nNo notes found for this message.')
       );
+
+      if (navContext) {
+        container.addActionRowComponents(buildContextualNav(navContext));
+      }
 
       return {
         container,
@@ -278,6 +289,10 @@ export class DiscordFormatter {
           container.addMediaGalleryComponents(gallery);
         }
       }
+    }
+
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
     }
 
     return {
@@ -341,7 +356,7 @@ export class DiscordFormatter {
     };
   }
 
-  static formatNoteScoreV2(response: NoteScoreJSONAPIResponse): {
+  static formatNoteScoreV2(response: NoteScoreJSONAPIResponse, navContext?: string): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
     flags: number;
@@ -373,6 +388,10 @@ export class DiscordFormatter {
         ].join('\n'))
       );
 
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
+    }
+
     return {
       container,
       components: [container.toJSON()],
@@ -383,7 +402,8 @@ export class DiscordFormatter {
   static formatRateNoteSuccessV2(
     result: RateNoteResult,
     noteId: string,
-    helpful: boolean
+    helpful: boolean,
+    navContext?: string
   ): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -408,6 +428,10 @@ export class DiscordFormatter {
         ].join('\n'))
       );
 
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
+    }
+
     return {
       container,
       components: [container.toJSON()],
@@ -420,7 +444,8 @@ export class DiscordFormatter {
     userId: string,
     reason?: string,
     guildId?: string,
-    channelId?: string
+    channelId?: string,
+    navContext?: string
   ): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -450,6 +475,10 @@ export class DiscordFormatter {
         new TextDisplayBuilder().setContent(metadataLines.join('\n'))
       );
 
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
+    }
+
     return {
       container,
       components: [container.toJSON()],
@@ -459,7 +488,8 @@ export class DiscordFormatter {
 
   static async formatListRequestsSuccessV2(
     result: ListRequestsResult,
-    options?: { status?: string; myRequestsOnly?: boolean; communityServerId?: string; guildId?: string; isAdmin?: boolean }
+    options?: { status?: string; myRequestsOnly?: boolean; communityServerId?: string; guildId?: string; isAdmin?: boolean },
+    navContext?: string
   ): Promise<{
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -475,6 +505,9 @@ export class DiscordFormatter {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent('## Note Requests\n\nNo requests found.')
       );
+      if (navContext) {
+        container.addActionRowComponents(buildContextualNav(navContext));
+      }
       return {
         container,
         components: [container.toJSON()],
@@ -643,6 +676,10 @@ export class DiscordFormatter {
           .setDisabled(result.page >= totalPages)
       );
       container.addActionRowComponents(paginationRow);
+    }
+
+    if (navContext) {
+      container.addActionRowComponents(buildContextualNav(navContext));
     }
 
     return {

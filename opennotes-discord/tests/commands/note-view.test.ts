@@ -162,7 +162,7 @@ describe('note-view command', () => {
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 
-    it('should include contextual nav row with Menu, Rate, and List Notes buttons', async () => {
+    it('should pass navContext to formatter for contextual nav', async () => {
       const mockNotesResponse = createMockNoteListJSONAPIResponse([
         { id: '1', summary: 'This is a community note', authorParticipantId: 'author1' },
       ]);
@@ -196,12 +196,11 @@ describe('note-view command', () => {
 
       await execute(mockInteraction as any);
 
-      const editReplyArg = mockInteraction.editReply.mock.calls[0][0];
-      const lastComponent = editReplyArg.components[editReplyArg.components.length - 1];
-      const customIds = lastComponent.components.map((c: any) => c.custom_id);
-      expect(customIds).toContain('nav:menu');
-      expect(customIds).toContain('nav:note:rate');
-      expect(customIds).toContain('nav:list:notes');
+      expect(mockDiscordFormatter.formatViewNotesSuccessV2).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'note:view'
+      );
     });
 
     it('should handle empty notes list', async () => {

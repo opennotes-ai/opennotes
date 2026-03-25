@@ -310,10 +310,9 @@ async function handleListRequests(interaction: ButtonInteraction): Promise<void>
 
     const formatted = await DiscordFormatter.formatListRequestsSuccessV2(
       result.data!,
-      { guildId: interaction.guildId ?? undefined }
+      { guildId: interaction.guildId ?? undefined },
+      'list:requests'
     );
-
-    formatted.container.addActionRowComponents(buildContextualNav('list:requests'));
 
     await interaction.editReply({
       components: [formatted.container.toJSON()],

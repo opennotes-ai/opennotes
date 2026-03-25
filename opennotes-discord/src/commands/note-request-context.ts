@@ -11,7 +11,6 @@ import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } fr
 import { createNoteRequest } from './note.js';
 import { handleEphemeralError } from '../lib/interaction-utils.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
-import { buildContextualNav } from '../lib/navigation-components.js';
 
 export const data = new ContextMenuCommandBuilder()
   .setName('Request Note')
@@ -57,12 +56,13 @@ export async function execute(interaction: MessageContextMenuCommandInteraction)
     const result = await createNoteRequest({
       messageId,
       message: targetMessage,
-      reason: undefined, // Context menu doesn't have reason field
+      reason: undefined,
       userId,
-      community_server_id: guildId, // Required: Discord guild/server ID
+      community_server_id: guildId,
       channel: interaction.channel,
       errorId,
       user: interaction.user,
+      navContext: 'note-request-context',
     });
 
     if (!result.success) {
@@ -73,13 +73,6 @@ export async function execute(interaction: MessageContextMenuCommandInteraction)
         await interaction.deleteReply();
       }
       return;
-    }
-
-    const responseWithContainer = result.response as Record<string, unknown>;
-    if ('container' in responseWithContainer && responseWithContainer.container) {
-      const container = responseWithContainer.container as import('discord.js').ContainerBuilder;
-      container.addActionRowComponents(buildContextualNav('note-request-context'));
-      responseWithContainer.components = [container.toJSON()];
     }
 
     await interaction.editReply(result.response);

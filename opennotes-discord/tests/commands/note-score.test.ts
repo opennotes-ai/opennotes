@@ -169,11 +169,10 @@ describe('note-score command', () => {
 
       await execute(mockInteraction as any);
 
-      const editReplyArg = mockInteraction.editReply.mock.calls[0][0];
-      const lastComponent = editReplyArg.components[editReplyArg.components.length - 1];
-      const customIds = lastComponent.components.map((c: any) => c.custom_id);
-      expect(customIds).toContain('nav:menu');
-      expect(customIds).toContain('nav:list:notes');
+      expect(mockDiscordFormatter.formatNoteScoreV2).toHaveBeenCalledWith(
+        expect.anything(),
+        'note:score'
+      );
     });
   });
 

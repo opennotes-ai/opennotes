@@ -207,12 +207,13 @@ describe('note-write command', () => {
         mockNote,
         '12345678901234567',
         undefined,
-        undefined
+        undefined,
+        'note:write'
       );
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 
-    it('should include contextual nav row with Menu and List Notes buttons', async () => {
+    it('should pass navContext to formatter for contextual nav', async () => {
       const mockNote = {
         id: '123',
         messageId: '12345678901234567',
@@ -256,11 +257,8 @@ describe('note-write command', () => {
 
       await handleModalSubmit(mockInteraction as any);
 
-      const editReplyArg = mockInteraction.editReply.mock.calls[0][0];
-      const lastComponent = editReplyArg.components[editReplyArg.components.length - 1];
-      const customIds = lastComponent.components.map((c: any) => c.custom_id);
-      expect(customIds).toContain('nav:menu');
-      expect(customIds).toContain('nav:list:notes');
+      const formatCall = mockDiscordFormatter.formatWriteNoteSuccessV2.mock.calls[0];
+      expect(formatCall[formatCall.length - 1]).toBe('note:write');
     });
 
     it('should handle creation errors gracefully', async () => {

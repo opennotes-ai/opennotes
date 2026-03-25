@@ -50,7 +50,6 @@ import { TextPaginator } from '../lib/text-paginator.js';
 import { storeViewFullContent } from '../lib/view-full-cache.js';
 import { buildForcePublishSuccessReply } from '../lib/force-publish-response.js';
 import { formatIdDisplay } from '../lib/proquint.js';
-import { buildContextualNav } from '../lib/navigation-components.js';
 
 const configCache = new ConfigCache(apiClient);
 const lastUsage = new Map<string, number>();
@@ -495,9 +494,7 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       communityServerId: communityServerUuid,
       guildId: guildId || undefined,
       isAdmin: hasManageGuildPermission(member),
-    });
-
-    formattedData.container.addActionRowComponents(buildContextualNav('list:requests'));
+    }, 'list:requests');
 
     await interaction.editReply({
       components: [formattedData.container.toJSON()],
@@ -635,7 +632,8 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       result.data!,
       messageId,
       interaction.guildId || undefined,
-      interaction.channelId || undefined
+      interaction.channelId || undefined,
+      'note:write'
     );
     await interaction.editReply({
       components: response.components,
@@ -1339,9 +1337,7 @@ export async function handleRequestQueuePageButton(interaction: ButtonInteractio
       communityServerId: filterState.communityServerId,
       guildId: interaction.guildId || undefined,
       isAdmin: hasManageGuildPermission(member),
-    });
-
-    formatted.container.addActionRowComponents(buildContextualNav('list:requests'));
+    }, 'list:requests');
 
     await interaction.editReply({
       components: [formatted.container.toJSON()],
