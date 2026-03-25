@@ -80,7 +80,7 @@ describe('ScoringService', () => {
       expect(result.success).toBe(true);
       expect(result.data).toEqual(mockScoreResponse);
       expect(mockApiClient.getNoteScore).toHaveBeenCalledWith(TEST_UUID_1);
-      expect(mockCache.set).toHaveBeenCalledWith(`score:${TEST_UUID_1}`, mockScoreResponse, 300);
+      expect(mockCache.set).toHaveBeenCalledWith(`score:${TEST_UUID_1}`, mockScoreResponse, 900);
     });
 
     it('should handle invalid note ID format', async () => {

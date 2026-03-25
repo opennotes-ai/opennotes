@@ -256,11 +256,11 @@ describe('list command - Button Handlers', () => {
           userId: 'user123',
         })
       );
-      expect(interaction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringContaining('Note #note-uuid-123 has been force-published'),
-        })
-      );
+      const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
+      expect(editReplyCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
+      const allContent = JSON.stringify(editReplyCall.components[0]);
+      expect(allContent).toContain('Force-Published');
+      expect(allContent).toContain('note-uuid-123');
     });
 
     it('should reuse the note force-publish summary preview for long summaries', async () => {
@@ -283,10 +283,12 @@ describe('list command - Button Handlers', () => {
       await handleForcePublishButton(interaction as any);
 
       const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
-      expect(editReplyCall.content).toContain('Note #note-uuid-123 has been force-published');
-      expect(editReplyCall.content).toContain('Admin Published');
-      expect(editReplyCall.content).toContain('**Note Summary:**');
-      expect(editReplyCall.content).toContain('...');
+      expect(editReplyCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
+      const allContent = JSON.stringify(editReplyCall.components[0]);
+      expect(allContent).toContain('Force-Published');
+      expect(allContent).toContain('Admin Published');
+      expect(allContent).toContain('Note Summary');
+      expect(allContent).toContain('...');
       expect(editReplyCall.components).toBeDefined();
     });
 
@@ -311,13 +313,15 @@ describe('list command - Button Handlers', () => {
       await handleForcePublishButton(interaction as any);
 
       const editReplyCall = (interaction.editReply as jest.Mock).mock.calls[0][0] as any;
-      expect(editReplyCall.content).toContain('**Note Summary:**');
-      expect(editReplyCall.content).toContain('...');
-      const viewFullButtons = (editReplyCall.components ?? []).filter((row: any) => {
-        const json = typeof row.toJSON === 'function' ? row.toJSON() : row;
-        return json.components?.some((btn: any) => btn.custom_id?.startsWith('view_full:'));
-      });
-      expect(viewFullButtons).toHaveLength(0);
+      const allContent = JSON.stringify(editReplyCall.components[0]);
+      expect(allContent).toContain('Note Summary');
+      expect(allContent).toContain('...');
+      const containerJson = editReplyCall.components[0];
+      const actionRows = containerJson.components.filter((c: any) => c.type === 1);
+      const viewFullRow = actionRows.find((row: any) =>
+        row.components.some((c: any) => c.custom_id?.startsWith('view_full:'))
+      );
+      expect(viewFullRow).toBeUndefined();
     });
 
     it('should handle invalid customId format', async () => {

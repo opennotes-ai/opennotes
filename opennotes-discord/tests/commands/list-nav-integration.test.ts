@@ -9,6 +9,7 @@ const mockCache = {
   get: jest.fn<(key: string) => Promise<unknown>>(),
   set: jest.fn<(key: string, value: unknown, ttl?: number) => Promise<boolean>>(),
   delete: jest.fn<(key: string) => Promise<boolean>>(),
+  expire: jest.fn<(key: string, ttl: number) => Promise<boolean>>(),
   clear: jest.fn<() => Promise<number>>(),
   start: jest.fn<() => void>(),
   stop: jest.fn<() => void>(),
@@ -25,6 +26,9 @@ function setupCacheImplementations() {
   });
   mockCache.delete.mockImplementation(async (key: string) => {
     return cacheStore.delete(key);
+  });
+  mockCache.expire.mockImplementation(async (key: string, _ttl: number) => {
+    return cacheStore.has(key);
   });
   mockCache.clear.mockImplementation(async () => {
     const count = cacheStore.size;
