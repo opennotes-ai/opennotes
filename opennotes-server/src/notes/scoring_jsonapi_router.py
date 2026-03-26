@@ -350,6 +350,7 @@ async def get_scoring_status_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     _current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    community_server_id: UUID | None = Query(None),
 ) -> JSONResponse:
     """Get system scoring status in JSON:API format.
 
@@ -363,7 +364,10 @@ async def get_scoring_status_jsonapi(
     - Warnings
     """
     try:
-        result = await db.execute(select(func.count(Note.id)).where(Note.deleted_at.is_(None)))
+        query = select(func.count(Note.id)).where(Note.deleted_at.is_(None))
+        if community_server_id:
+            query = query.where(Note.community_server_id == community_server_id)
+        result = await db.execute(query)
         note_count = result.scalar() or 0
 
         active_tier_enum = get_tier_for_note_count(note_count)
@@ -423,6 +427,7 @@ async def get_scoring_status_jsonapi(
                 "note_count": note_count,
                 "active_tier": active_tier_enum.value,
                 "confidence": data_confidence,
+                "community_server_id": str(community_server_id) if community_server_id else None,
             },
         )
 
