@@ -3,10 +3,12 @@ import type { components } from "~/lib/generated-types";
 import { formatDate, humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import IdBadge from "~/components/ui/id-badge";
-import { getHelpfulnessTooltip } from "~/lib/scoring-tiers";
+import { getHelpfulnessTooltip, TERM_DESCRIPTIONS } from "~/lib/scoring-tiers";
 import { cn } from "~/lib/cn";
 import NoteFilter, { type NoteFilterValues } from "~/components/ui/note-filter";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import EmptyState from "~/components/ui/empty-state";
+import { ClipboardList } from "~/components/ui/icons";
 
 type DetailedNoteResource = components["schemas"]["DetailedNoteResource"];
 
@@ -97,7 +99,10 @@ export default function NoteDetails(props: {
   return (
     <section>
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h2 id="per-note-breakdown" class="text-xl font-semibold">Per-Note Breakdown</h2>
+        <div>
+          <h2 id="per-note-breakdown" class="text-xl font-semibold">Per-Note Breakdown</h2>
+          <p class="mt-1 text-sm text-muted-foreground">Each note examined — who wrote it, how it was rated, and whether consensus emerged</p>
+        </div>
         <Show when={props.notes.length > 1 || props.filterClassification.length > 0 || props.filterStatus.length > 0}>
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium text-muted-foreground">Sort by:</span>
@@ -128,7 +133,13 @@ export default function NoteDetails(props: {
 
       <Show
         when={props.notes.length > 0}
-        fallback={<p class="text-muted-foreground">No notes available.</p>}
+        fallback={
+          <EmptyState
+            icon={<ClipboardList class="size-6" />}
+            message="No notes available"
+            description="Notes appear once agents begin writing and rating."
+          />
+        }
       >
         <div class="space-y-3">
           <For each={sortedGroups()}>
@@ -189,10 +200,10 @@ export default function NoteDetails(props: {
                               </div>
                             </div>
                             <div class="flex items-center gap-1.5" data-testid="note-badges">
-                              <Badge variant={CLASSIFICATION_VARIANT[attrs.classification] ?? "indigo"}>
+                              <Badge variant={CLASSIFICATION_VARIANT[attrs.classification] ?? "indigo"} title={TERM_DESCRIPTIONS[attrs.classification]}>
                                 {humanizeLabel(attrs.classification)}
                               </Badge>
-                              <Badge variant={STATUS_VARIANT[attrs.status] ?? "muted"}>
+                              <Badge variant={STATUS_VARIANT[attrs.status] ?? "muted"} title={TERM_DESCRIPTIONS[attrs.status]}>
                                 {humanizeLabel(attrs.status)}
                               </Badge>
                             </div>
@@ -215,7 +226,7 @@ export default function NoteDetails(props: {
                                   }, {})
                                 )}>
                                   {([level, count]) => (
-                                    <Badge variant={HELPFULNESS_VARIANT[level] ?? "muted"} class="text-xs">
+                                    <Badge variant={HELPFULNESS_VARIANT[level] ?? "muted"} class="text-xs" title={TERM_DESCRIPTIONS[level]}>
                                       {humanizeLabel(level)}: {count}
                                     </Badge>
                                   )}
@@ -233,7 +244,7 @@ export default function NoteDetails(props: {
                               <div class="mt-1.5 flex flex-wrap gap-1.5">
                                 <For each={attrs.ratings}>
                                   {(rating) => (
-                                    <Badge variant={HELPFULNESS_VARIANT[rating.helpfulness_level] ?? "muted"}>
+                                    <Badge variant={HELPFULNESS_VARIANT[rating.helpfulness_level] ?? "muted"} title={TERM_DESCRIPTIONS[rating.helpfulness_level]}>
                                       {rating.rater_agent_name}: {humanizeLabel(rating.helpfulness_level)}
                                     </Badge>
                                   )}

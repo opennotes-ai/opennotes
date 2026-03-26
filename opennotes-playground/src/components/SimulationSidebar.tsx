@@ -1,28 +1,83 @@
-import { For, createSignal } from "solid-js";
+import { For, createSignal, onMount, onCleanup } from "solid-js";
+import { isServer } from "solid-js/web";
 import { Sheet, SheetContent, SheetTitle } from "~/components/ui/sheet";
 import { SECTIONS } from "./sections";
+import { cn } from "~/lib/cn";
+
+const [activeSection, setActiveSection] = createSignal<string>(SECTIONS[0].id);
+
+function useScrollSpy() {
+  if (isServer) return;
+
+  const observerMap = new Map<string, IntersectionObserver>();
+
+  function observeSection(id: string) {
+    if (observerMap.has(id)) return;
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setActiveSection(id);
+        }
+      },
+      { rootMargin: "-80px 0px -60% 0px" },
+    );
+    observer.observe(el);
+    observerMap.set(id, observer);
+  }
+
+  onMount(() => {
+    function scanSections() {
+      for (const section of SECTIONS) {
+        observeSection(section.id);
+      }
+      if (observerMap.size < SECTIONS.length) {
+        requestAnimationFrame(scanSections);
+      }
+    }
+    scanSections();
+
+    onCleanup(() => {
+      for (const obs of observerMap.values()) obs.disconnect();
+      observerMap.clear();
+    });
+  });
+}
 
 function SidebarNav(props: { onSectionClick?: () => void }) {
   return (
-    <nav class="flex flex-col gap-1" aria-label="Page sections">
+    <nav class="flex flex-col gap-0.5" aria-label="Page sections">
       <For each={SECTIONS}>
-        {(section) => (
-          <button
-            class="rounded px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            onClick={() => {
-              document.getElementById(section.id)?.scrollIntoView({ behavior: "smooth" });
-              props.onSectionClick?.();
-            }}
-          >
-            {section.label}
-          </button>
-        )}
+        {(section) => {
+          const isActive = () => activeSection() === section.id;
+          return (
+            <button
+              class={cn(
+                "rounded px-2 py-1.5 text-left text-sm transition-colors",
+                isActive()
+                  ? "border-l-2 border-primary bg-muted pl-[calc(0.5rem-2px)] font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+              onClick={() => {
+                document.getElementById(section.id)?.scrollIntoView({ behavior: "smooth" });
+                setActiveSection(section.id);
+                props.onSectionClick?.();
+              }}
+            >
+              {section.label}
+            </button>
+          );
+        }}
       </For>
     </nav>
   );
 }
 
 export default function SimulationSidebar() {
+  useScrollSpy();
+
   return (
     <aside class="hidden w-48 shrink-0 lg:block">
       <div class="sticky top-8">

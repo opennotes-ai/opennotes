@@ -1,6 +1,8 @@
 import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import { Show, Switch, Match, Suspense, createSignal, createEffect, on, untrack } from "solid-js";
+import EmptyState from "~/components/ui/empty-state";
+import { AlertCircle, Search } from "~/components/ui/icons";
 import {
   getSimulation,
   getSimulationAnalysis,
@@ -20,6 +22,7 @@ import NotesRatingsSection from "~/components/NotesRatingsSection";
 import ScoringAnalysisSection from "~/components/ScoringAnalysisSection";
 import NoteDetails from "~/components/NoteDetails";
 import { SimChannelMessages } from "~/components/SimChannelMessages";
+import SectionHeader from "~/components/ui/section-header";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 
@@ -283,56 +286,41 @@ export default function SimulationDetailPage() {
                     </Badge>
                   </div>
 
-                  <section id="metadata" class="mt-6 rounded-lg border border-border bg-card p-5">
-                    <h2 class="mb-3 text-lg font-semibold">Metadata</h2>
-                    <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3 md:grid-cols-4">
-                      <div>
-                        <span class="text-muted-foreground">Status</span>
-                        <div class="font-medium">{humanizeLabel(attrs.status)}</div>
-                      </div>
-                      <div>
-                        <span class="text-muted-foreground">Created</span>
-                        <div class="font-medium">{formatDate(attrs.created_at)}</div>
-                      </div>
-                      <Show when={attrs.started_at}>
-                        <div>
-                          <span class="text-muted-foreground">Started</span>
-                          <div class="font-medium">{formatDate(attrs.started_at)}</div>
-                        </div>
-                      </Show>
-                      <Show when={attrs.completed_at}>
-                        <div>
-                          <span class="text-muted-foreground">Completed</span>
-                          <div class="font-medium">{formatDate(attrs.completed_at)}</div>
-                        </div>
-                      </Show>
-                      <div>
-                        <span class="text-muted-foreground">Agents</span>
-                        <div class="font-medium">{getMetric(attrs.metrics, "agent_count")}</div>
-                      </div>
-                      <div>
-                        <span class="text-muted-foreground">Notes</span>
-                        <div class="font-medium">{getMetric(attrs.metrics, "note_count")}</div>
-                      </div>
-                    </div>
-                    <Show when={attrs.error_message}>
-                      <div class="mt-3 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                        Error: {attrs.error_message}
-                      </div>
+                  <div id="metadata" class="mt-4 flex flex-wrap gap-x-6 gap-y-1 border-b border-border pb-4 text-sm text-muted-foreground">
+                    <span><span class="font-medium text-foreground">{humanizeLabel(attrs.status)}</span></span>
+                    <span>Created: <span class="font-medium text-foreground">{formatDate(attrs.created_at)}</span></span>
+                    <Show when={attrs.started_at}>
+                      <span>Started: <span class="font-medium text-foreground">{formatDate(attrs.started_at)}</span></span>
                     </Show>
-                  </section>
+                    <Show when={attrs.completed_at}>
+                      <span>Completed: <span class="font-medium text-foreground">{formatDate(attrs.completed_at)}</span></span>
+                    </Show>
+                    <span>Agents: <span class="font-medium text-foreground">{getMetric(attrs.metrics, "agent_count")}</span></span>
+                    <span>Notes: <span class="font-medium text-foreground">{getMetric(attrs.metrics, "note_count")}</span></span>
+                    <Show when={attrs.error_message}>
+                      <span class="basis-full text-sm text-red-700 dark:text-red-400">Error: {attrs.error_message}</span>
+                    </Show>
+                  </div>
 
                   <Suspense fallback={<p class="mt-6 text-muted-foreground">Loading analysis...</p>}>
                     <Show
                       when={analysis()}
                       keyed
-                      fallback={<p class="mt-6 italic text-muted-foreground">Analysis unavailable.</p>}
+                      fallback={
+                        <div class="mt-6">
+                          <EmptyState
+                            icon={<AlertCircle class="size-6" />}
+                            message="Analysis unavailable"
+                            description="Analysis data for this simulation couldn't be loaded."
+                          />
+                        </div>
+                      }
                     >
                       {(analysisResponse) => {
                         const a = analysisResponse.data.attributes;
                         const meta = analysisResponse._authMeta;
                         return (
-                          <div class="mt-8 space-y-8 divide-y divide-border [&>*]:pt-8 first:[&>*]:pt-0">
+                          <div class="mt-10 space-y-10">
                             <div>
                               <AgentsSection
                                 agents={a.agent_behaviors}
@@ -371,7 +359,15 @@ export default function SimulationDetailPage() {
                     <Show
                       when={detailed()}
                       keyed
-                      fallback={<p class="mt-6 italic text-muted-foreground">Loading detailed analysis...</p>}
+                      fallback={
+                        <div class="mt-6">
+                          <EmptyState
+                            icon={<AlertCircle class="size-6" />}
+                            message="Detailed analysis unavailable"
+                            description="Per-note breakdown data couldn't be loaded."
+                          />
+                        </div>
+                      }
                     >
                       {(detailedResponse) => {
                         const authMeta = detailedResponse._authMeta;
@@ -379,7 +375,7 @@ export default function SimulationDetailPage() {
                         const notesTruncated = !authMeta?.isAuthenticated && totalNotes > pageSize();
                         const totalPages = detailedResponse._totalPages ?? 1;
                         return (
-                          <section id="note-details" class="mt-8 border-t border-border pt-8">
+                          <section id="note-details" class="mt-12">
                             <Show when={detailedResponse.meta}>
                               {(meta) => (
                                 <p class="mb-2 text-sm text-muted-foreground">
@@ -426,8 +422,8 @@ export default function SimulationDetailPage() {
                     </Show>
                   </Suspense>
 
-                  <section id="sim-channel" class="mt-8 border-t border-border pt-8">
-                    <h2 class="mb-4 text-lg font-semibold">Chat Channel</h2>
+                  <section id="sim-channel" class="mt-12">
+                    <SectionHeader title="The Conversation" subtitle="How agents discussed and debated in the community channel" />
                     <Suspense fallback={<SectionSkeleton />}>
                       <SimChannelMessages simulationId={params.id!} />
                     </Suspense>
@@ -445,26 +441,29 @@ export default function SimulationDetailPage() {
 
 function NotFound() {
   return (
-    <div class="mt-16 text-center">
-      <h1 class="text-4xl font-bold">404</h1>
-      <p class="mt-2 text-muted-foreground">Simulation not found.</p>
-      <a href="/" class="mt-4 inline-block text-primary hover:underline">
-        Back to simulations
-      </a>
+    <div class="mt-16">
+      <EmptyState
+        icon={<Search class="size-6" />}
+        message="Simulation not found"
+        description="This simulation may have been removed, or the link might be outdated."
+        actionLabel="Back to home"
+        actionHref="/"
+      />
     </div>
   );
 }
 
 function ServerError() {
   return (
-    <div class="mt-16 text-center">
-      <h1 class="text-2xl font-bold text-red-700 dark:text-red-400">Server Error</h1>
-      <p class="mt-2 text-muted-foreground">
-        Something went wrong while loading this simulation. The API may be unreachable.
-      </p>
-      <a href="/" class="mt-4 inline-block text-primary hover:underline">
-        Back to simulations
-      </a>
+    <div class="mt-16">
+      <EmptyState
+        variant="error"
+        icon={<AlertCircle class="size-6" />}
+        message="Something went wrong"
+        description="We had trouble loading this simulation. The server may be temporarily unavailable."
+        actionLabel="Back to home"
+        actionHref="/"
+      />
     </div>
   );
 }

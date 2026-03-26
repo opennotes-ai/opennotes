@@ -3,11 +3,11 @@ import { test, expect } from "@playwright/test";
 const SIM_URL = "/simulations/019ceaaf-487e-708f-bcae-e4a441d6e841";
 
 const EXPECTED_SECTIONS = [
-  "Agents",
+  "The Agents",
   "Notes & Ratings",
-  "Scoring & Analysis",
+  "Scoring & Consensus",
   "Note Details",
-  "Chat Channel",
+  "The Conversation",
 ];
 
 test.describe("Simulation detail page", () => {
@@ -30,7 +30,7 @@ test.describe("Simulation detail page", () => {
     }) => {
       await page.goto(SIM_URL, { waitUntil: "networkidle" });
 
-      await page.locator("aside nav button", { hasText: "Agents" }).click();
+      await page.locator("aside nav button", { hasText: "The Agents" }).click();
       await expect(page.locator("section#agents")).toBeInViewport();
 
       await page
@@ -132,7 +132,7 @@ test.describe("Simulation detail page", () => {
       await expect(drawer).toBeVisible();
 
       await drawer
-        .locator("nav button", { hasText: "Scoring & Analysis" })
+        .locator("nav button", { hasText: "Scoring & Consensus" })
         .click();
 
       await expect(page.locator("section#scoring-analysis")).toBeInViewport({

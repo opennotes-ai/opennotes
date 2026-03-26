@@ -70,3 +70,23 @@ export function getHelpfulnessTooltip(score: number | null | undefined, tier: st
   const base = `Helpfulness: ${score.toFixed(2)} (${status})`;
   return tierInfo ? `${base}. ${tierInfo.helpfulnessNote}` : base;
 }
+
+export const TERM_DESCRIPTIONS: Record<string, string> = {
+  // Consensus metrics
+  mean_agreement: "Average agreement across all raters on each note (1.0 = unanimous, 0.0 = evenly split)",
+  polarization_index: "How divided raters are across notes (high = deep disagreement, low = broad consensus)",
+  notes_with_consensus: "Notes where raters show strong concord on helpfulness (not necessarily unanimous)",
+  notes_with_disagreement: "Notes where raters significantly differ on helpfulness",
+  total_notes_rated: "Total number of notes that have received at least one rating",
+  // Note classifications
+  NOT_MISLEADING: "Note argues the original content is accurate or not problematic",
+  MISINFORMED_OR_POTENTIALLY_MISLEADING: "Note argues the original content contains inaccuracies or is misleading",
+  // Note statuses
+  CURRENTLY_RATED_HELPFUL: "Community consensus: this note is helpful",
+  CURRENTLY_RATED_NOT_HELPFUL: "Community consensus: this note is not helpful",
+  NEEDS_MORE_RATINGS: "Not enough ratings yet to determine helpfulness",
+  // Helpfulness levels
+  HELPFUL: "Rater found this note helpful",
+  SOMEWHAT_HELPFUL: "Rater found this note partially helpful",
+  NOT_HELPFUL: "Rater found this note not helpful",
+};

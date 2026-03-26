@@ -4,6 +4,7 @@ import { getRequestEvent } from "solid-js/web";
 import { createClient } from "~/lib/supabase-server";
 import { safeRedirectPath } from "~/lib/safe-redirect";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 
 const loginAction = action(async (formData: FormData) => {
   "use server";
@@ -39,23 +40,11 @@ export default function LoginPage() {
         <input type="hidden" name="returnTo" value={searchParams.returnTo ?? ""} />
         <div class="space-y-1.5">
           <label for="email" class="text-sm font-medium">Email</label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            required
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
-          />
+          <Input id="email" name="email" type="email" required />
         </div>
         <div class="space-y-1.5">
           <label for="password" class="text-sm font-medium">Password</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            required
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
-          />
+          <Input id="password" name="password" type="password" required />
         </div>
         <Show when={submission.result}>
           <p class="text-sm text-red-600 dark:text-red-400">{submission.result}</p>
