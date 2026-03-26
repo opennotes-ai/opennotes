@@ -1,4 +1,5 @@
 import type { ComponentProps } from "solid-js";
+import { splitProps } from "solid-js";
 import type { VariantProps } from "class-variance-authority";
 import { cva } from "class-variance-authority";
 import { cn } from "~/lib/cn";
@@ -35,11 +36,13 @@ export type BadgeVariant = NonNullable<
 export function Badge(
   props: ComponentProps<"span"> & VariantProps<typeof badgeVariants>,
 ) {
+  const [local, rest] = splitProps(props, ["variant", "class", "children"]);
   return (
     <span
-      class={cn(badgeVariants({ variant: props.variant }), props.class)}
+      class={cn(badgeVariants({ variant: local.variant }), local.class)}
+      {...rest}
     >
-      {props.children}
+      {local.children}
     </span>
   );
 }

@@ -20,11 +20,11 @@ export default function ScoringAnalysisSection(props: {
       <SectionHeader title="Scoring & Consensus" subtitle="How the community reached (or failed to reach) agreement" />
 
       <div class="mt-4 flex flex-wrap gap-2">
-        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm" title={TERM_DESCRIPTIONS.mean_agreement}><span class="text-muted-foreground">Agreement:</span> <strong>{props.consensus.mean_agreement.toFixed(3)}</strong></span>
-        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm" title={TERM_DESCRIPTIONS.polarization_index}><span class="text-muted-foreground">Polarization:</span> <strong>{props.consensus.polarization_index.toFixed(3)}</strong></span>
-        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm" title={TERM_DESCRIPTIONS.notes_with_consensus}><span class="text-muted-foreground">Consensus:</span> <strong>{props.consensus.notes_with_consensus}</strong></span>
-        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm" title={TERM_DESCRIPTIONS.notes_with_disagreement}><span class="text-muted-foreground">Disagreement:</span> <strong>{props.consensus.notes_with_disagreement}</strong></span>
-        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm" title={TERM_DESCRIPTIONS.total_notes_rated}><span class="text-muted-foreground">Total Rated:</span> <strong>{props.consensus.total_notes_rated}</strong></span>
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm" title={TERM_DESCRIPTIONS.mean_agreement} tabindex="0"><span class="text-muted-foreground">Agreement:</span> <strong>{props.consensus.mean_agreement.toFixed(3)}</strong></span>
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm" title={TERM_DESCRIPTIONS.polarization_index} tabindex="0"><span class="text-muted-foreground">Polarization:</span> <strong>{props.consensus.polarization_index.toFixed(3)}</strong></span>
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm" title={TERM_DESCRIPTIONS.notes_with_consensus} tabindex="0"><span class="text-muted-foreground">Consensus:</span> <strong>{props.consensus.notes_with_consensus}</strong></span>
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm" title={TERM_DESCRIPTIONS.notes_with_disagreement} tabindex="0"><span class="text-muted-foreground">Disagreement:</span> <strong>{props.consensus.notes_with_disagreement}</strong></span>
+        <span class="rounded-md bg-muted/50 px-3 py-2 text-sm" title={TERM_DESCRIPTIONS.total_notes_rated} tabindex="0"><span class="text-muted-foreground">Total Rated:</span> <strong>{props.consensus.total_notes_rated}</strong></span>
       </div>
 
       <h3 class="mt-6 text-sm font-medium text-muted-foreground">Scoring Coverage</h3>
