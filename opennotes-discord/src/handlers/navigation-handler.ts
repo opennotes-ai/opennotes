@@ -2,7 +2,7 @@ import { ButtonInteraction, MessageFlags, ActionRowBuilder, ButtonBuilder, Conta
 import { cache } from '../cache.js';
 import { logger } from '../logger.js';
 import { NavigationStateManager, ScreenState } from '../lib/navigation-state.js';
-import { buildNavHub, buildBackButton, buildFullMenuButton, buildContextualNav, NAV_GRAPH } from '../lib/navigation-components.js';
+import { buildNavHub, buildBackButton, buildContextualNav, NAV_GRAPH } from '../lib/navigation-components.js';
 import { v2MessageFlags, createContainer, createTextSection, createDivider, V2_COLORS } from '../utils/v2-components.js';
 import { buildWelcomeContainer } from '../lib/welcome-content.js';
 import { serviceProvider } from '../services/index.js';
@@ -67,10 +67,14 @@ async function handleMenuButton(interaction: ButtonInteraction): Promise<void> {
 
   const container = buildHubContainer();
 
-  const navRow = new ActionRowBuilder<ButtonBuilder>();
-  navRow.addComponents(buildBackButton(), buildFullMenuButton());
+  const hubRows = buildNavHub();
+  for (const row of hubRows) {
+    container.addActionRowComponents(row);
+  }
 
   container.addSeparatorComponents(createDivider());
+  const navRow = new ActionRowBuilder<ButtonBuilder>();
+  navRow.addComponents(buildBackButton());
   container.addActionRowComponents(navRow);
 
   await interaction.update({
