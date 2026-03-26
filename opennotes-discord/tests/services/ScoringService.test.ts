@@ -185,7 +185,7 @@ describe('ScoringService', () => {
 
       expect(result.success).toBe(true);
       expect(result.data).toEqual(mockStatusResponse);
-      expect(mockCache.get).toHaveBeenCalledWith('scoring:status');
+      expect(mockCache.get).toHaveBeenCalledWith('scoring:status:global');
       expect(mockApiClient.getScoringStatus).not.toHaveBeenCalled();
     });
 
@@ -198,7 +198,7 @@ describe('ScoringService', () => {
       expect(result.success).toBe(true);
       expect(result.data).toEqual(mockStatusResponse);
       expect(mockApiClient.getScoringStatus).toHaveBeenCalled();
-      expect(mockCache.set).toHaveBeenCalledWith('scoring:status', mockStatusResponse, 60);
+      expect(mockCache.set).toHaveBeenCalledWith('scoring:status:global', mockStatusResponse, 60);
     });
   });
 
@@ -325,7 +325,7 @@ describe('ScoringService', () => {
     it('should invalidate scoring status cache', () => {
       scoringService.invalidateScoringStatusCache();
 
-      expect(mockCache.delete).toHaveBeenCalledWith('scoring:status');
+      expect(mockCache.delete).toHaveBeenCalledWith('scoring:status:global');
     });
   });
 });
