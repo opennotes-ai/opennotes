@@ -163,6 +163,17 @@ export class Bot {
       ...shardInfo,
     });
 
+    try {
+      await this.client.application?.commands.fetch();
+      logger.info('Application commands cache populated', {
+        commandCount: this.client.application?.commands.cache.size ?? 0,
+      });
+    } catch (error) {
+      logger.warn('Failed to fetch application commands cache', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     this.client.user.setPresence({
       activities: [{ name: 'Community Notes', type: ActivityType.Watching }],
       status: 'online',
