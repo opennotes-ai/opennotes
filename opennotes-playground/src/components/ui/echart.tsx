@@ -20,10 +20,10 @@ echarts.use([
   CanvasRenderer,
 ]);
 
-const VINTAGE_THEME = {
-  color: ["#d87c7c", "#919e8b", "#d7ab82", "#6e7074", "#61a0a8", "#efa18d", "#787464", "#cc7e63", "#724e58", "#4b565b"],
+const CHART_THEME = {
+  color: ["#2a9d6e", "#4a7fd4", "#d4874a", "#9a5eb8", "#9a9435", "#3d8b8b", "#c76a6a", "#6b8e5e", "#c4965a", "#5c7fa8"],
 };
-echarts.registerTheme("vintage", VINTAGE_THEME);
+echarts.registerTheme("vintage", CHART_THEME);
 
 interface EChartProps {
   option: EChartsOption;
