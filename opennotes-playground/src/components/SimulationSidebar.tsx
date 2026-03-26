@@ -9,27 +9,39 @@ const [activeSection, setActiveSection] = createSignal<string>(SECTIONS[0].id);
 function useScrollSpy() {
   if (isServer) return;
 
+  const observerMap = new Map<string, IntersectionObserver>();
+
+  function observeSection(id: string) {
+    if (observerMap.has(id)) return;
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setActiveSection(id);
+        }
+      },
+      { rootMargin: "-80px 0px -60% 0px" },
+    );
+    observer.observe(el);
+    observerMap.set(id, observer);
+  }
+
   onMount(() => {
-    const observers: IntersectionObserver[] = [];
-
-    for (const section of SECTIONS) {
-      const el = document.getElementById(section.id);
-      if (!el) continue;
-
-      const observer = new IntersectionObserver(
-        ([entry]) => {
-          if (entry.isIntersecting) {
-            setActiveSection(section.id);
-          }
-        },
-        { rootMargin: "-80px 0px -60% 0px" },
-      );
-      observer.observe(el);
-      observers.push(observer);
+    function scanSections() {
+      for (const section of SECTIONS) {
+        observeSection(section.id);
+      }
+      if (observerMap.size < SECTIONS.length) {
+        requestAnimationFrame(scanSections);
+      }
     }
+    scanSections();
 
     onCleanup(() => {
-      for (const obs of observers) obs.disconnect();
+      for (const obs of observerMap.values()) obs.disconnect();
+      observerMap.clear();
     });
   });
 }
