@@ -127,12 +127,18 @@ export function SimChannelMessages(props: { simulationId: string }) {
             <For each={messages()}>
               {(msg) => {
                 const avatar = getAgentAvatar(msg.attributes.agent_profile_id);
-                const time = msg.attributes.created_at
-                  ? new Date(msg.attributes.created_at).toLocaleTimeString(
-                      [],
-                      { hour: "2-digit", minute: "2-digit" },
-                    )
-                  : "";
+                const time = (() => {
+                  if (!msg.attributes.created_at) return "";
+                  const d = new Date(msg.attributes.created_at);
+                  const now = new Date();
+                  const isToday = d.getFullYear() === now.getFullYear()
+                    && d.getMonth() === now.getMonth()
+                    && d.getDate() === now.getDate();
+                  const t = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+                  if (isToday) return t;
+                  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                  return `${date}, ${t}`;
+                })();
                 return (
                   <div class="flex gap-3">
                     <div
