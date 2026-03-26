@@ -429,29 +429,24 @@ describe('navigation-handler', () => {
       expect(interaction.editReply).toHaveBeenCalledTimes(1);
     });
 
-    it('should dispatch list:requests to list requests service', async () => {
+    it('should show command mention redirect for list:requests', async () => {
       const interaction = buildMockInteraction({ customId: 'nav:list:requests' });
 
       await handleNavInteraction(interaction);
 
-      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
-      expect(mockListRequestsExecute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: 'user-123',
-          page: 1,
-          size: 4,
-        })
-      );
-      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+      expect(interaction.reply).toHaveBeenCalledTimes(1);
+      const replyCall = (interaction.reply as any).mock.calls[0][0] as Record<string, any>;
+      expect(replyCall.content).toContain('/list requests');
     });
 
-    it('should dispatch list:notes with deferReply and editReply', async () => {
+    it('should show command mention redirect for list:notes', async () => {
       const interaction = buildMockInteraction({ customId: 'nav:list:notes' });
 
       await handleNavInteraction(interaction);
 
-      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
-      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+      expect(interaction.reply).toHaveBeenCalledTimes(1);
+      const replyCall = (interaction.reply as any).mock.calls[0][0] as Record<string, any>;
+      expect(replyCall.content).toContain('/list notes');
     });
 
     it('should show redirect message for note:write', async () => {
@@ -527,19 +522,13 @@ describe('navigation-handler', () => {
       expect(interaction.editReply).toHaveBeenCalledTimes(1);
     });
 
-    it('should handle list requests service errors gracefully', async () => {
-      mockListRequestsExecute.mockResolvedValueOnce({
-        success: false,
-        error: { code: 'API_ERROR', message: 'Service unavailable' },
-      });
-
+    it('should not call list requests service for nav redirect', async () => {
       const interaction = buildMockInteraction({ customId: 'nav:list:requests' });
 
       await handleNavInteraction(interaction);
 
-      expect(interaction.deferReply).toHaveBeenCalledTimes(1);
-      expect(mockFormatErrorV2).toHaveBeenCalled();
-      expect(interaction.editReply).toHaveBeenCalledTimes(1);
+      expect(mockListRequestsExecute).not.toHaveBeenCalled();
+      expect(interaction.reply).toHaveBeenCalledTimes(1);
     });
 
     it('should add scoring status to status-bot when available', async () => {

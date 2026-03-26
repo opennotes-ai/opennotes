@@ -199,7 +199,7 @@ describe('request-queue command', () => {
       expect(mockListRequestsService.execute).toHaveBeenCalledWith({
         userId: 'user123',
         page: 1,
-        size: 4,
+        size: 3,
         status: undefined,
         myRequestsOnly: false,
         communityServerId: 'guild456',
@@ -230,7 +230,7 @@ describe('request-queue command', () => {
       expect(mockListRequestsService.execute).toHaveBeenCalledWith({
         userId: 'user123',
         page: 1,
-        size: 4,
+        size: 3,
         status: 'PENDING',
         myRequestsOnly: false,
         communityServerId: 'guild456',
@@ -261,7 +261,7 @@ describe('request-queue command', () => {
       expect(mockListRequestsService.execute).toHaveBeenCalledWith({
         userId: 'user123',
         page: 1,
-        size: 4,
+        size: 3,
         status: undefined,
         myRequestsOnly: true,
         communityServerId: 'guild456',

@@ -7,9 +7,6 @@ import { v2MessageFlags, createContainer, createTextSection, createDivider, V2_C
 import { buildWelcomeContainer } from '../lib/welcome-content.js';
 import { serviceProvider } from '../services/index.js';
 import { DiscordFormatter } from '../services/DiscordFormatter.js';
-import { apiClient } from '../api-client.js';
-import { resolveUserProfileId } from '../lib/user-profile-resolver.js';
-import { LIST_COMMAND_LIMITS } from '../lib/constants.js';
 
 const navState = new NavigationStateManager(cache);
 
@@ -142,9 +139,20 @@ type NavActionHandler = (interaction: ButtonInteraction) => Promise<void>;
 const ACTION_HANDLERS: Record<string, NavActionHandler> = {
   'about-opennotes': handleAboutOpennotes,
   'status-bot': handleStatusBot,
-  'list:notes': handleListNotes,
-  'list:requests': handleListRequests,
 };
+
+const COMMAND_REDIRECTS: Record<string, { command: string; subcommand: string; description: string }> = {
+  'list:notes': { command: 'list', subcommand: 'notes', description: 'Browse and rate community notes' },
+  'list:requests': { command: 'list', subcommand: 'requests', description: 'View and respond to note requests' },
+};
+
+function formatCommandMention(interaction: ButtonInteraction, command: string, subcommand: string): string {
+  const cmd = interaction.client.application?.commands.cache.find(c => c.name === command);
+  if (cmd) {
+    return `</${command} ${subcommand}:${cmd.id}>`;
+  }
+  return `\`/${command} ${subcommand}\``;
+}
 
 async function handleNavAction(interaction: ButtonInteraction): Promise<void> {
   const action = interaction.customId.slice(4);
@@ -152,6 +160,16 @@ async function handleNavAction(interaction: ButtonInteraction): Promise<void> {
   const handler = ACTION_HANDLERS[action];
   if (handler) {
     await handler(interaction);
+    return;
+  }
+
+  const commandRedirect = COMMAND_REDIRECTS[action];
+  if (commandRedirect) {
+    const mention = formatCommandMention(interaction, commandRedirect.command, commandRedirect.subcommand);
+    await interaction.reply({
+      content: `${mention} — ${commandRedirect.description}`,
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
 
@@ -231,103 +249,6 @@ async function handleStatusBot(interaction: ButtonInteraction): Promise<void> {
   }
 }
 
-async function handleListNotes(interaction: ButtonInteraction): Promise<void> {
-  await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
-
-  try {
-    const userId = interaction.user.id;
-    const guildId = interaction.guildId;
-
-    let profileUuid: string | undefined;
-    try {
-      profileUuid = await resolveUserProfileId(userId, apiClient);
-    } catch {
-      await interaction.editReply({ content: 'Could not find your user profile. Please try again later.' });
-      return;
-    }
-
-    let communityServerUuid: string | undefined;
-    if (guildId) {
-      try {
-        const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-        communityServerUuid = communityServer.data.id;
-      } catch {
-        logger.warn('Failed to resolve community server for nav list:notes', { guildId });
-      }
-    }
-
-    const notesResponse = await apiClient.listNotesWithStatus(
-      'NEEDS_MORE_RATINGS', 1, 5, communityServerUuid, profileUuid
-    );
-
-    const container = createContainer(V2_COLORS.INFO);
-
-    if (notesResponse.total === 0) {
-      container.addTextDisplayComponents(
-        createTextSection('## Rating Queue\n\nNo notes need rating right now! All caught up.')
-      );
-    } else {
-      container.addTextDisplayComponents(
-        createTextSection(`## Rating Queue\n\n${notesResponse.total} notes need your rating.\n\nUse \`/list notes\` for the full interactive queue with rating buttons.`)
-      );
-    }
-
-    container.addSeparatorComponents(createDivider());
-    container.addActionRowComponents(buildContextualNav('list:notes'));
-
-    await interaction.editReply({
-      components: [container],
-      flags: v2MessageFlags({ ephemeral: true }),
-    });
-  } catch (error) {
-    logger.error('Failed to handle nav list:notes', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    await interaction.editReply({
-      content: 'Failed to load the notes queue. Please try `/list notes` instead.',
-    });
-  }
-}
-
-async function handleListRequests(interaction: ButtonInteraction): Promise<void> {
-  await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
-
-  try {
-    const listRequestsService = serviceProvider.getListRequestsService();
-    const result = await listRequestsService.execute({
-      userId: interaction.user.id,
-      page: 1,
-      size: LIST_COMMAND_LIMITS.REQUESTS_PER_PAGE,
-    });
-
-    if (!result.success) {
-      const errorResponse = DiscordFormatter.formatErrorV2(result);
-      await interaction.editReply({
-        components: errorResponse.components,
-        flags: errorResponse.flags,
-      });
-      return;
-    }
-
-    const formatted = await DiscordFormatter.formatListRequestsSuccessV2(
-      result.data!,
-      { guildId: interaction.guildId ?? undefined },
-      'list:requests'
-    );
-
-    await interaction.editReply({
-      components: [formatted.container.toJSON()],
-      flags: formatted.flags,
-    });
-  } catch (error) {
-    logger.error('Failed to handle nav list:requests', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    await interaction.editReply({
-      content: 'Failed to load requests. Please try `/list requests` instead.',
-    });
-  }
-}
 
 function buildHubContainer(): ContainerBuilder {
   const container = createContainer(V2_COLORS.PRIMARY);

@@ -164,7 +164,7 @@ jest.unstable_mockModule('../../src/lib/validation.js', () => ({
 jest.unstable_mockModule('../../src/lib/constants.js', () => ({
   LIST_COMMAND_LIMITS: {
     NOTES_PER_PAGE: 4,
-    REQUESTS_PER_PAGE: 4,
+    REQUESTS_PER_PAGE: 3,
     STATE_CACHE_TTL_SECONDS: 300,
     RATE_LIMIT_MS: 0,
   },

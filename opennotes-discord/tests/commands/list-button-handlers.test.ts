@@ -112,7 +112,7 @@ jest.unstable_mockModule('../../src/lib/validation.js', () => ({
 
 jest.unstable_mockModule('../../src/lib/constants.js', () => ({
   LIST_COMMAND_LIMITS: {
-    REQUESTS_PER_PAGE: 4,
+    REQUESTS_PER_PAGE: 3,
     STATE_CACHE_TTL_SECONDS: 3600,
   },
 }));
@@ -393,7 +393,7 @@ describe('list command - Button Handlers', () => {
       expect(mockListRequestsService.execute).toHaveBeenCalledWith({
         userId: 'user123',
         page: 2,
-        size: 4,
+        size: 3,
         status: 'PENDING',
         myRequestsOnly: false,
         communityServerId: 'community-uuid',

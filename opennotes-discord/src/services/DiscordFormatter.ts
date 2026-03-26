@@ -528,7 +528,7 @@ export class DiscordFormatter {
       )
     );
 
-    for (const request of result.requests.slice(0, 4)) {
+    for (const request of result.requests.slice(0, 3)) {
       const statusEmojiMap: Record<RequestStatus, string> = {
         PENDING: '\u{23F3}',
         IN_PROGRESS: '\u{1F504}',
