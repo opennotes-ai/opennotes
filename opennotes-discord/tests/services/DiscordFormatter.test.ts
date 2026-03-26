@@ -747,7 +747,7 @@ describe('DiscordFormatter', () => {
 
       const container = formatted.container.toJSON();
       const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
-      expect(actionRowComponents).toHaveLength(2);
+      expect(actionRowComponents).toHaveLength(1);
       expect(formatted.actionRows).toHaveLength(0);
     });
 
@@ -856,7 +856,7 @@ describe('DiscordFormatter', () => {
       expect(mediaGalleryComponents.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('should embed action rows inside container for pending requests', async () => {
+    it('should embed single action row per pending request', async () => {
       const result = createMockListRequestsResult(1);
       result.requests[0].status = 'PENDING';
       const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
@@ -864,10 +864,11 @@ describe('DiscordFormatter', () => {
       const container = formatted.container.toJSON();
       const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
 
-      expect(actionRowComponents).toHaveLength(2);
+      expect(actionRowComponents).toHaveLength(1);
+      expect((actionRowComponents[0] as any).components).toHaveLength(2);
     });
 
-    it('should place action rows immediately after its associated request entry', async () => {
+    it('should place one action row after each pending request entry', async () => {
       const result = createMockListRequestsResult(2);
       result.requests[0].status = 'PENDING';
       result.requests[1].status = 'PENDING';
@@ -888,14 +889,14 @@ describe('DiscordFormatter', () => {
         }
       });
 
-      expect(actionRowIndices.length).toBe(4);
+      expect(actionRowIndices.length).toBe(2);
       for (let i = 0; i < requestTextIndices.length; i++) {
         const requestIdx = requestTextIndices[i];
         const nextRequestIdx = requestTextIndices[i + 1];
         const rowsForRequest = actionRowIndices.filter(
           (arIdx) => arIdx > requestIdx && (nextRequestIdx === undefined || arIdx < nextRequestIdx)
         );
-        expect(rowsForRequest).toHaveLength(2);
+        expect(rowsForRequest).toHaveLength(1);
       }
     });
 
@@ -907,41 +908,40 @@ describe('DiscordFormatter', () => {
       expect(formatted.actionRows).toHaveLength(0);
     });
 
-    it('should include TextDisplay labels before button rows for pending requests', async () => {
-      const result = createMockListRequestsResult(1);
-      result.requests[0].status = 'PENDING';
-      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
-
-      const container = formatted.container.toJSON();
-      const textComponents = container.components.filter((c: any) => c.type === 10);
-      const allContent = textComponents.map((c: any) => c.content).join(' ');
-      expect(allContent).toContain('Write a note yourself');
-      expect(allContent).toContain('Let AI write the note');
-    });
-
-    it('should use sparkles emoji and AI label on AI button', async () => {
+    it('should show Write a note and Let AI write a note buttons for pending requests', async () => {
       const result = createMockListRequestsResult(1);
       result.requests[0].status = 'PENDING';
       const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
 
       const container = formatted.container.toJSON();
       const actionRows = container.components.filter((c: any) => c.type === 1);
-      const aiRow = actionRows[1] as any;
-      const aiButton = aiRow.components[0];
-      expect(aiButton.label).toBe('AI');
-      expect(aiButton.emoji).toEqual({ name: '✨' });
+      const buttons = (actionRows[0] as any).components;
+      expect(buttons[0].label).toBe('Write a note');
+      expect(buttons[1].label).toBe('Let AI write a note');
     });
 
-    it('should split write buttons and AI button into separate action rows', async () => {
+    it('should use sparkles emoji on Let AI write a note button', async () => {
       const result = createMockListRequestsResult(1);
       result.requests[0].status = 'PENDING';
       const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
 
       const container = formatted.container.toJSON();
       const actionRows = container.components.filter((c: any) => c.type === 1);
-      expect(actionRows).toHaveLength(2);
+      const buttons = (actionRows[0] as any).components;
+      const aiButton = buttons[1];
+      expect(aiButton.label).toBe('Let AI write a note');
+      expect(aiButton.emoji).toEqual({ name: '\u2728' });
+    });
+
+    it('should have both write buttons in a single action row', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'PENDING';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const actionRows = container.components.filter((c: any) => c.type === 1);
+      expect(actionRows).toHaveLength(1);
       expect((actionRows[0] as any).components).toHaveLength(2);
-      expect((actionRows[1] as any).components).toHaveLength(1);
     });
   });
 

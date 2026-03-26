@@ -278,6 +278,12 @@ export class Bot {
         } catch (error) {
           logger.error('Pagination button failed', { error });
         }
+      } else if (interaction.customId.startsWith('write_note_choose:')) {
+        try {
+          await listCommand.handleWriteNoteChooseButton(interaction);
+        } catch (error) {
+          logger.error('Write note choose button failed', { error });
+        }
       } else if (interaction.customId.startsWith('write_note:')) {
         try {
           await listCommand.handleWriteNoteButton(interaction);

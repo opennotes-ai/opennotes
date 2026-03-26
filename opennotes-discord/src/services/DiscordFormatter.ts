@@ -574,19 +574,13 @@ export class DiscordFormatter {
       }
 
       if (effectiveMessageId && request.status === 'PENDING') {
-        const writeNoteNotMisleadingShortId = generateShortId();
-        const writeNoteMisinformedShortId = generateShortId();
+        const writeNoteShortId = generateShortId();
         const aiWriteNoteShortId = generateShortId();
-
-        const writeNoteNotMisleadingCacheKey = `write_note_state:${writeNoteNotMisleadingShortId}`;
-        const writeNoteMisinformedCacheKey = `write_note_state:${writeNoteMisinformedShortId}`;
-        const aiWriteNoteCacheKey = `write_note_state:${aiWriteNoteShortId}`;
         const ttl = 900;
 
         try {
-          await cache.set(writeNoteNotMisleadingCacheKey, request.id, ttl);
-          await cache.set(writeNoteMisinformedCacheKey, request.id, ttl);
-          await cache.set(aiWriteNoteCacheKey, request.id, ttl);
+          await cache.set(`write_note_state:${writeNoteShortId}`, request.id, ttl);
+          await cache.set(`write_note_state:${aiWriteNoteShortId}`, request.id, ttl);
         } catch (error) {
           logger.error('Failed to store write note button state in cache', {
             error: error instanceof Error ? error.message : String(error),
@@ -594,31 +588,18 @@ export class DiscordFormatter {
           });
         }
 
-        container.addTextDisplayComponents(
-          new TextDisplayBuilder().setContent('**Write a note yourself.** The original message is:')
-        );
         container.addActionRowComponents(
           new ActionRowBuilder<ButtonBuilder>().addComponents(
             new ButtonBuilder()
-              .setCustomId(`write_note:NOT_MISLEADING:${writeNoteNotMisleadingShortId}`)
-              .setLabel('Not Misleading')
-              .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId(`write_note:MISINFORMED_OR_POTENTIALLY_MISLEADING:${writeNoteMisinformedShortId}`)
-              .setLabel('Misinformed or Misleading')
-              .setStyle(ButtonStyle.Danger),
-          )
-        );
-        container.addTextDisplayComponents(
-          new TextDisplayBuilder().setContent('Let AI write the note:')
-        );
-        container.addActionRowComponents(
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
+              .setCustomId(`write_note_choose:${writeNoteShortId}`)
+              .setLabel('Write a note')
+              .setStyle(ButtonStyle.Success)
+              .setEmoji({ name: '\u270F\uFE0F' }),
             new ButtonBuilder()
               .setCustomId(`ai_write_note:${aiWriteNoteShortId}`)
-              .setLabel('AI')
-              .setEmoji({ name: '✨' })
-              .setStyle(ButtonStyle.Primary),
+              .setLabel('Let AI write a note')
+              .setStyle(ButtonStyle.Primary)
+              .setEmoji({ name: '\u2728' }),
           )
         );
       } else if (request.status === 'COMPLETED') {

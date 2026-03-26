@@ -670,6 +670,63 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
   }
 }
 
+export async function handleWriteNoteChooseButton(interaction: ButtonInteraction): Promise<void> {
+  const errorId = generateErrorId();
+
+  try {
+    const shortId = interaction.customId.split(':')[1];
+    if (!shortId) {
+      await interaction.reply({ content: 'Invalid button data.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const requestId = await cache.get<string>(`write_note_state:${shortId}`);
+    if (!requestId) {
+      await interaction.reply({
+        content: 'Button expired. Please run `/list requests` again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    await cache.expire(`write_note_state:${shortId}`, 900);
+
+    const notMisleadingShortId = generateShortId();
+    const misinformedShortId = generateShortId();
+    const ttl = 900;
+
+    await cache.set(`write_note_state:${notMisleadingShortId}`, requestId, ttl);
+    await cache.set(`write_note_state:${misinformedShortId}`, requestId, ttl);
+
+    await interaction.reply({
+      content: 'The original message is:',
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`write_note:NOT_MISLEADING:${notMisleadingShortId}`)
+            .setLabel('Not Misleading')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`write_note:MISINFORMED_OR_POTENTIALLY_MISLEADING:${misinformedShortId}`)
+            .setLabel('Misinformed or Misleading')
+            .setStyle(ButtonStyle.Danger),
+        ),
+      ],
+      flags: MessageFlags.Ephemeral,
+    });
+  } catch (error) {
+    const errorDetails = extractErrorDetails(error);
+    logger.error('Error handling write note choose button', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      error: errorDetails.message,
+    });
+    if (!interaction.replied) {
+      await interaction.reply({ content: 'Something went wrong. Please try again.', flags: MessageFlags.Ephemeral });
+    }
+  }
+}
+
 export async function handleWriteNoteButton(interaction: ButtonInteraction): Promise<void> {
   const errorId = generateErrorId();
 
