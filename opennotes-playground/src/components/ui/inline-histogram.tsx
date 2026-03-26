@@ -1,5 +1,6 @@
 import { For, createMemo } from "solid-js";
 import { humanizeLabel } from "~/lib/format";
+import { getSemanticColor } from "~/lib/chart-colors";
 
 export const CHART_COLORS = [
   "var(--chart-1)",
@@ -29,7 +30,7 @@ export default function InlineHistogram(props: { data: Record<string, number> })
                 class="h-full rounded-sm"
                 style={{
                   width: `${(count / max()) * 100}%`,
-                  "background-color": CHART_COLORS[i() % CHART_COLORS.length],
+                  "background-color": getSemanticColor(label) ?? CHART_COLORS[i() % CHART_COLORS.length],
                 }}
               />
             </div>
