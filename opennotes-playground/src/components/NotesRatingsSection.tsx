@@ -2,6 +2,7 @@ import { For, Show, createMemo } from "solid-js";
 import type { EChartsOption } from "echarts";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
+import { SEMANTIC_COLORS } from "~/lib/chart-colors";
 import { EChart } from "~/components/ui/echart";
 import SectionHeader from "~/components/ui/section-header";
 
@@ -31,6 +32,7 @@ function buildOverallBarOption(overall: Record<string, number>): EChartsOption {
       stack: "total",
       data: [overall[key]],
       label: { show: true, formatter: "{c}" },
+      ...(SEMANTIC_COLORS[key] ? { itemStyle: { color: SEMANTIC_COLORS[key] } } : {}),
     })),
     legend: { bottom: 0 },
     tooltip: { trigger: "axis", axisPointer: { type: "none" } },
@@ -56,6 +58,7 @@ function buildCumulativeOption(
       stack: "total",
       areaStyle: {},
       emphasis: { focus: "series" as const },
+      ...(SEMANTIC_COLORS[key] ? { itemStyle: { color: SEMANTIC_COLORS[key] }, lineStyle: { color: SEMANTIC_COLORS[key] }, areaStyle: { color: SEMANTIC_COLORS[key], opacity: 0.3 } } : {}),
       data: buckets.map((b) => {
         cumulative += (b[field] ?? {})[key] ?? 0;
         return cumulative;

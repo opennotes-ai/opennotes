@@ -3,6 +3,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover
 import type { EChartsOption } from "echarts";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
+import { SEMANTIC_COLORS } from "~/lib/chart-colors";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import InlineHistogram from "~/components/ui/inline-histogram";
 import IdBadge from "~/components/ui/id-badge";
@@ -60,6 +61,7 @@ function buildHistogramOption(perAgent: RatingDistributionData["per_agent"]): EC
       name: humanizeLabel(key),
       type: "bar" as const,
       stack: "total",
+      itemStyle: { color: SEMANTIC_COLORS[key] },
       data: [...perAgent].reverse().map((a) => a.distribution[key] ?? 0),
     })),
     legend: { bottom: 0, type: "scroll" },
