@@ -65,6 +65,8 @@ const mockApiClient = {
   rateNote: jest.fn<(...args: any[]) => Promise<any>>(),
   scoreNotes: jest.fn<(...args: any[]) => Promise<any>>(),
   createNoteRequest: jest.fn<(...args: any[]) => Promise<any>>(),
+  getCommunityServerByPlatformId: jest.fn<(...args: any[]) => Promise<any>>(),
+  getScoringStatus: jest.fn<(...args: any[]) => Promise<any>>(),
 };
 
 const mockCache = cacheFactory.build();
@@ -133,6 +135,9 @@ describe('status-bot command', () => {
     jest.clearAllMocks();
     mockServiceProvider.getStatusService.mockReturnValue(mockStatusService);
     mockServiceProvider.getScoringService.mockReturnValue(mockScoringService);
+    mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+      data: { id: 'community-server-uuid-123' },
+    });
     mockDiscordFormatter.formatStatusSuccessV2.mockImplementation(() => {
       const container = createMockContainer();
       return {
@@ -192,7 +197,8 @@ describe('status-bot command', () => {
       await execute(mockInteraction as any);
 
       expect(mockStatusService.execute).toHaveBeenCalledWith(5);
-      expect(mockScoringService.getScoringStatus).toHaveBeenCalled();
+      expect(mockApiClient.getCommunityServerByPlatformId).toHaveBeenCalledWith('guild456');
+      expect(mockScoringService.getScoringStatus).toHaveBeenCalledWith('community-server-uuid-123');
       expect(mockDiscordFormatter.formatStatusSuccessV2).toHaveBeenCalled();
       expect(mockInteraction.deferReply).toHaveBeenCalledWith({
         flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
@@ -355,6 +361,76 @@ describe('status-bot command', () => {
           components: expect.any(Array),
         })
       );
+    });
+
+    it('should fall back to global scoring status when community server lookup fails', async () => {
+      mockApiClient.getCommunityServerByPlatformId.mockRejectedValue(
+        new Error('Community server not found')
+      );
+
+      mockStatusService.execute.mockResolvedValue(
+        createSuccessResult({
+          bot: { uptime: 3600, cacheSize: 10, guilds: 5 },
+          server: { status: 'healthy', version: '1.0.0', latency: 50 },
+        })
+      );
+
+      mockScoringService.getScoringStatus.mockResolvedValue(
+        createSuccessResult({
+          status: 'healthy',
+          totalNotes: 1000,
+        })
+      );
+
+      const mockClient = { guilds: { cache: { size: 5 } } };
+
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        client: mockClient,
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.getCommunityServerByPlatformId).toHaveBeenCalledWith('guild456');
+      expect(mockScoringService.getScoringStatus).toHaveBeenCalledWith(undefined);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to fetch community server UUID for scoring status',
+        expect.objectContaining({
+          guild_id: 'guild456',
+        })
+      );
+      expect(mockInteraction.editReply).toHaveBeenCalled();
+    });
+
+    it('should pass undefined community server ID when not in a guild', async () => {
+      mockStatusService.execute.mockResolvedValue(
+        createSuccessResult({
+          bot: { uptime: 3600, cacheSize: 10, guilds: 5 },
+          server: { status: 'healthy', version: '1.0.0', latency: 50 },
+        })
+      );
+
+      mockScoringService.getScoringStatus.mockResolvedValue(
+        createSuccessResult({ status: 'healthy' })
+      );
+
+      const mockClient = { guilds: { cache: { size: 5 } } };
+
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: null,
+        client: mockClient,
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.getCommunityServerByPlatformId).not.toHaveBeenCalled();
+      expect(mockScoringService.getScoringStatus).toHaveBeenCalledWith(undefined);
     });
   });
 

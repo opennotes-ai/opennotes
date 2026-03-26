@@ -7,6 +7,7 @@ import { v2MessageFlags, createContainer, createTextSection, createDivider, V2_C
 import { buildWelcomeContainer } from '../lib/welcome-content.js';
 import { serviceProvider } from '../services/index.js';
 import { DiscordFormatter } from '../services/DiscordFormatter.js';
+import { apiClient } from '../api-client.js';
 
 const navState = new NavigationStateManager(cache);
 
@@ -226,7 +227,20 @@ async function handleStatusBot(interaction: ButtonInteraction): Promise<void> {
       return;
     }
 
-    const scoringResult = await scoringService.getScoringStatus();
+    let communityServerId: string | undefined;
+    if (interaction.guildId) {
+      try {
+        const communityServer = await apiClient.getCommunityServerByPlatformId(interaction.guildId);
+        communityServerId = communityServer.data.id;
+      } catch (error) {
+        logger.error('Failed to fetch community server UUID for scoring status', {
+          guild_id: interaction.guildId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const scoringResult = await scoringService.getScoringStatus(communityServerId);
 
     const response = DiscordFormatter.formatStatusSuccessV2(result.data!);
 

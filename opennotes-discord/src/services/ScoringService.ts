@@ -293,8 +293,8 @@ export class ScoringService {
     }
   }
 
-  async getScoringStatus(): Promise<ScoringServiceResult<ScoringStatusJSONAPIResponse>> {
-    const cacheKey = 'scoring:status';
+  async getScoringStatus(communityServerId?: string): Promise<ScoringServiceResult<ScoringStatusJSONAPIResponse>> {
+    const cacheKey = `scoring:status:${communityServerId || 'global'}`;
 
     try {
       const cached = await cache.get<ScoringStatusJSONAPIResponse>(cacheKey);
@@ -305,7 +305,7 @@ export class ScoringService {
 
       logger.debug('Fetching scoring status from API');
 
-      const response = await this.apiClient.getScoringStatus();
+      const response = await this.apiClient.getScoringStatus(communityServerId);
 
       void cache.set(cacheKey, response, 60);
 
@@ -335,8 +335,8 @@ export class ScoringService {
     logger.debug('Invalidated note score cache', { noteId });
   }
 
-  invalidateScoringStatusCache(): void {
-    void cache.delete('scoring:status');
+  invalidateScoringStatusCache(communityServerId?: string): void {
+    void cache.delete(`scoring:status:${communityServerId || 'global'}`);
     logger.debug('Invalidated scoring status cache');
   }
 
