@@ -1,6 +1,7 @@
 """Service for generating embeddings and performing similarity searches."""
 
 import hashlib
+from typing import Literal
 from uuid import UUID
 
 from cachetools import TTLCache
@@ -112,7 +113,7 @@ class EmbeddingService:
         community_server_id: str,
         community_server_uuid: UUID | None = None,
         retry_attempts: int | None = None,
-        input_type: str = "document",
+        input_type: Literal["query", "document"] = "document",
     ) -> list[float]:
         """
         Generate OpenAI embedding for text using community-server API key.
