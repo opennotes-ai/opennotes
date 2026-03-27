@@ -53,6 +53,12 @@ class TestEmbeddingServiceSpanAttributes:
             assert set_attribute_calls["embedding.community_server_id"] == "123456789"
             assert "embedding.cache_hit" in set_attribute_calls
 
+            mock_llm_service.generate_embedding.assert_awaited_once_with(
+                "test text",
+                input_type="document",
+                retry_attempts=None,
+            )
+
     @pytest.mark.asyncio
     async def test_generate_embedding_records_exception_on_error(self):
         """Verify generate_embedding records exception on span when error occurs."""
@@ -106,7 +112,11 @@ class TestEmbeddingServiceSpanAttributes:
         )
 
         mock_db.execute.assert_not_called()
-        mock_llm_service.generate_embedding.assert_awaited_once()
+        mock_llm_service.generate_embedding.assert_awaited_once_with(
+            "test text",
+            input_type="document",
+            retry_attempts=None,
+        )
 
     @pytest.mark.asyncio
     async def test_similarity_search_creates_span_with_correct_attributes(self):
@@ -162,6 +172,12 @@ class TestEmbeddingServiceSpanAttributes:
             assert set_attribute_calls["search.similarity_threshold"] == 0.7
             assert set_attribute_calls["search.score_threshold"] == 0.15
             assert set_attribute_calls["search.limit"] == 10
+
+            mock_llm_service.generate_embedding.assert_awaited_once_with(
+                "test query",
+                input_type="query",
+                retry_attempts=None,
+            )
 
     @pytest.mark.asyncio
     async def test_similarity_search_records_result_count_on_span(self):

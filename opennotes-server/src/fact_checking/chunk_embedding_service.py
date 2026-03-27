@@ -83,7 +83,7 @@ class ChunkEmbeddingService:
         self,
         db: AsyncSession,
         chunk_texts: list[str],
-        community_server_id: UUID | None = None,
+        community_server_id: UUID | None = None,  # noqa: ARG002
     ) -> list[tuple[ChunkEmbedding, bool]]:
         """
         Get existing chunks or create new ones with embeddings in batch.
@@ -122,7 +122,7 @@ class ChunkEmbeddingService:
         new_by_hash: dict[str, ChunkEmbedding] = {}
         if missing_texts:
             embeddings = await self.llm_service.generate_embeddings_batch(
-                db, missing_texts, community_server_id
+                missing_texts, input_type="document"
             )
 
             now = pendulum.now("UTC")
@@ -180,7 +180,7 @@ class ChunkEmbeddingService:
         self,
         db: AsyncSession,
         chunk_text: str,
-        community_server_id: UUID | None = None,
+        community_server_id: UUID | None = None,  # noqa: ARG002
     ) -> tuple[ChunkEmbedding, bool]:
         """
         Get an existing chunk by text or create a new one with embedding.
@@ -225,7 +225,7 @@ class ChunkEmbeddingService:
             return existing, False
 
         embedding, provider, model = await self.llm_service.generate_embedding(
-            db, chunk_text, community_server_id
+            chunk_text, input_type="document"
         )
 
         now = pendulum.now("UTC")

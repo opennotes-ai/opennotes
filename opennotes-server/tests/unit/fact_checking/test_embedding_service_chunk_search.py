@@ -56,6 +56,8 @@ class TestEmbeddingServiceUsesChunkSearch:
             )
 
             mock_gen_embedding.assert_called_once()
+            call_kwargs = mock_gen_embedding.call_args.kwargs
+            assert call_kwargs.get("input_type") == "query"
             mock_chunk_search.assert_called_once()
 
     async def test_similarity_search_passes_correct_params_to_chunk_search(self):

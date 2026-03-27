@@ -112,6 +112,7 @@ class EmbeddingService:
         community_server_id: str,
         community_server_uuid: UUID | None = None,
         retry_attempts: int | None = None,
+        input_type: str = "document",
     ) -> list[float]:
         """
         Generate OpenAI embedding for text using community-server API key.
@@ -167,9 +168,8 @@ class EmbeddingService:
                 # Generate embedding via LLMService (handles retries internally)
                 # LLMService returns tuple of (embedding, provider, model)
                 embedding, _, _ = await self.llm_service.generate_embedding(
-                    db,
                     text,
-                    resolved_community_server_uuid,
+                    input_type=input_type,
                     retry_attempts=retry_attempts,
                 )
 
@@ -260,6 +260,7 @@ class EmbeddingService:
                     community_server_id,
                     community_server_uuid=community_server_uuid,
                     retry_attempts=retry_attempts,
+                    input_type="query",
                 )
 
                 hybrid_results = await hybrid_search_with_chunks(
