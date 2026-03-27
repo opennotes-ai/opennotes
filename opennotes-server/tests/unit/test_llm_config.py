@@ -442,17 +442,6 @@ class TestLLMClientManager:
         assert len(manager.client_cache) == 0
 
 
-@pytest.mark.asyncio
-class TestLLMUsageTracker:
-    """Test LLM usage tracking and rate limiting."""
-
-    async def test_usage_stats_structure(self) -> None:
-        """Test usage stats return proper structure."""
-        from src.llm_config.usage_tracker import LLMUsageTracker
-
-        assert LLMUsageTracker is not None
-
-
 def test_import_all_exports() -> None:
     """Test that all public exports are importable."""
     from src.llm_config import (
@@ -470,18 +459,14 @@ def test_import_all_exports() -> None:
         LLMProvider,
         LLMProviderFactory,
         LLMResponse,
-        LLMUsageLog,
         LLMUsageStatsResponse,
-        LLMUsageTracker,
         router,
     )
 
     assert EncryptionService is not None
     assert CommunityServer is not None
     assert CommunityServerLLMConfig is not None
-    assert LLMUsageLog is not None
     assert LLMClientManager is not None
-    assert LLMUsageTracker is not None
     assert LLMProvider is not None
     assert LLMMessage is not None
     assert LLMResponse is not None

@@ -23,9 +23,7 @@ from src.llm_config.schemas import (
     LLMConfigTestRequest,
     LLMConfigTestResponse,
     LLMConfigUpdate,
-    LLMUsageStatsResponse,
 )
-from src.llm_config.usage_tracker import LLMUsageTracker
 from src.monitoring import get_logger
 from src.users.profile_models import CommunityMember
 
@@ -347,33 +345,6 @@ async def test_llm_config(
     finally:
         if provider:
             await provider.close()
-
-
-@router.get(
-    "/{community_server_id}/llm-config/{provider}/usage",
-    response_model=LLMUsageStatsResponse,
-)
-async def get_usage_stats(
-    community_server_id: UUID,
-    provider: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    _membership: Annotated[CommunityMember, Depends(verify_community_admin_by_uuid)],
-) -> LLMUsageStatsResponse:
-    """
-    Get usage statistics for an LLM configuration.
-
-    Requires admin or moderator access to the community server.
-    """
-    tracker = LLMUsageTracker(db)
-    stats = await tracker.get_usage_stats(community_server_id, provider)
-
-    if not stats:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Configuration for provider '{provider}' not found",
-        )
-
-    return LLMUsageStatsResponse(**stats)
 
 
 async def _get_config_or_404(

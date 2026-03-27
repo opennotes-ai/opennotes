@@ -5649,7 +5649,7 @@
           "embeddings-jsonapi"
         ],
         "summary": "Similarity Search Jsonapi",
-        "description": "Perform semantic similarity search on fact-check items.\n\nThis endpoint:\n1. Verifies user is authorized member of community server\n2. Validates community server has OpenAI configuration\n3. Generates embedding using text-embedding-3-small (1536 dimensions)\n4. Queries fact_check_items table with pgvector cosine similarity\n5. Filters by dataset_tags (e.g., 'snopes', 'politifact')\n6. Returns top matches above similarity threshold\n\nJSON:API 1.1 action endpoint that returns search results.\n\nRate Limiting:\n- Per-user rate limit: 100 requests/hour\n- Per-community rate limits: Based on configured LLM usage limits\n- OpenAI API rate limits: Automatic detection with retry guidance",
+        "description": "Perform semantic similarity search on fact-check items.\n\nThis endpoint:\n1. Verifies user is authorized member of community server\n2. Generates embedding using text-embedding-3-small (1536 dimensions)\n3. Queries fact_check_items table with pgvector cosine similarity\n4. Filters by dataset_tags (e.g., 'snopes', 'politifact')\n5. Returns top matches above similarity threshold\n\nJSON:API 1.1 action endpoint that returns search results.\n\nRate Limiting:\n- Per-user rate limit: 100 requests/minute\n- OpenAI API rate limits: Automatic detection with retry guidance",
         "operationId": "similarity_search_jsonapi_api_v2_similarity_searches_post",
         "security": [
           {
@@ -5785,7 +5785,7 @@
           "hybrid-searches-jsonapi"
         ],
         "summary": "Hybrid Search Jsonapi",
-        "description": "Perform hybrid search on fact-check items combining FTS and semantic similarity.\n\nThis endpoint:\n1. Verifies user is authorized member of community server\n2. Validates community server has OpenAI configuration\n3. Generates embedding using text-embedding-3-small (1536 dimensions)\n4. Executes hybrid search combining:\n   - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)\n   - pgvector embedding similarity (cosine distance)\n5. Uses Convex Combination (CC) to fuse semantic and keyword scores\n6. Returns top matches ranked by combined CC score\n\nThe CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm\nwhere alpha=0.7 by default (semantic-weighted).\n\nJSON:API 1.1 action endpoint that returns search results.\n\nRate Limiting:\n- Per-user rate limit: 100 requests/hour\n- Per-community rate limits: Based on configured LLM usage limits\n- OpenAI API rate limits: Automatic detection with retry guidance",
+        "description": "Perform hybrid search on fact-check items combining FTS and semantic similarity.\n\nThis endpoint:\n1. Verifies user is authorized member of community server\n2. Generates embedding using text-embedding-3-small (1536 dimensions)\n3. Executes hybrid search combining:\n   - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)\n   - pgvector embedding similarity (cosine distance)\n4. Uses Convex Combination (CC) to fuse semantic and keyword scores\n5. Returns top matches ranked by combined CC score\n\nThe CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm\nwhere alpha=0.7 by default (semantic-weighted).\n\nJSON:API 1.1 action endpoint that returns search results.\n\nRate Limiting:\n- Per-user rate limit: 100 requests/hour\n- OpenAI API rate limits: Automatic detection with retry guidance",
         "operationId": "hybrid_search_jsonapi_api_v2_hybrid_searches_post",
         "security": [
           {
@@ -9184,83 +9184,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LLMConfigTestResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not authenticated"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/community-servers/{community_server_id}/llm-config/{provider}/usage": {
-      "get": {
-        "tags": [
-          "llm-config"
-        ],
-        "summary": "Get Usage Stats",
-        "description": "Get usage statistics for an LLM configuration.\n\nRequires admin or moderator access to the community server.",
-        "operationId": "get_usage_stats_api_v1_community_servers__community_server_id__llm_config__provider__usage_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "community_server_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Community Server Id"
-            }
-          },
-          {
-            "name": "provider",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Provider"
-            }
-          },
-          {
-            "name": "X-API-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LLMUsageStatsResponse"
                 }
               }
             }
@@ -17434,82 +17357,6 @@
         "type": "object",
         "title": "LLMConfigUpdate",
         "description": "Schema for updating an existing LLM configuration."
-      },
-      "LLMUsageStatsResponse": {
-        "properties": {
-          "provider": {
-            "type": "string",
-            "title": "Provider"
-          },
-          "daily_requests": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Daily Requests"
-          },
-          "monthly_requests": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Monthly Requests"
-          },
-          "daily_tokens": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Daily Tokens"
-          },
-          "monthly_tokens": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Monthly Tokens"
-          },
-          "daily_spend": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Daily Spend"
-          },
-          "monthly_spend": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Monthly Spend"
-          },
-          "last_daily_reset": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Daily Reset"
-          },
-          "last_monthly_reset": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Monthly Reset"
-          }
-        },
-        "type": "object",
-        "required": [
-          "provider",
-          "daily_requests",
-          "monthly_requests",
-          "daily_tokens",
-          "monthly_tokens",
-          "daily_spend",
-          "monthly_spend",
-          "last_daily_reset",
-          "last_monthly_reset"
-        ],
-        "title": "LLMUsageStatsResponse",
-        "description": "Schema for usage statistics response."
       },
       "LatestScanAttributes": {
         "properties": {

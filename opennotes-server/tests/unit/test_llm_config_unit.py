@@ -199,18 +199,14 @@ def test_import_all_exports() -> None:
         LLMProvider,
         LLMProviderFactory,
         LLMResponse,
-        LLMUsageLog,
         LLMUsageStatsResponse,
-        LLMUsageTracker,
         router,
     )
 
     assert EncryptionService is not None
     assert CommunityServer is not None
     assert CommunityServerLLMConfig is not None
-    assert LLMUsageLog is not None
     assert LLMClientManager is not None
-    assert LLMUsageTracker is not None
     assert LLMProvider is not None
     assert LLMMessage is not None
     assert LLMResponse is not None
