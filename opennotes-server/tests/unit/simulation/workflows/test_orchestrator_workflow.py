@@ -613,6 +613,50 @@ class TestSpawnAgentsStep:
 
         assert result == []
 
+    def test_spawn_clamped_to_remaining_total_budget(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+
+        profile_id = str(uuid4())
+        config = _make_config(
+            max_active_agents=10,
+            max_total_spawns=8,
+            agent_profile_ids=[profile_id],
+        )
+
+        mock_session = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 6
+
+        agent_name_result = MagicMock()
+        agent_name_result.scalar_one_or_none.return_value = "Agent"
+
+        no_prior_instance_result = MagicMock()
+        no_prior_instance_result.scalar_one_or_none.return_value = None
+
+        prior_memory_result = MagicMock()
+        prior_memory_result.scalar_one_or_none.return_value = None
+
+        mock_session.execute = AsyncMock(
+            side_effect=[count_result]
+            + [agent_name_result, no_prior_instance_result, prior_memory_result] * 2
+        )
+        mock_session.add = MagicMock(
+            side_effect=lambda obj: setattr(obj, "id", uuid4())
+            if hasattr(obj, "id") and obj.id is None
+            else None
+        )
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = spawn_agents_step.__wrapped__(
+                str(uuid4()), config, active_count=0, total_spawned=6
+            )
+
+        assert len(result) == 2
+
     def test_spawn_blocked_by_active_cap(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
 

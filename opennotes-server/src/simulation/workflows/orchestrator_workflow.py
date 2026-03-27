@@ -322,9 +322,9 @@ def spawn_agents_step(
                 )
             )
             current_total = current_count_result.scalar() or 0
-            adjusted_to_spawn = min(to_spawn, max_active - active_count)
             if current_total >= max_total:
                 return []
+            adjusted_to_spawn = min(to_spawn, max_active - active_count, max_total - current_total)
 
             for i in range(adjusted_to_spawn):
                 profile_index = (total_spawned + i) % len(agent_profile_ids)
