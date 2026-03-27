@@ -655,7 +655,7 @@ async def trigger_scoring_for_simulation(
         raise ValueError(f"SimulationRun {simulation_run_id} not found")
 
     community_server_id = run.community_server_id
-    aggregation = getattr(run, "rating_aggregation", "aggregate_by_agent_profile")
+    aggregation = run.rating_aggregation
 
     count_result = await db.execute(
         select(func.count(Note.id)).where(

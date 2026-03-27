@@ -175,7 +175,7 @@ class TestInitializeRunStepIncludesGeneration:
 
         mock_orchestrator = MagicMock()
         mock_orchestrator.turn_cadence_seconds = 30
-        mock_orchestrator.max_agents = 10
+        mock_orchestrator.max_active_agents = 10
         mock_orchestrator.removal_rate = 0.1
         mock_orchestrator.max_turns_per_agent = 50
         mock_orchestrator.agent_profile_ids = [str(uuid4())]
@@ -233,7 +233,7 @@ class TestRefreshConfigStepIncludesGeneration:
 
         mock_orchestrator = MagicMock()
         mock_orchestrator.turn_cadence_seconds = 15
-        mock_orchestrator.max_agents = 8
+        mock_orchestrator.max_active_agents = 8
         mock_orchestrator.removal_rate = 0.2
         mock_orchestrator.max_turns_per_agent = 25
         mock_orchestrator.agent_profile_ids = [str(uuid4())]
@@ -284,7 +284,7 @@ class TestScheduleTurnsPassesGeneration:
 
         config = {
             "turn_cadence_seconds": 10,
-            "max_agents": 5,
+            "max_active_agents": 5,
             "removal_rate": 0.0,
             "max_turns_per_agent": 100,
             "agent_profile_ids": [str(uuid4())],

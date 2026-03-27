@@ -20,7 +20,7 @@ async def test_create_orchestrator_defaults(db):
     )
     row = result.scalar_one()
     assert row.turn_cadence_seconds == 60
-    assert row.max_agents == 10
+    assert row.max_active_agents == 10
     assert row.removal_rate == 0.0
     assert row.max_turns_per_agent == 100
     assert row.is_active is True

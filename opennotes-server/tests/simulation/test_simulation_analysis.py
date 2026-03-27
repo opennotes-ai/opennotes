@@ -38,7 +38,7 @@ async def orchestrator():
         orch = SimulationOrchestrator(
             name=f"AnalysisOrch_{unique}",
             turn_cadence_seconds=60,
-            max_agents=10,
+            max_active_agents=10,
             removal_rate=0.1,
             max_turns_per_agent=100,
             agent_profile_ids=[],
