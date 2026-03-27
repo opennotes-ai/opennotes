@@ -73,7 +73,8 @@ def orchestrator_list(ctx: click.Context, page: int, page_size: int) -> None:
     table = Table(show_header=True, header_style="bold")
     table.add_column("ID")
     table.add_column("Name", width=20)
-    table.add_column("Max Agents", justify="right", width=10)
+    table.add_column("Max Active", justify="right", width=10)
+    table.add_column("Max Spawns", justify="right", width=10)
     table.add_column("Cadence (s)", justify="right", width=11)
     table.add_column("Removal Rate", justify="right", width=12)
     table.add_column("Max Turns", justify="right", width=10)
@@ -87,7 +88,8 @@ def orchestrator_list(ctx: click.Context, page: int, page_size: int) -> None:
         table.add_row(
             format_id(item.get("id", "N/A"), cli_ctx.use_huuid),
             attrs.get("name", "N/A"),
-            str(attrs.get("max_agents", "N/A")),
+            str(attrs.get("max_active_agents", "N/A")),
+            str(attrs.get("max_total_spawns", "N/A")),
             str(attrs.get("turn_cadence_seconds", "N/A")),
             f"{attrs.get('removal_rate') or 0:.2f}",
             str(attrs.get("max_turns_per_agent", "N/A")),
@@ -136,7 +138,8 @@ def orchestrator_get(ctx: click.Context, orchestrator_id: str) -> None:
         f"[bold]ID:[/bold] {format_id(raw_id, cli_ctx.use_huuid)}\n"
         f"[bold]Name:[/bold] {attrs.get('name', 'N/A')}\n"
         f"[bold]Active:[/bold] {active}\n"
-        f"[bold]Max Agents:[/bold] {attrs.get('max_agents', 'N/A')}\n"
+        f"[bold]Max Active Agents:[/bold] {attrs.get('max_active_agents', 'N/A')}\n"
+        f"[bold]Max Total Spawns:[/bold] {attrs.get('max_total_spawns', 'N/A')}\n"
         f"[bold]Turn Cadence:[/bold] {attrs.get('turn_cadence_seconds', 'N/A')}s\n"
         f"[bold]Removal Rate:[/bold] {attrs.get('removal_rate', 'N/A')}\n"
         f"[bold]Max Turns/Agent:[/bold] {attrs.get('max_turns_per_agent', 'N/A')}"
@@ -173,7 +176,9 @@ def orchestrator_get(ctx: click.Context, orchestrator_id: str) -> None:
 @click.option("--name", required=True, help="Orchestrator name.")
 @click.option("--agent-ids", required=True, help="Comma-separated agent profile UUIDs.")
 @click.option("--turn-cadence", required=True, type=int, help="Turn cadence in seconds.")
-@click.option("--max-agents", required=True, type=int, help="Maximum concurrent agents.")
+@click.option("--max-active-agents", "max_active_agents", required=True, type=int, help="Maximum concurrent agents.")
+@click.option("--max-agents", "max_active_agents", type=int, hidden=True)
+@click.option("--max-total-spawns", default=None, type=int, help="Maximum total agent spawns.")
 @click.option(
     "--removal-rate", required=True, type=float, help="Agent removal rate (0.0-1.0)."
 )
@@ -185,7 +190,8 @@ def orchestrator_create(
     name: str,
     agent_ids: str,
     turn_cadence: int,
-    max_agents: int,
+    max_active_agents: int,
+    max_total_spawns: int | None,
     removal_rate: float,
     max_turns: int,
     description: str | None,
@@ -204,11 +210,13 @@ def orchestrator_create(
     attributes: dict[str, Any] = {
         "name": name,
         "turn_cadence_seconds": turn_cadence,
-        "max_agents": max_agents,
+        "max_active_agents": max_active_agents,
         "removal_rate": removal_rate,
         "max_turns_per_agent": max_turns,
         "agent_profile_ids": agent_id_list,
     }
+    if max_total_spawns is not None:
+        attributes["max_total_spawns"] = max_total_spawns
     if description:
         attributes["description"] = description
 
@@ -240,7 +248,8 @@ def orchestrator_create(
 def _build_update_attributes(
     name: str | None,
     description: str | None,
-    max_agents: int | None,
+    max_active_agents: int | None,
+    max_total_spawns: int | None,
     turn_cadence: int | None,
     removal_rate: float | None,
     max_turns: int | None,
@@ -252,8 +261,10 @@ def _build_update_attributes(
         attributes["name"] = name
     if description is not None:
         attributes["description"] = description
-    if max_agents is not None:
-        attributes["max_agents"] = max_agents
+    if max_active_agents is not None:
+        attributes["max_active_agents"] = max_active_agents
+    if max_total_spawns is not None:
+        attributes["max_total_spawns"] = max_total_spawns
     if turn_cadence is not None:
         attributes["turn_cadence_seconds"] = turn_cadence
     if removal_rate is not None:
@@ -275,7 +286,9 @@ def _build_update_attributes(
 @click.argument("orchestrator_id")
 @click.option("--name", default=None, help="Orchestrator name.")
 @click.option("--description", default=None, help="Description.")
-@click.option("--max-agents", default=None, type=int, help="Maximum concurrent agents.")
+@click.option("--max-active-agents", "max_active_agents", default=None, type=int, help="Maximum concurrent agents.")
+@click.option("--max-agents", "max_active_agents", type=int, hidden=True)
+@click.option("--max-total-spawns", default=None, type=int, help="Maximum total agent spawns.")
 @click.option("--turn-cadence", default=None, type=int, help="Turn cadence in seconds.")
 @click.option("--removal-rate", default=None, type=float, help="Agent removal rate (0.0-1.0).")
 @click.option("--max-turns", default=None, type=int, help="Maximum turns per agent.")
@@ -287,7 +300,8 @@ def orchestrator_update(
     orchestrator_id: str,
     name: str | None,
     description: str | None,
-    max_agents: int | None,
+    max_active_agents: int | None,
+    max_total_spawns: int | None,
     turn_cadence: int | None,
     removal_rate: float | None,
     max_turns: int | None,
@@ -309,7 +323,7 @@ def orchestrator_update(
         agent_ids = _resolve_agent_ids(agent_ids)
 
     attributes = _build_update_attributes(
-        name, description, max_agents, turn_cadence,
+        name, description, max_active_agents, max_total_spawns, turn_cadence,
         removal_rate, max_turns, agent_ids, scoring_config,
     )
 
@@ -352,7 +366,9 @@ def orchestrator_update(
 @click.option("--simulation", "simulation_id", required=True, help="Simulation run UUID to restart.")
 @click.option("--name", default=None, help="Orchestrator name.")
 @click.option("--description", default=None, help="Description.")
-@click.option("--max-agents", default=None, type=int, help="Maximum concurrent agents.")
+@click.option("--max-active-agents", "max_active_agents", default=None, type=int, help="Maximum concurrent agents.")
+@click.option("--max-agents", "max_active_agents", type=int, hidden=True)
+@click.option("--max-total-spawns", default=None, type=int, help="Maximum total agent spawns.")
 @click.option("--turn-cadence", default=None, type=int, help="Turn cadence in seconds.")
 @click.option("--removal-rate", default=None, type=float, help="Agent removal rate (0.0-1.0).")
 @click.option("--max-turns", default=None, type=int, help="Maximum turns per agent.")
@@ -365,7 +381,8 @@ def orchestrator_apply(
     simulation_id: str,
     name: str | None,
     description: str | None,
-    max_agents: int | None,
+    max_active_agents: int | None,
+    max_total_spawns: int | None,
     turn_cadence: int | None,
     removal_rate: float | None,
     max_turns: int | None,
@@ -393,7 +410,7 @@ def orchestrator_apply(
         agent_ids = _resolve_agent_ids(agent_ids)
 
     attributes = _build_update_attributes(
-        name, description, max_agents, turn_cadence,
+        name, description, max_active_agents, max_total_spawns, turn_cadence,
         removal_rate, max_turns, agent_ids, scoring_config,
     )
 
