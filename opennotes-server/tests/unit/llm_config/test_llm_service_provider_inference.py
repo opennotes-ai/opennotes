@@ -18,7 +18,7 @@ def mock_client_manager() -> MagicMock:
 
 @pytest.fixture
 def llm_service(mock_client_manager: MagicMock) -> LLMService:
-    return LLMService(client_manager=mock_client_manager)
+    return LLMService(client_manager=mock_client_manager, embedder=MagicMock())
 
 
 @pytest.fixture
@@ -573,7 +573,7 @@ class TestDescribeImageSettingsProviderRouting:
 
     @pytest.fixture
     def llm_service(self, mock_client_manager: MagicMock) -> LLMService:
-        return LLMService(client_manager=mock_client_manager)
+        return LLMService(client_manager=mock_client_manager, embedder=MagicMock())
 
     @pytest.fixture
     def mock_db(self) -> AsyncMock:
