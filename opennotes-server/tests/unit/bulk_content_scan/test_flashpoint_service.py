@@ -401,7 +401,7 @@ class TestFlashpointDetectionServiceInit:
     def test_default_model_is_str(self):
         """Default model (from ModelId setting) is converted to str."""
         service = FlashpointDetectionService()
-        assert service.model == "openai/gpt-5-mini"
+        assert service.model == "openai:gpt-5-mini"
         assert isinstance(service.model, str)
 
     def test_default_model_not_model_id_instance(self):
