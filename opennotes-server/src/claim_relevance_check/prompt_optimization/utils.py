@@ -4,7 +4,7 @@ import os
 
 
 def setup_openai_environment() -> str:
-    """Set up OpenAI environment for litellm.
+    """Set up OpenAI environment for pydantic-ai.
 
     Cleans the API key and removes any OPENAI_API_BASE override
     (e.g., from VSCode/GitHub Copilot) to ensure requests go to OpenAI.

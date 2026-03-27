@@ -12,7 +12,8 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import litellm
+from pydantic_ai.direct import model_request_sync
+from pydantic_ai.messages import ModelRequest
 from ruamel.yaml import YAML
 
 from src.claim_relevance_check.prompt_optimization.dataset import (
@@ -60,7 +61,7 @@ def generate_example_with_llm(
     example_type: str,
     example_id: str,
     context: str = "",
-    model: str = "openai/gpt-5-mini",
+    model: str = "openai:gpt-5-mini",
 ) -> dict[str, Any] | None:
     """Generate a single training example using an LLM.
 
@@ -68,7 +69,7 @@ def generate_example_with_llm(
         example_type: "false_positive" or "true_positive"
         example_id: ID for the new example (e.g., "fp-006")
         context: Optional context to guide generation
-        model: LLM model to use
+        model: LLM model in pydantic-ai format (provider:model)
 
     Returns:
         Generated example dict or None if failed
@@ -87,23 +88,19 @@ def generate_example_with_llm(
     )
 
     try:
-        response = litellm.completion(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
+        response = model_request_sync(
+            model,
+            [ModelRequest.user_text_prompt(prompt)],
         )
-        content = response.choices[0].message.content  # pyright: ignore[reportAttributeAccessIssue]
+        content = response.text
         if content is None:
             return None
         return json.loads(content)
     except json.JSONDecodeError as e:
         print(f"Error parsing LLM response as JSON: {e}")
         return None
-    except litellm.exceptions.APIError as e:
+    except Exception as e:
         print(f"LLM API error: {e}")
-        return None
-    except litellm.exceptions.AuthenticationError as e:
-        print(f"LLM authentication error: {e}")
         return None
 
 
@@ -281,7 +278,7 @@ def augment_dataset(
     balance: bool = True,
     interactive: bool = True,
     context: str = "",
-    model: str = "openai/gpt-5-mini",
+    model: str = "openai:gpt-5-mini",
     dataset_path: Path | None = None,
 ) -> int:
     """Generate candidate examples and optionally add to dataset.
@@ -396,7 +393,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        default="openai/gpt-5-mini",
+        default="openai:gpt-5-mini",
         help="LLM model to use",
     )
     parser.add_argument(
