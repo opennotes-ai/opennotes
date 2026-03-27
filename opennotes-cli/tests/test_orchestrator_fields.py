@@ -352,9 +352,7 @@ class TestOrchestratorListDisplay:
             result = runner.invoke(cli, ["--local", "orchestrator", "list"])
 
         assert result.exit_code == 0, f"Failed: {result.output}"
-        lines = result.output.split("\n")
-        header_line = lines[0] if lines else ""
-        assert "Max Agents" not in header_line
+        assert "Max Agents" not in result.output
 
 
 class TestOrchestratorGetDisplay:
