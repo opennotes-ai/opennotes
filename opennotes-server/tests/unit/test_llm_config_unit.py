@@ -189,7 +189,6 @@ def test_import_all_exports() -> None:
         CommunityServerLLMConfig,
         DirectProvider,
         EncryptionService,
-        LiteLLMProvider,
         LLMClientManager,
         LLMConfigCreate,
         LLMConfigResponse,
@@ -213,7 +212,6 @@ def test_import_all_exports() -> None:
     assert LLMResponse is not None
     assert LLMProviderFactory is not None
     assert DirectProvider is not None
-    assert LiteLLMProvider is DirectProvider
     assert LLMConfigCreate is not None
     assert LLMConfigUpdate is not None
     assert LLMConfigResponse is not None

@@ -1,4 +1,4 @@
-"""Tests for augment_dataset module migration from litellm to pydantic-ai."""
+"""Tests for augment_dataset module using pydantic-ai."""
 
 from unittest.mock import MagicMock, patch
 

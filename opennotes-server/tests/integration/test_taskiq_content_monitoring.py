@@ -12,7 +12,7 @@ Bulk scan batch processing and finalization tasks have been migrated to DBOS wor
 See tests/unit/test_content_scan_workflow.py for DBOS workflow tests.
 
 Note: These tests focus on broker and task registration without importing
-the full application modules to avoid torch/litellm import chain issues.
+the full application modules to avoid torch import chain issues.
 Full end-to-end testing is done via staging environment.
 """
 

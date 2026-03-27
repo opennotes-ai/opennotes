@@ -11,15 +11,15 @@ class ModelId(BaseModel, frozen=True):
     flavor: ModelFlavor
 
     @classmethod
-    def from_litellm(cls, s: str) -> ModelId:
+    def from_slash_format(cls, s: str) -> ModelId:
         if "/" not in s:
-            msg = f"LiteLLM model string requires explicit provider prefix (provider/model), got: {s!r}"
+            msg = f"Slash-format model string requires explicit provider prefix (provider/model), got: {s!r}"
             raise ValueError(msg)
         provider, _, model = s.partition("/")
         if not provider or not model:
             msg = f"Both provider and model must be non-empty, got: {s!r}"
             raise ValueError(msg)
-        return cls(provider=provider, model=model, flavor=ModelFlavor.LITELLM)
+        return cls(provider=provider, model=model, flavor=ModelFlavor.LEGACY_SLASH)
 
     @classmethod
     def from_pydantic_ai(cls, s: str) -> ModelId:
@@ -33,11 +33,11 @@ class ModelId(BaseModel, frozen=True):
         return cls(provider=provider, model=model, flavor=ModelFlavor.PYDANTIC_AI)
 
     @property
-    def litellm_provider(self) -> str:
-        return adapt_provider(self.provider, self.flavor, ModelFlavor.LITELLM)
+    def canonical_provider(self) -> str:
+        return adapt_provider(self.provider, self.flavor, ModelFlavor.LEGACY_SLASH)
 
-    def to_litellm(self) -> str:
-        return f"{self.litellm_provider}/{self.model}"
+    def to_slash_format(self) -> str:
+        return f"{self.canonical_provider}/{self.model}"
 
     def to_pydantic_ai(self) -> str:
         provider = adapt_provider(self.provider, self.flavor, ModelFlavor.PYDANTIC_AI)

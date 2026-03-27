@@ -102,21 +102,3 @@ class TestRegisterProvider:
             assert "custom" in LLMProviderFactory.list_providers()
         finally:
             LLMProviderFactory._providers = original_providers
-
-
-class TestBackwardCompatibleAliases:
-    def test_litellm_aliases_resolve_to_direct(self) -> None:
-        from src.llm_config.providers import (
-            LiteLLMCompletionParams,
-            LiteLLMProvider,
-            LiteLLMProviderSettings,
-        )
-
-        assert LiteLLMProvider is DirectProvider
-        from src.llm_config.providers.direct_provider import (
-            DirectCompletionParams,
-            DirectProviderSettings,
-        )
-
-        assert LiteLLMCompletionParams is DirectCompletionParams
-        assert LiteLLMProviderSettings is DirectProviderSettings

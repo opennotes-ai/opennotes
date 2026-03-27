@@ -29,7 +29,7 @@ def _parse_model_id(v: Any) -> ModelId:
         if ":" in v:
             return ModelId.from_pydantic_ai(v)
         if "/" in v:
-            return ModelId.from_litellm(v)
+            return ModelId.from_slash_format(v)
     raise ValueError(f"Invalid model ID format: {v}")
 
 
@@ -1021,7 +1021,7 @@ class Settings(BaseSettings):
             self.RELEVANCE_CHECK_MODEL,
             self.AI_NOTE_WRITER_MODEL,
         ]
-        has_vertex_ai = any(m.litellm_provider == "vertex_ai" for m in model_fields)
+        has_vertex_ai = any(m.canonical_provider == "vertex_ai" for m in model_fields)
         if has_vertex_ai and not self.VERTEXAI_PROJECT:
             raise ValueError(
                 "VERTEXAI_PROJECT must be set when using vertex_ai/ or google-vertex: model prefix. "

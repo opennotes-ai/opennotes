@@ -728,7 +728,7 @@ class TestBulkContentScanRepromptDaysValidation:
 
 
 class TestParseModelId:
-    """Test _parse_model_id auto-detection of pydantic-ai (colon) vs litellm (slash) format."""
+    """Test _parse_model_id auto-detection of pydantic-ai (colon) vs legacy slash format."""
 
     def test_colon_format_parsed_as_pydantic_ai(self):
         m = _parse_model_id("openai:gpt-5.1")
@@ -736,11 +736,11 @@ class TestParseModelId:
         assert m.model == "gpt-5.1"
         assert m.flavor.value == "pydantic_ai"
 
-    def test_slash_format_parsed_as_litellm_backward_compat(self):
+    def test_slash_format_parsed_as_legacy_slash_backward_compat(self):
         m = _parse_model_id("openai/gpt-5.1")
         assert m.provider == "openai"
         assert m.model == "gpt-5.1"
-        assert m.flavor.value == "litellm"
+        assert m.flavor.value == "legacy_slash"
 
     def test_model_id_passthrough(self):
         original = ModelId.from_pydantic_ai("openai:gpt-5.1")
@@ -765,7 +765,7 @@ class TestParseModelId:
         m = _parse_model_id("vertex_ai/gemini-2.5-pro")
         assert m.provider == "vertex_ai"
         assert m.model == "gemini-2.5-pro"
-        assert m.flavor.value == "litellm"
+        assert m.flavor.value == "legacy_slash"
 
 
 class TestPydanticAIModelIdTypeAlias:
@@ -1243,7 +1243,10 @@ class TestVertexAIProjectValidation:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert ModelId.from_litellm("vertex_ai/gemini-2.5-flash") == settings.DEFAULT_MINI_MODEL
+            assert (
+                ModelId.from_slash_format("vertex_ai/gemini-2.5-flash")
+                == settings.DEFAULT_MINI_MODEL
+            )
             assert settings.VERTEXAI_PROJECT == "my-gcp-project"
 
     def test_google_vertex_pydantic_ai_format_rejected_without_project(self):
@@ -1309,7 +1312,10 @@ class TestVertexAIProjectValidation:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert ModelId.from_litellm("vertex_ai/gemini-2.5-flash") == settings.DEFAULT_MINI_MODEL
+            assert (
+                ModelId.from_slash_format("vertex_ai/gemini-2.5-flash")
+                == settings.DEFAULT_MINI_MODEL
+            )
             assert settings.VERTEXAI_PROJECT is None
 
 

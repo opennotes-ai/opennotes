@@ -16,10 +16,6 @@ from src.llm_config.providers.direct_provider import (
 )
 from src.llm_config.providers.factory import LLMProviderFactory
 
-LiteLLMCompletionParams = DirectCompletionParams
-LiteLLMProvider = DirectProvider
-LiteLLMProviderSettings = DirectProviderSettings
-
 __all__ = [
     "CompletionParamsT",
     "DirectCompletionParams",
@@ -30,9 +26,6 @@ __all__ = [
     "LLMProvider",
     "LLMProviderFactory",
     "LLMResponse",
-    "LiteLLMCompletionParams",
-    "LiteLLMProvider",
-    "LiteLLMProviderSettings",
     "ProviderSettings",
     "SettingsT",
 ]

@@ -10,20 +10,12 @@ from collections.abc import AsyncGenerator
 from typing import Any, Literal
 from uuid import UUID
 
-from litellm.exceptions import (
-    APIConnectionError,
-    APIError,
-    BadRequestError,
-    RateLimitError,
-    ServiceUnavailableError,
-    Timeout,
-)
+import httpx
 from pydantic_ai import Embedder
 from tenacity import (
     AsyncRetrying,
     retry,
     retry_if_exception_type,
-    retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
@@ -37,19 +29,14 @@ from src.llm_config.providers.direct_provider import EmptyLLMResponseError
 from src.monitoring import get_logger
 
 TRANSIENT_EXCEPTIONS = (
-    APIConnectionError,
-    Timeout,
-    RateLimitError,
-    ServiceUnavailableError,
-    APIError,
+    httpx.ConnectError,
+    httpx.TimeoutException,
     ConnectionError,
     TimeoutError,
     EmptyLLMResponseError,
 )
 
-_RETRY_PREDICATE = retry_if_exception_type(TRANSIENT_EXCEPTIONS) & retry_if_not_exception_type(
-    BadRequestError
-)
+_RETRY_PREDICATE = retry_if_exception_type(TRANSIENT_EXCEPTIONS)
 
 logger = get_logger(__name__)
 
@@ -99,18 +86,18 @@ class LLMService:
         **kwargs: Any,
     ) -> LLMResponse:
         if model:
-            litellm_provider = model.litellm_provider
-            if provider not in ("openai", model.provider, litellm_provider):
+            resolved_provider = model.canonical_provider
+            if provider not in ("openai", model.provider, resolved_provider):
                 logger.warning(
                     "Model prefix provider differs from explicit provider param, "
                     "using model prefix",
                     extra={
                         "explicit_provider": provider,
                         "model_prefix_provider": model.provider,
-                        "model": model.to_litellm(),
+                        "model": model.to_pydantic_ai(),
                     },
                 )
-            provider = litellm_provider
+            provider = resolved_provider
 
         llm_provider = await self.client_manager.get_client(provider)
 
@@ -142,18 +129,18 @@ class LLMService:
         **kwargs: Any,
     ) -> AsyncGenerator[str, None]:
         if model:
-            litellm_provider = model.litellm_provider
-            if provider not in ("openai", model.provider, litellm_provider):
+            resolved_provider = model.canonical_provider
+            if provider not in ("openai", model.provider, resolved_provider):
                 logger.warning(
                     "Model prefix provider differs from explicit provider param, "
                     "using model prefix",
                     extra={
                         "explicit_provider": provider,
                         "model_prefix_provider": model.provider,
-                        "model": model.to_litellm(),
+                        "model": model.to_pydantic_ai(),
                     },
                 )
-            provider = litellm_provider
+            provider = resolved_provider
 
         llm_provider = await self.client_manager.get_client(provider)
 
@@ -241,7 +228,7 @@ class LLMService:
         model: ModelId | None = None,
     ) -> str:
         vision_model = model or settings.VISION_MODEL
-        provider = vision_model.litellm_provider
+        provider = vision_model.canonical_provider
 
         llm_provider = await self.client_manager.get_client(provider)
 

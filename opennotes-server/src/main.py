@@ -594,16 +594,6 @@ async def _shutdown_services(app: FastAPI, is_dbos_worker: bool) -> None:
     await redis_client.disconnect()
     logger.info("Redis connections closed")
 
-    try:
-        from litellm.llms.custom_httpx.async_client_cleanup import (
-            close_litellm_async_clients,
-        )
-
-        await close_litellm_async_clients()
-        logger.info("LiteLLM async clients closed")
-    except Exception as e:
-        logger.warning(f"Error closing LiteLLM async clients: {e}")
-
     _destroy_dbos(is_dbos_worker)
 
     from src.database import dispose_background_engines
