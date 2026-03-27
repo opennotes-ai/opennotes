@@ -35,7 +35,12 @@ logger = logging.getLogger(__name__)
 SCORING_BATCH_SIZE = 100
 
 
-def _build_profile_remap(instances: Sequence[SimAgentInstance]) -> dict[str, str]:
+def _build_profile_remap(
+    instances: Sequence[SimAgentInstance],
+    aggregation: str = "aggregate_by_agent_profile",
+) -> dict[str, str]:
+    if aggregation == "aggregate_by_user_profile":
+        return {}
     return {
         str(inst.user_profile_id): str(inst.agent_profile_id)
         for inst in instances
@@ -77,6 +82,7 @@ def _remap_tables(
 async def _prefetch_community_data(
     community_server_id: UUID,
     db: AsyncSession,
+    aggregation: str = "aggregate_by_agent_profile",
 ) -> PreloadedDataProvider:
     ratings_result = await db.execute(
         select(Rating).where(
@@ -117,7 +123,7 @@ async def _prefetch_community_data(
         )
     )
     instances = instances_result.scalars().all()
-    profile_remap = _build_profile_remap(instances)
+    profile_remap = _build_profile_remap(instances, aggregation=aggregation)
 
     ratings_table = pa.table(
         {
@@ -649,6 +655,7 @@ async def trigger_scoring_for_simulation(
         raise ValueError(f"SimulationRun {simulation_run_id} not found")
 
     community_server_id = run.community_server_id
+    aggregation = getattr(run, "rating_aggregation", "aggregate_by_agent_profile")
 
     count_result = await db.execute(
         select(func.count(Note.id)).where(
@@ -677,9 +684,13 @@ async def trigger_scoring_for_simulation(
     data_provider = None
     if tier != ScoringTier.MINIMAL:
         ratings_density = await _query_ratings_density(community_server_id, db)
-        data_provider = await _prefetch_community_data(community_server_id, db)
+        data_provider = await _prefetch_community_data(
+            community_server_id, db, aggregation=aggregation
+        )
     elif note_count >= MINIMAL_DIVERSITY_THRESHOLD:
-        data_provider = await _prefetch_community_data(community_server_id, db)
+        data_provider = await _prefetch_community_data(
+            community_server_id, db, aggregation=aggregation
+        )
 
     factory = ScorerFactory()
     scorer = factory.get_scorer(
