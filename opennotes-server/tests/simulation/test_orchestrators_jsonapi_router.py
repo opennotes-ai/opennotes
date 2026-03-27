@@ -16,7 +16,7 @@ class TestOrchestratorsJSONAPICreate:
                 "attributes": {
                     "name": f"TestOrch_{unique}",
                     "turn_cadence_seconds": 60,
-                    "max_agents": 10,
+                    "max_active_agents": 10,
                     "removal_rate": 0.1,
                     "max_turns_per_agent": 100,
                     "agent_profile_ids": [],
@@ -39,13 +39,76 @@ class TestOrchestratorsJSONAPICreate:
         assert isinstance(data["data"]["id"], str)
         assert data["data"]["attributes"]["name"] == f"TestOrch_{unique}"
         assert data["data"]["attributes"]["turn_cadence_seconds"] == 60
-        assert data["data"]["attributes"]["max_agents"] == 10
+        assert data["data"]["attributes"]["max_active_agents"] == 10
         assert data["data"]["attributes"]["removal_rate"] == 0.1
         assert data["data"]["attributes"]["max_turns_per_agent"] == 100
         assert data["data"]["attributes"]["is_active"] is True
+        assert "max_total_spawns" in data["data"]["attributes"]
+        assert data["data"]["attributes"]["max_total_spawns"] == 2000
 
         content_type = response.headers.get("content-type", "")
         assert "application/vnd.api+json" in content_type
+
+    @pytest.mark.asyncio
+    async def test_create_orchestrator_jsonapi_with_max_total_spawns(self, admin_auth_client):
+        unique = uuid4().hex[:8]
+        request_body = {
+            "data": {
+                "type": "simulation-orchestrators",
+                "attributes": {
+                    "name": f"TestOrchSpawns_{unique}",
+                    "turn_cadence_seconds": 60,
+                    "max_active_agents": 10,
+                    "max_total_spawns": 500,
+                    "removal_rate": 0.1,
+                    "max_turns_per_agent": 100,
+                    "agent_profile_ids": [],
+                },
+            }
+        }
+
+        response = await admin_auth_client.post(
+            "/api/v2/simulation-orchestrators", json=request_body
+        )
+
+        assert response.status_code == 201, (
+            f"Expected 201, got {response.status_code}: {response.text}"
+        )
+
+        data = response.json()
+        assert data["data"]["attributes"]["max_active_agents"] == 10
+        assert data["data"]["attributes"]["max_total_spawns"] == 500
+
+    @pytest.mark.asyncio
+    async def test_create_orchestrator_jsonapi_default_max_total_spawns_from_profiles(
+        self, admin_auth_client
+    ):
+        unique = uuid4().hex[:8]
+        profile_ids = [str(uuid4()) for _ in range(5)]
+        request_body = {
+            "data": {
+                "type": "simulation-orchestrators",
+                "attributes": {
+                    "name": f"TestOrchDefSpawns_{unique}",
+                    "turn_cadence_seconds": 60,
+                    "max_active_agents": 10,
+                    "removal_rate": 0.1,
+                    "max_turns_per_agent": 100,
+                    "agent_profile_ids": profile_ids,
+                },
+            }
+        }
+
+        response = await admin_auth_client.post(
+            "/api/v2/simulation-orchestrators", json=request_body
+        )
+
+        assert response.status_code == 201, (
+            f"Expected 201, got {response.status_code}: {response.text}"
+        )
+
+        data = response.json()
+        assert data["data"]["attributes"]["max_total_spawns"] == 5 * 20
 
     @pytest.mark.asyncio
     async def test_create_orchestrator_jsonapi_missing_required_field(self, admin_auth_client):
@@ -53,6 +116,30 @@ class TestOrchestratorsJSONAPICreate:
             "data": {
                 "type": "simulation-orchestrators",
                 "attributes": {
+                    "turn_cadence_seconds": 60,
+                    "max_active_agents": 10,
+                    "removal_rate": 0.1,
+                    "max_turns_per_agent": 100,
+                },
+            }
+        }
+
+        response = await admin_auth_client.post(
+            "/api/v2/simulation-orchestrators", json=request_body
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_orchestrator_jsonapi_rejects_old_max_agents_field(
+        self, admin_auth_client
+    ):
+        unique = uuid4().hex[:8]
+        request_body = {
+            "data": {
+                "type": "simulation-orchestrators",
+                "attributes": {
+                    "name": f"OldFieldOrch_{unique}",
                     "turn_cadence_seconds": 60,
                     "max_agents": 10,
                     "removal_rate": 0.1,
@@ -77,7 +164,7 @@ class TestOrchestratorsJSONAPICreate:
                     "attributes": {
                         "name": "Unauth Orch",
                         "turn_cadence_seconds": 60,
-                        "max_agents": 10,
+                        "max_active_agents": 10,
                         "removal_rate": 0.1,
                         "max_turns_per_agent": 100,
                     },
@@ -127,7 +214,7 @@ class TestOrchestratorsJSONAPIList:
                 "attributes": {
                     "name": f"ListTestOrch_{unique}",
                     "turn_cadence_seconds": 30,
-                    "max_agents": 5,
+                    "max_active_agents": 5,
                     "removal_rate": 0.0,
                     "max_turns_per_agent": 50,
                 },
@@ -156,7 +243,7 @@ class TestOrchestratorsJSONAPIGet:
                 "attributes": {
                     "name": f"GetTestOrch_{unique}",
                     "turn_cadence_seconds": 60,
-                    "max_agents": 10,
+                    "max_active_agents": 10,
                     "removal_rate": 0.1,
                     "max_turns_per_agent": 100,
                 },
@@ -180,6 +267,8 @@ class TestOrchestratorsJSONAPIGet:
         assert data["data"]["id"] == created_id
         assert "attributes" in data["data"]
         assert data["data"]["attributes"]["name"] == f"GetTestOrch_{unique}"
+        assert data["data"]["attributes"]["max_active_agents"] == 10
+        assert "max_total_spawns" in data["data"]["attributes"]
 
         content_type = response.headers.get("content-type", "")
         assert "application/vnd.api+json" in content_type
@@ -205,7 +294,7 @@ class TestOrchestratorsJSONAPIUpdate:
                 "attributes": {
                     "name": f"UpdateTestOrch_{unique}",
                     "turn_cadence_seconds": 60,
-                    "max_agents": 10,
+                    "max_active_agents": 10,
                     "removal_rate": 0.1,
                     "max_turns_per_agent": 100,
                 },
@@ -223,7 +312,7 @@ class TestOrchestratorsJSONAPIUpdate:
                 "id": created_id,
                 "attributes": {
                     "name": f"UpdatedOrch_{unique}",
-                    "max_agents": 20,
+                    "max_active_agents": 20,
                 },
             }
         }
@@ -240,11 +329,53 @@ class TestOrchestratorsJSONAPIUpdate:
         assert data["data"]["type"] == "simulation-orchestrators"
         assert data["data"]["id"] == created_id
         assert data["data"]["attributes"]["name"] == f"UpdatedOrch_{unique}"
-        assert data["data"]["attributes"]["max_agents"] == 20
+        assert data["data"]["attributes"]["max_active_agents"] == 20
         assert data["data"]["attributes"]["turn_cadence_seconds"] == 60
 
         content_type = response.headers.get("content-type", "")
         assert "application/vnd.api+json" in content_type
+
+    @pytest.mark.asyncio
+    async def test_update_orchestrator_jsonapi_max_total_spawns(self, admin_auth_client):
+        unique = uuid4().hex[:8]
+        create_body = {
+            "data": {
+                "type": "simulation-orchestrators",
+                "attributes": {
+                    "name": f"UpdateSpawnsOrch_{unique}",
+                    "turn_cadence_seconds": 60,
+                    "max_active_agents": 10,
+                    "removal_rate": 0.1,
+                    "max_turns_per_agent": 100,
+                },
+            }
+        }
+        create_response = await admin_auth_client.post(
+            "/api/v2/simulation-orchestrators", json=create_body
+        )
+        assert create_response.status_code == 201
+        created_id = create_response.json()["data"]["id"]
+
+        update_body = {
+            "data": {
+                "type": "simulation-orchestrators",
+                "id": created_id,
+                "attributes": {
+                    "max_total_spawns": 999,
+                },
+            }
+        }
+
+        response = await admin_auth_client.patch(
+            f"/api/v2/simulation-orchestrators/{created_id}", json=update_body
+        )
+
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+
+        data = response.json()
+        assert data["data"]["attributes"]["max_total_spawns"] == 999
 
     @pytest.mark.asyncio
     async def test_update_orchestrator_jsonapi_not_found(self, admin_auth_client):
@@ -277,7 +408,7 @@ class TestOrchestratorsJSONAPIUpdate:
                 "attributes": {
                     "name": f"MismatchOrch_{unique}",
                     "turn_cadence_seconds": 60,
-                    "max_agents": 10,
+                    "max_active_agents": 10,
                     "removal_rate": 0.1,
                     "max_turns_per_agent": 100,
                 },
@@ -316,7 +447,7 @@ class TestOrchestratorsJSONAPIDelete:
                 "attributes": {
                     "name": f"DeleteTestOrch_{unique}",
                     "turn_cadence_seconds": 60,
-                    "max_agents": 10,
+                    "max_active_agents": 10,
                     "removal_rate": 0.1,
                     "max_turns_per_agent": 100,
                 },
@@ -353,7 +484,7 @@ class TestOrchestratorsJSONAPIDelete:
                 "attributes": {
                     "name": f"SoftDeleteOrch_{unique}",
                     "turn_cadence_seconds": 60,
-                    "max_agents": 10,
+                    "max_active_agents": 10,
                     "removal_rate": 0.1,
                     "max_turns_per_agent": 100,
                 },

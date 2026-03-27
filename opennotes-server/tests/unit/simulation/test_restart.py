@@ -29,7 +29,8 @@ def _mock_orchestrator(**overrides: object) -> MagicMock:
         "name": "test-orch",
         "max_turns_per_agent": 50,
         "turn_cadence_seconds": 30,
-        "max_agents": 8,
+        "max_active_agents": 8,
+        "max_total_spawns": 2000,
         "removal_rate": 0.1,
         "scoring_config": {"scorer": "bayesian"},
         "is_active": True,
@@ -122,7 +123,8 @@ class TestSnapshotCreatesRunConfig:
         orch = _mock_orchestrator(
             max_turns_per_agent=50,
             turn_cadence_seconds=30,
-            max_agents=8,
+            max_active_agents=8,
+            max_total_spawns=2000,
             removal_rate=0.1,
             scoring_config={"scorer": "bayesian"},
         )
@@ -138,7 +140,8 @@ class TestSnapshotCreatesRunConfig:
         assert config.restart_number == 2
         assert config.max_turns_per_agent == 50
         assert config.turn_cadence_seconds == 30
-        assert config.max_agents == 8
+        assert config.max_active_agents == 8
+        assert config.max_total_spawns == 2000
         assert config.removal_rate == 0.1
         assert config.scoring_config == {"scorer": "bayesian"}
 
