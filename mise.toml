@@ -164,7 +164,7 @@ run = 'uv run opennotes "$@"'
 [tasks.install]
 description = "Install project dependencies"
 run = [
-    "cd {{vars.server_dir}} && uv venv && uv pip install -e '.[dev]'",
+    "cd {{vars.server_dir}} && uv sync --link-mode hardlink",
     "cd {{vars.discord_dir}} && pnpm install",
     "cd {{vars.playground_dir}} && pnpm install",
     "cd opennotes-cli && uv sync"

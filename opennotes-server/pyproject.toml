@@ -229,6 +229,7 @@ exclude_lines = [
 packages = ["src"]
 
 [tool.uv]
+link-mode = "hardlink"
 # bitsandbytes: convokit -> transformers -> bitsandbytes pulls an incompatible version.
 # We don't use bitsandbytes at runtime (training quantization lib), so pin to known-good.
 override-dependencies = [
