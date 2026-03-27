@@ -13,6 +13,7 @@ import pendulum
 import pytest
 
 from src.bulk_content_scan.scan_types import ScanType
+from src.llm_config.model_id import ModelId
 
 
 @pytest.fixture
@@ -286,10 +287,14 @@ class TestUnifiedRelevanceFilter:
             SimilarityMatch,
         )
         from src.bulk_content_scan.service import BulkContentScanService
+        from src.claim_relevance_check.schemas import RelevanceCheckResult
 
-        mock_llm_response = MagicMock()
-        mock_llm_response.content = '{"is_relevant": true, "reasoning": "Contains a claim"}'
-        mock_llm_service.complete = AsyncMock(return_value=mock_llm_response)
+        mock_agent_result = MagicMock()
+        mock_agent_result.output = RelevanceCheckResult(
+            is_relevant=True, reasoning="Contains a claim", confidence=0.9
+        )
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_agent_result)
 
         service = BulkContentScanService(
             session=mock_session,
@@ -350,10 +355,13 @@ class TestUnifiedRelevanceFilter:
             ),
         ]
 
-        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+        with (
+            patch("src.bulk_content_scan.service.settings") as mock_settings,
+            patch("src.claim_relevance_check.service.Agent", return_value=mock_agent),
+        ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = ModelId.from_pydantic_ai("openai:gpt-5-mini")
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 100
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 10
             mock_settings.INSTANCE_ID = "test"
@@ -363,7 +371,7 @@ class TestUnifiedRelevanceFilter:
                 scan_id=scan_id,
             )
 
-        assert mock_llm_service.complete.call_count == 2
+        assert mock_agent.run.call_count == 2
         assert len(flagged) == 2
 
 
@@ -422,7 +430,7 @@ class TestUpdatedRelevancePrompt:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = ModelId.from_pydantic_ai("openai:gpt-5-mini")
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 100
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 10
             mock_settings.INSTANCE_ID = "test"
@@ -484,7 +492,7 @@ class TestUpdatedRelevancePrompt:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = ModelId.from_pydantic_ai("openai:gpt-5-mini")
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 100
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 10
             mock_settings.INSTANCE_ID = "test"
@@ -556,7 +564,7 @@ class TestDebugModeUnification:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = ModelId.from_pydantic_ai("openai:gpt-5-mini")
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 100
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 10
             mock_settings.INSTANCE_ID = "test"
@@ -633,7 +641,7 @@ class TestCandidateFlaggedLogging:
         ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = ModelId.from_pydantic_ai("openai:gpt-5-mini")
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 100
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 10
             mock_settings.INSTANCE_ID = "test"

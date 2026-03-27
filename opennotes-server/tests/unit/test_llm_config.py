@@ -409,15 +409,14 @@ class TestLLMClientManager:
         encryption_service = EncryptionService(_generate_test_key())
         manager = LLMClientManager(encryption_service)
 
-        community_id = uuid4()
         mock_provider = MagicMock()
         mock_provider.close = AsyncMock()
-        manager.client_cache[(community_id, "openai")] = mock_provider
+        manager.client_cache[(None, "openai")] = mock_provider
 
-        assert (community_id, "openai") in manager.client_cache
+        assert (None, "openai") in manager.client_cache
 
-        manager.invalidate_cache(community_id, "openai")
-        assert (community_id, "openai") not in manager.client_cache
+        manager.invalidate_cache(uuid4(), "openai")
+        assert (None, "openai") not in manager.client_cache
 
     async def test_clear_cache(self) -> None:
         """Test clearing all cached clients."""
