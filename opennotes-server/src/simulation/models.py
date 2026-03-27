@@ -203,7 +203,7 @@ class SimulationRunConfig(Base, TimestampMixin):
     max_turns_per_agent: Mapped[int] = mapped_column(Integer, nullable=False)
     turn_cadence_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     max_active_agents: Mapped[int] = mapped_column(Integer, nullable=False)
-    max_total_spawns: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_total_spawns: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2000")
     removal_rate: Mapped[float] = mapped_column(Float, nullable=False)
     scoring_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
