@@ -102,7 +102,8 @@ def initialize_run_step(simulation_run_id: str) -> dict[str, Any]:
 
             return {
                 "turn_cadence_seconds": orchestrator.turn_cadence_seconds,
-                "max_agents": orchestrator.max_agents,
+                "max_active_agents": orchestrator.max_active_agents,
+                "max_total_spawns": orchestrator.max_total_spawns,
                 "removal_rate": orchestrator.removal_rate,
                 "max_turns_per_agent": orchestrator.max_turns_per_agent,
                 "agent_profile_ids": orchestrator.agent_profile_ids or [],
@@ -136,7 +137,8 @@ def refresh_config_step(simulation_run_id: str) -> dict[str, Any]:
 
             return {
                 "turn_cadence_seconds": orchestrator.turn_cadence_seconds,
-                "max_agents": orchestrator.max_agents,
+                "max_active_agents": orchestrator.max_active_agents,
+                "max_total_spawns": orchestrator.max_total_spawns,
                 "removal_rate": orchestrator.removal_rate,
                 "max_turns_per_agent": orchestrator.max_turns_per_agent,
                 "agent_profile_ids": orchestrator.agent_profile_ids or [],
@@ -297,14 +299,15 @@ def spawn_agents_step(
     from src.simulation.models import SimAgent
     from src.users.profile_models import CommunityMember, UserProfile
 
-    max_agents = config["max_agents"]
+    max_active = config["max_active_agents"]
+    max_total = config["max_total_spawns"]
     agent_profile_ids = config["agent_profile_ids"]
     community_server_id = config["community_server_id"]
 
-    if active_count >= max_agents or not agent_profile_ids:
+    if active_count >= max_active or not agent_profile_ids:
         return []
 
-    to_spawn = min(SPAWN_BATCH_SIZE, max_agents - active_count)
+    to_spawn = min(SPAWN_BATCH_SIZE, max_active - active_count)
 
     async def _spawn() -> list[str]:
         run_uuid = UUID(simulation_run_id)
@@ -319,8 +322,8 @@ def spawn_agents_step(
                 )
             )
             current_total = current_count_result.scalar() or 0
-            adjusted_to_spawn = min(to_spawn, max_agents - active_count)
-            if current_total >= max_agents:
+            adjusted_to_spawn = min(to_spawn, max_active - active_count)
+            if current_total >= max_total:
                 return []
 
             for i in range(adjusted_to_spawn):
@@ -333,59 +336,118 @@ def spawn_agents_step(
                 )
                 agent_name = agent_result.scalar_one_or_none() or "Unknown"
 
-                instance_number = total_spawned + i + 1
-                display_name = f"SimAgent-{agent_name}-{instance_number}"
-
-                user_profile = UserProfile(
-                    display_name=display_name,
-                    is_human=False,
-                    is_active=True,
-                )
-                session.add(user_profile)
-                await session.flush()
-
-                community_member = CommunityMember(
-                    community_id=cs_uuid,
-                    profile_id=user_profile.id,
-                    role="member",
-                    joined_at=now,
-                    is_active=True,
-                )
-                session.add(community_member)
-
-                instance = SimAgentInstance(
-                    simulation_run_id=run_uuid,
-                    agent_profile_id=profile_uuid,
-                    user_profile_id=user_profile.id,
-                    state="active",
-                    turn_count=0,
-                )
-                session.add(instance)
-                await session.flush()
-
-                prior_memory_query = (
-                    select(SimAgentMemory.acted_on_request_ids)
-                    .join(
-                        SimAgentInstance,
-                        SimAgentMemory.agent_instance_id == SimAgentInstance.id,
-                    )
+                prior_instance_query = (
+                    select(SimAgentInstance)
                     .where(
                         SimAgentInstance.simulation_run_id == run_uuid,
                         SimAgentInstance.agent_profile_id == profile_uuid,
-                        SimAgentInstance.id != instance.id,
                         SimAgentInstance.state == "removed",
                     )
                     .order_by(SimAgentInstance.created_at.desc())
                     .limit(1)
                 )
-                prior_result = await session.execute(prior_memory_query)
-                prior_acted_on = prior_result.scalar_one_or_none() or []
+                prior_result = await session.execute(prior_instance_query)
+                prior_instance = prior_result.scalar_one_or_none()
 
-                new_memory = SimAgentMemory(
-                    agent_instance_id=instance.id,
-                    acted_on_request_ids=prior_acted_on,
-                )
-                session.add(new_memory)
+                active_conflict = False
+                if prior_instance:
+                    active_conflict_result = await session.execute(
+                        select(func.count()).where(
+                            SimAgentInstance.simulation_run_id == run_uuid,
+                            SimAgentInstance.agent_profile_id == profile_uuid,
+                            SimAgentInstance.state == "active",
+                        )
+                    )
+                    active_conflict = (active_conflict_result.scalar() or 0) > 0
+
+                if prior_instance and not active_conflict:
+                    reused_user_profile_id = prior_instance.user_profile_id
+                    instance = SimAgentInstance(
+                        simulation_run_id=run_uuid,
+                        agent_profile_id=profile_uuid,
+                        user_profile_id=reused_user_profile_id,
+                        state="active",
+                        turn_count=0,
+                    )
+                    session.add(instance)
+                    await session.flush()
+
+                    prior_memory_query = select(SimAgentMemory).where(
+                        SimAgentMemory.agent_instance_id == prior_instance.id
+                    )
+                    prior_memory_result = await session.execute(prior_memory_query)
+                    prior_memory = prior_memory_result.scalar_one_or_none()
+
+                    new_memory = SimAgentMemory(
+                        agent_instance_id=instance.id,
+                        message_history=prior_memory.message_history if prior_memory else [],
+                        turn_count=0,
+                        token_count=prior_memory.token_count if prior_memory else 0,
+                        recent_actions=prior_memory.recent_actions if prior_memory else [],
+                        seen_request_ids=prior_memory.seen_request_ids if prior_memory else [],
+                        acted_on_request_ids=prior_memory.acted_on_request_ids
+                        if prior_memory
+                        else [],
+                        compaction_strategy=prior_memory.compaction_strategy
+                        if prior_memory
+                        else None,
+                        last_compacted_at=prior_memory.last_compacted_at if prior_memory else None,
+                    )
+                    session.add(new_memory)
+                else:
+                    instance_number = total_spawned + i + 1
+                    display_name = f"SimAgent-{agent_name}-{instance_number}"
+
+                    user_profile = UserProfile(
+                        display_name=display_name,
+                        is_human=False,
+                        is_active=True,
+                    )
+                    session.add(user_profile)
+                    await session.flush()
+
+                    community_member = CommunityMember(
+                        community_id=cs_uuid,
+                        profile_id=user_profile.id,
+                        role="member",
+                        joined_at=now,
+                        is_active=True,
+                    )
+                    session.add(community_member)
+
+                    instance = SimAgentInstance(
+                        simulation_run_id=run_uuid,
+                        agent_profile_id=profile_uuid,
+                        user_profile_id=user_profile.id,
+                        state="active",
+                        turn_count=0,
+                    )
+                    session.add(instance)
+                    await session.flush()
+
+                    prior_memory_query = (
+                        select(SimAgentMemory.acted_on_request_ids)
+                        .join(
+                            SimAgentInstance,
+                            SimAgentMemory.agent_instance_id == SimAgentInstance.id,
+                        )
+                        .where(
+                            SimAgentInstance.simulation_run_id == run_uuid,
+                            SimAgentInstance.agent_profile_id == profile_uuid,
+                            SimAgentInstance.id != instance.id,
+                            SimAgentInstance.state == "removed",
+                        )
+                        .order_by(SimAgentInstance.created_at.desc())
+                        .limit(1)
+                    )
+                    prior_result = await session.execute(prior_memory_query)
+                    prior_acted_on = prior_result.scalar_one_or_none() or []
+
+                    new_memory = SimAgentMemory(
+                        agent_instance_id=instance.id,
+                        acted_on_request_ids=prior_acted_on,
+                    )
+                    session.add(new_memory)
 
                 new_instance_ids.append(str(instance.id))
 
