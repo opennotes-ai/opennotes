@@ -122,9 +122,7 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
 
             response = await asyncio.wait_for(
                 self.llm_service.complete(
-                    db=db,
                     messages=messages,
-                    community_server_id=None,
                     model=cfg.RELEVANCE_CHECK_MODEL,
                     max_tokens=cfg.RELEVANCE_CHECK_MAX_TOKENS,
                     temperature=0.0,
@@ -223,7 +221,7 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
 
     async def _retry_without_fact_check(
         self,
-        db: AsyncSession,
+        db: AsyncSession,  # noqa: ARG002
         original_message: str,
         start_time: float,
     ) -> tuple[RelevanceOutcome, str]:
@@ -263,9 +261,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         try:
             response = await asyncio.wait_for(
                 self.llm_service.complete(
-                    db=db,
                     messages=messages,
-                    community_server_id=None,
                     model=cfg.RELEVANCE_CHECK_MODEL,
                     max_tokens=cfg.RELEVANCE_CHECK_MAX_TOKENS,
                     temperature=0.0,

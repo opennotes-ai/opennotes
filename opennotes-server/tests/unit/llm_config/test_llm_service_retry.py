@@ -39,10 +39,6 @@ class TestLLMServiceCompleteRetry:
         return LLMService(client_manager=mock_client_manager, embedder=MagicMock())
 
     @pytest.fixture
-    def mock_db(self) -> AsyncMock:
-        return AsyncMock()
-
-    @pytest.fixture
     def mock_llm_provider(self) -> MagicMock:
         provider = MagicMock()
         provider.api_key = "test-api-key"
@@ -53,7 +49,6 @@ class TestLLMServiceCompleteRetry:
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
-        mock_db: AsyncMock,
         mock_llm_provider: MagicMock,
     ) -> None:
         mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
@@ -74,9 +69,7 @@ class TestLLMServiceCompleteRetry:
             return success
 
         mock_llm_provider.complete = AsyncMock(side_effect=side_effect)
-        result = await llm_service.complete(
-            db=mock_db, messages=[LLMMessage(role="user", content="test")]
-        )
+        result = await llm_service.complete(messages=[LLMMessage(role="user", content="test")])
         assert call_count == 2
         assert result.content == '{"is_relevant": true}'
 
@@ -85,15 +78,12 @@ class TestLLMServiceCompleteRetry:
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
-        mock_db: AsyncMock,
         mock_llm_provider: MagicMock,
     ) -> None:
         mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
         mock_llm_provider.complete = AsyncMock(side_effect=EmptyLLMResponseError("empty"))
         with pytest.raises(EmptyLLMResponseError):
-            await llm_service.complete(
-                db=mock_db, messages=[LLMMessage(role="user", content="test")]
-            )
+            await llm_service.complete(messages=[LLMMessage(role="user", content="test")])
         assert mock_llm_provider.complete.call_count == 2
 
     @pytest.mark.asyncio
@@ -101,15 +91,12 @@ class TestLLMServiceCompleteRetry:
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
-        mock_db: AsyncMock,
         mock_llm_provider: MagicMock,
     ) -> None:
         mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
         mock_llm_provider.complete = AsyncMock(side_effect=ValueError("bad input"))
         with pytest.raises(ValueError, match="bad input"):
-            await llm_service.complete(
-                db=mock_db, messages=[LLMMessage(role="user", content="test")]
-            )
+            await llm_service.complete(messages=[LLMMessage(role="user", content="test")])
         assert mock_llm_provider.complete.call_count == 1
 
 
@@ -284,10 +271,6 @@ class TestLLMServiceDescribeImageRetry:
         return LLMService(client_manager=mock_client_manager, embedder=MagicMock())
 
     @pytest.fixture
-    def mock_db(self) -> AsyncMock:
-        return AsyncMock()
-
-    @pytest.fixture
     def mock_llm_provider(self) -> MagicMock:
         provider = MagicMock()
         provider.api_key = "test-api-key"
@@ -298,7 +281,6 @@ class TestLLMServiceDescribeImageRetry:
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
-        mock_db: AsyncMock,
         mock_llm_provider: MagicMock,
     ) -> None:
         mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
@@ -323,9 +305,7 @@ class TestLLMServiceDescribeImageRetry:
         mock_llm_provider.complete = AsyncMock(side_effect=side_effect)
 
         description = await llm_service.describe_image(
-            db=mock_db,
             image_url="https://example.com/image.jpg",
-            community_server_id=None,
         )
 
         assert call_count == 2
@@ -336,7 +316,6 @@ class TestLLMServiceDescribeImageRetry:
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
-        mock_db: AsyncMock,
         mock_llm_provider: MagicMock,
     ) -> None:
         mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
@@ -345,9 +324,7 @@ class TestLLMServiceDescribeImageRetry:
 
         with pytest.raises(TimeoutError, match="Persistent timeout"):
             await llm_service.describe_image(
-                db=mock_db,
                 image_url="https://example.com/image.jpg",
-                community_server_id=None,
             )
 
         assert mock_llm_provider.complete.call_count == 5

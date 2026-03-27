@@ -41,7 +41,7 @@ async def test_describe_image_delegates_to_llm_service(vision_service, mock_llm_
 
     assert result == "A test image description"
     mock_llm_service.describe_image.assert_called_once_with(
-        mock_db, "https://example.com/img.png", community_uuid, "high", 200
+        "https://example.com/img.png", detail="high", max_tokens=200
     )
 
 

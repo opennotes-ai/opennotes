@@ -19,7 +19,6 @@ from litellm.exceptions import (
     Timeout,
 )
 from pydantic_ai import Embedder
-from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
     AsyncRetrying,
     retry,
@@ -32,7 +31,7 @@ from tenacity import (
 from src.config import settings
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.model_id import ModelId
-from src.llm_config.providers import LiteLLMCompletionParams
+from src.llm_config.providers import DirectCompletionParams
 from src.llm_config.providers.base import LLMMessage, LLMResponse
 from src.llm_config.providers.direct_provider import EmptyLLMResponseError
 from src.monitoring import get_logger
@@ -92,9 +91,7 @@ class LLMService:
     )
     async def complete(
         self,
-        db: AsyncSession,
         messages: list[LLMMessage],
-        community_server_id: UUID | None = None,
         provider: str = "openai",
         model: ModelId | None = None,
         max_tokens: int | None = None,
@@ -115,22 +112,20 @@ class LLMService:
                 )
             provider = litellm_provider
 
-        llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
+        llm_provider = await self.client_manager.get_client(provider)
 
         if not llm_provider:
-            context = f"community server {community_server_id}" if community_server_id else "global"
-            raise ValueError(f"No {provider} configuration found for {context}")
+            raise ValueError(f"No {provider} configuration found")
 
-        params = LiteLLMCompletionParams(
+        params = DirectCompletionParams(
             model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
         )
 
         logger.debug(
             f"Generating completion with {provider}",
             extra={
-                "community_server_id": str(community_server_id) if community_server_id else None,
                 "provider": provider,
-                "model": model.to_litellm() if model else "default",
+                "model": model.to_pydantic_ai() if model else "default",
                 "message_count": len(messages),
             },
         )
@@ -139,9 +134,7 @@ class LLMService:
 
     async def stream_complete(
         self,
-        db: AsyncSession,
         messages: list[LLMMessage],
-        community_server_id: UUID | None = None,
         provider: str = "openai",
         model: ModelId | None = None,
         max_tokens: int | None = None,
@@ -162,22 +155,20 @@ class LLMService:
                 )
             provider = litellm_provider
 
-        llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
+        llm_provider = await self.client_manager.get_client(provider)
 
         if not llm_provider:
-            context = f"community server {community_server_id}" if community_server_id else "global"
-            raise ValueError(f"No {provider} configuration found for {context}")
+            raise ValueError(f"No {provider} configuration found")
 
-        params = LiteLLMCompletionParams(
+        params = DirectCompletionParams(
             model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
         )
 
         logger.debug(
             f"Starting streaming completion with {provider}",
             extra={
-                "community_server_id": str(community_server_id) if community_server_id else None,
                 "provider": provider,
-                "model": model.to_litellm() if model else "default",
+                "model": model.to_pydantic_ai() if model else "default",
                 "message_count": len(messages),
             },
         )
@@ -244,9 +235,7 @@ class LLMService:
     )
     async def describe_image(
         self,
-        db: AsyncSession,
         image_url: str,
-        community_server_id: UUID | None = None,
         detail: Literal["low", "high", "auto"] = "auto",
         max_tokens: int = 300,
         model: ModelId | None = None,
@@ -254,18 +243,16 @@ class LLMService:
         vision_model = model or settings.VISION_MODEL
         provider = vision_model.litellm_provider
 
-        llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
+        llm_provider = await self.client_manager.get_client(provider)
 
         if not llm_provider:
-            context = f"community server {community_server_id}" if community_server_id else "global"
-            raise ValueError(f"No {provider} configuration found for {context}")
+            raise ValueError(f"No {provider} configuration found")
 
         logger.debug(
             "Generating image description",
             extra={
                 "image_url": image_url[:100],
-                "community_server_id": str(community_server_id) if community_server_id else None,
-                "model": vision_model.to_litellm(),
+                "model": vision_model.to_pydantic_ai(),
                 "detail": detail,
                 "provider": provider,
             },
@@ -281,14 +268,13 @@ class LLMService:
             )
         ]
 
-        params = LiteLLMCompletionParams(model=vision_model, max_tokens=max_tokens)
+        params = DirectCompletionParams(model=vision_model, max_tokens=max_tokens)
         response = await llm_provider.complete(messages, params)
 
         logger.info(
             "Image description generated successfully",
             extra={
                 "image_url": image_url[:100],
-                "community_server_id": str(community_server_id) if community_server_id else None,
                 "tokens_used": response.tokens_used,
                 "description_length": len(response.content),
             },

@@ -73,13 +73,10 @@ async def test_describe_image_success(
     assert description == "A cat sitting on a table"
     mock_llm_service.describe_image.assert_called_once()
 
-    # Verify correct parameters were passed to LLMService
     call_args = mock_llm_service.describe_image.call_args
-    assert call_args[0][0] == db_session
-    assert call_args[0][1] == "https://example.com/cat.jpg"
-    assert call_args[0][2] == community_server.id  # UUID, not platform_id
-    assert call_args[0][3] == "auto"  # detail
-    assert call_args[0][4] == 300  # max_tokens
+    assert call_args[0][0] == "https://example.com/cat.jpg"
+    assert call_args[1]["detail"] == "auto"
+    assert call_args[1]["max_tokens"] == 300
 
 
 @pytest.mark.asyncio
@@ -104,10 +101,9 @@ async def test_describe_image_with_custom_params(
 
     assert description == "Detailed description of the image"
 
-    # Verify custom parameters were passed
     call_args = mock_llm_service.describe_image.call_args
-    assert call_args[0][3] == "high"  # detail
-    assert call_args[0][4] == 500  # max_tokens
+    assert call_args[1]["detail"] == "high"
+    assert call_args[1]["max_tokens"] == 500
 
 
 @pytest.mark.asyncio

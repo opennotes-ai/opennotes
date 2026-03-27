@@ -169,9 +169,7 @@ def generate_ai_note_step(
                     @_retry_llm_call
                     async def _call_llm():
                         return await llm_service.complete(
-                            db=session,
                             messages=messages,
-                            community_server_id=community_server_uuid,
                             model=settings.AI_NOTE_WRITER_MODEL,
                             max_tokens=500,
                             temperature=0.7,

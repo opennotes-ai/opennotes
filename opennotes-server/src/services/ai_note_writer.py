@@ -379,8 +379,8 @@ class AINoteWriter:
 
     async def _generate_fact_check_note(
         self,
-        db: AsyncSession,
-        community_server_uuid: UUID,
+        db: AsyncSession,  # noqa: ARG002
+        community_server_uuid: UUID,  # noqa: ARG002
         original_message: str,
         fact_check_item: FactCheckItem,
         similarity_score: float,
@@ -414,9 +414,7 @@ class AINoteWriter:
         ]
 
         response = await self.llm_service.complete(
-            db=db,
             messages=messages,
-            community_server_id=community_server_uuid,
             model=settings.AI_NOTE_WRITER_MODEL,
             max_tokens=500,
             temperature=0.7,
@@ -435,8 +433,8 @@ class AINoteWriter:
 
     async def _generate_general_explanation_note(
         self,
-        db: AsyncSession,
-        community_server_uuid: UUID,
+        db: AsyncSession,  # noqa: ARG002
+        community_server_uuid: UUID,  # noqa: ARG002
         original_message: str,
         image_description: str | None = None,
     ) -> str:
@@ -466,9 +464,7 @@ class AINoteWriter:
         ]
 
         response = await self.llm_service.complete(
-            db=db,
             messages=messages,
-            community_server_id=community_server_uuid,
             model=settings.AI_NOTE_WRITER_MODEL,
             max_tokens=500,
             temperature=0.7,
@@ -606,8 +602,8 @@ Community Note:"""
         self,
         original_message: str,
         fact_check_data: dict[str, str | float | None],
-        db: AsyncSession,
-        community_server_id: UUID,
+        db: AsyncSession,  # noqa: ARG002
+        community_server_id: UUID,  # noqa: ARG002
     ) -> str:
         """
         Generate a one-sentence explanation for why a message was flagged.
@@ -643,9 +639,7 @@ Be concise and factual. Start directly with the explanation, no preamble."""
         ]
 
         response = await self.llm_service.complete(
-            db=db,
             messages=messages,
-            community_server_id=community_server_id,
             model=settings.AI_NOTE_WRITER_MODEL,
             max_tokens=150,
             temperature=0.3,

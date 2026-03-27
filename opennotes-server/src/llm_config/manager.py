@@ -11,13 +11,10 @@ from typing import Any, TypeVar, cast, overload
 from uuid import UUID
 
 from cachetools import TTLCache
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
 from src.llm_config.constants import ADC_SENTINEL, get_default_model_for_provider
 from src.llm_config.encryption import EncryptionService
-from src.llm_config.models import CommunityServerLLMConfig
 from src.llm_config.providers.base import LLMProvider
 from src.llm_config.providers.factory import LLMProviderFactory
 from src.monitoring import get_logger
@@ -134,68 +131,25 @@ class LLMClientManager:
     """
 
     def __init__(self, encryption_service: EncryptionService, cache_ttl: int = 3600) -> None:
-        """
-        Initialize client manager.
-
-        Args:
-            encryption_service: Encryption service for API key decryption
-            cache_ttl: Cache TTL in seconds (default: 1 hour)
-        """
         self.encryption_service = encryption_service
-        self.client_cache: EvictingTTLCache[tuple[UUID | None, str], LLMProvider[Any, Any]] = (
+        self.client_cache: EvictingTTLCache[tuple[None, str], LLMProvider[Any, Any]] = (
             EvictingTTLCache(maxsize=1000, ttl=cache_ttl, eviction_callback=self._cleanup_provider)
         )
         self.locks: dict[str, asyncio.Lock] = {}
 
-    def _cleanup_provider(
-        self, key: tuple[UUID | None, str], provider: LLMProvider[Any, Any]
-    ) -> None:
-        """
-        Cleanup callback for evicted cache entries.
-
-        Schedules async cleanup of the provider's HTTP client resources
-        and removes the corresponding lock to prevent unbounded lock growth.
-        This is called synchronously by the cache, so we schedule the async
-        cleanup as a background task.
-
-        Args:
-            key: Cache key (community_server_id, provider_name)
-            provider: LLMProvider instance being evicted
-        """
+    def _cleanup_provider(self, key: tuple[None, str], provider: LLMProvider[Any, Any]) -> None:
         _task = asyncio.create_task(provider.close())
 
-        lock_key = f"{key[0]}:{key[1]}"
+        lock_key = key[1]
         self.locks.pop(lock_key, None)
 
-    async def get_client(
-        self, db: AsyncSession, community_server_id: UUID | None, provider: str
-    ) -> LLMProvider[Any, Any] | None:
-        """
-        Get or create an LLM provider client for the given community and provider.
-
-        Uses caching to avoid repeated database queries and API key decryption.
-        Thread-safe via per-key locks.
-
-        When community_server_id is None, uses global API key directly without
-        attempting to load community-specific configuration.
-
-        Args:
-            db: Database session
-            community_server_id: Community server UUID, or None for global fallback
-            provider: Provider name ('openai', 'anthropic', etc.)
-
-        Returns:
-            Initialized LLM provider instance, or None if not configured
-
-        Raises:
-            Exception: If provider initialization fails
-        """
-        cache_key = (community_server_id, provider)
+    async def get_client(self, provider: str) -> LLMProvider[Any, Any] | None:
+        cache_key = (None, provider)
 
         if cache_key in self.client_cache:
             return cast(LLMProvider[Any, Any], self.client_cache[cache_key])
 
-        lock_key = f"{community_server_id}:{provider}"
+        lock_key = provider
         if lock_key not in self.locks:
             self.locks[lock_key] = asyncio.Lock()
 
@@ -203,74 +157,25 @@ class LLMClientManager:
             if cache_key in self.client_cache:
                 return cast(LLMProvider[Any, Any], self.client_cache[cache_key])
 
-            client = await self._load_client(db, community_server_id, provider)
+            client = await self._load_client(provider)
             if client:
                 self.client_cache[cache_key] = client
             return client
 
-    async def _load_client(
-        self, db: AsyncSession, community_server_id: UUID | None, provider: str
-    ) -> LLMProvider[Any, Any] | None:
-        """
-        Load and initialize an LLM client from database configuration.
-
-        Falls back to global API key if no community-specific configuration exists.
-        When community_server_id is None, uses global API key directly.
-
-        Args:
-            db: Database session
-            community_server_id: Community server UUID, or None for global fallback
-            provider: Provider name
-
-        Returns:
-            Initialized LLM provider, or None if not found/disabled
-        """
-        config = None
-        if community_server_id is not None:
-            result = await db.execute(
-                select(CommunityServerLLMConfig).where(
-                    CommunityServerLLMConfig.community_server_id == community_server_id,
-                    CommunityServerLLMConfig.provider == provider,
-                    CommunityServerLLMConfig.enabled == True,
-                )
+    async def _load_client(self, provider: str) -> LLMProvider[Any, Any] | None:
+        global_key = self._get_global_api_key(provider)
+        if global_key:
+            default_model = self._get_default_model(provider)
+            logger = get_logger(__name__)
+            logger.info(
+                f"Using global {provider} API key",
+                extra={
+                    "provider": provider,
+                    "api_key_source": "global",
+                },
             )
-            config = result.scalar_one_or_none()
-
-        if not config:
-            global_key = self._get_global_api_key(provider)
-            if global_key:
-                default_model = self._get_default_model(provider)
-                logger = get_logger(__name__)
-                logger.info(
-                    f"Using global {provider} API key",
-                    extra={
-                        "community_server_id": str(community_server_id)
-                        if community_server_id
-                        else None,
-                        "provider": provider,
-                        "api_key_source": "global",
-                    },
-                )
-                return LLMProviderFactory.create(provider, global_key, default_model, {})
-            return None
-
-        api_key = self.encryption_service.decrypt_api_key(
-            config.api_key_encrypted, config.encryption_key_id
-        )
-
-        default_model = config.settings.get("default_model", self._get_default_model(provider))
-
-        logger = get_logger(__name__)
-        logger.info(
-            f"{provider} client initialized from community configuration",
-            extra={
-                "community_server_id": str(community_server_id),
-                "provider": provider,
-                "api_key_source": "community",
-            },
-        )
-
-        return LLMProviderFactory.create(provider, api_key, default_model, config.settings)
+            return LLMProviderFactory.create(provider, global_key, default_model, {})
+        return None
 
     def _get_default_model(self, provider: str) -> str:
         return get_default_model_for_provider(provider)
@@ -298,27 +203,12 @@ class LLMClientManager:
             return None
         return None
 
-    def invalidate_cache(self, community_server_id: UUID, provider: str | None = None) -> None:
-        """
-        Invalidate cached clients for a community server.
-
-        Removes both the cached client and its corresponding lock to prevent
-        unbounded lock growth. Useful after configuration updates.
-
-        Args:
-            community_server_id: Community server UUID
-            provider: Specific provider to invalidate, or None for all providers
-        """
+    def invalidate_cache(self, community_server_id: UUID, provider: str | None = None) -> None:  # noqa: ARG002
         if provider:
-            self.client_cache.pop((community_server_id, provider), None)
-            lock_key = f"{community_server_id}:{provider}"
-            self.locks.pop(lock_key, None)
+            self.client_cache.pop((None, provider), None)
+            self.locks.pop(provider, None)
         else:
-            keys = [k for k in self.client_cache if k[0] == community_server_id]
-            for key in keys:
-                self.client_cache.pop(key, None)
-                lock_key = f"{key[0]}:{key[1]}"
-                self.locks.pop(lock_key, None)
+            self.clear_cache()
 
     def clear_cache(self) -> None:
         """Clear all cached clients."""
