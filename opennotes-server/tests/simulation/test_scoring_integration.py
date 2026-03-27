@@ -766,6 +766,7 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    request_revert_result = MagicMock()
     agent_count_result_a = MagicMock()
     agent_count_result_a.scalar.return_value = 3
     note_count_requery_a = MagicMock()
@@ -779,6 +780,7 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
             batch_result,
             note_update_result,
             request_update_result,
+            request_revert_result,
             agent_count_result_a,
             note_count_requery_a,
             platform_result,
@@ -846,6 +848,7 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    request_revert_result = MagicMock()
     agent_count_result_b = MagicMock()
     agent_count_result_b.scalar.return_value = 2
     note_count_requery_b = MagicMock()
@@ -859,6 +862,7 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
             batch_result,
             note_update_result,
             request_update_result,
+            request_revert_result,
             agent_count_result_b,
             note_count_requery_b,
             platform_result,
@@ -924,6 +928,7 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    request_revert_result = MagicMock()
     agent_count_result_c = MagicMock()
     agent_count_result_c.scalar.return_value = 1
     note_count_requery_c = MagicMock()
@@ -937,6 +942,7 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
             batch_result,
             note_update_result,
             request_update_result,
+            request_revert_result,
             agent_count_result_c,
             note_count_requery_c,
             platform_result,
