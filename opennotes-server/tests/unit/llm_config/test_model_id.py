@@ -181,17 +181,17 @@ class TestRoundTrip:
 
 
 class TestStr:
-    def test_str_litellm_flavor(self):
+    def test_str_litellm_flavor_defaults_to_pydantic_ai(self):
         m = ModelId.from_litellm("openai/gpt-5.1")
-        assert str(m) == "openai/gpt-5.1"
+        assert str(m) == "openai:gpt-5.1"
 
     def test_str_pydantic_ai_flavor(self):
         m = ModelId.from_pydantic_ai("openai:gpt-5.1")
         assert str(m) == "openai:gpt-5.1"
 
-    def test_str_vertex_litellm(self):
+    def test_str_vertex_litellm_uses_pydantic_ai_provider(self):
         m = ModelId.from_litellm("vertex_ai/global/gemini-2.5-pro")
-        assert str(m) == "vertex_ai/global/gemini-2.5-pro"
+        assert str(m) == "google-vertex:global/gemini-2.5-pro"
 
     def test_str_vertex_pydantic_ai(self):
         m = ModelId.from_pydantic_ai("google-vertex:global/gemini-2.5-pro")
@@ -266,19 +266,28 @@ class TestEquality:
 
 
 class TestGetDefaultModelForProvider:
-    def test_openai_returns_str(self):
+    def test_openai_returns_pydantic_ai_format(self):
         result = get_default_model_for_provider("openai")
         assert isinstance(result, str)
         assert not isinstance(result, ModelId)
-        assert "/" in result
+        assert ":" in result
 
-    def test_all_providers_return_str(self):
+    def test_all_providers_return_pydantic_ai_format(self):
         for provider in [*DEFAULT_MODELS_BY_PROVIDER, "openai"]:
             result = get_default_model_for_provider(provider)
             assert isinstance(result, str), f"{provider} returned {type(result)}"
             assert not isinstance(result, ModelId), f"{provider} returned ModelId"
+            if result != "unknown":
+                assert ":" in result, f"{provider} returned non-pydantic-ai format: {result}"
 
     def test_unknown_provider_returns_str(self):
         result = get_default_model_for_provider("nonexistent")
         assert result == "unknown"
         assert isinstance(result, str)
+
+    def test_default_models_use_pydantic_ai_format(self):
+        for provider, model_str in DEFAULT_MODELS_BY_PROVIDER.items():
+            assert ":" in model_str, f"{provider} default not in pydantic-ai format: {model_str}"
+            assert "/" not in model_str.split(":")[0], (
+                f"{provider} default has slash in provider: {model_str}"
+            )

@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from src.config import Settings, get_settings
+from src.config import PydanticAIModelId, Settings, _parse_model_id, get_settings
 from src.llm_config.model_id import ModelId
 
 TEST_CREDENTIALS_ENCRYPTION_KEY = "WSaz4Oan5Rx-0zD-6wC7yOfasrJmzZDVViu6WzwSi0Q="
@@ -727,6 +727,89 @@ class TestBulkContentScanRepromptDaysValidation:
             assert settings.BULK_CONTENT_SCAN_REPROMPT_DAYS == 180
 
 
+class TestParseModelId:
+    """Test _parse_model_id auto-detection of pydantic-ai (colon) vs litellm (slash) format."""
+
+    def test_colon_format_parsed_as_pydantic_ai(self):
+        m = _parse_model_id("openai:gpt-5.1")
+        assert m.provider == "openai"
+        assert m.model == "gpt-5.1"
+        assert m.flavor.value == "pydantic_ai"
+
+    def test_slash_format_parsed_as_litellm_backward_compat(self):
+        m = _parse_model_id("openai/gpt-5.1")
+        assert m.provider == "openai"
+        assert m.model == "gpt-5.1"
+        assert m.flavor.value == "litellm"
+
+    def test_model_id_passthrough(self):
+        original = ModelId.from_pydantic_ai("openai:gpt-5.1")
+        result = _parse_model_id(original)
+        assert result is original
+
+    def test_bare_name_raises(self):
+        with pytest.raises(ValueError, match="Invalid model ID format"):
+            _parse_model_id("gpt-5.1")
+
+    def test_non_string_raises(self):
+        with pytest.raises(ValueError, match="Invalid model ID format"):
+            _parse_model_id(42)
+
+    def test_google_vertex_colon_format(self):
+        m = _parse_model_id("google-vertex:gemini-2.5-pro")
+        assert m.provider == "google-vertex"
+        assert m.model == "gemini-2.5-pro"
+        assert m.flavor.value == "pydantic_ai"
+
+    def test_vertex_ai_slash_format_backward_compat(self):
+        m = _parse_model_id("vertex_ai/gemini-2.5-pro")
+        assert m.provider == "vertex_ai"
+        assert m.model == "gemini-2.5-pro"
+        assert m.flavor.value == "litellm"
+
+
+class TestPydanticAIModelIdTypeAlias:
+    """Test PydanticAIModelId type alias exists and works."""
+
+    def test_type_alias_is_annotated_model_id(self):
+        import typing
+
+        origin = typing.get_origin(PydanticAIModelId)
+        assert origin is not None
+
+    def test_pydantic_ai_format_accepted_in_settings(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "DEFAULT_MINI_MODEL": "openai:gpt-5-mini",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.DEFAULT_MINI_MODEL.provider == "openai"
+            assert settings.DEFAULT_MINI_MODEL.model == "gpt-5-mini"
+
+    def test_slash_format_backward_compat_in_settings(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "DEFAULT_MINI_MODEL": "openai/gpt-5-mini",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.DEFAULT_MINI_MODEL.provider == "openai"
+            assert settings.DEFAULT_MINI_MODEL.model == "gpt-5-mini"
+
+
 class TestLLMModelNameValidation:
     """Test LLM model name validation to prevent empty strings (task-974)."""
 
@@ -879,15 +962,18 @@ class TestLLMModelNameValidation:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert ModelId.from_litellm("openai/gpt-5-mini") == settings.RELEVANCE_CHECK_MODEL
-            assert ModelId.from_litellm("openai/gpt-5.1") == settings.DEFAULT_FULL_MODEL
-            assert ModelId.from_litellm("openai/gpt-5-mini") == settings.DEFAULT_MINI_MODEL
-            assert ModelId.from_litellm("openai/text-embedding-3-small") == settings.EMBEDDING_MODEL
-            assert ModelId.from_litellm("openai/gpt-5.1") == settings.VISION_MODEL
-            assert ModelId.from_litellm("openai/gpt-5.1") == settings.AI_NOTE_WRITER_MODEL
+            assert ModelId.from_pydantic_ai("openai:gpt-5-mini") == settings.RELEVANCE_CHECK_MODEL
+            assert ModelId.from_pydantic_ai("openai:gpt-5.1") == settings.DEFAULT_FULL_MODEL
+            assert ModelId.from_pydantic_ai("openai:gpt-5-mini") == settings.DEFAULT_MINI_MODEL
+            assert (
+                ModelId.from_pydantic_ai("openai:text-embedding-3-small")
+                == settings.EMBEDDING_MODEL
+            )
+            assert ModelId.from_pydantic_ai("openai:gpt-5.1") == settings.VISION_MODEL
+            assert ModelId.from_pydantic_ai("openai:gpt-5.1") == settings.AI_NOTE_WRITER_MODEL
 
     def test_model_fields_reject_bare_names(self):
-        """Model fields without provider prefix (no slash) must be rejected."""
+        """Model fields without provider prefix (no slash or colon) must be rejected."""
         valid_key = "a" * 32
         with patch.dict(
             os.environ,
@@ -1160,6 +1246,40 @@ class TestVertexAIProjectValidation:
             assert ModelId.from_litellm("vertex_ai/gemini-2.5-flash") == settings.DEFAULT_MINI_MODEL
             assert settings.VERTEXAI_PROJECT == "my-gcp-project"
 
+    def test_google_vertex_pydantic_ai_format_rejected_without_project(self):
+        valid_key = "a" * 32
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "JWT_SECRET_KEY": valid_key,
+                    "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                    "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                    "DEFAULT_MINI_MODEL": "google-vertex:gemini-2.5-flash",
+                },
+                clear=True,
+            ),
+            pytest.raises((ValueError, ValidationError), match="VERTEXAI_PROJECT"),
+        ):
+            create_settings_no_env_file()
+
+    def test_google_vertex_pydantic_ai_format_accepted_with_project(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "DEFAULT_MINI_MODEL": "google-vertex:gemini-2.5-flash",
+                "VERTEXAI_PROJECT": "my-gcp-project",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.DEFAULT_MINI_MODEL.model == "gemini-2.5-flash"
+            assert settings.VERTEXAI_PROJECT == "my-gcp-project"
+
     def test_openai_models_accepted_without_vertexai_project(self):
         valid_key = "a" * 32
         with patch.dict(
@@ -1172,7 +1292,7 @@ class TestVertexAIProjectValidation:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert ModelId.from_litellm("openai/gpt-5-mini") == settings.DEFAULT_MINI_MODEL
+            assert ModelId.from_pydantic_ai("openai:gpt-5-mini") == settings.DEFAULT_MINI_MODEL
             assert settings.VERTEXAI_PROJECT is None
 
     def test_vertex_ai_validation_skipped_in_testing_mode(self):

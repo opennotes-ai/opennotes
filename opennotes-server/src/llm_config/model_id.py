@@ -52,6 +52,4 @@ class ModelId(BaseModel, frozen=True):
         return hash((self.provider, self.model))
 
     def __str__(self) -> str:
-        if self.flavor == ModelFlavor.LITELLM:
-            return self.to_litellm()
         return self.to_pydantic_ai()
