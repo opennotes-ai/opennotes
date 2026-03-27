@@ -62,6 +62,7 @@ def _mock_db_for_trigger(run, note_count, notes, agent_count=3):
 
     update_result = MagicMock()
     request_update_result = MagicMock()
+    request_revert_result = MagicMock()
 
     agent_count_result = MagicMock()
     agent_count_result.scalar.return_value = agent_count
@@ -78,6 +79,7 @@ def _mock_db_for_trigger(run, note_count, notes, agent_count=3):
             batch_result,
             update_result,
             request_update_result,
+            request_revert_result,
             agent_count_result,
             note_count_result,
             platform_result,
@@ -315,7 +317,7 @@ async def test_trigger_scoring_status_helpful():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 7
+    assert db.execute.call_count == 8
 
 
 @pytest.mark.unit
@@ -681,7 +683,7 @@ async def test_trigger_scoring_batch_update_uses_case():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 2
-    assert db.execute.call_count == 7
+    assert db.execute.call_count == 8
 
 
 @pytest.mark.unit
@@ -798,7 +800,7 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
 
         await trigger_scoring_for_simulation(run.id, db)
 
-    assert db.execute.call_count == 7
+    assert db.execute.call_count == 8
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
@@ -879,7 +881,7 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 7
+    assert db.execute.call_count == 8
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
@@ -957,7 +959,7 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 7
+    assert db.execute.call_count == 8
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
