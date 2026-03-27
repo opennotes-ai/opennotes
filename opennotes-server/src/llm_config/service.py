@@ -34,7 +34,7 @@ from src.llm_config.manager import LLMClientManager
 from src.llm_config.model_id import ModelId
 from src.llm_config.providers import LiteLLMCompletionParams
 from src.llm_config.providers.base import LLMMessage, LLMResponse
-from src.llm_config.providers.litellm_provider import EmptyLLMResponseError
+from src.llm_config.providers.direct_provider import EmptyLLMResponseError
 from src.monitoring import get_logger
 
 TRANSIENT_EXCEPTIONS = (

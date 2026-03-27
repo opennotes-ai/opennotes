@@ -13,7 +13,7 @@ import pytest
 from src.llm_config.constants import ADC_SENTINEL
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
-from src.llm_config.providers import LiteLLMProvider
+from src.llm_config.providers import DirectProvider
 
 
 @pytest.fixture
@@ -50,9 +50,9 @@ async def test_get_client_uses_community_config_when_exists(client_manager, db_s
     client = await client_manager.get_client(db_session, community_server_id, "openai")
 
     assert client is not None
-    assert isinstance(client, LiteLLMProvider)
+    assert isinstance(client, DirectProvider)
     assert client.api_key == "community-api-key"
-    assert client.default_model == "openai/gpt-5.1"
+    assert client.default_model == "openai:gpt-5.1"
 
 
 @pytest.mark.asyncio
@@ -69,9 +69,9 @@ async def test_get_client_falls_back_to_global_openai_key(client_manager, db_ses
         client = await client_manager.get_client(db_session, community_server_id, "openai")
 
         assert client is not None
-        assert isinstance(client, LiteLLMProvider)
+        assert isinstance(client, DirectProvider)
         assert client.api_key == "global-openai-key"
-        assert client.default_model == "openai/gpt-5.1"
+        assert client.default_model == "openai:gpt-5.1"
 
 
 @pytest.mark.asyncio
@@ -169,15 +169,13 @@ class TestVertexAIFallback:
             key = client_manager._get_global_api_key("gemini")
             assert key is None
 
-    def test_get_default_model_returns_prefixed_gemini_for_vertex_ai(self, client_manager):
-        """_get_default_model('vertex_ai') should return 'vertex_ai/gemini-2.5-pro'."""
+    def test_get_default_model_returns_pydantic_ai_format_for_vertex_ai(self, client_manager):
         model = client_manager._get_default_model("vertex_ai")
-        assert model == "vertex_ai/gemini-2.5-pro"
+        assert model == "google-vertex:gemini-2.5-pro"
 
-    def test_get_default_model_returns_prefixed_gemini_for_gemini_provider(self, client_manager):
-        """_get_default_model('gemini') should return 'gemini/gemini-2.5-pro'."""
+    def test_get_default_model_returns_pydantic_ai_format_for_gemini_provider(self, client_manager):
         model = client_manager._get_default_model("gemini")
-        assert model == "gemini/gemini-2.5-pro"
+        assert model == "google-gla:gemini-2.5-pro"
 
     @pytest.mark.asyncio
     async def test_vertex_ai_client_created_without_db_key(self, client_manager, db_session):
@@ -190,27 +188,26 @@ class TestVertexAIFallback:
 
         with patch("src.llm_config.manager.settings") as mock_settings:
             mock_settings.VERTEXAI_PROJECT = "my-gcp-project"
-            mock_settings.DEFAULT_FULL_MODEL = "openai/gpt-5.1"
+            mock_settings.DEFAULT_FULL_MODEL = "openai:gpt-5.1"
             client = await client_manager.get_client(db_session, community_server_id, "vertex_ai")
 
         assert client is not None
-        assert isinstance(client, LiteLLMProvider)
+        assert isinstance(client, DirectProvider)
         assert client.api_key == ADC_SENTINEL
-        assert client.default_model == "vertex_ai/gemini-2.5-pro"
+        assert client.default_model == "google-vertex:gemini-2.5-pro"
         assert client._provider_name == "vertex_ai"
 
     @pytest.mark.asyncio
     async def test_vertex_ai_global_client_no_community(self, client_manager, db_session):
-        """vertex_ai client should be created when community_server_id is None."""
         with patch("src.llm_config.manager.settings") as mock_settings:
             mock_settings.VERTEXAI_PROJECT = "my-gcp-project"
-            mock_settings.DEFAULT_FULL_MODEL = "openai/gpt-5.1"
+            mock_settings.DEFAULT_FULL_MODEL = "openai:gpt-5.1"
             client = await client_manager.get_client(db_session, None, "vertex_ai")
 
         assert client is not None
-        assert isinstance(client, LiteLLMProvider)
+        assert isinstance(client, DirectProvider)
         assert client.api_key == ADC_SENTINEL
-        assert client.default_model == "vertex_ai/gemini-2.5-pro"
+        assert client.default_model == "google-vertex:gemini-2.5-pro"
 
     @pytest.mark.asyncio
     async def test_vertex_ai_returns_none_when_project_missing(self, client_manager, db_session):

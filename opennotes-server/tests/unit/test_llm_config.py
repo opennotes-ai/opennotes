@@ -447,6 +447,7 @@ def test_import_all_exports() -> None:
     from src.llm_config import (
         CommunityServer,
         CommunityServerLLMConfig,
+        DirectProvider,
         EncryptionService,
         LiteLLMProvider,
         LLMClientManager,
@@ -471,7 +472,8 @@ def test_import_all_exports() -> None:
     assert LLMMessage is not None
     assert LLMResponse is not None
     assert LLMProviderFactory is not None
-    assert LiteLLMProvider is not None
+    assert DirectProvider is not None
+    assert LiteLLMProvider is DirectProvider
     assert LLMConfigCreate is not None
     assert LLMConfigUpdate is not None
     assert LLMConfigResponse is not None

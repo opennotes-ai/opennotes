@@ -108,12 +108,12 @@ class TestProviderAPIKeyCleanup:
     @pytest.mark.asyncio
     async def test_provider_close_clears_client_api_key(self) -> None:
         """Test that close() also clears API key from internal client."""
-        from src.llm_config.providers import LiteLLMProvider, LiteLLMProviderSettings
+        from src.llm_config.providers import DirectProvider, DirectProviderSettings
 
-        provider = LiteLLMProvider(
+        provider = DirectProvider(
             "sk-test-secret-key",
-            "openai/gpt-4",
-            LiteLLMProviderSettings(),
+            "openai:gpt-4",
+            DirectProviderSettings(),
         )
 
         await provider.close()

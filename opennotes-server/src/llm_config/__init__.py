@@ -10,6 +10,9 @@ if TYPE_CHECKING:
     from src.llm_config.manager import LLMClientManager
     from src.llm_config.models import CommunityServer, CommunityServerLLMConfig
     from src.llm_config.providers import (
+        DirectCompletionParams,
+        DirectProvider,
+        DirectProviderSettings,
         LiteLLMCompletionParams,
         LiteLLMProvider,
         LiteLLMProviderSettings,
@@ -33,6 +36,9 @@ if TYPE_CHECKING:
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "CommunityServer": ("src.llm_config.models", "CommunityServer"),
     "CommunityServerLLMConfig": ("src.llm_config.models", "CommunityServerLLMConfig"),
+    "DirectCompletionParams": ("src.llm_config.providers", "DirectCompletionParams"),
+    "DirectProvider": ("src.llm_config.providers", "DirectProvider"),
+    "DirectProviderSettings": ("src.llm_config.providers", "DirectProviderSettings"),
     "EncryptionService": ("src.llm_config.encryption", "EncryptionService"),
     "LLMClientManager": ("src.llm_config.manager", "LLMClientManager"),
     "LLMConfigCreate": ("src.llm_config.schemas", "LLMConfigCreate"),
@@ -68,6 +74,9 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "CommunityServer",
     "CommunityServerLLMConfig",
+    "DirectCompletionParams",
+    "DirectProvider",
+    "DirectProviderSettings",
     "EncryptionService",
     "LLMClientManager",
     "LLMConfigCreate",
