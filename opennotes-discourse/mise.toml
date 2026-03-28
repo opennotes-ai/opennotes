@@ -1,0 +1,82 @@
+# OpenNotes Discourse Plugin - mise configuration
+#
+# Discourse-specific tasks for plugin development.
+# Use from multiverse root: mise run discourse:up
+# Or from this directory: mise run discourse:up
+
+[env]
+DISCOURSE_DIR = "docker/.discourse"
+
+# ========================================
+# Discourse Dev Environment
+# ========================================
+
+[tasks."discourse:bootstrap"]
+description = "First-time Discourse dev environment setup (clone, boot, seed admin)"
+run = "bash docker/bootstrap.sh"
+
+[tasks."discourse:up"]
+description = "Start Discourse dev environment"
+run = '''
+if [ ! -d "docker/.discourse" ]; then
+  echo "Discourse not bootstrapped yet. Run: mise run discourse:bootstrap"
+  exit 1
+fi
+cd docker/.discourse && d/boot_dev
+'''
+
+[tasks."discourse:down"]
+description = "Stop Discourse dev environment"
+run = "bash docker/scripts/shutdown.sh"
+
+[tasks."discourse:seed"]
+description = "Seed Discourse with test data (users, categories, posts)"
+run = "bash docker/scripts/seed.sh"
+
+[tasks."discourse:shell"]
+description = "Open interactive shell in Discourse container"
+run = '''
+if [ ! -d "docker/.discourse" ]; then
+  echo "Discourse not bootstrapped. Run: mise run discourse:bootstrap"
+  exit 1
+fi
+cd docker/.discourse && d/shell
+'''
+
+[tasks."discourse:rails"]
+description = "Run Rails commands in Discourse container (pass via --)"
+run = '''
+cd docker/.discourse && d/rails "$@"
+'''
+
+[tasks."discourse:logs"]
+description = "Start Discourse Rails server (logs to stdout)"
+run = '''
+cd docker/.discourse && d/rails s
+'''
+
+[tasks."discourse:reset"]
+description = "Reset Discourse database to clean state"
+run = '''
+cd docker/.discourse && d/rake db:drop db:create db:migrate
+'''
+
+# ========================================
+# Testing
+# ========================================
+
+[tasks."discourse:test:e2e"]
+description = "Run Playwright E2E tests against Discourse"
+run = "cd tests/e2e && npx playwright test"
+
+[tasks."discourse:test:e2e:headed"]
+description = "Run Playwright E2E tests in headed browser mode"
+run = "cd tests/e2e && npx playwright test --headed"
+
+[tasks."discourse:test:e2e:report"]
+description = "Open Playwright HTML test report"
+run = "cd tests/e2e && npx playwright show-report"
+
+[tasks."discourse:test:e2e:install"]
+description = "Install Playwright browsers and test dependencies"
+run = "cd tests/e2e && npm install && npx playwright install chromium"
