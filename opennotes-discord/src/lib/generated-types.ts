@@ -7627,8 +7627,10 @@ export interface components {
             community_server_id?: string | null;
             /** Turn Cadence Seconds */
             turn_cadence_seconds: number;
-            /** Max Agents */
-            max_agents: number;
+            /** Max Active Agents */
+            max_active_agents: number;
+            /** Max Total Spawns */
+            max_total_spawns: number;
             /** Removal Rate */
             removal_rate: number;
             /** Max Turns Per Agent */
@@ -7656,8 +7658,10 @@ export interface components {
             community_server_id?: string | null;
             /** Turn Cadence Seconds */
             turn_cadence_seconds: number;
-            /** Max Agents */
-            max_agents: number;
+            /** Max Active Agents */
+            max_active_agents: number;
+            /** Max Total Spawns */
+            max_total_spawns?: number | null;
             /** Removal Rate */
             removal_rate: number;
             /** Max Turns Per Agent */
@@ -7734,8 +7738,10 @@ export interface components {
             community_server_id?: string | null;
             /** Turn Cadence Seconds */
             turn_cadence_seconds?: number | null;
-            /** Max Agents */
-            max_agents?: number | null;
+            /** Max Active Agents */
+            max_active_agents?: number | null;
+            /** Max Total Spawns */
+            max_total_spawns?: number | null;
             /** Removal Rate */
             removal_rate?: number | null;
             /** Max Turns Per Agent */

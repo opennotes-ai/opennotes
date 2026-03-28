@@ -60,7 +60,8 @@ async def snapshot_restart_state(
         restart_number=run.restart_count,
         max_turns_per_agent=orch.max_turns_per_agent,
         turn_cadence_seconds=orch.turn_cadence_seconds,
-        max_agents=orch.max_agents,
+        max_active_agents=orch.max_active_agents,
+        max_total_spawns=orch.max_total_spawns,
         removal_rate=orch.removal_rate,
         scoring_config=orch.scoring_config,
     )

@@ -91,7 +91,7 @@ async def test_simulation_run_config_snapshot(db):
     from src.simulation.models import SimulationRun
 
     orch, cs = await _create_orchestrator_and_cs(db)
-    snapshot = {"turn_cadence_seconds": 60, "max_agents": 10, "removal_rate": 0.1}
+    snapshot = {"turn_cadence_seconds": 60, "max_active_agents": 10, "removal_rate": 0.1}
     run = SimulationRun(
         orchestrator_id=orch.id,
         community_server_id=cs.id,

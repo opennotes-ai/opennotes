@@ -153,7 +153,8 @@ class SimulationOrchestrator(Base, TimestampMixin):
         index=True,
     )
     turn_cadence_seconds: Mapped[int] = mapped_column(Integer, nullable=False, server_default="60")
-    max_agents: Mapped[int] = mapped_column(Integer, nullable=False, server_default="10")
+    max_active_agents: Mapped[int] = mapped_column(Integer, nullable=False, server_default="10")
+    max_total_spawns: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2000")
     removal_rate: Mapped[float] = mapped_column(
         Float,
         nullable=False,
@@ -169,7 +170,8 @@ class SimulationOrchestrator(Base, TimestampMixin):
         Index("idx_simulation_orchestrators_deleted_at", "deleted_at"),
         Index("idx_simulation_orchestrators_is_active", "is_active"),
         CheckConstraint("turn_cadence_seconds > 0", name="ck_orchestrator_cadence_positive"),
-        CheckConstraint("max_agents > 0", name="ck_orchestrator_max_agents_positive"),
+        CheckConstraint("max_active_agents > 0", name="ck_orchestrator_max_active_agents_positive"),
+        CheckConstraint("max_total_spawns > 0", name="ck_orchestrator_max_total_spawns_positive"),
         CheckConstraint(
             "removal_rate >= 0 AND removal_rate <= 1",
             name="ck_orchestrator_removal_rate_range",
@@ -200,7 +202,8 @@ class SimulationRunConfig(Base, TimestampMixin):
     restart_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     max_turns_per_agent: Mapped[int] = mapped_column(Integer, nullable=False)
     turn_cadence_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
-    max_agents: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_active_agents: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_total_spawns: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2000")
     removal_rate: Mapped[float] = mapped_column(Float, nullable=False)
     scoring_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
@@ -257,6 +260,9 @@ class SimulationRun(Base, TimestampMixin):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rating_aggregation: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default="aggregate_by_user_profile"
+    )
 
     orchestrator: Mapped[SimulationOrchestrator] = relationship(
         "SimulationOrchestrator", lazy="raise"

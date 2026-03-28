@@ -607,7 +607,8 @@ def _submit_urls_batch(
 @click.option("--urls-from", "urls_file", default=None, help="File with URLs, one per line.")
 @click.option("--text", "texts", multiple=True, help="Text content to submit directly (repeatable).")
 @click.option("--agent-ids", default=None, help="Comma-separated agent profile UUIDs (default: all).")
-@click.option("--max-agents", default=15, type=int, help="Max concurrent agents (default: 15).")
+@click.option("--max-active-agents", "max_active_agents", default=15, type=int, help="Max concurrent agents (default: 15).")
+@click.option("--max-agents", "max_active_agents", type=int, hidden=True)
 @click.option("--turn-cadence", default=15, type=int, help="Turn cadence in seconds (default: 15).")
 @click.option("--removal-rate", default=0.0, type=float, help="Agent removal rate (default: 0.0).")
 @click.option("--max-turns", default=50, type=int, help="Max turns per agent (default: 50).")
@@ -621,7 +622,7 @@ def simulation_launch(
     urls_file: str | None,
     texts: tuple[str, ...],
     agent_ids: str | None,
-    max_agents: int,
+    max_active_agents: int,
     turn_cadence: int,
     removal_rate: float,
     max_turns: int,
@@ -675,7 +676,7 @@ def simulation_launch(
     orch_attributes: dict[str, Any] = {
         "name": name,
         "turn_cadence_seconds": turn_cadence,
-        "max_agents": max_agents,
+        "max_active_agents": max_active_agents,
         "removal_rate": removal_rate,
         "max_turns_per_agent": max_turns,
         "agent_profile_ids": agent_id_list,

@@ -29,7 +29,7 @@ async def test_create_simulation_run_config_defaults(db):
         simulation_run_id=uuid4(),
         max_turns_per_agent=100,
         turn_cadence_seconds=60,
-        max_agents=10,
+        max_active_agents=10,
         removal_rate=0.1,
     )
     db.add(config)
@@ -44,7 +44,7 @@ async def test_create_simulation_run_config_defaults(db):
     assert row.restart_number == 0
     assert row.max_turns_per_agent == 100
     assert row.turn_cadence_seconds == 60
-    assert row.max_agents == 10
+    assert row.max_active_agents == 10
     assert row.removal_rate == pytest.approx(0.1)
     assert row.scoring_config is None
     assert row.created_at is not None
@@ -59,7 +59,7 @@ async def test_simulation_run_config_with_scoring_config(db):
         simulation_run_id=uuid4(),
         max_turns_per_agent=50,
         turn_cadence_seconds=30,
-        max_agents=5,
+        max_active_agents=5,
         removal_rate=0.0,
         scoring_config=scoring,
     )
@@ -85,7 +85,7 @@ async def test_simulation_run_config_restart_number(db):
         restart_number=3,
         max_turns_per_agent=100,
         turn_cadence_seconds=60,
-        max_agents=10,
+        max_active_agents=10,
         removal_rate=0.1,
     )
     db.add(config)
@@ -114,7 +114,7 @@ async def test_simulation_run_current_config_fk(db):
         simulation_run_id=run.id,
         max_turns_per_agent=100,
         turn_cadence_seconds=60,
-        max_agents=10,
+        max_active_agents=10,
         removal_rate=0.1,
     )
     db.add(config)

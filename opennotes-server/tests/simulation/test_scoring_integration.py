@@ -13,6 +13,7 @@ from src.simulation.scoring_integration import (
     CoverageResult,
     ScoringMetrics,
     ScoringRunResult,
+    _build_profile_remap,
     _maybe_persist_snapshot,
     check_scoring_coverage,
     get_scoring_metrics,
@@ -61,6 +62,7 @@ def _mock_db_for_trigger(run, note_count, notes, agent_count=3):
 
     update_result = MagicMock()
     request_update_result = MagicMock()
+    request_revert_result = MagicMock()
 
     agent_count_result = MagicMock()
     agent_count_result.scalar.return_value = agent_count
@@ -77,6 +79,7 @@ def _mock_db_for_trigger(run, note_count, notes, agent_count=3):
             batch_result,
             update_result,
             request_update_result,
+            request_revert_result,
             agent_count_result,
             note_count_result,
             platform_result,
@@ -314,7 +317,7 @@ async def test_trigger_scoring_status_helpful():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 7
+    assert db.execute.call_count == 8
 
 
 @pytest.mark.unit
@@ -680,7 +683,7 @@ async def test_trigger_scoring_batch_update_uses_case():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 2
-    assert db.execute.call_count == 7
+    assert db.execute.call_count == 8
 
 
 @pytest.mark.unit
@@ -763,6 +766,7 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    request_revert_result = MagicMock()
     agent_count_result_a = MagicMock()
     agent_count_result_a.scalar.return_value = 3
     note_count_requery_a = MagicMock()
@@ -776,6 +780,7 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
             batch_result,
             note_update_result,
             request_update_result,
+            request_revert_result,
             agent_count_result_a,
             note_count_requery_a,
             platform_result,
@@ -797,7 +802,7 @@ async def test_trigger_scoring_transitions_requests_for_helpful_notes():
 
         await trigger_scoring_for_simulation(run.id, db)
 
-    assert db.execute.call_count == 7
+    assert db.execute.call_count == 8
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
@@ -843,6 +848,7 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    request_revert_result = MagicMock()
     agent_count_result_b = MagicMock()
     agent_count_result_b.scalar.return_value = 2
     note_count_requery_b = MagicMock()
@@ -856,6 +862,7 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
             batch_result,
             note_update_result,
             request_update_result,
+            request_revert_result,
             agent_count_result_b,
             note_count_requery_b,
             platform_result,
@@ -878,7 +885,7 @@ async def test_trigger_scoring_no_request_transition_when_not_helpful():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 7
+    assert db.execute.call_count == 8
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
@@ -921,6 +928,7 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
 
     note_update_result = MagicMock()
     request_update_result = MagicMock()
+    request_revert_result = MagicMock()
     agent_count_result_c = MagicMock()
     agent_count_result_c.scalar.return_value = 1
     note_count_requery_c = MagicMock()
@@ -934,6 +942,7 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
             batch_result,
             note_update_result,
             request_update_result,
+            request_revert_result,
             agent_count_result_c,
             note_count_requery_c,
             platform_result,
@@ -956,7 +965,7 @@ async def test_trigger_scoring_no_request_transition_for_needs_more_ratings():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    assert db.execute.call_count == 7
+    assert db.execute.call_count == 8
 
     request_update_stmt = db.execute.call_args_list[3][0][0]
     compiled = request_update_stmt.compile(compile_kwargs={"literal_binds": True})
@@ -1144,3 +1153,185 @@ async def test_trigger_scoring_no_prefetch_for_minimal_tier():
         await trigger_scoring_for_simulation(run.id, db)
 
     mock_prefetch.assert_not_called()
+
+
+def _make_instance(user_profile_id=None, agent_profile_id=None, turn_count=1):
+    inst = MagicMock()
+    inst.user_profile_id = user_profile_id or uuid4()
+    inst.agent_profile_id = agent_profile_id or uuid4()
+    inst.turn_count = turn_count
+    return inst
+
+
+@pytest.mark.unit
+def test_build_profile_remap_aggregate_by_user_profile_returns_empty():
+    inst1 = _make_instance(turn_count=5)
+    inst2 = _make_instance(turn_count=3)
+    result = _build_profile_remap([inst1, inst2], aggregation="aggregate_by_user_profile")
+    assert result == {}
+
+
+@pytest.mark.unit
+def test_build_profile_remap_aggregate_by_agent_profile_returns_remap():
+    up1, ap1 = uuid4(), uuid4()
+    up2, ap2 = uuid4(), uuid4()
+    inst1 = _make_instance(user_profile_id=up1, agent_profile_id=ap1, turn_count=2)
+    inst2 = _make_instance(user_profile_id=up2, agent_profile_id=ap2, turn_count=1)
+    result = _build_profile_remap([inst1, inst2], aggregation="aggregate_by_agent_profile")
+    assert result == {str(up1): str(ap1), str(up2): str(ap2)}
+
+
+@pytest.mark.unit
+def test_build_profile_remap_default_aggregation_is_agent_profile():
+    up1, ap1 = uuid4(), uuid4()
+    inst = _make_instance(user_profile_id=up1, agent_profile_id=ap1, turn_count=1)
+    result = _build_profile_remap([inst])
+    assert result == {str(up1): str(ap1)}
+
+
+@pytest.mark.unit
+def test_build_profile_remap_skips_zero_turn_count():
+    inst = _make_instance(turn_count=0)
+    result = _build_profile_remap([inst], aggregation="aggregate_by_agent_profile")
+    assert result == {}
+
+
+def _mock_db_for_limited_tier(run, note_count, notes, agent_count=3):
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=run)
+
+    count_result = MagicMock()
+    count_result.scalar.return_value = note_count
+
+    batch_result = MagicMock()
+    batch_scalars = MagicMock()
+    batch_scalars.all.return_value = notes
+    batch_result.scalars.return_value = batch_scalars
+
+    update_result = MagicMock()
+    request_update_1 = MagicMock()
+    request_update_2 = MagicMock()
+
+    agent_count_result = MagicMock()
+    agent_count_result.scalar.return_value = agent_count
+
+    note_count_result = MagicMock()
+    note_count_result.scalar.return_value = note_count
+
+    platform_result = MagicMock()
+    platform_result.scalar_one_or_none.return_value = "playground"
+
+    db.execute = AsyncMock(
+        side_effect=[
+            count_result,
+            batch_result,
+            update_result,
+            request_update_1,
+            request_update_2,
+            agent_count_result,
+            note_count_result,
+            platform_result,
+        ]
+    )
+    db.commit = AsyncMock()
+    return db
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_trigger_scoring_passes_aggregation_to_prefetch():
+    cs_id = uuid4()
+    run = _make_run(community_server_id=cs_id)
+    run.rating_aggregation = "aggregate_by_user_profile"
+    note = _make_note(community_server_id=cs_id, ratings=[_make_rating()])
+
+    score_response = NoteScoreResponse(
+        note_id=note.id,
+        score=0.6,
+        confidence=ScoreConfidence.PROVISIONAL,
+        algorithm="mf_core_stub",
+        rating_count=1,
+        tier=1,
+        tier_name="Limited",
+        calculated_at=None,
+        content=None,
+    )
+
+    db = _mock_db_for_limited_tier(run, 500, [note])
+
+    with (
+        patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
+        patch(
+            "src.simulation.scoring_integration.calculate_note_score",
+            new_callable=AsyncMock,
+            return_value=score_response,
+        ),
+        patch(
+            "src.simulation.scoring_integration._prefetch_community_data", new_callable=AsyncMock
+        ) as mock_prefetch,
+        patch(
+            "src.simulation.scoring_integration._query_ratings_density",
+            new_callable=AsyncMock,
+            return_value={"avg_raters_per_note": 3.0, "avg_ratings_per_rater": 5.0},
+        ),
+    ):
+        mock_provider = MagicMock()
+        mock_prefetch.return_value = mock_provider
+
+        mock_factory = MagicMock()
+        mock_factory.get_scorer.return_value = MagicMock()
+        mock_factory_cls.return_value = mock_factory
+
+        await trigger_scoring_for_simulation(run.id, db)
+
+    mock_prefetch.assert_called_once_with(cs_id, db, aggregation="aggregate_by_user_profile")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_trigger_scoring_passes_agent_aggregation_to_prefetch():
+    cs_id = uuid4()
+    run = _make_run(community_server_id=cs_id)
+    run.rating_aggregation = "aggregate_by_agent_profile"
+    note = _make_note(community_server_id=cs_id, ratings=[_make_rating()])
+
+    score_response = NoteScoreResponse(
+        note_id=note.id,
+        score=0.6,
+        confidence=ScoreConfidence.PROVISIONAL,
+        algorithm="mf_core_stub",
+        rating_count=1,
+        tier=1,
+        tier_name="Limited",
+        calculated_at=None,
+        content=None,
+    )
+
+    db = _mock_db_for_limited_tier(run, 500, [note])
+
+    with (
+        patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
+        patch(
+            "src.simulation.scoring_integration.calculate_note_score",
+            new_callable=AsyncMock,
+            return_value=score_response,
+        ),
+        patch(
+            "src.simulation.scoring_integration._prefetch_community_data", new_callable=AsyncMock
+        ) as mock_prefetch,
+        patch(
+            "src.simulation.scoring_integration._query_ratings_density",
+            new_callable=AsyncMock,
+            return_value={"avg_raters_per_note": 3.0, "avg_ratings_per_rater": 5.0},
+        ),
+    ):
+        mock_provider = MagicMock()
+        mock_prefetch.return_value = mock_provider
+
+        mock_factory = MagicMock()
+        mock_factory.get_scorer.return_value = MagicMock()
+        mock_factory_cls.return_value = mock_factory
+
+        await trigger_scoring_for_simulation(run.id, db)
+
+    mock_prefetch.assert_called_once_with(cs_id, db, aggregation="aggregate_by_agent_profile")

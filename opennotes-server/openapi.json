@@ -19904,9 +19904,13 @@
             "type": "integer",
             "title": "Turn Cadence Seconds"
           },
-          "max_agents": {
+          "max_active_agents": {
             "type": "integer",
-            "title": "Max Agents"
+            "title": "Max Active Agents"
+          },
+          "max_total_spawns": {
+            "type": "integer",
+            "title": "Max Total Spawns"
           },
           "removal_rate": {
             "type": "number",
@@ -19975,7 +19979,8 @@
         "required": [
           "name",
           "turn_cadence_seconds",
-          "max_agents",
+          "max_active_agents",
+          "max_total_spawns",
           "removal_rate",
           "max_turns_per_agent",
           "is_active"
@@ -20018,10 +20023,22 @@
             "minimum": 1.0,
             "title": "Turn Cadence Seconds"
           },
-          "max_agents": {
+          "max_active_agents": {
             "type": "integer",
             "minimum": 1.0,
-            "title": "Max Agents"
+            "title": "Max Active Agents"
+          },
+          "max_total_spawns": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Total Spawns"
           },
           "removal_rate": {
             "type": "number",
@@ -20059,7 +20076,7 @@
         "required": [
           "name",
           "turn_cadence_seconds",
-          "max_agents",
+          "max_active_agents",
           "removal_rate",
           "max_turns_per_agent"
         ],
@@ -20248,7 +20265,7 @@
             ],
             "title": "Turn Cadence Seconds"
           },
-          "max_agents": {
+          "max_active_agents": {
             "anyOf": [
               {
                 "type": "integer",
@@ -20258,7 +20275,19 @@
                 "type": "null"
               }
             ],
-            "title": "Max Agents"
+            "title": "Max Active Agents"
+          },
+          "max_total_spawns": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Total Spawns"
           },
           "removal_rate": {
             "anyOf": [

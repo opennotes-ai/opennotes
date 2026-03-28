@@ -40,7 +40,7 @@ async def _setup_run(db, *, restart_count=0, scoring_config=None):
         name=f"orch-{uuid4().hex[:8]}",
         max_turns_per_agent=50,
         turn_cadence_seconds=30,
-        max_agents=5,
+        max_active_agents=5,
         removal_rate=0.2,
         scoring_config=scoring_config,
     )
@@ -109,7 +109,7 @@ async def test_snapshot_creates_config_entry(db):
     assert config.restart_number == run.restart_count
     assert config.max_turns_per_agent == orch.max_turns_per_agent
     assert config.turn_cadence_seconds == orch.turn_cadence_seconds
-    assert config.max_agents == orch.max_agents
+    assert config.max_active_agents == orch.max_active_agents
     assert config.removal_rate == pytest.approx(orch.removal_rate)
     assert config.scoring_config == {"scorer": "bayesian"}
 

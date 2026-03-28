@@ -36,7 +36,8 @@ class OrchestratorCreateAttributes(StrictInputSchema):
     description: str | None = None
     community_server_id: UUID | None = None
     turn_cadence_seconds: int = Field(..., ge=1)
-    max_agents: int = Field(..., ge=1)
+    max_active_agents: int = Field(..., ge=1)
+    max_total_spawns: int | None = Field(None, ge=1)
     removal_rate: float = Field(..., ge=0.0, le=1.0)
     max_turns_per_agent: int = Field(..., ge=1)
     agent_profile_ids: list[str] = Field(default_factory=list)
@@ -63,7 +64,8 @@ class OrchestratorUpdateAttributes(StrictInputSchema):
     description: str | None = None
     community_server_id: UUID | None = None
     turn_cadence_seconds: int | None = Field(None, ge=1)
-    max_agents: int | None = Field(None, ge=1)
+    max_active_agents: int | None = Field(None, ge=1)
+    max_total_spawns: int | None = Field(None, ge=1)
     removal_rate: float | None = Field(None, ge=0.0, le=1.0)
     max_turns_per_agent: int | None = Field(None, ge=1)
     agent_profile_ids: list[str] | None = None
@@ -91,7 +93,8 @@ class OrchestratorAttributes(SQLAlchemySchema):
     description: str | None = None
     community_server_id: str | None = None
     turn_cadence_seconds: int
-    max_agents: int
+    max_active_agents: int
+    max_total_spawns: int
     removal_rate: float
     max_turns_per_agent: int
     agent_profile_ids: list[str] | None = None
@@ -129,7 +132,8 @@ def orchestrator_to_resource(orch: SimulationOrchestrator) -> OrchestratorResour
             description=orch.description,
             community_server_id=str(orch.community_server_id) if orch.community_server_id else None,
             turn_cadence_seconds=orch.turn_cadence_seconds,
-            max_agents=orch.max_agents,
+            max_active_agents=orch.max_active_agents,
+            max_total_spawns=orch.max_total_spawns,
             removal_rate=orch.removal_rate,
             max_turns_per_agent=orch.max_turns_per_agent,
             agent_profile_ids=orch.agent_profile_ids,
@@ -174,12 +178,20 @@ async def create_orchestrator_jsonapi(
 
     try:
         attrs = body.data.attributes
+        if attrs.max_total_spawns is not None:
+            max_total_spawns = attrs.max_total_spawns
+        elif attrs.agent_profile_ids:
+            max_total_spawns = len(attrs.agent_profile_ids) * 20
+        else:
+            max_total_spawns = 2000
+
         orchestrator = SimulationOrchestrator(
             name=attrs.name,
             description=attrs.description,
             community_server_id=attrs.community_server_id,
             turn_cadence_seconds=attrs.turn_cadence_seconds,
-            max_agents=attrs.max_agents,
+            max_active_agents=attrs.max_active_agents,
+            max_total_spawns=max_total_spawns,
             removal_rate=attrs.removal_rate,
             max_turns_per_agent=attrs.max_turns_per_agent,
             agent_profile_ids=attrs.agent_profile_ids,

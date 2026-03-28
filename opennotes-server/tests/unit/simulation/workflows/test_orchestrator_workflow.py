@@ -39,7 +39,8 @@ def _patch_session(mock_session_ctx):
 def _make_config(
     *,
     turn_cadence_seconds: int = 10,
-    max_agents: int = 5,
+    max_active_agents: int = 5,
+    max_total_spawns: int = 2000,
     removal_rate: float = 0.0,
     max_turns_per_agent: int = 100,
     agent_profile_ids: list[str] | None = None,
@@ -47,7 +48,8 @@ def _make_config(
 ) -> dict:
     return {
         "turn_cadence_seconds": turn_cadence_seconds,
-        "max_agents": max_agents,
+        "max_active_agents": max_active_agents,
+        "max_total_spawns": max_total_spawns,
         "removal_rate": removal_rate,
         "max_turns_per_agent": max_turns_per_agent,
         "agent_profile_ids": agent_profile_ids or [str(uuid4())],
@@ -80,7 +82,8 @@ class TestInitializeRunStep:
 
         mock_orchestrator = MagicMock()
         mock_orchestrator.turn_cadence_seconds = 30
-        mock_orchestrator.max_agents = 10
+        mock_orchestrator.max_active_agents = 10
+        mock_orchestrator.max_total_spawns = 2000
         mock_orchestrator.removal_rate = 0.1
         mock_orchestrator.max_turns_per_agent = 50
         mock_orchestrator.agent_profile_ids = [str(uuid4())]
@@ -105,7 +108,7 @@ class TestInitializeRunStep:
             result = initialize_run_step.__wrapped__(str(run_id))
 
         assert result["turn_cadence_seconds"] == 30
-        assert result["max_agents"] == 10
+        assert result["max_active_agents"] == 10
         assert result["removal_rate"] == 0.1
         assert result["max_turns_per_agent"] == 50
         assert result["community_server_id"] == str(cs_id)
@@ -162,7 +165,8 @@ class TestInitializeRunStep:
 
         mock_orchestrator = MagicMock()
         mock_orchestrator.turn_cadence_seconds = 10
-        mock_orchestrator.max_agents = 5
+        mock_orchestrator.max_active_agents = 5
+        mock_orchestrator.max_total_spawns = 2000
         mock_orchestrator.removal_rate = 0.0
         mock_orchestrator.max_turns_per_agent = 100
         mock_orchestrator.agent_profile_ids = [str(uuid4())]
@@ -294,7 +298,7 @@ class TestSpawnAgentsStep:
         from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
 
         profile_id = str(uuid4())
-        config = _make_config(max_agents=1, agent_profile_ids=[profile_id])
+        config = _make_config(max_active_agents=1, agent_profile_ids=[profile_id])
 
         mock_session = AsyncMock()
 
@@ -304,11 +308,19 @@ class TestSpawnAgentsStep:
         agent_name_result = MagicMock()
         agent_name_result.scalar_one_or_none.return_value = "TestAgent"
 
+        no_prior_instance_result = MagicMock()
+        no_prior_instance_result.scalar_one_or_none.return_value = None
+
         prior_memory_result = MagicMock()
         prior_memory_result.scalar_one_or_none.return_value = None
 
         mock_session.execute = AsyncMock(
-            side_effect=[count_result, agent_name_result, prior_memory_result]
+            side_effect=[
+                count_result,
+                agent_name_result,
+                no_prior_instance_result,
+                prior_memory_result,
+            ]
         )
 
         added_objects: list = []
@@ -335,7 +347,7 @@ class TestSpawnAgentsStep:
     def test_spawn_agents_respects_max_cap(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
 
-        config = _make_config(max_agents=5, agent_profile_ids=[str(uuid4())])
+        config = _make_config(max_active_agents=5, agent_profile_ids=[str(uuid4())])
 
         result = spawn_agents_step.__wrapped__(
             str(uuid4()), config, active_count=5, total_spawned=5
@@ -346,7 +358,9 @@ class TestSpawnAgentsStep:
     def test_spawn_agents_idempotent_check(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
 
-        config = _make_config(max_agents=5, agent_profile_ids=[str(uuid4())])
+        config = _make_config(
+            max_active_agents=5, max_total_spawns=5, agent_profile_ids=[str(uuid4())]
+        )
 
         mock_session = AsyncMock()
         count_result = MagicMock()
@@ -367,7 +381,7 @@ class TestSpawnAgentsStep:
         from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
 
         profile_ids = [str(uuid4()) for _ in range(3)]
-        config = _make_config(max_agents=10, agent_profile_ids=profile_ids)
+        config = _make_config(max_active_agents=10, agent_profile_ids=profile_ids)
 
         mock_session = AsyncMock()
 
@@ -377,11 +391,15 @@ class TestSpawnAgentsStep:
         agent_name_result = MagicMock()
         agent_name_result.scalar_one_or_none.return_value = "Agent"
 
+        no_prior_instance_result = MagicMock()
+        no_prior_instance_result.scalar_one_or_none.return_value = None
+
         prior_memory_result = MagicMock()
         prior_memory_result.scalar_one_or_none.return_value = None
 
         mock_session.execute = AsyncMock(
-            side_effect=[count_result] + [agent_name_result, prior_memory_result] * 5
+            side_effect=[count_result]
+            + [agent_name_result, no_prior_instance_result, prior_memory_result] * 5
         )
         mock_session.add = MagicMock(
             side_effect=lambda obj: setattr(obj, "id", uuid4())
@@ -405,21 +423,46 @@ class TestSpawnAgentsStep:
         from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
 
         profile_id = str(uuid4())
-        config = _make_config(max_agents=1, agent_profile_ids=[profile_id])
+        prior_user_profile_id = uuid4()
+        prior_instance_id = uuid4()
+        config = _make_config(max_active_agents=1, agent_profile_ids=[profile_id])
 
         mock_session = AsyncMock()
 
         count_result = MagicMock()
-        count_result.scalar.return_value = 0
+        count_result.scalar.return_value = 1
 
         agent_name_result = MagicMock()
         agent_name_result.scalar_one_or_none.return_value = "TestAgent"
 
+        mock_prior_instance = MagicMock()
+        mock_prior_instance.id = prior_instance_id
+        mock_prior_instance.user_profile_id = prior_user_profile_id
+        prior_instance_result = MagicMock()
+        prior_instance_result.scalar_one_or_none.return_value = mock_prior_instance
+
+        active_conflict_result = MagicMock()
+        active_conflict_result.scalar.return_value = 0
+
+        mock_prior_memory = MagicMock()
+        mock_prior_memory.message_history = [{"role": "user", "content": "hi"}]
+        mock_prior_memory.token_count = 42
+        mock_prior_memory.recent_actions = ["write_note"]
+        mock_prior_memory.seen_request_ids = ["req-0"]
+        mock_prior_memory.acted_on_request_ids = ["req-1", "req-2"]
+        mock_prior_memory.compaction_strategy = "sliding_window"
+        mock_prior_memory.last_compacted_at = None
         prior_memory_result = MagicMock()
-        prior_memory_result.scalar_one_or_none.return_value = ["req-1", "req-2"]
+        prior_memory_result.scalar_one_or_none.return_value = mock_prior_memory
 
         mock_session.execute = AsyncMock(
-            side_effect=[count_result, agent_name_result, prior_memory_result]
+            side_effect=[
+                count_result,
+                agent_name_result,
+                prior_instance_result,
+                active_conflict_result,
+                prior_memory_result,
+            ]
         )
 
         added_objects: list = []
@@ -451,7 +494,7 @@ class TestSpawnAgentsStep:
         from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
 
         profile_id = str(uuid4())
-        config = _make_config(max_agents=1, agent_profile_ids=[profile_id])
+        config = _make_config(max_active_agents=1, agent_profile_ids=[profile_id])
 
         mock_session = AsyncMock()
 
@@ -461,11 +504,19 @@ class TestSpawnAgentsStep:
         agent_name_result = MagicMock()
         agent_name_result.scalar_one_or_none.return_value = "TestAgent"
 
+        no_prior_instance_result = MagicMock()
+        no_prior_instance_result.scalar_one_or_none.return_value = None
+
         prior_memory_result = MagicMock()
         prior_memory_result.scalar_one_or_none.return_value = None
 
         mock_session.execute = AsyncMock(
-            side_effect=[count_result, agent_name_result, prior_memory_result]
+            side_effect=[
+                count_result,
+                agent_name_result,
+                no_prior_instance_result,
+                prior_memory_result,
+            ]
         )
 
         added_objects: list = []
@@ -491,6 +542,468 @@ class TestSpawnAgentsStep:
         memory_objects = [o for o in added_objects if isinstance(o, SimAgentMemory)]
         assert len(memory_objects) == 1
         assert memory_objects[0].acted_on_request_ids == []
+
+    def test_spawn_continues_after_removals_when_under_active_cap(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+
+        profile_id = str(uuid4())
+        config = _make_config(
+            max_active_agents=5,
+            max_total_spawns=100,
+            agent_profile_ids=[profile_id],
+        )
+
+        mock_session = AsyncMock()
+
+        count_result = MagicMock()
+        count_result.scalar.return_value = 8
+
+        agent_name_result = MagicMock()
+        agent_name_result.scalar_one_or_none.return_value = "Agent"
+
+        no_prior_instance_result = MagicMock()
+        no_prior_instance_result.scalar_one_or_none.return_value = None
+
+        prior_memory_result = MagicMock()
+        prior_memory_result.scalar_one_or_none.return_value = None
+
+        mock_session.execute = AsyncMock(
+            side_effect=[count_result]
+            + [agent_name_result, no_prior_instance_result, prior_memory_result] * 3
+        )
+        mock_session.add = MagicMock(
+            side_effect=lambda obj: setattr(obj, "id", uuid4())
+            if hasattr(obj, "id") and obj.id is None
+            else None
+        )
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = spawn_agents_step.__wrapped__(
+                str(uuid4()), config, active_count=2, total_spawned=8
+            )
+
+        assert len(result) == 3
+
+    def test_spawn_blocked_by_total_cap_not_active_cap(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+
+        profile_id = str(uuid4())
+        config = _make_config(
+            max_active_agents=10,
+            max_total_spawns=6,
+            agent_profile_ids=[profile_id],
+        )
+
+        mock_session = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 6
+        mock_session.execute = AsyncMock(return_value=count_result)
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = spawn_agents_step.__wrapped__(
+                str(uuid4()), config, active_count=2, total_spawned=6
+            )
+
+        assert result == []
+
+    def test_spawn_clamped_to_remaining_total_budget(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+
+        profile_id = str(uuid4())
+        config = _make_config(
+            max_active_agents=10,
+            max_total_spawns=8,
+            agent_profile_ids=[profile_id],
+        )
+
+        mock_session = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 6
+
+        agent_name_result = MagicMock()
+        agent_name_result.scalar_one_or_none.return_value = "Agent"
+
+        no_prior_instance_result = MagicMock()
+        no_prior_instance_result.scalar_one_or_none.return_value = None
+
+        prior_memory_result = MagicMock()
+        prior_memory_result.scalar_one_or_none.return_value = None
+
+        mock_session.execute = AsyncMock(
+            side_effect=[count_result]
+            + [agent_name_result, no_prior_instance_result, prior_memory_result] * 2
+        )
+        mock_session.add = MagicMock(
+            side_effect=lambda obj: setattr(obj, "id", uuid4())
+            if hasattr(obj, "id") and obj.id is None
+            else None
+        )
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = spawn_agents_step.__wrapped__(
+                str(uuid4()), config, active_count=0, total_spawned=6
+            )
+
+        assert len(result) == 2
+
+    def test_spawn_blocked_by_active_cap(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+
+        config = _make_config(
+            max_active_agents=5,
+            max_total_spawns=100,
+            agent_profile_ids=[str(uuid4())],
+        )
+
+        result = spawn_agents_step.__wrapped__(
+            str(uuid4()), config, active_count=5, total_spawned=3
+        )
+
+        assert result == []
+
+
+class TestRespawnAgentMemory:
+    def test_respawn_reuses_user_profile_id(self) -> None:
+        from src.simulation.models import SimAgentInstance
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+
+        profile_id = str(uuid4())
+        prior_user_profile_id = uuid4()
+        prior_instance_id = uuid4()
+        config = _make_config(max_active_agents=1, agent_profile_ids=[profile_id])
+
+        mock_session = AsyncMock()
+
+        count_result = MagicMock()
+        count_result.scalar.return_value = 1
+
+        agent_name_result = MagicMock()
+        agent_name_result.scalar_one_or_none.return_value = "TestAgent"
+
+        mock_prior_instance = MagicMock()
+        mock_prior_instance.id = prior_instance_id
+        mock_prior_instance.user_profile_id = prior_user_profile_id
+        prior_instance_result = MagicMock()
+        prior_instance_result.scalar_one_or_none.return_value = mock_prior_instance
+
+        active_conflict_result = MagicMock()
+        active_conflict_result.scalar.return_value = 0
+
+        prior_memory_result = MagicMock()
+        prior_memory_result.scalar_one_or_none.return_value = None
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                count_result,
+                agent_name_result,
+                prior_instance_result,
+                active_conflict_result,
+                prior_memory_result,
+            ]
+        )
+
+        added_objects: list = []
+
+        def track_add(obj):
+            added_objects.append(obj)
+            if hasattr(obj, "id") and obj.id is None:
+                obj.id = uuid4()
+
+        mock_session.add = MagicMock(side_effect=track_add)
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = spawn_agents_step.__wrapped__(
+                str(uuid4()), config, active_count=0, total_spawned=1
+            )
+
+        assert len(result) == 1
+
+        instance_objects = [o for o in added_objects if isinstance(o, SimAgentInstance)]
+        assert len(instance_objects) == 1
+        assert instance_objects[0].user_profile_id == prior_user_profile_id
+
+    def test_respawn_copies_full_memory(self) -> None:
+        from src.simulation.models import SimAgentMemory
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+
+        profile_id = str(uuid4())
+        prior_instance_id = uuid4()
+        config = _make_config(max_active_agents=1, agent_profile_ids=[profile_id])
+
+        mock_session = AsyncMock()
+
+        count_result = MagicMock()
+        count_result.scalar.return_value = 1
+
+        agent_name_result = MagicMock()
+        agent_name_result.scalar_one_or_none.return_value = "TestAgent"
+
+        mock_prior_instance = MagicMock()
+        mock_prior_instance.id = prior_instance_id
+        mock_prior_instance.user_profile_id = uuid4()
+        prior_instance_result = MagicMock()
+        prior_instance_result.scalar_one_or_none.return_value = mock_prior_instance
+
+        active_conflict_result = MagicMock()
+        active_conflict_result.scalar.return_value = 0
+
+        mock_prior_memory = MagicMock()
+        mock_prior_memory.message_history = [{"role": "user", "content": "hello"}]
+        mock_prior_memory.token_count = 150
+        mock_prior_memory.recent_actions = ["rate_note", "write_note"]
+        mock_prior_memory.seen_request_ids = ["req-A", "req-B"]
+        mock_prior_memory.acted_on_request_ids = ["req-A"]
+        mock_prior_memory.compaction_strategy = "sliding_window"
+        mock_prior_memory.last_compacted_at = None
+        prior_memory_result = MagicMock()
+        prior_memory_result.scalar_one_or_none.return_value = mock_prior_memory
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                count_result,
+                agent_name_result,
+                prior_instance_result,
+                active_conflict_result,
+                prior_memory_result,
+            ]
+        )
+
+        added_objects: list = []
+
+        def track_add(obj):
+            added_objects.append(obj)
+            if hasattr(obj, "id") and obj.id is None:
+                obj.id = uuid4()
+
+        mock_session.add = MagicMock(side_effect=track_add)
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = spawn_agents_step.__wrapped__(
+                str(uuid4()), config, active_count=0, total_spawned=1
+            )
+
+        assert len(result) == 1
+
+        memory_objects = [o for o in added_objects if isinstance(o, SimAgentMemory)]
+        assert len(memory_objects) == 1
+        mem = memory_objects[0]
+        assert mem.message_history == [{"role": "user", "content": "hello"}]
+        assert mem.token_count == 150
+        assert mem.recent_actions == ["rate_note", "write_note"]
+        assert mem.seen_request_ids == ["req-A", "req-B"]
+        assert mem.acted_on_request_ids == ["req-A"]
+        assert mem.compaction_strategy == "sliding_window"
+        assert mem.turn_count == 0
+
+    def test_respawn_no_new_user_profile_or_community_member(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+        from src.users.profile_models import CommunityMember, UserProfile
+
+        profile_id = str(uuid4())
+        prior_instance_id = uuid4()
+        config = _make_config(max_active_agents=1, agent_profile_ids=[profile_id])
+
+        mock_session = AsyncMock()
+
+        count_result = MagicMock()
+        count_result.scalar.return_value = 1
+
+        agent_name_result = MagicMock()
+        agent_name_result.scalar_one_or_none.return_value = "TestAgent"
+
+        mock_prior_instance = MagicMock()
+        mock_prior_instance.id = prior_instance_id
+        mock_prior_instance.user_profile_id = uuid4()
+        prior_instance_result = MagicMock()
+        prior_instance_result.scalar_one_or_none.return_value = mock_prior_instance
+
+        active_conflict_result = MagicMock()
+        active_conflict_result.scalar.return_value = 0
+
+        mock_prior_memory = MagicMock()
+        mock_prior_memory.message_history = []
+        mock_prior_memory.token_count = 0
+        mock_prior_memory.recent_actions = []
+        mock_prior_memory.seen_request_ids = []
+        mock_prior_memory.acted_on_request_ids = []
+        mock_prior_memory.compaction_strategy = None
+        mock_prior_memory.last_compacted_at = None
+        prior_memory_result = MagicMock()
+        prior_memory_result.scalar_one_or_none.return_value = mock_prior_memory
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                count_result,
+                agent_name_result,
+                prior_instance_result,
+                active_conflict_result,
+                prior_memory_result,
+            ]
+        )
+
+        added_objects: list = []
+
+        def track_add(obj):
+            added_objects.append(obj)
+            if hasattr(obj, "id") and obj.id is None:
+                obj.id = uuid4()
+
+        mock_session.add = MagicMock(side_effect=track_add)
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            spawn_agents_step.__wrapped__(str(uuid4()), config, active_count=0, total_spawned=1)
+
+        user_profiles = [o for o in added_objects if isinstance(o, UserProfile)]
+        community_members = [o for o in added_objects if isinstance(o, CommunityMember)]
+        assert len(user_profiles) == 0
+        assert len(community_members) == 0
+
+    def test_first_spawn_creates_new_user_profile(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+        from src.users.profile_models import CommunityMember, UserProfile
+
+        profile_id = str(uuid4())
+        config = _make_config(max_active_agents=1, agent_profile_ids=[profile_id])
+
+        mock_session = AsyncMock()
+
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+
+        agent_name_result = MagicMock()
+        agent_name_result.scalar_one_or_none.return_value = "TestAgent"
+
+        no_prior_instance_result = MagicMock()
+        no_prior_instance_result.scalar_one_or_none.return_value = None
+
+        prior_memory_result = MagicMock()
+        prior_memory_result.scalar_one_or_none.return_value = None
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                count_result,
+                agent_name_result,
+                no_prior_instance_result,
+                prior_memory_result,
+            ]
+        )
+
+        added_objects: list = []
+
+        def track_add(obj):
+            added_objects.append(obj)
+            if hasattr(obj, "id") and obj.id is None:
+                obj.id = uuid4()
+
+        mock_session.add = MagicMock(side_effect=track_add)
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = spawn_agents_step.__wrapped__(
+                str(uuid4()), config, active_count=0, total_spawned=0
+            )
+
+        assert len(result) == 1
+
+        user_profiles = [o for o in added_objects if isinstance(o, UserProfile)]
+        community_members = [o for o in added_objects if isinstance(o, CommunityMember)]
+        assert len(user_profiles) == 1
+        assert len(community_members) == 1
+
+    def test_active_conflict_creates_new_user_profile(self) -> None:
+        from src.simulation.models import SimAgentInstance
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+        from src.users.profile_models import CommunityMember, UserProfile
+
+        profile_id = str(uuid4())
+        prior_instance_id = uuid4()
+        prior_user_profile_id = uuid4()
+        config = _make_config(max_active_agents=2, agent_profile_ids=[profile_id])
+
+        mock_session = AsyncMock()
+
+        count_result = MagicMock()
+        count_result.scalar.return_value = 2
+
+        agent_name_result = MagicMock()
+        agent_name_result.scalar_one_or_none.return_value = "TestAgent"
+
+        mock_prior_instance = MagicMock()
+        mock_prior_instance.id = prior_instance_id
+        mock_prior_instance.user_profile_id = prior_user_profile_id
+        prior_instance_result = MagicMock()
+        prior_instance_result.scalar_one_or_none.return_value = mock_prior_instance
+
+        active_conflict_result = MagicMock()
+        active_conflict_result.scalar.return_value = 1
+
+        prior_memory_result = MagicMock()
+        prior_memory_result.scalar_one_or_none.return_value = None
+
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                count_result,
+                agent_name_result,
+                prior_instance_result,
+                active_conflict_result,
+                prior_memory_result,
+            ]
+        )
+
+        added_objects: list = []
+
+        def track_add(obj):
+            added_objects.append(obj)
+            if hasattr(obj, "id") and obj.id is None:
+                obj.id = uuid4()
+
+        mock_session.add = MagicMock(side_effect=track_add)
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = spawn_agents_step.__wrapped__(
+                str(uuid4()), config, active_count=1, total_spawned=2
+            )
+
+        assert len(result) == 1
+
+        user_profiles = [o for o in added_objects if isinstance(o, UserProfile)]
+        community_members = [o for o in added_objects if isinstance(o, CommunityMember)]
+        assert len(user_profiles) == 1
+        assert len(community_members) == 1
+
+        instance_objects = [o for o in added_objects if isinstance(o, SimAgentInstance)]
+        assert len(instance_objects) == 1
+        assert instance_objects[0].user_profile_id != prior_user_profile_id
 
 
 class TestRemoveAgentsStep:
@@ -2393,7 +2906,8 @@ class TestRefreshConfigStep:
 
         mock_orchestrator = MagicMock()
         mock_orchestrator.turn_cadence_seconds = 15
-        mock_orchestrator.max_agents = 20
+        mock_orchestrator.max_active_agents = 20
+        mock_orchestrator.max_total_spawns = 2000
         mock_orchestrator.removal_rate = 0.05
         mock_orchestrator.max_turns_per_agent = 200
         mock_orchestrator.agent_profile_ids = [str(uuid4())]
@@ -2413,7 +2927,7 @@ class TestRefreshConfigStep:
         with _patch_run_sync(), _patch_session(mock_session_ctx):
             result = refresh_config_step.__wrapped__(str(run_id))
 
-        assert result["max_agents"] == 20
+        assert result["max_active_agents"] == 20
         assert result["turn_cadence_seconds"] == 15
         assert result["removal_rate"] == 0.05
         assert result["max_turns_per_agent"] == 200
@@ -2427,7 +2941,8 @@ class TestRefreshConfigStep:
 
         mock_orchestrator = MagicMock()
         mock_orchestrator.turn_cadence_seconds = 10
-        mock_orchestrator.max_agents = 5
+        mock_orchestrator.max_active_agents = 5
+        mock_orchestrator.max_total_spawns = 2000
         mock_orchestrator.removal_rate = 0.0
         mock_orchestrator.max_turns_per_agent = 100
         mock_orchestrator.agent_profile_ids = None
@@ -2455,8 +2970,8 @@ class TestPauseToRunningConfigRefresh:
         from src.simulation.workflows.orchestrator_workflow import run_orchestrator
 
         run_id = str(uuid4())
-        initial_config = _make_config(max_agents=5)
-        refreshed_config = _make_config(max_agents=20, turn_cadence_seconds=5)
+        initial_config = _make_config(max_active_agents=5)
+        refreshed_config = _make_config(max_active_agents=20, turn_cadence_seconds=5)
 
         status_calls = iter(["paused", "running", "cancelled"])
 

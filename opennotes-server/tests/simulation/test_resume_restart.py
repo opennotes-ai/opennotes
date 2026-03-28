@@ -310,7 +310,7 @@ class TestResumeWithResetTurns:
                 restart_number=0,
                 max_turns_per_agent=100,
                 turn_cadence_seconds=60,
-                max_agents=10,
+                max_active_agents=10,
                 removal_rate=0.1,
             )
             session.add(config)
