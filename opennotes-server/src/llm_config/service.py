@@ -189,20 +189,27 @@ class LLMService:
         embedder = self._require_embedder()
         sanitized_text = self._sanitize_embedding_text(text)
 
-        async for attempt in AsyncRetrying(
-            retry=_RETRY_PREDICATE,
-            wait=wait_exponential(multiplier=1, min=1, max=60),
-            stop=stop_after_attempt(max_attempts),
-            reraise=True,
-        ):
-            with attempt:
-                if input_type == "query":
-                    result = await embedder.embed_query(sanitized_text)
-                else:
-                    result = await embedder.embed_documents(sanitized_text)
+        try:
+            async for attempt in AsyncRetrying(
+                retry=_RETRY_PREDICATE,
+                wait=wait_exponential(multiplier=1, min=1, max=60),
+                stop=stop_after_attempt(max_attempts),
+                reraise=True,
+            ):
+                with attempt:
+                    if input_type == "query":
+                        result = await embedder.embed_query(sanitized_text)
+                    else:
+                        result = await embedder.embed_documents(sanitized_text)
 
-                embedding = list(result.embeddings[0])
-                return embedding, result.provider_name, result.model_name
+                    embedding = list(result.embeddings[0])
+                    return embedding, result.provider_name, result.model_name
+        except (ModelHTTPError, ModelAPIError):
+            raise
+        except Exception as e:
+            if "api_key" in str(e).lower() or "authentication" in str(e).lower():
+                raise ValueError(f"Embedding provider not configured: {e}") from e
+            raise
 
         raise RuntimeError("Embedding generation failed unexpectedly after retries")
 
