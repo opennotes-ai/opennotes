@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai import Embedder
 from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,7 +78,8 @@ def get_llm_service(
 ) -> LLMService:
     """Get or create LLM service singleton."""
     client_manager = LLMClientManager(encryption_service)
-    return LLMService(client_manager)
+    embedder = Embedder(settings.EMBEDDING_MODEL.to_pydantic_ai())
+    return LLMService(client_manager, embedder=embedder)
 
 
 def get_embedding_service(
