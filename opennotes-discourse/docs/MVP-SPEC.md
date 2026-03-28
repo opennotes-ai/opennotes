@@ -195,7 +195,7 @@ Per-category configuration maps labels to action tiers:
 | `auto_action_min_score` | `0.90` | Minimum score for Tier 1 (labels without scores use boolean only) |
 | `review_labels` | `["misinformation", "hate_speech"]` | Labels that trigger Tier 2 (consensus pipeline) |
 | `review_min_score` | `0.50` | Minimum score for Tier 2 |
-| `review_group` | `"community"`, `"trusted"`, or `"staff"` | Who reviews items in this category (see section 4.4) |
+| `label_routing` | `{"staff": [...], "community": [...]}` | Per-label review group routing (see section 4.4) |
 
 #### Tier 1: Immediate Action + Retroactive Review
 
@@ -265,19 +265,36 @@ flowchart TD
 
 ### 4.4 Review Groups
 
-Review groups control **who can review** each type of flagged content. They map to Discourse trust levels and are configured per monitored category.
+Review groups control **who can review** each type of flagged content. They are scoped to **labels within a category** — different classification labels can be routed to different review groups in the same category.
 
-| Review Group | Who Can Review | Use Case |
+| Review Group | Who Can Review | Example Labels |
 |---|---|---|
-| `community` | TL2+ (default) | General content review |
-| `trusted` | TL3+ | Sensitive or complex content |
-| `staff` | Moderators and admins only | High-confidence harmful content |
+| `community` | TL2+ | `misinformation`, `off_topic` |
+| `trusted` | TL3+ | `self_harm`, `sensitive_content` |
+| `staff` | Moderators and admins only | `harassment`, `hate_speech`, `csam` |
 
-**Configuration:** Each monitored category specifies a `review_group` (see section 4.1 per-category settings table). The plugin enforces review group membership before allowing votes.
+**Configuration model:** Per category, admins map labels to review groups:
 
-**Default:** All items are reviewable by TL2+ unless the admin configures a stricter review group for the category.
+```json
+{
+  "general-discussion": {
+    "label_routing": {
+      "staff": ["harassment", "hate_speech", "csam"],
+      "trusted": ["self_harm"],
+      "community": ["misinformation", "spam", "off_topic"]
+    }
+  }
+}
+```
 
-**Admin override:** Admins can set all categories to `community` to make everything available for everyone to review.
+**Defaults:**
+- **Staff** sees all labels (implicit catch-all)
+- **Community and trusted** see no labels unless explicitly configured
+- This means by default, all flagged items go to staff-only review. Admins opt labels into community review.
+
+**Behavior:** When a post is classified with multiple labels (e.g., `harassment` + `spam`), the **most restrictive** review group applies. If any label routes to `staff`, the item goes to staff-only review.
+
+**Admin override:** Admins can route all labels to `community` to make everything available for everyone to review.
 
 ### 4.5 Concept Mapping
 
@@ -335,7 +352,7 @@ Review groups control **who can review** each type of flagged content. They map 
 | `auto_action_min_score` | Minimum score for Tier 1 auto-action | `0.90` |
 | `review_labels` | Labels that trigger Tier 2 consensus pipeline | All labels |
 | `review_min_score` | Minimum score for Tier 2 review | `0.50` |
-| `review_group` | Who reviews: `community` (TL2+), `trusted` (TL3+), or `staff` | `community` |
+| `label_routing` | Per-label review group mapping (see section 4.4) | `{"staff": ["*"]}` (staff sees all) |
 
 **Dashboard** (renders data from server's scoring analysis endpoint):
 - Activity metrics, classification breakdown, consensus health, top reviewers, false positive rate
