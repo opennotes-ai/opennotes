@@ -26,7 +26,7 @@ The plugin delegates to the existing `opennotes-server` (FastAPI, PostgreSQL, JS
 | **Monitored channels** | `POST/GET /api/v2/monitored-channels` | Which Discourse categories to monitor |
 | **Community config** (feature flags, thresholds) | `GET/PATCH /api/v1/community-config/*` | Admin-configurable settings |
 | **LLM config** (per-community model settings) | `POST/GET /api/v1/community-servers/{id}/llm-config` | Custom AI provider config |
-| **Outbound webhooks** | `POST /webhooks/register` (extended) | Server -> Discourse notifications when consensus is reached |
+| **Outbound webhooks** | `POST /api/v1/webhooks/register` (extended) | Server -> Discourse notifications when consensus is reached |
 | **User profiles** (with community membership) | `GET /api/v2/user-profiles/lookup` (extended) | Map Discourse users to OpenNotes profiles |
 | **Scoring analysis & history** | `GET /api/v2/community-servers/{id}/scoring-analysis` | Admin dashboard data |
 | **Auth** (JWT, API keys, service accounts) | `POST /api/v1/auth/*` | Plugin authenticates as service account |
@@ -390,16 +390,17 @@ When an admin installs the plugin and configures it:
    }
    ```
 3. Server creates a `CommunityServer` record. **Discourse communities must be pre-registered** -- the server does not auto-create communities from untrusted platforms on first contact.
-4. Plugin registers its webhook callback URL:
+4. Plugin registers its webhook callback URL (extends existing endpoint):
    ```
-   POST /webhooks/register
+   POST /api/v1/webhooks/register
    {
-     "callback_url": "https://community.example.com/opennotes/webhooks/receive",
+     "url": "https://community.example.com/opennotes/webhooks/receive",
      "secret": "<generated-hmac-secret>",
      "platform_community_server_id": "community.example.com",
-     "events": ["note.status_changed", "request.classified", "scoring.completed"]
+     "channel_id": null
    }
    ```
+   > **Current state:** This endpoint exists but is unauthenticated and has no `events` filter. TASK-1400.06 will add `Authorization` requirement and event filtering.
 5. Plugin syncs monitored categories to server as monitored channels:
    ```
    POST /api/v2/monitored-channels
@@ -467,10 +468,12 @@ stateDiagram-v2
 
 | Action | Discourse UI | Server API Call | Effect |
 |---|---|---|---|
-| **Approve (uphold post)** | "Disagree" button in /review | `PATCH /api/v2/notes/{id}` with `status: "CURRENTLY_RATED_NOT_HELPFUL"` | Force note to not-helpful, uphold post |
-| **Reject (hide post)** | "Agree" button in /review | `PATCH /api/v2/notes/{id}` with `status: "CURRENTLY_RATED_HELPFUL"` | Force note to helpful, hide post |
+| **Reject (hide post)** | "Agree" button in /review | `POST /api/v2/notes/{id}/force-publish` | Force note to CURRENTLY_RATED_HELPFUL, triggers hide post |
+| **Approve (uphold post)** | "Disagree" button in /review | *New endpoint needed:* `POST /api/v2/notes/{id}/dismiss` | Force note to CURRENTLY_RATED_NOT_HELPFUL, uphold post |
 | **Ignore (dismiss)** | "Ignore" button in /review | `DELETE /api/v2/requests/{id}` | Remove from review queue |
 | **Escalate** | "Escalate" in plugin UI | `PATCH /api/v2/requests/{id}` with `escalated: true` | Remove from community review, handle directly |
+
+> **Note:** The server currently only has `POST /api/v2/notes/{id}/force-publish` (sets CURRENTLY_RATED_HELPFUL). A `dismiss` endpoint for the opposite direction needs to be added as part of TASK-1400.05 or TASK-1400.06.
 
 ### 9.5 Webhook-Triggered Transitions
 
@@ -544,7 +547,7 @@ The server sends minimal payloads. The plugin fetches full details from the API 
 The plugin's `sync_scoring_status` Sidekiq scheduled job acts as a backup for missed webhooks:
 
 - **Interval:** Every 5 minutes.
-- **Query:** `GET /api/v2/requests?filter[status]=resolved&filter[updated_since]=<last_poll_timestamp>&filter[community_server_id]=<id>`
+- **Query:** `GET /api/v2/requests?filter[status]=COMPLETED&filter[requested_at__gte]=<last_poll_timestamp>&filter[community_server_id]=<id>`
 - **Reconciliation:** For each resolved request, the plugin checks if the corresponding `ReviewableOpennotesItem` has already been updated. If not, it applies the action.
 - **Idempotency:** The plugin stores `last_poll_timestamp` and each request's `updated_at` to avoid reprocessing.
 
@@ -586,13 +589,13 @@ The `Authorization` header authenticates the plugin as a trusted service. The `X
 | `/api/v2/notes/{id}` | PATCH | Update note status | Staff force-publish |
 | `/api/v2/ratings` | POST | Submit a rating | User votes on note |
 | `/api/v2/notes/{id}/ratings` | GET | Get ratings for note | Display vote tallies |
-| `/api/v2/scoring/score` | POST | Trigger scoring | After vote threshold met |
+| `/api/v2/scoring/score` | POST | Trigger scoring | Not called by plugin -- rating creation auto-dispatches rescoring server-side |
 | `/api/v2/user-profiles/lookup` | GET | Resolve platform user to profile | Every authenticated request |
 | `/api/v2/community-servers` | POST | Register Discourse instance | Plugin setup |
 | `/api/v2/monitored-channels` | POST/DELETE | Sync monitored categories | Settings change |
 | `/api/v1/community-config/{id}` | PATCH | Sync admin settings | Settings change |
 | `/api/v2/requests/{id}/ai-notes` | POST | Generate AI note | After classification |
-| `/webhooks/register` | POST | Register webhook callback | Plugin setup |
+| `/api/v1/webhooks/register` | POST | Register webhook callback | Plugin setup |
 
 ### 11.3 Endpoints Requiring Extension
 
@@ -603,8 +606,8 @@ These existing endpoints need modification for Discourse support:
 - **Extension:** Accept `platform=discourse`, add `provider_scope` query parameter
 - **New behavior:** When `platform=discourse`, use `provider_scope` to disambiguate multi-instance users
 
-**`POST /webhooks/register`**
-- Currently unauthenticated
+**`POST /api/v1/webhooks/register`**
+- Currently unauthenticated, accepts `url`, `secret`, `platform_community_server_id`, `channel_id`
 - **Extension:** Require `Authorization` header (service account API key). Add `events` field to specify which event types to receive. Add Discourse instance identity canonicalization.
 
 **`POST /api/v2/community-servers`**
@@ -676,3 +679,17 @@ These existing endpoints need modification for Discourse support:
 - **Latency:** Classification is async (Sidekiq job). Community review is inherently async (hours/days). No real-time blocking.
 - **Server provisioning:** Discourse admins use OpenNotes-hosted server for MVP (reduces friction). Self-hosted option for enterprise later.
 - **Untrusted environment:** Plugin runs in customer Discourse instances. Server verifies all identity claims. No auto-creation of communities from untrusted sources.
+
+---
+
+## Appendix A: Resolved Open Questions
+
+These questions were originally in section 9 of the Obsidian spec. Each has been resolved with a concrete decision and integrated into the relevant spec section.
+
+| # | Original Question | Decision | Spec Section |
+|---|---|---|---|
+| 1 | **Hosted vs. self-hosted server?** | OpenNotes-hosted for MVP. Self-hosted option for enterprise later. | Section 12 (Technical Constraints) |
+| 2 | **How does the server's scoring tier system map to community size?** | Plugin presents results as-is. It doesn't need to know which algorithm (Bayesian vs MF) is running -- the server handles adaptive tier selection based on data volume. | Section 2 (Server Capabilities) |
+| 3 | **Should the plugin expose full note-writing UX, or just voting?** | Voting only for v1. AI-generated notes provide context. Community-authored notes are v2 (adds UX complexity). | Section 12 (Deferred to v2+) |
+| 4 | **Webhook reliability and polling interval?** | Outbound webhooks with HMAC-SHA256, 3 retries with exponential backoff (10s/30s/90s). Polling fallback every 5 minutes with idempotent reconciliation. | Section 10 (Outbound Webhook Strategy) |
+| 5 | **How to handle Discourse trust levels on the server side?** | Trust level seeds initial rater weight (TL4=1.5, TL3=1.2, TL2=1.0 baseline). Weight converges to behavior-based over time. TL0/TL1 gated from voting by plugin. | Section 7.5 (Trust Level as Rater Weight Seed) |
