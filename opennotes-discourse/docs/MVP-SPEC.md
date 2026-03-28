@@ -195,7 +195,7 @@ Per-category configuration maps labels to action tiers:
 | `auto_action_min_score` | `0.90` | Minimum score for Tier 1 (labels without scores use boolean only) |
 | `review_labels` | `["misinformation", "hate_speech"]` | Labels that trigger Tier 2 (consensus pipeline) |
 | `review_min_score` | `0.50` | Minimum score for Tier 2 |
-| `review_group` | `"staff"` or `"community"` | Who reviews items in this category (see section 4.4) |
+| `review_group` | `"community"`, `"trusted"`, or `"staff"` | Who reviews items in this category (see section 4.4) |
 
 #### Tier 1: Immediate Action + Retroactive Review
 
