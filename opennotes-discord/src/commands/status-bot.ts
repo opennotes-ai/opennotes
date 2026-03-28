@@ -5,6 +5,7 @@ import {
 import { serviceProvider } from '../services/index.js';
 import { DiscordFormatter } from '../services/DiscordFormatter.js';
 import { logger } from '../logger.js';
+import { apiClient } from '../api-client.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
 import { buildContextualNav } from '../lib/navigation-components.js';
@@ -43,7 +44,21 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       return;
     }
 
-    const scoringResult = await scoringService.getScoringStatus();
+    let communityServerId: string | undefined;
+    if (guildId) {
+      try {
+        const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
+        communityServerId = communityServer.data.id;
+      } catch (error) {
+        logger.error('Failed to fetch community server UUID for scoring status', {
+          error_id: errorId,
+          guild_id: guildId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const scoringResult = await scoringService.getScoringStatus(communityServerId);
 
     const response = DiscordFormatter.formatStatusSuccessV2(result.data!);
 

@@ -12690,7 +12690,9 @@ export interface operations {
     };
     get_scoring_status_jsonapi_api_v2_scoring_status_get: {
         parameters: {
-            query?: never;
+            query?: {
+                community_server_id?: string | null;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };

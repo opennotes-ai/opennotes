@@ -536,8 +536,17 @@ describe('navigation-handler', () => {
 
       await handleNavInteraction(interaction);
 
-      expect(mockGetScoringStatus).toHaveBeenCalledTimes(1);
+      expect(mockGetScoringStatus).toHaveBeenCalledWith('community-server-uuid-456');
       expect(mockFormatScoringStatusV2).toHaveBeenCalled();
+    });
+
+    it('should pass undefined community server ID when not in a guild', async () => {
+      const interaction = buildMockInteraction({ customId: 'nav:status-bot', guildId: null });
+
+      await handleNavInteraction(interaction);
+
+      expect(mockGetCommunityServerByPlatformId).not.toHaveBeenCalled();
+      expect(mockGetScoringStatus).toHaveBeenCalledWith(undefined);
     });
 
     it('should not add scoring section when scoring status fails', async () => {

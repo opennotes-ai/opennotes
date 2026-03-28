@@ -112,19 +112,6 @@ export class DiscordFormatter {
     components: ReturnType<ContainerBuilder['toJSON']>[];
     flags: number;
   } {
-    const hours = Math.floor(result.bot.uptime / 3600);
-    const minutes = Math.floor((result.bot.uptime % 3600) / 60);
-    const seconds = Math.floor(result.bot.uptime % 60);
-
-    const botInfo = [
-      `**Uptime:** ${hours}h ${minutes}m ${seconds}s`,
-      `**Cache Size:** ${result.bot.cacheSize} entries`,
-    ];
-
-    if (result.bot.guilds !== undefined) {
-      botInfo.push(`**Guilds:** ${result.bot.guilds}`);
-    }
-
     const isServerHealthy = result.server.status === 'healthy';
     const serverInfo = [
       formatStatusIndicator(isServerHealthy, `Status: ${result.server.status}`),
@@ -137,10 +124,6 @@ export class DiscordFormatter {
         new TextDisplayBuilder().setContent('## Bot Status')
       )
       .addSeparatorComponents(createSmallSeparator())
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`**Bot Info**\n${botInfo.join('\n')}`)
-      )
-      .addSeparatorComponents(createDivider())
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent(`**API Status**\n${serverInfo.join('\n')}`)
       );

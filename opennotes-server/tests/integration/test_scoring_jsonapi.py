@@ -221,6 +221,62 @@ class TestScoringStatusJSONAPI:
                 f"Expected 401 or 403, got {response.status_code}"
             )
 
+    @pytest.mark.asyncio
+    async def test_get_scoring_status_filtered_by_community_server_id(
+        self,
+        scoring_jsonapi_auth_client,
+        scoring_jsonapi_community_server,
+        scoring_jsonapi_sample_note_data,
+    ):
+        """Test GET /api/v2/scoring/status?community_server_id=UUID returns guild-scoped count."""
+        note_data = scoring_jsonapi_sample_note_data.copy()
+        note_data["summary"] = (
+            f"Community-scoped note {int(datetime.now(tz=UTC).timestamp() * 1000000)}"
+        )
+        create_resp = await create_note_v2(scoring_jsonapi_auth_client, note_data)
+        assert create_resp.status_code == 201, f"Failed to create note: {create_resp.text}"
+
+        cs_id = str(scoring_jsonapi_community_server["uuid"])
+        response = await scoring_jsonapi_auth_client.get(
+            f"/api/v2/scoring/status?community_server_id={cs_id}"
+        )
+
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+
+        data = response.json()
+        attrs = data["data"]["attributes"]
+        assert attrs["current_note_count"] >= 1
+
+        global_response = await scoring_jsonapi_auth_client.get("/api/v2/scoring/status")
+        assert global_response.status_code == 200
+        global_attrs = global_response.json()["data"]["attributes"]
+        assert global_attrs["current_note_count"] >= attrs["current_note_count"]
+
+    @pytest.mark.asyncio
+    async def test_get_scoring_status_filtered_empty_community(self, scoring_jsonapi_auth_client):
+        """Test filtering by a community with no notes returns zero count."""
+        empty_cs_id = str(uuid4())
+        response = await scoring_jsonapi_auth_client.get(
+            f"/api/v2/scoring/status?community_server_id={empty_cs_id}"
+        )
+
+        assert response.status_code == 200
+        attrs = response.json()["data"]["attributes"]
+        assert attrs["current_note_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_get_scoring_status_invalid_community_server_id(
+        self, scoring_jsonapi_auth_client
+    ):
+        """Test invalid UUID for community_server_id returns 422."""
+        response = await scoring_jsonapi_auth_client.get(
+            "/api/v2/scoring/status?community_server_id=not-a-uuid"
+        )
+
+        assert response.status_code == 422
+
 
 class TestNoteScoreJSONAPI:
     """Tests for GET /api/v2/scoring/notes/{note_id}/score endpoint."""

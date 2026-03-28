@@ -753,8 +753,10 @@ export class ApiClient {
     return handleError(result, '/api/v2/scoring/notes/top')
   }
 
-  async getScoringStatus(): Promise<ScoringStatusJSONAPIResponse> {
-    const result = await this.client.GET('/api/v2/scoring/status');
+  async getScoringStatus(communityServerId?: string): Promise<ScoringStatusJSONAPIResponse> {
+    const result = await this.client.GET('/api/v2/scoring/status', {
+      params: communityServerId ? { query: { community_server_id: communityServerId } } : undefined,
+    });
     return handleError(result, '/api/v2/scoring/status')
   }
 

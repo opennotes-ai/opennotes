@@ -89,20 +89,6 @@ describe('DiscordFormatter', () => {
       expect(result.components[0]).toHaveProperty('type', 17);
     });
 
-    it('should include bot info in container', () => {
-      const result = DiscordFormatter.formatStatusSuccessV2(createMockStatusResult({
-        bot: { uptime: 7200, cacheSize: 25, guilds: 10 },
-      }));
-
-      const container = result.container.toJSON();
-      const textComponents = container.components.filter(c => c.type === 10);
-      const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-      expect(allContent).toContain('2h');
-      expect(allContent).toContain('25 entries');
-      expect(allContent).toContain('10');
-    });
-
     it('should include server info with status indicator', () => {
       const result = DiscordFormatter.formatStatusSuccessV2(createMockStatusResult({
         server: { status: 'healthy', version: '2.0.0', latency: 100 },
@@ -116,37 +102,18 @@ describe('DiscordFormatter', () => {
       expect(allContent).toContain('100ms');
     });
 
-    it('should format uptime correctly for different durations', () => {
-      const testCases = [
-        { uptime: 0, expected: '0h 0m 0s' },
-        { uptime: 3661, expected: '1h 1m 1s' },
-        { uptime: 86400, expected: '24h 0m 0s' },
-      ];
-
-      for (const { uptime, expected } of testCases) {
-        const result = DiscordFormatter.formatStatusSuccessV2(createMockStatusResult({
-          bot: { uptime, cacheSize: 0, guilds: 0 },
-        }));
-
-        const container = result.container.toJSON();
-        const textComponents = container.components.filter(c => c.type === 10);
-        const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
-
-        expect(allContent).toContain(expected);
-      }
-    });
-
-    it('should omit guilds when undefined', () => {
-      const result = DiscordFormatter.formatStatusSuccessV2(createMockStatusResult({
-        bot: { uptime: 3600, cacheSize: 10, guilds: undefined },
-      }));
+    it('should not include bot info section', () => {
+      const result = DiscordFormatter.formatStatusSuccessV2(createMockStatusResult());
 
       const container = result.container.toJSON();
       const textComponents = container.components.filter(c => c.type === 10);
       const allContent = textComponents.map(c => (c as { content?: string }).content).join(' ');
 
-      expect(allContent).toContain('Cache Size');
+      expect(allContent).not.toContain('Bot Info');
+      expect(allContent).not.toContain('Uptime');
+      expect(allContent).not.toContain('Cache Size');
       expect(allContent).not.toContain('Guilds');
+      expect(allContent).toContain('API Status');
     });
   });
 
