@@ -626,6 +626,51 @@ class TestConvertMessagesMultimodal:
         assert isinstance(user_part.content[1], ImageUrl)
         assert user_part.content[1].url == "https://example.com/img.png"
 
+    def test_multimodal_image_url_preserves_detail_via_vendor_metadata(
+        self, provider: DirectProvider
+    ) -> None:
+        from pydantic_ai.messages import ImageUrl, UserPromptPart
+
+        messages = [
+            LLMMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Describe"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "https://example.com/img.png", "detail": "high"},
+                    },
+                ],
+            )
+        ]
+        result = provider._convert_messages(messages)
+        user_part = result[0].parts[0]
+        assert isinstance(user_part, UserPromptPart)
+        img = user_part.content[1]
+        assert isinstance(img, ImageUrl)
+        assert img.vendor_metadata == {"openai.image_detail": "high"}
+
+    def test_multimodal_image_url_without_detail_has_no_vendor_metadata(
+        self, provider: DirectProvider
+    ) -> None:
+        from pydantic_ai.messages import ImageUrl, UserPromptPart
+
+        messages = [
+            LLMMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Describe"},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/img.png"}},
+                ],
+            )
+        ]
+        result = provider._convert_messages(messages)
+        user_part = result[0].parts[0]
+        assert isinstance(user_part, UserPromptPart)
+        img = user_part.content[1]
+        assert isinstance(img, ImageUrl)
+        assert img.vendor_metadata is None
+
     def test_multimodal_text_only_content(self, provider: DirectProvider) -> None:
         from pydantic_ai.messages import ModelRequest, UserPromptPart
 

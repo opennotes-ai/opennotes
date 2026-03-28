@@ -176,7 +176,11 @@ class DirectProvider(LLMProvider[DirectProviderSettings, DirectCompletionParams]
                             parts.append(part["text"])
                         elif part.get("type") == "image_url":
                             url_data = part["image_url"]
-                            parts.append(ImageUrl(url=url_data["url"]))
+                            detail = url_data.get("detail")
+                            vendor_metadata = {"openai.image_detail": detail} if detail else None
+                            parts.append(
+                                ImageUrl(url=url_data["url"], vendor_metadata=vendor_metadata)
+                            )
                     result.append(PydanticModelRequest(parts=[UserPromptPart(content=parts)]))
                 else:
                     result.append(PydanticModelRequest.user_text_prompt(str(msg.content)))

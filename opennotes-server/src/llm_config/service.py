@@ -15,7 +15,7 @@ from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from tenacity import (
     AsyncRetrying,
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -34,7 +34,14 @@ TRANSIENT_EXCEPTIONS = (
     TimeoutError,
 )
 
-_RETRY_PREDICATE = retry_if_exception_type(TRANSIENT_EXCEPTIONS)
+
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, ModelHTTPError):
+        return exc.status_code >= 429
+    return isinstance(exc, (ModelAPIError, ConnectionError, TimeoutError))
+
+
+_RETRY_PREDICATE = retry_if_exception(_is_retryable)
 
 logger = get_logger(__name__)
 
@@ -199,6 +206,12 @@ class LLMService:
 
         raise RuntimeError("Embedding generation failed unexpectedly after retries")
 
+    @retry(
+        retry=_RETRY_PREDICATE,
+        wait=wait_exponential(multiplier=1, min=1, max=60),
+        stop=stop_after_attempt(5),
+        reraise=True,
+    )
     async def generate_embeddings_batch(
         self,
         texts: list[str],

@@ -249,6 +249,29 @@ class TestCheckRelevance:
 
     @pytest.mark.asyncio
     @patch("src.claim_relevance_check.service.Agent")
+    async def test_agent_run_passes_model_settings(
+        self, mock_agent_cls, mock_db, mock_llm_service, mock_settings
+    ) -> None:
+        mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 200
+        relevance_output = RelevanceCheckResult(is_relevant=True, reasoning="Test")
+        agent_instance = mock_agent_cls.return_value
+        agent_instance.run = AsyncMock(return_value=_mock_agent_result(relevance_output))
+
+        service = ClaimRelevanceService(mock_llm_service, settings=mock_settings)
+        await service.check_relevance(
+            db=mock_db,
+            original_message="Test message",
+            matched_content="Test content",
+            matched_source=None,
+        )
+
+        call_kwargs = agent_instance.run.call_args.kwargs
+        ms = call_kwargs["model_settings"]
+        assert ms["max_tokens"] == 200
+        assert ms["temperature"] == 0.0
+
+    @pytest.mark.asyncio
+    @patch("src.claim_relevance_check.service.Agent")
     async def test_agent_receives_user_prompt_and_instructions(
         self, mock_agent_cls, mock_db, mock_llm_service, mock_settings
     ) -> None:

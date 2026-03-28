@@ -9,7 +9,7 @@ from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.providers.base import LLMMessage, LLMResponse
-from src.llm_config.service import TRANSIENT_EXCEPTIONS, LLMService
+from src.llm_config.service import TRANSIENT_EXCEPTIONS, LLMService, _is_retryable
 
 
 def _make_model_http_error(status_code: int = 502) -> ModelHTTPError:
@@ -134,6 +134,19 @@ class TestLLMServiceCompleteRetry:
         mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
         mock_llm_provider.complete = AsyncMock(side_effect=ValueError("bad input"))
         with pytest.raises(ValueError, match="bad input"):
+            await llm_service.complete(messages=[LLMMessage(role="user", content="test")])
+        assert mock_llm_provider.complete.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_complete_does_not_retry_4xx_http_error(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
+        mock_llm_provider.complete = AsyncMock(side_effect=_make_model_http_error(400))
+        with pytest.raises(ModelHTTPError):
             await llm_service.complete(messages=[LLMMessage(role="user", content="test")])
         assert mock_llm_provider.complete.call_count == 1
 
@@ -538,3 +551,126 @@ class TestRetryDecoratorConfiguration:
     def test_complete_retry_uses_2_attempts(self) -> None:
         method = LLMService.complete
         assert method.retry.stop.max_attempt_number == 2
+
+    def test_generate_embeddings_batch_has_retry_decorator(self) -> None:
+        method = LLMService.generate_embeddings_batch
+        assert hasattr(method, "retry")
+
+    def test_generate_embeddings_batch_retry_uses_5_attempts(self) -> None:
+        method = LLMService.generate_embeddings_batch
+        assert method.retry.stop.max_attempt_number == 5
+
+
+class TestRetryPredicate:
+    """Tests for _is_retryable predicate that filters permanent 4xx errors."""
+
+    def test_retries_model_http_error_429(self) -> None:
+        assert _is_retryable(_make_model_http_error(429)) is True
+
+    def test_retries_model_http_error_500(self) -> None:
+        assert _is_retryable(_make_model_http_error(500)) is True
+
+    def test_retries_model_http_error_502(self) -> None:
+        assert _is_retryable(_make_model_http_error(502)) is True
+
+    def test_retries_model_http_error_503(self) -> None:
+        assert _is_retryable(_make_model_http_error(503)) is True
+
+    def test_does_not_retry_model_http_error_400(self) -> None:
+        assert _is_retryable(_make_model_http_error(400)) is False
+
+    def test_does_not_retry_model_http_error_401(self) -> None:
+        assert _is_retryable(_make_model_http_error(401)) is False
+
+    def test_does_not_retry_model_http_error_403(self) -> None:
+        assert _is_retryable(_make_model_http_error(403)) is False
+
+    def test_does_not_retry_model_http_error_404(self) -> None:
+        assert _is_retryable(_make_model_http_error(404)) is False
+
+    def test_does_not_retry_model_http_error_422(self) -> None:
+        assert _is_retryable(_make_model_http_error(422)) is False
+
+    def test_retries_model_api_error(self) -> None:
+        assert _is_retryable(_make_model_api_error()) is True
+
+    def test_retries_connection_error(self) -> None:
+        assert _is_retryable(ConnectionError("network")) is True
+
+    def test_retries_timeout_error(self) -> None:
+        assert _is_retryable(TimeoutError("timed out")) is True
+
+    def test_does_not_retry_value_error(self) -> None:
+        assert _is_retryable(ValueError("bad input")) is False
+
+    def test_does_not_retry_runtime_error(self) -> None:
+        assert _is_retryable(RuntimeError("oops")) is False
+
+
+class TestLLMServiceBatchEmbeddingRetry:
+    """Tests for LLMService.generate_embeddings_batch retry behavior."""
+
+    @pytest.fixture
+    def mock_embedder(self) -> MagicMock:
+        return _make_embedder_mock()
+
+    @pytest.fixture
+    def llm_service(self, mock_embedder: MagicMock) -> LLMService:
+        return LLMService(
+            client_manager=MagicMock(spec=LLMClientManager),
+            embedder=mock_embedder,
+        )
+
+    @pytest.mark.asyncio
+    async def test_batch_retries_on_transient_failure(
+        self,
+        llm_service: LLMService,
+        mock_embedder: MagicMock,
+    ) -> None:
+        success_result = _FakeEmbeddingResult(
+            embeddings=[[0.1] * 1536, [0.2] * 1536],
+            inputs=["Text A", "Text B"],
+            input_type="document",
+            model_name="text-embedding-3-small",
+            provider_name="openai",
+        )
+        call_count = 0
+
+        async def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ConnectionError("Transient network error")
+            return success_result
+
+        mock_embedder.embed_documents = AsyncMock(side_effect=side_effect)
+
+        results = await llm_service.generate_embeddings_batch(
+            texts=["Text A", "Text B"],
+        )
+
+        assert call_count == 3
+        assert len(results) == 2
+        assert results[0][0] == [0.1] * 1536
+
+    @pytest.mark.asyncio
+    async def test_batch_does_not_retry_on_400(
+        self,
+        llm_service: LLMService,
+        mock_embedder: MagicMock,
+    ) -> None:
+        mock_embedder.embed_documents = AsyncMock(side_effect=_make_model_http_error(400))
+        with pytest.raises(ModelHTTPError):
+            await llm_service.generate_embeddings_batch(texts=["Text A"])
+        assert mock_embedder.embed_documents.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_batch_gives_up_after_5_attempts(
+        self,
+        llm_service: LLMService,
+        mock_embedder: MagicMock,
+    ) -> None:
+        mock_embedder.embed_documents = AsyncMock(side_effect=ConnectionError("Persistent failure"))
+        with pytest.raises(ConnectionError, match="Persistent failure"):
+            await llm_service.generate_embeddings_batch(texts=["Text A"])
+        assert mock_embedder.embed_documents.call_count == 5

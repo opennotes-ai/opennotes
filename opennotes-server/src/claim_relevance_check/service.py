@@ -11,6 +11,7 @@ from typing import Any
 from pydantic import ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.settings import ModelSettings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.claim_relevance_check.prompt_optimization.prompts import get_optimized_prompts
@@ -125,6 +126,10 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
                 relevance_agent.run(
                     user_prompt,
                     instructions=system_prompt,
+                    model_settings=ModelSettings(
+                        max_tokens=cfg.RELEVANCE_CHECK_MAX_TOKENS,
+                        temperature=0.0,
+                    ),
                 ),
                 timeout=cfg.RELEVANCE_CHECK_TIMEOUT,
             )
