@@ -3,12 +3,21 @@
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.providers.base import LLMMessage, LLMResponse
-from src.llm_config.providers.direct_provider import EmptyLLMResponseError
-from src.llm_config.service import LLMService
+from src.llm_config.service import TRANSIENT_EXCEPTIONS, LLMService
+
+
+def _make_model_http_error(status_code: int = 502) -> ModelHTTPError:
+    return ModelHTTPError(status_code=status_code, model_name="test-model", body=None)
+
+
+def _make_model_api_error(message: str = "API failure") -> ModelAPIError:
+    return ModelAPIError(model_name="test-model", message=message)
 
 
 @dataclass
@@ -45,7 +54,7 @@ class TestLLMServiceCompleteRetry:
         return provider
 
     @pytest.mark.asyncio
-    async def test_complete_retries_on_empty_response_error(
+    async def test_complete_retries_on_model_http_error(
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
@@ -65,13 +74,42 @@ class TestLLMServiceCompleteRetry:
             nonlocal call_count
             call_count += 1
             if call_count < 2:
-                raise EmptyLLMResponseError("empty")
+                raise _make_model_http_error(502)
             return success
 
         mock_llm_provider.complete = AsyncMock(side_effect=side_effect)
         result = await llm_service.complete(messages=[LLMMessage(role="user", content="test")])
         assert call_count == 2
         assert result.content == '{"is_relevant": true}'
+
+    @pytest.mark.asyncio
+    async def test_complete_retries_on_model_api_error(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
+        success = LLMResponse(
+            content="ok",
+            model="test",
+            tokens_used=5,
+            finish_reason="stop",
+            provider="openai",
+        )
+        call_count = 0
+
+        async def side_effect(*a, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise _make_model_api_error("Temporary API failure")
+            return success
+
+        mock_llm_provider.complete = AsyncMock(side_effect=side_effect)
+        result = await llm_service.complete(messages=[LLMMessage(role="user", content="test")])
+        assert call_count == 2
+        assert result.content == "ok"
 
     @pytest.mark.asyncio
     async def test_complete_gives_up_after_2_attempts(
@@ -81,8 +119,8 @@ class TestLLMServiceCompleteRetry:
         mock_llm_provider: MagicMock,
     ) -> None:
         mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
-        mock_llm_provider.complete = AsyncMock(side_effect=EmptyLLMResponseError("empty"))
-        with pytest.raises(EmptyLLMResponseError):
+        mock_llm_provider.complete = AsyncMock(side_effect=_make_model_http_error(503))
+        with pytest.raises(ModelHTTPError):
             await llm_service.complete(messages=[LLMMessage(role="user", content="test")])
         assert mock_llm_provider.complete.call_count == 2
 
@@ -146,6 +184,37 @@ class TestLLMServiceGenerateEmbeddingRetry:
         assert embedding == [0.1] * 1536
         assert provider == "openai"
         assert model == "text-embedding-3-small"
+
+    @pytest.mark.asyncio
+    async def test_generate_embedding_retries_on_model_http_error(
+        self,
+        llm_service: LLMService,
+        mock_embedder: MagicMock,
+    ) -> None:
+        success_result = _FakeEmbeddingResult(
+            embeddings=[[0.1] * 1536],
+            inputs=["Test text for embedding"],
+            input_type="document",
+            model_name="text-embedding-3-small",
+            provider_name="openai",
+        )
+        call_count = 0
+
+        async def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise _make_model_http_error(429)
+            return success_result
+
+        mock_embedder.embed_documents = AsyncMock(side_effect=side_effect)
+
+        embedding, _provider, _model = await llm_service.generate_embedding(
+            text="Test text for embedding",
+        )
+
+        assert call_count == 2
+        assert embedding == [0.1] * 1536
 
     @pytest.mark.asyncio
     async def test_generate_embedding_gives_up_after_max_retries(
@@ -312,6 +381,41 @@ class TestLLMServiceDescribeImageRetry:
         assert description == "An image showing a cat"
 
     @pytest.mark.asyncio
+    async def test_describe_image_retries_on_model_http_error(
+        self,
+        llm_service: LLMService,
+        mock_client_manager: MagicMock,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        mock_client_manager.get_client = AsyncMock(return_value=mock_llm_provider)
+
+        success_response = LLMResponse(
+            content="A landscape photo",
+            model="gpt-5.1",
+            tokens_used=15,
+            finish_reason="stop",
+            provider="openai",
+        )
+
+        call_count = 0
+
+        async def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise _make_model_http_error(429)
+            return success_response
+
+        mock_llm_provider.complete = AsyncMock(side_effect=side_effect)
+
+        description = await llm_service.describe_image(
+            image_url="https://example.com/landscape.jpg",
+        )
+
+        assert call_count == 3
+        assert description == "A landscape photo"
+
+    @pytest.mark.asyncio
     async def test_describe_image_gives_up_after_max_retries(
         self,
         llm_service: LLMService,
@@ -353,7 +457,7 @@ class TestSanitizeEmbeddingText:
         assert llm_service._sanitize_embedding_text(text) == "abcd"
 
     def test_clean_text_passes_through(self, llm_service: LLMService) -> None:
-        text = "Hello, world! This is normal text with unicode: cafe\u0301"
+        text = "Hello, world\\! This is normal text with unicode: cafe\u0301"
         assert llm_service._sanitize_embedding_text(text) == text
 
     def test_empty_string(self, llm_service: LLMService) -> None:
@@ -396,6 +500,28 @@ class TestSanitizeEmbeddingText:
 
         call_args = mock_embedder.embed_documents.call_args
         assert call_args[0][0] == ["helloworld", "foobar"]
+
+
+class TestTransientExceptionsTuple:
+    """Tests to verify TRANSIENT_EXCEPTIONS contains pydantic-ai exceptions, not raw httpx."""
+
+    def test_includes_model_http_error(self) -> None:
+        assert ModelHTTPError in TRANSIENT_EXCEPTIONS
+
+    def test_includes_model_api_error(self) -> None:
+        assert ModelAPIError in TRANSIENT_EXCEPTIONS
+
+    def test_includes_connection_error(self) -> None:
+        assert ConnectionError in TRANSIENT_EXCEPTIONS
+
+    def test_includes_timeout_error(self) -> None:
+        assert TimeoutError in TRANSIENT_EXCEPTIONS
+
+    def test_does_not_include_httpx_connect_error(self) -> None:
+        assert httpx.ConnectError not in TRANSIENT_EXCEPTIONS
+
+    def test_does_not_include_httpx_timeout_exception(self) -> None:
+        assert httpx.TimeoutException not in TRANSIENT_EXCEPTIONS
 
 
 class TestRetryDecoratorConfiguration:
