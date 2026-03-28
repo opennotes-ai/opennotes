@@ -6,15 +6,17 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.direct import model_request, model_request_stream
 from pydantic_ai.messages import (
+    ImageUrl,
+    PartDeltaEvent,
+    TextPart,
+    TextPartDelta,
+    UserPromptPart,
+)
+from pydantic_ai.messages import (
     ModelRequest as PydanticModelRequest,
 )
 from pydantic_ai.messages import (
     ModelResponse as PydanticModelResponse,
-)
-from pydantic_ai.messages import (
-    PartDeltaEvent,
-    TextPart,
-    TextPartDelta,
 )
 from pydantic_ai.settings import ModelSettings
 
@@ -165,8 +167,19 @@ class DirectProvider(LLMProvider[DirectProviderSettings, DirectCompletionParams]
                 content = msg.content if isinstance(msg.content, str) else str(msg.content)
                 result.append(PydanticModelRequest.user_text_prompt("", instructions=content))
             elif msg.role == "user":
-                content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                result.append(PydanticModelRequest.user_text_prompt(content))
+                if isinstance(msg.content, str):
+                    result.append(PydanticModelRequest.user_text_prompt(msg.content))
+                elif isinstance(msg.content, list):
+                    parts: list[str | ImageUrl] = []
+                    for part in msg.content:
+                        if part.get("type") == "text":
+                            parts.append(part["text"])
+                        elif part.get("type") == "image_url":
+                            url_data = part["image_url"]
+                            parts.append(ImageUrl(url=url_data["url"]))
+                    result.append(PydanticModelRequest(parts=[UserPromptPart(content=parts)]))
+                else:
+                    result.append(PydanticModelRequest.user_text_prompt(str(msg.content)))
             elif msg.role == "assistant":
                 content = msg.content if isinstance(msg.content, str) else str(msg.content)
                 result.append(PydanticModelResponse(parts=[TextPart(content=content)]))

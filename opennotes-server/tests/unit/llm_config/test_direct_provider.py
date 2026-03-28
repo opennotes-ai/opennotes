@@ -585,6 +585,146 @@ class TestDirectProviderVertexAI:
             assert call_kwargs["model"] == "openai:gpt-5.1"
 
 
+class TestConvertMessagesMultimodal:
+    @pytest.fixture
+    def provider(self) -> DirectProvider:
+        return DirectProvider(
+            api_key="test-api-key",
+            default_model="openai:gpt-5.1",
+            settings=DirectProviderSettings(),
+            provider_name="openai",
+        )
+
+    def test_multimodal_content_produces_image_url_part(self, provider: DirectProvider) -> None:
+        from pydantic_ai.messages import ImageUrl, ModelRequest, UserPromptPart
+
+        messages = [
+            LLMMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Describe this image"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "https://example.com/img.png", "detail": "auto"},
+                    },
+                ],
+            )
+        ]
+        result = provider._convert_messages(messages)
+
+        assert len(result) == 1
+        req = result[0]
+        assert isinstance(req, ModelRequest)
+        assert len(req.parts) == 1
+
+        user_part = req.parts[0]
+        assert isinstance(user_part, UserPromptPart)
+        assert isinstance(user_part.content, list)
+        assert len(user_part.content) == 2
+
+        assert user_part.content[0] == "Describe this image"
+        assert isinstance(user_part.content[1], ImageUrl)
+        assert user_part.content[1].url == "https://example.com/img.png"
+
+    def test_multimodal_text_only_content(self, provider: DirectProvider) -> None:
+        from pydantic_ai.messages import ModelRequest, UserPromptPart
+
+        messages = [
+            LLMMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Part one"},
+                    {"type": "text", "text": "Part two"},
+                ],
+            )
+        ]
+        result = provider._convert_messages(messages)
+
+        assert len(result) == 1
+        req = result[0]
+        assert isinstance(req, ModelRequest)
+
+        user_part = req.parts[0]
+        assert isinstance(user_part, UserPromptPart)
+        assert isinstance(user_part.content, list)
+        assert user_part.content[0] == "Part one"
+        assert user_part.content[1] == "Part two"
+
+    def test_multimodal_multiple_images(self, provider: DirectProvider) -> None:
+        from pydantic_ai.messages import ImageUrl, UserPromptPart
+
+        messages = [
+            LLMMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Compare these images"},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/b.png"}},
+                ],
+            )
+        ]
+        result = provider._convert_messages(messages)
+        user_part = result[0].parts[0]
+        assert isinstance(user_part, UserPromptPart)
+        assert len(user_part.content) == 3
+        assert isinstance(user_part.content[1], ImageUrl)
+        assert isinstance(user_part.content[2], ImageUrl)
+        assert user_part.content[1].url == "https://example.com/a.png"
+        assert user_part.content[2].url == "https://example.com/b.png"
+
+    @pytest.mark.asyncio
+    async def test_complete_with_multimodal_passes_correct_messages(
+        self, provider: DirectProvider
+    ) -> None:
+        from pydantic_ai.messages import ImageUrl, UserPromptPart
+
+        mock_resp = _make_mock_response()
+        with patch(
+            "src.llm_config.providers.direct_provider.model_request",
+            new_callable=AsyncMock,
+            return_value=mock_resp,
+        ) as mock_mr:
+            messages = [
+                LLMMessage(
+                    role="user",
+                    content=[
+                        {"type": "text", "text": "Describe this image"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "https://example.com/img.png", "detail": "auto"},
+                        },
+                    ],
+                )
+            ]
+            await provider.complete(messages)
+
+            call_kwargs = mock_mr.call_args.kwargs
+            pydantic_messages = call_kwargs["messages"]
+            user_part = pydantic_messages[0].parts[0]
+            assert isinstance(user_part, UserPromptPart)
+            assert isinstance(user_part.content, list)
+            assert isinstance(user_part.content[1], ImageUrl)
+
+    def test_unknown_multimodal_part_type_is_skipped(self, provider: DirectProvider) -> None:
+        from pydantic_ai.messages import UserPromptPart
+
+        messages = [
+            LLMMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Hello"},
+                    {"type": "audio", "audio": {"url": "https://example.com/audio.mp3"}},
+                ],
+            )
+        ]
+        result = provider._convert_messages(messages)
+        user_part = result[0].parts[0]
+        assert isinstance(user_part, UserPromptPart)
+        assert isinstance(user_part.content, list)
+        assert len(user_part.content) == 1
+        assert user_part.content[0] == "Hello"
+
+
 class TestDirectProviderNoLitellmImports:
     def test_no_litellm_imports_in_direct_provider(self) -> None:
         import ast
