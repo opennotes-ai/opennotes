@@ -872,23 +872,19 @@ class TestHybridSearchJSONAPIWithMockedService:
         hybrid_search_jsonapi_auth_client,
         hybrid_search_jsonapi_community_server,
     ):
-        """Test POST /api/v2/hybrid-searches returns 429 when OpenAI rate limit exceeded."""
-        import httpx
-        from openai import RateLimitError
+        """Test POST /api/v2/hybrid-searches returns 429 when LLM rate limit exceeded."""
+        from pydantic_ai.exceptions import ModelHTTPError
 
         platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
-
-        mock_request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
-        mock_response = httpx.Response(429, request=mock_request)
 
         with patch(
             "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
             new_callable=AsyncMock,
         ) as mock_generate:
-            mock_generate.side_effect = RateLimitError(
-                message="Rate limit exceeded",
-                response=mock_response,
-                body=None,
+            mock_generate.side_effect = ModelHTTPError(
+                status_code=429,
+                model_name="openai:text-embedding-3-small",
+                body="Rate limit exceeded",
             )
 
             request_body = {

@@ -19,8 +19,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -408,19 +408,45 @@ async def similarity_search_jsonapi(  # noqa: PLR0911
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except RateLimitError as e:
+    except ModelHTTPError as e:
+        status_code = e.status_code if e.status_code else 502
+        if status_code == 429:
+            logger.warning(
+                "LLM provider rate limit exceeded",
+                extra={
+                    "user_id": user_id,
+                    "community_server_id": community_server_id,
+                    "error": str(e),
+                },
+            )
+            return create_error_response(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "Rate Limit Exceeded",
+                "LLM provider rate limit exceeded. Please try again later.",
+            )
         logger.error(
-            "OpenAI API rate limit exceeded",
+            "LLM provider API error during similarity search",
             extra={
                 "user_id": user_id,
                 "community_server_id": community_server_id,
+                "status_code": status_code,
                 "error": str(e),
             },
         )
         return create_error_response(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            "Rate Limit Exceeded",
-            "OpenAI API rate limit exceeded. Please try again later.",
+            status.HTTP_502_BAD_GATEWAY,
+            "LLM Provider Error",
+            "Embedding generation failed. Please try again later.",
+        )
+    except ModelAPIError as e:
+        logger.error(
+            "LLM provider error during similarity search",
+            extra={"user_id": user_id, "community_server_id": community_server_id, "error": str(e)},
+        )
+        return create_error_response(
+            status.HTTP_502_BAD_GATEWAY,
+            "LLM Provider Error",
+            "Embedding generation failed. Please try again later.",
         )
     except HTTPException as e:
         logger.warning(
