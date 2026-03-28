@@ -25,7 +25,6 @@ if TYPE_CHECKING:
         LLMConfigTestRequest,
         LLMConfigTestResponse,
         LLMConfigUpdate,
-        LLMUsageStatsResponse,
     )
     from src.llm_config.secure_string import SecureString, secure_api_key_context
     from src.llm_config.service import LLMService
@@ -48,7 +47,6 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "LLMProviderFactory": ("src.llm_config.providers", "LLMProviderFactory"),
     "LLMResponse": ("src.llm_config.providers", "LLMResponse"),
     "LLMService": ("src.llm_config.service", "LLMService"),
-    "LLMUsageStatsResponse": ("src.llm_config.schemas", "LLMUsageStatsResponse"),
     "SecureString": ("src.llm_config.secure_string", "SecureString"),
     "router": ("src.llm_config.router", "router"),
     "secure_api_key_context": ("src.llm_config.secure_string", "secure_api_key_context"),
@@ -83,7 +81,6 @@ __all__ = [
     "LLMProviderFactory",
     "LLMResponse",
     "LLMService",
-    "LLMUsageStatsResponse",
     "SecureString",
     "router",
     "secure_api_key_context",

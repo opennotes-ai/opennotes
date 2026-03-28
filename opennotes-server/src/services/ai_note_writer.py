@@ -351,32 +351,6 @@ class AINoteWriter:
         )
         return result.scalar_one_or_none()
 
-    async def _get_community_server_uuid(self, db: AsyncSession, community_server_id: str) -> UUID:
-        """
-        Get community server UUID from platform ID.
-
-        Args:
-            db: Database session
-            community_server_id: Community server platform ID
-
-        Returns:
-            Community server UUID
-
-        Raises:
-            ValueError: If community server not found
-        """
-        result = await db.execute(
-            select(CommunityServer.id).where(
-                CommunityServer.platform_community_server_id == community_server_id
-            )
-        )
-        community_server_uuid = result.scalar_one_or_none()
-
-        if not community_server_uuid:
-            raise ValueError(f"Community server not found: {community_server_id}")
-
-        return community_server_uuid
-
     async def _generate_fact_check_note(
         self,
         db: AsyncSession,  # noqa: ARG002
@@ -554,49 +528,6 @@ Please analyze this content and write a concise, informative community note that
 Focus on helping readers understand what the content is about, what context might be important, and any relevant information that would be helpful to know.
 
 Community Note:"""
-
-    async def _submit_note(
-        self,
-        db: AsyncSession,
-        request_id: UUID,
-        note_content: str,
-        community_server_uuid: UUID,
-    ) -> None:
-        """
-        Submit generated note to database.
-
-        Args:
-            db: Database session
-            request_id: Request ID
-            note_content: Generated note content
-            community_server_uuid: Community server UUID
-
-        Raises:
-            Exception: If note submission fails
-        """
-        note = Note(
-            request_id=request_id,
-            author_id=PLACEHOLDER_USER_ID,
-            summary=note_content,
-            classification="NOT_MISLEADING",
-            status="NEEDS_MORE_RATINGS",
-            community_server_id=community_server_uuid,
-            ai_generated=True,
-            ai_provider=settings.AI_NOTE_WRITER_MODEL.provider,
-            ai_model=settings.AI_NOTE_WRITER_MODEL.model,
-        )
-
-        db.add(note)
-        await db.commit()
-        await db.refresh(note)
-
-        logger.info(
-            f"Submitted AI-generated note {note.id}",
-            extra={
-                "note_id": str(note.id),
-                "request_id": request_id,
-            },
-        )
 
     async def generate_scan_explanation(
         self,

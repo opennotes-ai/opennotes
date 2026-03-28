@@ -649,7 +649,7 @@ class Settings(BaseSettings):
     TRACELOOP_ENABLED: bool = Field(
         default=True,
         description="Enable Traceloop SDK for LLM observability. "
-        "Provides automatic instrumentation of LiteLLM, OpenAI, and Anthropic calls "
+        "Provides automatic instrumentation of OpenAI, Anthropic, and Google calls "
         "with GenAI semantic conventions (gen_ai.*, llm.*).",
     )
     TRACELOOP_TRACE_CONTENT: bool = Field(

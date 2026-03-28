@@ -52,7 +52,9 @@ def downgrade() -> None:
             server_default=sa.text("0"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(["community_server_id"], ["community_servers.id"]),
+        sa.ForeignKeyConstraint(
+            ["community_server_id"], ["community_servers.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_llm_usage_log_id", "llm_usage_log", ["id"])

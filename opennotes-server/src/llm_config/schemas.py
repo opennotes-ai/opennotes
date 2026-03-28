@@ -106,17 +106,3 @@ class LLMConfigTestResponse(SQLAlchemySchema):
 
     valid: bool
     error_message: str | None = None
-
-
-class LLMUsageStatsResponse(SQLAlchemySchema):
-    """Schema for usage statistics response."""
-
-    provider: str
-    daily_requests: dict[str, Any]
-    monthly_requests: dict[str, Any]
-    daily_tokens: dict[str, Any]
-    monthly_tokens: dict[str, Any]
-    daily_spend: dict[str, Any]
-    monthly_spend: dict[str, Any]
-    last_daily_reset: datetime | None
-    last_monthly_reset: datetime | None

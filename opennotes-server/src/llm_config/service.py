@@ -10,8 +10,8 @@ from collections.abc import AsyncGenerator
 from typing import Any, Literal
 from uuid import UUID
 
-import httpx
 from pydantic_ai import Embedder
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from tenacity import (
     AsyncRetrying,
     retry,
@@ -25,15 +25,13 @@ from src.llm_config.manager import LLMClientManager
 from src.llm_config.model_id import ModelId
 from src.llm_config.providers import DirectCompletionParams
 from src.llm_config.providers.base import LLMMessage, LLMResponse
-from src.llm_config.providers.direct_provider import EmptyLLMResponseError
 from src.monitoring import get_logger
 
 TRANSIENT_EXCEPTIONS = (
-    httpx.ConnectError,
-    httpx.TimeoutException,
+    ModelHTTPError,
+    ModelAPIError,
     ConnectionError,
     TimeoutError,
-    EmptyLLMResponseError,
 )
 
 _RETRY_PREDICATE = retry_if_exception_type(TRANSIENT_EXCEPTIONS)
@@ -47,7 +45,7 @@ class LLMService:
 
     Provides high-level methods that automatically handle:
     - Server-specific -> global credential fallback
-    - Provider abstraction (OpenAI/Anthropic/LiteLLM)
+    - Provider abstraction (OpenAI/Anthropic/Google via pydantic-ai)
     - Caching and resource management
     - Error handling and retries
     """
@@ -204,14 +202,19 @@ class LLMService:
     async def generate_embeddings_batch(
         self,
         texts: list[str],
-        input_type: Literal["query", "document"] = "document",  # noqa: ARG002
+        input_type: Literal["query", "document"] = "document",
     ) -> list[tuple[list[float], str, str]]:
         if not texts:
             return []
 
         embedder = self._require_embedder()
         sanitized_texts = [self._sanitize_embedding_text(t) for t in texts]
-        result = await embedder.embed_documents(sanitized_texts)
+
+        if input_type == "query":
+            result = await embedder.embed_query(sanitized_texts)
+        else:
+            result = await embedder.embed_documents(sanitized_texts)
+
         return [(list(emb), result.provider_name, result.model_name) for emb in result.embeddings]
 
     @retry(

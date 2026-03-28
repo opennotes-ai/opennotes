@@ -199,7 +199,6 @@ def test_import_all_exports() -> None:
         LLMProvider,
         LLMProviderFactory,
         LLMResponse,
-        LLMUsageStatsResponse,
         router,
     )
 
@@ -217,5 +216,4 @@ def test_import_all_exports() -> None:
     assert LLMConfigResponse is not None
     assert LLMConfigTestRequest is not None
     assert LLMConfigTestResponse is not None
-    assert LLMUsageStatsResponse is not None
     assert router is not None
