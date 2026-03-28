@@ -14,7 +14,7 @@ Open Discourse at http://localhost:4200 and log in with the default admin creden
 ### Default Credentials
 
 - Email: `admin@opennotes.local`
-- Password: `opennotes-dev`
+- Password: `opennotes-dev-password`
 
 ### Ports
 
@@ -25,7 +25,7 @@ Open Discourse at http://localhost:4200 and log in with the default admin creden
 
 ## Plugin Development Workflow
 
-1. Edit plugin files under `opennotes-discourse/`.
+1. Edit plugin files under `opennotes-discourse/plugin/`.
 2. Restart the Discourse container to pick up changes:
    ```bash
    mise run discourse:down && mise run discourse:up
@@ -38,12 +38,13 @@ For JavaScript/template changes, Discourse's Ember live-reload may pick them up 
 
 ```
 opennotes-discourse/
-  plugin.rb                 # Plugin entry point (name, version, initialization)
-  config/
-    settings.yml            # Site settings (API URL, trust levels, feature flags)
-    locales/
-      server.en.yml         # Server-side translations
-      client.en.yml         # Client-side translations
+  plugin/                   # Discourse plugin source (mounted into container)
+    plugin.rb               # Plugin entry point (name, version, initialization)
+    config/
+      settings.yml          # Site settings (API URL, trust levels, feature flags)
+      locales/
+        server.en.yml       # Server-side translations
+        client.en.yml       # Client-side translations
   docker/
     bootstrap.sh            # One-time dev environment setup
     .gitignore              # Ignores cloned Discourse repo
