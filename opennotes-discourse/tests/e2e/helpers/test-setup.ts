@@ -4,15 +4,16 @@ import { ALL_USERS, ADMIN, TestUser } from "../fixtures/users";
 export class TestSetup {
   private api: DiscourseAPI;
 
-  constructor(baseUrl: string, apiKey: string) {
-    this.api = new DiscourseAPI(baseUrl, apiKey, ADMIN.username);
+  constructor(api: DiscourseAPI) {
+    this.api = api;
   }
 
-  async ensureUsersExist(): Promise<void> {
+  async ensureUsersExist(users?: TestUser[]): Promise<void> {
+    const targetUsers = users ?? ALL_USERS;
     const existingUsers = await this.api.getUsers();
     const existingUsernames = new Set(existingUsers.map((u) => u.username));
 
-    for (const user of ALL_USERS) {
+    for (const user of targetUsers) {
       if (!existingUsernames.has(user.username)) {
         await this.api.createUser(
           user.username,

@@ -57,6 +57,16 @@ opennotes-discourse/
       specs/                # Playwright test specs
 ```
 
+## API Key
+
+The bootstrap script automatically provisions a Discourse API key and saves it to `docker/.discourse-api-key`. This key is used by the Playwright test harness for test data setup.
+
+If you need to set it manually (e.g., for CI):
+
+```bash
+export DISCOURSE_API_KEY=<your-key>
+```
+
 ## Testing
 
 Run end-to-end tests with Playwright:
@@ -85,7 +95,7 @@ The Discourse dev image supports ARM64. If you see image pull errors, ensure Doc
    ```bash
    ls -la docker/.discourse/plugins/discourse-opennotes
    ```
-   It should point to `../../../` (the plugin root).
+   It should point to `../../../plugin` (the plugin source directory).
 
 2. Restart the container:
    ```bash
@@ -94,5 +104,5 @@ The Discourse dev image supports ARM64. If you see image pull errors, ensure Doc
 
 3. Check the Discourse container logs for plugin load errors:
    ```bash
-   docker logs discourse-dev
+   docker logs discourse_dev
    ```

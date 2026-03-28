@@ -19,7 +19,7 @@ export class PostPage {
       await categoryOption.click();
     }
 
-    await this.page.click(".create");
+    await this.page.click(".save-or-cancel .create");
     await this.page.waitForSelector(".d-editor-input", { state: "hidden", timeout: 15_000 });
     await this.page.waitForLoadState("networkidle");
 
@@ -27,7 +27,7 @@ export class PostPage {
   }
 
   async replyToTopic(body: string): Promise<void> {
-    const replyButton = this.page.locator(".topic-footer-main-buttons .create");
+    const replyButton = this.page.locator(".topic-footer-main-buttons button.create");
     await replyButton.click();
     await this.page.waitForSelector(".d-editor-input", { state: "visible" });
     await this.page.fill(".d-editor-input", body);
