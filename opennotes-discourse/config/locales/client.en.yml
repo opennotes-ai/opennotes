@@ -1,0 +1,14 @@
+en:
+  js:
+    opennotes:
+      title: "OpenNotes"
+      community_review: "Community Review"
+      under_review: "This post is under community review"
+      reviewed: "Community Reviewed"
+      vote:
+        helpful: "Helpful"
+        somewhat_helpful: "Somewhat Helpful"
+        not_helpful: "Not Helpful"
+      admin:
+        dashboard: "OpenNotes Dashboard"
+        settings: "OpenNotes Settings"
