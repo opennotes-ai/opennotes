@@ -1,0 +1,678 @@
+# OpenNotes for Discourse — MVP Product Specification
+
+## 1. Executive Summary
+
+A Discourse plugin that acts as a **thin client/adapter** between Discourse and the existing OpenNotes server (`opennotes-server`). The plugin handles Discourse-specific integration (event hooks, UI components, review queue) while delegating all classification, scoring, consensus computation, and data storage to the OpenNotes API.
+
+**One-line pitch:** "Install one plugin, connect to OpenNotes, and let your community help moderate itself."
+
+**Architecture principle:** The plugin contains no business logic for classification or scoring. It is an adapter that maps Discourse concepts (posts, flags, trust levels) to OpenNotes concepts (requests, notes, ratings, scoring) and renders the results back into Discourse's UI.
+
+---
+
+## 2. What the OpenNotes Server Already Provides
+
+The plugin delegates to the existing `opennotes-server` (FastAPI, PostgreSQL, JSON:API). Key existing capabilities:
+
+| Server Capability | API Surface | Maps To Plugin Need |
+|---|---|---|
+| **Notes** (CRUD, status tracking) | `POST/GET/PATCH/DELETE /api/v2/notes` | Community review items ("this post needs context") |
+| **Ratings** (per-note votes with helpfulness levels) | `POST /api/v2/ratings`, `GET /api/v2/notes/{id}/ratings` | Community votes on whether a moderation action is justified |
+| **Scoring** (adaptive tiers: Bayesian -> MF as data grows) | `POST /api/v2/scoring/score`, `GET /api/v2/scoring/notes/{id}/score` | Consensus computation with bridging algorithm |
+| **Requests** (content flagged for review) | `POST/GET /api/v2/requests` | Flagged Discourse posts awaiting community notes |
+| **AI note generation** | `POST /api/v2/requests/{id}/ai-notes` | Auto-generate context notes for flagged content |
+| **Bulk content scan** (OpenAI moderation, flashpoint) | `POST /api/v1/bulk-content-scan/*` | AI classification of posts |
+| **Community servers** (multi-tenant) | `GET /api/v2/community-servers/*` | Each Discourse instance = one community server |
+| **Monitored channels** | `POST/GET /api/v2/monitored-channels` | Which Discourse categories to monitor |
+| **Community config** (feature flags, thresholds) | `GET/PATCH /api/v1/community-config/*` | Admin-configurable settings |
+| **LLM config** (per-community model settings) | `POST/GET /api/v1/community-servers/{id}/llm-config` | Custom AI provider config |
+| **Outbound webhooks** | `POST /webhooks/register` (extended) | Server -> Discourse notifications when consensus is reached |
+| **User profiles** (with community membership) | `GET /api/v2/user-profiles/lookup` (extended) | Map Discourse users to OpenNotes profiles |
+| **Scoring analysis & history** | `GET /api/v2/community-servers/{id}/scoring-analysis` | Admin dashboard data |
+| **Auth** (JWT, API keys, service accounts) | `POST /api/v1/auth/*` | Plugin authenticates as service account |
+
+**What does NOT need to be in the plugin:**
+- Classification models or API calls (server has `bulk_content_scan` with OpenAI moderation + flashpoint)
+- Bridging/consensus algorithm (server has `notes/scoring` with adaptive tiers)
+- User reputation/scoring data (server has `user_profiles` + scoring snapshots)
+- Data storage for votes, notes, or scores (all in server's PostgreSQL)
+
+---
+
+## 3. Plugin Architecture
+
+### 3.1 Design Principle: Thin Adapter
+
+```mermaid
+graph TB
+    subgraph Discourse["Discourse Instance"]
+        subgraph Plugin["discourse-opennotes plugin"]
+            Hooks["Event Hooks<br/>(post_created, post_edited, flag_created)"]
+            Client["API Client<br/>(HTTP / JSON:API)"]
+            Webhook["Webhook Receiver"]
+            UI["UI Components<br/>(Ember/Glimmer)"]
+            Reviewable["Reviewable Subclass<br/>(staff review queue)"]
+        end
+    end
+
+    subgraph Server["OpenNotes Server (FastAPI + PostgreSQL)"]
+        Classification
+        Notes
+        Ratings
+        Scoring
+        OutboundWebhooks["Outbound Webhooks"]
+    end
+
+    Hooks --> Client
+    Client -->|"HTTP (JSON:API)<br/>+ X-Platform-Claims"| Server
+    Server -->|"Webhooks (HMAC-SHA256)"| Webhook
+    UI -->|"renders server data"| Discourse
+    Reviewable -->|"staff sees items"| Discourse
+```
+
+### 3.2 Plugin Structure
+
+```
+discourse-opennotes/
+  plugin.rb                          # Entry point, event hooks, settings
+  config/
+    settings.yml                     # Admin settings (server URL, API key, thresholds)
+    locales/
+      server.en.yml
+      client.en.yml
+  app/
+    controllers/
+      opennotes/
+        webhook_controller.rb        # Receives webhooks from OpenNotes server
+        community_reviews_controller.rb  # Proxies review data for non-staff UI
+    models/
+      reviewable_opennotes_item.rb   # Discourse Reviewable subclass (thin -- data lives on server)
+    serializers/
+      opennotes/
+        review_serializer.rb         # Serializes server data for Discourse frontend
+    jobs/
+      regular/
+        sync_post_to_opennotes.rb    # Push new/edited posts to server for classification
+        sync_flag_to_opennotes.rb    # Push user flags as requests
+      scheduled/
+        sync_scoring_status.rb       # Periodic check for completed consensus (backup for webhooks)
+  lib/
+    opennotes/
+      client.rb                      # HTTP client for OpenNotes JSON:API
+      platform_claims.rb             # Sign/verify X-Platform-Claims JWT
+      user_mapper.rb                 # Map Discourse users -> OpenNotes profiles (via server lookup)
+      post_mapper.rb                 # Map Discourse posts -> OpenNotes requests/notes
+      action_executor.rb             # Execute Discourse actions based on server consensus
+  assets/
+    javascripts/discourse/
+      connectors/
+        topic-above-post-stream/     # "Under community review" banner
+        post-menu/                   # "Community context" button
+      components/
+        community-review-panel.gjs   # Review queue UI
+        vote-widget.gjs              # Rating submission (calls server via plugin proxy)
+        consensus-badge.gjs          # Shows resolved status
+        opennotes-admin-dashboard.gjs
+      routes/
+        community-reviews.js
+    stylesheets/
+      opennotes.scss
+  spec/
+```
+
+### 3.3 Key Discourse Extension Points
+
+| Extension Point | Purpose |
+|---|---|
+| `DiscourseEvent.on(:post_created)` | Enqueue `SyncPostToOpennotes` job |
+| `DiscourseEvent.on(:post_edited)` | Re-sync edited post |
+| `DiscourseEvent.on(:flag_created)` | Create OpenNotes request for community review |
+| Custom `Reviewable` subclass | Staff sees OpenNotes items in native `/review` queue |
+| `add_to_serializer(:post, :opennotes_status)` | Inject review status badge data |
+| `add_admin_route` | Admin panel for OpenNotes config + dashboard |
+| Plugin outlets (Ember) | UI injection for banners, badges, review button |
+| Webhook endpoint | Receive server callbacks on consensus/scoring events |
+
+---
+
+## 4. Data Flow
+
+### 4.1 Post Classification
+
+```mermaid
+flowchart TD
+    A["post_created / post_edited event"] --> B["SyncPostToOpennotes job (Sidekiq)"]
+    B --> C["POST /api/v2/requests<br/>content + category + author + metadata"]
+    C --> D["Server classifies via bulk_content_scan<br/>(OpenAI moderation / flashpoint)"]
+    D --> E{"Classification score"}
+    E -->|"Score < threshold"| F["Store 'pass' locally<br/>No further action"]
+    E -->|"Score in review zone"| G["Create ReviewableOpennotesItem<br/>-> community review queue"]
+    E -->|"Score > critical"| H["Auto-hide post<br/>+ notify staff"]
+
+    style F fill:#90EE90
+    style G fill:#FFD700
+    style H fill:#FFB6C6
+```
+
+### 4.2 Community Review (Voting)
+
+```mermaid
+flowchart TD
+    A["Community member visits /community-reviews"] --> B["Plugin fetches pending requests<br/>GET /api/v2/requests?filter[status]=pending"]
+    B --> C["User votes on note or submits new note"]
+    C --> D["Plugin proxies to server<br/>POST /api/v2/ratings (vote)<br/>POST /api/v2/notes (new note)"]
+    D --> E["Server triggers scoring<br/>when vote thresholds are met"]
+    E --> F["Server sends webhook<br/>to plugin on consensus"]
+    F --> G["Plugin webhook_controller<br/>receives event"]
+    G --> H{"Note status?"}
+    H -->|"CURRENTLY_RATED_HELPFUL"| I["Execute action<br/>(hide post, warn user, etc.)"]
+    H -->|"CURRENTLY_RATED_NOT_HELPFUL"| J["Uphold post<br/>show 'Reviewed' badge"]
+    H -->|"NEEDS_MORE_RATINGS"| K["No action yet"]
+
+    style I fill:#FFB6C6
+    style J fill:#90EE90
+    style K fill:#E0E0E0
+```
+
+### 4.3 Concept Mapping
+
+| Discourse Concept | OpenNotes Server Concept |
+|---|---|
+| Discourse instance | Community Server (`platform: "discourse"`) |
+| Discourse category (monitored) | Monitored Channel |
+| Discourse post (flagged) | Request |
+| Community review note | Note |
+| Community vote | Rating (with `helpfulness_level`) |
+| Consensus result | Scoring snapshot (note status) |
+| Discourse user | User Profile (mapped via platform identity with `provider_scope`) |
+| Admin thresholds | Community Config |
+| Discourse trust level | Profile metadata (seeds rater weight) |
+
+---
+
+## 5. User-Facing Features
+
+### 5.1 Community Members (TL2+)
+
+- `/community-reviews` page showing posts under review (fetched from server)
+- Each item shows: post content, context, category, reason flagged
+- **Vote widget:** maps to OpenNotes ratings -- "Helpful" / "Somewhat Helpful" / "Not Helpful" on existing notes, or ability to write a new note providing context
+- Users don't see scores until consensus is reached
+- After resolution: "Community Reviewed" badge on posts
+
+### 5.2 Moderators
+
+- OpenNotes items in native `/review` queue via `ReviewableOpennotesItem`
+- Staff sees: AI classification scores, current rating tallies, individual notes with ratings, scoring analysis from server
+- Staff can override: force-publish a note, or take direct Discourse action
+- Staff can escalate: remove from community review, handle directly
+
+### 5.3 Admins
+
+**Settings** (stored as Discourse site settings, some synced to server as community config):
+
+| Setting | Purpose | Stored |
+|---|---|---|
+| `opennotes_server_url` | URL of OpenNotes server | Discourse only |
+| `opennotes_api_key` | Service account API key | Discourse only |
+| `opennotes_enabled` | Master switch | Discourse only |
+| `opennotes_monitored_categories` | Which categories to scan | Synced -> monitored channels |
+| `opennotes_reviewer_min_trust_level` | Who can participate | Discourse only (enforced in plugin) |
+| `opennotes_route_flags_to_community` | Flags -> community review | Discourse only |
+| `opennotes_staff_approval_required` | Require staff approval | Community config |
+| `opennotes_auto_hide_on_consensus` | Auto-hide when note rated helpful | Community config |
+
+**Dashboard** (renders data from server's scoring analysis endpoint):
+- Activity metrics, classification breakdown, consensus health, top reviewers, false positive rate
+- All data fetched from `GET /api/v2/community-servers/{id}/scoring-analysis` and `/scoring-history`
+
+---
+
+## 6. What the Plugin Does NOT Do
+
+The plugin explicitly does NOT:
+
+- Store notes, ratings, or scores (all on server)
+- Run any classification model or call Perspective/OpenAI directly (server handles via bulk_content_scan)
+- Implement the bridging/consensus algorithm (server's adaptive scoring tiers handle this)
+- Manage user reputation weights (server's scoring system handles rater weights)
+- Store webhook configuration (server manages)
+- Maintain a local identity mapping table (server owns identity via `provider_scope`)
+
+The plugin's job is: **listen to Discourse events -> call server API -> render results in Discourse UI -> execute Discourse actions based on server decisions.**
+
+---
+
+## 7. Identity Mapping
+
+### 7.1 Design Principles
+
+- **Discourse acts as identity provider.** Each Discourse user maps to an OpenNotes profile via the server's identity system.
+- **Plugin runs in untrusted environments.** Unlike the Discord bot (which we operate), the Discourse plugin runs in customer-managed Discourse instances. The server must verify identity claims.
+- **No local identity table.** Following the thin-adapter principle, the plugin does not maintain a local `discourse_user_id -> opennotes_profile_id` table. Identity resolution happens via the server's profile lookup endpoint.
+
+### 7.2 Identity Model: `provider_scope`
+
+The server's `UserIdentity` table gains a new `provider_scope` column to handle site-scoped platforms:
+
+| Field | Discord | Discourse |
+|---|---|---|
+| `provider` | `"discord"` | `"discourse"` |
+| `provider_scope` | `null` (globally unique snowflake IDs) | Instance URL, e.g. `"community.example.com"` |
+| `provider_user_id` | `"123456789"` | `"42"` |
+
+**Uniqueness constraint:** `(provider, provider_scope, provider_user_id)`
+
+This ensures user 42 on `community-a.example.com` is a different identity than user 42 on `community-b.example.com`.
+
+### 7.3 Authentication Headers
+
+The plugin uses two authentication layers:
+
+1. **Service account API key** in `Authorization: Bearer <api_key>` header -- authenticates the plugin as a trusted service.
+2. **Platform claims JWT** in `X-Platform-Claims` header -- asserts the identity of the Discourse user on whose behalf the action is taken. Contains:
+
+```json
+{
+  "platform": "discourse",
+  "scope": "community.example.com",
+  "sub": "42",
+  "username": "alice",
+  "trust_level": 2,
+  "admin": false,
+  "moderator": false,
+  "iat": 1711500000,
+  "exp": 1711503600
+}
+```
+
+The JWT is signed with a shared secret provisioned during community server registration.
+
+### 7.4 Verification Flows
+
+#### First-Time User (Slow Path)
+
+When a Discourse user first interacts with OpenNotes (votes, writes a note), the server has no profile for them.
+
+```mermaid
+sequenceDiagram
+    participant User as Discourse User
+    participant Plugin as Plugin
+    participant Server as OpenNotes Server
+    participant DiscourseAPI as Discourse Admin API
+
+    User->>Plugin: Votes on a note
+    Plugin->>Plugin: Sign X-Platform-Claims JWT
+    Plugin->>Server: POST /api/v2/ratings<br/>Authorization: Bearer <api_key><br/>X-Platform-Claims: <jwt>
+    Server->>Server: Decode JWT, extract user identity
+    Server->>Server: Lookup UserIdentity(discourse, community.example.com, 42)
+    Note over Server: Identity not found -- first-time user
+    Server->>DiscourseAPI: GET /admin/users/42.json<br/>(verify user exists, get trust level)
+    DiscourseAPI-->>Server: User confirmed (TL2, not admin)
+    Server->>Server: Create UserProfile + UserIdentity
+    Server->>Server: Set initial rater weight from trust level
+    Server->>Server: Cache verified identity (24h)
+    Server->>Server: Process the rating
+    Server-->>Plugin: 201 Created
+    Plugin-->>User: Vote recorded
+```
+
+#### Returning User (Fast Path)
+
+```mermaid
+sequenceDiagram
+    participant User as Discourse User
+    participant Plugin as Plugin
+    participant Server as OpenNotes Server
+
+    User->>Plugin: Votes on a note
+    Plugin->>Plugin: Sign X-Platform-Claims JWT
+    Plugin->>Server: POST /api/v2/ratings<br/>Authorization: Bearer <api_key><br/>X-Platform-Claims: <jwt>
+    Server->>Server: Decode JWT, extract user identity
+    Server->>Server: Lookup UserIdentity(discourse, community.example.com, 42)
+    Note over Server: Identity found, cache valid
+    Server->>Server: Process the rating
+    Server-->>Plugin: 201 Created
+    Plugin-->>User: Vote recorded
+```
+
+#### Admin/Moderator Action (Elevated Verification)
+
+For sensitive operations (staff override, force-publish, community config changes), the server uses a shorter cache TTL or forces fresh verification:
+
+```mermaid
+sequenceDiagram
+    participant Staff as Discourse Staff
+    participant Plugin as Plugin
+    participant Server as OpenNotes Server
+    participant DiscourseAPI as Discourse Admin API
+
+    Staff->>Plugin: Force-publish note
+    Plugin->>Plugin: Sign X-Platform-Claims JWT (admin: true)
+    Plugin->>Server: PATCH /api/v2/notes/{id}<br/>X-Platform-Claims: <jwt>
+    Server->>Server: Decode JWT -- admin claim detected
+    Server->>Server: Admin cache expired or forced fresh
+    Server->>DiscourseAPI: GET /admin/users/42.json<br/>(re-verify admin status)
+    DiscourseAPI-->>Server: User confirmed (admin: true)
+    Server->>Server: Process force-publish
+    Server-->>Plugin: 200 OK
+```
+
+### 7.5 Trust Level as Rater Weight Seed
+
+Discourse trust levels are stored as profile metadata and used to **seed initial rater weights** for cold-start:
+
+| Trust Level | Initial Weight | Rationale |
+|---|---|---|
+| TL0 (New User) | Cannot vote (gated by plugin) | Too new to participate |
+| TL1 (Basic) | Cannot vote (gated by plugin) | Too new to participate |
+| TL2 (Member) | 1.0 (baseline) | Standard community member |
+| TL3 (Regular) | 1.2 | Proven track record |
+| TL4 (Leader) | 1.5 | Community leader |
+
+Weights converge to behavior-based over time as the scoring system accumulates rating history. The seed weight only affects a rater's first few votes.
+
+---
+
+## 8. Bootstrap and Provisioning
+
+### 8.1 Plugin Setup Flow
+
+When an admin installs the plugin and configures it:
+
+1. Admin enters OpenNotes server URL and API key in Discourse admin settings.
+2. Plugin calls `POST /api/v2/community-servers` to register the Discourse instance:
+   ```json
+   {
+     "platform": "discourse",
+     "platform_community_server_id": "community.example.com",
+     "name": "Community Forum"
+   }
+   ```
+3. Server creates a `CommunityServer` record. **Discourse communities must be pre-registered** -- the server does not auto-create communities from untrusted platforms on first contact.
+4. Plugin registers its webhook callback URL:
+   ```
+   POST /webhooks/register
+   {
+     "callback_url": "https://community.example.com/opennotes/webhooks/receive",
+     "secret": "<generated-hmac-secret>",
+     "platform_community_server_id": "community.example.com",
+     "events": ["note.status_changed", "request.classified", "scoring.completed"]
+   }
+   ```
+5. Plugin syncs monitored categories to server as monitored channels:
+   ```
+   POST /api/v2/monitored-channels
+   {
+     "community_server_id": "<uuid>",
+     "platform_channel_id": "general-discussion",
+     "name": "General Discussion"
+   }
+   ```
+
+### 8.2 Category Sync
+
+When admin changes `opennotes_monitored_categories`:
+- Plugin compares current Discourse categories with server's monitored channels
+- Adds new categories, removes deactivated ones
+- **Discourse is authoritative** for which categories are monitored; server stores the mapping
+
+### 8.3 Settings Sync
+
+Some Discourse site settings are synced to the server's community config:
+- `opennotes_staff_approval_required` -> `community_config.staff_approval_required`
+- `opennotes_auto_hide_on_consensus` -> `community_config.auto_hide_on_consensus`
+
+**Discourse is authoritative.** Changes flow one-way: Discourse -> server. The plugin syncs on setting change via `DiscourseEvent.on(:site_setting_changed)`.
+
+---
+
+## 9. Reviewable State Machine
+
+### 9.1 Overview
+
+The plugin implements `ReviewableOpennotesItem`, a subclass of Discourse's `Reviewable` model. This puts OpenNotes items into Discourse's native `/review` queue for staff visibility.
+
+**Key principle:** The Reviewable is a thin view over server-side state. The plugin does not store moderation state locally -- it queries the server and maps the response to Discourse's Reviewable actions.
+
+### 9.2 State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: flag_created / classification_triggered
+    Pending --> UnderReview: community_review_started
+    UnderReview --> ConsensusHelpful: note.status_changed -> CURRENTLY_RATED_HELPFUL
+    UnderReview --> ConsensusNotHelpful: note.status_changed -> CURRENTLY_RATED_NOT_HELPFUL
+    UnderReview --> StaffOverridden: staff_action (force-publish / escalate)
+    ConsensusHelpful --> Resolved: action_executed (hide post / warn user)
+    ConsensusNotHelpful --> Resolved: action_executed (uphold post)
+    StaffOverridden --> Resolved: staff_decision_applied
+    Pending --> Dismissed: staff_ignores
+
+    note right of Pending: Server: request created,\nclassification pending
+    note right of UnderReview: Server: NEEDS_MORE_RATINGS\nCommunity voting active
+    note right of ConsensusHelpful: Server: CURRENTLY_RATED_HELPFUL\nAction recommended
+    note right of ConsensusNotHelpful: Server: CURRENTLY_RATED_NOT_HELPFUL\nPost upheld
+```
+
+### 9.3 NoteStatus to Discourse Action Mapping
+
+| Server NoteStatus | Reviewable State | Discourse Action | API Call |
+|---|---|---|---|
+| `NEEDS_MORE_RATINGS` | Under Review | No action -- show "Under Review" banner | None |
+| `CURRENTLY_RATED_HELPFUL` | Consensus: Helpful | Hide post (if `auto_hide_on_consensus`), warn author, show "Community Reviewed" badge | `PostAction.act(post, :hide)` |
+| `CURRENTLY_RATED_NOT_HELPFUL` | Consensus: Not Helpful | Uphold post, show "Reviewed -- No Action" badge | Update Reviewable status |
+
+### 9.4 Staff Actions
+
+| Action | Discourse UI | Server API Call | Effect |
+|---|---|---|---|
+| **Approve (uphold post)** | "Disagree" button in /review | `PATCH /api/v2/notes/{id}` with `status: "CURRENTLY_RATED_NOT_HELPFUL"` | Force note to not-helpful, uphold post |
+| **Reject (hide post)** | "Agree" button in /review | `PATCH /api/v2/notes/{id}` with `status: "CURRENTLY_RATED_HELPFUL"` | Force note to helpful, hide post |
+| **Ignore (dismiss)** | "Ignore" button in /review | `DELETE /api/v2/requests/{id}` | Remove from review queue |
+| **Escalate** | "Escalate" in plugin UI | `PATCH /api/v2/requests/{id}` with `escalated: true` | Remove from community review, handle directly |
+
+### 9.5 Webhook-Triggered Transitions
+
+When the server reaches consensus (via community voting or scoring), it sends a webhook to the plugin. The plugin's `webhook_controller` receives the event and:
+
+1. Looks up the associated Discourse post via the request's metadata
+2. Updates the `ReviewableOpennotesItem` status
+3. Executes the recommended Discourse action (if `auto_hide_on_consensus` is enabled)
+4. Updates the post's serializer data (badge, banner)
+
+**Idempotency:** The plugin checks the current Reviewable state before acting. Duplicate webhook deliveries (retries) are safe because the plugin only transitions forward (pending -> resolved, never backward).
+
+---
+
+## 10. Outbound Webhook Strategy
+
+### 10.1 Registration
+
+During plugin setup (section 8), the plugin registers a webhook callback URL with the server. The server stores the webhook configuration and begins delivering events.
+
+### 10.2 Event Types
+
+The server sends minimal payloads. The plugin fetches full details from the API on receipt.
+
+**`note.status_changed`**
+```json
+{
+  "event": "note.status_changed",
+  "note_id": "uuid",
+  "status": "CURRENTLY_RATED_HELPFUL",
+  "request_id": "uuid",
+  "recommended_action": "hide_post",
+  "community_server_id": "uuid",
+  "timestamp": "2026-03-27T12:00:00Z"
+}
+```
+
+**`request.classified`**
+```json
+{
+  "event": "request.classified",
+  "request_id": "uuid",
+  "classification_score": 0.85,
+  "recommended_action": "community_review",
+  "community_server_id": "uuid",
+  "timestamp": "2026-03-27T12:00:00Z"
+}
+```
+
+**`scoring.completed`**
+```json
+{
+  "event": "scoring.completed",
+  "community_server_id": "uuid",
+  "notes_scored": 12,
+  "summary": {"helpful": 5, "not_helpful": 3, "needs_more": 4},
+  "timestamp": "2026-03-27T12:00:00Z"
+}
+```
+
+### 10.3 Delivery and Signing
+
+- **HMAC-SHA256 signature** in `X-Webhook-Signature` header: `sha256=<hex-digest>`
+- The plugin verifies the signature using the shared secret from registration before processing.
+- **Delivery timeout:** 5 seconds per attempt.
+- **Retry policy:** 3 attempts with exponential backoff (10s, 30s, 90s). After exhaustion, event is dead-lettered.
+- **Ordering:** Events are delivered in order per community server. If delivery fails, subsequent events for that community are held until the backlog clears or is dead-lettered.
+
+### 10.4 Polling Fallback
+
+The plugin's `sync_scoring_status` Sidekiq scheduled job acts as a backup for missed webhooks:
+
+- **Interval:** Every 5 minutes.
+- **Query:** `GET /api/v2/requests?filter[status]=resolved&filter[updated_since]=<last_poll_timestamp>&filter[community_server_id]=<id>`
+- **Reconciliation:** For each resolved request, the plugin checks if the corresponding `ReviewableOpennotesItem` has already been updated. If not, it applies the action.
+- **Idempotency:** The plugin stores `last_poll_timestamp` and each request's `updated_at` to avoid reprocessing.
+
+### 10.5 Failure Modes
+
+| Scenario | Behavior |
+|---|---|
+| **Server down** | Plugin defers classification. Posts publish normally. Classification + review happens when server recovers. Sidekiq jobs retry with backoff. |
+| **Plugin down** | Webhooks dead-letter after 3 retries. Polling catches up when Discourse restarts. No data loss (server is source of truth). |
+| **Network partition** | Same as server-down. Polling reconciles after reconnection. |
+| **Duplicate webhook delivery** | Safe -- plugin checks Reviewable state before acting. Forward-only transitions prevent double actions. |
+| **Stale polling results** | Plugin compares `updated_at` timestamps. If the local Reviewable was already updated (by webhook), the poll result is a no-op. |
+
+---
+
+## 11. API Contract
+
+### 11.1 Authentication
+
+All plugin requests to the server use two headers:
+
+| Header | Purpose | Example |
+|---|---|---|
+| `Authorization` | Service account API key | `Bearer sk_live_abc123...` |
+| `X-Platform-Claims` | Signed JWT with Discourse user identity | `eyJhbGciOiJIUzI1NiJ9...` |
+| `X-Platform-Type` | Routing hint (redundant with JWT but useful for middleware) | `discourse` |
+
+The `Authorization` header authenticates the plugin as a trusted service. The `X-Platform-Claims` header identifies which Discourse user the action is on behalf of.
+
+**Security:** The server's `InternalHeaderValidationMiddleware` must be extended to protect `X-Platform-*` headers (strip from untrusted sources, same as `X-Discord-*`).
+
+### 11.2 Existing Endpoints Used by Plugin
+
+| Endpoint | Method | Purpose | Plugin Use |
+|---|---|---|---|
+| `/api/v2/requests` | POST | Create content review request | When post flagged or classified |
+| `/api/v2/requests` | GET | List pending requests | Community review queue |
+| `/api/v2/notes` | POST | Create a community note | User submits context note |
+| `/api/v2/notes/{id}` | PATCH | Update note status | Staff force-publish |
+| `/api/v2/ratings` | POST | Submit a rating | User votes on note |
+| `/api/v2/notes/{id}/ratings` | GET | Get ratings for note | Display vote tallies |
+| `/api/v2/scoring/score` | POST | Trigger scoring | After vote threshold met |
+| `/api/v2/user-profiles/lookup` | GET | Resolve platform user to profile | Every authenticated request |
+| `/api/v2/community-servers` | POST | Register Discourse instance | Plugin setup |
+| `/api/v2/monitored-channels` | POST/DELETE | Sync monitored categories | Settings change |
+| `/api/v1/community-config/{id}` | PATCH | Sync admin settings | Settings change |
+| `/api/v2/requests/{id}/ai-notes` | POST | Generate AI note | After classification |
+| `/webhooks/register` | POST | Register webhook callback | Plugin setup |
+
+### 11.3 Endpoints Requiring Extension
+
+These existing endpoints need modification for Discourse support:
+
+**`GET /api/v2/user-profiles/lookup`**
+- Currently rejects non-discord platforms (hardcoded check at `profiles_jsonapi_router.py:990`)
+- **Extension:** Accept `platform=discourse`, add `provider_scope` query parameter
+- **New behavior:** When `platform=discourse`, use `provider_scope` to disambiguate multi-instance users
+
+**`POST /webhooks/register`**
+- Currently unauthenticated
+- **Extension:** Require `Authorization` header (service account API key). Add `events` field to specify which event types to receive. Add Discourse instance identity canonicalization.
+
+**`POST /api/v2/community-servers`**
+- Currently auto-creates communities for Discord
+- **Extension:** For `platform=discourse`, require explicit registration (no auto-create from first contact). Validate that the Discourse instance URL is reachable.
+
+### 11.4 New Server-Side Components
+
+| Component | Purpose | Task |
+|---|---|---|
+| `DISCOURSE` in `AuthProvider` enum | Identity provider for Discourse users | TASK-1400.07 |
+| `provider_scope` column on `UserIdentity` | Multi-instance user disambiguation | TASK-1400.07 |
+| `PlatformContextMiddleware` | Generic `X-Platform-*` header handling | TASK-1400.07 |
+| `X-Platform-*` header protection | Prevent spoofing (same as `X-Discord-*`) | TASK-1400.07 |
+| Outbound webhook delivery system | Server -> plugin event notifications | TASK-1400.06 |
+| `DiscourseVerifier` | Verify user identity against Discourse API | TASK-1400.07 |
+| Generic `can_administer_community` capability | Replace Discord-specific `has_manage_server` | TASK-1400.07 |
+
+### 11.5 Error Handling Contract
+
+| HTTP Status | Meaning | Plugin Behavior |
+|---|---|---|
+| 200/201 | Success | Process response |
+| 400 | Bad request (malformed payload) | Log error, do not retry |
+| 401 | Invalid API key | Alert admin, disable plugin |
+| 403 | Insufficient permissions | Log, show user-facing error |
+| 404 | Resource not found | Handle gracefully (e.g., user not yet registered) |
+| 409 | Conflict (duplicate) | Idempotent -- treat as success |
+| 422 | Validation error | Log error with details, do not retry |
+| 429 | Rate limited | Retry with `Retry-After` header value |
+| 500/502/503 | Server error | Retry with exponential backoff (Sidekiq) |
+
+---
+
+## 12. MVP Scope
+
+### In v1
+
+| Feature | How |
+|---|---|
+| Post scanning on create/edit | Sidekiq job -> server's request + classification endpoints |
+| Flag routing to community review | Flag event -> server request |
+| Community review queue UI | Ember route fetching from server via plugin proxy |
+| Voting (ratings) | Plugin proxies to server's ratings endpoint |
+| Consensus -> action | Webhook from server triggers Discourse hide/warn/silence |
+| Staff override | Via Discourse Reviewable actions, synced to server (force-publish) |
+| Admin settings | Discourse site settings, subset synced to community config |
+| Admin dashboard | Renders server's scoring-analysis data |
+| Identity mapping | Hybrid verification with provider_scope |
+| Outbound webhooks | Minimal payloads with HMAC-SHA256, polling fallback |
+| Bootstrap/provisioning | Community server registration, category sync, webhook setup |
+
+### Deferred to v2+
+
+| Feature | Why |
+|---|---|
+| Writing community notes (not just voting) | v1 uses AI-generated notes; community-authored notes add UX complexity |
+| Per-category policy configuration | v1 uses one global policy; server supports per-channel config for v2 |
+| Replace mode for flags | Too risky until system proves accuracy |
+| Anonymous voting | Deferred UX decision |
+| Real-time updates via MessageBus | v1 uses polling; v2 could use server webhooks -> MessageBus push |
+| WordPress/other platform plugins | Same server, different adapter -- after Discourse proves the model |
+| JWKS-based asymmetric key verification | v1 uses shared-secret JWT; v2 could use JWKS per community for stronger key management |
+| PlatformVerifier registry pattern | v1 uses simple verify-on-first-write; v2 could formalize as pluggable verifier interface |
+
+### Technical Constraints
+
+- **Network dependency:** Plugin requires connectivity to OpenNotes server. If server is down, classification is deferred (posts still publish, reviewed later).
+- **Latency:** Classification is async (Sidekiq job). Community review is inherently async (hours/days). No real-time blocking.
+- **Server provisioning:** Discourse admins use OpenNotes-hosted server for MVP (reduces friction). Self-hosted option for enterprise later.
+- **Untrusted environment:** Plugin runs in customer Discourse instances. Server verifies all identity claims. No auto-creation of communities from untrusted sources.
