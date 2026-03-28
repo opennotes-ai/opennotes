@@ -357,6 +357,45 @@ description = "Open Redis CLI"
 run = "docker exec -it opennotes-redis redis-cli"
 
 # ========================================
+# Discourse Plugin Tasks
+# ========================================
+
+[tasks."discourse:bootstrap"]
+description = "First-time Discourse dev environment setup"
+dir = "opennotes-discourse"
+run = "mise run discourse:bootstrap"
+
+[tasks."discourse:up"]
+description = "Start Discourse dev environment"
+dir = "opennotes-discourse"
+run = "mise run discourse:up"
+
+[tasks."discourse:down"]
+description = "Stop Discourse dev environment"
+dir = "opennotes-discourse"
+run = "mise run discourse:down"
+
+[tasks."discourse:seed"]
+description = "Seed Discourse with test data"
+dir = "opennotes-discourse"
+run = "mise run discourse:seed"
+
+[tasks."discourse:shell"]
+description = "Open shell in Discourse container"
+dir = "opennotes-discourse"
+run = "mise run discourse:shell"
+
+[tasks."discourse:test:e2e"]
+description = "Run Discourse Playwright E2E tests"
+dir = "opennotes-discourse"
+run = "mise run discourse:test:e2e"
+
+[tasks."discourse:test:e2e:headed"]
+description = "Run Discourse E2E tests in headed browser mode"
+dir = "opennotes-discourse"
+run = "mise run discourse:test:e2e:headed"
+
+# ========================================
 # Database Branching Tasks
 # ========================================
 

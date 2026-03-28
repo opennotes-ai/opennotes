@@ -1,0 +1,28 @@
+plugins:
+  opennotes_enabled:
+    default: false
+    client: true
+  opennotes_server_url:
+    default: "http://host.docker.internal:8000"
+    type: string
+  opennotes_api_key:
+    default: ""
+    type: string
+    secret: true
+  opennotes_monitored_categories:
+    default: ""
+    type: string
+  opennotes_reviewer_min_trust_level:
+    default: 2
+    type: integer
+    min: 0
+    max: 4
+  opennotes_auto_hide_on_consensus:
+    default: false
+    type: bool
+  opennotes_staff_approval_required:
+    default: true
+    type: bool
+  opennotes_route_flags_to_community:
+    default: true
+    type: bool
