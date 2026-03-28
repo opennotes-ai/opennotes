@@ -268,3 +268,119 @@ class TestServiceSingletons:
         assert all(s is services[0] for s in services)
 
         reset_chunk_embedding_services()
+
+
+@pytest.mark.asyncio
+class TestChunkEmbeddingServiceLLMCalls:
+    """Test that ChunkEmbeddingService passes correct args to LLMService (TASK-1368.03)."""
+
+    async def test_get_or_create_chunks_batch_passes_input_type_document(self):
+        """generate_embeddings_batch should receive input_type='document', not db/community_server_id."""
+        from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
+
+        mock_chunking = MagicMock()
+        mock_llm = MagicMock()
+        mock_llm.generate_embeddings_batch = AsyncMock(
+            return_value=[
+                ([0.1] * 1536, "openai", "text-embedding-3-small"),
+                ([0.2] * 1536, "openai", "text-embedding-3-small"),
+            ]
+        )
+        service = ChunkEmbeddingService(mock_chunking, mock_llm)
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        with patch("src.fact_checking.chunk_embedding_service.pg_insert") as mock_pg_insert:
+            mock_stmt = MagicMock()
+            mock_stmt.on_conflict_do_nothing.return_value = mock_stmt
+            mock_pg_insert.return_value.values.return_value = mock_stmt
+
+            post_insert_result = MagicMock()
+            chunk1 = MagicMock()
+            chunk1.chunk_text_hash = "hash1"
+            chunk1.id = uuid4()
+            chunk2 = MagicMock()
+            chunk2.chunk_text_hash = "hash2"
+            chunk2.id = uuid4()
+            post_insert_result.scalars.return_value.all.return_value = [chunk1, chunk2]
+
+            call_count = 0
+
+            async def execute_side_effect(*args, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count <= 1:
+                    return mock_result
+                return post_insert_result
+
+            mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            with patch(
+                "src.fact_checking.chunk_embedding_service.compute_chunk_text_hash",
+                side_effect=lambda t: f"hash{['text1', 'text2'].index(t) + 1}",
+            ):
+                await service.get_or_create_chunks_batch(
+                    db=mock_db,
+                    chunk_texts=["text1", "text2"],
+                    community_server_id=uuid4(),
+                )
+
+            mock_llm.generate_embeddings_batch.assert_awaited_once_with(
+                ["text1", "text2"], input_type="document"
+            )
+
+    async def test_get_or_create_chunk_passes_input_type_document(self):
+        """generate_embedding should receive input_type='document', not db/community_server_id."""
+        from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
+
+        mock_chunking = MagicMock()
+        mock_llm = MagicMock()
+        mock_llm.generate_embedding = AsyncMock(
+            return_value=([0.1] * 1536, "openai", "text-embedding-3-small")
+        )
+        service = ChunkEmbeddingService(mock_chunking, mock_llm)
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        chunk_mock = MagicMock()
+        chunk_mock.id = uuid4()
+
+        insert_result = MagicMock()
+        insert_result.rowcount = 1
+
+        call_count = 0
+
+        async def execute_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return mock_result
+            if call_count == 2:
+                return insert_result
+            flush_result = MagicMock()
+            flush_result.scalar_one.return_value = chunk_mock
+            return flush_result
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        mock_db.flush = AsyncMock()
+
+        with patch("src.fact_checking.chunk_embedding_service.pg_insert") as mock_pg_insert:
+            mock_stmt = MagicMock()
+            mock_stmt.on_conflict_do_nothing.return_value = mock_stmt
+            mock_pg_insert.return_value.values.return_value = mock_stmt
+
+            await service.get_or_create_chunk(
+                db=mock_db,
+                chunk_text="test chunk text",
+                community_server_id=uuid4(),
+            )
+
+        mock_llm.generate_embedding.assert_awaited_once_with(
+            "test chunk text", input_type="document"
+        )

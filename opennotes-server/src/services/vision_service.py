@@ -80,7 +80,7 @@ class VisionService:
 
         # Generate description via LLMService (handles retries internally)
         description = await self.llm_service.describe_image(
-            db, image_url, community_server_uuid, detail, max_tokens
+            image_url, detail=detail, max_tokens=max_tokens
         )
 
         self.description_cache[cache_key] = description

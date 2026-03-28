@@ -187,8 +187,8 @@ def test_import_all_exports() -> None:
     from src.llm_config import (
         CommunityServer,
         CommunityServerLLMConfig,
+        DirectProvider,
         EncryptionService,
-        LiteLLMProvider,
         LLMClientManager,
         LLMConfigCreate,
         LLMConfigResponse,
@@ -199,27 +199,21 @@ def test_import_all_exports() -> None:
         LLMProvider,
         LLMProviderFactory,
         LLMResponse,
-        LLMUsageLog,
-        LLMUsageStatsResponse,
-        LLMUsageTracker,
         router,
     )
 
     assert EncryptionService is not None
     assert CommunityServer is not None
     assert CommunityServerLLMConfig is not None
-    assert LLMUsageLog is not None
     assert LLMClientManager is not None
-    assert LLMUsageTracker is not None
     assert LLMProvider is not None
     assert LLMMessage is not None
     assert LLMResponse is not None
     assert LLMProviderFactory is not None
-    assert LiteLLMProvider is not None
+    assert DirectProvider is not None
     assert LLMConfigCreate is not None
     assert LLMConfigUpdate is not None
     assert LLMConfigResponse is not None
     assert LLMConfigTestRequest is not None
     assert LLMConfigTestResponse is not None
-    assert LLMUsageStatsResponse is not None
     assert router is not None

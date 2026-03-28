@@ -8,22 +8,24 @@ from src.llm_config.providers.base import (
     ProviderSettings,
     SettingsT,
 )
-from src.llm_config.providers.factory import LLMProviderFactory
-from src.llm_config.providers.litellm_provider import (
-    LiteLLMCompletionParams,
-    LiteLLMProvider,
-    LiteLLMProviderSettings,
+from src.llm_config.providers.direct_provider import (
+    DirectCompletionParams,
+    DirectProvider,
+    DirectProviderSettings,
+    EmptyLLMResponseError,
 )
+from src.llm_config.providers.factory import LLMProviderFactory
 
 __all__ = [
     "CompletionParamsT",
+    "DirectCompletionParams",
+    "DirectProvider",
+    "DirectProviderSettings",
+    "EmptyLLMResponseError",
     "LLMMessage",
     "LLMProvider",
     "LLMProviderFactory",
     "LLMResponse",
-    "LiteLLMCompletionParams",
-    "LiteLLMProvider",
-    "LiteLLMProviderSettings",
     "ProviderSettings",
     "SettingsT",
 ]

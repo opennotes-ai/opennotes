@@ -10,21 +10,12 @@ from collections.abc import AsyncGenerator
 from typing import Any, Literal
 from uuid import UUID
 
-import litellm
-from litellm.exceptions import (
-    APIConnectionError,
-    APIError,
-    BadRequestError,
-    RateLimitError,
-    ServiceUnavailableError,
-    Timeout,
-)
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic_ai import Embedder
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from tenacity import (
     AsyncRetrying,
     retry,
-    retry_if_exception_type,
-    retry_if_not_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -32,25 +23,25 @@ from tenacity import (
 from src.config import settings
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.model_id import ModelId
-from src.llm_config.providers import LiteLLMCompletionParams
+from src.llm_config.providers import DirectCompletionParams
 from src.llm_config.providers.base import LLMMessage, LLMResponse
-from src.llm_config.providers.litellm_provider import EmptyLLMResponseError
 from src.monitoring import get_logger
 
 TRANSIENT_EXCEPTIONS = (
-    APIConnectionError,
-    Timeout,
-    RateLimitError,
-    ServiceUnavailableError,
-    APIError,
+    ModelHTTPError,
+    ModelAPIError,
     ConnectionError,
     TimeoutError,
-    EmptyLLMResponseError,
 )
 
-_RETRY_PREDICATE = retry_if_exception_type(TRANSIENT_EXCEPTIONS) & retry_if_not_exception_type(
-    BadRequestError
-)
+
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, ModelHTTPError):
+        return exc.status_code >= 429
+    return isinstance(exc, (ModelAPIError, ConnectionError, TimeoutError))
+
+
+_RETRY_PREDICATE = retry_if_exception(_is_retryable)
 
 logger = get_logger(__name__)
 
@@ -60,20 +51,15 @@ class LLMService:
     Unified service for all LLM operations.
 
     Provides high-level methods that automatically handle:
-    - Server-specific → global credential fallback
-    - Provider abstraction (OpenAI/Anthropic/LiteLLM)
+    - Server-specific -> global credential fallback
+    - Provider abstraction (OpenAI/Anthropic/Google via pydantic-ai)
     - Caching and resource management
     - Error handling and retries
     """
 
-    def __init__(self, client_manager: LLMClientManager) -> None:
-        """
-        Initialize LLM service.
-
-        Args:
-            client_manager: LLM client manager for provider access
-        """
+    def __init__(self, client_manager: LLMClientManager, embedder: Embedder | None = None) -> None:
         self.client_manager = client_manager
+        self._embedder = embedder
         self._control_char_re = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
     def _sanitize_embedding_text(self, text: str) -> str:
@@ -97,65 +83,41 @@ class LLMService:
     )
     async def complete(
         self,
-        db: AsyncSession,
         messages: list[LLMMessage],
-        community_server_id: UUID | None = None,
         provider: str = "openai",
         model: ModelId | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
-        """
-        Generate a completion using the specified LLM provider.
-
-        Args:
-            db: Database session
-            messages: Conversation messages
-            community_server_id: Community server UUID, or None for global fallback
-            provider: Provider name ('openai', 'anthropic')
-            model: Model to use (uses provider default if None)
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            **kwargs: Additional provider-specific parameters
-
-        Returns:
-            LLMResponse with generated content
-
-        Raises:
-            ValueError: If no LLM configuration found for provider
-            Exception: If API call fails
-        """
         if model:
-            litellm_provider = model.litellm_provider
-            if provider not in ("openai", model.provider, litellm_provider):
+            resolved_provider = model.canonical_provider
+            if provider not in ("openai", model.provider, resolved_provider):
                 logger.warning(
                     "Model prefix provider differs from explicit provider param, "
                     "using model prefix",
                     extra={
                         "explicit_provider": provider,
                         "model_prefix_provider": model.provider,
-                        "model": model.to_litellm(),
+                        "model": model.to_pydantic_ai(),
                     },
                 )
-            provider = litellm_provider
+            provider = resolved_provider
 
-        llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
+        llm_provider = await self.client_manager.get_client(provider)
 
         if not llm_provider:
-            context = f"community server {community_server_id}" if community_server_id else "global"
-            raise ValueError(f"No {provider} configuration found for {context}")
+            raise ValueError(f"No {provider} configuration found")
 
-        params = LiteLLMCompletionParams(
+        params = DirectCompletionParams(
             model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
         )
 
         logger.debug(
             f"Generating completion with {provider}",
             extra={
-                "community_server_id": str(community_server_id) if community_server_id else None,
                 "provider": provider,
-                "model": model.to_litellm() if model else "default",
+                "model": model.to_pydantic_ai() if model else "default",
                 "message_count": len(messages),
             },
         )
@@ -164,65 +126,41 @@ class LLMService:
 
     async def stream_complete(
         self,
-        db: AsyncSession,
         messages: list[LLMMessage],
-        community_server_id: UUID | None = None,
         provider: str = "openai",
         model: ModelId | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[str, None]:
-        """
-        Generate a streaming completion using the specified LLM provider.
-
-        Args:
-            db: Database session
-            messages: Conversation messages
-            community_server_id: Community server UUID, or None for global fallback
-            provider: Provider name ('openai', 'anthropic')
-            model: Model to use (uses provider default if None)
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            **kwargs: Additional provider-specific parameters
-
-        Yields:
-            Content chunks as they are generated
-
-        Raises:
-            ValueError: If no LLM configuration found for provider
-            Exception: If API call fails
-        """
         if model:
-            litellm_provider = model.litellm_provider
-            if provider not in ("openai", model.provider, litellm_provider):
+            resolved_provider = model.canonical_provider
+            if provider not in ("openai", model.provider, resolved_provider):
                 logger.warning(
                     "Model prefix provider differs from explicit provider param, "
                     "using model prefix",
                     extra={
                         "explicit_provider": provider,
                         "model_prefix_provider": model.provider,
-                        "model": model.to_litellm(),
+                        "model": model.to_pydantic_ai(),
                     },
                 )
-            provider = litellm_provider
+            provider = resolved_provider
 
-        llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
+        llm_provider = await self.client_manager.get_client(provider)
 
         if not llm_provider:
-            context = f"community server {community_server_id}" if community_server_id else "global"
-            raise ValueError(f"No {provider} configuration found for {context}")
+            raise ValueError(f"No {provider} configuration found")
 
-        params = LiteLLMCompletionParams(
+        params = DirectCompletionParams(
             model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
         )
 
         logger.debug(
             f"Starting streaming completion with {provider}",
             extra={
-                "community_server_id": str(community_server_id) if community_server_id else None,
                 "provider": provider,
-                "model": model.to_litellm() if model else "default",
+                "model": model.to_pydantic_ai() if model else "default",
                 "message_count": len(messages),
             },
         )
@@ -230,113 +168,48 @@ class LLMService:
         async for chunk in llm_provider.stream_complete(messages, params):
             yield chunk
 
+    def _require_embedder(self) -> Embedder:
+        if self._embedder is None:
+            raise RuntimeError(
+                "LLMService was created without an Embedder; "
+                "pass embedder= to use embedding methods"
+            )
+        return self._embedder
+
     async def generate_embedding(
         self,
-        db: AsyncSession,
         text: str,
-        community_server_id: UUID | None = None,
-        model: ModelId | None = None,
+        input_type: Literal["query", "document"] = "document",
         retry_attempts: int | None = None,
     ) -> tuple[list[float], str, str]:
-        """
-        Generate embedding for text using LiteLLM.
-
-        Automatically retries on errors with exponential backoff.
-        Uses OpenAI provider credentials but can work with any LiteLLM-supported
-        embedding model.
-
-        Args:
-            db: Database session
-            text: Text to embed
-            community_server_id: Community server UUID, or None for global fallback
-            model: Embedding model (uses settings.EMBEDDING_MODEL if None)
-            retry_attempts: Optional retry override. Defaults to 3 attempts.
-                Hot-path HTTP callers should pass 2.
-
-        Returns:
-            Tuple of (embedding vector, provider name, model name)
-
-        Raises:
-            ValueError: If no OpenAI configuration found
-            Exception: If API call fails after retries
-        """
         max_attempts = 3 if retry_attempts is None else retry_attempts
         if max_attempts < 1:
             raise ValueError(f"retry_attempts must be >= 1, got {max_attempts}")
 
-        async for attempt in AsyncRetrying(
-            retry=_RETRY_PREDICATE,
-            wait=wait_exponential(multiplier=1, min=1, max=60),
-            stop=stop_after_attempt(max_attempts),
-            reraise=True,
-        ):
-            with attempt:
-                llm_provider = await self.client_manager.get_client(
-                    db, community_server_id, "openai"
-                )
+        embedder = self._require_embedder()
+        sanitized_text = self._sanitize_embedding_text(text)
 
-                if not llm_provider:
-                    context = (
-                        f"community server {community_server_id}"
-                        if community_server_id
-                        else "global"
-                    )
-                    raise ValueError(f"No OpenAI configuration found for {context}")
+        try:
+            async for attempt in AsyncRetrying(
+                retry=_RETRY_PREDICATE,
+                wait=wait_exponential(multiplier=1, min=1, max=60),
+                stop=stop_after_attempt(max_attempts),
+                reraise=True,
+            ):
+                with attempt:
+                    if input_type == "query":
+                        result = await embedder.embed_query(sanitized_text)
+                    else:
+                        result = await embedder.embed_documents(sanitized_text)
 
-                embedding_model = model or settings.EMBEDDING_MODEL
-                embedding_model_str = embedding_model.to_litellm()
-
-                sanitized_text = self._sanitize_embedding_text(text)
-
-                logger.debug(
-                    "Generating embedding",
-                    extra={
-                        "text_length": len(sanitized_text),
-                        "community_server_id": str(community_server_id)
-                        if community_server_id
-                        else None,
-                        "model": embedding_model_str,
-                        "retry_attempts": max_attempts,
-                    },
-                )
-
-                try:
-                    response = await litellm.aembedding(
-                        model=embedding_model_str,
-                        input=[sanitized_text],
-                        api_key=llm_provider.api_key,
-                        encoding_format="float",
-                        timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
-                    )
-                except BadRequestError:
-                    logger.error(
-                        "Embedding request rejected by provider (BadRequestError)",
-                        extra={
-                            "text_preview": sanitized_text[:200],
-                            "text_length": len(sanitized_text),
-                            "community_server_id": str(community_server_id)
-                            if community_server_id
-                            else None,
-                            "model": embedding_model_str,
-                        },
-                    )
-                    raise
-
-                embedding = response.data[0]["embedding"]
-
-                logger.info(
-                    "Embedding generated successfully",
-                    extra={
-                        "text_length": len(sanitized_text),
-                        "community_server_id": str(community_server_id)
-                        if community_server_id
-                        else None,
-                        "tokens_used": response.usage.total_tokens if response.usage else 0,
-                        "embedding_dimensions": len(embedding),
-                    },
-                )
-
-                return embedding, "litellm", embedding_model_str
+                    embedding = list(result.embeddings[0])
+                    return embedding, result.provider_name, result.model_name
+        except (ModelHTTPError, ModelAPIError):
+            raise
+        except Exception as e:
+            if "api_key" in str(e).lower() or "authentication" in str(e).lower():
+                raise ValueError(f"Embedding provider not configured: {e}") from e
+            raise
 
         raise RuntimeError("Embedding generation failed unexpectedly after retries")
 
@@ -348,103 +221,21 @@ class LLMService:
     )
     async def generate_embeddings_batch(
         self,
-        db: AsyncSession,
         texts: list[str],
-        community_server_id: UUID | None = None,
-        model: ModelId | None = None,
+        input_type: Literal["query", "document"] = "document",
     ) -> list[tuple[list[float], str, str]]:
-        """
-        Generate embeddings for multiple texts in a single API call.
-
-        This batch method reduces API calls from N to 1 for N texts, improving
-        performance when embedding multiple chunks.
-
-        Automatically retries on errors with exponential backoff.
-        Uses OpenAI provider credentials but can work with any LiteLLM-supported
-        embedding model.
-
-        Args:
-            db: Database session
-            texts: List of texts to embed
-            community_server_id: Community server UUID, or None for global fallback
-            model: Embedding model (uses settings.EMBEDDING_MODEL if None)
-
-        Returns:
-            List of tuples (embedding vector, provider name, model name),
-            in the same order as input texts
-
-        Raises:
-            ValueError: If no OpenAI configuration found or if texts is empty
-            Exception: If API call fails after retries
-        """
         if not texts:
             return []
 
-        llm_provider = await self.client_manager.get_client(db, community_server_id, "openai")
-
-        if not llm_provider:
-            context = f"community server {community_server_id}" if community_server_id else "global"
-            raise ValueError(f"No OpenAI configuration found for {context}")
-
-        embedding_model = model or settings.EMBEDDING_MODEL
-        embedding_model_str = embedding_model.to_litellm()
-
+        embedder = self._require_embedder()
         sanitized_texts = [self._sanitize_embedding_text(t) for t in texts]
 
-        logger.debug(
-            "Generating batch embeddings",
-            extra={
-                "text_count": len(sanitized_texts),
-                "total_text_length": sum(len(t) for t in sanitized_texts),
-                "community_server_id": str(community_server_id) if community_server_id else None,
-                "model": embedding_model_str,
-            },
-        )
+        if input_type == "query":
+            result = await embedder.embed_query(sanitized_texts)
+        else:
+            result = await embedder.embed_documents(sanitized_texts)
 
-        try:
-            response = await litellm.aembedding(
-                model=embedding_model_str,
-                input=sanitized_texts,
-                api_key=llm_provider.api_key,
-                encoding_format="float",
-                timeout=settings.EMBEDDING_TIMEOUT_SECONDS,
-            )
-        except BadRequestError:
-            logger.error(
-                "Batch embedding request rejected by provider (BadRequestError)",
-                extra={
-                    "text_preview": sanitized_texts[0][:200] if sanitized_texts else "",
-                    "text_count": len(sanitized_texts),
-                    "text_length": sum(len(t) for t in sanitized_texts),
-                    "community_server_id": str(community_server_id)
-                    if community_server_id
-                    else None,
-                    "model": embedding_model_str,
-                },
-            )
-            raise
-
-        if len(response.data) != len(texts):
-            raise ValueError(
-                f"API returned {len(response.data)} embeddings but expected {len(texts)}"
-            )
-
-        embeddings_by_index = {item["index"]: item["embedding"] for item in response.data}
-        results = [
-            (embeddings_by_index[i], "litellm", embedding_model_str) for i in range(len(texts))
-        ]
-
-        logger.info(
-            "Batch embeddings generated successfully",
-            extra={
-                "text_count": len(texts),
-                "community_server_id": str(community_server_id) if community_server_id else None,
-                "tokens_used": response.usage.total_tokens if response.usage else 0,
-                "embedding_dimensions": len(results[0][0]) if results else 0,
-            },
-        )
-
-        return results
+        return [(list(emb), result.provider_name, result.model_name) for emb in result.embeddings]
 
     @retry(
         retry=_RETRY_PREDICATE,
@@ -454,50 +245,24 @@ class LLMService:
     )
     async def describe_image(
         self,
-        db: AsyncSession,
         image_url: str,
-        community_server_id: UUID | None = None,
         detail: Literal["low", "high", "auto"] = "auto",
         max_tokens: int = 300,
         model: ModelId | None = None,
     ) -> str:
-        """
-        Generate image description using LiteLLM vision capabilities.
-
-        Automatically retries on errors with exponential backoff.
-        Routes through the appropriate provider based on model prefix
-        (e.g., "openai/gpt-5.1", "vertex_ai/gemini-2.5-flash").
-
-        Args:
-            db: Database session
-            image_url: URL of image to describe
-            community_server_id: Community server UUID, or None for global fallback
-            detail: Image detail level ('low', 'high', 'auto')
-            max_tokens: Maximum tokens in description
-            model: Vision model (uses settings.VISION_MODEL if None)
-
-        Returns:
-            Generated description text
-
-        Raises:
-            ValueError: If no provider configuration found
-            Exception: If API call fails after retries
-        """
         vision_model = model or settings.VISION_MODEL
-        provider = vision_model.litellm_provider
+        provider = vision_model.canonical_provider
 
-        llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
+        llm_provider = await self.client_manager.get_client(provider)
 
         if not llm_provider:
-            context = f"community server {community_server_id}" if community_server_id else "global"
-            raise ValueError(f"No {provider} configuration found for {context}")
+            raise ValueError(f"No {provider} configuration found")
 
         logger.debug(
             "Generating image description",
             extra={
                 "image_url": image_url[:100],
-                "community_server_id": str(community_server_id) if community_server_id else None,
-                "model": vision_model.to_litellm(),
+                "model": vision_model.to_pydantic_ai(),
                 "detail": detail,
                 "provider": provider,
             },
@@ -513,14 +278,13 @@ class LLMService:
             )
         ]
 
-        params = LiteLLMCompletionParams(model=vision_model, max_tokens=max_tokens)
+        params = DirectCompletionParams(model=vision_model, max_tokens=max_tokens)
         response = await llm_provider.complete(messages, params)
 
         logger.info(
             "Image description generated successfully",
             extra={
                 "image_url": image_url[:100],
-                "community_server_id": str(community_server_id) if community_server_id else None,
                 "tokens_used": response.tokens_used,
                 "description_length": len(response.content),
             },
@@ -529,11 +293,4 @@ class LLMService:
         return response.content
 
     def invalidate_cache(self, community_server_id: UUID, provider: str | None = None) -> None:
-        """
-        Invalidate cached LLM clients for a community server.
-
-        Args:
-            community_server_id: Community server UUID
-            provider: Specific provider to invalidate, or None for all providers
-        """
         self.client_manager.invalidate_cache(community_server_id, provider)

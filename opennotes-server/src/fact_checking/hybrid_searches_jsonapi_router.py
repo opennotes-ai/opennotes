@@ -22,8 +22,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai import Embedder
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,7 +48,6 @@ from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
-from src.llm_config.usage_tracker import LLMUsageTracker
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
 from src.users.models import User
@@ -71,7 +71,8 @@ def get_llm_service(
 ) -> LLMService:
     """Get or create LLM service singleton."""
     client_manager = LLMClientManager(encryption_service)
-    return LLMService(client_manager)
+    embedder = Embedder(settings.EMBEDDING_MODEL.to_pydantic_ai())
+    return LLMService(client_manager, embedder=embedder)
 
 
 def get_embedding_service(
@@ -79,11 +80,6 @@ def get_embedding_service(
 ) -> EmbeddingService:
     """Get embedding service with LLM service dependency."""
     return EmbeddingService(llm_service)
-
-
-def get_usage_tracker(db: Annotated[AsyncSession, Depends(get_db)]) -> LLMUsageTracker:
-    """Get LLM usage tracker instance."""
-    return LLMUsageTracker(db)
 
 
 def _is_statement_timeout_error(exc: OperationalError) -> bool:
@@ -231,19 +227,17 @@ async def hybrid_search_jsonapi(  # noqa: PLR0911
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     embedding_service: Annotated[EmbeddingService, Depends(get_embedding_service)],
-    usage_tracker: Annotated[LLMUsageTracker, Depends(get_usage_tracker)],
 ) -> JSONResponse:
     """Perform hybrid search on fact-check items combining FTS and semantic similarity.
 
     This endpoint:
     1. Verifies user is authorized member of community server
-    2. Validates community server has OpenAI configuration
-    3. Generates embedding using text-embedding-3-small (1536 dimensions)
-    4. Executes hybrid search combining:
+    2. Generates embedding using text-embedding-3-small (1536 dimensions)
+    3. Executes hybrid search combining:
        - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)
        - pgvector embedding similarity (cosine distance)
-    5. Uses Convex Combination (CC) to fuse semantic and keyword scores
-    6. Returns top matches ranked by combined CC score
+    4. Uses Convex Combination (CC) to fuse semantic and keyword scores
+    5. Returns top matches ranked by combined CC score
 
     The CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm
     where alpha=0.7 by default (semantic-weighted).
@@ -252,7 +246,6 @@ async def hybrid_search_jsonapi(  # noqa: PLR0911
 
     Rate Limiting:
     - Per-user rate limit: 100 requests/hour
-    - Per-community rate limits: Based on configured LLM usage limits
     - OpenAI API rate limits: Automatic detection with retry guidance
     """
     total_start = time.perf_counter()
@@ -275,32 +268,7 @@ async def hybrid_search_jsonapi(  # noqa: PLR0911
             },
         )
 
-        estimated_tokens = len(attrs.text) // 4
-
         community_server_uuid = await get_community_server_uuid(db, attrs.community_server_id)
-
-        if community_server_uuid:
-            allowed, reason = await usage_tracker.check_limits(
-                community_server_id=community_server_uuid,
-                provider="openai",
-                estimated_tokens=estimated_tokens,
-            )
-
-            if not allowed:
-                logger.warning(
-                    "Community LLM usage limit exceeded",
-                    extra={
-                        "user_id": str(current_user.id),
-                        "community_server_id": attrs.community_server_id,
-                        "community_server_uuid": str(community_server_uuid),
-                        "reason": reason,
-                    },
-                )
-                return create_error_response(
-                    status.HTTP_429_TOO_MANY_REQUESTS,
-                    "Rate Limit Exceeded",
-                    reason or "LLM usage limit exceeded",
-                )
 
         embedding_start = time.perf_counter()
         query_embedding = await embedding_service.generate_embedding(
@@ -372,9 +340,31 @@ async def hybrid_search_jsonapi(  # noqa: PLR0911
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except RateLimitError as e:
+    except ModelHTTPError as e:
+        status_code = e.status_code if e.status_code else 502
+        if status_code == 429:
+            return create_error_response(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "Rate Limit Exceeded",
+                "LLM provider rate limit exceeded. Please try again later.",
+            )
         logger.error(
-            "OpenAI API rate limit exceeded",
+            "LLM provider API error during hybrid search",
+            extra={
+                "user_id": str(current_user.id),
+                "community_server_id": body.data.attributes.community_server_id,
+                "status_code": status_code,
+                "error": str(e),
+            },
+        )
+        return create_error_response(
+            status.HTTP_502_BAD_GATEWAY,
+            "LLM Provider Error",
+            "Embedding generation failed. Please try again later.",
+        )
+    except ModelAPIError as e:
+        logger.error(
+            "LLM provider error during hybrid search",
             extra={
                 "user_id": str(current_user.id),
                 "community_server_id": body.data.attributes.community_server_id,
@@ -382,9 +372,9 @@ async def hybrid_search_jsonapi(  # noqa: PLR0911
             },
         )
         return create_error_response(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            "Rate Limit Exceeded",
-            "OpenAI API rate limit exceeded. Please try again later.",
+            status.HTTP_502_BAD_GATEWAY,
+            "LLM Provider Error",
+            "Embedding generation failed. Please try again later.",
         )
     except HTTPException as e:
         logger.warning(

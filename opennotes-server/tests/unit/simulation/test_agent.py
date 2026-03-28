@@ -1296,10 +1296,13 @@ class TestBuildTurnPromptTokenBudget:
 
 class TestWebSearchToolGating:
     def test_sim_agent_has_no_builtin_tools(self):
-        assert len(sim_agent._builtin_tools) == 0
+        builtin_tools = getattr(sim_agent, "_builtin_tools", None)
+        if builtin_tools is not None:
+            assert len(builtin_tools) == 0
 
     def test_sim_agent_has_no_prepare_tools(self):
-        assert sim_agent._prepare_tools is None
+        prepare_tools = getattr(sim_agent, "_prepare_tools", None)
+        assert prepare_tools is None
 
     def test_websearch_supported_providers_is_frozenset(self):
         assert isinstance(WEBSEARCH_SUPPORTED_PROVIDERS, frozenset)

@@ -351,36 +351,10 @@ class AINoteWriter:
         )
         return result.scalar_one_or_none()
 
-    async def _get_community_server_uuid(self, db: AsyncSession, community_server_id: str) -> UUID:
-        """
-        Get community server UUID from platform ID.
-
-        Args:
-            db: Database session
-            community_server_id: Community server platform ID
-
-        Returns:
-            Community server UUID
-
-        Raises:
-            ValueError: If community server not found
-        """
-        result = await db.execute(
-            select(CommunityServer.id).where(
-                CommunityServer.platform_community_server_id == community_server_id
-            )
-        )
-        community_server_uuid = result.scalar_one_or_none()
-
-        if not community_server_uuid:
-            raise ValueError(f"Community server not found: {community_server_id}")
-
-        return community_server_uuid
-
     async def _generate_fact_check_note(
         self,
-        db: AsyncSession,
-        community_server_uuid: UUID,
+        db: AsyncSession,  # noqa: ARG002
+        community_server_uuid: UUID,  # noqa: ARG002
         original_message: str,
         fact_check_item: FactCheckItem,
         similarity_score: float,
@@ -414,9 +388,7 @@ class AINoteWriter:
         ]
 
         response = await self.llm_service.complete(
-            db=db,
             messages=messages,
-            community_server_id=community_server_uuid,
             model=settings.AI_NOTE_WRITER_MODEL,
             max_tokens=500,
             temperature=0.7,
@@ -435,8 +407,8 @@ class AINoteWriter:
 
     async def _generate_general_explanation_note(
         self,
-        db: AsyncSession,
-        community_server_uuid: UUID,
+        db: AsyncSession,  # noqa: ARG002
+        community_server_uuid: UUID,  # noqa: ARG002
         original_message: str,
         image_description: str | None = None,
     ) -> str:
@@ -466,9 +438,7 @@ class AINoteWriter:
         ]
 
         response = await self.llm_service.complete(
-            db=db,
             messages=messages,
-            community_server_id=community_server_uuid,
             model=settings.AI_NOTE_WRITER_MODEL,
             max_tokens=500,
             temperature=0.7,
@@ -559,55 +529,12 @@ Focus on helping readers understand what the content is about, what context migh
 
 Community Note:"""
 
-    async def _submit_note(
-        self,
-        db: AsyncSession,
-        request_id: UUID,
-        note_content: str,
-        community_server_uuid: UUID,
-    ) -> None:
-        """
-        Submit generated note to database.
-
-        Args:
-            db: Database session
-            request_id: Request ID
-            note_content: Generated note content
-            community_server_uuid: Community server UUID
-
-        Raises:
-            Exception: If note submission fails
-        """
-        note = Note(
-            request_id=request_id,
-            author_id=PLACEHOLDER_USER_ID,
-            summary=note_content,
-            classification="NOT_MISLEADING",
-            status="NEEDS_MORE_RATINGS",
-            community_server_id=community_server_uuid,
-            ai_generated=True,
-            ai_provider=settings.AI_NOTE_WRITER_MODEL.provider,
-            ai_model=settings.AI_NOTE_WRITER_MODEL.model,
-        )
-
-        db.add(note)
-        await db.commit()
-        await db.refresh(note)
-
-        logger.info(
-            f"Submitted AI-generated note {note.id}",
-            extra={
-                "note_id": str(note.id),
-                "request_id": request_id,
-            },
-        )
-
     async def generate_scan_explanation(
         self,
         original_message: str,
         fact_check_data: dict[str, str | float | None],
-        db: AsyncSession,
-        community_server_id: UUID,
+        db: AsyncSession,  # noqa: ARG002
+        community_server_id: UUID,  # noqa: ARG002
     ) -> str:
         """
         Generate a one-sentence explanation for why a message was flagged.
@@ -643,9 +570,7 @@ Be concise and factual. Start directly with the explanation, no preamble."""
         ]
 
         response = await self.llm_service.complete(
-            db=db,
             messages=messages,
-            community_server_id=community_server_id,
             model=settings.AI_NOTE_WRITER_MODEL,
             max_tokens=150,
             temperature=0.3,

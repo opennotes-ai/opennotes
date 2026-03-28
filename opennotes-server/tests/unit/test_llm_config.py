@@ -409,15 +409,14 @@ class TestLLMClientManager:
         encryption_service = EncryptionService(_generate_test_key())
         manager = LLMClientManager(encryption_service)
 
-        community_id = uuid4()
         mock_provider = MagicMock()
         mock_provider.close = AsyncMock()
-        manager.client_cache[(community_id, "openai")] = mock_provider
+        manager.client_cache[(None, "openai")] = mock_provider
 
-        assert (community_id, "openai") in manager.client_cache
+        assert (None, "openai") in manager.client_cache
 
-        manager.invalidate_cache(community_id, "openai")
-        assert (community_id, "openai") not in manager.client_cache
+        manager.invalidate_cache(uuid4(), "openai")
+        assert (None, "openai") not in manager.client_cache
 
     async def test_clear_cache(self) -> None:
         """Test clearing all cached clients."""
@@ -442,24 +441,13 @@ class TestLLMClientManager:
         assert len(manager.client_cache) == 0
 
 
-@pytest.mark.asyncio
-class TestLLMUsageTracker:
-    """Test LLM usage tracking and rate limiting."""
-
-    async def test_usage_stats_structure(self) -> None:
-        """Test usage stats return proper structure."""
-        from src.llm_config.usage_tracker import LLMUsageTracker
-
-        assert LLMUsageTracker is not None
-
-
 def test_import_all_exports() -> None:
     """Test that all public exports are importable."""
     from src.llm_config import (
         CommunityServer,
         CommunityServerLLMConfig,
+        DirectProvider,
         EncryptionService,
-        LiteLLMProvider,
         LLMClientManager,
         LLMConfigCreate,
         LLMConfigResponse,
@@ -470,27 +458,21 @@ def test_import_all_exports() -> None:
         LLMProvider,
         LLMProviderFactory,
         LLMResponse,
-        LLMUsageLog,
-        LLMUsageStatsResponse,
-        LLMUsageTracker,
         router,
     )
 
     assert EncryptionService is not None
     assert CommunityServer is not None
     assert CommunityServerLLMConfig is not None
-    assert LLMUsageLog is not None
     assert LLMClientManager is not None
-    assert LLMUsageTracker is not None
     assert LLMProvider is not None
     assert LLMMessage is not None
     assert LLMResponse is not None
     assert LLMProviderFactory is not None
-    assert LiteLLMProvider is not None
+    assert DirectProvider is not None
     assert LLMConfigCreate is not None
     assert LLMConfigUpdate is not None
     assert LLMConfigResponse is not None
     assert LLMConfigTestRequest is not None
     assert LLMConfigTestResponse is not None
-    assert LLMUsageStatsResponse is not None
     assert router is not None

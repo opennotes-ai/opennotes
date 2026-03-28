@@ -610,10 +610,6 @@ class TestHybridSearchJSONAPIWithMockedService:
 
         with (
             patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
-                new_callable=AsyncMock,
-            ) as mock_check_limits,
-            patch(
                 "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
                 new_callable=AsyncMock,
             ) as mock_generate,
@@ -622,7 +618,6 @@ class TestHybridSearchJSONAPIWithMockedService:
                 new_callable=AsyncMock,
             ) as mock_search,
         ):
-            mock_check_limits.return_value = (True, None)
             mock_generate.return_value = mock_embedding
             mock_search.return_value = mock_results
 
@@ -704,10 +699,6 @@ class TestHybridSearchJSONAPIWithMockedService:
 
         with (
             patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
-                new_callable=AsyncMock,
-            ) as mock_check_limits,
-            patch(
                 "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
                 new_callable=AsyncMock,
             ) as mock_generate,
@@ -717,7 +708,6 @@ class TestHybridSearchJSONAPIWithMockedService:
                 return_value=[],
             ) as mock_search,
         ):
-            mock_check_limits.return_value = (True, None)
             mock_generate.return_value = mock_embedding
 
             response = await hybrid_search_jsonapi_auth_client.post(
@@ -752,11 +742,6 @@ class TestHybridSearchJSONAPIWithMockedService:
         )
 
         with (
-            patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
-                new_callable=AsyncMock,
-                return_value=(True, None),
-            ),
             patch(
                 "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
                 new_callable=AsyncMock,
@@ -798,10 +783,6 @@ class TestHybridSearchJSONAPIWithMockedService:
 
         with (
             patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
-                new_callable=AsyncMock,
-            ) as mock_check_limits,
-            patch(
                 "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
                 new_callable=AsyncMock,
             ) as mock_generate,
@@ -810,7 +791,6 @@ class TestHybridSearchJSONAPIWithMockedService:
                 new_callable=AsyncMock,
             ) as mock_search,
         ):
-            mock_check_limits.return_value = (True, None)
             mock_generate.return_value = mock_embedding
             mock_search.return_value = []
 
@@ -854,10 +834,6 @@ class TestHybridSearchJSONAPIWithMockedService:
 
         with (
             patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
-                new_callable=AsyncMock,
-            ) as mock_check_limits,
-            patch(
                 "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
                 new_callable=AsyncMock,
             ) as mock_generate,
@@ -866,7 +842,6 @@ class TestHybridSearchJSONAPIWithMockedService:
                 new_callable=AsyncMock,
             ) as mock_search,
         ):
-            mock_check_limits.return_value = (True, None)
             mock_generate.return_value = mock_embedding
             mock_search.return_value = []
 
@@ -897,30 +872,19 @@ class TestHybridSearchJSONAPIWithMockedService:
         hybrid_search_jsonapi_auth_client,
         hybrid_search_jsonapi_community_server,
     ):
-        """Test POST /api/v2/hybrid-searches returns 429 when OpenAI rate limit exceeded."""
-        import httpx
-        from openai import RateLimitError
+        """Test POST /api/v2/hybrid-searches returns 429 when LLM rate limit exceeded."""
+        from pydantic_ai.exceptions import ModelHTTPError
 
         platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
-        mock_request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
-        mock_response = httpx.Response(429, request=mock_request)
-
-        with (
-            patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
-                new_callable=AsyncMock,
-            ) as mock_check_limits,
-            patch(
-                "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
-                new_callable=AsyncMock,
-            ) as mock_generate,
-        ):
-            mock_check_limits.return_value = (True, None)
-            mock_generate.side_effect = RateLimitError(
-                message="Rate limit exceeded",
-                response=mock_response,
-                body=None,
+        with patch(
+            "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
+            new_callable=AsyncMock,
+        ) as mock_generate:
+            mock_generate.side_effect = ModelHTTPError(
+                status_code=429,
+                model_name="openai:text-embedding-3-small",
+                body="Rate limit exceeded",
             )
 
             request_body = {
@@ -948,47 +912,6 @@ class TestHybridSearchJSONAPIWithMockedService:
             content_type = response.headers.get("content-type", "")
             assert "application/vnd.api+json" in content_type
 
-    @pytest.mark.asyncio
-    async def test_hybrid_search_jsonapi_community_rate_limit_exceeded(
-        self,
-        hybrid_search_jsonapi_auth_client,
-        hybrid_search_jsonapi_community_server,
-    ):
-        """Test POST /api/v2/hybrid-searches returns 429 when community rate limit exceeded."""
-        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
-
-        with patch(
-            "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
-            new_callable=AsyncMock,
-        ) as mock_check_limits:
-            mock_check_limits.return_value = (False, "Monthly usage limit exceeded")
-
-            request_body = {
-                "data": {
-                    "type": "hybrid-searches",
-                    "attributes": {
-                        "text": "test query",
-                        "community_server_id": platform_id,
-                    },
-                }
-            }
-
-            response = await hybrid_search_jsonapi_auth_client.post(
-                "/api/v2/hybrid-searches", json=request_body
-            )
-
-            assert response.status_code == 429
-
-            data = response.json()
-            assert "errors" in data
-            assert len(data["errors"]) > 0
-            assert data["errors"][0]["status"] == "429"
-            assert "Rate Limit Exceeded" in data["errors"][0]["title"]
-            assert "Monthly usage limit exceeded" in data["errors"][0]["detail"]
-
-            content_type = response.headers.get("content-type", "")
-            assert "application/vnd.api+json" in content_type
-
 
 class TestHybridSearchJSONAPIPerformanceMetrics:
     """Tests for performance monitoring metrics in hybrid search JSON:API endpoint."""
@@ -1012,10 +935,6 @@ class TestHybridSearchJSONAPIPerformanceMetrics:
 
         with (
             patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
-                new_callable=AsyncMock,
-            ) as mock_check_limits,
-            patch(
                 "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
                 new_callable=AsyncMock,
             ) as mock_generate,
@@ -1027,7 +946,6 @@ class TestHybridSearchJSONAPIPerformanceMetrics:
                 logging.INFO, logger="src.fact_checking.hybrid_searches_jsonapi_router"
             ),
         ):
-            mock_check_limits.return_value = (True, None)
             mock_generate.return_value = mock_embedding
             mock_search.return_value = []
 
@@ -1089,10 +1007,6 @@ class TestHybridSearchJSONAPIPerformanceMetrics:
 
         with (
             patch(
-                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
-                new_callable=AsyncMock,
-            ) as mock_check_limits,
-            patch(
                 "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
                 new_callable=AsyncMock,
             ) as mock_generate,
@@ -1104,7 +1018,6 @@ class TestHybridSearchJSONAPIPerformanceMetrics:
                 logging.INFO, logger="src.fact_checking.hybrid_searches_jsonapi_router"
             ),
         ):
-            mock_check_limits.return_value = (True, None)
             mock_generate.return_value = mock_embedding
             mock_search.return_value = []
 

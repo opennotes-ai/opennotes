@@ -26,12 +26,14 @@ def _parse_model_id(v: Any) -> ModelId:
     if isinstance(v, ModelId):
         return v
     if isinstance(v, str):
-        return ModelId.from_litellm(v)
-    msg = f"Expected str or ModelId, got {type(v)}"
-    raise ValueError(msg)
+        if ":" in v:
+            return ModelId.from_pydantic_ai(v)
+        if "/" in v:
+            return ModelId.from_slash_format(v)
+    raise ValueError(f"Invalid model ID format: {v}")
 
 
-LiteLLMModelId = Annotated[ModelId, NoDecode, BeforeValidator(_parse_model_id)]
+PydanticAIModelId = Annotated[ModelId, NoDecode, BeforeValidator(_parse_model_id)]
 
 # Module-level singleton tracking variables
 # These must be outside the Settings class to avoid Pydantic treating them as PrivateAttr
@@ -647,7 +649,7 @@ class Settings(BaseSettings):
     TRACELOOP_ENABLED: bool = Field(
         default=True,
         description="Enable Traceloop SDK for LLM observability. "
-        "Provides automatic instrumentation of LiteLLM, OpenAI, and Anthropic calls "
+        "Provides automatic instrumentation of OpenAI, Anthropic, and Google calls "
         "with GenAI semantic conventions (gen_ai.*, llm.*).",
     )
     TRACELOOP_TRACE_CONTENT: bool = Field(
@@ -728,9 +730,9 @@ class Settings(BaseSettings):
         default=24, description="Email verification token expiration time in hours"
     )
 
-    EMBEDDING_MODEL: LiteLLMModelId = Field(
-        default=ModelId.from_litellm("openai/text-embedding-3-small"),
-        description="Embedding model in provider/model format for LiteLLM compatibility",
+    EMBEDDING_MODEL: PydanticAIModelId = Field(
+        default_factory=lambda: ModelId.from_pydantic_ai("openai:text-embedding-3-small"),
+        description="Embedding model in provider:model format (pydantic-ai)",
     )
     EMBEDDING_DIMENSIONS: int = Field(
         default=1536,
@@ -757,13 +759,13 @@ class Settings(BaseSettings):
         description="Global Anthropic API key for fallback when community servers don't have their own key configured",
     )
 
-    DEFAULT_MINI_MODEL: LiteLLMModelId = Field(
-        default=ModelId.from_litellm("openai/gpt-5-mini"),
-        description="Default mini/fast model for quick tasks (provider/model format for LiteLLM compatibility)",
+    DEFAULT_MINI_MODEL: PydanticAIModelId = Field(
+        default_factory=lambda: ModelId.from_pydantic_ai("openai:gpt-5-mini"),
+        description="Default mini/fast model for quick tasks (provider:model format, pydantic-ai)",
     )
-    DEFAULT_FULL_MODEL: LiteLLMModelId = Field(
-        default=ModelId.from_litellm("openai/gpt-5.1"),
-        description="Default full-capability model for complex tasks (provider/model format for LiteLLM compatibility)",
+    DEFAULT_FULL_MODEL: PydanticAIModelId = Field(
+        default_factory=lambda: ModelId.from_pydantic_ai("openai:gpt-5.1"),
+        description="Default full-capability model for complex tasks (provider:model format, pydantic-ai)",
     )
 
     INTERNAL_SERVICE_SECRET: str = Field(
@@ -796,9 +798,9 @@ class Settings(BaseSettings):
         le=1.0,
     )
 
-    VISION_MODEL: LiteLLMModelId = Field(
-        default=ModelId.from_litellm("openai/gpt-5.1"),
-        description="Vision model in provider/model format for LiteLLM compatibility",
+    VISION_MODEL: PydanticAIModelId = Field(
+        default_factory=lambda: ModelId.from_pydantic_ai("openai:gpt-5.1"),
+        description="Vision model in provider:model format (pydantic-ai)",
     )
     VISION_PROMPT: str = Field(
         default="Describe this image concisely for fact-checking purposes. Focus on text, claims, or notable content. Be brief.",
@@ -824,9 +826,9 @@ class Settings(BaseSettings):
         default=True,
         description="Enable LLM-based relevance filtering for hybrid search results",
     )
-    RELEVANCE_CHECK_MODEL: LiteLLMModelId = Field(
-        default=ModelId.from_litellm("openai/gpt-5-mini"),
-        description="LLM model in provider/model format for relevance checking (should be fast and cheap)",
+    RELEVANCE_CHECK_MODEL: PydanticAIModelId = Field(
+        default_factory=lambda: ModelId.from_pydantic_ai("openai:gpt-5-mini"),
+        description="LLM model in provider:model format for relevance checking (should be fast and cheap)",
     )
     RELEVANCE_CHECK_MAX_TOKENS: int = Field(
         default=2000,
@@ -848,9 +850,9 @@ class Settings(BaseSettings):
         default=True,
         description="Enable automatic AI-generated community notes for fact-check matches",
     )
-    AI_NOTE_WRITER_MODEL: LiteLLMModelId = Field(
-        default=ModelId.from_litellm("openai/gpt-5.1"),
-        description="AI note generation model in provider/model format for LiteLLM compatibility",
+    AI_NOTE_WRITER_MODEL: PydanticAIModelId = Field(
+        default_factory=lambda: ModelId.from_pydantic_ai("openai:gpt-5.1"),
+        description="AI note generation model in provider:model format (pydantic-ai)",
     )
     AI_NOTE_WRITER_SYSTEM_PROMPT: str = Field(
         default="You are a helpful assistant that writes concise, informative community notes. "
@@ -1019,10 +1021,10 @@ class Settings(BaseSettings):
             self.RELEVANCE_CHECK_MODEL,
             self.AI_NOTE_WRITER_MODEL,
         ]
-        has_vertex_ai = any(m.provider == "vertex_ai" for m in model_fields)
+        has_vertex_ai = any(m.canonical_provider == "vertex_ai" for m in model_fields)
         if has_vertex_ai and not self.VERTEXAI_PROJECT:
             raise ValueError(
-                "VERTEXAI_PROJECT must be set when using vertex_ai/ model prefix. "
+                "VERTEXAI_PROJECT must be set when using vertex_ai/ or google-vertex: model prefix. "
                 "Set VERTEXAI_PROJECT to your GCP project ID."
             )
         return self

@@ -9,6 +9,9 @@ import time
 from typing import Any
 
 from pydantic import ValidationError
+from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.settings import ModelSettings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.claim_relevance_check.prompt_optimization.prompts import get_optimized_prompts
@@ -115,37 +118,23 @@ Step 3: How confident are you in this assessment? (0.0 = uncertain, 1.0 = certai
 
 Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the response."""
 
-            messages = [
-                LLMMessage(role="system", content=system_prompt),
-                LLMMessage(role="user", content=user_prompt),
-            ]
-
-            response = await asyncio.wait_for(
-                self.llm_service.complete(
-                    db=db,
-                    messages=messages,
-                    community_server_id=None,
-                    model=cfg.RELEVANCE_CHECK_MODEL,
-                    max_tokens=cfg.RELEVANCE_CHECK_MAX_TOKENS,
-                    temperature=0.0,
-                    response_format=RelevanceCheckResult,
+            relevance_agent = Agent(
+                model=cfg.RELEVANCE_CHECK_MODEL.to_pydantic_ai(),
+                output_type=RelevanceCheckResult,
+            )
+            agent_result = await asyncio.wait_for(
+                relevance_agent.run(
+                    user_prompt,
+                    instructions=system_prompt,
+                    model_settings=ModelSettings(
+                        max_tokens=cfg.RELEVANCE_CHECK_MAX_TOKENS,
+                        temperature=0.0,
+                    ),
                 ),
                 timeout=cfg.RELEVANCE_CHECK_TIMEOUT,
             )
 
-            if response.finish_reason == "content_filter":
-                latency_ms = (time.monotonic() - start_time) * 1000
-                logger.warning(
-                    "Content filter triggered during relevance check, retrying without fact-check",
-                    extra={
-                        "original_message_length": len(original_message),
-                        "matched_content_length": len(matched_content),
-                        "latency_ms": round(latency_ms, 2),
-                    },
-                )
-                return await self._retry_without_fact_check(db, original_message, start_time)
-
-            result = RelevanceCheckResult.model_validate_json(response.content)
+            result = agent_result.output
 
             latency_ms = (time.monotonic() - start_time) * 1000
             logger.info(
@@ -176,6 +165,18 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
                 RelevanceOutcome.RELEVANT if result.is_relevant else RelevanceOutcome.NOT_RELEVANT
             )
             return (outcome, result.reasoning)
+
+        except UnexpectedModelBehavior:
+            latency_ms = (time.monotonic() - start_time) * 1000
+            logger.warning(
+                "Structured output failed during relevance check, retrying without fact-check",
+                extra={
+                    "original_message_length": len(original_message),
+                    "matched_content_length": len(matched_content),
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+            return await self._retry_without_fact_check(db, original_message, start_time)
 
         except Exception as e:
             return self._handle_check_error(e, start_time, cfg)
@@ -223,7 +224,7 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
 
     async def _retry_without_fact_check(
         self,
-        db: AsyncSession,
+        db: AsyncSession,  # noqa: ARG002
         original_message: str,
         start_time: float,
     ) -> tuple[RelevanceOutcome, str]:
@@ -263,9 +264,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         try:
             response = await asyncio.wait_for(
                 self.llm_service.complete(
-                    db=db,
                     messages=messages,
-                    community_server_id=None,
                     model=cfg.RELEVANCE_CHECK_MODEL,
                     max_tokens=cfg.RELEVANCE_CHECK_MAX_TOKENS,
                     temperature=0.0,
