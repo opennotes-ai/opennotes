@@ -137,22 +137,82 @@ discourse-opennotes/
 
 ## 4. Data Flow
 
-### 4.1 Post Classification
+### 4.1 Post Classification (Two-Tier Action Model)
+
+Posts are classified and routed through a **two-tier action model**:
+- **Tier 1 (Immediate):** High-confidence classifications trigger immediate platform action (auto-hide) plus retroactive community review.
+- **Tier 2 (Consensus):** Lower-confidence classifications enter the community review pipeline and wait for consensus before any action is taken.
+
+The classification produces an OpenAI-moderation-like output: a map of **labels** (boolean flags, e.g., `harassment: true`) with optional **numerical scores** (e.g., `harassment_score: 0.92`). A per-category **moderation decision step** compares these against configured thresholds to determine the action tier.
 
 ```mermaid
 flowchart TD
     A["post_created / post_edited event"] --> B["SyncPostToOpennotes job (Sidekiq)"]
     B --> C["POST /api/v2/requests<br/>content + category + author + metadata"]
-    C --> D["Server classifies via bulk_content_scan<br/>(OpenAI moderation / flashpoint)"]
-    D --> E{"Classification score"}
-    E -->|"Score < threshold"| F["Store 'pass' locally<br/>No further action"]
-    E -->|"Score in review zone"| G["Create ReviewableOpennotesItem<br/>-> community review queue"]
-    E -->|"Score > critical"| H["Auto-hide post<br/>+ notify staff"]
+    C --> D["Server classifies<br/>(labels + scores)"]
+    D --> E["Moderation decision step<br/>(per-category config)"]
+    E --> F{"Action tier?"}
+    F -->|"No labels flagged"| G["Store 'pass'<br/>No further action"]
+    F -->|"Tier 2: below auto-action threshold"| H["Create request + AI note<br/>-> community review queue"]
+    F -->|"Tier 1: above auto-action threshold"| I["Create moderation action<br/>+ request + retroactive note"]
+    I --> J["Execute immediate action<br/>(auto-hide post)"]
+    J --> K["Retroactive review<br/>(community votes to approve/overturn)"]
 
-    style F fill:#90EE90
-    style G fill:#FFD700
-    style H fill:#FFB6C6
+    style G fill:#90EE90
+    style H fill:#FFD700
+    style I fill:#FFB6C6
+    style K fill:#E6E6FA
 ```
+
+#### Moderation Decision Contract
+
+The classification output is a structured result:
+
+```json
+{
+  "labels": {
+    "harassment": true,
+    "misinformation": false,
+    "spam": true,
+    "hate_speech": false
+  },
+  "scores": {
+    "harassment": 0.92,
+    "spam": 0.87
+  }
+}
+```
+
+- **Labels:** Boolean flags indicating detected categories. Not every label has a numerical score (some are purely boolean).
+- **Scores:** Optional confidence values (0.0-1.0) for labels that support them.
+- **Exact label set:** Determined in TASK-1401 (scan engine redesign). The spec defines the contract shape, not the specific labels.
+
+Per-category configuration maps labels to action tiers:
+
+| Setting | Example Value | Effect |
+|---|---|---|
+| `auto_action_labels` | `["harassment", "spam"]` | Labels that can trigger Tier 1 (immediate action) |
+| `auto_action_min_score` | `0.90` | Minimum score for Tier 1 (labels without scores use boolean only) |
+| `review_labels` | `["misinformation", "hate_speech"]` | Labels that trigger Tier 2 (consensus pipeline) |
+| `review_min_score` | `0.50` | Minimum score for Tier 2 |
+| `review_group` | `"staff"` or `"community"` | Who reviews items in this category (see section 4.4) |
+
+#### Tier 1: Immediate Action + Retroactive Review
+
+When classification exceeds the auto-action threshold, the server creates three records atomically:
+
+1. **Moderation action** — records that an action was taken, what type, and why
+2. **Request** — the content review request (same as Tier 2)
+3. **Retroactive note** — e.g., "This post was auto-hidden for harassment (confidence: 0.92). Was this action correct?"
+
+The plugin then:
+- Executes the Discourse action (hide post via `PostAction.act(post, :hide)`)
+- Adds a Discourse staff message annotation to the post (visible to staff, not a separate post)
+- Creates a `ReviewableOpennotesItem` in the "Auto-Actioned" state for retroactive review
+
+#### Tier 2: Consensus Pipeline (Unchanged)
+
+Same as the existing flow — request + AI-generated explanatory note enters the community review queue. No action until consensus is reached.
 
 ### 4.2 Community Review (Voting)
 
@@ -174,7 +234,52 @@ flowchart TD
     style K fill:#E0E0E0
 ```
 
-### 4.3 Concept Mapping
+### 4.3 Retroactive Review (Tier 1 Posts)
+
+When a Tier 1 auto-action is taken, the community (or staff, depending on review group) reviews whether the action was correct:
+
+```mermaid
+flowchart TD
+    A["Post auto-hidden (Tier 1)"] --> B["Retroactive note created:<br/>'Was this auto-hide correct?'"]
+    B --> C["Review group members vote<br/>(same rating mechanism as consensus)"]
+    C --> D{"Retroactive consensus?"}
+    D -->|"CURRENTLY_RATED_HELPFUL<br/>(action was correct)"| E["Action confirmed<br/>Post stays hidden<br/>Warning stays on record"]
+    D -->|"CURRENTLY_RATED_NOT_HELPFUL<br/>(action was wrong)"| F["Action overturned<br/>Post unhidden<br/>Warning marked 'overturned'"]
+    F --> G["Post gets scan-exempt flag<br/>(prevents re-scan ping-pong)"]
+    G --> H["Staff annotation added:<br/>'This post was hidden but restored<br/>after community review'"]
+
+    style E fill:#90EE90
+    style F fill:#FFB6C6
+    style G fill:#E6E6FA
+    style H fill:#E0E0E0
+```
+
+**Overturn mechanics:**
+- **Partial reversal:** Post is unhidden, but the warning stays on the author's record as informational ("auto-flagged but overturned"). Helps track false-positive patterns without punishing the author.
+- **Scan-exempt flag:** Restored posts get a `scan-exempt` flag that prevents re-scan ping-pong. Staff can remove the flag to allow re-scanning if needed.
+- **Discourse staff annotation:** Uses Discourse's built-in staff message mechanism (not a separate post) to annotate "this post was hidden but came back after community review."
+
+**Scoring:** Retroactive review votes participate in the same scoring pipeline as forward-looking consensus votes. Both reveal preferences about helpful vs unhelpful content — there is no need to carve out retroactive votes from scoring calibration.
+
+**Source of truth:** Server owns review state ("overturn approved"). Discourse owns platform state (hidden/visible). Plugin translates server decisions into Discourse actions. No reconciliation for MVP.
+
+### 4.4 Review Groups
+
+Review groups control **who can review** each type of flagged content. They map to Discourse trust levels and are configured per monitored category.
+
+| Review Group | Who Can Review | Use Case |
+|---|---|---|
+| `community` | TL2+ (default) | General content review |
+| `trusted` | TL3+ | Sensitive or complex content |
+| `staff` | Moderators and admins only | High-confidence harmful content |
+
+**Configuration:** Each monitored category specifies a `review_group` (see section 4.1 per-category settings table). The plugin enforces review group membership before allowing votes.
+
+**Default:** All items are reviewable by TL2+ unless the admin configures a stricter review group for the category.
+
+**Admin override:** Admins can set all categories to `community` to make everything available for everyone to review.
+
+### 4.5 Concept Mapping
 
 | Discourse Concept | OpenNotes Server Concept |
 |---|---|
@@ -221,6 +326,16 @@ flowchart TD
 | `opennotes_route_flags_to_community` | Flags -> community review | Discourse only |
 | `opennotes_staff_approval_required` | Require staff approval | Community config |
 | `opennotes_auto_hide_on_consensus` | Auto-hide when note rated helpful | Community config |
+
+**Per-Category Settings** (configured per monitored category, synced to server as monitored channel config):
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `auto_action_labels` | Labels that trigger Tier 1 immediate action | `[]` (disabled) |
+| `auto_action_min_score` | Minimum score for Tier 1 auto-action | `0.90` |
+| `review_labels` | Labels that trigger Tier 2 consensus pipeline | All labels |
+| `review_min_score` | Minimum score for Tier 2 review | `0.50` |
+| `review_group` | Who reviews: `community` (TL2+), `trusted` (TL3+), or `staff` | `community` |
 
 **Dashboard** (renders data from server's scoring analysis endpoint):
 - Activity metrics, classification breakdown, consensus health, top reviewers, false positive rate
@@ -438,22 +553,39 @@ The plugin implements `ReviewableOpennotesItem`, a subclass of Discourse's `Revi
 
 ### 9.2 State Machine
 
+The state machine supports both **forward-looking** (Tier 2 consensus) and **retroactive** (Tier 1 auto-action review) flows, with reversible transitions for overturn.
+
 ```mermaid
 stateDiagram-v2
     [*] --> Pending: flag_created / classification_triggered
-    Pending --> UnderReview: community_review_started
-    UnderReview --> ConsensusHelpful: note.status_changed -> CURRENTLY_RATED_HELPFUL
-    UnderReview --> ConsensusNotHelpful: note.status_changed -> CURRENTLY_RATED_NOT_HELPFUL
-    UnderReview --> StaffOverridden: staff_action (force-publish / escalate)
-    ConsensusHelpful --> Resolved: action_executed (hide post / warn user)
-    ConsensusNotHelpful --> Resolved: action_executed (uphold post)
+
+    %% Tier 2: Consensus pipeline (forward-looking)
+    Pending --> UnderReview: tier_2_community_review
+    UnderReview --> ConsensusHelpful: note.status -> CURRENTLY_RATED_HELPFUL
+    UnderReview --> ConsensusNotHelpful: note.status -> CURRENTLY_RATED_NOT_HELPFUL
+    ConsensusHelpful --> Resolved: action_executed
+    ConsensusNotHelpful --> Resolved: post_upheld
+
+    %% Tier 1: Immediate action + retroactive review
+    Pending --> AutoActioned: tier_1_immediate_action
+    AutoActioned --> RetroReview: retroactive_review_started
+    RetroReview --> ActionConfirmed: retro_consensus_helpful
+    RetroReview --> ActionOverturned: retro_consensus_not_helpful
+    ActionConfirmed --> Resolved: action_stands
+    ActionOverturned --> Restored: post_unhidden_scan_exempt
+
+    %% Staff overrides (from any active state)
+    UnderReview --> StaffOverridden: staff_action
+    RetroReview --> StaffOverridden: staff_action
     StaffOverridden --> Resolved: staff_decision_applied
+
+    %% Dismiss
     Pending --> Dismissed: staff_ignores
 
-    note right of Pending: Server: request created,\nclassification pending
-    note right of UnderReview: Server: NEEDS_MORE_RATINGS\nCommunity voting active
-    note right of ConsensusHelpful: Server: CURRENTLY_RATED_HELPFUL\nAction recommended
-    note right of ConsensusNotHelpful: Server: CURRENTLY_RATED_NOT_HELPFUL\nPost upheld
+    note right of AutoActioned: Post hidden immediately\nRetroactive note created
+    note right of RetroReview: Community/staff voting\non auto-action correctness
+    note right of ActionOverturned: Post unhidden\nWarning kept as informational
+    note right of Restored: scan-exempt flag set\nStaff annotation added
 ```
 
 ### 9.3 NoteStatus to Discourse Action Mapping
@@ -484,7 +616,7 @@ When the server reaches consensus (via community voting or scoring), it sends a 
 3. Executes the recommended Discourse action (if `auto_hide_on_consensus` is enabled)
 4. Updates the post's serializer data (badge, banner)
 
-**Idempotency:** The plugin checks the current Reviewable state before acting. Duplicate webhook deliveries (retries) are safe because the plugin only transitions forward (pending -> resolved, never backward).
+**Idempotency:** The plugin checks the current Reviewable state before acting. Duplicate webhook deliveries are safe because the plugin verifies state compatibility before applying transitions. The state machine supports backward transitions (overturn) but only via explicit retroactive review consensus — never from duplicate deliveries.
 
 ---
 
@@ -649,12 +781,15 @@ These existing endpoints need modification for Discourse support:
 | Feature | How |
 |---|---|
 | Post scanning on create/edit | Sidekiq job -> server's request + classification endpoints |
+| Two-tier action model | Tier 1: immediate action on high-confidence, Tier 2: consensus pipeline |
+| Retroactive review | Auto-actioned posts reviewed by community/staff, can be overturned |
+| Review groups | Per-category config: community (TL2+), trusted (TL3+), or staff-only |
 | Flag routing to community review | Flag event -> server request |
 | Community review queue UI | Ember route fetching from server via plugin proxy |
 | Voting (ratings) | Plugin proxies to server's ratings endpoint |
 | Consensus -> action | Webhook from server triggers Discourse hide/warn/silence |
 | Staff override | Via Discourse Reviewable actions, synced to server (force-publish) |
-| Admin settings | Discourse site settings, subset synced to community config |
+| Admin settings | Discourse site settings with per-category thresholds, synced to server |
 | Admin dashboard | Renders server's scoring-analysis data |
 | Identity mapping | Hybrid verification with provider_scope |
 | Outbound webhooks | Minimal payloads with HMAC-SHA256, polling fallback |
@@ -665,7 +800,7 @@ These existing endpoints need modification for Discourse support:
 | Feature | Why |
 |---|---|
 | Writing community notes (not just voting) | v1 uses AI-generated notes; community-authored notes add UX complexity |
-| Per-category policy configuration | v1 uses one global policy; server supports per-channel config for v2 |
+| Configuration assistant agent | Vibecheck-like agent that sets reasonable thresholds based on initial scan results of the server |
 | Replace mode for flags | Too risky until system proves accuracy |
 | Anonymous voting | Deferred UX decision |
 | Real-time updates via MessageBus | v1 uses polling; v2 could use server webhooks -> MessageBus push |
