@@ -67,7 +67,7 @@ class TestPlatformClaims:
             sub="123",
             community_id="456",
             can_administer_community=False,
-            username="testuser",
+            extra_claims={"username": "testuser"},
         )
 
         claims = validate_platform_claims(token)

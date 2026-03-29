@@ -58,7 +58,7 @@ class PlatformIdentityInput(StrictInputSchema):
         ..., min_length=1, max_length=255, description="User's unique ID on the provider"
     )
     provider_scope: str = Field(
-        "*",
+        default="*",
         max_length=255,
         description="Scope within provider (e.g., Discourse domain). '*' for global.",
     )
@@ -228,7 +228,7 @@ class UserIdentityCreate(UserIdentityBase, StrictInputSchema):
 
     profile_id: UUID = Field(..., description="Associated user profile ID")
     provider_scope: str = Field(
-        "*",
+        default="*",
         max_length=255,
         description="Scope within provider (e.g., Discourse domain). '*' for global.",
     )

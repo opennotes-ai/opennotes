@@ -30,7 +30,7 @@ class TestPlatformContextMiddleware:
             sub="123456789",
             community_id="987654321",
             can_administer_community=True,
-            username="testuser",
+            extra_claims={"username": "testuser"},
         )
 
         with (

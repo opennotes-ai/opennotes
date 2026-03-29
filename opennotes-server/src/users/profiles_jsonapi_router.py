@@ -548,6 +548,7 @@ async def link_identity_jsonapi(
             profile_id=profile_id,
             provider=provider,
             provider_user_id=attrs.provider_user_id,
+            provider_scope="*",
             credentials=attrs.credentials,
         )
 
