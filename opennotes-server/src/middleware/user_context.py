@@ -16,8 +16,8 @@ Span Attributes Set:
 Baggage Propagation:
 - enduser.id and user.username are propagated via W3C Baggage for downstream services
 
-Note: For Discord-specific user context (from Discord bot requests), see discord_context.py
-which handles X-Discord-* headers. This middleware handles JWT/API key auth paths.
+Note: For platform-specific user context (from platform adapter requests), see platform_context.py
+which handles X-Platform-* headers. This middleware handles JWT/API key auth paths.
 """
 
 import logging

@@ -1,34 +1,29 @@
 """
 Internal service authentication middleware.
 
-This middleware validates X-Discord-* headers to prevent authentication bypass attacks.
-It ensures that headers containing Discord user information only come from trusted
-internal services (like the Discord bot), not from external clients.
+This middleware validates X-Platform-* headers to prevent authentication bypass attacks.
+It ensures that headers containing platform user information only come from trusted
+internal services (like platform adapter bots), not from external clients.
 
 Security Model:
-    - External requests: X-Discord-* headers are stripped (cannot impersonate users)
+    - External requests: X-Platform-* headers are stripped (cannot impersonate users)
     - Internal requests: Headers are preserved if X-Internal-Auth matches INTERNAL_SERVICE_SECRET
     - Uses constant-time comparison to prevent timing attacks
 
 Headers Protected:
-    - X-Discord-User-Id
-    - X-Discord-Username
-    - X-Discord-Display-Name
-    - X-Discord-Avatar-Url
-    - X-Discord-Has-Manage-Server
-    - X-Guild-Id
-    - Any header starting with X-Discord-*
+    - Any header starting with X-Platform-* (except X-Platform-Claims)
+    - X-Internal-Auth (always stripped after validation)
 
 Usage:
     This middleware should be registered early in the middleware chain (before
-    any other middleware that reads Discord headers).
+    any other middleware that reads platform headers).
 
-    The Discord bot must include the X-Internal-Auth header with the shared secret
+    Platform adapters must include the X-Internal-Auth header with the shared secret
     when making requests to the API server.
 
 Related:
     - task-686: Fix profile tracking middleware authentication bypass
-    - community_dependencies.py (reads X-Discord-Has-Manage-Server)
+    - community_dependencies.py (reads platform admin status from JWT)
 """
 
 import logging
@@ -40,15 +35,14 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-PROTECTED_HEADER_PREFIXES = (b"x-discord-",)
+PROTECTED_HEADER_PREFIXES = (b"x-platform-",)
 
 PROTECTED_HEADERS = {
-    b"x-guild-id",
     b"x-internal-auth",
 }
 
-ALLOWED_DISCORD_HEADERS = {
-    b"x-discord-claims",
+ALLOWED_PLATFORM_HEADERS = {
+    b"x-platform-claims",
 }
 
 
@@ -57,12 +51,12 @@ def _is_protected_header(header_name: bytes) -> bool:
     Check if a header should be protected (stripped from untrusted requests).
 
     Headers that are allowed through even from untrusted sources:
-    - X-Discord-Claims: Contains signed JWT that is validated separately
-                        (see src/auth/discord_claims.py)
+    - X-Platform-Claims: Contains signed JWT that is validated separately
+                         (see src/auth/platform_claims.py)
     """
     lower_name = header_name.lower()
 
-    if lower_name in ALLOWED_DISCORD_HEADERS:
+    if lower_name in ALLOWED_PLATFORM_HEADERS:
         return False
 
     if lower_name in PROTECTED_HEADERS:
@@ -99,9 +93,9 @@ class InternalHeaderValidationMiddleware:
     """
     ASGI middleware that validates internal service authentication.
 
-    This middleware strips X-Discord-* and X-Guild-Id headers from requests
-    unless they are accompanied by a valid X-Internal-Auth header. This prevents
-    external clients from spoofing Discord user identity headers.
+    This middleware strips X-Platform-* headers from requests unless they are
+    accompanied by a valid X-Internal-Auth header. This prevents external
+    clients from spoofing platform user identity headers.
 
     The X-Internal-Auth header is also stripped after validation to prevent
     leaking the secret to the application layer.
