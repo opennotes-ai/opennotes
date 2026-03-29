@@ -86,7 +86,7 @@ async def test_concurrent_membership_auto_create_recovers_duplicate(setup_databa
             membership = await community_dependencies._ensure_membership_with_permissions(
                 community=community,
                 profile=profile,
-                has_discord_manage_server=True,
+                can_administer_community=True,
                 db=session,
             )
             await session.commit()
