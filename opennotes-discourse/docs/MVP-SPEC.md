@@ -774,6 +774,10 @@ These existing endpoints need modification for Discourse support:
 | Outbound webhook delivery system | Server -> plugin event notifications | TASK-1400.06 |
 | `DiscourseVerifier` | Verify user identity against Discourse API | TASK-1400.07 |
 | Generic `can_administer_community` capability | Replace Discord-specific `has_manage_server` | TASK-1400.07 |
+| `ModerationAction` model + CRUD | First-class moderation action records (section 13) | TASK-1400.09 |
+| `PATCH /api/v2/moderation-actions/{id}` | Plugin confirms action execution/overturn | TASK-1400.09 |
+| `GET /api/v2/moderation-actions/{id}` | Plugin fetches action details after webhook | TASK-1400.09 |
+| `moderation_action.*` events | 6 new outbound event types for action lifecycle | TASK-1400.09 |
 
 ### 11.5 Error Handling Contract
 
@@ -910,7 +914,10 @@ stateDiagram-v2
     UnderReview --> Dismissed: consensus_not_helpful_no_action
 
     %% Staff overrides (from any active state)
+    Proposed --> Dismissed: staff_dismisses
     Applied --> Overturned: staff_overturns
+    UnderReview --> Dismissed: staff_dismisses
+    UnderReview --> Applied: staff_force_applies
     RetroReview --> Confirmed: staff_confirms
     RetroReview --> Overturned: staff_overturns
 
@@ -935,7 +942,7 @@ stateDiagram-v2
 | `overturned` | Community/staff determined the action was wrong | Server (consensus) |
 | `scan_exempt` | Post restored and exempt from re-scanning | Server (after overturn) |
 | `under_review` | Tier 2 only — awaiting consensus before any action | Server (classification) |
-| `dismissed` | Tier 2 only — consensus says no action needed | Server (consensus) |
+| `dismissed` | No action needed (consensus or staff dismiss) | Server (consensus or staff) |
 
 ### 13.4 Classifier Evidence Schema
 
@@ -993,9 +1000,10 @@ This enables:
 |---|---|---|
 | 1. Classification below auto-action threshold | Server internal | ModerationAction created with state `proposed`, then `under_review` |
 | 2. Community reviews note | Same as existing consensus flow | Standard rating/scoring pipeline |
-| 3. Consensus: helpful (action needed) | Server → Plugin | Webhook: `moderation_action.applied` |
+| 3. Consensus: helpful (action needed) | Server → Plugin | Webhook: `moderation_action.proposed` (with `action_tier: "tier_2_consensus"`) |
 | 4. Plugin executes action | Plugin → Discourse | `PostAction.act(post, :hide)` |
-| 5. Consensus: not helpful (no action) | Server → Plugin | Webhook: `moderation_action.dismissed` (or no webhook) |
+| 5. Plugin confirms execution | Plugin → Server | `PATCH /api/v2/moderation-actions/{id}` with `{action_state: "applied"}` |
+| 6. Consensus: not helpful (no action) | Server → Plugin | Webhook: `moderation_action.dismissed` |
 
 ### 13.6 Edit/Rescan Lifecycle
 
@@ -1009,7 +1017,7 @@ flowchart TD
     F --> G["Enter scan pipeline"]
     G --> H{"Cosine similarity with\nexempted content hash"}
     H -->|"Similarity > 0.95\n(minor edit)"| I["Short-circuit: skip classification\nRestore scan_exempt"]
-    H -->|"Similarity <= 0.95\n(substantial edit)"| J["Full classification\nNew ModerationAction if needed"]
+    H -->|"Similarity <= 0.95\n(substantial edit)"| J["Full classification\nNew Request + ModerationAction + Note\n(same as fresh post)"]
 
     style I fill:#90EE90
     style J fill:#FFD700
@@ -1032,6 +1040,7 @@ New event types added to the `EventType` enum:
 | `moderation_action.retro_review_started` | Retroactive review note is open for voting | `{action_id, note_id, review_group}` |
 | `moderation_action.confirmed` | Community/staff confirmed the action was correct | `{action_id, note_id, note_status}` |
 | `moderation_action.overturned` | Community/staff overturned the action | `{action_id, note_id, note_status, scan_exempt: true}` |
+| `moderation_action.dismissed` | No action needed (Tier 2 consensus or staff dismiss) | `{action_id, request_id, reason}` |
 
 These events are delivered via the same outbound webhook mechanism (section 10): HMAC-SHA256 signed, 3 retries with exponential backoff, 5min polling fallback.
 
