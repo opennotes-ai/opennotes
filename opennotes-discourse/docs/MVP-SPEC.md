@@ -774,6 +774,10 @@ These existing endpoints need modification for Discourse support:
 | Outbound webhook delivery system | Server -> plugin event notifications | TASK-1400.06 |
 | `DiscourseVerifier` | Verify user identity against Discourse API | TASK-1400.07 |
 | Generic `can_administer_community` capability | Replace Discord-specific `has_manage_server` | TASK-1400.07 |
+| `ModerationAction` model + CRUD | First-class moderation action records (section 13) | TASK-1400.09 |
+| `PATCH /api/v2/moderation-actions/{id}` | Plugin confirms action execution/overturn | TASK-1400.09 |
+| `GET /api/v2/moderation-actions/{id}` | Plugin fetches action details after webhook | TASK-1400.09 |
+| `moderation_action.*` events | 6 new outbound event types for action lifecycle | TASK-1400.09 |
 
 ### 11.5 Error Handling Contract
 
@@ -831,6 +835,214 @@ These existing endpoints need modification for Discourse support:
 - **Latency:** Classification is async (Sidekiq job). Community review is inherently async (hours/days). No real-time blocking.
 - **Server provisioning:** Discourse admins use OpenNotes-hosted server for MVP (reduces friction). Self-hosted option for enterprise later.
 - **Untrusted environment:** Plugin runs in customer Discourse instances. Server verifies all identity claims. No auto-creation of communities from untrusted sources.
+
+---
+
+## 13. Moderation Action Contract
+
+### 13.1 Overview
+
+The two-tier action model (section 4.1) requires a server-side record for tracking moderation actions taken on posts. The `ModerationAction` model is a first-class record — semantically similar to `MessageArchive` in the existing codebase: it represents a log of an event that the request/note/rating loop operates on.
+
+**Relationship to existing models:**
+
+```
+ModerationAction (the action taken)
+  ├── Request (the content review request)
+  │     └── Note (retroactive/explanatory note for community voting)
+  │           └── Ratings (community votes)
+  └── classifier_evidence (JSONB: labels, scores, threshold, config snapshot)
+```
+
+The Note remains a note. The ModerationAction is a separate record that *references* a Note and Request. This keeps the scoring pipeline clean — notes and ratings work the same regardless of whether they're attached to a Tier 1 auto-action or a Tier 2 consensus review.
+
+### 13.2 ModerationAction Schema
+
+```python
+class ModerationAction(Base, TimestampMixin):
+    __tablename__ = "moderation_actions"
+
+    id: UUID                          # UUIDv7 primary key
+    request_id: UUID                  # FK to Request
+    note_id: UUID | None              # FK to Note (retroactive/explanatory note)
+    community_server_id: UUID         # FK to CommunityServer
+
+    # Action details
+    action_type: str                  # "hide", "unhide", "warn", "silence", "delete"
+    action_tier: str                  # "tier_1_immediate" or "tier_2_consensus"
+    action_state: str                 # State machine state (see 13.3)
+    platform_action_id: str | None    # Platform-specific action ID (Discourse PostAction ID)
+
+    # Classification evidence (JSONB)
+    classifier_evidence: dict         # {labels: {}, scores: {}, threshold: float,
+                                      #  model_version: str, category_config_snapshot: {}}
+
+    # Review metadata
+    review_group: str                 # "community", "trusted", or "staff"
+    scan_exempt: bool                 # Whether post is exempt from re-scanning
+    scan_exempt_content_hash: str | None  # Hash of content at exemption time (PreviouslySeen)
+
+    # Overturn tracking
+    overturned_at: datetime | None
+    overturned_reason: str | None     # "community_consensus" or "staff_override"
+
+    # Timestamps
+    proposed_at: datetime
+    applied_at: datetime | None
+    confirmed_at: datetime | None
+
+    created_at: datetime
+    updated_at: datetime
+```
+
+### 13.3 Action State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Proposed: classification_triggers_action
+
+    %% Tier 1: Immediate action path
+    Proposed --> Applied: plugin_executes_action
+    Applied --> RetroReview: retroactive_review_started
+    RetroReview --> Confirmed: retro_consensus_helpful
+    RetroReview --> Overturned: retro_consensus_not_helpful
+    Overturned --> ScanExempt: post_restored_exempt
+
+    %% Tier 2: Consensus path (action proposed but not applied until consensus)
+    Proposed --> UnderReview: tier_2_enters_consensus
+    UnderReview --> Applied: consensus_helpful_action_approved
+    UnderReview --> Dismissed: consensus_not_helpful_no_action
+
+    %% Staff overrides (from any active state)
+    Proposed --> Dismissed: staff_dismisses
+    Applied --> Overturned: staff_overturns
+    UnderReview --> Dismissed: staff_dismisses
+    UnderReview --> Applied: staff_force_applies
+    RetroReview --> Confirmed: staff_confirms
+    RetroReview --> Overturned: staff_overturns
+
+    %% Rescan after edit
+    ScanExempt --> Proposed: edit_clears_exempt_rescan_triggers
+
+    note right of Proposed: Server: action decided,\nwaiting for plugin to execute
+    note right of Applied: Plugin: action executed on Discourse\n(post hidden, user warned, etc.)
+    note right of RetroReview: Community/staff voting on\nwhether action was correct
+    note right of Overturned: Action reversed.\nPost restored, warning kept as informational
+    note right of ScanExempt: Post exempt from re-scan.\nContent hash stored for similarity check.
+```
+
+**Key states:**
+
+| State | Meaning | Who transitions |
+|---|---|---|
+| `proposed` | Classification decided an action should be taken | Server (automatic) |
+| `applied` | Plugin executed the Discourse action (hide/warn/etc.) | Plugin (confirms execution) |
+| `retro_review` | Retroactive note is being voted on | Server (when review starts) |
+| `confirmed` | Community/staff confirmed the action was correct | Server (consensus) |
+| `overturned` | Community/staff determined the action was wrong | Server (consensus) |
+| `scan_exempt` | Post restored and exempt from re-scanning | Server (after overturn) |
+| `under_review` | Tier 2 only — awaiting consensus before any action | Server (classification) |
+| `dismissed` | No action needed (consensus or staff dismiss) | Server (consensus or staff) |
+
+### 13.4 Classifier Evidence Schema
+
+The `classifier_evidence` JSONB field stores the full decision context:
+
+```json
+{
+  "labels": {
+    "harassment": true,
+    "spam": true,
+    "misinformation": false
+  },
+  "scores": {
+    "harassment": 0.92,
+    "spam": 0.87
+  },
+  "threshold_used": 0.90,
+  "category_config_snapshot": {
+    "auto_action_labels": ["harassment", "spam"],
+    "auto_action_min_score": 0.90,
+    "review_group": "staff",
+    "label_routing": {"staff": ["harassment"], "community": ["spam"]}
+  },
+  "model_version": "scan-agent-v1.0",
+  "scan_type": "post_created",
+  "classification_timestamp": "2026-03-28T12:00:00Z"
+}
+```
+
+This enables:
+- **Audit:** "Why was this post hidden?" → full classifier output + threshold + config at time of decision
+- **False positive analysis:** Query actions where `overturned = true` to identify systematic classifier errors
+- **Threshold tuning:** Compare scores against thresholds across overturned vs confirmed actions
+
+### 13.5 Plugin-Server Action Contract
+
+#### Tier 1: Immediate Action Flow
+
+| Step | Direction | API Call | Payload |
+|---|---|---|---|
+| 1. Classification triggers action | Server internal | — | ModerationAction created with state `proposed` |
+| 2. Server notifies plugin | Server → Plugin | Webhook: `moderation_action.proposed` | `{action_id, request_id, action_type, recommended_action, classifier_evidence}` |
+| 3. Plugin executes Discourse action | Plugin → Discourse | `PostAction.act(post, :hide)` | — |
+| 4. Plugin confirms execution | Plugin → Server | `PATCH /api/v2/moderation-actions/{id}` | `{action_state: "applied", platform_action_id: "..."}` |
+| 5. Retroactive review starts | Server internal | — | ModerationAction transitions to `retro_review` |
+| 6. Community votes | Plugin → Server | `POST /api/v2/ratings` | Same as consensus flow |
+| 7. Consensus reached | Server → Plugin | Webhook: `moderation_action.confirmed` or `moderation_action.overturned` | `{action_id, outcome, note_status}` |
+| 8a. If confirmed | Plugin → Discourse | No action (post stays hidden) | — |
+| 8b. If overturned | Plugin → Discourse | Unhide post, add staff annotation | `Post.unhide`, staff message |
+| 9. Plugin confirms overturn | Plugin → Server | `PATCH /api/v2/moderation-actions/{id}` | `{action_state: "scan_exempt", scan_exempt_content_hash: "..."}` |
+
+#### Tier 2: Consensus Flow
+
+| Step | Direction | API Call |
+|---|---|---|
+| 1. Classification below auto-action threshold | Server internal | ModerationAction created with state `proposed`, then `under_review` |
+| 2. Community reviews note | Same as existing consensus flow | Standard rating/scoring pipeline |
+| 3. Consensus: helpful (action needed) | Server → Plugin | Webhook: `moderation_action.proposed` (with `action_tier: "tier_2_consensus"`) |
+| 4. Plugin executes action | Plugin → Discourse | `PostAction.act(post, :hide)` |
+| 5. Plugin confirms execution | Plugin → Server | `PATCH /api/v2/moderation-actions/{id}` with `{action_state: "applied"}` |
+| 6. Consensus: not helpful (no action) | Server → Plugin | Webhook: `moderation_action.dismissed` |
+
+### 13.6 Edit/Rescan Lifecycle
+
+```mermaid
+flowchart TD
+    A["Post edited"] --> B["post_edited event fires"]
+    B --> C["SyncPostToOpennotes job"]
+    C --> D{"Post has scan_exempt ModerationAction?"}
+    D -->|No| E["Normal classification flow"]
+    D -->|Yes| F["Clear scan_exempt flag"]
+    F --> G["Enter scan pipeline"]
+    G --> H{"Cosine similarity with\nexempted content hash"}
+    H -->|"Similarity > 0.95\n(minor edit)"| I["Short-circuit: skip classification\nRestore scan_exempt"]
+    H -->|"Similarity <= 0.95\n(substantial edit)"| J["Full classification\nNew Request + ModerationAction + Note\n(same as fresh post)"]
+
+    style I fill:#90EE90
+    style J fill:#FFD700
+```
+
+**Key rules:**
+- **Edit always enters the scan pipeline.** The decision to skip happens *inside* the pipeline, not before it.
+- **Scan-exempt content hash** is stored on the ModerationAction (similar to `PreviouslySeen` pattern). Cosine similarity check against the stored hash determines if the edit is minor.
+- **Minor edit threshold:** 0.95 cosine similarity = trivially similar, short-circuit. Below 0.95 = substantial change, full re-classification.
+- **Staff can remove scan-exempt** flag manually at any time to force re-scan regardless of similarity.
+
+### 13.7 Outbound Events for Moderation Actions
+
+New event types added to the `EventType` enum:
+
+| Event | When | Payload |
+|---|---|---|
+| `moderation_action.proposed` | Classification decides an action should be taken | `{action_id, request_id, action_type, classifier_evidence, review_group}` |
+| `moderation_action.applied` | Plugin confirms it executed the action on the platform | `{action_id, platform_action_id, applied_at}` |
+| `moderation_action.retro_review_started` | Retroactive review note is open for voting | `{action_id, note_id, review_group}` |
+| `moderation_action.confirmed` | Community/staff confirmed the action was correct | `{action_id, note_id, note_status}` |
+| `moderation_action.overturned` | Community/staff overturned the action | `{action_id, note_id, note_status, scan_exempt: true}` |
+| `moderation_action.dismissed` | No action needed (Tier 2 consensus or staff dismiss) | `{action_id, request_id, reason}` |
+
+These events are delivered via the same outbound webhook mechanism (section 10): HMAC-SHA256 signed, 3 retries with exponential backoff, 5min polling fallback.
 
 ---
 
