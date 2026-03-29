@@ -62,13 +62,17 @@ class PlatformIdentityInput(StrictInputSchema):
         max_length=255,
         description="Scope within provider (e.g., Discourse domain). '*' for global.",
     )
-    username: str | None = Field(None, max_length=255, description="Username on the platform")
-    display_name: str | None = Field(
-        None, max_length=255, description="Display name on the platform"
+    username: str | None = Field(
+        default=None, max_length=255, description="Username on the platform"
     )
-    avatar_url: str | None = Field(None, max_length=500, description="Avatar URL from the platform")
+    display_name: str | None = Field(
+        default=None, max_length=255, description="Display name on the platform"
+    )
+    avatar_url: str | None = Field(
+        default=None, max_length=500, description="Avatar URL from the platform"
+    )
     metadata: dict | None = Field(
-        None, description="Provider-specific metadata (trust_level, admin, etc.)"
+        default=None, description="Provider-specific metadata (trust_level, admin, etc.)"
     )
 
 
