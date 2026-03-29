@@ -227,6 +227,11 @@ class UserIdentityCreate(UserIdentityBase, StrictInputSchema):
     """Schema for creating a new user identity."""
 
     profile_id: UUID = Field(..., description="Associated user profile ID")
+    provider_scope: str = Field(
+        "*",
+        max_length=255,
+        description="Scope within provider (e.g., Discourse domain). '*' for global.",
+    )
 
 
 class UserIdentityUpdate(StrictInputSchema):

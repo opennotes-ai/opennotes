@@ -191,12 +191,12 @@ async def get_identity_by_provider(
     provider_user_id: str,
     provider_scope: str | None = None,
 ) -> UserIdentity | None:
+    effective_scope = provider_scope if provider_scope is not None else "*"
     filters = [
         UserIdentity.provider == _enum_val(provider),
         UserIdentity.provider_user_id == provider_user_id,
+        UserIdentity.provider_scope == effective_scope,
     ]
-    if provider_scope is not None:
-        filters.append(UserIdentity.provider_scope == provider_scope)
     result = await db.execute(
         select(UserIdentity).where(*filters).options(*loaders.identity_with_profile())
     )
@@ -231,6 +231,7 @@ async def create_identity(
         profile_id=identity_create.profile_id,
         provider=_enum_val(identity_create.provider),
         provider_user_id=identity_create.provider_user_id,
+        provider_scope=identity_create.provider_scope,
         credentials=identity_create.credentials,
     )
 
@@ -326,6 +327,7 @@ async def create_profile_with_identity(
     provider: AuthProvider,
     provider_user_id: str,
     credentials: dict[str, Any] | None = None,
+    provider_scope: str = "*",
 ) -> tuple[UserProfile, UserIdentity]:
     profile = await create_profile(db, profile_create)
 
@@ -334,6 +336,7 @@ async def create_profile_with_identity(
         provider=provider,
         provider_user_id=provider_user_id,
         credentials=credentials,
+        provider_scope=provider_scope,
     )
 
     identity = await create_identity(db, identity_create)
@@ -646,11 +649,8 @@ async def get_or_create_profile_from_platform(
             provider=user_info.provider,
             provider_user_id=user_info.provider_user_id,
             credentials=None,
+            provider_scope=user_info.provider_scope,
         )
-
-        if user_info.provider_scope != "*":
-            _identity.provider_scope = user_info.provider_scope
-            await db.flush()
 
         profile.last_interaction_at = pendulum.now("UTC")
         await db.flush()

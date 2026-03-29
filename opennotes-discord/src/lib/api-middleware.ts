@@ -288,6 +288,7 @@ export function buildProfileHeaders(context?: UserContext): Record<string, strin
   }
 
   headers['X-Platform-Type'] = 'discord';
+  headers['X-Platform-User-Id'] = context.userId;
 
   if (context.channelId) {
     headers['X-Channel-Id'] = context.channelId;
