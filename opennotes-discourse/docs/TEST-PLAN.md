@@ -31,6 +31,7 @@ This test plan covers all 14 MVP v1 features from the spec (section 12). Tests r
 | **Reviewer 1** | reviewer1@test.local / password-for-testing (TL2) |
 | **Reviewer 2** | reviewer2@test.local / password-for-testing (TL2) |
 | **New User** | newuser@test.local / password-for-testing (TL0) |
+| **TL1 User** | basic@test.local / password-for-testing (TL1) — *new, to be added* |
 | **TL3 User** | trusted@test.local / password-for-testing (TL3) — *new, to be added* |
 | **Categories** | General Discussion, Announcements, Off Topic |
 | **Plugin settings** | opennotes_enabled: true, server_url: http://host.docker.internal:8000 |
@@ -50,18 +51,18 @@ This test plan covers all 14 MVP v1 features from the spec (section 12). Tests r
 
 ### Test Execution Order
 
-Tests are organized in dependency order. Later suites may depend on state created by earlier ones.
+Tests are organized in dependency order. **Bootstrap suite runs first** to set up the community server and sync state. Remaining suites rely primarily on **SQL fixture data** seeded before tests, not on state from prior suites. Where a test depends on prior suite state, the preconditions column says so explicitly.
 
 ```
-1. bootstrap.spec.ts       — Plugin setup, community server registration
-2. identity.spec.ts        — User identity mapping, trust level sync
-3. classification.spec.ts  — Post scanning, two-tier routing
-4. review.spec.ts          — Community review queue, voting
-5. consensus.spec.ts       — Consensus actions, webhook handling
-6. moderation.spec.ts      — Tier 1 auto-action, retroactive review, overturn
-7. staff.spec.ts           — Staff overrides, review queue actions
-8. admin.spec.ts           — Settings, dashboard, per-category config
-9. error.spec.ts           — Degraded mode, server down, webhook failures
+1. bootstrap.spec.ts       — Plugin setup, community server registration (MUST run first)
+2. identity.spec.ts        — User identity mapping, trust level sync (uses fixtures)
+3. classification.spec.ts  — Post scanning, two-tier routing (uses fixtures)
+4. review.spec.ts          — Community review queue, voting, flag routing (uses fixtures)
+5. consensus.spec.ts       — Consensus actions, webhook handling (uses fixtures)
+6. moderation.spec.ts      — Tier 1 auto-action, retroactive review, overturn (uses fixtures)
+7. staff.spec.ts           — Staff overrides, review queue actions (uses fixtures)
+8. admin.spec.ts           — Settings, dashboard, per-category config (independent)
+9. error.spec.ts           — Degraded mode, server down, webhook failures (independent)
 ```
 
 ---
@@ -77,8 +78,10 @@ Tests are organized in dependency order. Later suites may depend on state create
 | B1 | Plugin registers community server on setup | Server running, plugin enabled | 1. Enable plugin in admin settings<br>2. Enter server URL and API key<br>3. Save settings | Server has CommunityServer record with platform="discourse" |
 | B2 | Plugin registers webhook on setup | B1 complete | 1. Check server webhook registrations | Webhook registered with correct callback URL and HMAC secret |
 | B3 | Monitored categories sync | B1 complete | 1. Set opennotes_monitored_categories to ["General Discussion", "Announcements"]<br>2. Save settings | Server has 2 monitored channels for this community |
-| B4 | Category sync on change | B3 complete | 1. Remove "Announcements" from monitored categories<br>2. Save | Server has 1 monitored channel |
+| B4 | Category sync on change | B3 complete | 1. Add a third category to monitored list<br>2. Save | Server has 3 monitored channels (note: test adds, not removes, to preserve state for later suites) |
 | B5 | Settings sync to community config | B1 complete | 1. Set opennotes_staff_approval_required=true<br>2. Set opennotes_auto_hide_on_consensus=true<br>3. Save | Server community config reflects both settings |
+| B6 | reviewer_min_trust_level setting enforced | B1 complete | 1. Set opennotes_reviewer_min_trust_level=3<br>2. Login as TL2 user<br>3. Navigate to /community-reviews | Vote widget not visible (TL2 < TL3 threshold) |
+| B7 | route_flags_to_community setting | B1 complete | 1. Set opennotes_route_flags_to_community=true<br>2. Flag a post | Flag routed to OpenNotes as a request (not just Discourse native flag queue) |
 
 ### 3.2 Identity Mapping (`identity.spec.ts`)
 
@@ -90,6 +93,7 @@ Tests are organized in dependency order. Later suites may depend on state create
 | I2 | Returning user uses cached identity | I1 complete | 1. Login as reviewer1<br>2. Vote on another note | No new profile created, existing profile used |
 | I3 | Trust level stored as profile metadata | I1 complete | 1. Check server profile for reviewer1 | Profile metadata includes trust_level=2 |
 | I4 | TL0 user cannot vote | Server running | 1. Login as newuser (TL0)<br>2. Navigate to community reviews | Vote widget not visible or disabled |
+| I4b | TL1 user cannot vote | Server running, TL1 user exists | 1. Login as TL1 user<br>2. Navigate to community reviews | Vote widget not visible or disabled |
 | I5 | Admin action triggers elevated verification | Server running | 1. Login as admin<br>2. Force-publish a note | Server re-verifies admin status against Discourse API |
 
 ### 3.3 Post Classification (`classification.spec.ts`)
@@ -118,6 +122,9 @@ Tests are organized in dependency order. Later suites may depend on state create
 | R5 | Review group filters items | Per-category review groups configured | 1. Login as reviewer1 (TL2)<br>2. Check items from staff-only category | Staff-only items not visible to TL2 user |
 | R6 | TL3 user sees trusted items | Trusted review group items exist | 1. Login as trusted (TL3)<br>2. Navigate to /community-reviews | Sees items from both community and trusted groups |
 | R7 | Scores hidden until consensus | Pending items | 1. Login as reviewer1<br>2. View a pending item | Score/tally not shown until consensus reached |
+| R8 | Default review group catches all to staff | No label routing configured for category | 1. Login as reviewer1 (TL2)<br>2. Check items from unconfigured category | Items not visible to TL2 (default: staff-only) |
+| R9 | Flag creates server request | route_flags_to_community=true | 1. Login as reviewer1<br>2. Flag a post<br>3. Check server | Request created on server from flag_created event |
+| R10 | Staff sees rating tallies in /review | Items with ratings | 1. Login as admin<br>2. View item in /review | Current rating tallies and individual notes with ratings visible |
 
 ### 3.5 Consensus & Action (`consensus.spec.ts`)
 
@@ -129,6 +136,8 @@ Tests are organized in dependency order. Later suites may depend on state create
 | A2 | Consensus "not helpful" upholds post | Note with enough ratings trending not helpful | 1. Submit final rating<br>2. Wait for webhook | Post stays visible, "Reviewed -- No Action" badge shown |
 | A3 | Webhook triggers Discourse action | Server sends webhook | 1. Trigger scoring on server<br>2. Observe Discourse state | ReviewableOpennotesItem updated, post action executed |
 | A4 | Polling fallback catches missed webhook | Webhook delivery blocked | 1. Block webhook delivery<br>2. Wait for polling cycle (5 min or trigger manually) | Plugin catches up, applies correct action |
+| A5 | Webhook with invalid HMAC signature rejected | Webhook endpoint reachable | 1. Send webhook with wrong HMAC signature | Plugin rejects webhook, returns 401 |
+| A6 | Stale polling is no-op after webhook | Webhook already processed | 1. Process consensus via webhook<br>2. Trigger manual polling cycle | Polling detects state already updated, takes no action |
 
 ### 3.6 Moderation Actions (`moderation.spec.ts`)
 
@@ -182,6 +191,8 @@ Tests are organized in dependency order. Later suites may depend on state create
 | E4 | Webhook delivery failure + polling recovery | Webhook endpoint blocked | 1. Block webhook delivery<br>2. Trigger consensus on server<br>3. Wait for polling cycle | Plugin eventually picks up the consensus result |
 | E5 | Duplicate webhook delivery | Same webhook sent twice | 1. Deliver same webhook event twice | Action only applied once (idempotent) |
 | E6 | Server returns 429 (rate limited) | Rate limit triggered | 1. Trigger many API calls quickly | Plugin respects Retry-After, retries appropriately |
+| E7 | Plugin restart recovers from missed webhooks | Webhooks dead-lettered during downtime | 1. Stop Discourse container<br>2. Trigger consensus on server (webhooks dead-letter)<br>3. Restart Discourse | Polling on restart catches up and applies missed actions |
+| E8 | Stale polling after webhook already processed | Webhook delivered, then poll runs | 1. Deliver webhook<br>2. Trigger polling cycle | No duplicate action — poll detects Reviewable already updated |
 
 ---
 
