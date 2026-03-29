@@ -50,11 +50,11 @@ class TestExtractEventPayloadContext:
 
         ctx = _extract_event_payload_context(event, span)
 
-        span.set_attribute.assert_any_call("discord.channel_id", "ch-456")
+        span.set_attribute.assert_any_call("platform.channel_id", "ch-456")
 
         token = context.attach(ctx)
         try:
-            assert baggage.get_baggage("discord.channel_id") == "ch-456"
+            assert baggage.get_baggage("platform.channel_id") == "ch-456"
         finally:
             context.detach(token)
 
@@ -67,12 +67,12 @@ class TestExtractEventPayloadContext:
         ctx = _extract_event_payload_context(event, span)
 
         span.set_attribute.assert_any_call("community_server_id", "guild-789")
-        span.set_attribute.assert_any_call("discord.channel_id", "ch-012")
+        span.set_attribute.assert_any_call("platform.channel_id", "ch-012")
 
         token = context.attach(ctx)
         try:
             assert baggage.get_baggage("community_server_id") == "guild-789"
-            assert baggage.get_baggage("discord.channel_id") == "ch-012"
+            assert baggage.get_baggage("platform.channel_id") == "ch-012"
         finally:
             context.detach(token)
 
@@ -87,7 +87,7 @@ class TestExtractEventPayloadContext:
         token = context.attach(ctx)
         try:
             assert baggage.get_baggage("community_server_id") is None
-            assert baggage.get_baggage("discord.channel_id") is None
+            assert baggage.get_baggage("platform.channel_id") is None
         finally:
             context.detach(token)
 

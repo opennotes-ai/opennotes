@@ -39,10 +39,11 @@ _span_exporter: "SpanExporter | None" = None
 _meter_provider: "MeterProvider | None" = None
 
 BAGGAGE_KEYS_TO_PROPAGATE = [
-    "discord.user_id",
-    "discord.username",
-    "discord.guild_id",
-    "discord.channel_id",
+    "platform.user_id",
+    "platform.type",
+    "platform.scope",
+    "platform.community_id",
+    "platform.channel_id",
     "community_server_id",
     "request_id",
     "enduser.id",

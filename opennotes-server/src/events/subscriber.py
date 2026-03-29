@@ -61,7 +61,7 @@ def _extract_user_context(msg: Msg, span: trace.Span) -> None:
     Attributes set:
     - enduser.id: User's UUID from X-User-Id header
     - user.username: User's username from X-Username header
-    - discord.user_id: Discord user ID from X-Discord-User-Id header
+    - platform.user_id: Platform user ID from X-Platform-User-Id header
     - event.initiator.user_id: Same as enduser.id, semantic for event context
     """
     if not msg.headers:
@@ -69,7 +69,7 @@ def _extract_user_context(msg: Msg, span: trace.Span) -> None:
 
     user_id = msg.headers.get("X-User-Id")
     username = msg.headers.get("X-Username")
-    discord_user_id = msg.headers.get("X-Discord-User-Id")
+    platform_user_id = msg.headers.get("X-Platform-User-Id")
 
     if user_id:
         span.set_attribute("enduser.id", user_id)
@@ -78,8 +78,8 @@ def _extract_user_context(msg: Msg, span: trace.Span) -> None:
     if username:
         span.set_attribute("user.username", username)
 
-    if discord_user_id:
-        span.set_attribute("discord.user_id", discord_user_id)
+    if platform_user_id:
+        span.set_attribute("platform.user_id", platform_user_id)
 
 
 def _extract_event_payload_context(event: Any, span: trace.Span) -> context.Context:
@@ -99,8 +99,8 @@ def _extract_event_payload_context(event: Any, span: trace.Span) -> context.Cont
 
     channel_id = getattr(event, "channel_id", None)
     if channel_id is not None:
-        span.set_attribute("discord.channel_id", channel_id)
-        ctx = baggage.set_baggage("discord.channel_id", channel_id, ctx)
+        span.set_attribute("platform.channel_id", channel_id)
+        ctx = baggage.set_baggage("platform.channel_id", channel_id, ctx)
 
     return ctx
 

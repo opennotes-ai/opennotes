@@ -81,14 +81,14 @@ class EventPublisher:
         ctx = context.get_current()
         user_id = baggage.get_baggage("enduser.id", ctx)
         username = baggage.get_baggage("user.username", ctx)
-        discord_user_id = baggage.get_baggage("discord.user_id", ctx)
+        platform_user_id = baggage.get_baggage("platform.user_id", ctx)
 
         if user_id:
             headers["X-User-Id"] = str(user_id)
         if username:
             headers["X-Username"] = str(username)
-        if discord_user_id:
-            headers["X-Discord-User-Id"] = str(discord_user_id)
+        if platform_user_id:
+            headers["X-Platform-User-Id"] = str(platform_user_id)
 
         return headers
 

@@ -63,9 +63,9 @@ def get_user_identifier(request: Request) -> str:
         except Exception as e:
             logger.debug(f"Unexpected error extracting user for rate limiting: {e}")
 
-    discord_user_id = request.headers.get("x-discord-user-id")
-    if discord_user_id:
-        return f"discord:{discord_user_id.strip()}"
+    platform_user_id = request.headers.get("x-platform-user-id")
+    if platform_user_id:
+        return f"platform:{platform_user_id.strip()}"
 
     api_key = request.headers.get("x-api-key")
     if api_key:
