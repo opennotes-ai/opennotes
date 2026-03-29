@@ -35,6 +35,7 @@ class AuthProvider(str, PyEnum):
     DISCORD = "discord"
     GITHUB = "github"
     EMAIL = "email"
+    DISCOURSE = "discourse"
 
 
 class CommunityRole(str, PyEnum):

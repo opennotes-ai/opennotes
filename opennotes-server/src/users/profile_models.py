@@ -147,6 +147,7 @@ class UserIdentity(Base, TimestampMixin):
         String(50), nullable=False, index=True
     )  # 'discord', 'github', 'email'
     provider_user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    provider_scope: Mapped[str] = mapped_column(String(255), nullable=False, server_default="*")
     credentials: Mapped[dict[str, Any] | None] = mapped_column(
         EncryptedJSONB, nullable=True
     )  # Encrypted storage for provider-specific credential data
@@ -168,6 +169,7 @@ class UserIdentity(Base, TimestampMixin):
         Index(
             USER_IDENTITY_PROVIDER_USER_UNIQUE_CONSTRAINT,
             "provider",
+            "provider_scope",
             "provider_user_id",
             unique=True,
         ),
