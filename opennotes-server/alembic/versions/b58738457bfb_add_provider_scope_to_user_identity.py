@@ -26,24 +26,38 @@ def upgrade() -> None:
 
     op.execute("UPDATE user_identities SET provider_scope = '*' WHERE provider_scope IS NULL")
 
-    op.drop_index("idx_user_identities_provider_user", table_name="user_identities")
+    op.execute("COMMIT")
+
+    op.drop_index(
+        "idx_user_identities_provider_user",
+        table_name="user_identities",
+        postgresql_concurrently=True,
+    )
 
     op.create_index(
         "idx_user_identities_provider_user",
         "user_identities",
         ["provider", "provider_scope", "provider_user_id"],
         unique=True,
+        postgresql_concurrently=True,
     )
 
 
 def downgrade() -> None:
-    op.drop_index("idx_user_identities_provider_user", table_name="user_identities")
+    op.execute("COMMIT")
+
+    op.drop_index(
+        "idx_user_identities_provider_user",
+        table_name="user_identities",
+        postgresql_concurrently=True,
+    )
 
     op.create_index(
         "idx_user_identities_provider_user",
         "user_identities",
         ["provider", "provider_user_id"],
         unique=True,
+        postgresql_concurrently=True,
     )
 
     op.drop_column("user_identities", "provider_scope")

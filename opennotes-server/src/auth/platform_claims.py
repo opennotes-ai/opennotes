@@ -12,6 +12,20 @@ logger = get_logger(__name__)
 PLATFORM_CLAIMS_EXPIRY_SECONDS = 300
 
 
+CORE_CLAIM_KEYS = frozenset(
+    {
+        "platform",
+        "scope",
+        "sub",
+        "community_id",
+        "can_administer_community",
+        "type",
+        "iat",
+        "exp",
+    }
+)
+
+
 def create_platform_claims_token(
     platform: str,
     scope: str,
@@ -19,7 +33,7 @@ def create_platform_claims_token(
     community_id: str,
     can_administer_community: bool = False,
     expires_delta: pendulum.Duration | None = None,
-    **kwargs: Any,
+    extra_claims: dict[str, Any] | None = None,
 ) -> str:
     if expires_delta is None:
         expires_delta = pendulum.duration(seconds=PLATFORM_CLAIMS_EXPIRY_SECONDS)
@@ -36,8 +50,14 @@ def create_platform_claims_token(
         "type": "platform_claims",
         "iat": now,
         "exp": expire,
-        **kwargs,
     }
+    if extra_claims:
+        collisions = set(extra_claims.keys()) & CORE_CLAIM_KEYS
+        if collisions:
+            logger.warning(f"Ignoring extra_claims that collide with core claims: {collisions}")
+        for key, value in extra_claims.items():
+            if key not in CORE_CLAIM_KEYS:
+                payload[key] = value
 
     return jwt.encode(
         payload,
@@ -75,13 +95,16 @@ def validate_platform_claims(token: str) -> dict[str, Any] | None:
             logger.warning(f"Missing required field '{field}' in platform claims JWT")
             validation_failed = True
 
-    if not isinstance(payload.get("sub"), str):
-        logger.warning("sub must be string in platform claims JWT")
-        validation_failed = True
-
-    if not isinstance(payload.get("can_administer_community"), bool):
-        logger.warning("can_administer_community must be boolean in platform claims JWT")
-        validation_failed = True
+    type_checks: list[tuple[str, type]] = [
+        ("sub", str),
+        ("platform", str),
+        ("community_id", str),
+        ("can_administer_community", bool),
+    ]
+    for field_name, expected_type in type_checks:
+        if not isinstance(payload.get(field_name), expected_type):
+            logger.warning(f"{field_name} must be {expected_type.__name__} in platform claims JWT")
+            validation_failed = True
 
     if validation_failed:
         return None
