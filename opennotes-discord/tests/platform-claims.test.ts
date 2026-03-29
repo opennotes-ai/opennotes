@@ -8,7 +8,7 @@ jest.unstable_mockModule('../src/logger.js', () => ({
   logger: mockLogger,
 }));
 
-describe('Discord Claims JWT Utility', () => {
+describe('Platform Claims JWT Utility', () => {
   const TEST_JWT_SECRET = 'abcdefghij1234567890abcdefghij12';
   const TEST_USER_ID = '123456789012345678';
   const TEST_GUILD_ID = '987654321098765432';
@@ -18,28 +18,35 @@ describe('Discord Claims JWT Utility', () => {
     jest.clearAllMocks();
   });
 
-  describe('createDiscordClaimsToken', () => {
-    it('should create valid JWT with correct claims when JWT_SECRET_KEY is configured', async () => {
+  describe('createPlatformClaimsToken', () => {
+    it('should create valid JWT with platform claims when JWT_SECRET_KEY is configured', async () => {
       jest.unstable_mockModule('../src/config.js', () => ({
         config: {
           jwtSecretKey: TEST_JWT_SECRET,
         },
       }));
 
-      const { createDiscordClaimsToken } = await import('../src/utils/discord-claims.js');
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
 
-      const token = createDiscordClaimsToken(TEST_USER_ID, TEST_GUILD_ID, true);
+      const token = createPlatformClaimsToken(
+        'discord',
+        '*',
+        TEST_USER_ID,
+        TEST_GUILD_ID,
+        true
+      );
 
       expect(token).not.toBeNull();
       expect(typeof token).toBe('string');
 
       const decoded = jwt.decode(token!) as jwt.JwtPayload;
       expect(decoded).not.toBeNull();
+      expect(decoded.platform).toBe('discord');
+      expect(decoded.scope).toBe('*');
       expect(decoded.sub).toBe(TEST_USER_ID);
-      expect(decoded.user_id).toBe(TEST_USER_ID);
-      expect(decoded.guild_id).toBe(TEST_GUILD_ID);
-      expect(decoded.has_manage_server).toBe(true);
-      expect(decoded.type).toBe('discord_claims');
+      expect(decoded.community_id).toBe(TEST_GUILD_ID);
+      expect(decoded.can_administer_community).toBe(true);
+      expect(decoded.type).toBe('platform_claims');
       expect(decoded.iat).toBeDefined();
       expect(decoded.exp).toBeDefined();
     });
@@ -51,9 +58,15 @@ describe('Discord Claims JWT Utility', () => {
         },
       }));
 
-      const { createDiscordClaimsToken } = await import('../src/utils/discord-claims.js');
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
 
-      const token = createDiscordClaimsToken(TEST_USER_ID, TEST_GUILD_ID, false);
+      const token = createPlatformClaimsToken(
+        'discord',
+        '*',
+        TEST_USER_ID,
+        TEST_GUILD_ID,
+        false
+      );
 
       expect(() => {
         jwt.verify(token!, TEST_JWT_SECRET, { algorithms: ['HS256'] });
@@ -61,7 +74,7 @@ describe('Discord Claims JWT Utility', () => {
 
       const verified = jwt.verify(token!, TEST_JWT_SECRET, { algorithms: ['HS256'] }) as jwt.JwtPayload;
       expect(verified.sub).toBe(TEST_USER_ID);
-      expect(verified.has_manage_server).toBe(false);
+      expect(verified.can_administer_community).toBe(false);
     });
 
     it('should set expiry approximately 5 minutes from creation', async () => {
@@ -71,10 +84,16 @@ describe('Discord Claims JWT Utility', () => {
         },
       }));
 
-      const { createDiscordClaimsToken } = await import('../src/utils/discord-claims.js');
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
 
       const beforeCreation = Math.floor(Date.now() / 1000);
-      const token = createDiscordClaimsToken(TEST_USER_ID, TEST_GUILD_ID, true);
+      const token = createPlatformClaimsToken(
+        'discord',
+        '*',
+        TEST_USER_ID,
+        TEST_GUILD_ID,
+        true
+      );
       const afterCreation = Math.floor(Date.now() / 1000);
 
       const decoded = jwt.decode(token!) as jwt.JwtPayload;
@@ -97,13 +116,19 @@ describe('Discord Claims JWT Utility', () => {
         },
       }));
 
-      const { createDiscordClaimsToken } = await import('../src/utils/discord-claims.js');
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
 
-      const token = createDiscordClaimsToken(TEST_USER_ID, TEST_GUILD_ID, true);
+      const token = createPlatformClaimsToken(
+        'discord',
+        '*',
+        TEST_USER_ID,
+        TEST_GUILD_ID,
+        true
+      );
 
       expect(token).toBeNull();
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        'JWT_SECRET_KEY not configured, cannot create Discord claims token'
+        'JWT_SECRET_KEY not configured, cannot create platform claims token'
       );
     });
 
@@ -114,57 +139,63 @@ describe('Discord Claims JWT Utility', () => {
         },
       }));
 
-      const { createDiscordClaimsToken } = await import('../src/utils/discord-claims.js');
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
 
-      const token = createDiscordClaimsToken(TEST_USER_ID, TEST_GUILD_ID, false);
+      const token = createPlatformClaimsToken(
+        'discord',
+        '*',
+        TEST_USER_ID,
+        TEST_GUILD_ID,
+        false
+      );
 
       expect(token).toBeNull();
     });
 
-    it('should correctly encode has_manage_server as true', async () => {
+    it('should correctly encode can_administer_community as true', async () => {
       jest.unstable_mockModule('../src/config.js', () => ({
         config: {
           jwtSecretKey: TEST_JWT_SECRET,
         },
       }));
 
-      const { createDiscordClaimsToken } = await import('../src/utils/discord-claims.js');
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
 
-      const token = createDiscordClaimsToken(TEST_USER_ID, TEST_GUILD_ID, true);
+      const token = createPlatformClaimsToken('discord', '*', TEST_USER_ID, TEST_GUILD_ID, true);
       const decoded = jwt.decode(token!) as jwt.JwtPayload;
 
-      expect(decoded.has_manage_server).toBe(true);
+      expect(decoded.can_administer_community).toBe(true);
     });
 
-    it('should correctly encode has_manage_server as false', async () => {
+    it('should correctly encode can_administer_community as false', async () => {
       jest.unstable_mockModule('../src/config.js', () => ({
         config: {
           jwtSecretKey: TEST_JWT_SECRET,
         },
       }));
 
-      const { createDiscordClaimsToken } = await import('../src/utils/discord-claims.js');
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
 
-      const token = createDiscordClaimsToken(TEST_USER_ID, TEST_GUILD_ID, false);
+      const token = createPlatformClaimsToken('discord', '*', TEST_USER_ID, TEST_GUILD_ID, false);
       const decoded = jwt.decode(token!) as jwt.JwtPayload;
 
-      expect(decoded.has_manage_server).toBe(false);
+      expect(decoded.can_administer_community).toBe(false);
     });
 
-    it('should handle empty guild_id', async () => {
+    it('should handle empty community_id', async () => {
       jest.unstable_mockModule('../src/config.js', () => ({
         config: {
           jwtSecretKey: TEST_JWT_SECRET,
         },
       }));
 
-      const { createDiscordClaimsToken } = await import('../src/utils/discord-claims.js');
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
 
-      const token = createDiscordClaimsToken(TEST_USER_ID, '', false);
+      const token = createPlatformClaimsToken('discord', '*', TEST_USER_ID, '', false);
 
       expect(token).not.toBeNull();
       const decoded = jwt.decode(token!) as jwt.JwtPayload;
-      expect(decoded.guild_id).toBe('');
+      expect(decoded.community_id).toBe('');
     });
 
     it('should use HS256 algorithm for signing', async () => {
@@ -174,9 +205,9 @@ describe('Discord Claims JWT Utility', () => {
         },
       }));
 
-      const { createDiscordClaimsToken } = await import('../src/utils/discord-claims.js');
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
 
-      const token = createDiscordClaimsToken(TEST_USER_ID, TEST_GUILD_ID, true);
+      const token = createPlatformClaimsToken('discord', '*', TEST_USER_ID, TEST_GUILD_ID, true);
 
       const header = jwt.decode(token!, { complete: true })?.header;
       expect(header?.alg).toBe('HS256');
@@ -189,13 +220,30 @@ describe('Discord Claims JWT Utility', () => {
         },
       }));
 
-      const { createDiscordClaimsToken } = await import('../src/utils/discord-claims.js');
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
 
-      const token = createDiscordClaimsToken(TEST_USER_ID, TEST_GUILD_ID, true);
+      const token = createPlatformClaimsToken('discord', '*', TEST_USER_ID, TEST_GUILD_ID, true);
 
       expect(() => {
         jwt.verify(token!, 'wrong-secret-key-12345678901234', { algorithms: ['HS256'] });
       }).toThrow();
+    });
+
+    it('should not include old Discord-specific claim names', async () => {
+      jest.unstable_mockModule('../src/config.js', () => ({
+        config: {
+          jwtSecretKey: TEST_JWT_SECRET,
+        },
+      }));
+
+      const { createPlatformClaimsToken } = await import('../src/utils/platform-claims.js');
+
+      const token = createPlatformClaimsToken('discord', '*', TEST_USER_ID, TEST_GUILD_ID, true);
+      const decoded = jwt.decode(token!) as jwt.JwtPayload;
+
+      expect(decoded.user_id).toBeUndefined();
+      expect(decoded.guild_id).toBeUndefined();
+      expect(decoded.has_manage_server).toBeUndefined();
     });
   });
 });

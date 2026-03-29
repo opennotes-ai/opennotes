@@ -1560,8 +1560,8 @@ describe('ApiClient Wrapper', () => {
       });
     });
 
-    describe('X-Discord-Claims JWT Header', () => {
-      it('should NOT send X-Discord-Claims header when no user context is provided', async () => {
+    describe('X-Platform-Claims JWT Header', () => {
+      it('should NOT send X-Platform-Claims header when no user context is provided', async () => {
         const client = new ApiClient({
           serverUrl: 'http://localhost:8000',
           environment: 'development',
@@ -1578,10 +1578,10 @@ describe('ApiClient Wrapper', () => {
         await client.healthCheck();
 
         const req = getFetchRequestDetails();
-        expect(req.headers['x-discord-claims']).toBeUndefined();
+        expect(req.headers['x-platform-claims']).toBeUndefined();
       });
 
-      it('should NOT send X-Discord-Claims header when createDiscordClaimsToken returns null (JWT secret not configured)', async () => {
+      it('should NOT send X-Platform-Claims header when createPlatformClaimsToken returns null (JWT secret not configured)', async () => {
         const client = new ApiClient({
           serverUrl: 'http://localhost:8000',
           environment: 'development',
@@ -1608,10 +1608,10 @@ describe('ApiClient Wrapper', () => {
         await client.listRequests({}, userContext);
 
         const req = getFetchRequestDetails();
-        expect(req.headers['x-discord-claims']).toBeUndefined();
+        expect(req.headers['x-platform-claims']).toBeUndefined();
       });
 
-      it('should send profile headers when user context is provided', async () => {
+      it('should send X-Platform-Type header when user context is provided', async () => {
         const client = new ApiClient({
           serverUrl: 'http://localhost:8000',
           environment: 'development',
@@ -1641,11 +1641,10 @@ describe('ApiClient Wrapper', () => {
 
         const req = getFetchRequestDetails();
 
-        expect(req.headers['x-discord-user-id']).toBe(TEST_USER_ID);
-        expect(req.headers['x-discord-username']).toBe('testuser');
-        expect(req.headers['x-discord-display-name']).toBe('Test User');
-        expect(req.headers['x-guild-id']).toBe(TEST_GUILD_ID);
-        expect(req.headers['x-discord-has-manage-server']).toBe('true');
+        expect(req.headers['x-platform-type']).toBe('discord');
+        expect(req.headers['x-discord-user-id']).toBeUndefined();
+        expect(req.headers['x-discord-username']).toBeUndefined();
+        expect(req.headers['x-guild-id']).toBeUndefined();
       });
     });
   });

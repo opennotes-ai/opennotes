@@ -1,7 +1,7 @@
 import type { Middleware } from 'openapi-fetch';
 import { logger } from '../logger.js';
 import { getIdentityToken, isRunningOnGCP } from '../utils/gcp-auth.js';
-import { createDiscordClaimsToken } from '../utils/discord-claims.js';
+import { createPlatformClaimsToken } from '../utils/platform-claims.js';
 import { ApiError } from './errors.js';
 import { nanoid } from 'nanoid';
 
@@ -287,35 +287,21 @@ export function buildProfileHeaders(context?: UserContext): Record<string, strin
     return headers;
   }
 
-  if (context.userId) {
-    headers['X-Discord-User-Id'] = context.userId;
-  }
-  if (context.username) {
-    headers['X-Discord-Username'] = context.username;
-  }
-  if (context.displayName) {
-    headers['X-Discord-Display-Name'] = context.displayName;
-  }
-  if (context.avatarUrl) {
-    headers['X-Discord-Avatar-Url'] = context.avatarUrl;
-  }
-  if (context.guildId) {
-    headers['X-Guild-Id'] = context.guildId;
-  }
+  headers['X-Platform-Type'] = 'discord';
+
   if (context.channelId) {
     headers['X-Channel-Id'] = context.channelId;
   }
-  if (context.hasManageServer !== undefined) {
-    headers['X-Discord-Has-Manage-Server'] = context.hasManageServer.toString();
-  }
 
-  const claimsToken = createDiscordClaimsToken(
+  const claimsToken = createPlatformClaimsToken(
+    'discord',
+    '*',
     context.userId,
     context.guildId || '',
     context.hasManageServer ?? false
   );
   if (claimsToken) {
-    headers['X-Discord-Claims'] = claimsToken;
+    headers['X-Platform-Claims'] = claimsToken;
   }
 
   return headers;

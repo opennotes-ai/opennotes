@@ -15,10 +15,10 @@ jest.unstable_mockModule('../../src/utils/gcp-auth.js', () => ({
   getIdentityToken: mockGetIdentityToken,
 }));
 
-const mockCreateDiscordClaimsToken = jest.fn<() => string | null>();
+const mockCreatePlatformClaimsToken = jest.fn<() => string | null>();
 
-jest.unstable_mockModule('../../src/utils/discord-claims.js', () => ({
-  createDiscordClaimsToken: mockCreateDiscordClaimsToken,
+jest.unstable_mockModule('../../src/utils/platform-claims.js', () => ({
+  createPlatformClaimsToken: mockCreatePlatformClaimsToken,
 }));
 
 const {
@@ -480,15 +480,15 @@ describe('createRetryFetch', () => {
 
 describe('buildProfileHeaders', () => {
   beforeEach(() => {
-    mockCreateDiscordClaimsToken.mockReturnValue(null);
+    mockCreatePlatformClaimsToken.mockReturnValue(null);
   });
 
   it('returns empty object when no context', () => {
     expect(buildProfileHeaders()).toEqual({});
   });
 
-  it('sets all profile headers from context', () => {
-    mockCreateDiscordClaimsToken.mockReturnValue('jwt-token-123');
+  it('sets X-Platform-Type and X-Platform-Claims headers', () => {
+    mockCreatePlatformClaimsToken.mockReturnValue('jwt-token-123');
 
     const headers = buildProfileHeaders({
       userId: 'user-1',
@@ -500,21 +500,64 @@ describe('buildProfileHeaders', () => {
       hasManageServer: true,
     });
 
-    expect(headers['X-Discord-User-Id']).toBe('user-1');
-    expect(headers['X-Discord-Username']).toBe('testuser');
-    expect(headers['X-Discord-Display-Name']).toBe('Test User');
-    expect(headers['X-Discord-Avatar-Url']).toBe('https://cdn.example.com/avatar.png');
-    expect(headers['X-Guild-Id']).toBe('guild-1');
+    expect(headers['X-Platform-Type']).toBe('discord');
+    expect(headers['X-Platform-Claims']).toBe('jwt-token-123');
     expect(headers['X-Channel-Id']).toBe('channel-1');
-    expect(headers['X-Discord-Has-Manage-Server']).toBe('true');
-    expect(headers['X-Discord-Claims']).toBe('jwt-token-123');
+  });
+
+  it('does not set any X-Discord-* or X-Guild-Id headers', () => {
+    mockCreatePlatformClaimsToken.mockReturnValue('jwt-token-123');
+
+    const headers = buildProfileHeaders({
+      userId: 'user-1',
+      username: 'testuser',
+      displayName: 'Test User',
+      avatarUrl: 'https://cdn.example.com/avatar.png',
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      hasManageServer: true,
+    });
+
+    expect(headers['X-Discord-User-Id']).toBeUndefined();
+    expect(headers['X-Discord-Username']).toBeUndefined();
+    expect(headers['X-Discord-Display-Name']).toBeUndefined();
+    expect(headers['X-Discord-Avatar-Url']).toBeUndefined();
+    expect(headers['X-Guild-Id']).toBeUndefined();
+    expect(headers['X-Discord-Has-Manage-Server']).toBeUndefined();
+    expect(headers['X-Discord-Claims']).toBeUndefined();
+  });
+
+  it('calls createPlatformClaimsToken with correct arguments', () => {
+    mockCreatePlatformClaimsToken.mockReturnValue('jwt-token-123');
+
+    buildProfileHeaders({
+      userId: 'user-1',
+      guildId: 'guild-1',
+      hasManageServer: true,
+    });
+
+    expect(mockCreatePlatformClaimsToken).toHaveBeenCalledWith(
+      'discord',
+      '*',
+      'user-1',
+      'guild-1',
+      true
+    );
   });
 
   it('only sets provided fields', () => {
     const headers = buildProfileHeaders({ userId: 'user-1' });
 
-    expect(headers['X-Discord-User-Id']).toBe('user-1');
-    expect(headers['X-Discord-Username']).toBeUndefined();
-    expect(headers['X-Guild-Id']).toBeUndefined();
+    expect(headers['X-Platform-Type']).toBe('discord');
+    expect(headers['X-Channel-Id']).toBeUndefined();
+  });
+
+  it('keeps X-Channel-Id when channelId is provided', () => {
+    const headers = buildProfileHeaders({
+      userId: 'user-1',
+      channelId: 'channel-1',
+    });
+
+    expect(headers['X-Channel-Id']).toBe('channel-1');
   });
 });

@@ -31,26 +31,39 @@ jest.unstable_mockModule('../src/config.js', () => ({
   },
 }));
 
-function createTestToken(userId: string, guildId: string, hasManageServer: boolean): string {
+function createTestToken(
+  platform: string,
+  scope: string,
+  userId: string,
+  communityId: string,
+  canAdministerCommunity: boolean
+): string {
   const now = Math.floor(Date.now() / 1000);
   return jwtLib.sign(
     {
+      platform,
+      scope,
       sub: userId,
-      user_id: userId,
-      guild_id: guildId,
-      has_manage_server: hasManageServer,
+      community_id: communityId,
+      can_administer_community: canAdministerCommunity,
       iat: now,
       exp: now + 300,
-      type: 'discord_claims',
+      type: 'platform_claims',
     },
     TEST_JWT_SECRET,
     { algorithm: 'HS256' }
   );
 }
 
-jest.unstable_mockModule('../src/utils/discord-claims.js', () => ({
-  createDiscordClaimsToken: (userId: string, guildId: string, hasManageServer: boolean) => {
-    return createTestToken(userId, guildId, hasManageServer);
+jest.unstable_mockModule('../src/utils/platform-claims.js', () => ({
+  createPlatformClaimsToken: (
+    platform: string,
+    scope: string,
+    userId: string,
+    communityId: string,
+    canAdministerCommunity: boolean
+  ) => {
+    return createTestToken(platform, scope, userId, communityId, canAdministerCommunity);
   },
 }));
 
@@ -68,13 +81,13 @@ function getRequestHeaders(call: unknown[]): Record<string, string> {
   return headers;
 }
 
-describe('ApiClient X-Discord-Claims JWT Header', () => {
+describe('ApiClient X-Platform-Claims JWT Header', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCache.get.mockResolvedValue(null);
   });
 
-  it('should send X-Discord-Claims JWT header when user context is provided and JWT secret is configured', async () => {
+  it('should send X-Platform-Claims JWT header when user context is provided and JWT secret is configured', async () => {
     const client = new ApiClient({
       serverUrl: 'http://localhost:8000',
       environment: 'development',
@@ -102,20 +115,22 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
 
     const headers = getRequestHeaders(mockFetch.mock.calls[0]);
 
-    expect(headers['x-discord-claims']).toBeDefined();
+    expect(headers['x-platform-claims']).toBeDefined();
+    expect(headers['x-platform-type']).toBe('discord');
 
-    const claimsToken = headers['x-discord-claims'];
+    const claimsToken = headers['x-platform-claims'];
     const decoded = jwtLib.decode(claimsToken!) as jwtLib.JwtPayload;
 
     expect(decoded).not.toBeNull();
+    expect(decoded.platform).toBe('discord');
+    expect(decoded.scope).toBe('*');
     expect(decoded.sub).toBe(TEST_USER_ID);
-    expect(decoded.user_id).toBe(TEST_USER_ID);
-    expect(decoded.guild_id).toBe(TEST_GUILD_ID);
-    expect(decoded.has_manage_server).toBe(true);
-    expect(decoded.type).toBe('discord_claims');
+    expect(decoded.community_id).toBe(TEST_GUILD_ID);
+    expect(decoded.can_administer_community).toBe(true);
+    expect(decoded.type).toBe('platform_claims');
   });
 
-  it('should include correct claims matching user context in X-Discord-Claims JWT', async () => {
+  it('should include correct claims matching user context in X-Platform-Claims JWT', async () => {
     const client = new ApiClient({
       serverUrl: 'http://localhost:8000',
       environment: 'development',
@@ -145,16 +160,17 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
 
     const headers = getRequestHeaders(mockFetch.mock.calls[0]);
 
-    const claimsToken = headers['x-discord-claims'];
+    const claimsToken = headers['x-platform-claims'];
     expect(claimsToken).toBeDefined();
 
     const decoded = jwtLib.decode(claimsToken!) as jwtLib.JwtPayload;
 
+    expect(decoded.platform).toBe('discord');
+    expect(decoded.scope).toBe('*');
     expect(decoded.sub).toBe('user-abc-123');
-    expect(decoded.user_id).toBe('user-abc-123');
-    expect(decoded.guild_id).toBe('guild-xyz-456');
-    expect(decoded.has_manage_server).toBe(false);
-    expect(decoded.type).toBe('discord_claims');
+    expect(decoded.community_id).toBe('guild-xyz-456');
+    expect(decoded.can_administer_community).toBe(false);
+    expect(decoded.type).toBe('platform_claims');
     expect(decoded.iat).toBeDefined();
     expect(decoded.exp).toBeDefined();
 
@@ -162,7 +178,7 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
     expect(expiryDiff).toBe(300);
   });
 
-  it('should send profile headers alongside X-Discord-Claims', async () => {
+  it('should send X-Platform-Type header alongside X-Platform-Claims', async () => {
     const client = new ApiClient({
       serverUrl: 'http://localhost:8000',
       environment: 'development',
@@ -192,12 +208,13 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
 
     const headers = getRequestHeaders(mockFetch.mock.calls[0]);
 
-    expect(headers['x-discord-user-id']).toBe(TEST_USER_ID);
-    expect(headers['x-discord-username']).toBe('testuser');
-    expect(headers['x-discord-display-name']).toBe('Test User');
-    expect(headers['x-guild-id']).toBe(TEST_GUILD_ID);
-    expect(headers['x-discord-has-manage-server']).toBe('true');
-    expect(headers['x-discord-claims']).toBeDefined();
+    expect(headers['x-platform-type']).toBe('discord');
+    expect(headers['x-platform-claims']).toBeDefined();
+    expect(headers['x-discord-user-id']).toBeUndefined();
+    expect(headers['x-discord-username']).toBeUndefined();
+    expect(headers['x-discord-display-name']).toBeUndefined();
+    expect(headers['x-guild-id']).toBeUndefined();
+    expect(headers['x-discord-has-manage-server']).toBeUndefined();
   });
 
   it('should create JWT that can be verified with the secret key', async () => {
@@ -227,7 +244,7 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
     await client.listRequests({}, userContext);
 
     const headers = getRequestHeaders(mockFetch.mock.calls[0]);
-    const claimsToken = headers['x-discord-claims'];
+    const claimsToken = headers['x-platform-claims'];
 
     expect(claimsToken).toBeDefined();
 
@@ -237,9 +254,8 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
 
     const verified = jwtLib.verify(claimsToken!, TEST_JWT_SECRET, { algorithms: ['HS256'] }) as jwtLib.JwtPayload;
     expect(verified.sub).toBe(TEST_USER_ID);
-    expect(verified.user_id).toBe(TEST_USER_ID);
-    expect(verified.guild_id).toBe(TEST_GUILD_ID);
-    expect(verified.has_manage_server).toBe(true);
+    expect(verified.community_id).toBe(TEST_GUILD_ID);
+    expect(verified.can_administer_community).toBe(true);
   });
 
   it('should use HS256 algorithm for signing', async () => {
@@ -269,7 +285,7 @@ describe('ApiClient X-Discord-Claims JWT Header', () => {
     await client.listRequests({}, userContext);
 
     const headers = getRequestHeaders(mockFetch.mock.calls[0]);
-    const claimsToken = headers['x-discord-claims'];
+    const claimsToken = headers['x-platform-claims'];
 
     const header = jwtLib.decode(claimsToken!, { complete: true })?.header;
     expect(header?.alg).toBe('HS256');
