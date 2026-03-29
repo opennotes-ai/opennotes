@@ -8,17 +8,18 @@ class TestBaggageKeysToPropgate:
     def test_community_server_id_in_baggage_keys(self) -> None:
         assert "community_server_id" in BAGGAGE_KEYS_TO_PROPAGATE
 
-    def test_discord_channel_id_in_baggage_keys(self) -> None:
-        assert "discord.channel_id" in BAGGAGE_KEYS_TO_PROPAGATE
+    def test_platform_channel_id_in_baggage_keys(self) -> None:
+        assert "platform.channel_id" in BAGGAGE_KEYS_TO_PROPAGATE
 
-    def test_discord_guild_id_in_baggage_keys(self) -> None:
-        assert "discord.guild_id" in BAGGAGE_KEYS_TO_PROPAGATE
+    def test_platform_user_id_in_baggage_keys(self) -> None:
+        assert "platform.user_id" in BAGGAGE_KEYS_TO_PROPAGATE
 
     def test_existing_keys_preserved(self) -> None:
         expected_keys = [
-            "discord.user_id",
-            "discord.username",
-            "discord.guild_id",
+            "platform.user_id",
+            "platform.type",
+            "platform.scope",
+            "platform.community_id",
             "request_id",
             "enduser.id",
             "user.username",

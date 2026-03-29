@@ -1,17 +1,3 @@
-"""
-Tests for InternalHeaderValidationMiddleware.
-
-This middleware protects against authentication bypass attacks where external
-clients could set X-Discord-* headers to impersonate users. It validates that
-these headers only come from trusted internal services using a shared secret.
-
-Security requirements (task-686):
-1. Only accept Discord headers from trusted internal sources
-2. Add shared secret validation for internal service calls
-3. Strip client-provided X-Discord-* headers from untrusted sources
-4. Verify external header spoofing is blocked
-"""
-
 import pytest
 from fastapi import FastAPI, Request
 from starlette.testclient import TestClient
@@ -23,8 +9,7 @@ TEST_INTERNAL_SERVICE_SECRET = "test-internal-service-secret-must-be-32-chars-mi
 
 
 @pytest.mark.unit
-def test_external_request_without_auth_strips_discord_headers(monkeypatch):
-    """External requests without X-Internal-Auth should have Discord headers stripped."""
+def test_external_request_without_auth_strips_platform_headers(monkeypatch):
     from src import config
 
     test_settings = config.Settings(
@@ -45,10 +30,9 @@ def test_external_request_without_auth_strips_discord_headers(monkeypatch):
     @app.get("/test")
     async def test_endpoint(request: Request):
         return {
-            "discord_user_id": request.headers.get("X-Discord-User-Id"),
-            "discord_username": request.headers.get("X-Discord-Username"),
-            "discord_has_manage_server": request.headers.get("X-Discord-Has-Manage-Server"),
-            "guild_id": request.headers.get("X-Guild-Id"),
+            "platform_type": request.headers.get("X-Platform-Type"),
+            "platform_user_id": request.headers.get("X-Platform-User-Id"),
+            "platform_scope": request.headers.get("X-Platform-Scope"),
         }
 
     import src.middleware.internal_auth
@@ -59,24 +43,21 @@ def test_external_request_without_auth_strips_discord_headers(monkeypatch):
     response = client.get(
         "/test",
         headers={
-            "X-Discord-User-Id": "12345",
-            "X-Discord-Username": "attacker",
-            "X-Discord-Has-Manage-Server": "true",
-            "X-Guild-Id": "67890",
+            "X-Platform-Type": "discord",
+            "X-Platform-User-Id": "12345",
+            "X-Platform-Scope": "*",
         },
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert data["discord_user_id"] is None
-    assert data["discord_username"] is None
-    assert data["discord_has_manage_server"] is None
-    assert data["guild_id"] is None
+    assert data["platform_type"] is None
+    assert data["platform_user_id"] is None
+    assert data["platform_scope"] is None
 
 
 @pytest.mark.unit
-def test_external_request_with_wrong_auth_strips_discord_headers(monkeypatch):
-    """External requests with wrong X-Internal-Auth should have Discord headers stripped."""
+def test_external_request_with_wrong_auth_strips_platform_headers(monkeypatch):
     from src import config
 
     test_settings = config.Settings(
@@ -97,8 +78,8 @@ def test_external_request_with_wrong_auth_strips_discord_headers(monkeypatch):
     @app.get("/test")
     async def test_endpoint(request: Request):
         return {
-            "discord_user_id": request.headers.get("X-Discord-User-Id"),
-            "discord_username": request.headers.get("X-Discord-Username"),
+            "platform_type": request.headers.get("X-Platform-Type"),
+            "platform_user_id": request.headers.get("X-Platform-User-Id"),
         }
 
     import src.middleware.internal_auth
@@ -109,21 +90,20 @@ def test_external_request_with_wrong_auth_strips_discord_headers(monkeypatch):
     response = client.get(
         "/test",
         headers={
-            "X-Discord-User-Id": "12345",
-            "X-Discord-Username": "attacker",
+            "X-Platform-Type": "discord",
+            "X-Platform-User-Id": "12345",
             "X-Internal-Auth": "wrong-secret",
         },
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert data["discord_user_id"] is None
-    assert data["discord_username"] is None
+    assert data["platform_type"] is None
+    assert data["platform_user_id"] is None
 
 
 @pytest.mark.unit
-def test_internal_request_with_valid_auth_preserves_discord_headers(monkeypatch):
-    """Internal requests with valid X-Internal-Auth should preserve Discord headers."""
+def test_internal_request_with_valid_auth_preserves_platform_headers(monkeypatch):
     from src import config
 
     test_settings = config.Settings(
@@ -144,10 +124,9 @@ def test_internal_request_with_valid_auth_preserves_discord_headers(monkeypatch)
     @app.get("/test")
     async def test_endpoint(request: Request):
         return {
-            "discord_user_id": request.headers.get("X-Discord-User-Id"),
-            "discord_username": request.headers.get("X-Discord-Username"),
-            "discord_has_manage_server": request.headers.get("X-Discord-Has-Manage-Server"),
-            "guild_id": request.headers.get("X-Guild-Id"),
+            "platform_type": request.headers.get("X-Platform-Type"),
+            "platform_user_id": request.headers.get("X-Platform-User-Id"),
+            "platform_scope": request.headers.get("X-Platform-Scope"),
         }
 
     import src.middleware.internal_auth
@@ -158,25 +137,22 @@ def test_internal_request_with_valid_auth_preserves_discord_headers(monkeypatch)
     response = client.get(
         "/test",
         headers={
-            "X-Discord-User-Id": "12345",
-            "X-Discord-Username": "legitimate_user",
-            "X-Discord-Has-Manage-Server": "true",
-            "X-Guild-Id": "67890",
+            "X-Platform-Type": "discord",
+            "X-Platform-User-Id": "12345",
+            "X-Platform-Scope": "*",
             "X-Internal-Auth": TEST_INTERNAL_SERVICE_SECRET,
         },
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert data["discord_user_id"] == "12345"
-    assert data["discord_username"] == "legitimate_user"
-    assert data["discord_has_manage_server"] == "true"
-    assert data["guild_id"] == "67890"
+    assert data["platform_type"] == "discord"
+    assert data["platform_user_id"] == "12345"
+    assert data["platform_scope"] == "*"
 
 
 @pytest.mark.unit
-def test_non_discord_headers_pass_through_without_auth(monkeypatch):
-    """Non-Discord headers should pass through even without authentication."""
+def test_non_platform_headers_pass_through_without_auth(monkeypatch):
     from src import config
 
     test_settings = config.Settings(
@@ -225,11 +201,6 @@ def test_non_discord_headers_pass_through_without_auth(monkeypatch):
 
 @pytest.mark.unit
 def test_timing_attack_resistance_uses_constant_time_comparison(monkeypatch):
-    """Verify that secret comparison uses constant-time algorithm.
-
-    This test verifies the implementation calls secrets.compare_digest
-    rather than == for comparing the secret, preventing timing attacks.
-    """
     from src import config
 
     test_settings = config.Settings(
@@ -249,14 +220,13 @@ def test_timing_attack_resistance_uses_constant_time_comparison(monkeypatch):
 
     @app.get("/test")
     async def test_endpoint(request: Request):
-        return {"discord_user_id": request.headers.get("X-Discord-User-Id")}
+        return {"platform_type": request.headers.get("X-Platform-Type")}
 
     import src.middleware.internal_auth
 
     monkeypatch.setattr(src.middleware.internal_auth, "settings", test_settings)
 
     compare_digest_called = False
-    original_compare_digest = None
 
     import secrets
 
@@ -276,7 +246,7 @@ def test_timing_attack_resistance_uses_constant_time_comparison(monkeypatch):
     client.get(
         "/test",
         headers={
-            "X-Discord-User-Id": "12345",
+            "X-Platform-Type": "discord",
             "X-Internal-Auth": "some-secret",
         },
     )
@@ -287,8 +257,7 @@ def test_timing_attack_resistance_uses_constant_time_comparison(monkeypatch):
 
 
 @pytest.mark.unit
-def test_all_discord_header_variants_are_stripped(monkeypatch):
-    """All X-Discord-* header variants should be stripped from untrusted requests."""
+def test_all_platform_header_variants_are_stripped(monkeypatch):
     from src import config
 
     test_settings = config.Settings(
@@ -308,12 +277,101 @@ def test_all_discord_header_variants_are_stripped(monkeypatch):
 
     @app.get("/test")
     async def test_endpoint(request: Request):
-        discord_headers = {
+        platform_headers = {
             key: value
             for key, value in request.headers.items()
-            if key.lower().startswith("x-discord-") or key.lower() == "x-guild-id"
+            if key.lower().startswith("x-platform-")
         }
-        return {"discord_headers": discord_headers}
+        return {"platform_headers": platform_headers}
+
+    import src.middleware.internal_auth
+
+    monkeypatch.setattr(src.middleware.internal_auth, "settings", test_settings)
+
+    client = TestClient(app)
+    response = client.get(
+        "/test",
+        headers={
+            "X-Platform-Type": "discord",
+            "X-Platform-User-Id": "12345",
+            "X-Platform-Username": "attacker",
+            "X-Platform-Scope": "*",
+            "X-Platform-Unknown-Header": "should-be-stripped",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["platform_headers"] == {}
+
+
+@pytest.mark.unit
+def test_platform_claims_header_is_allowed_through(monkeypatch):
+    from src import config
+
+    test_settings = config.Settings(
+        _env_file=None,
+        ENVIRONMENT="development",
+        JWT_SECRET_KEY=TEST_JWT_SECRET_KEY,
+        CREDENTIALS_ENCRYPTION_KEY=TEST_CREDENTIALS_ENCRYPTION_KEY,
+        ENCRYPTION_MASTER_KEY=TEST_ENCRYPTION_MASTER_KEY,
+        INTERNAL_SERVICE_SECRET=TEST_INTERNAL_SERVICE_SECRET,
+    )
+    monkeypatch.setattr(config, "settings", test_settings)
+
+    from src.middleware.internal_auth import InternalHeaderValidationMiddleware
+
+    app = FastAPI()
+    app.add_middleware(InternalHeaderValidationMiddleware)
+
+    @app.get("/test")
+    async def test_endpoint(request: Request):
+        return {
+            "platform_claims": request.headers.get("X-Platform-Claims"),
+        }
+
+    import src.middleware.internal_auth
+
+    monkeypatch.setattr(src.middleware.internal_auth, "settings", test_settings)
+
+    client = TestClient(app)
+    response = client.get(
+        "/test",
+        headers={
+            "X-Platform-Claims": "some.jwt.token",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["platform_claims"] == "some.jwt.token"
+
+
+@pytest.mark.unit
+def test_old_discord_headers_no_longer_protected(monkeypatch):
+    from src import config
+
+    test_settings = config.Settings(
+        _env_file=None,
+        ENVIRONMENT="development",
+        JWT_SECRET_KEY=TEST_JWT_SECRET_KEY,
+        CREDENTIALS_ENCRYPTION_KEY=TEST_CREDENTIALS_ENCRYPTION_KEY,
+        ENCRYPTION_MASTER_KEY=TEST_ENCRYPTION_MASTER_KEY,
+        INTERNAL_SERVICE_SECRET=TEST_INTERNAL_SERVICE_SECRET,
+    )
+    monkeypatch.setattr(config, "settings", test_settings)
+
+    from src.middleware.internal_auth import InternalHeaderValidationMiddleware
+
+    app = FastAPI()
+    app.add_middleware(InternalHeaderValidationMiddleware)
+
+    @app.get("/test")
+    async def test_endpoint(request: Request):
+        return {
+            "discord_user_id": request.headers.get("X-Discord-User-Id"),
+            "guild_id": request.headers.get("X-Guild-Id"),
+        }
 
     import src.middleware.internal_auth
 
@@ -324,23 +382,18 @@ def test_all_discord_header_variants_are_stripped(monkeypatch):
         "/test",
         headers={
             "X-Discord-User-Id": "12345",
-            "X-Discord-Username": "attacker",
-            "X-Discord-Display-Name": "Attacker Display Name",
-            "X-Discord-Avatar-Url": "https://evil.com/avatar.png",
-            "X-Discord-Has-Manage-Server": "true",
-            "X-Discord-Unknown-Header": "should-be-stripped",
             "X-Guild-Id": "67890",
         },
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert data["discord_headers"] == {}
+    assert data["discord_user_id"] == "12345"
+    assert data["guild_id"] == "67890"
 
 
 @pytest.mark.unit
 def test_health_endpoints_are_not_affected(monkeypatch):
-    """Health endpoints should work regardless of header validation."""
     from src import config
 
     test_settings = config.Settings(
@@ -381,7 +434,6 @@ def test_health_endpoints_are_not_affected(monkeypatch):
 
 @pytest.mark.unit
 def test_case_insensitive_header_matching(monkeypatch):
-    """Header matching should be case-insensitive per HTTP spec."""
     from src import config
 
     test_settings = config.Settings(
@@ -402,7 +454,7 @@ def test_case_insensitive_header_matching(monkeypatch):
     @app.get("/test")
     async def test_endpoint(request: Request):
         return {
-            "discord_user_id": request.headers.get("X-Discord-User-Id"),
+            "platform_type": request.headers.get("X-Platform-Type"),
         }
 
     import src.middleware.internal_auth
@@ -414,18 +466,17 @@ def test_case_insensitive_header_matching(monkeypatch):
     response = client.get(
         "/test",
         headers={
-            "x-discord-user-id": "12345",
+            "x-platform-type": "discord",
         },
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert data["discord_user_id"] is None
+    assert data["platform_type"] is None
 
 
 @pytest.mark.unit
 def test_middleware_without_internal_secret_configured_strips_all(monkeypatch):
-    """When INTERNAL_SERVICE_SECRET is not set, all Discord headers should be stripped."""
     from src import config
 
     test_settings = config.Settings(
@@ -446,7 +497,7 @@ def test_middleware_without_internal_secret_configured_strips_all(monkeypatch):
     @app.get("/test")
     async def test_endpoint(request: Request):
         return {
-            "discord_user_id": request.headers.get("X-Discord-User-Id"),
+            "platform_type": request.headers.get("X-Platform-Type"),
         }
 
     import src.middleware.internal_auth
@@ -457,19 +508,18 @@ def test_middleware_without_internal_secret_configured_strips_all(monkeypatch):
     response = client.get(
         "/test",
         headers={
-            "X-Discord-User-Id": "12345",
+            "X-Platform-Type": "discord",
             "X-Internal-Auth": "any-secret",
         },
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert data["discord_user_id"] is None
+    assert data["platform_type"] is None
 
 
 @pytest.mark.unit
 def test_x_internal_auth_header_is_stripped(monkeypatch):
-    """X-Internal-Auth header should be stripped after validation (don't leak to app)."""
     from src import config
 
     test_settings = config.Settings(
@@ -501,7 +551,7 @@ def test_x_internal_auth_header_is_stripped(monkeypatch):
     response = client.get(
         "/test",
         headers={
-            "X-Discord-User-Id": "12345",
+            "X-Platform-Type": "discord",
             "X-Internal-Auth": TEST_INTERNAL_SERVICE_SECRET,
         },
     )
@@ -509,3 +559,34 @@ def test_x_internal_auth_header_is_stripped(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["internal_auth"] is None
+
+
+@pytest.mark.unit
+class TestHeaderProtection:
+    def test_platform_headers_are_protected(self) -> None:
+        from src.middleware.internal_auth import _is_protected_header
+
+        assert _is_protected_header(b"x-platform-type") is True
+        assert _is_protected_header(b"X-Platform-Type") is True
+        assert _is_protected_header(b"x-platform-user-id") is True
+        assert _is_protected_header(b"x-platform-scope") is True
+
+    def test_platform_claims_header_is_allowed(self) -> None:
+        from src.middleware.internal_auth import _is_protected_header
+
+        assert _is_protected_header(b"x-platform-claims") is False
+        assert _is_protected_header(b"X-Platform-Claims") is False
+
+    def test_regular_headers_are_not_protected(self) -> None:
+        from src.middleware.internal_auth import _is_protected_header
+
+        assert _is_protected_header(b"content-type") is False
+        assert _is_protected_header(b"authorization") is False
+        assert _is_protected_header(b"x-request-id") is False
+
+    def test_old_discord_headers_are_not_protected(self) -> None:
+        from src.middleware.internal_auth import _is_protected_header
+
+        assert _is_protected_header(b"x-discord-user-id") is False
+        assert _is_protected_header(b"x-discord-has-manage-server") is False
+        assert _is_protected_header(b"x-guild-id") is False

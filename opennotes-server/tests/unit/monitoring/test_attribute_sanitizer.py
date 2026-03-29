@@ -212,16 +212,16 @@ class TestBaggageSpanProcessorFactory:
 
         processor = _get_baggage_span_processor()
         ctx = context.get_current()
-        ctx = baggage.set_baggage("discord.user_id", "u-42", ctx)
-        ctx = baggage.set_baggage("discord.guild_id", "g-99", ctx)
+        ctx = baggage.set_baggage("platform.user_id", "u-42", ctx)
+        ctx = baggage.set_baggage("platform.type", "discord", ctx)
         ctx = baggage.set_baggage("request_id", "req-abc", ctx)
         ctx = baggage.set_baggage("community_server_id", "cs-7", ctx)
 
         mock_span = MagicMock()
         processor.on_start(mock_span, ctx)
 
-        mock_span.set_attribute.assert_any_call("discord_user_id", "u-42")
-        mock_span.set_attribute.assert_any_call("discord_guild_id", "g-99")
+        mock_span.set_attribute.assert_any_call("platform_user_id", "u-42")
+        mock_span.set_attribute.assert_any_call("platform_type", "discord")
         mock_span.set_attribute.assert_any_call("request_id", "req-abc")
         mock_span.set_attribute.assert_any_call("community_server_id", "cs-7")
         assert mock_span.set_attribute.call_count == 4

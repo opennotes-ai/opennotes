@@ -83,7 +83,7 @@ class TestCommunityDependencyRaceRecovery:
             membership = await _ensure_membership_with_permissions(
                 community=community,
                 profile=profile,
-                has_discord_manage_server=True,
+                can_administer_community=True,
                 db=mock_db,
             )
 
@@ -117,7 +117,7 @@ class TestCommunityDependencyRaceRecovery:
             membership = await _ensure_membership_with_permissions(
                 community=community,
                 profile=profile,
-                has_discord_manage_server=True,
+                can_administer_community=True,
                 db=mock_db,
             )
 
@@ -245,7 +245,7 @@ class TestCommunityDependencyRaceRecovery:
             await _ensure_membership_with_permissions(
                 community=community,
                 profile=profile,
-                has_discord_manage_server=True,
+                can_administer_community=True,
                 db=mock_db,
             )
 

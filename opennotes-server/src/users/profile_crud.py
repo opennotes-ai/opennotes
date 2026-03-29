@@ -44,6 +44,7 @@ from src.users.profile_schemas import (
     CommunityMemberCreate,
     CommunityMemberUpdate,
     CommunityRole,
+    PlatformIdentityInput,
     UserIdentityCreate,
     UserProfileAdminUpdate,
     UserProfileCreate,
@@ -185,15 +186,19 @@ async def update_profile(
 
 
 async def get_identity_by_provider(
-    db: AsyncSession, provider: AuthProvider, provider_user_id: str
+    db: AsyncSession,
+    provider: AuthProvider,
+    provider_user_id: str,
+    provider_scope: str | None = None,
 ) -> UserIdentity | None:
+    effective_scope = provider_scope if provider_scope is not None else "*"
+    filters = [
+        UserIdentity.provider == _enum_val(provider),
+        UserIdentity.provider_user_id == provider_user_id,
+        UserIdentity.provider_scope == effective_scope,
+    ]
     result = await db.execute(
-        select(UserIdentity)
-        .where(
-            UserIdentity.provider == _enum_val(provider),
-            UserIdentity.provider_user_id == provider_user_id,
-        )
-        .options(*loaders.identity_with_profile())
+        select(UserIdentity).where(*filters).options(*loaders.identity_with_profile())
     )
     return result.scalar_one_or_none()
 
@@ -226,6 +231,7 @@ async def create_identity(
         profile_id=identity_create.profile_id,
         provider=_enum_val(identity_create.provider),
         provider_user_id=identity_create.provider_user_id,
+        provider_scope=identity_create.provider_scope,
         credentials=identity_create.credentials,
     )
 
@@ -321,6 +327,7 @@ async def create_profile_with_identity(
     provider: AuthProvider,
     provider_user_id: str,
     credentials: dict[str, Any] | None = None,
+    provider_scope: str = "*",
 ) -> tuple[UserProfile, UserIdentity]:
     profile = await create_profile(db, profile_create)
 
@@ -329,6 +336,7 @@ async def create_profile_with_identity(
         provider=provider,
         provider_user_id=provider_user_id,
         credentials=credentials,
+        provider_scope=provider_scope,
     )
 
     identity = await create_identity(db, identity_create)
@@ -565,6 +573,137 @@ async def update_identity(
     return identity
 
 
+async def get_or_create_profile_from_platform(
+    db: AsyncSession,
+    user_info: PlatformIdentityInput,
+    platform_community_server_id: str | None = None,
+) -> UserProfile:
+    """
+    Get or create a user profile from any platform identity.
+
+    This function is idempotent and race-condition safe. It will:
+    1. Look up existing identity by provider, provider_user_id, and provider_scope
+    2. If found, update last_interaction_at and optionally refresh metadata
+    3. If not found, create profile, identity, and optionally community membership
+    4. Handle concurrent creation attempts gracefully (retry on IntegrityError)
+
+    Args:
+        db: Database session
+        user_info: Platform identity information (provider, user ID, scope, metadata)
+        platform_community_server_id: Platform-specific community server ID (optional, for community membership)
+
+    Returns:
+        UserProfile instance (existing or newly created)
+    """
+    identity = await get_identity_by_provider(
+        db,
+        user_info.provider,
+        user_info.provider_user_id,
+        provider_scope=user_info.provider_scope,
+    )
+
+    platform = _enum_val(user_info.provider)
+
+    if identity:
+        profile = identity.profile
+        profile.last_interaction_at = pendulum.now("UTC")
+
+        if user_info.avatar_url and profile.avatar_url != user_info.avatar_url:
+            profile.avatar_url = user_info.avatar_url
+
+        effective_display_name = user_info.display_name or user_info.username
+        if effective_display_name and profile.display_name != effective_display_name:
+            profile.display_name = effective_display_name
+
+        await db.flush()
+        await db.refresh(profile)
+
+        if platform_community_server_id:
+            await _ensure_community_membership(
+                db, profile.id, platform, platform_community_server_id
+            )
+
+        return profile
+
+    try:
+        effective_display_name = (
+            user_info.display_name or user_info.username or f"user_{user_info.provider_user_id}"
+        )
+
+        profile_create = UserProfileCreate(
+            display_name=effective_display_name,
+            avatar_url=user_info.avatar_url,
+            bio=None,
+            role="user",
+            is_opennotes_admin=False,
+            is_human=True,
+            is_active=True,
+            is_banned=False,
+            banned_at=None,
+            banned_reason=None,
+        )
+
+        profile, _identity = await create_profile_with_identity(
+            db=db,
+            profile_create=profile_create,
+            provider=user_info.provider,
+            provider_user_id=user_info.provider_user_id,
+            credentials=None,
+            provider_scope=user_info.provider_scope,
+        )
+
+        profile.last_interaction_at = pendulum.now("UTC")
+        await db.flush()
+
+        if platform_community_server_id:
+            await _ensure_community_membership(
+                db, profile.id, platform, platform_community_server_id
+            )
+
+        await db.refresh(profile)
+        return profile
+
+    except IntegrityError as e:
+        logger.info(
+            "Race condition detected during profile creation, retrying lookup",
+            extra={
+                "provider": platform,
+                "provider_user_id": user_info.provider_user_id,
+                "provider_scope": user_info.provider_scope,
+                "error": str(e),
+            },
+        )
+        await db.rollback()
+
+        identity = await get_identity_by_provider(
+            db,
+            user_info.provider,
+            user_info.provider_user_id,
+            provider_scope=user_info.provider_scope,
+        )
+        if identity:
+            profile = identity.profile
+            profile.last_interaction_at = pendulum.now("UTC")
+            await db.flush()
+            await db.refresh(profile)
+
+            if platform_community_server_id:
+                await _ensure_community_membership(
+                    db, profile.id, platform, platform_community_server_id
+                )
+
+            return profile
+
+        logger.error(
+            "Profile creation failed and retry lookup also failed",
+            extra={
+                "provider": platform,
+                "provider_user_id": user_info.provider_user_id,
+            },
+        )
+        raise
+
+
 async def get_or_create_profile_from_discord(
     db: AsyncSession,
     discord_user_id: str,
@@ -576,11 +715,8 @@ async def get_or_create_profile_from_discord(
     """
     Get or create a user profile from Discord user information.
 
-    This function is idempotent and race-condition safe. It will:
-    1. Look up existing Discord identity
-    2. If found, update last_interaction_at and optionally refresh metadata
-    3. If not found, create profile, identity, and optionally community membership
-    4. Handle concurrent creation attempts gracefully (retry on IntegrityError)
+    Thin wrapper around get_or_create_profile_from_platform() for backward
+    compatibility with existing Discord-specific callers.
 
     Args:
         db: Database session
@@ -592,111 +728,16 @@ async def get_or_create_profile_from_discord(
 
     Returns:
         UserProfile instance (existing or newly created)
-
-    Note:
-        This function uses flush() instead of commit() to allow the caller
-        to manage transaction boundaries. The caller is responsible for
-        calling commit() or rollback() on the session.
     """
-    # Try to find existing Discord identity
-    identity = await get_identity_by_provider(db, AuthProvider.DISCORD, discord_user_id)
-
-    if identity:
-        # Update existing profile
-        profile = identity.profile
-        profile.last_interaction_at = pendulum.now("UTC")
-
-        # Optionally refresh metadata (avatar_url, display_name)
-        if avatar_url and profile.avatar_url != avatar_url:
-            profile.avatar_url = avatar_url
-
-        effective_display_name = display_name or username
-        if profile.display_name != effective_display_name:
-            profile.display_name = effective_display_name
-
-        await db.flush()
-        await db.refresh(profile)
-
-        # Ensure community membership exists if platform_community_server_id provided
-        if platform_community_server_id:
-            await _ensure_community_membership(
-                db, profile.id, "discord", platform_community_server_id
-            )
-
-        return profile
-
-    # Profile doesn't exist yet - create it
-    try:
-        effective_display_name = display_name or username
-
-        profile_create = UserProfileCreate(
-            display_name=effective_display_name,
-            avatar_url=avatar_url,
-            bio=None,
-            role="user",
-            is_opennotes_admin=False,
-            is_human=True,
-            is_active=True,
-            is_banned=False,
-            banned_at=None,
-            banned_reason=None,
-        )
-
-        profile, identity = await create_profile_with_identity(
-            db=db,
-            profile_create=profile_create,
-            provider=AuthProvider.DISCORD,
-            provider_user_id=discord_user_id,
-            credentials=None,
-        )
-
-        # Set initial last_interaction_at
-        profile.last_interaction_at = pendulum.now("UTC")
-        await db.flush()
-
-        # Create community membership if platform_community_server_id provided
-        if platform_community_server_id:
-            await _ensure_community_membership(
-                db, profile.id, "discord", platform_community_server_id
-            )
-
-        await db.refresh(profile)
-        return profile
-
-    except IntegrityError as e:
-        # Race condition: another request created the profile concurrently
-        # Rollback and retry lookup
-        logger.info(
-            "Race condition detected during profile creation, retrying lookup",
-            extra={
-                "discord_user_id": discord_user_id,
-                "error": str(e),
-            },
-        )
-        await db.rollback()
-
-        # Retry lookup - should succeed now
-        identity = await get_identity_by_provider(db, AuthProvider.DISCORD, discord_user_id)
-        if identity:
-            profile = identity.profile
-            profile.last_interaction_at = pendulum.now("UTC")
-            await db.flush()
-            await db.refresh(profile)
-
-            # Ensure community membership exists if platform_community_server_id provided
-            if platform_community_server_id:
-                await _ensure_community_membership(
-                    db, profile.id, "discord", platform_community_server_id
-                )
-
-            return profile
-
-        # Still not found - unexpected error
-        logger.error(
-            "Profile creation failed and retry lookup also failed",
-            extra={"discord_user_id": discord_user_id},
-        )
-        raise
+    user_info = PlatformIdentityInput(
+        provider=AuthProvider.DISCORD,
+        provider_user_id=discord_user_id,
+        provider_scope="*",
+        username=username,
+        display_name=display_name,
+        avatar_url=avatar_url,
+    )
+    return await get_or_create_profile_from_platform(db, user_info, platform_community_server_id)
 
 
 async def _ensure_community_membership(

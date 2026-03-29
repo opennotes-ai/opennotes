@@ -1,15 +1,3 @@
-"""
-Integration tests for blocking X-Discord-* header spoofing.
-
-These tests verify that:
-1. Raw X-Discord-Has-Manage-Server header from untrusted sources is blocked
-2. Spoofed headers do not grant admin access
-3. Valid signed JWT claims DO grant access when from service accounts
-4. Invalid/expired JWT claims are rejected
-
-Security fix for task-682: Authentication bypass via X-Discord-Has-Manage-Server header
-"""
-
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
@@ -25,7 +13,6 @@ from src.users.profile_schemas import AuthProvider
 
 @pytest.fixture
 async def test_community_server() -> CommunityServer:
-    """Create a test community server."""
     from src.database import get_session_maker
 
     async_session_maker = get_session_maker()
@@ -45,7 +32,6 @@ async def test_community_server() -> CommunityServer:
 
 @pytest.fixture
 async def regular_user() -> User:
-    """Create a regular (non-service-account) user."""
     from src.database import get_session_maker
 
     async_session_maker = get_session_maker()
@@ -66,7 +52,6 @@ async def regular_user() -> User:
 
 @pytest.fixture
 async def service_account_user() -> User:
-    """Create a service account (bot) user."""
     from src.database import get_session_maker
 
     async_session_maker = get_session_maker()
@@ -87,7 +72,6 @@ async def service_account_user() -> User:
 
 @pytest.fixture
 async def regular_profile(regular_user: User) -> tuple[UserProfile, UserIdentity]:
-    """Create a profile and identity for the regular user."""
     from src.database import get_session_maker
 
     async_session_maker = get_session_maker()
@@ -114,7 +98,6 @@ async def regular_profile(regular_user: User) -> tuple[UserProfile, UserIdentity
 
 @pytest.fixture
 async def service_account_profile(service_account_user: User) -> tuple[UserProfile, UserIdentity]:
-    """Create a profile and identity for the service account."""
     from src.database import get_session_maker
 
     async_session_maker = get_session_maker()
@@ -145,7 +128,6 @@ async def regular_membership(
     test_community_server: CommunityServer,
     regular_profile: tuple[UserProfile, UserIdentity],
 ) -> CommunityMember:
-    """Create membership for regular user with role='member'."""
     from src.database import get_session_maker
 
     async_session_maker = get_session_maker()
@@ -169,7 +151,6 @@ async def service_account_membership(
     test_community_server: CommunityServer,
     service_account_profile: tuple[UserProfile, UserIdentity],
 ) -> CommunityMember:
-    """Create membership for service account with role='member'."""
     from src.database import get_session_maker
 
     async_session_maker = get_session_maker()
@@ -189,7 +170,6 @@ async def service_account_membership(
 
 
 def create_mock_request_with_spoofed_header() -> MagicMock:
-    """Create a mock request with a spoofed X-Discord-Has-Manage-Server header."""
     request = MagicMock()
     request.headers = {
         "x-discord-has-manage-server": "true",
@@ -198,45 +178,43 @@ def create_mock_request_with_spoofed_header() -> MagicMock:
 
 
 def create_mock_request_no_header() -> MagicMock:
-    """Create a mock request without any Discord headers."""
     request = MagicMock()
     request.headers = {}
     return request
 
 
-def create_mock_request_with_valid_claims(
-    user_id: str,
-    guild_id: str,
-    has_manage_server: bool = True,
+def create_mock_request_with_valid_platform_claims(
+    platform: str,
+    sub: str,
+    community_id: str,
+    can_administer_community: bool = True,
 ) -> MagicMock:
-    """Create a mock request with a valid signed JWT in X-Discord-Claims header."""
-    from src.auth.discord_claims import create_discord_claims_token
+    from src.auth.platform_claims import create_platform_claims_token
 
-    token = create_discord_claims_token(
-        user_id=user_id,
-        guild_id=guild_id,
-        has_manage_server=has_manage_server,
+    token = create_platform_claims_token(
+        platform=platform,
+        scope="*",
+        sub=sub,
+        community_id=community_id,
+        can_administer_community=can_administer_community,
     )
     request = MagicMock()
     request.headers = {
-        "x-discord-claims": token,
+        "x-platform-claims": token,
     }
     return request
 
 
 def create_mock_request_with_invalid_claims() -> MagicMock:
-    """Create a mock request with an invalid/tampered JWT."""
     request = MagicMock()
     request.headers = {
-        "x-discord-claims": "invalid.jwt.token",
+        "x-platform-claims": "invalid.jwt.token",
     }
     return request
 
 
 @pytest.mark.asyncio
 class TestHeaderSpoofingBlocked:
-    """Test that header spoofing is properly blocked."""
-
     async def test_spoofed_header_does_not_grant_admin_access(
         self,
         db_session: AsyncSession,
@@ -244,18 +222,10 @@ class TestHeaderSpoofingBlocked:
         regular_user: User,
         regular_membership: CommunityMember,
     ) -> None:
-        """
-        Test that a regular user cannot gain admin access by spoofing
-        the X-Discord-Has-Manage-Server header.
-
-        This is the core security test for task-682.
-        """
         from src.auth.community_dependencies import verify_community_admin
 
-        # Create request with spoofed header
         spoofed_request = create_mock_request_with_spoofed_header()
 
-        # Regular user with spoofed header should be BLOCKED
         with pytest.raises(HTTPException) as exc_info:
             await verify_community_admin(
                 test_community_server.platform_community_server_id,
@@ -274,9 +244,6 @@ class TestHeaderSpoofingBlocked:
         regular_user: User,
         regular_membership: CommunityMember,
     ) -> None:
-        """
-        Baseline test: regular user without spoofed header is blocked.
-        """
         from src.auth.community_dependencies import verify_community_admin
 
         request = create_mock_request_no_header()
@@ -299,13 +266,8 @@ class TestHeaderSpoofingBlocked:
         service_account_user: User,
         service_account_membership: CommunityMember,
     ) -> None:
-        """
-        Test that service account with valid signed JWT claims has admin access.
-        """
         from src.auth.community_dependencies import verify_community_admin
 
-        # Service accounts should have access regardless of claims
-        # (they're trusted by virtue of being service accounts)
         request = create_mock_request_no_header()
 
         result = await verify_community_admin(
@@ -325,9 +287,6 @@ class TestHeaderSpoofingBlocked:
         regular_user: User,
         regular_membership: CommunityMember,
     ) -> None:
-        """
-        Test that invalid/tampered JWT claims are rejected.
-        """
         from src.auth.community_dependencies import verify_community_admin
 
         request = create_mock_request_with_invalid_claims()
@@ -346,118 +305,99 @@ class TestHeaderSpoofingBlocked:
 
 @pytest.mark.asyncio
 class TestHeaderStrippingMiddleware:
-    """Test the header stripping middleware."""
-
-    async def test_middleware_strips_discord_headers_from_regular_requests(
+    async def test_middleware_strips_platform_headers_from_regular_requests(
         self,
         async_client,
     ) -> None:
-        """
-        Test that X-Discord-* headers are stripped from requests
-        that are not from service accounts.
-        """
-        # Make a request with spoofed headers (no auth = not a service account)
         response = await async_client.get(
             "/health",
             headers={
-                "X-Discord-Has-Manage-Server": "true",
-                "X-Discord-User-Id": "fake123",
+                "X-Platform-Type": "discord",
+                "X-Platform-User-Id": "fake123",
             },
         )
 
-        # Health check should succeed
         assert response.status_code == 200
 
     async def test_middleware_preserves_headers_for_service_accounts(
         self,
     ) -> None:
-        """
-        Test that X-Discord-* headers are preserved for authenticated
-        service account requests.
-
-        Note: This test requires a service account API key which is
-        handled via the auth dependency, not the middleware.
-        """
+        pass
 
 
 @pytest.mark.asyncio
-class TestDiscordClaimsJWT:
-    """Test the Discord claims JWT creation and validation."""
-
+class TestPlatformClaimsJWT:
     def test_create_valid_claims_token(self) -> None:
-        """Test creating a valid Discord claims JWT."""
-        from src.auth.discord_claims import create_discord_claims_token, validate_discord_claims
+        from src.auth.platform_claims import create_platform_claims_token, validate_platform_claims
 
-        token = create_discord_claims_token(
-            user_id="123456789",
-            guild_id="987654321",
-            has_manage_server=True,
+        token = create_platform_claims_token(
+            platform="discord",
+            scope="*",
+            sub="123456789",
+            community_id="987654321",
+            can_administer_community=True,
         )
 
         assert token is not None
         assert isinstance(token, str)
 
-        # Validate the token
-        claims = validate_discord_claims(token)
+        claims = validate_platform_claims(token)
         assert claims is not None
-        assert claims["user_id"] == "123456789"
-        assert claims["guild_id"] == "987654321"
-        assert claims["has_manage_server"] is True
+        assert claims["sub"] == "123456789"
+        assert claims["community_id"] == "987654321"
+        assert claims["can_administer_community"] is True
 
     def test_invalid_token_returns_none(self) -> None:
-        """Test that invalid tokens return None."""
-        from src.auth.discord_claims import validate_discord_claims
+        from src.auth.platform_claims import validate_platform_claims
 
-        claims = validate_discord_claims("invalid.jwt.token")
+        claims = validate_platform_claims("invalid.jwt.token")
         assert claims is None
 
     def test_tampered_token_returns_none(self) -> None:
-        """Test that tampered tokens return None."""
-        from src.auth.discord_claims import create_discord_claims_token, validate_discord_claims
+        from src.auth.platform_claims import create_platform_claims_token, validate_platform_claims
 
-        token = create_discord_claims_token(
-            user_id="123456789",
-            guild_id="987654321",
-            has_manage_server=True,
+        token = create_platform_claims_token(
+            platform="discord",
+            scope="*",
+            sub="123456789",
+            community_id="987654321",
+            can_administer_community=True,
         )
 
-        # Tamper with the token
         parts = token.split(".")
         tampered_token = parts[0] + "." + parts[1] + ".tamperedsignature"
 
-        claims = validate_discord_claims(tampered_token)
+        claims = validate_platform_claims(tampered_token)
         assert claims is None
 
     def test_expired_token_returns_none(self) -> None:
-        """Test that expired tokens return None."""
         from datetime import timedelta
 
-        from src.auth.discord_claims import (
-            create_discord_claims_token,
-            validate_discord_claims,
+        from src.auth.platform_claims import create_platform_claims_token, validate_platform_claims
+
+        token = create_platform_claims_token(
+            platform="discord",
+            scope="*",
+            sub="123456789",
+            community_id="987654321",
+            can_administer_community=True,
+            expires_delta=timedelta(seconds=-60),
         )
 
-        # Create token with negative expiry (already expired)
-        token = create_discord_claims_token(
-            user_id="123456789",
-            guild_id="987654321",
-            has_manage_server=True,
-            expires_delta=timedelta(seconds=-60),  # Expired 60 seconds ago
-        )
-
-        claims = validate_discord_claims(token)
+        claims = validate_platform_claims(token)
         assert claims is None
 
-    def test_claims_without_manage_server_permission(self) -> None:
-        """Test claims with has_manage_server=False."""
-        from src.auth.discord_claims import create_discord_claims_token, validate_discord_claims
+    def test_claims_without_admin_permission(self) -> None:
+        from src.auth.platform_claims import create_platform_claims_token, validate_platform_claims
 
-        token = create_discord_claims_token(
-            user_id="123456789",
-            guild_id="987654321",
-            has_manage_server=False,
+        token = create_platform_claims_token(
+            platform="discord",
+            scope="*",
+            sub="123456789",
+            community_id="987654321",
+            can_administer_community=False,
         )
 
-        claims = validate_discord_claims(token)
+        claims = validate_platform_claims(token)
         assert claims is not None
-        assert claims["has_manage_server"] is False
+        assert claims["can_administer_community"] is False

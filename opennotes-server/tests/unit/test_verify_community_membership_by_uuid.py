@@ -298,10 +298,10 @@ class TestVerifyCommunityMembershipByUUID:
             assert exc_info.value.status_code == 403
             assert "banned" in exc_info.value.detail.lower()
 
-    async def test_discord_claims_header_is_passed_to_ensure_membership(self):
-        """Discord claims header should be passed to _ensure_membership_with_permissions."""
+    async def test_platform_claims_header_is_passed_to_ensure_membership(self):
+        """Platform claims header should be passed to _ensure_membership_with_permissions."""
         from src.auth.community_dependencies import verify_community_membership_by_uuid
-        from src.auth.discord_claims import create_discord_claims_token
+        from src.auth.platform_claims import create_platform_claims_token
 
         community_id = uuid4()
         profile_id = uuid4()
@@ -316,13 +316,15 @@ class TestVerifyCommunityMembershipByUUID:
 
         user = create_mock_user()
 
-        token = create_discord_claims_token(
-            user_id="123",
-            guild_id="456",
-            has_manage_server=True,
+        token = create_platform_claims_token(
+            platform="discord",
+            scope="*",
+            sub="123",
+            community_id="456",
+            can_administer_community=True,
         )
         mock_request = MagicMock()
-        mock_request.headers = {"x-discord-claims": token}
+        mock_request.headers = {"x-platform-claims": token}
 
         ensure_membership_mock = AsyncMock(return_value=membership)
 
@@ -344,7 +346,7 @@ class TestVerifyCommunityMembershipByUUID:
 
             ensure_membership_mock.assert_called_once()
             call_kwargs = ensure_membership_mock.call_args.kwargs
-            assert call_kwargs["has_discord_manage_server"] is True
+            assert call_kwargs["can_administer_community"] is True
 
 
 @pytest.mark.unit

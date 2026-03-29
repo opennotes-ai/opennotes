@@ -6,11 +6,11 @@ to access community resources. It verifies that users are members of the
 community and optionally checks for admin/moderator roles.
 
 SECURITY NOTE (task-682):
-Discord permissions (like Manage Server) are only trusted from:
-1. Signed JWT in X-Discord-Claims header (created by Discord bot)
+Platform admin permissions are only trusted from:
+1. Signed JWT in X-Platform-Claims header (created by platform adapters)
 2. Service accounts (authenticated via API key)
 
-Raw X-Discord-* headers are stripped by HeaderStrippingMiddleware
+Raw X-Platform-* headers are stripped by InternalHeaderValidationMiddleware
 to prevent spoofing attacks.
 """
 
@@ -25,11 +25,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
-from src.auth.discord_claims import get_discord_manage_server_from_request
 from src.auth.permissions import (
     has_community_admin_access,
     is_service_account,
 )
+from src.auth.platform_claims import get_platform_admin_status
 from src.database import get_db
 from src.llm_config.models import (
     COMMUNITY_SERVER_PLATFORM_ID_UNIQUE_CONSTRAINT,
@@ -248,16 +248,16 @@ async def get_community_server_by_platform_id(
 async def _ensure_membership_with_permissions(
     community: CommunityServer,
     profile: UserProfile,
-    has_discord_manage_server: bool,
+    can_administer_community: bool,
     db: AsyncSession,
 ) -> CommunityMember:
     """
-    Ensure user has membership, creating it if needed for Discord admins or service accounts.
+    Ensure user has membership, creating it if needed for platform admins or service accounts.
 
     Args:
         community: Community server instance
         profile: User profile instance
-        has_discord_manage_server: Whether user has Discord Manage Server permission
+        can_administer_community: Whether user has platform admin permission
         db: Database session
 
     Returns:
@@ -268,18 +268,17 @@ async def _ensure_membership_with_permissions(
     """
     membership = await get_community_member(db, community.id, profile.id)
 
-    # Auto-create membership for service accounts (bots) or Discord server admins
     if not membership:
         should_auto_create = (
             not profile.is_human  # Service accounts
-            or has_discord_manage_server  # Discord server admins
+            or can_administer_community  # Platform admins
         )
 
         if should_auto_create:
             invitation_reason = (
                 "Auto-created for service account"
                 if not profile.is_human
-                else "Auto-created for Discord server admin with Manage Server permission"
+                else "Auto-created for platform admin with community administration permission"
             )
             member_create = CommunityMemberCreate(
                 community_id=community.id,
@@ -376,15 +375,12 @@ async def verify_community_membership(
             detail="User profile not found. Cannot verify community membership.",
         )
 
-    # Get Discord permission from signed JWT claims (secure)
-    # Raw X-Discord-Has-Manage-Server header is stripped by middleware
-    has_discord_manage_server = get_discord_manage_server_from_request(dict(request.headers))
+    can_administer = get_platform_admin_status(request)
 
-    # Use shared membership validation and auto-creation logic
     return await _ensure_membership_with_permissions(
         community=community,
         profile=profile,
-        has_discord_manage_server=has_discord_manage_server,
+        can_administer_community=can_administer,
         db=db,
     )
 
@@ -401,18 +397,18 @@ async def verify_community_admin(
     Implements permission hierarchy:
     1. Service accounts - always granted admin access
     2. Open Notes admins (is_opennotes_admin=True) - cross-community admins
-    3. Discord Manage Server permission (from signed JWT in X-Discord-Claims header)
+    3. Platform admin permission (from signed JWT in X-Platform-Claims header)
     4. Community admins/moderators (role='admin'/'moderator')
 
     SECURITY NOTE (task-682):
-    Discord permissions are ONLY trusted from signed JWT claims.
-    Raw X-Discord-* headers are stripped by HeaderStrippingMiddleware.
+    Platform permissions are ONLY trusted from signed JWT claims.
+    Raw X-Platform-* headers are stripped by InternalHeaderValidationMiddleware.
 
     Args:
         community_server_id: Platform-specific community ID (e.g., Discord guild ID)
         current_user: Current authenticated user
         db: Database session
-        request: HTTP request (for reading Discord permission headers)
+        request: HTTP request (for reading platform permission headers)
 
     Returns:
         CommunityMember: The user's membership record
@@ -420,23 +416,19 @@ async def verify_community_admin(
     Raises:
         HTTPException: 404 if community not found, 403 if user is not an admin/moderator
     """
-    # Get membership (with auto-creation for service accounts and Discord admins)
     membership = await verify_community_membership(community_server_id, current_user, db, request)
 
-    # Get Discord permission from signed JWT claims (secure)
-    # Raw X-Discord-Has-Manage-Server header is stripped by middleware
-    has_discord_manage_server = get_discord_manage_server_from_request(dict(request.headers))
+    can_administer = get_platform_admin_status(request)
 
-    # Use centralized permission check with hierarchy
     if not has_community_admin_access(
         membership=membership,
         profile=membership.profile,
         user=current_user,
-        has_discord_manage_server=has_discord_manage_server,
+        has_discord_manage_server=can_administer,
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Insufficient permissions. User role '{membership.role}' cannot perform this action. Required: admin, moderator, Discord Manage Server permission, or Open Notes admin.",
+            detail=f"Insufficient permissions. User role '{membership.role}' cannot perform this action. Required: admin, moderator, platform admin permission, or Open Notes admin.",
         )
 
     return membership
@@ -457,17 +449,17 @@ async def verify_community_membership_by_uuid(
 
     Community membership is auto-created for:
     - Service accounts (bots) - always granted membership
-    - Users with Discord Manage Server permission (from signed JWT)
+    - Users with platform admin permission (from signed JWT)
 
     SECURITY NOTE (task-682):
-    Discord permissions are ONLY trusted from signed JWT claims.
-    Raw X-Discord-* headers are stripped by HeaderStrippingMiddleware.
+    Platform permissions are ONLY trusted from signed JWT claims.
+    Raw X-Platform-* headers are stripped by InternalHeaderValidationMiddleware.
 
     Args:
         community_server_id: Community server database UUID
         current_user: Current authenticated user
         db: Database session
-        request: HTTP request (for reading Discord permission headers)
+        request: HTTP request (for reading platform permission headers)
 
     Returns:
         CommunityMember: The user's membership record
@@ -499,12 +491,12 @@ async def verify_community_membership_by_uuid(
             detail="User profile not found. Cannot verify community membership.",
         )
 
-    has_discord_manage_server = get_discord_manage_server_from_request(dict(request.headers))
+    can_administer = get_platform_admin_status(request)
 
     return await _ensure_membership_with_permissions(
         community=community,
         profile=profile,
-        has_discord_manage_server=has_discord_manage_server,
+        can_administer_community=can_administer,
         db=db,
     )
 
@@ -521,18 +513,18 @@ async def verify_community_admin_by_uuid(
     Implements permission hierarchy:
     1. Service accounts - always granted admin access
     2. Open Notes admins (is_opennotes_admin=True) - cross-community admins
-    3. Discord Manage Server permission (from signed JWT in X-Discord-Claims header)
+    3. Platform admin permission (from signed JWT in X-Platform-Claims header)
     4. Community admins/moderators (role='admin'/'moderator')
 
     SECURITY NOTE (task-682):
-    Discord permissions are ONLY trusted from signed JWT claims.
-    Raw X-Discord-* headers are stripped by HeaderStrippingMiddleware.
+    Platform permissions are ONLY trusted from signed JWT claims.
+    Raw X-Platform-* headers are stripped by InternalHeaderValidationMiddleware.
 
     Args:
         community_server_id: Community server database UUID
         current_user: Current authenticated user
         db: Database session
-        request: HTTP request (for reading Discord permission headers)
+        request: HTTP request (for reading platform permission headers)
 
     Returns:
         CommunityMember: The user's membership record
@@ -540,7 +532,6 @@ async def verify_community_admin_by_uuid(
     Raises:
         HTTPException: 404 if community not found, 403 if user is not an admin/moderator
     """
-    # Look up community by UUID
     result = await db.execute(
         select(CommunityServer).where(CommunityServer.id == community_server_id)
     )
@@ -565,28 +556,24 @@ async def verify_community_admin_by_uuid(
             detail="User profile not found. Cannot verify community membership.",
         )
 
-    # Get Discord permission from signed JWT claims (secure)
-    # Raw X-Discord-Has-Manage-Server header is stripped by middleware
-    has_discord_manage_server = get_discord_manage_server_from_request(dict(request.headers))
+    can_administer = get_platform_admin_status(request)
 
-    # Use shared membership validation and auto-creation logic
     membership = await _ensure_membership_with_permissions(
         community=community,
         profile=profile,
-        has_discord_manage_server=has_discord_manage_server,
+        can_administer_community=can_administer,
         db=db,
     )
 
-    # Use centralized permission check with hierarchy
     if not has_community_admin_access(
         membership=membership,
         profile=membership.profile,
         user=current_user,
-        has_discord_manage_server=has_discord_manage_server,
+        has_discord_manage_server=can_administer,
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Insufficient permissions. User role '{membership.role}' cannot perform this action. Required: admin, moderator, Discord Manage Server permission, or Open Notes admin.",
+            detail=f"Insufficient permissions. User role '{membership.role}' cannot perform this action. Required: admin, moderator, platform admin permission, or Open Notes admin.",
         )
 
     return membership

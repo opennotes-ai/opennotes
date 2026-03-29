@@ -37,16 +37,15 @@ class TestGetUserIdentifier:
     def _create_mock_request(
         self,
         auth_header: str | None = None,
-        discord_user_id: str | None = None,
+        platform_user_id: str | None = None,
         api_key: str | None = None,
     ) -> MagicMock:
-        """Create a mock request object with optional auth header."""
         request = MagicMock()
         headers = {}
         if auth_header:
             headers["authorization"] = auth_header
-        if discord_user_id:
-            headers["x-discord-user-id"] = discord_user_id
+        if platform_user_id:
+            headers["x-platform-user-id"] = platform_user_id
         if api_key:
             headers["x-api-key"] = api_key
         request.headers.get = lambda key, default=None: headers.get(key, default)
@@ -82,46 +81,43 @@ class TestGetUserIdentifier:
 
         assert result == f"user:{user_id}"
 
-    def test_prefers_jwt_user_id_over_discord_header(self):
-        """A valid JWT should take precedence over Discord profile headers."""
+    def test_prefers_jwt_user_id_over_platform_header(self):
         from src.middleware.rate_limiting import get_user_identifier
 
         user_id = str(uuid4())
         token = self._create_valid_token(user_id)
         request = self._create_mock_request(
             auth_header=f"Bearer {token}",
-            discord_user_id="discord-user-123",
+            platform_user_id="platform-user-123",
         )
 
         result = get_user_identifier(request)
 
         assert result == f"user:{user_id}"
 
-    def test_returns_discord_user_id_when_token_cannot_be_decoded(self):
-        """Discord user header should be used before falling back to IP."""
+    def test_returns_platform_user_id_when_token_cannot_be_decoded(self):
         from src.middleware.rate_limiting import get_user_identifier
 
         request = self._create_mock_request(
             auth_header="Bearer invalid.token.here",
-            discord_user_id="discord-user-123",
+            platform_user_id="platform-user-123",
         )
 
         result = get_user_identifier(request)
 
-        assert result == "discord:discord-user-123"
+        assert result == "platform:platform-user-123"
 
-    def test_returns_unique_discord_identifier_per_user(self):
-        """Different Discord users must not share the same rate-limit key."""
+    def test_returns_unique_platform_identifier_per_user(self):
         from src.middleware.rate_limiting import get_user_identifier
 
-        request_a = self._create_mock_request(discord_user_id="discord-user-a")
-        request_b = self._create_mock_request(discord_user_id="discord-user-b")
+        request_a = self._create_mock_request(platform_user_id="platform-user-a")
+        request_b = self._create_mock_request(platform_user_id="platform-user-b")
 
         result_a = get_user_identifier(request_a)
         result_b = get_user_identifier(request_b)
 
-        assert result_a == "discord:discord-user-a"
-        assert result_b == "discord:discord-user-b"
+        assert result_a == "platform:platform-user-a"
+        assert result_b == "platform:platform-user-b"
         assert result_a != result_b
 
     def test_returns_api_key_identifier_when_no_user_context_available(self):

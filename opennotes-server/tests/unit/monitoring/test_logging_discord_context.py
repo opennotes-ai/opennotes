@@ -28,32 +28,32 @@ def log_record() -> logging.LogRecord:
 
 
 @pytest.mark.unit
-class TestDiscordContextInLogs:
-    def test_guild_id_from_baggage_added_to_log(
+class TestPlatformContextInLogs:
+    def test_platform_type_from_baggage_added_to_log(
         self, formatter: CustomJsonFormatter, log_record: logging.LogRecord
     ) -> None:
         ctx = context.get_current()
-        ctx = baggage.set_baggage("discord.guild_id", "111222333", ctx)
+        ctx = baggage.set_baggage("platform.type", "discord", ctx)
         token = context.attach(ctx)
 
         try:
             log_data: dict[str, Any] = {}
             formatter.add_fields(log_data, log_record, {})
-            assert log_data.get("discord.guild_id") == "111222333"
+            assert log_data.get("platform.type") == "discord"
         finally:
             context.detach(token)
 
-    def test_channel_id_from_baggage_added_to_log(
+    def test_platform_community_id_from_baggage_added_to_log(
         self, formatter: CustomJsonFormatter, log_record: logging.LogRecord
     ) -> None:
         ctx = context.get_current()
-        ctx = baggage.set_baggage("discord.channel_id", "444555666", ctx)
+        ctx = baggage.set_baggage("platform.community_id", "444555666", ctx)
         token = context.attach(ctx)
 
         try:
             log_data: dict[str, Any] = {}
             formatter.add_fields(log_data, log_record, {})
-            assert log_data.get("discord.channel_id") == "444555666"
+            assert log_data.get("platform.community_id") == "444555666"
         finally:
             context.detach(token)
 
@@ -71,20 +71,20 @@ class TestDiscordContextInLogs:
         finally:
             context.detach(token)
 
-    def test_all_discord_context_fields_from_baggage(
+    def test_all_platform_context_fields_from_baggage(
         self, formatter: CustomJsonFormatter, log_record: logging.LogRecord
     ) -> None:
         ctx = context.get_current()
-        ctx = baggage.set_baggage("discord.guild_id", "111", ctx)
-        ctx = baggage.set_baggage("discord.channel_id", "222", ctx)
+        ctx = baggage.set_baggage("platform.type", "discord", ctx)
+        ctx = baggage.set_baggage("platform.community_id", "222", ctx)
         ctx = baggage.set_baggage("community_server_id", "333", ctx)
         token = context.attach(ctx)
 
         try:
             log_data: dict[str, Any] = {}
             formatter.add_fields(log_data, log_record, {})
-            assert log_data.get("discord.guild_id") == "111"
-            assert log_data.get("discord.channel_id") == "222"
+            assert log_data.get("platform.type") == "discord"
+            assert log_data.get("platform.community_id") == "222"
             assert log_data.get("community_server_id") == "333"
         finally:
             context.detach(token)
@@ -95,6 +95,6 @@ class TestDiscordContextInLogs:
         log_data: dict[str, Any] = {}
         formatter.add_fields(log_data, log_record, {})
 
-        assert "discord.guild_id" not in log_data
-        assert "discord.channel_id" not in log_data
+        assert "platform.type" not in log_data
+        assert "platform.community_id" not in log_data
         assert "community_server_id" not in log_data

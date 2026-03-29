@@ -771,7 +771,7 @@ class Settings(BaseSettings):
     INTERNAL_SERVICE_SECRET: str = Field(
         default="",
         description="Shared secret for internal service-to-service authentication. "
-        "Used to validate that X-Discord-* headers come from trusted internal services (e.g., Discord bot). "
+        "Used to validate that X-Platform-* headers come from trusted internal services (e.g., Discord bot). "
         "Must be at least 32 characters in production. "
         "Generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))'",
     )
@@ -1004,7 +1004,7 @@ class Settings(BaseSettings):
             if not self.INTERNAL_SERVICE_SECRET or len(self.INTERNAL_SERVICE_SECRET) < 32:
                 raise ValueError(
                     "INTERNAL_SERVICE_SECRET must be set and at least 32 characters in production. "
-                    "This secret is required to prevent authentication bypass via X-Discord-* header spoofing. "
+                    "This secret is required to prevent authentication bypass via X-Platform-* header spoofing. "
                     "Generate a secure key with: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
                 )
 

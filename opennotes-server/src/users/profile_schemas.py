@@ -35,6 +35,7 @@ class AuthProvider(str, PyEnum):
     DISCORD = "discord"
     GITHUB = "github"
     EMAIL = "email"
+    DISCOURSE = "discourse"
 
 
 class CommunityRole(str, PyEnum):
@@ -43,6 +44,36 @@ class CommunityRole(str, PyEnum):
     ADMIN = "admin"
     MODERATOR = "moderator"
     MEMBER = "member"
+
+
+class PlatformIdentityInput(StrictInputSchema):
+    """Generic platform identity for get_or_create_profile_from_platform().
+
+    Used to represent user identity information from any supported platform
+    (Discord, Discourse, GitHub, etc.) in a provider-agnostic way.
+    """
+
+    provider: AuthProvider = Field(..., description="Authentication provider")
+    provider_user_id: str = Field(
+        ..., min_length=1, max_length=255, description="User's unique ID on the provider"
+    )
+    provider_scope: str = Field(
+        default="*",
+        max_length=255,
+        description="Scope within provider (e.g., Discourse domain). '*' for global.",
+    )
+    username: str | None = Field(
+        default=None, max_length=255, description="Username on the platform"
+    )
+    display_name: str | None = Field(
+        default=None, max_length=255, description="Display name on the platform"
+    )
+    avatar_url: str | None = Field(
+        default=None, max_length=500, description="Avatar URL from the platform"
+    )
+    metadata: dict | None = Field(
+        default=None, description="Provider-specific metadata (trust_level, admin, etc.)"
+    )
 
 
 # ============================================================================
@@ -196,6 +227,11 @@ class UserIdentityCreate(UserIdentityBase, StrictInputSchema):
     """Schema for creating a new user identity."""
 
     profile_id: UUID = Field(..., description="Associated user profile ID")
+    provider_scope: str = Field(
+        default="*",
+        max_length=255,
+        description="Scope within provider (e.g., Discourse domain). '*' for global.",
+    )
 
 
 class UserIdentityUpdate(StrictInputSchema):

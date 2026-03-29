@@ -2781,7 +2781,7 @@
           "profiles-jsonapi"
         ],
         "summary": "Lookup User Profile Jsonapi",
-        "description": "Look up a user profile by platform and platform user ID with JSON:API format.\n\nReturns the internal UUID for a user profile based on its platform-specific identifier.\nAuto-creates the profile if it doesn't exist (for service accounts/bots).\n\nArgs:\n    platform: Platform type (default: \"discord\")\n    platform_user_id: Platform-specific user ID (e.g., Discord user ID)\n\nReturns:\n    JSON:API formatted response with user profile details\n\nRaises:\n    404: If user profile not found and user is not a service account\n    400: If platform is not supported (currently only 'discord')",
+        "description": "Look up a user profile by platform and platform user ID with JSON:API format.\n\nReturns the internal UUID for a user profile based on its platform-specific identifier.\nAuto-creates the profile if it doesn't exist (for service accounts/bots).\n\nArgs:\n    platform: Platform type (discord, discourse, github, email)\n    platform_user_id: Platform-specific user ID\n    provider_scope: Provider scope (e.g., Discourse domain). Defaults to '*'.\n        For Discourse, this must be the instance domain (not '*').\n\nReturns:\n    JSON:API formatted response with user profile details\n\nRaises:\n    404: If user profile not found and user is not a service account\n    400: If platform is not a valid AuthProvider or if Discourse lookup missing provider_scope",
         "operationId": "lookup_user_profile_jsonapi_api_v2_user_profiles_lookup_get",
         "security": [
           {
@@ -2795,11 +2795,11 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "Platform type",
+              "description": "Platform type (discord, discourse, github, email)",
               "default": "discord",
               "title": "Platform"
             },
-            "description": "Platform type"
+            "description": "Platform type (discord, discourse, github, email)"
           },
           {
             "name": "platform_user_id",
@@ -2807,10 +2807,22 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Platform-specific user ID (e.g., Discord user ID)",
+              "description": "Platform-specific user ID (e.g., Discord user ID, Discourse user ID)",
               "title": "Platform User Id"
             },
-            "description": "Platform-specific user ID (e.g., Discord user ID)"
+            "description": "Platform-specific user ID (e.g., Discord user ID, Discourse user ID)"
+          },
+          {
+            "name": "provider_scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Provider scope (e.g., Discourse domain). '*' for global.",
+              "default": "*",
+              "title": "Provider Scope"
+            },
+            "description": "Provider scope (e.g., Discourse domain). '*' for global."
           },
           {
             "name": "X-API-Key",
@@ -12928,7 +12940,8 @@
         "enum": [
           "discord",
           "github",
-          "email"
+          "email",
+          "discourse"
         ],
         "title": "AuthProvider",
         "description": "Supported authentication providers."

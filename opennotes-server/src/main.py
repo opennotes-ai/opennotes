@@ -82,9 +82,9 @@ from src.llm_config.router import router as llm_config_router
 from src.llm_config.service import LLMService
 from src.middleware.audit import AuditMiddleware
 from src.middleware.csrf import CSRFMiddleware
-from src.middleware.discord_context import DiscordContextMiddleware
 from src.middleware.gcp_trace_filter import wrap_app_with_gcp_trace_filter
 from src.middleware.internal_auth import InternalHeaderValidationMiddleware
+from src.middleware.platform_context import PlatformContextMiddleware
 from src.middleware.rate_limiting import limiter
 from src.middleware.request_size import RequestSizeLimitMiddleware
 from src.middleware.security import SecurityHeadersMiddleware
@@ -674,7 +674,7 @@ app = FastAPI(
 )
 
 if settings.ENABLE_TRACING and not settings.TESTING:
-    app.add_middleware(DiscordContextMiddleware)
+    app.add_middleware(PlatformContextMiddleware)
     app.add_middleware(AuthenticatedUserContextMiddleware)
 
 app.state.limiter = limiter
