@@ -49,7 +49,7 @@ from src.users.profile_crud import (
     get_identities_by_profile,
     get_identity_by_id,
     get_identity_by_provider,
-    get_or_create_profile_from_discord,
+    get_or_create_profile_from_platform,
     get_profile_by_id,
     get_profile_communities,
     update_profile,
@@ -57,6 +57,7 @@ from src.users.profile_crud import (
 from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
 from src.users.profile_schemas import (
     AuthProvider,
+    PlatformIdentityInput,
     UserIdentityCreate,
     UserProfileSelfUpdate,
     UserProfileUpdate,
@@ -955,9 +956,14 @@ async def lookup_user_profile_jsonapi(
     request: HTTPRequest,
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    platform: str = Query("discord", description="Platform type"),
+    platform: str = Query(
+        "discord", description="Platform type (discord, discourse, github, email)"
+    ),
     platform_user_id: str = Query(
-        ..., description="Platform-specific user ID (e.g., Discord user ID)"
+        ..., description="Platform-specific user ID (e.g., Discord user ID, Discourse user ID)"
+    ),
+    provider_scope: str = Query(
+        "*", description="Provider scope (e.g., Discourse domain). '*' for global."
     ),
 ) -> JSONResponse:
     """Look up a user profile by platform and platform user ID with JSON:API format.
@@ -966,15 +972,17 @@ async def lookup_user_profile_jsonapi(
     Auto-creates the profile if it doesn't exist (for service accounts/bots).
 
     Args:
-        platform: Platform type (default: "discord")
-        platform_user_id: Platform-specific user ID (e.g., Discord user ID)
+        platform: Platform type (discord, discourse, github, email)
+        platform_user_id: Platform-specific user ID
+        provider_scope: Provider scope (e.g., Discourse domain). Defaults to '*'.
+            For Discourse, this must be the instance domain (not '*').
 
     Returns:
         JSON:API formatted response with user profile details
 
     Raises:
         404: If user profile not found and user is not a service account
-        400: If platform is not supported (currently only 'discord')
+        400: If platform is not a valid AuthProvider or if Discourse lookup missing provider_scope
     """
     try:
         logger.info(
@@ -983,25 +991,34 @@ async def lookup_user_profile_jsonapi(
                 "user_id": current_user.id,
                 "platform": platform,
                 "platform_user_id": platform_user_id,
+                "provider_scope": provider_scope,
             },
         )
 
-        # Currently only Discord is supported
-        if platform != "discord":
+        try:
+            provider = AuthProvider(platform)
+        except ValueError:
+            valid_providers = ", ".join(p.value for p in AuthProvider)
             return create_error_response(
                 status.HTTP_400_BAD_REQUEST,
                 "Bad Request",
-                f"Unsupported platform: {platform}. Currently only 'discord' is supported.",
+                f"Unsupported platform: {platform}. Must be one of: {valid_providers}",
             )
 
-        # Check if identity already exists
-        identity = await get_identity_by_provider(db, AuthProvider.DISCORD, platform_user_id)
+        if provider == AuthProvider.DISCOURSE and provider_scope == "*":
+            return create_error_response(
+                status.HTTP_400_BAD_REQUEST,
+                "Bad Request",
+                "provider_scope is required for Discourse lookups (e.g., the Discourse instance domain)",
+            )
+
+        identity = await get_identity_by_provider(
+            db, provider, platform_user_id, provider_scope=provider_scope
+        )
 
         if identity:
-            # Return existing profile
             profile = identity.profile
         else:
-            # Auto-create only for service accounts (bots)
             if not is_service_account(current_user):
                 return create_error_response(
                     status.HTTP_404_NOT_FOUND,
@@ -1009,15 +1026,13 @@ async def lookup_user_profile_jsonapi(
                     f"User profile not found: {platform}:{platform_user_id}",
                 )
 
-            # Create new profile with Discord identity
-            profile = await get_or_create_profile_from_discord(
-                db=db,
-                discord_user_id=platform_user_id,
-                username=f"user_{platform_user_id}",  # Placeholder username
-                display_name=None,
-                avatar_url=None,
-                platform_community_server_id=None,
+            user_info = PlatformIdentityInput(
+                provider=provider,
+                provider_user_id=platform_user_id,
+                provider_scope=provider_scope,
+                username=f"user_{platform_user_id}",
             )
+            profile = await get_or_create_profile_from_platform(db, user_info)
             await db.commit()
             await db.refresh(profile)
 
