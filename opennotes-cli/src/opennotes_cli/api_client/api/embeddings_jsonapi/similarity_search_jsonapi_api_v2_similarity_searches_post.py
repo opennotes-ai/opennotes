@@ -79,17 +79,15 @@ def sync_detailed(
 
     This endpoint:
     1. Verifies user is authorized member of community server
-    2. Validates community server has OpenAI configuration
-    3. Generates embedding using text-embedding-3-small (1536 dimensions)
-    4. Queries fact_check_items table with pgvector cosine similarity
-    5. Filters by dataset_tags (e.g., 'snopes', 'politifact')
-    6. Returns top matches above similarity threshold
+    2. Generates embedding using text-embedding-3-small (1536 dimensions)
+    3. Queries fact_check_items table with pgvector cosine similarity
+    4. Filters by dataset_tags (e.g., 'snopes', 'politifact')
+    5. Returns top matches above similarity threshold
 
     JSON:API 1.1 action endpoint that returns search results.
 
     Rate Limiting:
-    - Per-user rate limit: 100 requests/hour
-    - Per-community rate limits: Based on configured LLM usage limits
+    - Per-user rate limit: 100 requests/minute
     - OpenAI API rate limits: Automatic detection with retry guidance
 
     Args:
@@ -129,17 +127,15 @@ def sync(
 
     This endpoint:
     1. Verifies user is authorized member of community server
-    2. Validates community server has OpenAI configuration
-    3. Generates embedding using text-embedding-3-small (1536 dimensions)
-    4. Queries fact_check_items table with pgvector cosine similarity
-    5. Filters by dataset_tags (e.g., 'snopes', 'politifact')
-    6. Returns top matches above similarity threshold
+    2. Generates embedding using text-embedding-3-small (1536 dimensions)
+    3. Queries fact_check_items table with pgvector cosine similarity
+    4. Filters by dataset_tags (e.g., 'snopes', 'politifact')
+    5. Returns top matches above similarity threshold
 
     JSON:API 1.1 action endpoint that returns search results.
 
     Rate Limiting:
-    - Per-user rate limit: 100 requests/hour
-    - Per-community rate limits: Based on configured LLM usage limits
+    - Per-user rate limit: 100 requests/minute
     - OpenAI API rate limits: Automatic detection with retry guidance
 
     Args:
@@ -174,17 +170,15 @@ async def asyncio_detailed(
 
     This endpoint:
     1. Verifies user is authorized member of community server
-    2. Validates community server has OpenAI configuration
-    3. Generates embedding using text-embedding-3-small (1536 dimensions)
-    4. Queries fact_check_items table with pgvector cosine similarity
-    5. Filters by dataset_tags (e.g., 'snopes', 'politifact')
-    6. Returns top matches above similarity threshold
+    2. Generates embedding using text-embedding-3-small (1536 dimensions)
+    3. Queries fact_check_items table with pgvector cosine similarity
+    4. Filters by dataset_tags (e.g., 'snopes', 'politifact')
+    5. Returns top matches above similarity threshold
 
     JSON:API 1.1 action endpoint that returns search results.
 
     Rate Limiting:
-    - Per-user rate limit: 100 requests/hour
-    - Per-community rate limits: Based on configured LLM usage limits
+    - Per-user rate limit: 100 requests/minute
     - OpenAI API rate limits: Automatic detection with retry guidance
 
     Args:
@@ -222,17 +216,15 @@ async def asyncio(
 
     This endpoint:
     1. Verifies user is authorized member of community server
-    2. Validates community server has OpenAI configuration
-    3. Generates embedding using text-embedding-3-small (1536 dimensions)
-    4. Queries fact_check_items table with pgvector cosine similarity
-    5. Filters by dataset_tags (e.g., 'snopes', 'politifact')
-    6. Returns top matches above similarity threshold
+    2. Generates embedding using text-embedding-3-small (1536 dimensions)
+    3. Queries fact_check_items table with pgvector cosine similarity
+    4. Filters by dataset_tags (e.g., 'snopes', 'politifact')
+    5. Returns top matches above similarity threshold
 
     JSON:API 1.1 action endpoint that returns search results.
 
     Rate Limiting:
-    - Per-user rate limit: 100 requests/hour
-    - Per-community rate limits: Based on configured LLM usage limits
+    - Per-user rate limit: 100 requests/minute
     - OpenAI API rate limits: Automatic detection with retry guidance
 
     Args:

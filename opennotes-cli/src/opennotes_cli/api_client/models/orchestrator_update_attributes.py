@@ -25,7 +25,8 @@ class OrchestratorUpdateAttributes:
         description (None | str | Unset):
         community_server_id (None | Unset | UUID):
         turn_cadence_seconds (int | None | Unset):
-        max_agents (int | None | Unset):
+        max_active_agents (int | None | Unset):
+        max_total_spawns (int | None | Unset):
         removal_rate (float | None | Unset):
         max_turns_per_agent (int | None | Unset):
         agent_profile_ids (list[str] | None | Unset):
@@ -36,7 +37,8 @@ class OrchestratorUpdateAttributes:
     description: None | str | Unset = UNSET
     community_server_id: None | Unset | UUID = UNSET
     turn_cadence_seconds: int | None | Unset = UNSET
-    max_agents: int | None | Unset = UNSET
+    max_active_agents: int | None | Unset = UNSET
+    max_total_spawns: int | None | Unset = UNSET
     removal_rate: float | None | Unset = UNSET
     max_turns_per_agent: int | None | Unset = UNSET
     agent_profile_ids: list[str] | None | Unset = UNSET
@@ -75,11 +77,17 @@ class OrchestratorUpdateAttributes:
         else:
             turn_cadence_seconds = self.turn_cadence_seconds
 
-        max_agents: int | None | Unset
-        if isinstance(self.max_agents, Unset):
-            max_agents = UNSET
+        max_active_agents: int | None | Unset
+        if isinstance(self.max_active_agents, Unset):
+            max_active_agents = UNSET
         else:
-            max_agents = self.max_agents
+            max_active_agents = self.max_active_agents
+
+        max_total_spawns: int | None | Unset
+        if isinstance(self.max_total_spawns, Unset):
+            max_total_spawns = UNSET
+        else:
+            max_total_spawns = self.max_total_spawns
 
         removal_rate: float | None | Unset
         if isinstance(self.removal_rate, Unset):
@@ -123,8 +131,10 @@ class OrchestratorUpdateAttributes:
             field_dict["community_server_id"] = community_server_id
         if turn_cadence_seconds is not UNSET:
             field_dict["turn_cadence_seconds"] = turn_cadence_seconds
-        if max_agents is not UNSET:
-            field_dict["max_agents"] = max_agents
+        if max_active_agents is not UNSET:
+            field_dict["max_active_agents"] = max_active_agents
+        if max_total_spawns is not UNSET:
+            field_dict["max_total_spawns"] = max_total_spawns
         if removal_rate is not UNSET:
             field_dict["removal_rate"] = removal_rate
         if max_turns_per_agent is not UNSET:
@@ -192,14 +202,23 @@ class OrchestratorUpdateAttributes:
             d.pop("turn_cadence_seconds", UNSET)
         )
 
-        def _parse_max_agents(data: object) -> int | None | Unset:
+        def _parse_max_active_agents(data: object) -> int | None | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
             return cast(int | None | Unset, data)
 
-        max_agents = _parse_max_agents(d.pop("max_agents", UNSET))
+        max_active_agents = _parse_max_active_agents(d.pop("max_active_agents", UNSET))
+
+        def _parse_max_total_spawns(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        max_total_spawns = _parse_max_total_spawns(d.pop("max_total_spawns", UNSET))
 
         def _parse_removal_rate(data: object) -> float | None | Unset:
             if data is None:
@@ -266,7 +285,8 @@ class OrchestratorUpdateAttributes:
             description=description,
             community_server_id=community_server_id,
             turn_cadence_seconds=turn_cadence_seconds,
-            max_agents=max_agents,
+            max_active_agents=max_active_agents,
+            max_total_spawns=max_total_spawns,
             removal_rate=removal_rate,
             max_turns_per_agent=max_turns_per_agent,
             agent_profile_ids=agent_profile_ids,

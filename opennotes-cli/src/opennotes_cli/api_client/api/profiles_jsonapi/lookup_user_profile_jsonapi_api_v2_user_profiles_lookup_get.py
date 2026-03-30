@@ -14,6 +14,7 @@ def _get_kwargs(
     *,
     platform: str | Unset = "discord",
     platform_user_id: str,
+    provider_scope: str | Unset = "*",
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
@@ -25,6 +26,8 @@ def _get_kwargs(
     params["platform"] = platform
 
     params["platform_user_id"] = platform_user_id
+
+    params["provider_scope"] = provider_scope
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -77,9 +80,10 @@ def sync_detailed(
     client: AuthenticatedClient,
     platform: str | Unset = "discord",
     platform_user_id: str,
+    provider_scope: str | Unset = "*",
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[Any | HTTPValidationError | UserProfileLookupResponse]:
-    r"""Lookup User Profile Jsonapi
+    """Lookup User Profile Jsonapi
 
      Look up a user profile by platform and platform user ID with JSON:API format.
 
@@ -87,19 +91,25 @@ def sync_detailed(
     Auto-creates the profile if it doesn't exist (for service accounts/bots).
 
     Args:
-        platform: Platform type (default: \"discord\")
-        platform_user_id: Platform-specific user ID (e.g., Discord user ID)
+        platform: Platform type (discord, discourse, github, email)
+        platform_user_id: Platform-specific user ID
+        provider_scope: Provider scope (e.g., Discourse domain). Defaults to '*'.
+            For Discourse, this must be the instance domain (not '*').
 
     Returns:
         JSON:API formatted response with user profile details
 
     Raises:
         404: If user profile not found and user is not a service account
-        400: If platform is not supported (currently only 'discord')
+        400: If platform is not a valid AuthProvider or if Discourse lookup missing provider_scope
 
     Args:
-        platform (str | Unset): Platform type Default: 'discord'.
-        platform_user_id (str): Platform-specific user ID (e.g., Discord user ID)
+        platform (str | Unset): Platform type (discord, discourse, github, email) Default:
+            'discord'.
+        platform_user_id (str): Platform-specific user ID (e.g., Discord user ID, Discourse user
+            ID)
+        provider_scope (str | Unset): Provider scope (e.g., Discourse domain). '*' for global.
+            Default: '*'.
         x_api_key (None | str | Unset):
 
     Raises:
@@ -113,6 +123,7 @@ def sync_detailed(
     kwargs = _get_kwargs(
         platform=platform,
         platform_user_id=platform_user_id,
+        provider_scope=provider_scope,
         x_api_key=x_api_key,
     )
 
@@ -128,9 +139,10 @@ def sync(
     client: AuthenticatedClient,
     platform: str | Unset = "discord",
     platform_user_id: str,
+    provider_scope: str | Unset = "*",
     x_api_key: None | str | Unset = UNSET,
 ) -> Any | HTTPValidationError | UserProfileLookupResponse | None:
-    r"""Lookup User Profile Jsonapi
+    """Lookup User Profile Jsonapi
 
      Look up a user profile by platform and platform user ID with JSON:API format.
 
@@ -138,19 +150,25 @@ def sync(
     Auto-creates the profile if it doesn't exist (for service accounts/bots).
 
     Args:
-        platform: Platform type (default: \"discord\")
-        platform_user_id: Platform-specific user ID (e.g., Discord user ID)
+        platform: Platform type (discord, discourse, github, email)
+        platform_user_id: Platform-specific user ID
+        provider_scope: Provider scope (e.g., Discourse domain). Defaults to '*'.
+            For Discourse, this must be the instance domain (not '*').
 
     Returns:
         JSON:API formatted response with user profile details
 
     Raises:
         404: If user profile not found and user is not a service account
-        400: If platform is not supported (currently only 'discord')
+        400: If platform is not a valid AuthProvider or if Discourse lookup missing provider_scope
 
     Args:
-        platform (str | Unset): Platform type Default: 'discord'.
-        platform_user_id (str): Platform-specific user ID (e.g., Discord user ID)
+        platform (str | Unset): Platform type (discord, discourse, github, email) Default:
+            'discord'.
+        platform_user_id (str): Platform-specific user ID (e.g., Discord user ID, Discourse user
+            ID)
+        provider_scope (str | Unset): Provider scope (e.g., Discourse domain). '*' for global.
+            Default: '*'.
         x_api_key (None | str | Unset):
 
     Raises:
@@ -165,6 +183,7 @@ def sync(
         client=client,
         platform=platform,
         platform_user_id=platform_user_id,
+        provider_scope=provider_scope,
         x_api_key=x_api_key,
     ).parsed
 
@@ -174,9 +193,10 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     platform: str | Unset = "discord",
     platform_user_id: str,
+    provider_scope: str | Unset = "*",
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[Any | HTTPValidationError | UserProfileLookupResponse]:
-    r"""Lookup User Profile Jsonapi
+    """Lookup User Profile Jsonapi
 
      Look up a user profile by platform and platform user ID with JSON:API format.
 
@@ -184,19 +204,25 @@ async def asyncio_detailed(
     Auto-creates the profile if it doesn't exist (for service accounts/bots).
 
     Args:
-        platform: Platform type (default: \"discord\")
-        platform_user_id: Platform-specific user ID (e.g., Discord user ID)
+        platform: Platform type (discord, discourse, github, email)
+        platform_user_id: Platform-specific user ID
+        provider_scope: Provider scope (e.g., Discourse domain). Defaults to '*'.
+            For Discourse, this must be the instance domain (not '*').
 
     Returns:
         JSON:API formatted response with user profile details
 
     Raises:
         404: If user profile not found and user is not a service account
-        400: If platform is not supported (currently only 'discord')
+        400: If platform is not a valid AuthProvider or if Discourse lookup missing provider_scope
 
     Args:
-        platform (str | Unset): Platform type Default: 'discord'.
-        platform_user_id (str): Platform-specific user ID (e.g., Discord user ID)
+        platform (str | Unset): Platform type (discord, discourse, github, email) Default:
+            'discord'.
+        platform_user_id (str): Platform-specific user ID (e.g., Discord user ID, Discourse user
+            ID)
+        provider_scope (str | Unset): Provider scope (e.g., Discourse domain). '*' for global.
+            Default: '*'.
         x_api_key (None | str | Unset):
 
     Raises:
@@ -210,6 +236,7 @@ async def asyncio_detailed(
     kwargs = _get_kwargs(
         platform=platform,
         platform_user_id=platform_user_id,
+        provider_scope=provider_scope,
         x_api_key=x_api_key,
     )
 
@@ -223,9 +250,10 @@ async def asyncio(
     client: AuthenticatedClient,
     platform: str | Unset = "discord",
     platform_user_id: str,
+    provider_scope: str | Unset = "*",
     x_api_key: None | str | Unset = UNSET,
 ) -> Any | HTTPValidationError | UserProfileLookupResponse | None:
-    r"""Lookup User Profile Jsonapi
+    """Lookup User Profile Jsonapi
 
      Look up a user profile by platform and platform user ID with JSON:API format.
 
@@ -233,19 +261,25 @@ async def asyncio(
     Auto-creates the profile if it doesn't exist (for service accounts/bots).
 
     Args:
-        platform: Platform type (default: \"discord\")
-        platform_user_id: Platform-specific user ID (e.g., Discord user ID)
+        platform: Platform type (discord, discourse, github, email)
+        platform_user_id: Platform-specific user ID
+        provider_scope: Provider scope (e.g., Discourse domain). Defaults to '*'.
+            For Discourse, this must be the instance domain (not '*').
 
     Returns:
         JSON:API formatted response with user profile details
 
     Raises:
         404: If user profile not found and user is not a service account
-        400: If platform is not supported (currently only 'discord')
+        400: If platform is not a valid AuthProvider or if Discourse lookup missing provider_scope
 
     Args:
-        platform (str | Unset): Platform type Default: 'discord'.
-        platform_user_id (str): Platform-specific user ID (e.g., Discord user ID)
+        platform (str | Unset): Platform type (discord, discourse, github, email) Default:
+            'discord'.
+        platform_user_id (str): Platform-specific user ID (e.g., Discord user ID, Discourse user
+            ID)
+        provider_scope (str | Unset): Provider scope (e.g., Discourse domain). '*' for global.
+            Default: '*'.
         x_api_key (None | str | Unset):
 
     Raises:
@@ -261,6 +295,7 @@ async def asyncio(
             client=client,
             platform=platform,
             platform_user_id=platform_user_id,
+            provider_scope=provider_scope,
             x_api_key=x_api_key,
         )
     ).parsed

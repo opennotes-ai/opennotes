@@ -38,13 +38,13 @@ class TestStartupGateMiddleware:
         assert body["error"] == "starting"
         assert body["message"] == "Server initializing"
 
-    def test_health_returns_503_when_not_ready(self) -> None:
+    def test_health_passes_through_when_not_ready(self) -> None:
         app = _make_app(startup_complete=False)
         client = TestClient(app, raise_server_exceptions=False)
         response = client.get("/health")
 
-        assert response.status_code == 503
-        assert response.json()["error"] == "starting"
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
 
     def test_health_simple_passes_through_when_not_ready(self) -> None:
         app = _make_app(startup_complete=False)
@@ -96,7 +96,7 @@ class TestStartupGateMiddleware:
         assert response.status_code == 503
         assert response.json()["error"] == "starting"
 
-    def test_health_returns_503_without_state(self) -> None:
+    def test_health_passes_through_without_state(self) -> None:
         app = FastAPI()
         app.add_middleware(StartupGateMiddleware)
 
@@ -107,5 +107,4 @@ class TestStartupGateMiddleware:
         client = TestClient(app, raise_server_exceptions=False)
         response = client.get("/health")
 
-        assert response.status_code == 503
-        assert response.json()["error"] == "starting"
+        assert response.status_code == 200

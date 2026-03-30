@@ -240,15 +240,6 @@ from .llm_config_test_request_settings import LLMConfigTestRequestSettings
 from .llm_config_test_response import LLMConfigTestResponse
 from .llm_config_update import LLMConfigUpdate
 from .llm_config_update_settings_type_0 import LLMConfigUpdateSettingsType0
-from .llm_usage_stats_response import LLMUsageStatsResponse
-from .llm_usage_stats_response_daily_requests import LLMUsageStatsResponseDailyRequests
-from .llm_usage_stats_response_daily_spend import LLMUsageStatsResponseDailySpend
-from .llm_usage_stats_response_daily_tokens import LLMUsageStatsResponseDailyTokens
-from .llm_usage_stats_response_monthly_requests import (
-    LLMUsageStatsResponseMonthlyRequests,
-)
-from .llm_usage_stats_response_monthly_spend import LLMUsageStatsResponseMonthlySpend
-from .llm_usage_stats_response_monthly_tokens import LLMUsageStatsResponseMonthlyTokens
 from .model_name_response import ModelNameResponse
 from .monitored_channel_attributes import MonitoredChannelAttributes
 from .monitored_channel_create_attributes import MonitoredChannelCreateAttributes
@@ -826,13 +817,6 @@ __all__ = (
     "LLMConfigTestResponse",
     "LLMConfigUpdate",
     "LLMConfigUpdateSettingsType0",
-    "LLMUsageStatsResponse",
-    "LLMUsageStatsResponseDailyRequests",
-    "LLMUsageStatsResponseDailySpend",
-    "LLMUsageStatsResponseDailyTokens",
-    "LLMUsageStatsResponseMonthlyRequests",
-    "LLMUsageStatsResponseMonthlySpend",
-    "LLMUsageStatsResponseMonthlyTokens",
     "ModelNameResponse",
     "MonitoredChannelAttributes",
     "MonitoredChannelCreateAttributes",

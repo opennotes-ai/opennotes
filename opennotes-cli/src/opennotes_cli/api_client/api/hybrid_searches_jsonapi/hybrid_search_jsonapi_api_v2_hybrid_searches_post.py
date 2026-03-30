@@ -79,13 +79,12 @@ def sync_detailed(
 
     This endpoint:
     1. Verifies user is authorized member of community server
-    2. Validates community server has OpenAI configuration
-    3. Generates embedding using text-embedding-3-small (1536 dimensions)
-    4. Executes hybrid search combining:
+    2. Generates embedding using text-embedding-3-small (1536 dimensions)
+    3. Executes hybrid search combining:
        - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)
        - pgvector embedding similarity (cosine distance)
-    5. Uses Convex Combination (CC) to fuse semantic and keyword scores
-    6. Returns top matches ranked by combined CC score
+    4. Uses Convex Combination (CC) to fuse semantic and keyword scores
+    5. Returns top matches ranked by combined CC score
 
     The CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm
     where alpha=0.7 by default (semantic-weighted).
@@ -94,7 +93,6 @@ def sync_detailed(
 
     Rate Limiting:
     - Per-user rate limit: 100 requests/hour
-    - Per-community rate limits: Based on configured LLM usage limits
     - OpenAI API rate limits: Automatic detection with retry guidance
 
     Args:
@@ -133,13 +131,12 @@ def sync(
 
     This endpoint:
     1. Verifies user is authorized member of community server
-    2. Validates community server has OpenAI configuration
-    3. Generates embedding using text-embedding-3-small (1536 dimensions)
-    4. Executes hybrid search combining:
+    2. Generates embedding using text-embedding-3-small (1536 dimensions)
+    3. Executes hybrid search combining:
        - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)
        - pgvector embedding similarity (cosine distance)
-    5. Uses Convex Combination (CC) to fuse semantic and keyword scores
-    6. Returns top matches ranked by combined CC score
+    4. Uses Convex Combination (CC) to fuse semantic and keyword scores
+    5. Returns top matches ranked by combined CC score
 
     The CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm
     where alpha=0.7 by default (semantic-weighted).
@@ -148,7 +145,6 @@ def sync(
 
     Rate Limiting:
     - Per-user rate limit: 100 requests/hour
-    - Per-community rate limits: Based on configured LLM usage limits
     - OpenAI API rate limits: Automatic detection with retry guidance
 
     Args:
@@ -182,13 +178,12 @@ async def asyncio_detailed(
 
     This endpoint:
     1. Verifies user is authorized member of community server
-    2. Validates community server has OpenAI configuration
-    3. Generates embedding using text-embedding-3-small (1536 dimensions)
-    4. Executes hybrid search combining:
+    2. Generates embedding using text-embedding-3-small (1536 dimensions)
+    3. Executes hybrid search combining:
        - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)
        - pgvector embedding similarity (cosine distance)
-    5. Uses Convex Combination (CC) to fuse semantic and keyword scores
-    6. Returns top matches ranked by combined CC score
+    4. Uses Convex Combination (CC) to fuse semantic and keyword scores
+    5. Returns top matches ranked by combined CC score
 
     The CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm
     where alpha=0.7 by default (semantic-weighted).
@@ -197,7 +192,6 @@ async def asyncio_detailed(
 
     Rate Limiting:
     - Per-user rate limit: 100 requests/hour
-    - Per-community rate limits: Based on configured LLM usage limits
     - OpenAI API rate limits: Automatic detection with retry guidance
 
     Args:
@@ -234,13 +228,12 @@ async def asyncio(
 
     This endpoint:
     1. Verifies user is authorized member of community server
-    2. Validates community server has OpenAI configuration
-    3. Generates embedding using text-embedding-3-small (1536 dimensions)
-    4. Executes hybrid search combining:
+    2. Generates embedding using text-embedding-3-small (1536 dimensions)
+    3. Executes hybrid search combining:
        - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)
        - pgvector embedding similarity (cosine distance)
-    5. Uses Convex Combination (CC) to fuse semantic and keyword scores
-    6. Returns top matches ranked by combined CC score
+    4. Uses Convex Combination (CC) to fuse semantic and keyword scores
+    5. Returns top matches ranked by combined CC score
 
     The CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm
     where alpha=0.7 by default (semantic-weighted).
@@ -249,7 +242,6 @@ async def asyncio(
 
     Rate Limiting:
     - Per-user rate limit: 100 requests/hour
-    - Per-community rate limits: Based on configured LLM usage limits
     - OpenAI API rate limits: Automatic detection with retry guidance
 
     Args:

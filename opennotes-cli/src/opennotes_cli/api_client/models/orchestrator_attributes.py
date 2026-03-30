@@ -25,7 +25,8 @@ class OrchestratorAttributes:
     Attributes:
         name (str):
         turn_cadence_seconds (int):
-        max_agents (int):
+        max_active_agents (int):
+        max_total_spawns (int):
         removal_rate (float):
         max_turns_per_agent (int):
         is_active (bool):
@@ -39,7 +40,8 @@ class OrchestratorAttributes:
 
     name: str
     turn_cadence_seconds: int
-    max_agents: int
+    max_active_agents: int
+    max_total_spawns: int
     removal_rate: float
     max_turns_per_agent: int
     is_active: bool
@@ -60,7 +62,9 @@ class OrchestratorAttributes:
 
         turn_cadence_seconds = self.turn_cadence_seconds
 
-        max_agents = self.max_agents
+        max_active_agents = self.max_active_agents
+
+        max_total_spawns = self.max_total_spawns
 
         removal_rate = self.removal_rate
 
@@ -119,7 +123,8 @@ class OrchestratorAttributes:
             {
                 "name": name,
                 "turn_cadence_seconds": turn_cadence_seconds,
-                "max_agents": max_agents,
+                "max_active_agents": max_active_agents,
+                "max_total_spawns": max_total_spawns,
                 "removal_rate": removal_rate,
                 "max_turns_per_agent": max_turns_per_agent,
                 "is_active": is_active,
@@ -151,7 +156,9 @@ class OrchestratorAttributes:
 
         turn_cadence_seconds = d.pop("turn_cadence_seconds")
 
-        max_agents = d.pop("max_agents")
+        max_active_agents = d.pop("max_active_agents")
+
+        max_total_spawns = d.pop("max_total_spawns")
 
         removal_rate = d.pop("removal_rate")
 
@@ -254,7 +261,8 @@ class OrchestratorAttributes:
         orchestrator_attributes = cls(
             name=name,
             turn_cadence_seconds=turn_cadence_seconds,
-            max_agents=max_agents,
+            max_active_agents=max_active_agents,
+            max_total_spawns=max_total_spawns,
             removal_rate=removal_rate,
             max_turns_per_agent=max_turns_per_agent,
             is_active=is_active,

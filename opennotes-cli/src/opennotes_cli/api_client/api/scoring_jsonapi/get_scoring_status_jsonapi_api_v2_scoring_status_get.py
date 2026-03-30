@@ -1,5 +1,6 @@
 from http import HTTPStatus
 from typing import Any, cast
+from uuid import UUID
 
 import httpx
 
@@ -12,15 +13,30 @@ from ...types import UNSET, Response, Unset
 
 def _get_kwargs(
     *,
+    community_server_id: None | Unset | UUID = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
     if not isinstance(x_api_key, Unset):
         headers["X-API-Key"] = x_api_key
 
+    params: dict[str, Any] = {}
+
+    json_community_server_id: None | str | Unset
+    if isinstance(community_server_id, Unset):
+        json_community_server_id = UNSET
+    elif isinstance(community_server_id, UUID):
+        json_community_server_id = str(community_server_id)
+    else:
+        json_community_server_id = community_server_id
+    params["community_server_id"] = json_community_server_id
+
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
+
     _kwargs: dict[str, Any] = {
         "method": "get",
         "url": "/api/v2/scoring/status",
+        "params": params,
     }
 
     _kwargs["headers"] = headers
@@ -64,6 +80,7 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
+    community_server_id: None | Unset | UUID = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[Any | HTTPValidationError | ScoringStatusJSONAPIResponse]:
     """Get Scoring Status Jsonapi
@@ -80,6 +97,7 @@ def sync_detailed(
     - Warnings
 
     Args:
+        community_server_id (None | Unset | UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -91,6 +109,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
+        community_server_id=community_server_id,
         x_api_key=x_api_key,
     )
 
@@ -104,6 +123,7 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
+    community_server_id: None | Unset | UUID = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> Any | HTTPValidationError | ScoringStatusJSONAPIResponse | None:
     """Get Scoring Status Jsonapi
@@ -120,6 +140,7 @@ def sync(
     - Warnings
 
     Args:
+        community_server_id (None | Unset | UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -132,6 +153,7 @@ def sync(
 
     return sync_detailed(
         client=client,
+        community_server_id=community_server_id,
         x_api_key=x_api_key,
     ).parsed
 
@@ -139,6 +161,7 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
+    community_server_id: None | Unset | UUID = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> Response[Any | HTTPValidationError | ScoringStatusJSONAPIResponse]:
     """Get Scoring Status Jsonapi
@@ -155,6 +178,7 @@ async def asyncio_detailed(
     - Warnings
 
     Args:
+        community_server_id (None | Unset | UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -166,6 +190,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
+        community_server_id=community_server_id,
         x_api_key=x_api_key,
     )
 
@@ -177,6 +202,7 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
+    community_server_id: None | Unset | UUID = UNSET,
     x_api_key: None | str | Unset = UNSET,
 ) -> Any | HTTPValidationError | ScoringStatusJSONAPIResponse | None:
     """Get Scoring Status Jsonapi
@@ -193,6 +219,7 @@ async def asyncio(
     - Warnings
 
     Args:
+        community_server_id (None | Unset | UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -206,6 +233,7 @@ async def asyncio(
     return (
         await asyncio_detailed(
             client=client,
+            community_server_id=community_server_id,
             x_api_key=x_api_key,
         )
     ).parsed

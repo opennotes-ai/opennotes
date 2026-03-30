@@ -23,22 +23,24 @@ class OrchestratorCreateAttributes:
     Attributes:
         name (str):
         turn_cadence_seconds (int):
-        max_agents (int):
+        max_active_agents (int):
         removal_rate (float):
         max_turns_per_agent (int):
         description (None | str | Unset):
         community_server_id (None | Unset | UUID):
+        max_total_spawns (int | None | Unset):
         agent_profile_ids (list[str] | Unset):
         scoring_config (None | OrchestratorCreateAttributesScoringConfigType0 | Unset):
     """
 
     name: str
     turn_cadence_seconds: int
-    max_agents: int
+    max_active_agents: int
     removal_rate: float
     max_turns_per_agent: int
     description: None | str | Unset = UNSET
     community_server_id: None | Unset | UUID = UNSET
+    max_total_spawns: int | None | Unset = UNSET
     agent_profile_ids: list[str] | Unset = UNSET
     scoring_config: None | OrchestratorCreateAttributesScoringConfigType0 | Unset = (
         UNSET
@@ -53,7 +55,7 @@ class OrchestratorCreateAttributes:
 
         turn_cadence_seconds = self.turn_cadence_seconds
 
-        max_agents = self.max_agents
+        max_active_agents = self.max_active_agents
 
         removal_rate = self.removal_rate
 
@@ -72,6 +74,12 @@ class OrchestratorCreateAttributes:
             community_server_id = str(self.community_server_id)
         else:
             community_server_id = self.community_server_id
+
+        max_total_spawns: int | None | Unset
+        if isinstance(self.max_total_spawns, Unset):
+            max_total_spawns = UNSET
+        else:
+            max_total_spawns = self.max_total_spawns
 
         agent_profile_ids: list[str] | Unset = UNSET
         if not isinstance(self.agent_profile_ids, Unset):
@@ -93,7 +101,7 @@ class OrchestratorCreateAttributes:
             {
                 "name": name,
                 "turn_cadence_seconds": turn_cadence_seconds,
-                "max_agents": max_agents,
+                "max_active_agents": max_active_agents,
                 "removal_rate": removal_rate,
                 "max_turns_per_agent": max_turns_per_agent,
             }
@@ -102,6 +110,8 @@ class OrchestratorCreateAttributes:
             field_dict["description"] = description
         if community_server_id is not UNSET:
             field_dict["community_server_id"] = community_server_id
+        if max_total_spawns is not UNSET:
+            field_dict["max_total_spawns"] = max_total_spawns
         if agent_profile_ids is not UNSET:
             field_dict["agent_profile_ids"] = agent_profile_ids
         if scoring_config is not UNSET:
@@ -120,7 +130,7 @@ class OrchestratorCreateAttributes:
 
         turn_cadence_seconds = d.pop("turn_cadence_seconds")
 
-        max_agents = d.pop("max_agents")
+        max_active_agents = d.pop("max_active_agents")
 
         removal_rate = d.pop("removal_rate")
 
@@ -154,6 +164,15 @@ class OrchestratorCreateAttributes:
             d.pop("community_server_id", UNSET)
         )
 
+        def _parse_max_total_spawns(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        max_total_spawns = _parse_max_total_spawns(d.pop("max_total_spawns", UNSET))
+
         agent_profile_ids = cast(list[str], d.pop("agent_profile_ids", UNSET))
 
         def _parse_scoring_config(
@@ -182,11 +201,12 @@ class OrchestratorCreateAttributes:
         orchestrator_create_attributes = cls(
             name=name,
             turn_cadence_seconds=turn_cadence_seconds,
-            max_agents=max_agents,
+            max_active_agents=max_active_agents,
             removal_rate=removal_rate,
             max_turns_per_agent=max_turns_per_agent,
             description=description,
             community_server_id=community_server_id,
+            max_total_spawns=max_total_spawns,
             agent_profile_ids=agent_profile_ids,
             scoring_config=scoring_config,
         )

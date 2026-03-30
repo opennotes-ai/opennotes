@@ -1046,15 +1046,17 @@ export interface paths {
          *     Auto-creates the profile if it doesn't exist (for service accounts/bots).
          *
          *     Args:
-         *         platform: Platform type (default: "discord")
-         *         platform_user_id: Platform-specific user ID (e.g., Discord user ID)
+         *         platform: Platform type (discord, discourse, github, email)
+         *         platform_user_id: Platform-specific user ID
+         *         provider_scope: Provider scope (e.g., Discourse domain). Defaults to '*'.
+         *             For Discourse, this must be the instance domain (not '*').
          *
          *     Returns:
          *         JSON:API formatted response with user profile details
          *
          *     Raises:
          *         404: If user profile not found and user is not a service account
-         *         400: If platform is not supported (currently only 'discord')
+         *         400: If platform is not a valid AuthProvider or if Discourse lookup missing provider_scope
          */
         get: operations["lookup_user_profile_jsonapi_api_v2_user_profiles_lookup_get"];
         put?: never;
@@ -1902,17 +1904,15 @@ export interface paths {
          *
          *     This endpoint:
          *     1. Verifies user is authorized member of community server
-         *     2. Validates community server has OpenAI configuration
-         *     3. Generates embedding using text-embedding-3-small (1536 dimensions)
-         *     4. Queries fact_check_items table with pgvector cosine similarity
-         *     5. Filters by dataset_tags (e.g., 'snopes', 'politifact')
-         *     6. Returns top matches above similarity threshold
+         *     2. Generates embedding using text-embedding-3-small (1536 dimensions)
+         *     3. Queries fact_check_items table with pgvector cosine similarity
+         *     4. Filters by dataset_tags (e.g., 'snopes', 'politifact')
+         *     5. Returns top matches above similarity threshold
          *
          *     JSON:API 1.1 action endpoint that returns search results.
          *
          *     Rate Limiting:
-         *     - Per-user rate limit: 100 requests/hour
-         *     - Per-community rate limits: Based on configured LLM usage limits
+         *     - Per-user rate limit: 100 requests/minute
          *     - OpenAI API rate limits: Automatic detection with retry guidance
          */
         post: operations["similarity_search_jsonapi_api_v2_similarity_searches_post"];
@@ -1965,13 +1965,12 @@ export interface paths {
          *
          *     This endpoint:
          *     1. Verifies user is authorized member of community server
-         *     2. Validates community server has OpenAI configuration
-         *     3. Generates embedding using text-embedding-3-small (1536 dimensions)
-         *     4. Executes hybrid search combining:
+         *     2. Generates embedding using text-embedding-3-small (1536 dimensions)
+         *     3. Executes hybrid search combining:
          *        - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)
          *        - pgvector embedding similarity (cosine distance)
-         *     5. Uses Convex Combination (CC) to fuse semantic and keyword scores
-         *     6. Returns top matches ranked by combined CC score
+         *     4. Uses Convex Combination (CC) to fuse semantic and keyword scores
+         *     5. Returns top matches ranked by combined CC score
          *
          *     The CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm
          *     where alpha=0.7 by default (semantic-weighted).
@@ -1980,7 +1979,6 @@ export interface paths {
          *
          *     Rate Limiting:
          *     - Per-user rate limit: 100 requests/hour
-         *     - Per-community rate limits: Based on configured LLM usage limits
          *     - OpenAI API rate limits: Automatic detection with retry guidance
          */
         post: operations["hybrid_search_jsonapi_api_v2_hybrid_searches_post"];
@@ -2938,28 +2936,6 @@ export interface paths {
          *     Requires admin or moderator access to the community server.
          */
         post: operations["test_llm_config_api_v1_community_servers__community_server_id__llm_config_test_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/community-servers/{community_server_id}/llm-config/{provider}/usage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Usage Stats
-         * @description Get usage statistics for an LLM configuration.
-         *
-         *     Requires admin or moderator access to the community server.
-         */
-        get: operations["get_usage_stats_api_v1_community_servers__community_server_id__llm_config__provider__usage_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4132,7 +4108,7 @@ export interface components {
          * @description Supported authentication providers.
          * @enum {string}
          */
-        AuthProvider: "discord" | "github" | "email";
+        AuthProvider: "discord" | "github" | "email" | "discourse";
         /**
          * BatchJobCreate
          * @description Schema for creating a new batch job.
@@ -6426,42 +6402,6 @@ export interface components {
             monthly_spend_limit?: number | null;
         };
         /**
-         * LLMUsageStatsResponse
-         * @description Schema for usage statistics response.
-         */
-        LLMUsageStatsResponse: {
-            /** Provider */
-            provider: string;
-            /** Daily Requests */
-            daily_requests: {
-                [key: string]: unknown;
-            };
-            /** Monthly Requests */
-            monthly_requests: {
-                [key: string]: unknown;
-            };
-            /** Daily Tokens */
-            daily_tokens: {
-                [key: string]: unknown;
-            };
-            /** Monthly Tokens */
-            monthly_tokens: {
-                [key: string]: unknown;
-            };
-            /** Daily Spend */
-            daily_spend: {
-                [key: string]: unknown;
-            };
-            /** Monthly Spend */
-            monthly_spend: {
-                [key: string]: unknown;
-            };
-            /** Last Daily Reset */
-            last_daily_reset: string | null;
-            /** Last Monthly Reset */
-            last_monthly_reset: string | null;
-        };
-        /**
          * LatestScanAttributes
          * @description Attributes for the latest scan resource.
          */
@@ -7627,8 +7567,10 @@ export interface components {
             community_server_id?: string | null;
             /** Turn Cadence Seconds */
             turn_cadence_seconds: number;
-            /** Max Agents */
-            max_agents: number;
+            /** Max Active Agents */
+            max_active_agents: number;
+            /** Max Total Spawns */
+            max_total_spawns: number;
             /** Removal Rate */
             removal_rate: number;
             /** Max Turns Per Agent */
@@ -7656,8 +7598,10 @@ export interface components {
             community_server_id?: string | null;
             /** Turn Cadence Seconds */
             turn_cadence_seconds: number;
-            /** Max Agents */
-            max_agents: number;
+            /** Max Active Agents */
+            max_active_agents: number;
+            /** Max Total Spawns */
+            max_total_spawns?: number | null;
             /** Removal Rate */
             removal_rate: number;
             /** Max Turns Per Agent */
@@ -7734,8 +7678,10 @@ export interface components {
             community_server_id?: string | null;
             /** Turn Cadence Seconds */
             turn_cadence_seconds?: number | null;
-            /** Max Agents */
-            max_agents?: number | null;
+            /** Max Active Agents */
+            max_active_agents?: number | null;
+            /** Max Total Spawns */
+            max_total_spawns?: number | null;
             /** Removal Rate */
             removal_rate?: number | null;
             /** Max Turns Per Agent */
@@ -12269,10 +12215,12 @@ export interface operations {
     lookup_user_profile_jsonapi_api_v2_user_profiles_lookup_get: {
         parameters: {
             query: {
-                /** @description Platform type */
+                /** @description Platform type (discord, discourse, github, email) */
                 platform?: string;
-                /** @description Platform-specific user ID (e.g., Discord user ID) */
+                /** @description Platform-specific user ID (e.g., Discord user ID, Discourse user ID) */
                 platform_user_id: string;
+                /** @description Provider scope (e.g., Discourse domain). '*' for global. */
+                provider_scope?: string;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -12690,7 +12638,9 @@ export interface operations {
     };
     get_scoring_status_jsonapi_api_v2_scoring_status_get: {
         parameters: {
-            query?: never;
+            query?: {
+                community_server_id?: string | null;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };
@@ -15768,47 +15718,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LLMConfigTestResponse"];
-                };
-            };
-            /** @description Not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_usage_stats_api_v1_community_servers__community_server_id__llm_config__provider__usage_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                community_server_id: string;
-                provider: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LLMUsageStatsResponse"];
                 };
             };
             /** @description Not authenticated */
