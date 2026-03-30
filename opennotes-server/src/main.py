@@ -1,5 +1,6 @@
 import ast
 import asyncio
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -618,6 +619,45 @@ def _destroy_dbos(is_dbos_worker: bool) -> None:
         logger.warning(f"Error destroying DBOS: {e}")
 
 
+async def _startup_background(app: FastAPI, is_dbos_worker: bool) -> None:
+    """Run full init chain in background after lifespan yields."""
+    try:
+        if not settings.TESTING:
+            await run_startup_migrations(settings.SERVER_MODE)
+
+        await init_db()
+        logger.info("Database initialized")
+
+        await _init_dbos(is_dbos_worker)
+
+        await redis_client.connect()
+        await rate_limiter.connect()
+        await interaction_cache.connect()
+        logger.info("Redis connections established")
+
+        await _connect_nats()
+
+        ai_note_writer, vision_service = await _init_worker_services(app, is_dbos_worker)
+
+        app.state.ai_note_writer = ai_note_writer
+        app.state.vision_service = vision_service
+
+        _register_health_checks(is_dbos_worker)
+
+        await distributed_health.start_heartbeat(health_checker.check_all)
+        logger.info(f"Distributed health heartbeat started for instance {settings.INSTANCE_ID}")
+
+        app.state.startup_complete = True
+        logger.info("Background initialization complete — server ready")
+    except asyncio.CancelledError:
+        logger.warning("Background init cancelled (shutdown during startup)")
+        raise
+    except Exception as e:
+        logger.critical(f"Background initialization failed: {e}", exc_info=True)
+        app.state.startup_failed = True
+        sys.exit(1)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}")
@@ -627,39 +667,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     is_dbos_worker = settings.SERVER_MODE == "dbos_worker"
 
-    _validate_encryption_key()
-    await _run_startup_validation()
-
-    if not settings.TESTING:
-        await run_startup_migrations(settings.SERVER_MODE)
-
-    await init_db()
-    logger.info("Database initialized")
-
-    await _init_dbos(is_dbos_worker)
-
-    await redis_client.connect()
-    await rate_limiter.connect()
-    await interaction_cache.connect()
-    logger.info("Redis connections established")
-
-    await _connect_nats()
-
-    ai_note_writer, vision_service = await _init_worker_services(app, is_dbos_worker)
-
-    app.state.ai_note_writer = ai_note_writer
-    app.state.vision_service = vision_service
+    app.state.startup_complete = False
+    app.state.startup_failed = False
     app.state.health_checker = health_checker
     app.state.distributed_health = distributed_health
 
-    _register_health_checks(is_dbos_worker)
+    _validate_encryption_key()
+    await _run_startup_validation()
 
-    await distributed_health.start_heartbeat(health_checker.check_all)
-    logger.info(f"Distributed health heartbeat started for instance {settings.INSTANCE_ID}")
+    init_task = asyncio.create_task(
+        _startup_background(app, is_dbos_worker),
+        name="startup-init",
+    )
 
     yield
 
-    await _shutdown_services(app, is_dbos_worker)
+    init_task.cancel()
+    try:
+        await init_task
+    except asyncio.CancelledError:
+        pass
+
+    if app.state.startup_complete:
+        await _shutdown_services(app, is_dbos_worker)
 
 
 app = FastAPI(
@@ -714,6 +744,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(InternalHeaderValidationMiddleware)
+
+from src.middleware.startup_gate import StartupGateMiddleware
+
+app.add_middleware(StartupGateMiddleware)
 
 # Auth routes (no prefix)
 app.include_router(auth_router)
