@@ -18,8 +18,13 @@ class StartupGateMiddleware(BaseHTTPMiddleware):
 
         startup_complete = getattr(request.app.state, "startup_complete", False)
         if not startup_complete:
-            if request.url.path.startswith("/health"):
+            if request.url.path in ("/health/simple", "/health/live", "/version"):
                 return await call_next(request)
+            if request.url.path.startswith("/health"):
+                return JSONResponse(
+                    status_code=503,
+                    content={"error": "starting", "message": "Server initializing"},
+                )
             return JSONResponse(
                 status_code=503,
                 content={"error": "starting", "message": "Server initializing"},

@@ -1,6 +1,6 @@
 import ast
 import asyncio
-import sys
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -655,7 +655,7 @@ async def _startup_background(app: FastAPI, is_dbos_worker: bool) -> None:
     except Exception as e:
         logger.critical(f"Background initialization failed: {e}", exc_info=True)
         app.state.startup_failed = True
-        sys.exit(1)
+        os._exit(1)
 
 
 @asynccontextmanager

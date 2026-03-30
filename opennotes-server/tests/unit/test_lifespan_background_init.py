@@ -131,7 +131,7 @@ class TestStartupBackground:
         )
         _start_patches(patches)
         try:
-            with patch("src.main.sys.exit") as mock_exit:
+            with patch("src.main.os._exit") as mock_exit:
                 await _startup_background(app, is_dbos_worker=False)
                 mock_exit.assert_called_once_with(1)
                 assert app.state.startup_failed is True
@@ -146,7 +146,7 @@ class TestStartupBackground:
         )
         _start_patches(patches)
         try:
-            with patch("src.main.sys.exit") as mock_exit:
+            with patch("src.main.os._exit") as mock_exit:
                 await _startup_background(app, is_dbos_worker=False)
                 mock_exit.assert_called_once_with(1)
                 assert app.state.startup_failed is True
@@ -161,7 +161,7 @@ class TestStartupBackground:
         mocks = _start_patches(patches)
         mocks["run_startup_migrations"].side_effect = asyncio.CancelledError()
         try:
-            with patch("src.main.sys.exit") as mock_exit:
+            with patch("src.main.os._exit") as mock_exit:
                 with pytest.raises(asyncio.CancelledError):
                     await _startup_background(app, is_dbos_worker=False)
                 mock_exit.assert_not_called()
