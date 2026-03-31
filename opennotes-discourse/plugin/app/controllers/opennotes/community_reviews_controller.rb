@@ -26,6 +26,8 @@ module Opennotes
       items = filter_by_review_group(actions["data"] || [], current_user)
       items = strip_score_fields(items) unless staff_user?
       render json: { data: items }
+    rescue Faraday::Error, OpenNotes::ApiError => e
+      render json: { data: [], error: I18n.t("opennotes.errors.server_unavailable") }, status: :ok
     end
 
     def show
@@ -47,6 +49,8 @@ module Opennotes
         data: data,
         included: included,
       }
+    rescue Faraday::Error, OpenNotes::ApiError => e
+      render json: { error: I18n.t("opennotes.errors.server_unavailable") }, status: :service_unavailable
     end
 
     def rate
@@ -66,13 +70,17 @@ module Opennotes
       if e.status == 409
         render json: { error: I18n.t("opennotes.errors.already_voted") }, status: :conflict
       else
-        raise
+        render json: { error: I18n.t("opennotes.errors.server_unavailable") }, status: :service_unavailable
       end
+    rescue Faraday::Error => e
+      render json: { error: I18n.t("opennotes.errors.server_unavailable") }, status: :service_unavailable
     end
 
     private
 
     def ensure_minimum_trust_level
+      return if current_user.admin? || current_user.moderator?
+
       min_tl = SiteSetting.opennotes_reviewer_min_trust_level
       raise Discourse::InvalidAccess unless current_user.trust_level >= min_tl
     end

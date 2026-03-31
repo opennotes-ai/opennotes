@@ -9,6 +9,8 @@
 
 enabled_site_setting :opennotes_enabled
 
+register_asset "stylesheets/opennotes.scss"
+
 after_initialize do
   %w[client platform_claims user_mapper post_mapper action_executor].each do |f|
     load File.expand_path("../lib/opennotes/#{f}.rb", __FILE__)
@@ -22,8 +24,10 @@ after_initialize do
     app/serializers/opennotes/review_serializer
     app/controllers/opennotes/admin_controller
     app/controllers/opennotes/community_reviews_controller
+    app/controllers/opennotes/webhook_controller
   ].each { |f| load File.expand_path("../#{f}.rb", __FILE__) }
 
+  load File.expand_path("../config/routes.rb", __FILE__)
   load File.expand_path("../config/routes_reviews.rb", __FILE__)
 
   DiscourseEvent.on(:post_created) do |post, _opts, _user|
@@ -56,7 +60,7 @@ after_initialize do
     )
   end
 
-  add_to_serializer(:topic_view, :opennotes_status) do
+  add_to_serializer(:topic_view, :opennotes_status, include_condition: -> { SiteSetting.opennotes_enabled }) do
     first_post = object.posts&.first
     return unless first_post
 
@@ -64,17 +68,9 @@ after_initialize do
     reviewable&.opennotes_state
   end
 
-  add_to_serializer(:topic_view, :include_opennotes_status?) do
-    SiteSetting.opennotes_enabled
-  end
-
-  add_to_serializer(:post, :opennotes_status) do
+  add_to_serializer(:post, :opennotes_status, include_condition: -> { SiteSetting.opennotes_enabled }) do
     reviewable = ReviewableOpennotesItem.where(target: object).order(created_at: :desc).first
     reviewable&.opennotes_state
-  end
-
-  add_to_serializer(:post, :include_opennotes_status?) do
-    SiteSetting.opennotes_enabled
   end
 
   def opennotes_monitored_category?(category)

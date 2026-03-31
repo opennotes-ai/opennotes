@@ -11,6 +11,7 @@ en:
   opennotes:
     errors:
       already_voted: "You have already voted on this note"
+      server_unavailable: "OpenNotes server is temporarily unavailable"
     staff_annotation:
       overturned: "This post was automatically hidden but has been restored after community review determined the action was incorrect."
     staff_annotations:
