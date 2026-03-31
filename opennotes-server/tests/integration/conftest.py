@@ -28,6 +28,22 @@ def pytest_runtest_setup(item):
 
 
 @pytest.fixture(autouse=True)
+def bypass_startup_gate():
+    from src.main import app
+
+    prev = getattr(app.state, "startup_complete", None)
+    app.state.startup_complete = True
+    yield
+    if prev is None:
+        try:
+            del app.state.startup_complete
+        except AttributeError:
+            pass
+    else:
+        app.state.startup_complete = prev
+
+
+@pytest.fixture(autouse=True)
 async def cleanup_database_after_test():
     """
     Clean up database connections after each test.
