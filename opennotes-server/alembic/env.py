@@ -28,6 +28,7 @@ from src.fact_checking import (
 )
 from src.fact_checking import models as fact_checking_models  # noqa: F401
 from src.llm_config import models as llm_config_models  # noqa: F401
+from src.moderation_actions import models as moderation_actions_models  # noqa: F401
 from src.notes import models as notes_models  # noqa: F401
 from src.notes import note_publisher_models  # noqa: F401
 from src.notes.scoring import models as scoring_models  # noqa: F401
