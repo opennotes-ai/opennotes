@@ -29,18 +29,16 @@ def pytest_runtest_setup(item):
 
 @pytest.fixture(autouse=True)
 def bypass_startup_gate():
-    from src.main import app
+    from unittest.mock import patch
 
-    prev = getattr(app.state, "startup_complete", None)
-    app.state.startup_complete = True
-    yield
-    if prev is None:
-        try:
-            del app.state.startup_complete
-        except AttributeError:
-            pass
-    else:
-        app.state.startup_complete = prev
+    async def _passthrough(self, request, call_next):
+        return await call_next(request)
+
+    with patch(
+        "src.middleware.startup_gate.StartupGateMiddleware.dispatch",
+        _passthrough,
+    ):
+        yield
 
 
 @pytest.fixture(autouse=True)

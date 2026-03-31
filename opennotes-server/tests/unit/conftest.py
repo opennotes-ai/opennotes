@@ -35,23 +35,16 @@ def mock_nats_client():
 
 @pytest.fixture(autouse=True)
 def bypass_startup_gate():
-    """Allow unit tests using ASGITransport to bypass StartupGateMiddleware.
+    from unittest.mock import patch
 
-    ASGITransport does not run the app lifespan, so startup_complete is never
-    set. Without this, endpoints return 503 'Server initializing'.
-    """
-    from src.main import app
+    async def _passthrough(self, request, call_next):
+        return await call_next(request)
 
-    prev = getattr(app.state, "startup_complete", None)
-    app.state.startup_complete = True
-    yield
-    if prev is None:
-        try:
-            del app.state.startup_complete
-        except AttributeError:
-            pass
-    else:
-        app.state.startup_complete = prev
+    with patch(
+        "src.middleware.startup_gate.StartupGateMiddleware.dispatch",
+        _passthrough,
+    ):
+        yield
 
 
 @pytest.fixture
