@@ -35,16 +35,22 @@ def mock_nats_client():
 
 @pytest.fixture(autouse=True)
 def bypass_startup_gate():
-    from unittest.mock import patch
+    from contextlib import asynccontextmanager
 
-    async def _passthrough(self, request, call_next):
-        return await call_next(request)
+    from src.main import app
 
-    with patch(
-        "src.middleware.startup_gate.StartupGateMiddleware.dispatch",
-        _passthrough,
-    ):
+    @asynccontextmanager
+    async def _noop_lifespan(app):
+        app.state.startup_complete = True
         yield
+
+    original_router_lifespan = app.router.lifespan_context
+    app.router.lifespan_context = _noop_lifespan
+    app.state.startup_complete = True
+
+    yield
+
+    app.router.lifespan_context = original_router_lifespan
 
 
 @pytest.fixture
