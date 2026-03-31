@@ -1,19 +1,19 @@
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
+from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...models.webhook_config_secure import WebhookConfigSecure
-from ...models.webhook_create_request import WebhookCreateRequest
 from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
+    action_id: UUID,
     *,
-    body: WebhookCreateRequest,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
@@ -21,13 +21,11 @@ def _get_kwargs(
         headers["X-API-Key"] = x_api_key
 
     _kwargs: dict[str, Any] = {
-        "method": "post",
-        "url": "/api/v1/webhooks/register",
+        "method": "get",
+        "url": "/api/v2/moderation-actions/{action_id}".format(
+            action_id=quote(str(action_id), safe=""),
+        ),
     }
-
-    _kwargs["json"] = body.to_dict()
-
-    headers["Content-Type"] = "application/json"
 
     _kwargs["headers"] = headers
     return _kwargs
@@ -35,11 +33,14 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | WebhookConfigSecure | None:
+) -> Any | HTTPValidationError | None:
     if response.status_code == 200:
-        response_200 = WebhookConfigSecure.from_dict(response.json())
-
+        response_200 = response.json()
         return response_200
+
+    if response.status_code == 401:
+        response_401 = cast(Any, None)
+        return response_401
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -54,7 +55,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | WebhookConfigSecure]:
+) -> Response[Any | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,27 +65,29 @@ def _build_response(
 
 
 def sync_detailed(
+    action_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[HTTPValidationError | WebhookConfigSecure]:
-    """Register Webhook
+) -> Response[Any | HTTPValidationError]:
+    """Get Moderation Action Endpoint
+
+     Fetch a single moderation action by UUID.
 
     Args:
+        action_id (UUID):
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | WebhookConfigSecure]
+        Response[Any | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
-        body=body,
+        action_id=action_id,
         x_api_key=x_api_key,
     )
 
@@ -96,54 +99,58 @@ def sync_detailed(
 
 
 def sync(
+    action_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> HTTPValidationError | WebhookConfigSecure | None:
-    """Register Webhook
+) -> Any | HTTPValidationError | None:
+    """Get Moderation Action Endpoint
+
+     Fetch a single moderation action by UUID.
 
     Args:
+        action_id (UUID):
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | WebhookConfigSecure
+        Any | HTTPValidationError
     """
 
     return sync_detailed(
+        action_id=action_id,
         client=client,
-        body=body,
         x_api_key=x_api_key,
     ).parsed
 
 
 async def asyncio_detailed(
+    action_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[HTTPValidationError | WebhookConfigSecure]:
-    """Register Webhook
+) -> Response[Any | HTTPValidationError]:
+    """Get Moderation Action Endpoint
+
+     Fetch a single moderation action by UUID.
 
     Args:
+        action_id (UUID):
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | WebhookConfigSecure]
+        Response[Any | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
-        body=body,
+        action_id=action_id,
         x_api_key=x_api_key,
     )
 
@@ -153,29 +160,31 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    action_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> HTTPValidationError | WebhookConfigSecure | None:
-    """Register Webhook
+) -> Any | HTTPValidationError | None:
+    """Get Moderation Action Endpoint
+
+     Fetch a single moderation action by UUID.
 
     Args:
+        action_id (UUID):
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | WebhookConfigSecure
+        Any | HTTPValidationError
     """
 
     return (
         await asyncio_detailed(
+            action_id=action_id,
             client=client,
-            body=body,
             x_api_key=x_api_key,
         )
     ).parsed

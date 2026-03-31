@@ -92,6 +92,7 @@ from src.middleware.security import SecurityHeadersMiddleware
 from src.middleware.timeout import TimeoutMiddleware
 from src.middleware.user_context import AuthenticatedUserContextMiddleware
 from src.middleware.validation_error_handler import sanitized_validation_exception_handler
+from src.moderation_actions.router import router as moderation_actions_jsonapi_router
 from src.monitoring import (
     DistributedHealthCoordinator,
     HealthChecker,
@@ -129,6 +130,7 @@ from src.users.profile_router import router as profile_auth_router
 from src.users.profiles_jsonapi_router import router as profiles_jsonapi_router
 from src.users.router import router as auth_router
 from src.webhooks.cache import interaction_cache
+from src.webhooks.delivery import OutboundWebhookDeliveryService
 from src.webhooks.discord_client import close_discord_client
 from src.webhooks.rate_limit import rate_limiter
 from src.webhooks.router import router as webhook_router
@@ -267,6 +269,53 @@ async def _register_bulk_scan_handlers(llm_service: LLMService | None = None) ->
         logger.warning(
             "NATS not connected - bulk scan event handlers NOT registered. "
             "Bulk scans will not process message batches."
+        )
+
+
+async def _register_outbound_webhook_handlers() -> None:
+    if not await nats_client.is_connected():
+        logger.warning("NATS not connected - outbound webhook delivery handlers NOT registered.")
+        return
+
+    delivery_service = OutboundWebhookDeliveryService(get_session_maker())
+
+    moderation_action_event_types = [
+        EventType.MODERATION_ACTION_PROPOSED,
+        EventType.MODERATION_ACTION_APPLIED,
+        EventType.MODERATION_ACTION_RETRO_REVIEW_STARTED,
+        EventType.MODERATION_ACTION_CONFIRMED,
+        EventType.MODERATION_ACTION_OVERTURNED,
+        EventType.MODERATION_ACTION_DISMISSED,
+    ]
+
+    for event_type in moderation_action_event_types:
+        captured_type = event_type
+
+        async def _handler(event, _et=captured_type) -> None:
+            community_server_id = getattr(event, "community_server_id", None)
+            if community_server_id is None:
+                logger.warning(
+                    f"Outbound webhook handler: missing community_server_id on event "
+                    f"event_type={_et.value}"
+                )
+                return
+            await delivery_service.deliver_event(
+                _et.value,
+                event.event_id,
+                event.model_dump(mode="json"),
+                community_server_id,
+            )
+
+        event_subscriber.register_handler(event_type, _handler)
+
+    try:
+        for event_type in moderation_action_event_types:
+            await event_subscriber.subscribe(event_type)
+        logger.info("Outbound webhook delivery handlers registered and subscribed")
+    except TimeoutError:
+        logger.warning(
+            "NATS JetStream subscribe timed out - outbound webhook delivery handlers "
+            "NOT subscribed."
         )
 
 
@@ -481,6 +530,7 @@ async def _init_worker_services(
         app.state.taskiq_broker = await _start_taskiq_broker()
         ai_note_writer, vision_service, llm_service = await _init_ai_services()
         await _register_bulk_scan_handlers(llm_service=llm_service)
+        await _register_outbound_webhook_handlers()
     return ai_note_writer, vision_service
 
 
@@ -817,6 +867,11 @@ app.include_router(
     sim_channel_messages_jsonapi_router,
     prefix=settings.API_V2_PREFIX,
     tags=["sim-channel-messages-jsonapi"],
+)
+app.include_router(
+    moderation_actions_jsonapi_router,
+    prefix=settings.API_V2_PREFIX,
+    tags=["moderation-actions-jsonapi"],
 )
 
 # API v1 routes

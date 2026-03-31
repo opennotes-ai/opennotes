@@ -1,19 +1,18 @@
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...models.webhook_config_secure import WebhookConfigSecure
-from ...models.webhook_create_request import WebhookCreateRequest
+from ...models.moderation_action_create import ModerationActionCreate
 from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
     *,
-    body: WebhookCreateRequest,
+    body: ModerationActionCreate,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
@@ -22,7 +21,7 @@ def _get_kwargs(
 
     _kwargs: dict[str, Any] = {
         "method": "post",
-        "url": "/api/v1/webhooks/register",
+        "url": "/api/v2/moderation-actions",
     }
 
     _kwargs["json"] = body.to_dict()
@@ -35,11 +34,14 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | WebhookConfigSecure | None:
-    if response.status_code == 200:
-        response_200 = WebhookConfigSecure.from_dict(response.json())
+) -> Any | HTTPValidationError | None:
+    if response.status_code == 201:
+        response_201 = response.json()
+        return response_201
 
-        return response_200
+    if response.status_code == 401:
+        response_401 = cast(Any, None)
+        return response_401
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -54,7 +56,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | WebhookConfigSecure]:
+) -> Response[Any | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -66,21 +68,25 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
+    body: ModerationActionCreate,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[HTTPValidationError | WebhookConfigSecure]:
-    """Register Webhook
+) -> Response[Any | HTTPValidationError]:
+    """Create Moderation Action Endpoint
+
+     Create a moderation action in PROPOSED state.
+
+    Publishes a moderation_action.proposed NATS event after successful creation.
 
     Args:
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
+        body (ModerationActionCreate):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | WebhookConfigSecure]
+        Response[Any | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -98,21 +104,25 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
+    body: ModerationActionCreate,
     x_api_key: None | str | Unset = UNSET,
-) -> HTTPValidationError | WebhookConfigSecure | None:
-    """Register Webhook
+) -> Any | HTTPValidationError | None:
+    """Create Moderation Action Endpoint
+
+     Create a moderation action in PROPOSED state.
+
+    Publishes a moderation_action.proposed NATS event after successful creation.
 
     Args:
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
+        body (ModerationActionCreate):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | WebhookConfigSecure
+        Any | HTTPValidationError
     """
 
     return sync_detailed(
@@ -125,21 +135,25 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
+    body: ModerationActionCreate,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[HTTPValidationError | WebhookConfigSecure]:
-    """Register Webhook
+) -> Response[Any | HTTPValidationError]:
+    """Create Moderation Action Endpoint
+
+     Create a moderation action in PROPOSED state.
+
+    Publishes a moderation_action.proposed NATS event after successful creation.
 
     Args:
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
+        body (ModerationActionCreate):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | WebhookConfigSecure]
+        Response[Any | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -155,21 +169,25 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
+    body: ModerationActionCreate,
     x_api_key: None | str | Unset = UNSET,
-) -> HTTPValidationError | WebhookConfigSecure | None:
-    """Register Webhook
+) -> Any | HTTPValidationError | None:
+    """Create Moderation Action Endpoint
+
+     Create a moderation action in PROPOSED state.
+
+    Publishes a moderation_action.proposed NATS event after successful creation.
 
     Args:
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
+        body (ModerationActionCreate):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | WebhookConfigSecure
+        Any | HTTPValidationError
     """
 
     return (
