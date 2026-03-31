@@ -17,7 +17,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
@@ -58,11 +58,15 @@ class ModerationActionResource(BaseModel):
 
 
 class ModerationActionSingleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     data: ModerationActionResource
     jsonapi: dict[str, str] = {"version": "1.1"}
 
 
 class ModerationActionListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     data: list[ModerationActionResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
     meta: dict[str, Any] = {}
