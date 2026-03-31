@@ -27,6 +27,12 @@ from src.events.nats_client import nats_client
 from src.events.schemas import (
     BaseEvent,
     EventType,
+    ModerationActionAppliedEvent,
+    ModerationActionConfirmedEvent,
+    ModerationActionDismissedEvent,
+    ModerationActionOverturnedEvent,
+    ModerationActionProposedEvent,
+    ModerationActionRetroReviewStartedEvent,
     NoteCreatedEvent,
     NoteRatedEvent,
     NoteRequestCreatedEvent,
@@ -327,6 +333,112 @@ class EventPublisher:
             dataset_name=dataset_name,
             dataset_item_id=dataset_item_id,
             metadata=metadata or {},
+        )
+        return await self.publish_event(event)
+
+    async def publish_moderation_action_proposed(
+        self,
+        action_id: UUID,
+        request_id: UUID,
+        action_type: str,
+        action_tier: str,
+        classifier_evidence: dict[str, Any],
+        review_group: str,
+        community_server_id: UUID,
+    ) -> str:
+        event = ModerationActionProposedEvent(
+            event_id=secrets.token_urlsafe(16),
+            action_id=action_id,
+            request_id=request_id,
+            action_type=action_type,
+            action_tier=action_tier,
+            classifier_evidence=classifier_evidence,
+            review_group=review_group,
+            community_server_id=community_server_id,
+        )
+        return await self.publish_event(event)
+
+    async def publish_moderation_action_applied(
+        self,
+        action_id: UUID,
+        request_id: UUID,
+        action_type: str,
+        community_server_id: UUID,
+        platform_action_id: str | None = None,
+    ) -> str:
+        event = ModerationActionAppliedEvent(
+            event_id=secrets.token_urlsafe(16),
+            action_id=action_id,
+            request_id=request_id,
+            action_type=action_type,
+            platform_action_id=platform_action_id,
+            community_server_id=community_server_id,
+        )
+        return await self.publish_event(event)
+
+    async def publish_moderation_action_retro_review_started(
+        self,
+        action_id: UUID,
+        request_id: UUID,
+        action_type: str,
+        community_server_id: UUID,
+    ) -> str:
+        event = ModerationActionRetroReviewStartedEvent(
+            event_id=secrets.token_urlsafe(16),
+            action_id=action_id,
+            request_id=request_id,
+            action_type=action_type,
+            community_server_id=community_server_id,
+        )
+        return await self.publish_event(event)
+
+    async def publish_moderation_action_confirmed(
+        self,
+        action_id: UUID,
+        request_id: UUID,
+        action_type: str,
+        community_server_id: UUID,
+    ) -> str:
+        event = ModerationActionConfirmedEvent(
+            event_id=secrets.token_urlsafe(16),
+            action_id=action_id,
+            request_id=request_id,
+            action_type=action_type,
+            community_server_id=community_server_id,
+        )
+        return await self.publish_event(event)
+
+    async def publish_moderation_action_overturned(
+        self,
+        action_id: UUID,
+        request_id: UUID,
+        action_type: str,
+        community_server_id: UUID,
+        overturned_reason: str | None = None,
+    ) -> str:
+        event = ModerationActionOverturnedEvent(
+            event_id=secrets.token_urlsafe(16),
+            action_id=action_id,
+            request_id=request_id,
+            action_type=action_type,
+            overturned_reason=overturned_reason,
+            community_server_id=community_server_id,
+        )
+        return await self.publish_event(event)
+
+    async def publish_moderation_action_dismissed(
+        self,
+        action_id: UUID,
+        request_id: UUID,
+        action_type: str,
+        community_server_id: UUID,
+    ) -> str:
+        event = ModerationActionDismissedEvent(
+            event_id=secrets.token_urlsafe(16),
+            action_id=action_id,
+            request_id=request_id,
+            action_type=action_type,
+            community_server_id=community_server_id,
         )
         return await self.publish_event(event)
 
