@@ -26244,6 +26244,20 @@
           "active": {
             "type": "boolean",
             "title": "Active"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
           }
         },
         "type": "object",
@@ -26285,6 +26299,20 @@
           "active": {
             "type": "boolean",
             "title": "Active"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
           },
           "secret": {
             "type": "string",
@@ -26329,6 +26357,21 @@
             ],
             "title": "Channel Id",
             "description": "Channel ID (Discord channel ID, etc.)"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events",
+            "description": "Event types this webhook subscribes to. Null means all events."
           }
         },
         "additionalProperties": false,

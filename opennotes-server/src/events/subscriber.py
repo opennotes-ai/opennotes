@@ -22,6 +22,12 @@ from src.events.schemas import (
     BulkScanProgressEvent,
     BulkScanResultsEvent,
     EventType,
+    ModerationActionAppliedEvent,
+    ModerationActionConfirmedEvent,
+    ModerationActionDismissedEvent,
+    ModerationActionOverturnedEvent,
+    ModerationActionProposedEvent,
+    ModerationActionRetroReviewStartedEvent,
     NoteCreatedEvent,
     NoteRatedEvent,
     NoteRequestCreatedEvent,
@@ -116,6 +122,12 @@ class EventSubscriber:
             EventType.WEBHOOK_RECEIVED: [],
             EventType.BULK_SCAN_MESSAGE_BATCH: [],
             EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED: [],
+            EventType.MODERATION_ACTION_PROPOSED: [],
+            EventType.MODERATION_ACTION_APPLIED: [],
+            EventType.MODERATION_ACTION_RETRO_REVIEW_STARTED: [],
+            EventType.MODERATION_ACTION_CONFIRMED: [],
+            EventType.MODERATION_ACTION_OVERTURNED: [],
+            EventType.MODERATION_ACTION_DISMISSED: [],
         }
         self.subscriptions: list[Subscription] = []
 
@@ -149,6 +161,12 @@ class EventSubscriber:
             EventType.BULK_SCAN_RESULTS: BulkScanResultsEvent,
             EventType.BULK_SCAN_PROGRESS: BulkScanProgressEvent,
             EventType.BULK_SCAN_FAILED: BulkScanFailedEvent,
+            EventType.MODERATION_ACTION_PROPOSED: ModerationActionProposedEvent,
+            EventType.MODERATION_ACTION_APPLIED: ModerationActionAppliedEvent,
+            EventType.MODERATION_ACTION_RETRO_REVIEW_STARTED: ModerationActionRetroReviewStartedEvent,
+            EventType.MODERATION_ACTION_CONFIRMED: ModerationActionConfirmedEvent,
+            EventType.MODERATION_ACTION_OVERTURNED: ModerationActionOverturnedEvent,
+            EventType.MODERATION_ACTION_DISMISSED: ModerationActionDismissedEvent,
         }
         event_class = mapping.get(event_type)
         if event_class is None:

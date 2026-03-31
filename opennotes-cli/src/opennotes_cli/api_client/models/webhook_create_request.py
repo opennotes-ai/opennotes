@@ -19,12 +19,14 @@ class WebhookCreateRequest:
         platform_community_server_id (str): Platform-specific community server ID (Discord guild ID, subreddit name,
             etc.)
         channel_id (None | str | Unset): Channel ID (Discord channel ID, etc.)
+        events (list[str] | None | Unset): Event types this webhook subscribes to. Null means all events.
     """
 
     url: str
     secret: str
     platform_community_server_id: str
     channel_id: None | str | Unset = UNSET
+    events: list[str] | None | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         url = self.url
@@ -39,6 +41,15 @@ class WebhookCreateRequest:
         else:
             channel_id = self.channel_id
 
+        events: list[str] | None | Unset
+        if isinstance(self.events, Unset):
+            events = UNSET
+        elif isinstance(self.events, list):
+            events = self.events
+
+        else:
+            events = self.events
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -50,6 +61,8 @@ class WebhookCreateRequest:
         )
         if channel_id is not UNSET:
             field_dict["channel_id"] = channel_id
+        if events is not UNSET:
+            field_dict["events"] = events
 
         return field_dict
 
@@ -71,11 +84,29 @@ class WebhookCreateRequest:
 
         channel_id = _parse_channel_id(d.pop("channel_id", UNSET))
 
+        def _parse_events(data: object) -> list[str] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                events_type_0 = cast(list[str], data)
+
+                return events_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[str] | None | Unset, data)
+
+        events = _parse_events(d.pop("events", UNSET))
+
         webhook_create_request = cls(
             url=url,
             secret=secret,
             platform_community_server_id=platform_community_server_id,
             channel_id=channel_id,
+            events=events,
         )
 
         return webhook_create_request

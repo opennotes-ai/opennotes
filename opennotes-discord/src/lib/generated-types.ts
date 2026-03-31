@@ -10481,6 +10481,8 @@ export interface components {
             channel_id?: string | null;
             /** Active */
             active: boolean;
+            /** Events */
+            events?: string[] | null;
         };
         /** WebhookConfigSecure */
         WebhookConfigSecure: {
@@ -10500,6 +10502,8 @@ export interface components {
             channel_id?: string | null;
             /** Active */
             active: boolean;
+            /** Events */
+            events?: string[] | null;
             /** Secret */
             secret: string;
         };
@@ -10525,6 +10529,11 @@ export interface components {
              * @description Channel ID (Discord channel ID, etc.)
              */
             channel_id?: string | null;
+            /**
+             * Events
+             * @description Event types this webhook subscribes to. Null means all events.
+             */
+            events?: string[] | null;
         };
         /** WebhookUpdateRequest */
         WebhookUpdateRequest: {

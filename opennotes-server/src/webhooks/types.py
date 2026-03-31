@@ -97,6 +97,7 @@ class WebhookConfig(StrictSQLAlchemySchema):
     community_server_id: UUID
     channel_id: str | None = None
     active: bool = True
+    events: list[str] | None = None
 
 
 class WebhookConfigResponse(SQLAlchemySchema):
@@ -105,6 +106,7 @@ class WebhookConfigResponse(SQLAlchemySchema):
     community_server_id: UUID
     channel_id: str | None = None
     active: bool
+    events: list[str] | None = None
 
 
 class WebhookConfigSecure(WebhookConfigResponse):
@@ -119,6 +121,9 @@ class WebhookCreateRequest(StrictInputSchema):
         description="Platform-specific community server ID (Discord guild ID, subreddit name, etc.)",
     )
     channel_id: str | None = Field(None, description="Channel ID (Discord channel ID, etc.)")
+    events: list[str] | None = Field(
+        None, description="Event types this webhook subscribes to. Null means all events."
+    )
 
 
 class WebhookUpdateRequest(StrictInputSchema):

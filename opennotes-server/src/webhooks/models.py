@@ -4,6 +4,7 @@ from uuid import UUID
 
 import pendulum
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,6 +29,7 @@ class Webhook(Base):
     )
     channel_id: Mapped[str] = mapped_column(String(50), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    events: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: pendulum.now("UTC"),
