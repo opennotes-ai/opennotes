@@ -7122,15 +7122,38 @@
         ],
         "summary": "Register Webhook",
         "operationId": "register_webhook_api_v1_webhooks_register_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/WebhookCreateRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {

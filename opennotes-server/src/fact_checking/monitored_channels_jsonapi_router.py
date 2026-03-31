@@ -320,10 +320,11 @@ async def list_monitored_channels_jsonapi(
 
         await verify_community_admin(filter_community_server_id, current_user, db, request)
 
-        # Look up community server UUID from platform ID
+        platform = request.headers.get("x-platform-type", "discord")
         cs_result = await db.execute(
             select(CommunityServer.id).where(
-                CommunityServer.platform_community_server_id == filter_community_server_id
+                CommunityServer.platform_community_server_id == filter_community_server_id,
+                CommunityServer.platform == platform,
             )
         )
         community_server_uuid = cs_result.scalar_one_or_none()
@@ -457,10 +458,11 @@ async def create_monitored_channel_jsonapi(
 
         await verify_community_admin(attrs.community_server_id, current_user, db, request)
 
-        # Look up community server UUID from platform ID
+        platform = request.headers.get("x-platform-type", "discord")
         cs_result = await db.execute(
             select(CommunityServer.id).where(
-                CommunityServer.platform_community_server_id == attrs.community_server_id
+                CommunityServer.platform_community_server_id == attrs.community_server_id,
+                CommunityServer.platform == platform,
             )
         )
         community_server_uuid = cs_result.scalar_one_or_none()

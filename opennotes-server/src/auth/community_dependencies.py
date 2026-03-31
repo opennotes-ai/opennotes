@@ -182,7 +182,7 @@ async def _check_circular_reference(db: AsyncSession, community_server_id: str) 
 async def get_community_server_by_platform_id(
     db: AsyncSession,
     community_server_id: str,
-    platform: str | None = "discord",
+    platform: str = "discord",
     auto_create: bool = True,
 ) -> CommunityServer | None:
     """
@@ -191,9 +191,9 @@ async def get_community_server_by_platform_id(
     Args:
         db: Database session
         community_server_id: Platform-specific community ID (must be platform-native format)
-        platform: Platform type (default: "discord"). Pass None to search across all platforms.
+        platform: Platform type (default: "discord"). Discourse communities never auto-create.
         auto_create: If True, automatically create the community server if it doesn't exist.
-            Requires platform to be set (non-None) for auto-creation.
+            Discourse communities always have auto_create forced to False regardless of this arg.
 
     Returns:
         CommunityServer instance, or None if not found and auto_create=False
@@ -203,14 +203,16 @@ async def get_community_server_by_platform_id(
     """
     await _check_circular_reference(db, community_server_id)
 
+    if platform == "discourse":
+        auto_create = False
+
     filters = [CommunityServer.platform_community_server_id == community_server_id]
-    if platform is not None:
-        filters.append(CommunityServer.platform == platform)
+    filters.append(CommunityServer.platform == platform)
 
     result = await db.execute(select(CommunityServer).where(*filters))
     server = result.scalar_one_or_none()
 
-    if not server and auto_create and platform is not None:
+    if not server and auto_create:
         server = CommunityServer(
             platform=platform,
             platform_community_server_id=community_server_id,
@@ -351,13 +353,14 @@ async def verify_community_membership(
     Raises:
         HTTPException: 403 if user is not a member or is banned
     """
-    # Auto-create community server if it doesn't exist
-    community = await get_community_server_by_platform_id(db, community_server_id, auto_create=True)
+    platform = request.headers.get("x-platform-type", "discord")
+    community = await get_community_server_by_platform_id(
+        db, community_server_id, platform=platform, auto_create=True
+    )
     if not community:
-        # This should never happen with auto_create=True, but handle it safely
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create or retrieve community server {community_server_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Community server not found: {community_server_id}",
         )
 
     profile_id = await get_profile_id_from_user(db, current_user)
