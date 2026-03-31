@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module OpenNotes
+module Opennotes
   class AdminController < ::Admin::AdminController
     requires_plugin "discourse-opennotes"
 
@@ -10,6 +10,8 @@ module OpenNotes
       render json: data
     rescue OpenNotes::ApiError => e
       render json: { error: e.message }, status: e.status
+    rescue Faraday::Error
+      render json: { error: I18n.t("opennotes.errors.server_unavailable") }, status: :service_unavailable
     end
 
     def category_settings
