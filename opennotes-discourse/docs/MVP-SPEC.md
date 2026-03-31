@@ -318,7 +318,7 @@ Review groups control **who can review** each type of flagged content. They are 
 
 - `/community-reviews` page showing posts under review (fetched from server)
 - Each item shows: post content, context, category, reason flagged
-- **Vote widget:** maps to OpenNotes ratings -- "Helpful" / "Somewhat Helpful" / "Not Helpful" on existing notes, or ability to write a new note providing context
+- **Vote widget:** maps to OpenNotes ratings -- "Helpful" / "Somewhat Helpful" / "Not Helpful" on existing notes (community-authored notes deferred to v2)
 - Users don't see scores until consensus is reached
 - After resolution: "Community Reviewed" badge on posts
 
