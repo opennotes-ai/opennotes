@@ -2004,6 +2004,74 @@
         }
       }
     },
+    "/api/v2/notes/{note_id}/dismiss": {
+      "post": {
+        "tags": [
+          "notes-jsonapi"
+        ],
+        "summary": "Dismiss Note Jsonapi",
+        "description": "Dismiss a note with JSON:API format (admin only).\n\nThis endpoint allows administrators to manually dismiss notes by setting their\nstatus to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:\nthe note is marked with force_published flags for transparency, and any associated\nrequest is set to COMPLETED.\n\nRequires admin authentication (service accounts, Open Notes admins, or community admins).\n\nReturns JSON:API formatted response with updated note resource.",
+        "operationId": "dismiss_note_jsonapi_api_v2_notes__note_id__dismiss_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/ratings": {
       "post": {
         "tags": [

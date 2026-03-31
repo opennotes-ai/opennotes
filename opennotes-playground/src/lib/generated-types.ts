@@ -747,6 +747,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/notes/{note_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Note Jsonapi
+         * @description Dismiss a note with JSON:API format (admin only).
+         *
+         *     This endpoint allows administrators to manually dismiss notes by setting their
+         *     status to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:
+         *     the note is marked with force_published flags for transparency, and any associated
+         *     request is set to COMPLETED.
+         *
+         *     Requires admin authentication (service accounts, Open Notes admins, or community admins).
+         *
+         *     Returns JSON:API formatted response with updated note resource.
+         */
+        post: operations["dismiss_note_jsonapi_api_v2_notes__note_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/ratings": {
         parameters: {
             query?: never;
@@ -11805,6 +11834,46 @@ export interface operations {
         };
     };
     force_publish_note_jsonapi_api_v2_notes__note_id__force_publish_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_note_jsonapi_api_v2_notes__note_id__dismiss_post: {
         parameters: {
             query?: never;
             header?: {
