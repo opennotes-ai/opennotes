@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+
+for script in /etc/runit/1.d/*; do
+  [ -x "$script" ] && "$script"
+done
+
+exec /usr/bin/runsvdir -P /etc/service

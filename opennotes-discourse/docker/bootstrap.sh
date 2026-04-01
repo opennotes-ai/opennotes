@@ -36,7 +36,19 @@ else
   ln -sfn "$EXPECTED_SYMLINK_TARGET" "$SYMLINK_TARGET"
 fi
 
-# Step 3: Boot container
+# Step 3: Build native ARM64 image if on Apple Silicon
+ARCH=$(uname -m)
+if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
+  if ! docker image inspect discourse/discourse_dev:release > /dev/null 2>&1; then
+    echo "==> Apple Silicon detected. Building native ARM64 Discourse dev image..."
+    echo "    (This takes ~5 minutes the first time, cached after)"
+    docker build -t discourse/discourse_dev:release "$SCRIPT_DIR/arm64"
+  else
+    echo "==> Native ARM64 Discourse dev image already built"
+  fi
+fi
+
+# Step 4: Boot container
 if docker ps -q -f name=discourse_dev | grep -q .; then
   echo "==> discourse_dev container already running"
 else
