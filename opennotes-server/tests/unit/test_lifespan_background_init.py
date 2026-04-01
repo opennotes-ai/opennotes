@@ -5,6 +5,8 @@ import pytest
 
 from src.main import _startup_background, lifespan
 
+pytestmark = pytest.mark.serial
+
 
 def _build_mock_app():
     app = MagicMock()

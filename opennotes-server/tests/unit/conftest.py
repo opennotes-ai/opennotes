@@ -4,6 +4,25 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def bypass_startup_gate():
+    """Bypass StartupGateMiddleware for all unit tests.
+
+    Unit tests don't run the full lifespan, so startup_complete is never set.
+    Without this, any test that makes requests against the real app gets 503.
+
+    Also resets startup_failed to prevent pollution from tests that trigger
+    failed startup paths.
+    """
+    from src.main import app
+
+    app.state.startup_complete = True
+    app.state.startup_failed = False
+    yield
+    app.state.startup_complete = True
+    app.state.startup_failed = False
+
+
+@pytest.fixture(autouse=True)
 def clear_settings_singleton():
     """Clear Settings singleton before each unit test to avoid state leakage."""
     from src.config import get_settings

@@ -6,6 +6,8 @@ single-note scoring operations. Since MFCoreScorer operates in batch mode,
 this adapter caches batch results and serves individual note scores from cache.
 """
 
+from __future__ import annotations
+
 import logging
 import math
 import sys
@@ -23,6 +25,8 @@ from src.notes.scoring.scorer_protocol import ScoringResult
 from src.notes.scoring.snapshot_persistence import _sanitize_float
 
 if TYPE_CHECKING:
+    from scoring.constants import ModelResult  # pyright: ignore[reportMissingImports]
+
     from src.notes.scoring.data_provider import CommunityDataProvider
 
 scoring_path = (
@@ -30,20 +34,6 @@ scoring_path = (
 )
 if str(scoring_path) not in sys.path:
     sys.path.insert(0, str(scoring_path))
-
-from scoring.constants import (  # pyright: ignore[reportMissingImports]  # noqa: E402
-    FinalScoringArgs,
-    ModelResult,
-    PrescoringArgs,
-    PrescoringMetaOutput,
-    scorerNameKey,
-)
-from scoring.mf_core_scorer import (  # pyright: ignore[reportMissingImports]  # noqa: E402
-    MFCoreScorer,
-)
-from scoring.pandas_utils import (  # pyright: ignore[reportMissingImports]  # noqa: E402
-    PandasPatcher,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +58,10 @@ class _PandasPatchState:
         """
         if cls.patched:
             return
+
+        from scoring.pandas_utils import (  # noqa: PLC0415
+            PandasPatcher,  # pyright: ignore[reportMissingImports]
+        )
 
         patcher = PandasPatcher(fail=False, silent=True)
         pd.DataFrame.merge = patcher.safe_merge()
@@ -133,7 +127,7 @@ class MFCoreScorerAdapter:
 
     def __init__(
         self,
-        data_provider: "CommunityDataProvider | None" = None,
+        data_provider: CommunityDataProvider | None = None,
         community_id: str | None = None,
     ) -> None:
         """
@@ -157,6 +151,10 @@ class MFCoreScorerAdapter:
         self._last_int_to_uuid: dict[int, str] | None = None
 
         if data_provider is not None:
+            from scoring.mf_core_scorer import (  # noqa: PLC0415
+                MFCoreScorer,  # pyright: ignore[reportMissingImports]
+            )
+
             _PandasPatchState.ensure_patched()
             self._scorer = MFCoreScorer(
                 seed=None,
@@ -512,6 +510,13 @@ class MFCoreScorerAdapter:
         if self._data_provider is None:
             msg = "Cannot execute batch scoring: data_provider is not configured"
             raise RuntimeError(msg)
+
+        from scoring.constants import (  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+            FinalScoringArgs,
+            PrescoringArgs,
+            PrescoringMetaOutput,
+            scorerNameKey,
+        )
 
         ratings_df, note_status_df, user_enrollment_df, note_topics_df, int_to_uuid = (
             self._build_scoring_inputs()

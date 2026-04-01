@@ -5,6 +5,8 @@ import pytest
 from src.main import _shutdown_services
 from src.utils.async_compat import reset as reset_bg_loop
 
+pytestmark = pytest.mark.serial
+
 
 def _build_mock_app():
     app = MagicMock()
