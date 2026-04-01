@@ -1,6 +1,7 @@
 export class OpenNotesAPI {
   private baseUrl: string;
   private apiKey: string;
+  private internalIdCache: Map<string, string> = new Map();
 
   constructor(
     baseUrl: string = process.env.OPENNOTES_SERVER_URL ?? "http://127.0.0.1:8000",
@@ -82,34 +83,62 @@ export class OpenNotesAPI {
     return result.data ?? [];
   }
 
-  async getCommunityServer(communityServerId: string): Promise<any> {
+  async lookupCommunityServer(platformId: string): Promise<any> {
     return this.request<any>(
       "GET",
-      `/api/v1/community-servers/lookup?platform=discourse&platform_community_server_id=${encodeURIComponent(communityServerId)}`
+      `/api/v2/community-servers/lookup?platform=discourse&platform_community_server_id=${encodeURIComponent(platformId)}`
     );
   }
 
-  async getCommunityServers(): Promise<any[]> {
-    const result = await this.request<any>("GET", `/api/v1/community-servers/lookup`);
-    return Array.isArray(result) ? result : [result];
+  async getCommunityServer(communityServerId: string): Promise<any> {
+    return this.lookupCommunityServer(communityServerId);
   }
 
-  async getMonitoredChannels(communityServerId: string): Promise<any[]> {
+  async getCommunityServers(platformId: string = "discourse-dev-1"): Promise<any[]> {
+    try {
+      const result = await this.lookupCommunityServer(platformId);
+      return result ? [result] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async resolveInternalId(platformId: string): Promise<string> {
+    const cached = this.internalIdCache.get(platformId);
+    if (cached) return cached;
+
+    const result = await this.lookupCommunityServer(platformId);
+    const internalId: string =
+      result?.data?.id ??
+      result?.id;
+    if (!internalId) {
+      throw new Error(`Could not resolve internal UUID for platform ID: ${platformId}`);
+    }
+    this.internalIdCache.set(platformId, internalId);
+    return internalId;
+  }
+
+  async getMonitoredChannels(platformCommunityServerId: string): Promise<any[]> {
     const result = await this.request<{ data: any[] }>(
       "GET",
-      `/api/v2/monitored-channels?filter[community_server_id]=${encodeURIComponent(communityServerId)}`
+      `/api/v2/monitored-channels?filter[community_server_id]=${encodeURIComponent(platformCommunityServerId)}`
     );
     return result.data ?? [];
   }
 
-  async triggerScoring(communityServerId: string): Promise<void> {
-    await this.request("POST", `/api/v2/community-servers/${communityServerId}/score`);
+  async triggerScoring(communityServerIdOrPlatformId: string): Promise<void> {
+    let internalId = communityServerIdOrPlatformId;
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidPattern.test(communityServerIdOrPlatformId)) {
+      internalId = await this.resolveInternalId(communityServerIdOrPlatformId);
+    }
+    await this.request("POST", `/api/v2/community-servers/${internalId}/score`);
   }
 
-  async getUserProfile(platform: string, userId: string, scope: string): Promise<any> {
+  async getUserProfile(platform: string, userId: string, providerScope: string): Promise<any> {
     return this.request<any>(
       "GET",
-      `/api/v2/profiles?filter[platform]=${encodeURIComponent(platform)}&filter[platform_user_id]=${encodeURIComponent(userId)}&scope=${encodeURIComponent(scope)}`
+      `/api/v2/user-profiles/lookup?platform=${encodeURIComponent(platform)}&platform_user_id=${encodeURIComponent(userId)}&provider_scope=${encodeURIComponent(providerScope)}`
     );
   }
 

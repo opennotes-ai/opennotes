@@ -65,10 +65,9 @@ test.describe.serial("Bootstrap tests", () => {
   test("B3: monitored categories are synced as channels on server", async () => {
     test.setTimeout(30000);
     const server = await openNotesApi.getCommunityServer(COMMUNITY_SERVER_ID);
-    const serverId = server?.data?.id ?? server?.id;
-    expect(serverId).toBeTruthy();
+    expect(server).toBeTruthy();
 
-    const channels = await openNotesApi.getMonitoredChannels(serverId as string);
+    const channels = await openNotesApi.getMonitoredChannels(COMMUNITY_SERVER_ID);
     expect(Array.isArray(channels)).toBe(true);
     expect(channels.length).toBeGreaterThan(0);
 
@@ -108,10 +107,9 @@ test.describe.serial("Bootstrap tests", () => {
       await new Promise((r) => setTimeout(r, 8000));
 
       const server = await openNotesApi.getCommunityServer(COMMUNITY_SERVER_ID);
-      const serverId = server?.data?.id ?? server?.id;
-      expect(serverId).toBeTruthy();
+      expect(server).toBeTruthy();
 
-      const channels = await openNotesApi.getMonitoredChannels(serverId as string);
+      const channels = await openNotesApi.getMonitoredChannels(COMMUNITY_SERVER_ID);
       expect(Array.isArray(channels)).toBe(true);
 
       const newChannel = channels.find((ch: any) => {

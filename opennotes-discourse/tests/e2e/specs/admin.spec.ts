@@ -104,9 +104,12 @@ test.describe("Admin settings and dashboard", () => {
 
     if (communityServers.length > 0) {
       const server = communityServers[0];
-      const serverId: string = server?.data?.id ?? server?.id ?? "";
-      if (serverId) {
-        const channels = await opennotesApi.getMonitoredChannels(serverId).catch(() => []);
+      const platformServerId: string =
+        server?.data?.attributes?.platform_community_server_id ??
+        server?.platform_community_server_id ??
+        "";
+      if (platformServerId) {
+        const channels = await opennotesApi.getMonitoredChannels(platformServerId).catch(() => []);
         expect(Array.isArray(channels)).toBe(true);
       }
     }
