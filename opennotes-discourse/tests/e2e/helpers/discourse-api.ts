@@ -66,8 +66,8 @@ export class DiscourseAPI {
 
   async getUserIdByUsername(username: string): Promise<number | undefined> {
     try {
-      const user = await this.request<{ id: number }>("GET", `/users/${username}.json`);
-      return user?.id;
+      const resp = await this.request<{ user: { id: number } }>("GET", `/users/${username}.json`);
+      return resp?.user?.id;
     } catch {
       return undefined;
     }

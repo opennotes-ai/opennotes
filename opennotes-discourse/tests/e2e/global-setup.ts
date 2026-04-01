@@ -1,7 +1,7 @@
 import http from "node:http";
 import { DiscourseAPI } from "./helpers/discourse-api";
 import { TestSetup } from "./helpers/test-setup";
-import { REVIEWER1, REVIEWER2, NEWUSER } from "./fixtures/users";
+import { REVIEWER1, REVIEWER2, NEWUSER, TL1_USER, TL3_USER } from "./fixtures/users";
 
 const DISCOURSE_URL = process.env.DISCOURSE_URL || "http://localhost:4200";
 // Use Rails directly for admin API calls — Ember CLI proxy at 4200 sends non-compliant headers
@@ -79,7 +79,7 @@ async function globalSetup() {
   await setup.updateSetting("max_logins_per_ip_per_hour", "1000");
 
   console.log("Ensuring test users exist...");
-  await setup.ensureUsersExist([REVIEWER1, REVIEWER2, NEWUSER]);
+  await setup.ensureUsersExist([REVIEWER1, REVIEWER2, NEWUSER, TL1_USER, TL3_USER]);
 
   // 3. Clean up leftover test topics from previous runs
   console.log("Cleaning up old test topics...");
