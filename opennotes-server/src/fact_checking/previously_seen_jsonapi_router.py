@@ -67,7 +67,7 @@ HOT_PATH_ENDPOINT_TIMEOUT_SECONDS = 10
 HOT_PATH_DB_STATEMENT_TIMEOUT_MS = 10_000
 
 
-def _is_openai_quota_error(exc: Exception) -> bool:
+def _is_openai_transient_error(exc: Exception) -> bool:
     if isinstance(exc, ModelHTTPError):
         return exc.status_code >= 429
     return isinstance(exc, ModelAPIError)
@@ -75,7 +75,7 @@ def _is_openai_quota_error(exc: Exception) -> bool:
 
 openai_embedding_breaker = circuit_breaker_registry.get_breaker(
     name="openai_embeddings",
-    failure_predicate=_is_openai_quota_error,
+    failure_predicate=_is_openai_transient_error,
     failure_threshold=3,
     timeout=30,
     backoff_rate=2.0,

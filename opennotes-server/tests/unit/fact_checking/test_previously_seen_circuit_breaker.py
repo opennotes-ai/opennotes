@@ -6,51 +6,51 @@ from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from src.circuit_breaker_core import CircuitOpenError, CircuitState
 from src.fact_checking.previously_seen_jsonapi_router import (
     _build_check_response,
-    _is_openai_quota_error,
+    _is_openai_transient_error,
     openai_embedding_breaker,
 )
 
 
-class TestIsOpenAIQuotaError:
+class TestIsOpenAITransientError:
     def test_model_http_error_429_matches(self):
         exc = ModelHTTPError(status_code=429, model_name="openai:text-embedding-3-small")
-        assert _is_openai_quota_error(exc) is True
+        assert _is_openai_transient_error(exc) is True
 
     def test_model_http_error_500_matches(self):
         exc = ModelHTTPError(status_code=500, model_name="openai:text-embedding-3-small")
-        assert _is_openai_quota_error(exc) is True
+        assert _is_openai_transient_error(exc) is True
 
     def test_model_http_error_503_matches(self):
         exc = ModelHTTPError(status_code=503, model_name="openai:text-embedding-3-small")
-        assert _is_openai_quota_error(exc) is True
+        assert _is_openai_transient_error(exc) is True
 
     def test_model_http_error_400_does_not_match(self):
         exc = ModelHTTPError(status_code=400, model_name="openai:text-embedding-3-small")
-        assert _is_openai_quota_error(exc) is False
+        assert _is_openai_transient_error(exc) is False
 
     def test_model_http_error_401_does_not_match(self):
         exc = ModelHTTPError(status_code=401, model_name="openai:text-embedding-3-small")
-        assert _is_openai_quota_error(exc) is False
+        assert _is_openai_transient_error(exc) is False
 
     def test_model_http_error_404_does_not_match(self):
         exc = ModelHTTPError(status_code=404, model_name="openai:text-embedding-3-small")
-        assert _is_openai_quota_error(exc) is False
+        assert _is_openai_transient_error(exc) is False
 
     def test_model_api_error_matches(self):
         exc = ModelAPIError(model_name="openai:text-embedding-3-small", message="quota exceeded")
-        assert _is_openai_quota_error(exc) is True
+        assert _is_openai_transient_error(exc) is True
 
     def test_value_error_does_not_match(self):
         exc = ValueError("some error")
-        assert _is_openai_quota_error(exc) is False
+        assert _is_openai_transient_error(exc) is False
 
     def test_timeout_error_does_not_match(self):
         exc = TimeoutError("timed out")
-        assert _is_openai_quota_error(exc) is False
+        assert _is_openai_transient_error(exc) is False
 
     def test_connection_error_does_not_match(self):
         exc = ConnectionError("connection refused")
-        assert _is_openai_quota_error(exc) is False
+        assert _is_openai_transient_error(exc) is False
 
 
 class TestOpenAIEmbeddingBreakerRegistration:
