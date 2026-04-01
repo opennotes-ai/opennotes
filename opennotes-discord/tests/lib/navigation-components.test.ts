@@ -125,6 +125,19 @@ describe('navigation-components', () => {
       }
     });
 
+    it('should use descriptive labels instead of short labels', () => {
+      const allLabels = Object.values(NAV_GRAPH).flat().map(a => a.label);
+      expect(allLabels).not.toContain('List Notes');
+      expect(allLabels).not.toContain('List Requests');
+    });
+
+    it('should not contain Write Note in any context', () => {
+      for (const [_context, actions] of Object.entries(NAV_GRAPH)) {
+        const labels = actions.map(a => a.label);
+        expect(labels).not.toContain('Write Note');
+      }
+    });
+
     it('should not have duplicate custom IDs within a single context', () => {
       for (const [_context, actions] of Object.entries(NAV_GRAPH)) {
         const ids = actions.map(a => a.customId);
@@ -177,8 +190,8 @@ describe('navigation-components', () => {
   });
 
   describe('HUB_ACTIONS', () => {
-    it('should contain 6 hub actions', () => {
-      expect(HUB_ACTIONS).toHaveLength(6);
+    it('should contain 5 hub actions', () => {
+      expect(HUB_ACTIONS).toHaveLength(5);
     });
 
     it('should have valid NavAction shape for all entries', () => {
@@ -191,9 +204,9 @@ describe('navigation-components', () => {
 
     it('should include core navigation destinations', () => {
       const labels = HUB_ACTIONS.map(a => a.label);
-      expect(labels).toContain('List Notes');
-      expect(labels).toContain('List Requests');
-      expect(labels).toContain('Write Note');
+      expect(labels).toContain('Read notes others have written and rate them');
+      expect(labels).toContain('See note requests and write a note');
+      expect(labels).not.toContain('Write Note');
       expect(labels).toContain('Status');
       expect(labels).toContain('About');
     });
@@ -238,12 +251,11 @@ describe('navigation-components', () => {
       }
     });
 
-    it('should split into multiple rows when exceeding 5 buttons per row', () => {
+    it('should fit all hub actions in a single row', () => {
       const rows = buildNavHub();
 
-      expect(rows.length).toBe(2);
+      expect(rows.length).toBe(1);
       expect(rowButtons(rows[0])).toHaveLength(5);
-      expect(rowButtons(rows[1])).toHaveLength(1);
     });
 
     it('should set emoji on hub buttons', () => {

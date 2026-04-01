@@ -353,7 +353,7 @@ describe('clear command', () => {
         );
       });
 
-      it('should include nav row with Menu, List Notes, and List Requests buttons for requests subcommand', async () => {
+      it('should include nav row with Menu, Read notes, and See requests buttons for requests subcommand', async () => {
         mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
           data: { id: 'community-uuid' },
         });

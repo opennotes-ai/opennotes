@@ -211,7 +211,7 @@ describe('status-bot command', () => {
       );
     });
 
-    it('should include contextual nav row with Menu, List Notes, and About buttons', async () => {
+    it('should include contextual nav row with Menu, Read notes, and About buttons', async () => {
       const mockContainer = createMockContainer();
       mockDiscordFormatter.formatStatusSuccessV2.mockImplementation(() => ({
         container: mockContainer,

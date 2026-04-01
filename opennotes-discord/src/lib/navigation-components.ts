@@ -8,12 +8,10 @@ export interface NavAction {
 
 export const NAV_GRAPH: Record<string, NavAction[]> = {
   'list:notes': [
-    { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
-    { label: 'Write Note', customId: 'nav:note:write', emoji: '\u270F\uFE0F' },
+    { label: 'See note requests and write a note', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
   ],
   'list:requests': [
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
-    { label: 'Write Note', customId: 'nav:note:write', emoji: '\u270F\uFE0F' },
+    { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
   ],
   'vibecheck:scan': [
     { label: 'Status', customId: 'nav:vibecheck:status', emoji: '\u{1F4CA}' },
@@ -21,50 +19,50 @@ export const NAV_GRAPH: Record<string, NavAction[]> = {
   ],
   'vibecheck:status': [
     { label: 'Create Requests', customId: 'nav:vibecheck:create-requests', emoji: '\u{1F4E8}' },
-    { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
+    { label: 'See note requests and write a note', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
   ],
   'vibecheck:create-requests': [
-    { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
+    { label: 'See note requests and write a note', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
+    { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
   ],
   'note:write': [
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
+    { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
   ],
   'note:request': [
-    { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
+    { label: 'See note requests and write a note', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
   ],
   'note:view': [
     { label: 'Rate', customId: 'nav:note:rate', emoji: '\u{1F5F3}\uFE0F' },
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
+    { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
   ],
   'note:score': [
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
+    { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
   ],
   'note:rate': [
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
+    { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
   ],
   'clear:notes': [
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
-    { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
+    { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
+    { label: 'See note requests and write a note', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
   ],
   'clear:requests': [
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
-    { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
+    { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
+    { label: 'See note requests and write a note', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
   ],
   'config': [
     { label: 'Status', customId: 'nav:status-bot', emoji: '\u{1F4CA}' },
     { label: 'About', customId: 'nav:about-opennotes', emoji: '\u2139\uFE0F' },
   ],
   'status-bot': [
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
+    { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
     { label: 'About', customId: 'nav:about-opennotes', emoji: '\u2139\uFE0F' },
   ],
   'about-opennotes': [
-    { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
-    { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
+    { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
+    { label: 'See note requests and write a note', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
   ],
   'note-request-context': [
-    { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
+    { label: 'See note requests and write a note', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
   ],
 };
 
@@ -110,9 +108,8 @@ export function buildContextualNav(commandContext: string): ActionRowBuilder<But
 }
 
 export const HUB_ACTIONS: NavAction[] = [
-  { label: 'List Notes', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
-  { label: 'List Requests', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
-  { label: 'Write Note', customId: 'nav:note:write', emoji: '\u270F\uFE0F' },
+  { label: 'Read notes others have written and rate them', customId: 'nav:list:notes', emoji: '\u{1F4DD}' },
+  { label: 'See note requests and write a note', customId: 'nav:list:requests', emoji: '\u{1F4CB}' },
   { label: 'Vibecheck Scan', customId: 'nav:vibecheck:scan', emoji: '\u{1F50D}' },
   { label: 'Status', customId: 'nav:status-bot', emoji: '\u{1F4CA}' },
   { label: 'About', customId: 'nav:about-opennotes', emoji: '\u2139\uFE0F' },

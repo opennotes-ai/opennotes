@@ -308,7 +308,7 @@ describe('list command - Navigation button integration', () => {
   });
 
   describe('list notes subcommand', () => {
-    it('should include nav buttons with Menu, List Requests, and Write Note in response', async () => {
+    it('should include nav buttons with Menu and See note requests in response', async () => {
       mockApiClient.listNotesWithStatus.mockResolvedValue({
         data: [
           {
@@ -331,7 +331,7 @@ describe('list command - Navigation button integration', () => {
       const navIds = getNavCustomIds(editReplyArg.components);
       expect(navIds).toContain('nav:menu');
       expect(navIds).toContain('nav:list:requests');
-      expect(navIds).toContain('nav:note:write');
+      expect(navIds).not.toContain('nav:note:write');
     }, 10000);
 
     it('should include nav buttons even when notes queue is empty', async () => {

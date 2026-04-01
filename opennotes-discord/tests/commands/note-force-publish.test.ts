@@ -204,7 +204,7 @@ describe('note-force-publish command', () => {
       expect(allContent).toContain('Admin Published');
     });
 
-    it('should include contextual nav row inside container with Menu and List Notes buttons', async () => {
+    it('should include contextual nav row inside container with Menu and Read notes buttons', async () => {
       const mockNote = createMockNoteJSONAPIResponse({
         id: TEST_UUID,
         summary: 'Short note summary',
