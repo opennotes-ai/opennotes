@@ -10,12 +10,18 @@ module Opennotes
 
     def index
       client = self.class.opennotes_client
-      community_server = client.get("/api/v2/community-servers", params: {
-        "filter[platform]" => "discourse",
-        "filter[platform_community_server_id]" => Discourse.current_hostname,
-      })
 
-      server_id = community_server.dig("data", 0, "id")
+      begin
+        community_server = client.get("/api/v2/community-servers/lookup", params: {
+          "platform" => "discourse",
+          "platform_community_server_id" => Discourse.current_hostname,
+        })
+      rescue OpenNotes::ApiError => e
+        return render json: { data: [] } if e.status == 404
+        raise
+      end
+
+      server_id = community_server.dig("data", "id")
       return render json: { data: [] } unless server_id
 
       actions = client.get("/api/v2/moderation-actions", params: {
@@ -26,7 +32,9 @@ module Opennotes
       items = filter_by_review_group(actions["data"] || [], current_user)
       items = strip_score_fields(items) unless staff_user?
       render json: { data: items }
-    rescue Faraday::Error, OpenNotes::ApiError => e
+    rescue Faraday::Error => e
+      render json: { data: [], error: I18n.t("opennotes.errors.server_unavailable") }, status: :ok
+    rescue OpenNotes::ApiError => e
       render json: { data: [], error: I18n.t("opennotes.errors.server_unavailable") }, status: :ok
     end
 
