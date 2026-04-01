@@ -108,13 +108,26 @@ export class DiscourseAPI {
     slug: string,
     color?: string
   ): Promise<CategoryResponse["category"]> {
-    const result = await this.request<CategoryResponse>("POST", "/categories.json", {
-      name,
-      slug,
-      color: color ?? "0088CC",
-      text_color: "FFFFFF",
-    });
-    return result.category;
+    try {
+      const result = await this.request<CategoryResponse>("POST", "/categories.json", {
+        name,
+        slug,
+        color: color ?? "0088CC",
+        text_color: "FFFFFF",
+      });
+      return result.category;
+    } catch (e: unknown) {
+      if (e instanceof Error && (e.message.includes("422") || e.message.includes("429"))) {
+        const resp = await this.request<Record<string, unknown>>("GET", "/categories.json");
+        const catList = (resp as { category_list?: { categories?: CategoryResponse["category"][] } })
+          .category_list?.categories ?? [];
+        const found = catList.find(
+          (c) => c.slug === slug || c.name === name
+        );
+        if (found) return found;
+      }
+      throw e;
+    }
   }
 
   async createTopic(

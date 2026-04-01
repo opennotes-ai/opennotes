@@ -5,6 +5,7 @@ export default defineConfig({
   testDir: "./specs",
   timeout: 60_000,
   retries: 1,
+  workers: 1,
   reporter: [["html", { open: "never" }], ["list"]],
   use: {
     baseURL: "http://localhost:4200",

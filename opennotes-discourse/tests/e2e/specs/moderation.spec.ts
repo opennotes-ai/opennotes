@@ -41,7 +41,7 @@ async function sendWebhook(
 ): Promise<Response> {
   const body = JSON.stringify(payload);
   const signature = await makeWebhookSignature(body);
-  return fetch("http://127.0.0.1:4200/opennotes/webhooks/receive.json", {
+  return fetch("http://127.0.0.1:3000/opennotes/webhooks/receive.json", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
