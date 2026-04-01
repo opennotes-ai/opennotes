@@ -180,6 +180,22 @@ class AsyncCircuitBreaker:
     def failure_count(self) -> int:
         return self._core.failures
 
+    @failure_count.setter
+    def failure_count(self, value: int) -> None:
+        self._core._failures = value
+
+    @property
+    def failure_threshold(self) -> int:
+        return self._core.config.failure_threshold
+
+    @property
+    def timeout(self) -> float:
+        return self._core.config.reset_timeout
+
+    @timeout.setter
+    def timeout(self, value: float) -> None:
+        self._core.config.reset_timeout = value
+
     @property
     def is_open(self) -> bool:
         return self._core.is_open

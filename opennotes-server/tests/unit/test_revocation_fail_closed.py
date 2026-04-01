@@ -36,15 +36,9 @@ pytestmark = pytest.mark.unit
 @pytest.fixture(autouse=True)
 async def reset_circuit_breaker():
     """Reset the circuit breaker to CLOSED state before each test."""
-    async with revocation_circuit_breaker._lock:
-        revocation_circuit_breaker.failure_count = 0
-        revocation_circuit_breaker.state = CircuitState.CLOSED
-        revocation_circuit_breaker.last_failure_time = None
+    await revocation_circuit_breaker.reset()
     yield
-    async with revocation_circuit_breaker._lock:
-        revocation_circuit_breaker.failure_count = 0
-        revocation_circuit_breaker.state = CircuitState.CLOSED
-        revocation_circuit_breaker.last_failure_time = None
+    await revocation_circuit_breaker.reset()
 
 
 class TestRevocationCheckFailClosed:
