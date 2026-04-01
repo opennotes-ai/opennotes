@@ -216,7 +216,7 @@ describe('about-opennotes command', () => {
       expect(textDisplays.length).toBeGreaterThanOrEqual(5);
     });
 
-    it('should include contextual nav row with Menu, List Notes, and List Requests buttons', async () => {
+    it('should include contextual nav row with Menu, Read notes, and See requests buttons', async () => {
       const mockInteraction = {
         user: { id: 'user123' },
         guildId: 'guild456',

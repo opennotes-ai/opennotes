@@ -203,24 +203,24 @@ describe('list notes v2 helper functions', () => {
       }
     });
 
-    it('should build list:notes nav with List Requests and Write Note buttons', () => {
+    it('should build list:notes nav with See note requests button', () => {
       const navRow = buildContextualNav('list:notes');
       const json = navRow.toJSON();
       const customIds = json.components.map((c: any) => c.custom_id);
       expect(customIds).toContain('nav:menu');
       expect(customIds).toContain('nav:list:requests');
-      expect(customIds).toContain('nav:note:write');
-      expect(json.components).toHaveLength(3);
+      expect(customIds).not.toContain('nav:note:write');
+      expect(json.components).toHaveLength(2);
     });
 
-    it('should build list:requests nav with List Notes and Write Note buttons', () => {
+    it('should build list:requests nav with Read notes button', () => {
       const navRow = buildContextualNav('list:requests');
       const json = navRow.toJSON();
       const customIds = json.components.map((c: any) => c.custom_id);
       expect(customIds).toContain('nav:menu');
       expect(customIds).toContain('nav:list:notes');
-      expect(customIds).toContain('nav:note:write');
-      expect(json.components).toHaveLength(3);
+      expect(customIds).not.toContain('nav:note:write');
+      expect(json.components).toHaveLength(2);
     });
 
     it('should have NAV_GRAPH entries for all list contexts', () => {

@@ -135,7 +135,7 @@ describe('note-score command', () => {
       );
     });
 
-    it('should include contextual nav row with Menu and List Notes buttons', async () => {
+    it('should include contextual nav row with Menu and Read notes buttons', async () => {
       const mockScoreResponse = createMockNoteScoreJSONAPIResponse({
         noteId: TEST_NOTE_UUID,
         score: TEST_SCORE_ABOVE_THRESHOLD,

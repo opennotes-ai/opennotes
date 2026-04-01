@@ -174,7 +174,7 @@ describe('note-rate command', () => {
       expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 
-    it('should include contextual nav row with Menu and List Notes buttons', async () => {
+    it('should include contextual nav row with Menu and Read notes buttons', async () => {
       mockRateNoteService.execute.mockResolvedValue(
         createSuccessResult({
           rating: createMockRatingJSONAPIResponse({
