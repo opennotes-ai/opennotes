@@ -24,6 +24,7 @@ from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Embedder
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +32,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.community_dependencies import verify_community_membership
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
+from src.circuit_breaker import circuit_breaker_registry
+from src.circuit_breaker_core import CircuitOpenError
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
@@ -62,6 +65,22 @@ logger = get_logger(__name__)
 HOT_PATH_EMBEDDING_RETRY_ATTEMPTS = 2
 HOT_PATH_ENDPOINT_TIMEOUT_SECONDS = 10
 HOT_PATH_DB_STATEMENT_TIMEOUT_MS = 10_000
+
+
+def _is_openai_quota_error(exc: Exception) -> bool:
+    if isinstance(exc, ModelHTTPError):
+        return exc.status_code >= 429
+    return isinstance(exc, ModelAPIError)
+
+
+openai_embedding_breaker = circuit_breaker_registry.get_breaker(
+    name="openai_embeddings",
+    failure_predicate=_is_openai_quota_error,
+    failure_threshold=3,
+    timeout=30,
+    backoff_rate=2.0,
+    max_reset_timeout=300,
+)
 
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
@@ -324,6 +343,63 @@ def _previously_seen_timeout_response() -> JSONResponse:
     )
     timeout_response.headers["Retry-After"] = "5"
     return timeout_response
+
+
+def _build_check_response(
+    *,
+    matches: list[PreviouslySeenMessageMatch],
+    should_auto_publish: bool,
+    should_auto_request: bool,
+    autopublish_threshold: float,
+    autorequest_threshold: float,
+) -> JSONResponse:
+    match_resources = [match_to_resource(m) for m in matches]
+    top_match_resource = match_resources[0] if match_resources else None
+
+    check_result = PreviouslySeenCheckResultResource(
+        type="previously-seen-check-result",
+        id=str(uuid.uuid4()),
+        attributes=PreviouslySeenCheckResultAttributes(
+            should_auto_publish=should_auto_publish,
+            should_auto_request=should_auto_request,
+            autopublish_threshold=autopublish_threshold,
+            autorequest_threshold=autorequest_threshold,
+            matches=match_resources,
+            top_match=top_match_resource,
+        ),
+    )
+
+    response = PreviouslySeenCheckResultResponse(data=check_result)
+
+    return JSONResponse(
+        content=response.model_dump(by_alias=True, mode="json"),
+        media_type=JSONAPI_CONTENT_TYPE,
+    )
+
+
+def _handle_circuit_open_fail_open(
+    *,
+    platform_community_server_id: str,
+    channel_id: str,
+    autopublish_threshold: float,
+    autorequest_threshold: float,
+) -> JSONResponse:
+    logger.critical(
+        "OpenAI embedding circuit breaker OPEN — skipping dedup check",
+        extra={
+            "breaker_name": "openai_embeddings",
+            "failure_count": openai_embedding_breaker.failures,
+            "platform_community_server_id": platform_community_server_id,
+            "channel_id": channel_id,
+        },
+    )
+    return _build_check_response(
+        matches=[],
+        should_auto_publish=False,
+        should_auto_request=False,
+        autopublish_threshold=autopublish_threshold,
+        autorequest_threshold=autorequest_threshold,
+    )
 
 
 @router.get(
@@ -653,7 +729,8 @@ async def check_previously_seen_jsonapi(
 
         try:
             async with asyncio.timeout(HOT_PATH_ENDPOINT_TIMEOUT_SECONDS):
-                embedding = await embedding_service.generate_embedding(
+                embedding = await openai_embedding_breaker.call(
+                    embedding_service.generate_embedding,
                     db=db,
                     text=attrs.message_text,
                     community_server_id=attrs.platform_community_server_id,
@@ -669,6 +746,13 @@ async def check_previously_seen_jsonapi(
                     limit=5,
                     statement_timeout_ms=HOT_PATH_DB_STATEMENT_TIMEOUT_MS,
                 )
+        except CircuitOpenError:
+            return _handle_circuit_open_fail_open(
+                platform_community_server_id=attrs.platform_community_server_id,
+                channel_id=attrs.channel_id,
+                autopublish_threshold=autopublish_threshold,
+                autorequest_threshold=autorequest_threshold,
+            )
         except TimeoutError:
             return _previously_seen_timeout_response()
         except OperationalError as e:
@@ -717,30 +801,12 @@ async def check_previously_seen_jsonapi(
                     },
                 )
 
-        match_resources = [match_to_resource(m) for m in matches]
-        top_match_resource = match_to_resource(top_match) if top_match else None
-
-        check_result = PreviouslySeenCheckResultResource(
-            type="previously-seen-check-result",
-            id=str(uuid.uuid4()),
-            attributes=PreviouslySeenCheckResultAttributes(
-                should_auto_publish=should_auto_publish,
-                should_auto_request=should_auto_request,
-                autopublish_threshold=autopublish_threshold,
-                autorequest_threshold=autorequest_threshold,
-                matches=match_resources,
-                top_match=top_match_resource,
-            ),
-        )
-
-        response = PreviouslySeenCheckResultResponse(
-            data=check_result,
-            links=JSONAPILinks(self_=str(request.url)),
-        )
-
-        return JSONResponse(
-            content=response.model_dump(by_alias=True, mode="json"),
-            media_type=JSONAPI_CONTENT_TYPE,
+        return _build_check_response(
+            matches=matches,
+            should_auto_publish=should_auto_publish,
+            should_auto_request=should_auto_request,
+            autopublish_threshold=autopublish_threshold,
+            autorequest_threshold=autorequest_threshold,
         )
 
     except Exception as e:
