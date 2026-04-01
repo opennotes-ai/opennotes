@@ -2004,6 +2004,74 @@
         }
       }
     },
+    "/api/v2/notes/{note_id}/dismiss": {
+      "post": {
+        "tags": [
+          "notes-jsonapi"
+        ],
+        "summary": "Dismiss Note Jsonapi",
+        "description": "Dismiss a note with JSON:API format (admin only).\n\nThis endpoint allows administrators to manually dismiss notes by setting their\nstatus to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:\nthe note is marked with force_published flags for transparency, and any associated\nrequest is set to COMPLETED.\n\nRequires admin authentication (service accounts, Open Notes admins, or community admins).\n\nReturns JSON:API formatted response with updated note resource.",
+        "operationId": "dismiss_note_jsonapi_api_v2_notes__note_id__dismiss_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/ratings": {
       "post": {
         "tags": [
@@ -7115,6 +7183,339 @@
         }
       }
     },
+    "/api/v2/moderation-actions": {
+      "post": {
+        "tags": [
+          "moderation-actions-jsonapi",
+          "moderation-actions"
+        ],
+        "summary": "Create Moderation Action Endpoint",
+        "description": "Create a moderation action in PROPOSED state.\n\nPublishes a moderation_action.proposed NATS event after successful creation.",
+        "operationId": "create_moderation_action_endpoint_api_v2_moderation_actions_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModerationActionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "moderation-actions-jsonapi",
+          "moderation-actions"
+        ],
+        "summary": "List Moderation Actions Endpoint",
+        "description": "List moderation actions with optional filters.\n\nQuery params:\n- community_server_id: filter by community\n- action_state: filter by state (e.g. proposed, applied)\n- action_tier: filter by tier\n- limit: max results (default 50)\n- offset: pagination offset (default 0)",
+        "operationId": "list_moderation_actions_endpoint_api_v2_moderation_actions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "action_state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action State"
+            }
+          },
+          {
+            "name": "action_tier",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionTier"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action Tier"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/moderation-actions/{action_id}": {
+      "get": {
+        "tags": [
+          "moderation-actions-jsonapi",
+          "moderation-actions"
+        ],
+        "summary": "Get Moderation Action Endpoint",
+        "description": "Fetch a single moderation action by UUID.",
+        "operationId": "get_moderation_action_endpoint_api_v2_moderation_actions__action_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Action Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "moderation-actions-jsonapi",
+          "moderation-actions"
+        ],
+        "summary": "Patch Moderation Action Endpoint",
+        "description": "Transition a moderation action to a new state.\n\nValidates the state transition against VALID_TRANSITIONS and returns 422\non invalid transitions.  Publishes a NATS event for all target states\nexcept scan_exempt (plugin-initiated acknowledgement, no event needed).",
+        "operationId": "patch_moderation_action_endpoint_api_v2_moderation_actions__action_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Action Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModerationActionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/webhooks/register": {
       "post": {
         "tags": [
@@ -7122,15 +7523,38 @@
         ],
         "summary": "Register Webhook",
         "operationId": "register_webhook_api_v1_webhooks_register_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/WebhookCreateRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -12403,6 +12827,39 @@
         ],
         "title": "APIKeyResponse"
       },
+      "ActionState": {
+        "type": "string",
+        "enum": [
+          "proposed",
+          "applied",
+          "retro_review",
+          "confirmed",
+          "overturned",
+          "scan_exempt",
+          "under_review",
+          "dismissed"
+        ],
+        "title": "ActionState"
+      },
+      "ActionTier": {
+        "type": "string",
+        "enum": [
+          "tier_1_immediate",
+          "tier_2_consensus"
+        ],
+        "title": "ActionTier"
+      },
+      "ActionType": {
+        "type": "string",
+        "enum": [
+          "hide",
+          "unhide",
+          "warn",
+          "silence",
+          "delete"
+        ],
+        "title": "ActionType"
+      },
       "AddCommunityAdminRequest": {
         "properties": {
           "user_discord_id": {
@@ -17521,6 +17978,107 @@
           "model"
         ],
         "title": "ModelNameResponse"
+      },
+      "ModerationActionCreate": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "note_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note Id"
+          },
+          "community_server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Community Server Id"
+          },
+          "action_type": {
+            "$ref": "#/components/schemas/ActionType"
+          },
+          "action_tier": {
+            "$ref": "#/components/schemas/ActionTier"
+          },
+          "action_state": {
+            "$ref": "#/components/schemas/ActionState",
+            "default": "proposed"
+          },
+          "classifier_evidence": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Classifier Evidence"
+          },
+          "review_group": {
+            "$ref": "#/components/schemas/ReviewGroup"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "community_server_id",
+          "action_type",
+          "action_tier",
+          "classifier_evidence",
+          "review_group"
+        ],
+        "title": "ModerationActionCreate"
+      },
+      "ModerationActionUpdate": {
+        "properties": {
+          "action_state": {
+            "$ref": "#/components/schemas/ActionState"
+          },
+          "platform_action_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform Action Id"
+          },
+          "scan_exempt_content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Exempt Content Hash"
+          },
+          "overturned_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overturned Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action_state"
+        ],
+        "title": "ModerationActionUpdate"
       },
       "MonitoredChannelAttributes": {
         "properties": {
@@ -22748,6 +23306,15 @@
         ],
         "title": "ResumeRequest"
       },
+      "ReviewGroup": {
+        "type": "string",
+        "enum": [
+          "community",
+          "trusted",
+          "staff"
+        ],
+        "title": "ReviewGroup"
+      },
       "RiskLevel": {
         "type": "string",
         "enum": [
@@ -25677,6 +26244,20 @@
           "active": {
             "type": "boolean",
             "title": "Active"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
           }
         },
         "type": "object",
@@ -25718,6 +26299,20 @@
           "active": {
             "type": "boolean",
             "title": "Active"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
           },
           "secret": {
             "type": "string",
@@ -25762,6 +26357,21 @@
             ],
             "title": "Channel Id",
             "description": "Channel ID (Discord channel ID, etc.)"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events",
+            "description": "Event types this webhook subscribes to. Null means all events."
           }
         },
         "additionalProperties": false,

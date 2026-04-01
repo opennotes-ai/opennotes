@@ -77,6 +77,12 @@ class EventType(str, Enum):
     BULK_SCAN_RESULTS = "bulk_scan.results"
     BULK_SCAN_PROGRESS = "bulk_scan.progress"
     BULK_SCAN_FAILED = "bulk_scan.failed"
+    MODERATION_ACTION_PROPOSED = "moderation_action.proposed"
+    MODERATION_ACTION_APPLIED = "moderation_action.applied"
+    MODERATION_ACTION_RETRO_REVIEW_STARTED = "moderation_action.retro_review_started"
+    MODERATION_ACTION_CONFIRMED = "moderation_action.confirmed"
+    MODERATION_ACTION_OVERTURNED = "moderation_action.overturned"
+    MODERATION_ACTION_DISMISSED = "moderation_action.dismissed"
 
 
 class BaseEvent(StrictEventSchema):
@@ -429,6 +435,59 @@ class BulkScanFailedEvent(BaseEvent):
     )
 
 
+class ModerationActionProposedEvent(BaseEvent):
+    event_type: EventType = EventType.MODERATION_ACTION_PROPOSED
+    action_id: UUID
+    request_id: UUID
+    action_type: str
+    action_tier: str
+    classifier_evidence: dict[str, Any]
+    review_group: str
+    community_server_id: UUID
+
+
+class ModerationActionAppliedEvent(BaseEvent):
+    event_type: EventType = EventType.MODERATION_ACTION_APPLIED
+    action_id: UUID
+    request_id: UUID
+    action_type: str
+    platform_action_id: str | None = None
+    community_server_id: UUID
+
+
+class ModerationActionRetroReviewStartedEvent(BaseEvent):
+    event_type: EventType = EventType.MODERATION_ACTION_RETRO_REVIEW_STARTED
+    action_id: UUID
+    request_id: UUID
+    action_type: str
+    community_server_id: UUID
+
+
+class ModerationActionConfirmedEvent(BaseEvent):
+    event_type: EventType = EventType.MODERATION_ACTION_CONFIRMED
+    action_id: UUID
+    request_id: UUID
+    action_type: str
+    community_server_id: UUID
+
+
+class ModerationActionOverturnedEvent(BaseEvent):
+    event_type: EventType = EventType.MODERATION_ACTION_OVERTURNED
+    action_id: UUID
+    request_id: UUID
+    action_type: str
+    overturned_reason: str | None = None
+    community_server_id: UUID
+
+
+class ModerationActionDismissedEvent(BaseEvent):
+    event_type: EventType = EventType.MODERATION_ACTION_DISMISSED
+    action_id: UUID
+    request_id: UUID
+    action_type: str
+    community_server_id: UUID
+
+
 EventUnion = (
     NoteCreatedEvent
     | NoteRatedEvent
@@ -446,4 +505,10 @@ EventUnion = (
     | BulkScanResultsEvent
     | BulkScanProgressEvent
     | BulkScanFailedEvent
+    | ModerationActionProposedEvent
+    | ModerationActionAppliedEvent
+    | ModerationActionRetroReviewStartedEvent
+    | ModerationActionConfirmedEvent
+    | ModerationActionOverturnedEvent
+    | ModerationActionDismissedEvent
 )

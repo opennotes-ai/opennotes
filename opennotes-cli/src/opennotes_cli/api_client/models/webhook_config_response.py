@@ -21,6 +21,7 @@ class WebhookConfigResponse:
         community_server_id (UUID):
         active (bool):
         channel_id (None | str | Unset):
+        events (list[str] | None | Unset):
     """
 
     id: UUID
@@ -28,6 +29,7 @@ class WebhookConfigResponse:
     community_server_id: UUID
     active: bool
     channel_id: None | str | Unset = UNSET
+    events: list[str] | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -45,6 +47,15 @@ class WebhookConfigResponse:
         else:
             channel_id = self.channel_id
 
+        events: list[str] | None | Unset
+        if isinstance(self.events, Unset):
+            events = UNSET
+        elif isinstance(self.events, list):
+            events = self.events
+
+        else:
+            events = self.events
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -57,6 +68,8 @@ class WebhookConfigResponse:
         )
         if channel_id is not UNSET:
             field_dict["channel_id"] = channel_id
+        if events is not UNSET:
+            field_dict["events"] = events
 
         return field_dict
 
@@ -80,12 +93,30 @@ class WebhookConfigResponse:
 
         channel_id = _parse_channel_id(d.pop("channel_id", UNSET))
 
+        def _parse_events(data: object) -> list[str] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                events_type_0 = cast(list[str], data)
+
+                return events_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[str] | None | Unset, data)
+
+        events = _parse_events(d.pop("events", UNSET))
+
         webhook_config_response = cls(
             id=id,
             url=url,
             community_server_id=community_server_id,
             active=active,
             channel_id=channel_id,
+            events=events,
         )
 
         webhook_config_response.additional_properties = d

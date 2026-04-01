@@ -7,7 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import get_community_server_by_platform_id
+from src.auth.dependencies import get_current_user_or_api_key
 from src.database import get_db
+from src.users.models import User
 from src.webhooks.models import Webhook
 from src.webhooks.rate_limit import rate_limiter
 from src.webhooks.types import (
@@ -26,10 +28,10 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 async def register_webhook(
     webhook_request: WebhookCreateRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
 ) -> WebhookConfigSecure:
-    # Look up or auto-create CommunityServer by platform ID
     community_server = await get_community_server_by_platform_id(
-        db, webhook_request.platform_community_server_id, auto_create=True
+        db, webhook_request.platform_community_server_id, platform="discord", auto_create=True
     )
     if not community_server:
         raise HTTPException(
@@ -43,6 +45,7 @@ async def register_webhook(
         community_server_id=community_server.id,
         channel_id=webhook_request.channel_id,
         active=True,
+        events=webhook_request.events,
     )
 
     db.add(webhook)
@@ -56,6 +59,7 @@ async def register_webhook(
         community_server_id=webhook.community_server_id,
         channel_id=webhook.channel_id,
         active=webhook.active,
+        events=webhook.events,
     )
 
 
@@ -66,9 +70,8 @@ async def get_webhooks_by_community_server(
     platform_community_server_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> list[WebhookConfigResponse]:
-    # Look up CommunityServer by platform ID (don't auto-create for GET)
     community_server = await get_community_server_by_platform_id(
-        db, platform_community_server_id, auto_create=False
+        db, platform_community_server_id, platform="discord", auto_create=False
     )
     if not community_server:
         return []
@@ -87,6 +90,7 @@ async def get_webhooks_by_community_server(
             community_server_id=w.community_server_id,
             channel_id=w.channel_id,
             active=w.active,
+            events=w.events,
         )
         for w in webhooks
     ]
@@ -125,6 +129,7 @@ async def update_webhook(
         community_server_id=webhook.community_server_id,
         channel_id=webhook.channel_id,
         active=webhook.active,
+        events=webhook.events,
     )
 
 

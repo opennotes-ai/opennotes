@@ -7,10 +7,27 @@ Verifies that:
 - PUT requests return WebhookConfigResponse (excludes secret)
 """
 
+from unittest.mock import MagicMock
+from uuid import uuid4
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from src.auth.dependencies import get_current_user_or_api_key
 from src.main import app
+
+
+@pytest.fixture(autouse=True)
+def override_auth():
+    mock_user = MagicMock()
+    mock_user.id = uuid4()
+    mock_user.username = "webhook_test_user"
+    mock_user.role = "admin"
+    mock_user.is_superuser = True
+    mock_user.is_active = True
+    app.dependency_overrides[get_current_user_or_api_key] = lambda: mock_user
+    yield
+    app.dependency_overrides.pop(get_current_user_or_api_key, None)
 
 
 @pytest.mark.asyncio

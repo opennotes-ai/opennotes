@@ -33,6 +33,26 @@ def mock_nats_client():
     nats_client.publish.reset_mock()
 
 
+@pytest.fixture(autouse=True)
+def bypass_startup_gate():
+    from contextlib import asynccontextmanager
+
+    from src.main import app
+
+    @asynccontextmanager
+    async def _noop_lifespan(app):
+        app.state.startup_complete = True
+        yield
+
+    original_router_lifespan = app.router.lifespan_context
+    app.router.lifespan_context = _noop_lifespan
+    app.state.startup_complete = True
+
+    yield
+
+    app.router.lifespan_context = original_router_lifespan
+
+
 @pytest.fixture
 def no_db_setup():
     """

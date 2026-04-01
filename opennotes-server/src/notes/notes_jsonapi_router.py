@@ -795,3 +795,145 @@ async def force_publish_note_jsonapi(
             "Internal Server Error",
             "Failed to force-publish note",
         )
+
+
+@router.post(
+    "/notes/{note_id}/dismiss", response_class=JSONResponse, response_model=NoteSingleResponse
+)
+async def dismiss_note_jsonapi(
+    note_id: UUID,
+    request: HTTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    """Dismiss a note with JSON:API format (admin only).
+
+    This endpoint allows administrators to manually dismiss notes by setting their
+    status to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:
+    the note is marked with force_published flags for transparency, and any associated
+    request is set to COMPLETED.
+
+    Requires admin authentication (service accounts, Open Notes admins, or community admins).
+
+    Returns JSON:API formatted response with updated note resource.
+    """
+    try:
+        result = await db.execute(
+            select(Note)
+            .options(*loaders.admin())
+            .where(Note.id == note_id, Note.deleted_at.is_(None))
+        )
+        note = result.scalar_one_or_none()
+
+        if not note:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Note {note_id} not found",
+            )
+
+        if not note.community_server_id:
+            return create_error_response(
+                status.HTTP_400_BAD_REQUEST,
+                "Bad Request",
+                f"Note {note_id} has no associated community server",
+            )
+
+        await verify_community_admin_by_uuid(note.community_server_id, current_user, db, request)
+
+        admin_profile_id = await get_profile_id_from_user(db, current_user)
+        if not admin_profile_id:
+            return create_error_response(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+                "Failed to determine admin profile ID",
+            )
+
+        note.force_published = True
+        note.force_published_by = admin_profile_id
+        note.force_published_at = pendulum.now("UTC").replace(tzinfo=None)
+        note.status = "CURRENTLY_RATED_NOT_HELPFUL"
+
+        if note.request_id:
+            request_result = await db.execute(
+                select(Request).where(Request.id == note.request_id, Request.deleted_at.is_(None))
+            )
+            associated_request = request_result.scalar_one_or_none()
+            if associated_request:
+                associated_request.status = "COMPLETED"
+                logger.info(
+                    "Updated request status to COMPLETED for dismissed note",
+                    extra={
+                        "request_id": note.request_id,
+                        "note_id": note_id,
+                    },
+                )
+
+        await db.commit()
+        await db.refresh(note)
+
+        logger.info(
+            f"Dismissed note {note_id} via JSON:API by admin {current_user.id} "
+            f"(profile {admin_profile_id})",
+            extra={
+                "note_id": note_id,
+                "admin_user_id": current_user.id,
+                "admin_profile_id": str(admin_profile_id),
+                "community_server_id": str(note.community_server_id),
+                "force_published_at": (
+                    fpa.isoformat() if (fpa := note.force_published_at) else None
+                ),
+            },
+        )
+
+        dismiss_metadata: dict[str, str | bool | None] = {
+            "force_published": True,
+            "force_published_by": str(admin_profile_id),
+            "force_published_at": (fpa.isoformat() if (fpa := note.force_published_at) else None),
+        }
+
+        if note.force_published_by_profile:
+            dismiss_metadata["admin_username"] = note.force_published_by_profile.display_name
+
+        try:
+            routing_context = await build_score_event_routing_context(db, note)
+            await event_publisher.publish_note_score_updated(
+                note_id=note.id,
+                score=0.0,
+                confidence="standard",
+                algorithm="admin_override",
+                rating_count=len(note.ratings) if note.ratings else 0,
+                tier=3,
+                tier_name="admin_dismissed",
+                original_message_id=routing_context.original_message_id,
+                channel_id=routing_context.channel_id,
+                community_server_id=routing_context.community_server_id,
+                metadata=dismiss_metadata,
+            )
+            logger.info(f"Published score update event for dismissed note {note_id}")
+        except Exception as e:
+            logger.error(
+                f"Failed to publish score update event for note {note_id}: {e}", exc_info=True
+            )
+
+        note_resource = note_to_resource(note)
+        response = NoteSingleResponse(
+            data=note_resource,
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to dismiss note (JSON:API): {e}")
+        await db.rollback()
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to dismiss note",
+        )

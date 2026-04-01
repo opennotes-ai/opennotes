@@ -163,10 +163,11 @@ async def get_community_config(
     if not is_service_account(current_user):
         await verify_community_membership(community_server_id, current_user, db, request)
 
+    platform = request.headers.get("x-platform-type", "discord")
     community_server = await get_community_server_by_platform_id(
         db=db,
         community_server_id=community_server_id,
-        platform="discord",
+        platform=platform,
         auto_create=False,
     )
     if not community_server:
@@ -192,6 +193,7 @@ async def get_community_config(
 @router.put("/community-config/{community_server_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def set_community_config(
     community_server_id: str,
+    request: HTTPRequest,
     request_body: SetConfigRequest,
     membership: Annotated[CommunityMember, Depends(verify_community_admin)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
@@ -207,10 +209,11 @@ async def set_community_config(
 
     Requires: User must be an admin or moderator of the community server.
     """
+    platform = request.headers.get("x-platform-type", "discord")
     community_server = await get_community_server_by_platform_id(
         db=db,
         community_server_id=community_server_id,
-        platform="discord",
+        platform=platform,
         auto_create=False,
     )
     if not community_server:
@@ -254,6 +257,7 @@ async def set_community_config(
 @router.delete("/community-config/{community_server_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def reset_community_config(
     community_server_id: str,
+    request: HTTPRequest,
     membership: Annotated[CommunityMember, Depends(verify_community_admin)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -271,10 +275,11 @@ async def reset_community_config(
 
     Requires: User must be an admin or moderator of the community server.
     """
+    platform = request.headers.get("x-platform-type", "discord")
     community_server = await get_community_server_by_platform_id(
         db=db,
         community_server_id=community_server_id,
-        platform="discord",
+        platform=platform,
         auto_create=False,
     )
     if not community_server:

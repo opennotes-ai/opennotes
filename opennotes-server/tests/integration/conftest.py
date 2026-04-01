@@ -28,6 +28,20 @@ def pytest_runtest_setup(item):
 
 
 @pytest.fixture(autouse=True)
+def bypass_startup_gate():
+    from unittest.mock import patch
+
+    async def _passthrough(self, request, call_next):
+        return await call_next(request)
+
+    with patch(
+        "src.middleware.startup_gate.StartupGateMiddleware.dispatch",
+        _passthrough,
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 async def cleanup_database_after_test():
     """
     Clean up database connections after each test.

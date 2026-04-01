@@ -1,19 +1,20 @@
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
+from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...models.webhook_config_secure import WebhookConfigSecure
-from ...models.webhook_create_request import WebhookCreateRequest
+from ...models.note_single_response import NoteSingleResponse
 from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
+    note_id: UUID,
     *,
-    body: WebhookCreateRequest,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
@@ -22,12 +23,10 @@ def _get_kwargs(
 
     _kwargs: dict[str, Any] = {
         "method": "post",
-        "url": "/api/v1/webhooks/register",
+        "url": "/api/v2/notes/{note_id}/dismiss".format(
+            note_id=quote(str(note_id), safe=""),
+        ),
     }
-
-    _kwargs["json"] = body.to_dict()
-
-    headers["Content-Type"] = "application/json"
 
     _kwargs["headers"] = headers
     return _kwargs
@@ -35,11 +34,15 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | WebhookConfigSecure | None:
+) -> Any | HTTPValidationError | NoteSingleResponse | None:
     if response.status_code == 200:
-        response_200 = WebhookConfigSecure.from_dict(response.json())
+        response_200 = NoteSingleResponse.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = cast(Any, None)
+        return response_401
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -54,7 +57,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | WebhookConfigSecure]:
+) -> Response[Any | HTTPValidationError | NoteSingleResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,27 +67,38 @@ def _build_response(
 
 
 def sync_detailed(
+    note_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[HTTPValidationError | WebhookConfigSecure]:
-    """Register Webhook
+) -> Response[Any | HTTPValidationError | NoteSingleResponse]:
+    """Dismiss Note Jsonapi
+
+     Dismiss a note with JSON:API format (admin only).
+
+    This endpoint allows administrators to manually dismiss notes by setting their
+    status to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:
+    the note is marked with force_published flags for transparency, and any associated
+    request is set to COMPLETED.
+
+    Requires admin authentication (service accounts, Open Notes admins, or community admins).
+
+    Returns JSON:API formatted response with updated note resource.
 
     Args:
+        note_id (UUID):
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | WebhookConfigSecure]
+        Response[Any | HTTPValidationError | NoteSingleResponse]
     """
 
     kwargs = _get_kwargs(
-        body=body,
+        note_id=note_id,
         x_api_key=x_api_key,
     )
 
@@ -96,54 +110,76 @@ def sync_detailed(
 
 
 def sync(
+    note_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> HTTPValidationError | WebhookConfigSecure | None:
-    """Register Webhook
+) -> Any | HTTPValidationError | NoteSingleResponse | None:
+    """Dismiss Note Jsonapi
+
+     Dismiss a note with JSON:API format (admin only).
+
+    This endpoint allows administrators to manually dismiss notes by setting their
+    status to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:
+    the note is marked with force_published flags for transparency, and any associated
+    request is set to COMPLETED.
+
+    Requires admin authentication (service accounts, Open Notes admins, or community admins).
+
+    Returns JSON:API formatted response with updated note resource.
 
     Args:
+        note_id (UUID):
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | WebhookConfigSecure
+        Any | HTTPValidationError | NoteSingleResponse
     """
 
     return sync_detailed(
+        note_id=note_id,
         client=client,
-        body=body,
         x_api_key=x_api_key,
     ).parsed
 
 
 async def asyncio_detailed(
+    note_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[HTTPValidationError | WebhookConfigSecure]:
-    """Register Webhook
+) -> Response[Any | HTTPValidationError | NoteSingleResponse]:
+    """Dismiss Note Jsonapi
+
+     Dismiss a note with JSON:API format (admin only).
+
+    This endpoint allows administrators to manually dismiss notes by setting their
+    status to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:
+    the note is marked with force_published flags for transparency, and any associated
+    request is set to COMPLETED.
+
+    Requires admin authentication (service accounts, Open Notes admins, or community admins).
+
+    Returns JSON:API formatted response with updated note resource.
 
     Args:
+        note_id (UUID):
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | WebhookConfigSecure]
+        Response[Any | HTTPValidationError | NoteSingleResponse]
     """
 
     kwargs = _get_kwargs(
-        body=body,
+        note_id=note_id,
         x_api_key=x_api_key,
     )
 
@@ -153,29 +189,40 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    note_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: WebhookCreateRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> HTTPValidationError | WebhookConfigSecure | None:
-    """Register Webhook
+) -> Any | HTTPValidationError | NoteSingleResponse | None:
+    """Dismiss Note Jsonapi
+
+     Dismiss a note with JSON:API format (admin only).
+
+    This endpoint allows administrators to manually dismiss notes by setting their
+    status to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:
+    the note is marked with force_published flags for transparency, and any associated
+    request is set to COMPLETED.
+
+    Requires admin authentication (service accounts, Open Notes admins, or community admins).
+
+    Returns JSON:API formatted response with updated note resource.
 
     Args:
+        note_id (UUID):
         x_api_key (None | str | Unset):
-        body (WebhookCreateRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | WebhookConfigSecure
+        Any | HTTPValidationError | NoteSingleResponse
     """
 
     return (
         await asyncio_detailed(
+            note_id=note_id,
             client=client,
-            body=body,
             x_api_key=x_api_key,
         )
     ).parsed

@@ -747,6 +747,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/notes/{note_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Note Jsonapi
+         * @description Dismiss a note with JSON:API format (admin only).
+         *
+         *     This endpoint allows administrators to manually dismiss notes by setting their
+         *     status to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:
+         *     the note is marked with force_published flags for transparency, and any associated
+         *     request is set to COMPLETED.
+         *
+         *     Requires admin authentication (service accounts, Open Notes admins, or community admins).
+         *
+         *     Returns JSON:API formatted response with updated note resource.
+         */
+        post: operations["dismiss_note_jsonapi_api_v2_notes__note_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/ratings": {
         parameters: {
             query?: never;
@@ -2266,6 +2295,67 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v2/moderation-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Moderation Actions Endpoint
+         * @description List moderation actions with optional filters.
+         *
+         *     Query params:
+         *     - community_server_id: filter by community
+         *     - action_state: filter by state (e.g. proposed, applied)
+         *     - action_tier: filter by tier
+         *     - limit: max results (default 50)
+         *     - offset: pagination offset (default 0)
+         */
+        get: operations["list_moderation_actions_endpoint_api_v2_moderation_actions_get"];
+        put?: never;
+        /**
+         * Create Moderation Action Endpoint
+         * @description Create a moderation action in PROPOSED state.
+         *
+         *     Publishes a moderation_action.proposed NATS event after successful creation.
+         */
+        post: operations["create_moderation_action_endpoint_api_v2_moderation_actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/moderation-actions/{action_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Moderation Action Endpoint
+         * @description Fetch a single moderation action by UUID.
+         */
+        get: operations["get_moderation_action_endpoint_api_v2_moderation_actions__action_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Moderation Action Endpoint
+         * @description Transition a moderation action to a new state.
+         *
+         *     Validates the state transition against VALID_TRANSITIONS and returns 422
+         *     on invalid transitions.  Publishes a NATS event for all target states
+         *     except scan_exempt (plugin-initiated acknowledgement, no event needed).
+         */
+        patch: operations["patch_moderation_action_endpoint_api_v2_moderation_actions__action_id__patch"];
         trace?: never;
     };
     "/api/v1/webhooks/register": {
@@ -3861,6 +3951,21 @@ export interface components {
             /** Expires At */
             expires_at: string | null;
         };
+        /**
+         * ActionState
+         * @enum {string}
+         */
+        ActionState: "proposed" | "applied" | "retro_review" | "confirmed" | "overturned" | "scan_exempt" | "under_review" | "dismissed";
+        /**
+         * ActionTier
+         * @enum {string}
+         */
+        ActionTier: "tier_1_immediate" | "tier_2_consensus";
+        /**
+         * ActionType
+         * @enum {string}
+         */
+        ActionType: "hide" | "unhide" | "warn" | "silence" | "delete";
         /**
          * AddCommunityAdminRequest
          * @description Request schema for adding a community admin.
@@ -6481,6 +6586,40 @@ export interface components {
             /** Model */
             model: string;
         };
+        /** ModerationActionCreate */
+        ModerationActionCreate: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Note Id */
+            note_id?: string | null;
+            /**
+             * Community Server Id
+             * Format: uuid
+             */
+            community_server_id: string;
+            action_type: components["schemas"]["ActionType"];
+            action_tier: components["schemas"]["ActionTier"];
+            /** @default proposed */
+            action_state: components["schemas"]["ActionState"];
+            /** Classifier Evidence */
+            classifier_evidence: {
+                [key: string]: unknown;
+            };
+            review_group: components["schemas"]["ReviewGroup"];
+        };
+        /** ModerationActionUpdate */
+        ModerationActionUpdate: {
+            action_state: components["schemas"]["ActionState"];
+            /** Platform Action Id */
+            platform_action_id?: string | null;
+            /** Scan Exempt Content Hash */
+            scan_exempt_content_hash?: string | null;
+            /** Overturned Reason */
+            overturned_reason?: string | null;
+        };
         /**
          * MonitoredChannelAttributes
          * @description Monitored channel attributes for JSON:API resource.
@@ -8919,6 +9058,11 @@ export interface components {
             data: components["schemas"]["ResumeData"];
         };
         /**
+         * ReviewGroup
+         * @enum {string}
+         */
+        ReviewGroup: "community" | "trusted" | "staff";
+        /**
          * RiskLevel
          * @description Categorical risk level for conversation flashpoint detection.
          * @enum {string}
@@ -10337,6 +10481,8 @@ export interface components {
             channel_id?: string | null;
             /** Active */
             active: boolean;
+            /** Events */
+            events?: string[] | null;
         };
         /** WebhookConfigSecure */
         WebhookConfigSecure: {
@@ -10356,6 +10502,8 @@ export interface components {
             channel_id?: string | null;
             /** Active */
             active: boolean;
+            /** Events */
+            events?: string[] | null;
             /** Secret */
             secret: string;
         };
@@ -10381,6 +10529,11 @@ export interface components {
              * @description Channel ID (Discord channel ID, etc.)
              */
             channel_id?: string | null;
+            /**
+             * Events
+             * @description Event types this webhook subscribes to. Null means all events.
+             */
+            events?: string[] | null;
         };
         /** WebhookUpdateRequest */
         WebhookUpdateRequest: {
@@ -11690,6 +11843,46 @@ export interface operations {
         };
     };
     force_publish_note_jsonapi_api_v2_notes__note_id__force_publish_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_note_jsonapi_api_v2_notes__note_id__dismiss_post: {
         parameters: {
             query?: never;
             header?: {
@@ -14501,10 +14694,182 @@ export interface operations {
             };
         };
     };
+    list_moderation_actions_endpoint_api_v2_moderation_actions_get: {
+        parameters: {
+            query?: {
+                community_server_id?: string | null;
+                action_state?: components["schemas"]["ActionState"] | null;
+                action_tier?: components["schemas"]["ActionTier"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_moderation_action_endpoint_api_v2_moderation_actions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModerationActionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_moderation_action_endpoint_api_v2_moderation_actions__action_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_moderation_action_endpoint_api_v2_moderation_actions__action_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModerationActionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     register_webhook_api_v1_webhooks_register_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
