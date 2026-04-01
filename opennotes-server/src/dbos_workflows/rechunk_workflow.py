@@ -22,11 +22,11 @@ from src.batch_jobs.constants import (
 )
 from src.batch_jobs.schemas import BatchJobCreate
 from src.batch_jobs.service import BatchJobService
+from src.circuit_breaker_core import CircuitBreakerConfig, CircuitBreakerCore, CircuitOpenError
 from src.dbos_workflows.batch_job_helpers import (
     finalize_batch_job_sync,
     update_batch_job_progress_sync,
 )
-from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
 from src.dbos_workflows.enqueue_utils import safe_enqueue
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
@@ -227,9 +227,11 @@ def rechunk_fact_check_workflow(
             },
         )
 
-        circuit_breaker = CircuitBreaker(
-            threshold=5,
-            reset_timeout=60,
+        circuit_breaker = CircuitBreakerCore(
+            CircuitBreakerConfig(
+                failure_threshold=5,
+                reset_timeout=60,
+            )
         )
 
         completed_count = 0
@@ -655,9 +657,11 @@ def rechunk_previously_seen_workflow(
             },
         )
 
-        circuit_breaker = CircuitBreaker(
-            threshold=5,
-            reset_timeout=60,
+        circuit_breaker = CircuitBreakerCore(
+            CircuitBreakerConfig(
+                failure_threshold=5,
+                reset_timeout=60,
+            )
         )
 
         completed_count = 0

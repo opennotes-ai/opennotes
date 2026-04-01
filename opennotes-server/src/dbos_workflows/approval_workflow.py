@@ -30,12 +30,12 @@ from sqlalchemy import and_, bindparam, cast, func, select, update
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.types import Text
 
+from src.circuit_breaker_core import CircuitBreakerConfig, CircuitBreakerCore, CircuitOpenError
 from src.dbos_workflows.batch_job_helpers import (
     finalize_batch_job_sync,
     start_batch_job_sync,
     update_batch_job_progress_sync,
 )
-from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.fact_checking.candidate_models import FactCheckedItemCandidate
@@ -404,9 +404,11 @@ def bulk_approval_workflow(  # noqa: PLR0912
             },
         )
 
-        circuit_breaker = CircuitBreaker(
-            threshold=5,
-            reset_timeout=60,
+        circuit_breaker = CircuitBreakerCore(
+            CircuitBreakerConfig(
+                failure_threshold=5,
+                reset_timeout=60,
+            )
         )
 
         total_matching = count_approval_candidates_step(

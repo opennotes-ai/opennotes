@@ -21,8 +21,9 @@ from src.batch_jobs.service import (
     VALID_STATUS_TRANSITIONS,
     InvalidStateTransitionError,
 )
-from src.dbos_workflows.circuit_breaker import (
-    CircuitBreaker,
+from src.circuit_breaker_core import (
+    CircuitBreakerConfig,
+    CircuitBreakerCore,
     CircuitOpenError,
     CircuitState,
 )
@@ -215,7 +216,9 @@ class TestCircuitBreakerProperties:
         failure_count=st.integers(min_value=0, max_value=100),
     )
     def test_opens_exactly_at_threshold(self, threshold: int, failure_count: int):
-        cb = CircuitBreaker(threshold=threshold, reset_timeout=60.0)
+        cb = CircuitBreakerCore(
+            CircuitBreakerConfig(failure_threshold=threshold, reset_timeout=60.0)
+        )
 
         for i in range(failure_count):
             cb.record_failure()
@@ -235,7 +238,9 @@ class TestCircuitBreakerProperties:
     def test_success_resets_failure_count(self, threshold: int, failures_before_success: int):
         assume(failures_before_success < threshold)
 
-        cb = CircuitBreaker(threshold=threshold, reset_timeout=60.0)
+        cb = CircuitBreakerCore(
+            CircuitBreakerConfig(failure_threshold=threshold, reset_timeout=60.0)
+        )
 
         for _ in range(failures_before_success):
             cb.record_failure()
@@ -254,15 +259,17 @@ class TestCircuitBreakerProperties:
     def test_opens_after_threshold_then_probes_after_timeout(
         self, threshold: int, reset_timeout: float
     ):
-        cb = CircuitBreaker(threshold=threshold, reset_timeout=reset_timeout)
+        cb = CircuitBreakerCore(
+            CircuitBreakerConfig(failure_threshold=threshold, reset_timeout=reset_timeout)
+        )
 
         for _ in range(threshold):
             cb.record_failure()
 
         assert cb.state == CircuitState.OPEN
 
-        with patch("src.dbos_workflows.circuit_breaker.time") as mock_time:
-            mock_time.time.return_value = cb.last_failure_time + reset_timeout + 0.001
+        with patch("src.circuit_breaker_core.time") as mock_time:
+            mock_time.time.return_value = cb._last_failure_time + reset_timeout + 0.001
             cb.check()
 
         assert cb.state == CircuitState.HALF_OPEN
@@ -274,15 +281,17 @@ class TestCircuitBreakerProperties:
         ),
     )
     def test_probe_failure_returns_to_open(self, threshold: int, reset_timeout: float):
-        cb = CircuitBreaker(threshold=threshold, reset_timeout=reset_timeout)
+        cb = CircuitBreakerCore(
+            CircuitBreakerConfig(failure_threshold=threshold, reset_timeout=reset_timeout)
+        )
 
         for _ in range(threshold):
             cb.record_failure()
 
         assert cb.state == CircuitState.OPEN
 
-        with patch("src.dbos_workflows.circuit_breaker.time") as mock_time:
-            mock_time.time.return_value = cb.last_failure_time + reset_timeout + 0.001
+        with patch("src.circuit_breaker_core.time") as mock_time:
+            mock_time.time.return_value = cb._last_failure_time + reset_timeout + 0.001
             cb.check()
 
         assert cb.state == CircuitState.HALF_OPEN
@@ -298,13 +307,15 @@ class TestCircuitBreakerProperties:
         ),
     )
     def test_probe_success_closes_circuit(self, threshold: int, reset_timeout: float):
-        cb = CircuitBreaker(threshold=threshold, reset_timeout=reset_timeout)
+        cb = CircuitBreakerCore(
+            CircuitBreakerConfig(failure_threshold=threshold, reset_timeout=reset_timeout)
+        )
 
         for _ in range(threshold):
             cb.record_failure()
 
-        with patch("src.dbos_workflows.circuit_breaker.time") as mock_time:
-            mock_time.time.return_value = cb.last_failure_time + reset_timeout + 0.001
+        with patch("src.circuit_breaker_core.time") as mock_time:
+            mock_time.time.return_value = cb._last_failure_time + reset_timeout + 0.001
             cb.check()
 
         assert cb.state == CircuitState.HALF_OPEN
@@ -313,7 +324,7 @@ class TestCircuitBreakerProperties:
 
         assert cb.state == CircuitState.CLOSED
         assert cb.failures == 0
-        assert cb.last_failure_time is None
+        assert cb._last_failure_time is None
 
     @given(
         threshold=st.integers(min_value=1, max_value=10),
@@ -322,15 +333,17 @@ class TestCircuitBreakerProperties:
         ),
     )
     def test_open_circuit_rejects_before_timeout(self, threshold: int, reset_timeout: float):
-        cb = CircuitBreaker(threshold=threshold, reset_timeout=reset_timeout)
+        cb = CircuitBreakerCore(
+            CircuitBreakerConfig(failure_threshold=threshold, reset_timeout=reset_timeout)
+        )
 
         for _ in range(threshold):
             cb.record_failure()
 
         assert cb.state == CircuitState.OPEN
 
-        with patch("src.dbos_workflows.circuit_breaker.time") as mock_time:
-            mock_time.time.return_value = cb.last_failure_time + (reset_timeout * 0.5)
+        with patch("src.circuit_breaker_core.time") as mock_time:
+            mock_time.time.return_value = cb._last_failure_time + (reset_timeout * 0.5)
             with pytest.raises(CircuitOpenError):
                 cb.check()
 
@@ -341,7 +354,9 @@ class TestCircuitBreakerProperties:
         num_cycles=st.integers(min_value=1, max_value=5),
     )
     def test_circuit_can_open_and_close_multiple_times(self, threshold: int, num_cycles: int):
-        cb = CircuitBreaker(threshold=threshold, reset_timeout=0.01)
+        cb = CircuitBreakerCore(
+            CircuitBreakerConfig(failure_threshold=threshold, reset_timeout=0.01)
+        )
 
         for _ in range(num_cycles):
             assert cb.state == CircuitState.CLOSED
@@ -351,8 +366,8 @@ class TestCircuitBreakerProperties:
 
             assert cb.state == CircuitState.OPEN
 
-            with patch("src.dbos_workflows.circuit_breaker.time") as mock_time:
-                mock_time.time.return_value = cb.last_failure_time + 1.0
+            with patch("src.circuit_breaker_core.time") as mock_time:
+                mock_time.time.return_value = cb._last_failure_time + 1.0
                 cb.check()
 
             assert cb.state == CircuitState.HALF_OPEN
@@ -367,7 +382,9 @@ class TestCircuitBreakerProperties:
         successes_between=st.integers(min_value=1, max_value=5),
     )
     def test_intermittent_failures_dont_open_circuit(self, threshold: int, successes_between: int):
-        cb = CircuitBreaker(threshold=threshold, reset_timeout=60.0)
+        cb = CircuitBreakerCore(
+            CircuitBreakerConfig(failure_threshold=threshold, reset_timeout=60.0)
+        )
 
         for _ in range(threshold * 2):
             cb.record_failure()

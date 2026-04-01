@@ -9,7 +9,7 @@ from dbos import DBOS, Queue
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import selectinload
 
-from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.circuit_breaker_core import CircuitBreakerConfig, CircuitBreakerCore, CircuitOpenError
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
 from src.monitoring import get_logger
@@ -918,10 +918,12 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:  # noqa: PLR0912
 
         initial_generation = config.get("generation", 1)
 
-        circuit_breaker = CircuitBreaker(
-            threshold=CIRCUIT_BREAKER_THRESHOLD,
-            reset_timeout=CIRCUIT_BREAKER_RESET_TIMEOUT,
-            backoff_rate=2.0,
+        circuit_breaker = CircuitBreakerCore(
+            CircuitBreakerConfig(
+                failure_threshold=CIRCUIT_BREAKER_THRESHOLD,
+                reset_timeout=CIRCUIT_BREAKER_RESET_TIMEOUT,
+                backoff_rate=2.0,
+            )
         )
 
         final_status = "completed"
