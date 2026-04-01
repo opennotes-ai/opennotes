@@ -25,15 +25,15 @@ module OpenNotes
     def self.hide_post(post, reason: :spam)
       return if post.hidden?
 
-      post_action_type = resolve_post_action_type(reason)
-      PostAction.act(Discourse.system_user, post, post_action_type)
+      action_type_id = PostActionType.types[resolve_post_action_key(reason)]
+      post.hide!(action_type_id)
     end
 
     def self.unhide_post(post)
       return unless post.hidden?
 
       post.unhide!
-      PostAction.remove_act(Discourse.system_user, post, PostActionType.types[:spam])
+      PostActionDestroyer.destroy(Discourse.system_user, post, :spam)
     rescue StandardError => e
       Rails.logger.warn("[opennotes] Error removing post action during unhide: #{e.message}")
     end
@@ -68,18 +68,18 @@ module OpenNotes
       post.custom_fields[SCAN_EXEMPT_HASH_FIELD]
     end
 
-    def self.resolve_post_action_type(reason)
+    def self.resolve_post_action_key(reason)
       case reason.to_sym
       when :spam
-        PostActionType.types[:spam]
+        :spam
       when :inappropriate
-        PostActionType.types[:inappropriate]
+        :inappropriate
       when :off_topic
-        PostActionType.types[:off_topic]
+        :off_topic
       else
-        PostActionType.types[:spam]
+        :spam
       end
     end
-    private_class_method :resolve_post_action_type
+    private_class_method :resolve_post_action_key
   end
 end

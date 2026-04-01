@@ -26,6 +26,12 @@ module Jobs
     def handle_response(post, response, client)
       return unless response.is_a?(Hash)
 
+      request_id = response.dig("data", "id") || response.dig("data", "attributes", "request_id")
+      if request_id.present?
+        post.custom_fields["opennotes_request_id"] = request_id
+        post.save_custom_fields
+      end
+
       request_data = response.dig("data", "attributes") || response.dig("data") || {}
       moderation_action = request_data["moderation_action"] || request_data["recommended_action"]
 
