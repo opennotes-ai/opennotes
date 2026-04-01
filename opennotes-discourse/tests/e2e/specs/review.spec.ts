@@ -58,6 +58,7 @@ test.describe("Review queue — community review UI (R1–R10)", () => {
   let testTopicId: number;
   let testPostId: number;
   let testRequestId: string;
+  let testCategoryId: number;
 
   test.beforeAll(async () => {
     api = new DiscourseAPI(API_URL, API_KEY, "admin");
@@ -70,6 +71,7 @@ test.describe("Review queue — community review UI (R1–R10)", () => {
       "[TEST] Review Specs",
       "test-review-specs"
     );
+    testCategoryId = category.id;
     const topic = await setup.createTestTopic(
       "[TEST] Review queue test topic",
       "This post is under community review for testing purposes.",
@@ -335,7 +337,7 @@ test.describe("Review queue — community review UI (R1–R10)", () => {
     const topic = await setup.createTestTopic(
       "[TEST] Flag test topic R9",
       "This post will be flagged to test OpenNotes request creation.",
-      1
+      testCategoryId
     );
 
     await page.goto(`/t/${topic.topicSlug}/${topic.topicId}`, {
