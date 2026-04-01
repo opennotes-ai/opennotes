@@ -8,6 +8,8 @@
     "skipLibCheck": true,
     "outDir": "./dist",
     "rootDir": ".",
+    "ignoreDeprecations": "6.0",
+    "types": ["node"],
     "baseUrl": ".",
     "paths": {
       "@helpers/*": ["./helpers/*"],
