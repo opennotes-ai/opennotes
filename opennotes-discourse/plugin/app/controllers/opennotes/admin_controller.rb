@@ -5,8 +5,14 @@ module Opennotes
     requires_plugin "discourse-opennotes"
 
     def dashboard
+      community_server_id = PluginStore.get("discourse-opennotes", "community_server_id")
+      unless community_server_id
+        render json: { error: "Community server not registered" }, status: :not_found
+        return
+      end
+
       client = build_client
-      data = client.get("/api/v1/scoring/analysis")
+      data = client.get("/api/v2/community-servers/#{community_server_id}/scoring-analysis")
       render json: data
     rescue OpenNotes::ApiError => e
       render json: { error: e.message }, status: e.status
