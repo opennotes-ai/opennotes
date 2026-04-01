@@ -177,6 +177,10 @@ class AsyncCircuitBreaker:
         return self._core.failures
 
     @property
+    def failure_count(self) -> int:
+        return self._core.failures
+
+    @property
     def is_open(self) -> bool:
         return self._core.is_open
 
