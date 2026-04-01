@@ -24,19 +24,24 @@ RSpec.describe Jobs::SyncPostToOpennotes do
 
   describe "#execute" do
     it "sends the post to the OpenNotes server" do
-      allow(client).to receive(:post).and_return({ "data" => { "id" => "req-1" } })
+      captured_args = nil
+      allow(client).to receive(:post) do |*args, **kwargs|
+        captured_args = [args, kwargs]
+        { "data" => { "id" => "req-1" } }
+      end
 
       described_class.new.execute(post_id: post.id)
 
-      expect(client).to have_received(:post).with(
-        "/api/v2/requests",
-        body: hash_including(
-          data: hash_including(
-            type: "requests",
-            attributes: hash_including(
-              platform_message_id: post.id.to_s,
-              original_message_content: post.raw,
-            ),
+      expect(captured_args).not_to be_nil
+      path, = captured_args[0]
+      kwargs = captured_args[1]
+      expect(path).to eq("/api/v2/requests")
+      expect(kwargs[:body]).to include(
+        data: include(
+          type: "requests",
+          attributes: include(
+            platform_message_id: post.id.to_s,
+            original_message_content: post.raw,
           ),
         ),
       )

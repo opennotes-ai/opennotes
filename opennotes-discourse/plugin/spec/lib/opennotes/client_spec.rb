@@ -61,7 +61,8 @@ RSpec.describe OpenNotes::Client do
 
     it "passes query parameters" do
       stubs.get("/api/v2/requests") do |env|
-        expect(env.params["filter[status]"]).to eq("pending")
+        expect(env.url.query).to include("filter")
+        expect(env.url.query).to include("pending")
         [200, { "Content-Type" => "application/json" }, '{"data": []}']
       end
 

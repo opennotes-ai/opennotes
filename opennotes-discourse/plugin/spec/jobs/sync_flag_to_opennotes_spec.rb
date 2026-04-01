@@ -33,22 +33,27 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
     end
 
     it "sends the flag to the OpenNotes server" do
-      allow(client).to receive(:post).and_return({ "data" => { "id" => "req-flag-1" } })
+      captured_args = nil
+      allow(client).to receive(:post) do |*args, **kwargs|
+        captured_args = [args, kwargs]
+        { "data" => { "id" => "req-flag-1" } }
+      end
 
       described_class.new.execute(args)
 
-      expect(client).to have_received(:post).with(
-        "/api/v2/requests",
-        body: hash_including(
-          data: hash_including(
-            type: "requests",
-            attributes: hash_including(
-              platform_message_id: post.id.to_s,
-              metadata: hash_including(source: "user_flag"),
-            ),
+      expect(captured_args).not_to be_nil
+      path, = captured_args[0]
+      kwargs = captured_args[1]
+      expect(path).to eq("/api/v2/requests")
+      expect(kwargs[:user]).to eq(flagger)
+      expect(kwargs[:body]).to include(
+        data: include(
+          type: "requests",
+          attributes: include(
+            platform_message_id: post.id.to_s,
+            metadata: include(source: "user_flag"),
           ),
         ),
-        user: flagger,
       )
     end
 
@@ -98,7 +103,7 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
     it "skips when flagger does not exist" do
       allow(client).to receive(:post)
 
-      described_class.new.execute(args.merge(flagged_by_id: -1))
+      described_class.new.execute(args.merge(flagged_by_id: 999_999_999))
 
       expect(client).not_to have_received(:post)
     end

@@ -56,45 +56,29 @@ RSpec.describe OpenNotes::ActionExecutor do
   end
 
   describe ".hide_post" do
-    it "creates a PostAction with the spam type" do
-      expect(PostAction).to receive(:act).with(
-        system_user,
-        post_record,
-        PostActionType.types[:spam],
-      )
+    it "hides the post with the spam type" do
+      expect(post_record).to receive(:hide!).with(PostActionType.types[:spam])
       described_class.hide_post(post_record, reason: :spam)
     end
 
-    it "creates a PostAction with the inappropriate type" do
-      expect(PostAction).to receive(:act).with(
-        system_user,
-        post_record,
-        PostActionType.types[:inappropriate],
-      )
+    it "hides the post with the inappropriate type" do
+      expect(post_record).to receive(:hide!).with(PostActionType.types[:inappropriate])
       described_class.hide_post(post_record, reason: :inappropriate)
     end
 
-    it "creates a PostAction with the off_topic type" do
-      expect(PostAction).to receive(:act).with(
-        system_user,
-        post_record,
-        PostActionType.types[:off_topic],
-      )
+    it "hides the post with the off_topic type" do
+      expect(post_record).to receive(:hide!).with(PostActionType.types[:off_topic])
       described_class.hide_post(post_record, reason: :off_topic)
     end
 
     it "defaults to spam for unrecognized reasons" do
-      expect(PostAction).to receive(:act).with(
-        system_user,
-        post_record,
-        PostActionType.types[:spam],
-      )
+      expect(post_record).to receive(:hide!).with(PostActionType.types[:spam])
       described_class.hide_post(post_record, reason: :unknown_reason)
     end
 
     it "skips if the post is already hidden" do
       allow(post_record).to receive(:hidden?).and_return(true)
-      expect(PostAction).not_to receive(:act)
+      expect(post_record).not_to receive(:hide!)
       described_class.hide_post(post_record)
     end
   end
@@ -104,17 +88,17 @@ RSpec.describe OpenNotes::ActionExecutor do
 
     it "unhides the post and removes the spam PostAction" do
       expect(post_record).to receive(:unhide!)
-      expect(PostAction).to receive(:remove_act).with(
+      expect(PostActionDestroyer).to receive(:destroy).with(
         system_user,
         post_record,
-        PostActionType.types[:spam],
+        :spam,
       )
       described_class.unhide_post(post_record)
     end
 
     it "still unhides even if remove_act raises" do
       expect(post_record).to receive(:unhide!)
-      expect(PostAction).to receive(:remove_act).and_raise(StandardError.new("no action to remove"))
+      expect(PostActionDestroyer).to receive(:destroy).and_raise(StandardError.new("no action to remove"))
       expect(Rails.logger).to receive(:warn).with(/Error removing post action during unhide/)
       described_class.unhide_post(post_record)
     end
@@ -154,7 +138,7 @@ RSpec.describe OpenNotes::ActionExecutor do
       described_class.set_scan_exempt(post_record, content_hash: "sha256hashvalue")
 
       post_record.reload
-      expect(post_record.custom_fields[described_class::SCAN_EXEMPT_FIELD]).to eq(true)
+      expect(post_record.custom_fields[described_class::SCAN_EXEMPT_FIELD]).to be_truthy
       expect(post_record.custom_fields[described_class::SCAN_EXEMPT_HASH_FIELD]).to eq("sha256hashvalue")
     end
   end

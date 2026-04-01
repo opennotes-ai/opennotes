@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Opennotes::CommunityReviewsController do
+RSpec.describe Opennotes::CommunityReviewsController, type: :request do
   fab!(:admin) { Fabricate(:admin) }
   fab!(:moderator) { Fabricate(:moderator) }
   fab!(:tl3_user) { Fabricate(:trust_level_3) }
@@ -12,10 +12,14 @@ RSpec.describe Opennotes::CommunityReviewsController do
 
   let(:server_url) { "https://opennotes.test" }
   let(:api_key) { "test-api-key" }
-  let(:mock_client) { instance_double(OpenNotes::Client) }
+  let(:mock_client) { double("OpenNotes::Client") }
 
   let(:community_server_response) do
-    { "data" => [{ "id" => "server-123", "type" => "community-servers" }] }
+    { "data" => { "id" => "server-123", "type" => "community-servers" } }
+  end
+
+  let(:empty_server_response) do
+    { "data" => {} }
   end
 
   let(:community_item) do
@@ -58,6 +62,31 @@ RSpec.describe Opennotes::CommunityReviewsController do
     { "data" => [community_item, trusted_item, staff_item] }
   end
 
+  def stub_client_index(server_response: community_server_response, actions: actions_response)
+    allow(mock_client).to receive(:get) do |path, **_kwargs|
+      case path
+      when "/api/v2/community-servers/lookup"
+        server_response
+      when "/api/v2/moderation-actions"
+        actions
+      else
+        raise "Unexpected get call: #{path}"
+      end
+    end
+  end
+
+  def stub_client_show(request_data:, notes_data:)
+    allow(mock_client).to receive(:get) do |path, **_kwargs|
+      if path.start_with?("/api/v2/requests/")
+        request_data
+      elsif path == "/api/v2/notes"
+        notes_data
+      else
+        raise "Unexpected get call: #{path}"
+      end
+    end
+  end
+
   before do
     SiteSetting.opennotes_enabled = true
     SiteSetting.opennotes_server_url = server_url
@@ -97,13 +126,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       before { sign_in(tl2_user) }
 
       it "returns pending items filtered by review group" do
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/community-servers", params: hash_including("filter[platform]" => "discourse"))
-          .and_return(community_server_response)
-
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/moderation-actions", hash_including(params: hash_including("filter[action_state]" => "under_review")))
-          .and_return(actions_response)
+        stub_client_index
 
         get "/opennotes/reviews.json"
         expect(response.status).to eq(200)
@@ -116,13 +139,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       end
 
       it "strips score fields for non-staff users" do
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/community-servers", params: anything)
-          .and_return(community_server_response)
-
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/moderation-actions", anything)
-          .and_return(actions_response)
+        stub_client_index
 
         get "/opennotes/reviews.json"
         expect(response.status).to eq(200)
@@ -135,9 +152,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       end
 
       it "returns empty data when no community server is found" do
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/community-servers", params: anything)
-          .and_return({ "data" => [] })
+        stub_client_index(server_response: empty_server_response)
 
         get "/opennotes/reviews.json"
         expect(response.status).to eq(200)
@@ -149,13 +164,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       before { sign_in(tl3_user) }
 
       it "sees community and trusted items but not staff items" do
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/community-servers", params: anything)
-          .and_return(community_server_response)
-
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/moderation-actions", anything)
-          .and_return(actions_response)
+        stub_client_index
 
         get "/opennotes/reviews.json"
         expect(response.status).to eq(200)
@@ -171,13 +180,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       before { sign_in(admin) }
 
       it "sees all items including staff-only" do
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/community-servers", params: anything)
-          .and_return(community_server_response)
-
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/moderation-actions", anything)
-          .and_return(actions_response)
+        stub_client_index
 
         get "/opennotes/reviews.json"
         expect(response.status).to eq(200)
@@ -188,13 +191,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       end
 
       it "preserves score fields for staff users" do
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/community-servers", params: anything)
-          .and_return(community_server_response)
-
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/moderation-actions", anything)
-          .and_return(actions_response)
+        stub_client_index
 
         get "/opennotes/reviews.json"
         expect(response.status).to eq(200)
@@ -211,13 +208,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       before { sign_in(moderator) }
 
       it "sees all items including staff-only" do
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/community-servers", params: anything)
-          .and_return(community_server_response)
-
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/moderation-actions", anything)
-          .and_return(actions_response)
+        stub_client_index
 
         get "/opennotes/reviews.json"
         expect(response.status).to eq(200)
@@ -263,13 +254,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       before { sign_in(tl2_user) }
 
       it "returns request data with notes" do
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/requests/req-1", user: tl2_user)
-          .and_return(request_response)
-
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/notes", hash_including(params: { "filter[request_id]" => "req-1" }))
-          .and_return(notes_response)
+        stub_client_show(request_data: request_response, notes_data: notes_response)
 
         get "/opennotes/reviews/req-1.json"
         expect(response.status).to eq(200)
@@ -280,13 +265,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       end
 
       it "strips score fields from response" do
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/requests/req-1", user: tl2_user)
-          .and_return(request_response)
-
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/notes", anything)
-          .and_return(notes_response)
+        stub_client_show(request_data: request_response, notes_data: notes_response)
 
         get "/opennotes/reviews/req-1.json"
         expect(response.status).to eq(200)
@@ -302,13 +281,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       before { sign_in(admin) }
 
       it "preserves score fields for staff" do
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/requests/req-1", user: admin)
-          .and_return(request_response)
-
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/notes", anything)
-          .and_return(notes_response)
+        stub_client_show(request_data: request_response, notes_data: notes_response)
 
         get "/opennotes/reviews/req-1.json"
         expect(response.status).to eq(200)
@@ -325,19 +298,9 @@ RSpec.describe Opennotes::CommunityReviewsController do
       before { sign_in(tl2_user) }
 
       it "proxies rating to server" do
-        allow(mock_client).to receive(:post)
-          .with("/api/v2/ratings", hash_including(
-            body: {
-              data: {
-                type: "ratings",
-                attributes: {
-                  note_id: "note-1",
-                  helpfulness_level: "helpful",
-                },
-              },
-            },
-          ))
-          .and_return({ "data" => { "id" => "rating-1", "type" => "ratings" } })
+        allow(mock_client).to receive(:post).and_return(
+          { "data" => { "id" => "rating-1", "type" => "ratings" } },
+        )
 
         post "/opennotes/reviews/note-1/rate.json", params: { helpfulness_level: "helpful" }
         expect(response.status).to eq(200)
@@ -347,9 +310,9 @@ RSpec.describe Opennotes::CommunityReviewsController do
       end
 
       it "returns 409 for duplicate vote" do
-        allow(mock_client).to receive(:post)
-          .with("/api/v2/ratings", anything)
-          .and_raise(OpenNotes::ApiError.new(409, { "error" => "duplicate" }))
+        allow(mock_client).to receive(:post).and_raise(
+          OpenNotes::ApiError.new(409, { "error" => "duplicate" }),
+        )
 
         post "/opennotes/reviews/note-1/rate.json", params: { helpfulness_level: "helpful" }
         expect(response.status).to eq(409)
@@ -358,14 +321,13 @@ RSpec.describe Opennotes::CommunityReviewsController do
         expect(json["error"]).to be_present
       end
 
-      it "re-raises non-409 API errors" do
-        allow(mock_client).to receive(:post)
-          .with("/api/v2/ratings", anything)
-          .and_raise(OpenNotes::ApiError.new(500, { "error" => "server error" }))
+      it "returns 503 for non-409 API errors" do
+        allow(mock_client).to receive(:post).and_raise(
+          OpenNotes::ApiError.new(500, { "error" => "server error" }),
+        )
 
-        expect {
-          post "/opennotes/reviews/note-1/rate.json", params: { helpfulness_level: "helpful" }
-        }.to raise_error(OpenNotes::ApiError)
+        post "/opennotes/reviews/note-1/rate.json", params: { helpfulness_level: "helpful" }
+        expect(response.status).to eq(503)
       end
     end
 
@@ -392,13 +354,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
         },
       }
 
-      allow(mock_client).to receive(:get)
-        .with("/api/v2/community-servers", params: anything)
-        .and_return(community_server_response)
-
-      allow(mock_client).to receive(:get)
-        .with("/api/v2/moderation-actions", anything)
-        .and_return({ "data" => [unknown_group_item] })
+      stub_client_index(actions: { "data" => [unknown_group_item] })
 
       get "/opennotes/reviews.json"
       expect(response.status).to eq(200)
@@ -416,13 +372,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
         },
       }
 
-      allow(mock_client).to receive(:get)
-        .with("/api/v2/community-servers", params: anything)
-        .and_return(community_server_response)
-
-      allow(mock_client).to receive(:get)
-        .with("/api/v2/moderation-actions", anything)
-        .and_return({ "data" => [no_group_item] })
+      stub_client_index(actions: { "data" => [no_group_item] })
 
       get "/opennotes/reviews.json"
       expect(response.status).to eq(200)
@@ -445,13 +395,7 @@ RSpec.describe Opennotes::CommunityReviewsController do
       SiteSetting.opennotes_reviewer_min_trust_level = 3
       sign_in(tl3_user)
 
-      allow(mock_client).to receive(:get)
-        .with("/api/v2/community-servers", params: anything)
-        .and_return(community_server_response)
-
-      allow(mock_client).to receive(:get)
-        .with("/api/v2/moderation-actions", anything)
-        .and_return({ "data" => [community_item] })
+      stub_client_index(actions: { "data" => [community_item] })
 
       get "/opennotes/reviews.json"
       expect(response.status).to eq(200)

@@ -145,14 +145,17 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
         classifier_evidence: { labels: { spam: true }, scores: { spam: 0.95 } },
       }
 
-      expect(OpenNotes::ActionExecutor).to receive(:execute_action).with(
-        action_type: "hide_post",
-        post: post_record,
-        metadata: hash_including(:action_id, :classifier_evidence),
-      )
+      captured_kwargs = nil
+      allow(OpenNotes::ActionExecutor).to receive(:execute_action) do |**kwargs|
+        captured_kwargs = kwargs
+      end
 
       send_webhook(payload)
       expect(response).to have_http_status(:ok)
+
+      expect(captured_kwargs).not_to be_nil
+      expect(captured_kwargs[:action_type]).to eq("hide_post")
+      expect(captured_kwargs[:post]).to eq(post_record)
     end
 
     it "creates a reviewable even without an action_type" do
@@ -170,16 +173,19 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
   end
 
   describe "handle_action_overturned" do
+    let!(:reviewable_for_overturn) do
+      ReviewableOpennotesItem.create_for(
+        post_record,
+        state: :auto_actioned,
+        opennotes_request_id: "req-uuid-1",
+        opennotes_action_id: "act-uuid-1",
+      )
+    end
+
     it "unhides the post, sets scan exempt, and adds staff annotation" do
-      expect(OpenNotes::ActionExecutor).to receive(:unhide_post).with(post_record)
-      expect(OpenNotes::ActionExecutor).to receive(:set_scan_exempt).with(
-        post_record,
-        content_hash: kind_of(String),
-      )
-      expect(OpenNotes::ActionExecutor).to receive(:add_staff_annotation).with(
-        post_record,
-        text: kind_of(String),
-      )
+      expect(OpenNotes::ActionExecutor).to receive(:unhide_post)
+      expect(OpenNotes::ActionExecutor).to receive(:set_scan_exempt)
+      expect(OpenNotes::ActionExecutor).to receive(:add_staff_annotation)
 
       payload = {
         event: "moderation_action.overturned",

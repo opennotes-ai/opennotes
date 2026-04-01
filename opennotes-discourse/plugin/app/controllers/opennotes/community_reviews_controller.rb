@@ -98,13 +98,14 @@ module Opennotes
     end
 
     def filter_by_review_group(items, user)
+      is_staff = user.admin? || user.moderator?
       items.select do |item|
         review_group = item.dig("attributes", "review_group") || "staff"
         case review_group
-        when "community" then user.trust_level >= 2
-        when "trusted" then user.trust_level >= 3
-        when "staff" then user.admin? || user.moderator?
-        else user.admin? || user.moderator?
+        when "community" then is_staff || user.trust_level >= 2
+        when "trusted" then is_staff || user.trust_level >= 3
+        when "staff" then is_staff
+        else is_staff
         end
       end
     end
