@@ -77,8 +77,10 @@ class CircuitBreakerRegistry:
         if failure_predicate is None:
             exc_type = expected_exception
 
-            def failure_predicate(e: Exception, _t: type[Exception] = exc_type) -> bool:
+            def _default_predicate(e: Exception, _t: type[Exception] = exc_type) -> bool:
                 return isinstance(e, _t)
+
+            failure_predicate = _default_predicate
 
         config = CircuitBreakerConfig(
             failure_threshold=failure_threshold or settings.CIRCUIT_BREAKER_FAILURE_THRESHOLD,
