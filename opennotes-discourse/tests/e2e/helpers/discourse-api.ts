@@ -64,6 +64,15 @@ export class DiscourseAPI {
     return response.json() as Promise<T>;
   }
 
+  async getUserIdByUsername(username: string): Promise<number | undefined> {
+    try {
+      const user = await this.request<{ id: number }>("GET", `/users/${username}.json`);
+      return user?.id;
+    } catch {
+      return undefined;
+    }
+  }
+
   async createUser(
     username: string,
     email: string,
@@ -79,9 +88,13 @@ export class DiscourseAPI {
       approved: true,
     });
 
-    const userId = result.user_id;
+    let userId = result.user_id;
 
-    if (trustLevel > 0) {
+    if (!userId) {
+      userId = await this.getUserIdByUsername(username) ?? 0;
+    }
+
+    if (userId && trustLevel > 0) {
       await this.request("PUT", `/admin/users/${userId}/trust_level.json`, {
         level: trustLevel,
       });

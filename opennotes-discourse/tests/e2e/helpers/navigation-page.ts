@@ -6,12 +6,12 @@ export class NavigationPage {
   async goToCategory(name: string): Promise<void> {
     const slug = name.toLowerCase().replace(/\s+/g, "-");
     await this.page.goto(`/c/${slug}`);
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   async goToAdminPlugins(): Promise<void> {
     await this.page.goto("/admin/plugins");
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   async goToAdminSettings(filter?: string): Promise<void> {
@@ -19,17 +19,17 @@ export class NavigationPage {
       ? `/admin/site_settings?filter=${encodeURIComponent(filter)}`
       : "/admin/site_settings";
     await this.page.goto(url);
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   async goToReviewQueue(): Promise<void> {
     await this.page.goto("/review");
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   async goToLatest(): Promise<void> {
     await this.page.goto("/latest");
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   getCurrentPath(): string {

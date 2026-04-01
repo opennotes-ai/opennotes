@@ -1,8 +1,12 @@
+import http from "node:http";
 import { DiscourseAPI } from "./helpers/discourse-api";
 import { TestSetup } from "./helpers/test-setup";
-import { ADMIN, REVIEWER1, REVIEWER2, NEWUSER } from "./fixtures/users";
+import { REVIEWER1, REVIEWER2, NEWUSER } from "./fixtures/users";
 
 const DISCOURSE_URL = process.env.DISCOURSE_URL || "http://localhost:4200";
+// Use Rails directly for admin API calls — Ember CLI proxy at 4200 sends non-compliant headers
+// that Node 25's undici fetch() rejects. Browser tests still use 4200 via playwright.config.ts.
+const DISCOURSE_API_URL = process.env.DISCOURSE_API_URL || "http://localhost:3000";
 const API_USERNAME = process.env.DISCOURSE_API_USERNAME || "admin";
 
 async function getApiKey(): Promise<string> {
@@ -36,11 +40,16 @@ async function globalSetup() {
 
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const response = await fetch(`${DISCOURSE_URL}/srv/status`);
-      if (response.ok) {
-        discourseReady = true;
-        break;
-      }
+      await new Promise<void>((resolve, reject) => {
+        http.get(`${DISCOURSE_API_URL}/srv/status`, (res) => {
+          if (res.statusCode && res.statusCode < 500) {
+            discourseReady = true;
+          }
+          res.resume();
+          resolve();
+        }).on("error", reject);
+      });
+      if (discourseReady) break;
     } catch {
       // Discourse not ready yet
     }
@@ -62,8 +71,12 @@ async function globalSetup() {
   // 2. Ensure test data is seeded (idempotent)
   const API_KEY = await getApiKey();
   console.log("  API key loaded.");
-  const api = new DiscourseAPI(DISCOURSE_URL, API_KEY, API_USERNAME);
+  const api = new DiscourseAPI(DISCOURSE_API_URL, API_KEY, API_USERNAME);
   const setup = new TestSetup(api);
+
+  console.log("Disabling login rate limits for testing...");
+  await setup.updateSetting("max_logins_per_ip_per_minute", "200");
+  await setup.updateSetting("max_logins_per_ip_per_hour", "1000");
 
   console.log("Ensuring test users exist...");
   await setup.ensureUsersExist([REVIEWER1, REVIEWER2, NEWUSER]);
@@ -73,7 +86,7 @@ async function globalSetup() {
   try {
     const apiKey = await getApiKey();
     const response = await fetch(
-      `${DISCOURSE_URL}/search.json?q=%5BTEST%5D`,
+      `${DISCOURSE_API_URL}/search.json?q=%5BTEST%5D`,
       {
         headers: {
           "Api-Key": apiKey,

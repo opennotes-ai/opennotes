@@ -5,11 +5,11 @@ export class DashboardPage {
 
   async goToDashboard(): Promise<void> {
     await this.page.goto("/admin/plugins/opennotes");
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   async waitForLoad(): Promise<void> {
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
     await this.page.waitForSelector(".opennotes-admin-dashboard", { state: "visible" });
     await this.page.waitForSelector(".opennotes-admin-dashboard__loading", { state: "detached" });
   }

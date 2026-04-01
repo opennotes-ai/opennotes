@@ -8,7 +8,7 @@ export class CommunityReviewPage {
   }
 
   async waitForLoad(): Promise<void> {
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
     await this.page.waitForSelector(".opennotes-review-panel", { state: "visible" });
     await this.page.waitForSelector(".opennotes-review-panel__loading", { state: "detached" });
   }
@@ -40,7 +40,7 @@ export class CommunityReviewPage {
       has: this.page.locator(`.opennotes-vote-widget[data-note-id="${noteId}"]`),
     });
     await item.locator(".opennotes-vote-widget__btn--helpful").click();
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   async voteNotHelpful(noteId: string): Promise<void> {
@@ -48,7 +48,7 @@ export class CommunityReviewPage {
       has: this.page.locator(`.opennotes-vote-widget[data-note-id="${noteId}"]`),
     });
     await item.locator(".opennotes-vote-widget__btn--not-helpful").click();
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   async isVoteWidgetVisible(): Promise<boolean> {
