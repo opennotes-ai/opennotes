@@ -19,7 +19,7 @@ export default class CommunityReviewPanel extends Component {
     this.isLoading = true;
     try {
       const result = await ajax("/opennotes/reviews");
-      this.items = result.reviews ?? [];
+      this.items = result.data ?? [];
     } finally {
       this.isLoading = false;
     }
