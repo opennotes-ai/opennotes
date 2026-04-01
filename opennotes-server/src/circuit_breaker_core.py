@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -8,12 +9,10 @@ from enum import Enum
 from functools import wraps
 from typing import Any, ParamSpec, TypeVar
 
-from src.monitoring import get_logger
-
 P = ParamSpec("P")
 T = TypeVar("T")
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class CircuitState(Enum):
@@ -191,10 +190,10 @@ class AsyncCircuitBreaker:
         try:
             result = await func(*args, **kwargs)
             async with self._lock:
-                if self._core.state == CircuitState.HALF_OPEN:
+                if self._core.state == CircuitState.HALF_OPEN or (
+                    self._core.state == CircuitState.CLOSED and self._core.failures > 0
+                ):
                     self._core.record_success()
-                elif self._core.state == CircuitState.CLOSED and self._core.failures > 0:
-                    self._core._failures = 0
             return result
         except Exception as e:
             if self._failure_predicate(e):
