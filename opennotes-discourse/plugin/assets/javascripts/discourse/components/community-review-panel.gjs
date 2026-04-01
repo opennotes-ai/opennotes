@@ -40,22 +40,21 @@ export default class CommunityReviewPanel extends Component {
           {{#each this.items as |item|}}
             <li class="opennotes-review-panel__item">
               <div class="opennotes-review-panel__item-content">
-                <p class="opennotes-review-panel__item-text">{{item.raw}}</p>
                 <div class="opennotes-review-panel__item-meta">
-                  <span class="opennotes-review-panel__item-category">
-                    {{I18n.t "opennotes.review.post_in" category=item.category_name}}
-                  </span>
                   <span class="opennotes-review-panel__item-reason">
-                    {{I18n.t "opennotes.review.flagged_for" reason=item.reason}}
+                    {{I18n.t "opennotes.review.flagged_for" reason=item.attributes.action_type}}
                   </span>
-                  <time class="opennotes-review-panel__item-date">{{item.created_at}}</time>
+                  <span class="opennotes-review-panel__item-state">
+                    {{item.attributes.action_state}}
+                  </span>
+                  <time class="opennotes-review-panel__item-date">{{item.attributes.created_at}}</time>
                 </div>
               </div>
               <div class="opennotes-review-panel__item-actions">
                 <VoteWidget
-                  @noteId={{item.id}}
-                  @hasVoted={{item.has_voted}}
-                  @userVote={{item.user_vote}}
+                  @noteId={{item.attributes.note_id}}
+                  @hasVoted={{false}}
+                  @userVote={{null}}
                   @disabled={{false}}
                 />
               </div>
