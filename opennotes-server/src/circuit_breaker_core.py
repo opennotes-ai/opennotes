@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from functools import wraps
+from typing import Any, ParamSpec, TypeVar
 
 from src.monitoring import get_logger
+
+P = ParamSpec("P")
+T = TypeVar("T")
 
 logger = get_logger(__name__)
 
@@ -147,3 +153,62 @@ class CircuitBreakerCore:
             return 0.0
         elapsed = time.time() - self._last_failure_time
         return max(0.0, self.effective_reset_timeout - elapsed)
+
+
+class AsyncCircuitBreaker:
+    def __init__(
+        self,
+        core: CircuitBreakerCore,
+        failure_predicate: Callable[[Exception], bool] | None = None,
+    ) -> None:
+        self._core = core
+        self._failure_predicate = failure_predicate or (lambda e: True)
+        self._lock = asyncio.Lock()
+
+    @property
+    def name(self) -> str:
+        return self._core.name
+
+    @property
+    def state(self) -> CircuitState:
+        return self._core.state
+
+    @property
+    def failures(self) -> int:
+        return self._core.failures
+
+    @property
+    def is_open(self) -> bool:
+        return self._core.is_open
+
+    def get_status(self) -> dict[str, Any]:
+        return self._core.get_status()
+
+    async def call(self, func: Callable[P, Awaitable[T]], *args: P.args, **kwargs: P.kwargs) -> T:
+        async with self._lock:
+            self._core.check()
+
+        try:
+            result = await func(*args, **kwargs)
+            async with self._lock:
+                if self._core.state == CircuitState.HALF_OPEN:
+                    self._core.record_success()
+                elif self._core.state == CircuitState.CLOSED and self._core.failures > 0:
+                    self._core._failures = 0
+            return result
+        except Exception as e:
+            if self._failure_predicate(e):
+                async with self._lock:
+                    self._core.record_failure()
+            raise
+
+    async def reset(self) -> None:
+        async with self._lock:
+            self._core.reset()
+
+    def __call__(self, func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+        @wraps(func)
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            return await self.call(func, *args, **kwargs)
+
+        return wrapper
