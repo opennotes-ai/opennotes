@@ -33,4 +33,18 @@ export const NEWUSER: TestUser = {
   trustLevel: 0,
 };
 
-export const ALL_USERS = [ADMIN, REVIEWER1, REVIEWER2, NEWUSER];
+export const TL1_USER: TestUser = {
+  username: "basic",
+  email: "basic@test.local",
+  password: "password-for-testing",
+  trustLevel: 1,
+};
+
+export const TL3_USER: TestUser = {
+  username: "trusted",
+  email: "trusted@test.local",
+  password: "password-for-testing",
+  trustLevel: 3,
+};
+
+export const ALL_USERS = [ADMIN, REVIEWER1, REVIEWER2, NEWUSER, TL1_USER, TL3_USER];

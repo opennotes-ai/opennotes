@@ -8,3 +8,15 @@ en:
     opennotes_auto_hide_on_consensus: "Automatically hide posts when community consensus is reached"
     opennotes_staff_approval_required: "Require staff approval before executing consensus actions"
     opennotes_route_flags_to_community: "Route user flags to community review instead of staff-only queue"
+  opennotes:
+    errors:
+      already_voted: "You have already voted on this note"
+      server_unavailable: "OpenNotes server is temporarily unavailable"
+    staff_annotation:
+      overturned: "This post was automatically hidden but has been restored after community review determined the action was incorrect."
+    staff_annotations:
+      auto_hidden: "This post was automatically hidden by OpenNotes based on content classification."
+      action_overturned: "This post was automatically hidden but has been restored after community review determined the action was incorrect."
+    reviewable:
+      actions:
+        escalate: "Escalate to staff"

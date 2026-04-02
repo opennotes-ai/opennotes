@@ -6,3 +6,7 @@ export { FlagPage } from "./flag-page";
 export { ReviewPage } from "./review-page";
 export { AdminPage } from "./admin-page";
 export { TestSetup } from "./test-setup";
+export { CommunityReviewPage } from "./community-review-page";
+export { ModerationBannerPage } from "./moderation-banner-page";
+export { DashboardPage } from "./dashboard-page";
+export { OpenNotesAPI } from "./opennotes-api";

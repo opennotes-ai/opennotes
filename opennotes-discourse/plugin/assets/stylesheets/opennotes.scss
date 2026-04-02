@@ -1,0 +1,264 @@
+.opennotes-review-panel {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 1em;
+
+  &__title {
+    font-size: var(--font-up-3);
+    color: var(--primary);
+    margin-bottom: 1em;
+  }
+
+  &__loading {
+    padding: 2em;
+    text-align: center;
+    color: var(--primary-medium);
+    font-style: italic;
+  }
+
+  &__empty {
+    padding: 2em;
+    text-align: center;
+    color: var(--primary-medium);
+    background: var(--primary-very-low);
+    border-radius: var(--d-border-radius);
+  }
+
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75em;
+    padding: 1em;
+    margin-bottom: 0.75em;
+    background: var(--secondary);
+    border: 1px solid var(--primary-low);
+    border-radius: var(--d-border-radius);
+
+    &:hover {
+      border-color: var(--primary-low-mid);
+    }
+  }
+
+  &__item-content {
+    flex: 1;
+  }
+
+  &__item-text {
+    margin: 0 0 0.5em;
+    color: var(--primary);
+    line-height: var(--line-height-large);
+  }
+
+  &__item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75em;
+    font-size: var(--font-down-1);
+    color: var(--primary-medium);
+  }
+
+  &__item-category {
+    background: var(--tertiary-low);
+    color: var(--tertiary);
+    padding: 0.15em 0.5em;
+    border-radius: var(--d-border-radius);
+    font-weight: 500;
+  }
+
+  &__item-reason {
+    background: var(--highlight-low);
+    color: var(--highlight);
+    padding: 0.15em 0.5em;
+    border-radius: var(--d-border-radius);
+  }
+
+  &__item-date {
+    color: var(--primary-low-mid);
+  }
+
+  &__item-actions {
+    border-top: 1px solid var(--primary-very-low);
+    padding-top: 0.75em;
+  }
+}
+
+.opennotes-vote-widget {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  flex-wrap: wrap;
+
+  &__btn {
+    transition: opacity 0.15s ease;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  &__voted {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    padding: 0.25em 0.75em;
+    background: var(--success-low);
+    color: var(--success);
+    border-radius: var(--d-border-radius);
+    font-size: var(--font-down-1);
+    font-weight: 500;
+  }
+
+  &__submitting {
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+    font-style: italic;
+  }
+}
+
+.opennotes-banner {
+  padding: 0.75em 1em;
+  border-radius: var(--d-border-radius);
+  margin-bottom: 1em;
+  font-size: var(--font-down-1);
+
+  &--info {
+    background: var(--tertiary-low);
+    color: var(--tertiary);
+    border: 1px solid var(--tertiary-low);
+  }
+
+  &--warning {
+    background: var(--highlight-low);
+    color: var(--highlight);
+    border: 1px solid var(--highlight-low);
+  }
+
+  &--success {
+    background: var(--success-low);
+    color: var(--success);
+    border: 1px solid var(--success-low);
+  }
+}
+
+.opennotes-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15em 0.5em;
+  border-radius: var(--d-border-radius);
+  font-size: var(--font-down-2);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+
+  &--review {
+    background: var(--highlight-low);
+    color: var(--highlight);
+  }
+
+  &--reviewed {
+    background: var(--success-low);
+    color: var(--success);
+  }
+
+  &--helpful {
+    background-color: #d4edda;
+    color: #155724;
+  }
+
+  &--no-action {
+    background-color: #e2e3e5;
+    color: #383d41;
+  }
+
+  &--under-review {
+    background-color: #fef3cd;
+    color: #856404;
+  }
+
+  &--auto-actioned {
+    background-color: #f8d7da;
+    color: #721c24;
+  }
+}
+
+.opennotes-review-banner {
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 4px;
+  font-weight: 500;
+  font-size: var(--font-up-1);
+
+  &--warning {
+    background-color: #fef3cd;
+    border: 1px solid #ffc107;
+    color: #856404;
+  }
+
+  &--danger {
+    background-color: #f8d7da;
+    border: 1px solid #dc3545;
+    color: #721c24;
+  }
+}
+
+.opennotes-admin-dashboard {
+  max-width: 960px;
+  padding: 20px;
+
+  h1 {
+    margin-bottom: 24px;
+  }
+
+  &__loading {
+    padding: 40px 0;
+    text-align: center;
+    color: var(--primary-medium);
+    font-size: var(--font-up-1);
+  }
+
+  &__error {
+    padding: 16px;
+    background-color: #f8d7da;
+    border: 1px solid #dc3545;
+    border-radius: 4px;
+    color: #721c24;
+  }
+
+  &__section {
+    margin-bottom: 32px;
+
+    h2 {
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--primary-low);
+    }
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+
+    th,
+    td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--primary-low);
+    }
+
+    th {
+      font-weight: 600;
+      color: var(--primary-high);
+    }
+
+    tr:hover {
+      background-color: var(--primary-very-low);
+    }
+  }
+}

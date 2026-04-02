@@ -6,14 +6,12 @@ export class LoginPage {
 
   async loginAs(username: string, password?: string): Promise<void> {
     const pwd = password ?? "password123";
-    await this.page.goto("/");
-    await this.page.click(".login-button");
-    await this.page.waitForSelector("#login-account-name", { state: "visible" });
+    await this.page.goto("/login", { waitUntil: "domcontentloaded" });
+    await this.page.waitForSelector("#login-account-name", { state: "visible", timeout: 30000 });
     await this.page.fill("#login-account-name", username);
     await this.page.fill("#login-account-password", pwd);
     await this.page.click("#login-button");
-    await this.page.waitForSelector("#login-button", { state: "hidden" });
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForSelector(".current-user", { state: "visible", timeout: 30000 });
   }
 
   async loginAsAdmin(): Promise<void> {
@@ -33,7 +31,7 @@ export class LoginPage {
     if (await confirmButton.isVisible({ timeout: 3000 }).catch(() => false)) {
       await confirmButton.click();
     }
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForSelector(".login-required, .login-button, .btn-primary:has-text('Log In')", { timeout: 15000 }).catch(() => {});
   }
 
   async isLoggedIn(): Promise<boolean> {

@@ -11,17 +11,17 @@ export class ReviewPage {
 
   async goToReviewQueue(): Promise<void> {
     await this.page.goto("/review");
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   async getReviewableCount(): Promise<number> {
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
     const items = this.page.locator(".reviewable-item");
     return items.count();
   }
 
   async getReviewableItems(): Promise<ReviewableItem[]> {
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
     const items = this.page.locator(".reviewable-item");
     const count = await items.count();
     const results: ReviewableItem[] = [];
@@ -60,7 +60,7 @@ export class ReviewPage {
       ".reviewable-actions .btn.approve, .reviewable-actions button"
     ).filter({ hasText: /Approve/i });
     await approveButton.click();
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 
   async rejectItem(index: number): Promise<void> {
@@ -70,6 +70,6 @@ export class ReviewPage {
       ".reviewable-actions .btn.reject, .reviewable-actions button"
     ).filter({ hasText: /Reject|Delete/i });
     await rejectButton.click();
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("domcontentloaded");
   }
 }

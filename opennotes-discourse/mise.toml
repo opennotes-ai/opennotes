@@ -80,3 +80,27 @@ run = "cd tests/e2e && npx playwright show-report"
 [tasks."discourse:test:e2e:install"]
 description = "Install Playwright browsers and test dependencies"
 run = "cd tests/e2e && npm install && npx playwright install chromium"
+
+[tasks."discourse:test:seed:server"]
+description = "Seed OpenNotes server with E2E test data"
+run = '''
+PGPASSWORD="${POSTGRES_PASSWORD:-testpass}" \
+  psql \
+    -h "${POSTGRES_HOST:-127.0.0.1}" \
+    -p "${POSTGRES_PORT:-5432}" \
+    -U "${POSTGRES_USER:-opennotes}" \
+    -d "${POSTGRES_DB:-opennotes}" \
+    -f "tests/e2e/fixtures/server-seed.sql"
+'''
+
+[tasks."discourse:test:reset"]
+description = "Reset E2E test data (server + Discourse)"
+run = '''
+PGPASSWORD="${POSTGRES_PASSWORD:-testpass}" \
+  psql \
+    -h "${POSTGRES_HOST:-127.0.0.1}" \
+    -p "${POSTGRES_PORT:-5432}" \
+    -U "${POSTGRES_USER:-opennotes}" \
+    -d "${POSTGRES_DB:-opennotes}" \
+    -c "DELETE FROM moderation_actions WHERE community_server_id IN (SELECT id FROM community_servers WHERE platform = 'discourse' AND platform_community_server_id = 'discourse-dev-1'); DELETE FROM ratings WHERE note_id IN (SELECT id FROM notes WHERE community_server_id IN (SELECT id FROM community_servers WHERE platform = 'discourse' AND platform_community_server_id = 'discourse-dev-1')); DELETE FROM notes WHERE community_server_id IN (SELECT id FROM community_servers WHERE platform = 'discourse' AND platform_community_server_id = 'discourse-dev-1'); DELETE FROM requests WHERE community_server_id IN (SELECT id FROM community_servers WHERE platform = 'discourse' AND platform_community_server_id = 'discourse-dev-1');"
+'''
