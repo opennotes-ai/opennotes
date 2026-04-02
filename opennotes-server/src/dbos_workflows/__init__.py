@@ -16,7 +16,8 @@ Adapters:
         All methods use fire-and-forget semantics (errors logged, not raised).
 
 Resilience:
-    CircuitBreaker: Protect against cascading failures during workflow execution
+    CircuitBreakerCore: Protect against cascading failures during workflow execution
+    CircuitBreakerConfig: Configuration for CircuitBreakerCore
     CircuitOpenError: Raised when circuit breaker is open
     CircuitState: Enum with CLOSED, OPEN, HALF_OPEN states
 
@@ -113,9 +114,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
         "VISION_DESCRIPTION_WORKFLOW_NAME",
     ),
     "BatchJobDBOSAdapter": ("src.dbos_workflows.batch_job_adapter", "BatchJobDBOSAdapter"),
-    "CircuitBreaker": ("src.dbos_workflows.circuit_breaker", "CircuitBreaker"),
-    "CircuitOpenError": ("src.dbos_workflows.circuit_breaker", "CircuitOpenError"),
-    "CircuitState": ("src.dbos_workflows.circuit_breaker", "CircuitState"),
+    "CircuitBreakerCore": ("src.circuit_breaker_core", "CircuitBreakerCore"),
+    "CircuitBreakerConfig": ("src.circuit_breaker_core", "CircuitBreakerConfig"),
+    "CircuitOpenError": ("src.circuit_breaker_core", "CircuitOpenError"),
+    "CircuitState": ("src.circuit_breaker_core", "CircuitState"),
     "ai_note_generation_workflow": (
         "src.dbos_workflows.content_monitoring_workflows",
         "ai_note_generation_workflow",

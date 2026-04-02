@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.dbos_workflows.circuit_breaker import CircuitOpenError
+from src.circuit_breaker_core import CircuitOpenError
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 
 

@@ -1482,9 +1482,13 @@ class TestScheduleTurnsStep:
         mock_dispatch.assert_awaited_once_with(instance_id, 3, 1, generation=1)
 
     def test_schedule_turns_circuit_breaker_trips(self) -> None:
-        from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
+        from src.circuit_breaker_core import (
+            CircuitBreakerConfig,
+            CircuitBreakerCore,
+            CircuitOpenError,
+        )
 
-        breaker = CircuitBreaker(threshold=3, reset_timeout=300)
+        breaker = CircuitBreakerCore(CircuitBreakerConfig(failure_threshold=3, reset_timeout=300))
 
         for _ in range(3):
             breaker.record_failure()
@@ -1495,12 +1499,16 @@ class TestScheduleTurnsStep:
     def test_circuit_breaker_stuck_log_after_consecutive_skips(self) -> None:
         import logging
 
-        from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
+        from src.circuit_breaker_core import (
+            CircuitBreakerConfig,
+            CircuitBreakerCore,
+            CircuitOpenError,
+        )
         from src.simulation.workflows.orchestrator_workflow import (
             CIRCUIT_BREAKER_STUCK_THRESHOLD,
         )
 
-        breaker = CircuitBreaker(threshold=2, reset_timeout=300)
+        breaker = CircuitBreakerCore(CircuitBreakerConfig(failure_threshold=2, reset_timeout=300))
         for _ in range(2):
             breaker.record_failure()
 
