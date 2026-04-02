@@ -33,8 +33,10 @@ def mock_admin_user():
 @pytest.fixture
 def client(mock_admin_user):
     app.dependency_overrides[get_current_user_or_api_key] = lambda: mock_admin_user
+    app.state.startup_complete = True
     yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.pop(get_current_user_or_api_key, None)
+    app.state.startup_complete = False
 
 
 COMMUNITY_SERVER_ID = "00000000-0000-0000-0000-000000000001"

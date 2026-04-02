@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import functools
 import sys
@@ -8,22 +10,12 @@ from typing import Any, cast
 import pandas as pd
 
 scoring_path = Path(__file__).parent.parent.parent / "communitynotes" / "scoring" / "src"
-sys.path.insert(0, str(scoring_path))
+if str(scoring_path) not in sys.path:
+    sys.path.insert(0, str(scoring_path))
 
-from scoring.enums import Scorers  # pyright: ignore[reportMissingImports]  # noqa: E402
-from scoring.mf_base_scorer import (  # pyright: ignore[reportMissingImports]  # noqa: E402
-    MFBaseScorer,
-)
-from scoring.pandas_utils import (  # pyright: ignore[reportMissingImports]  # noqa: E402
-    PandasPatcher,
-)
-from scoring.run_scoring import (  # pyright: ignore[reportMissingImports]  # noqa: E402
-    run_scoring,
-)
-
-from src.config import settings  # noqa: E402 - sys.path manipulation required before import
-from src.monitoring import get_logger  # noqa: E402 - sys.path manipulation required before import
-from src.notes.scoring.tier_config import (  # noqa: E402 - sys.path manipulation required before import
+from src.config import settings  # noqa: E402
+from src.monitoring import get_logger  # noqa: E402
+from src.notes.scoring.tier_config import (  # noqa: E402
     TierThresholds,
     get_tier_config,
     get_tier_for_note_count,
@@ -77,6 +69,10 @@ def _apply_scoring_threshold_monkey_patch() -> None:
         # modifies the global between the fast path check and lock acquisition
         if _scoring_thresholds_patched:
             return  # type: ignore[unreachable]
+
+        from scoring.mf_base_scorer import (  # noqa: PLC0415
+            MFBaseScorer,  # pyright: ignore[reportMissingImports]
+        )
 
         should_patch = settings.ENVIRONMENT in ("development", "test")
 
@@ -227,6 +223,10 @@ class ScoringAdapter:
             with _pandas_patch_lock:
                 # Check again after acquiring lock in case another thread patched while we waited
                 if not _pandas_patched:
+                    from scoring.pandas_utils import (  # noqa: PLC0415
+                        PandasPatcher,  # pyright: ignore[reportMissingImports]
+                    )
+
                     logger.info("Applying pandas patches for Community Notes scoring")
                     patcher = PandasPatcher(fail=False)
                     pd.concat = patcher.safe_concat()
@@ -236,6 +236,11 @@ class ScoringAdapter:
                     _pandas_patched = True
 
         _apply_scoring_threshold_monkey_patch()
+
+        from scoring.enums import Scorers  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+        from scoring.run_scoring import (  # noqa: PLC0415
+            run_scoring,  # pyright: ignore[reportMissingImports]
+        )
 
         enabled_scorers = {
             Scorers.MFCoreScorer,

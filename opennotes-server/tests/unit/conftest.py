@@ -4,6 +4,25 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def bypass_startup_gate():
+    """Bypass StartupGateMiddleware for all unit tests.
+
+    Unit tests don't run the full lifespan, so startup_complete is never set.
+    Without this, any test that makes requests against the real app gets 503.
+
+    Also resets startup_failed to prevent pollution from tests that trigger
+    failed startup paths.
+    """
+    from src.main import app
+
+    app.state.startup_complete = True
+    app.state.startup_failed = False
+    yield
+    app.state.startup_complete = True
+    app.state.startup_failed = False
+
+
+@pytest.fixture(autouse=True)
 def clear_settings_singleton():
     """Clear Settings singleton before each unit test to avoid state leakage."""
     from src.config import get_settings
@@ -31,26 +50,6 @@ def mock_nats_client():
     nats_client.nc = None
     nats_client.js = None
     nats_client.publish.reset_mock()
-
-
-@pytest.fixture(autouse=True)
-def bypass_startup_gate():
-    from contextlib import asynccontextmanager
-
-    from src.main import app
-
-    @asynccontextmanager
-    async def _noop_lifespan(app):
-        app.state.startup_complete = True
-        yield
-
-    original_router_lifespan = app.router.lifespan_context
-    app.router.lifespan_context = _noop_lifespan
-    app.state.startup_complete = True
-
-    yield
-
-    app.router.lifespan_context = original_router_lifespan
 
 
 @pytest.fixture

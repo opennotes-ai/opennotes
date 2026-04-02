@@ -436,7 +436,7 @@ class BulkScanFailedEvent(BaseEvent):
 
 
 class ModerationActionProposedEvent(BaseEvent):
-    event_type: EventType = EventType.MODERATION_ACTION_PROPOSED
+    event_type: Literal[EventType.MODERATION_ACTION_PROPOSED] = EventType.MODERATION_ACTION_PROPOSED  # pyright: ignore[reportIncompatibleVariableOverride]
     action_id: UUID
     request_id: UUID
     action_type: str
@@ -447,7 +447,7 @@ class ModerationActionProposedEvent(BaseEvent):
 
 
 class ModerationActionAppliedEvent(BaseEvent):
-    event_type: EventType = EventType.MODERATION_ACTION_APPLIED
+    event_type: Literal[EventType.MODERATION_ACTION_APPLIED] = EventType.MODERATION_ACTION_APPLIED  # pyright: ignore[reportIncompatibleVariableOverride]
     action_id: UUID
     request_id: UUID
     action_type: str
@@ -456,7 +456,9 @@ class ModerationActionAppliedEvent(BaseEvent):
 
 
 class ModerationActionRetroReviewStartedEvent(BaseEvent):
-    event_type: EventType = EventType.MODERATION_ACTION_RETRO_REVIEW_STARTED
+    event_type: Literal[EventType.MODERATION_ACTION_RETRO_REVIEW_STARTED] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        EventType.MODERATION_ACTION_RETRO_REVIEW_STARTED
+    )
     action_id: UUID
     request_id: UUID
     action_type: str
@@ -464,7 +466,9 @@ class ModerationActionRetroReviewStartedEvent(BaseEvent):
 
 
 class ModerationActionConfirmedEvent(BaseEvent):
-    event_type: EventType = EventType.MODERATION_ACTION_CONFIRMED
+    event_type: Literal[EventType.MODERATION_ACTION_CONFIRMED] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        EventType.MODERATION_ACTION_CONFIRMED
+    )
     action_id: UUID
     request_id: UUID
     action_type: str
@@ -472,7 +476,9 @@ class ModerationActionConfirmedEvent(BaseEvent):
 
 
 class ModerationActionOverturnedEvent(BaseEvent):
-    event_type: EventType = EventType.MODERATION_ACTION_OVERTURNED
+    event_type: Literal[EventType.MODERATION_ACTION_OVERTURNED] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        EventType.MODERATION_ACTION_OVERTURNED
+    )
     action_id: UUID
     request_id: UUID
     action_type: str
@@ -481,7 +487,9 @@ class ModerationActionOverturnedEvent(BaseEvent):
 
 
 class ModerationActionDismissedEvent(BaseEvent):
-    event_type: EventType = EventType.MODERATION_ACTION_DISMISSED
+    event_type: Literal[EventType.MODERATION_ACTION_DISMISSED] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        EventType.MODERATION_ACTION_DISMISSED
+    )
     action_id: UUID
     request_id: UUID
     action_type: str

@@ -293,7 +293,7 @@ jobs:
         working-directory: opennotes-server
         run: |
           uv venv --allow-existing --relocatable
-          uv pip install -e ".[dev]"
+          uv pip install -e ".[dev,scoring]"
 
       - name: Run unit tests with coverage
         env:
@@ -359,7 +359,7 @@ jobs:
         working-directory: opennotes-server
         run: |
           uv venv --allow-existing --relocatable
-          uv pip install -e ".[dev]"
+          uv pip install -e ".[dev,scoring]"
 
       - name: Build PostgreSQL with pgvector and pgroonga
         run: |
