@@ -43,9 +43,9 @@
 
 services:
   # PostgreSQL - Relational database with pgvector extension
-  # Use POSTGRES_IMAGE env var to override (e.g., for PGroonga support)
+  # Custom image with pgvector + pgroonga + pg_cron (built from docker/postgres/)
   postgres:
-    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg18}
+    image: ${POSTGRES_IMAGE:-opennotes/postgres:18-pgvector-pgroonga}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-opennotes}
       POSTGRES_USER: ${POSTGRES_USER:-opennotes}
