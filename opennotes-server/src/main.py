@@ -19,19 +19,17 @@ from src.config import get_settings
 _otel_settings = get_settings()
 
 if _otel_settings.ENABLE_TRACING and not _otel_settings.TESTING:
-    from src.monitoring.otel import setup_otel
+    from src.monitoring.observability import setup_observability
 
-    setup_otel(
+    setup_observability(
         service_name=_otel_settings.OTEL_SERVICE_NAME or _otel_settings.PROJECT_NAME,
         service_version=_otel_settings.VERSION,
         environment=_otel_settings.ENVIRONMENT,
-        otlp_endpoint=_otel_settings.OTLP_ENDPOINT,
-        otlp_headers=_otel_settings.OTLP_HEADERS,
-        otlp_insecure=_otel_settings.OTLP_INSECURE,
+        logfire_token=_otel_settings.LOGFIRE_TOKEN,
+        trace_content=_otel_settings.LOGFIRE_TRACE_CONTENT,
         sample_rate=_otel_settings.TRACING_SAMPLE_RATE,
-        enable_console_export=_otel_settings.ENABLE_CONSOLE_TRACING,
         use_gcp_exporters=_otel_settings.USE_GCP_EXPORTERS,
-        skip_batch_export=_otel_settings.TRACELOOP_ENABLED,
+        enable_console_export=_otel_settings.ENABLE_CONSOLE_TRACING,
     )
 
 from src.batch_jobs.router import router as batch_jobs_router
@@ -152,20 +150,6 @@ initialize_instance_metadata(
     environment=settings.ENVIRONMENT,
 )
 logger.info(f"Instance metadata initialized: {settings.INSTANCE_ID}")
-
-if settings.TRACELOOP_ENABLED and not settings.TESTING:
-    from src.monitoring.traceloop import setup_traceloop
-
-    setup_traceloop(
-        app_name=settings.PROJECT_NAME,
-        service_name=settings.PROJECT_NAME,
-        version=settings.VERSION,
-        environment=settings.ENVIRONMENT,
-        instance_id=settings.INSTANCE_ID,
-        otlp_endpoint=settings.OTLP_ENDPOINT,
-        otlp_headers=settings.OTLP_HEADERS,
-        trace_content=settings.TRACELOOP_TRACE_CONTENT,
-    )
 
 health_checker = HealthChecker(
     version=settings.VERSION,
