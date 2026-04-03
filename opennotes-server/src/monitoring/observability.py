@@ -100,6 +100,8 @@ def setup_observability(
                         "GCP exporter packages not available, Cloud Trace export disabled"
                     )
 
+            from logfire import SamplingOptions
+
             logfire.configure(
                 token=logfire_token,
                 service_name=service_name,
@@ -107,6 +109,8 @@ def setup_observability(
                 environment=environment,
                 send_to_logfire="if-token-present" if not logfire_token else True,
                 additional_span_processors=additional_processors,
+                sampling=SamplingOptions(head=sample_rate),
+                scrubbing=False if trace_content else None,
             )
 
             logfire.instrument_anthropic()
