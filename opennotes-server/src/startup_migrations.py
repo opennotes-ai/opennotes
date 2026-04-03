@@ -18,6 +18,18 @@ LOCK_RETRY_INTERVAL = 2
 LOCK_TIMEOUT_SECONDS = 1800
 LOCK_LOG_INTERVAL = 30
 
+KNOWN_SAFE_ERRORS = frozenset(
+    {
+        "DuplicateColumn",
+        "DuplicateTable",
+        "DuplicateObject",
+    }
+)
+
+
+def _is_safe_error(stderr: str) -> bool:
+    return any(err in stderr for err in KNOWN_SAFE_ERRORS)
+
 
 def _get_alembic_env(direct_url: str) -> dict[str, str]:
     env = os.environ.copy()
@@ -117,8 +129,8 @@ def _run_alembic_upgrade(conn, server_dir: Path, alembic_env: dict[str, str]) ->
                 "heads": revisions,
             },
         )
-    pre_deploy_revision = revisions[0] if revisions else "base"
-    logger.info(f"Pre-deploy revision(s): {revisions or ['base']}")
+    pre_deploy_revisions = revisions if revisions else ["base"]
+    logger.info(f"Pre-deploy revision(s): {pre_deploy_revisions}")
 
     try:
         result = subprocess.run(
@@ -142,7 +154,7 @@ def _run_alembic_upgrade(conn, server_dir: Path, alembic_env: dict[str, str]) ->
         return
 
     if result.returncode != 0:
-        _handle_upgrade_failure(conn, server_dir, alembic_env, result, pre_deploy_revision)
+        _handle_upgrade_failure(conn, server_dir, alembic_env, result, pre_deploy_revisions)
     elif result.stdout.strip():
         logger.info(f"Migrations applied successfully: {result.stdout.strip()}")
     else:
@@ -151,19 +163,35 @@ def _run_alembic_upgrade(conn, server_dir: Path, alembic_env: dict[str, str]) ->
     _release_lock(conn)
 
 
-def _handle_upgrade_failure(conn, server_dir, alembic_env, result, pre_deploy_revision):
+def _handle_upgrade_failure(conn, server_dir, alembic_env, result, pre_deploy_revisions: list[str]):
+    if _is_safe_error(result.stderr):
+        matched = next(err for err in KNOWN_SAFE_ERRORS if err in result.stderr)
+        logger.warning(
+            "Migration failed with known-safe error — skipping rollback",
+            extra={
+                "alert_type": "migration_safe_error",
+                "matched_error": matched,
+                "alembic_stdout": result.stdout,
+                "alembic_stderr": result.stderr,
+                "pre_deploy_revisions": pre_deploy_revisions,
+            },
+        )
+        return
+
+    rollback_target = pre_deploy_revisions[0]
     logger.critical(
         "Migration failed — rolling back to pre-deploy revision",
         extra={
             "alert_type": "migration_failure",
             "alembic_stdout": result.stdout,
             "alembic_stderr": result.stderr,
-            "pre_deploy_revision": pre_deploy_revision,
+            "pre_deploy_revisions": pre_deploy_revisions,
+            "rollback_target": rollback_target,
         },
     )
     try:
         rollback = subprocess.run(
-            [sys.executable, "-m", "alembic", "downgrade", pre_deploy_revision],
+            [sys.executable, "-m", "alembic", "downgrade", rollback_target],
             capture_output=True,
             text=True,
             check=False,
@@ -177,7 +205,7 @@ def _handle_upgrade_failure(conn, server_dir, alembic_env, result, pre_deploy_re
             extra={
                 "alert_type": "migration_rollback_timeout",
                 "timeout_seconds": SUBPROCESS_TIMEOUT,
-                "pre_deploy_revision": pre_deploy_revision,
+                "pre_deploy_revisions": pre_deploy_revisions,
             },
         )
         _release_lock(conn)

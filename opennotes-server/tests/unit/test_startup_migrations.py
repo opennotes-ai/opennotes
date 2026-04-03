@@ -943,3 +943,178 @@ class TestSkipMigrations:
 
         info_messages = [str(c) for c in mock_logger.info.call_args_list]
         assert any("skip" in m.lower() for m in info_messages)
+
+
+@pytest.mark.asyncio
+class TestSafeErrorAllowlist:
+    async def test_duplicate_column_skips_rollback(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(
+            returncode=1,
+            stderr='sqlalchemy.exc.ProgrammingError: (psycopg2.errors.DuplicateColumn) column "foo" of relation "bar" already exists',
+        )
+
+        mock_settings = _make_mock_settings()
+
+        with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run",
+                side_effect=[current_result, upgrade_result],
+            ) as mock_run,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        assert mock_run.call_count == 2
+
+    async def test_duplicate_table_skips_rollback(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(
+            returncode=1,
+            stderr='sqlalchemy.exc.ProgrammingError: (psycopg2.errors.DuplicateTable) relation "foo" already exists',
+        )
+
+        mock_settings = _make_mock_settings()
+
+        with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run",
+                side_effect=[current_result, upgrade_result],
+            ) as mock_run,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        assert mock_run.call_count == 2
+
+    async def test_unknown_error_still_triggers_rollback(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(
+            returncode=1, stderr="some unexpected migration error"
+        )
+        downgrade_result = _make_subprocess_result(stdout="ok")
+
+        mock_settings = _make_mock_settings()
+
+        with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run",
+                side_effect=[current_result, upgrade_result, downgrade_result],
+            ) as mock_run,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        assert mock_run.call_count == 3
+        downgrade_call = mock_run.call_args_list[2]
+        assert "downgrade" in downgrade_call.args[0]
+
+    async def test_safe_error_logs_warning_not_critical(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(
+            returncode=1,
+            stderr="psycopg2.errors.DuplicateColumn: column already exists",
+        )
+
+        mock_settings = _make_mock_settings()
+
+        with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run",
+                side_effect=[current_result, upgrade_result],
+            ),
+            patch(f"{MODULE}.logger") as mock_logger,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        warning_msgs = [str(c) for c in mock_logger.warning.call_args_list]
+        assert any(
+            "known-safe" in m.lower() or "skipping rollback" in m.lower() for m in warning_msgs
+        )
+        critical_msgs = [str(c) for c in mock_logger.critical.call_args_list]
+        assert not any("rolling back" in m.lower() for m in critical_msgs)
+
+    async def test_safe_error_still_releases_lock(self):
+        mock_engine, mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\n")
+        upgrade_result = _make_subprocess_result(
+            returncode=1,
+            stderr="psycopg2.errors.DuplicateObject: constraint already exists",
+        )
+
+        mock_settings = _make_mock_settings()
+
+        with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run",
+                side_effect=[current_result, upgrade_result],
+            ),
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        sql_calls = _execute_call_strings(mock_conn)
+        assert any("pg_advisory_unlock" in s for s in sql_calls)
+
+
+@pytest.mark.asyncio
+class TestMultiHeadRevisions:
+    async def test_multiple_revisions_all_captured_in_log(self):
+        mock_engine, _mock_conn = _make_mock_engine()
+        current_result = _make_subprocess_result(stdout="abc123 (head)\ndef456 (head)\n")
+        upgrade_result = _make_subprocess_result(returncode=1, stderr="some error")
+        downgrade_result = _make_subprocess_result(stdout="ok")
+
+        mock_settings = _make_mock_settings()
+
+        with (
+            patch(f"{MODULE}._get_direct_sync_url", return_value=TEST_SYNC_URL),
+            patch(f"{MODULE}.create_engine", return_value=mock_engine),
+            patch(f"{MODULE}.get_settings", return_value=mock_settings),
+            patch(
+                f"{MODULE}.subprocess.run",
+                side_effect=[current_result, upgrade_result, downgrade_result],
+            ),
+            patch(f"{MODULE}.logger") as mock_logger,
+        ):
+            from src.startup_migrations import run_startup_migrations
+
+            await run_startup_migrations("full")
+
+        all_log_calls = []
+        for method in [mock_logger.info, mock_logger.warning, mock_logger.critical]:
+            for call in method.call_args_list:
+                extra = call.kwargs.get("extra", {})
+                all_log_calls.append(extra)
+
+        has_all_revisions = any(
+            extra.get("pre_deploy_revisions") == ["abc123", "def456"]
+            or extra.get("heads") == ["abc123", "def456"]
+            for extra in all_log_calls
+        )
+        assert has_all_revisions
