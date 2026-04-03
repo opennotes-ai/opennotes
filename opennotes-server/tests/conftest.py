@@ -114,6 +114,10 @@ def pytest_configure(config: "pytest.Config") -> None:
     """
 
 
+_XDIST_SERIAL_MARKERS = {"integration_messaging", "serial", "heavy"}
+
+
+@pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(config, items):
     """
     Deselect tests that must run serially when xdist is active.
@@ -127,18 +131,32 @@ def pytest_collection_modifyitems(config, items):
     """
     xdist_numprocesses = config.getoption("numprocesses", default=None)
 
-    if xdist_numprocesses and xdist_numprocesses != "0":
-        items_to_remove = []
+    if xdist_numprocesses and int(xdist_numprocesses) > 0:
+        remaining = []
+        deselected = []
         for item in items:
-            if (
-                "integration_messaging" in item.keywords
-                or "serial" in item.keywords
-                or "heavy" in item.keywords
-            ):
-                items_to_remove.append(item)
+            if item.keywords.keys() & _XDIST_SERIAL_MARKERS:
+                deselected.append(item)
+            else:
+                remaining.append(item)
 
-        for item in items_to_remove:
-            items.remove(item)
+        if deselected:
+            items[:] = remaining
+            config.hook.pytest_deselected(items=deselected)
+
+
+@pytest.fixture(autouse=True)
+def _skip_serial_under_xdist(request):
+    """Skip serial-marked tests if they somehow run under xdist workers.
+
+    Belt-and-suspenders: pytest_collection_modifyitems deselects these on the
+    controller, but xdist worker re-collection can reintroduce them.
+    """
+    if not (request.node.keywords.keys() & _XDIST_SERIAL_MARKERS):
+        return
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+    if worker_id is not None:
+        pytest.skip(f"serial test skipped on xdist worker {worker_id}")
 
 
 def cleanup_old_orphaned_containers():
