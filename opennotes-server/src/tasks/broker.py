@@ -272,13 +272,15 @@ def get_broker() -> PullBasedJetStreamBroker:
             module_levels=parse_log_level_overrides(settings.LOG_LEVEL_OVERRIDES),
         )
 
-        if settings.ENABLE_TRACING:
+        if settings.ENABLE_TRACING and settings.LOGFIRE_ENABLED:
             setup_observability(
                 service_name="opennotes-taskiq-worker",
                 service_version=settings.VERSION,
                 environment=settings.ENVIRONMENT,
                 logfire_token=settings.LOGFIRE_TOKEN,
                 trace_content=settings.LOGFIRE_TRACE_CONTENT,
+                sample_rate=settings.TRACING_SAMPLE_RATE,
+                use_gcp_exporters=settings.USE_GCP_EXPORTERS,
             )
 
         _broker_instance = _create_broker()

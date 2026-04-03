@@ -18,7 +18,7 @@ from src.config import get_settings
 
 _otel_settings = get_settings()
 
-if _otel_settings.ENABLE_TRACING and not _otel_settings.TESTING:
+if _otel_settings.ENABLE_TRACING and _otel_settings.LOGFIRE_ENABLED and not _otel_settings.TESTING:
     from src.monitoring.observability import setup_observability
 
     setup_observability(

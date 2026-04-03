@@ -168,11 +168,13 @@ def shutdown_observability(flush_timeout_millis: int | None = None) -> None:
         try:
             from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
             from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+            from opentelemetry.instrumentation.logging import LoggingInstrumentor
             from opentelemetry.instrumentation.redis import RedisInstrumentor
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
             FastAPIInstrumentor().uninstrument()
             HTTPXClientInstrumentor().uninstrument()
+            LoggingInstrumentor().uninstrument()
             RedisInstrumentor().uninstrument()
             SQLAlchemyInstrumentor().uninstrument()
             logger.debug("Uninstrumented all auto-instrumented libraries")
