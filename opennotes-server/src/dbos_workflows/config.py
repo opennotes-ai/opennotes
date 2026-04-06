@@ -103,7 +103,7 @@ def get_dbos_config() -> DBOSConfig:
         "deployment.environment": settings.ENVIRONMENT,
     }
 
-    if settings.OTLP_ENDPOINT:
+    if settings.OTLP_ENDPOINT and not settings.LOGFIRE_ENABLED:
         http_base = _derive_http_otlp_endpoint(settings.OTLP_ENDPOINT)
         if http_base:
             config["enable_otlp"] = True
