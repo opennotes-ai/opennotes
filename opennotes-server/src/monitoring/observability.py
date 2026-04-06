@@ -95,9 +95,9 @@ def setup_observability(
                     )
                     additional_processors.append(cloud_trace_processor)
                     logger.info("Cloud Trace exporter configured as additional Logfire processor")
-                except ImportError:
+                except Exception as exc:
                     logger.warning(
-                        "GCP exporter packages not available, Cloud Trace export disabled"
+                        "GCP exporter setup failed, Cloud Trace export disabled: %s", exc
                     )
 
             from logfire import SamplingOptions
@@ -136,9 +136,7 @@ def setup_observability(
                 logger.warning(f"Some OTel instrumentors not available: {e}")
 
             if enable_console_export:
-                logger.info(
-                    "Console export: use LOGFIRE_CONSOLE=true env var for Logfire console output"
-                )
+                os.environ.setdefault("LOGFIRE_CONSOLE", "true")
 
             _observability_initialized = True
             logger.info(
@@ -192,15 +190,18 @@ def shutdown_observability(flush_timeout_millis: int | None = None) -> None:
         except Exception as e:
             logger.warning(f"Error during Logfire shutdown: {e}")
 
-        from src.monitoring.otel import (
-            AttributeSanitizingSpanProcessor,
-            BaggageSpanProcessor,
-            _remove_attribute_warning_filter,
-        )
+        try:
+            from src.monitoring.otel import (
+                AttributeSanitizingSpanProcessor,
+                BaggageSpanProcessor,
+                _remove_attribute_warning_filter,
+            )
 
-        AttributeSanitizingSpanProcessor.instance = None
-        BaggageSpanProcessor.instance = None
-        _remove_attribute_warning_filter()
-
-        _observability_initialized = False
-        logger.debug("Observability state reset")
+            AttributeSanitizingSpanProcessor.instance = None
+            BaggageSpanProcessor.instance = None
+            _remove_attribute_warning_filter()
+        except Exception as e:
+            logger.warning(f"Error resetting processor state: {e}")
+        finally:
+            _observability_initialized = False
+            logger.debug("Observability state reset")

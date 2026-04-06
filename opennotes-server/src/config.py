@@ -660,8 +660,9 @@ class Settings(BaseSettings):
     )
     LOGFIRE_TOKEN: str | None = Field(
         default=None,
+        repr=False,
         description="Logfire write token for sending telemetry to logfire.dev. "
-        "If not set, Logfire will use the LOGFIRE_TOKEN environment variable.",
+        "If absent, Logfire operates in if-token-present mode (no remote export).",
     )
 
     OTEL_SERVICE_NAME: str | None = Field(

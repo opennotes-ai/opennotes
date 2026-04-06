@@ -11,8 +11,9 @@ class TestObservabilityGcpExporters:
     @patch(LOGFIRE_CONFIGURE_PATH)
     @patch(LOGFIRE_INSTRUMENT_ANTHROPIC_PATH)
     @patch(LOGFIRE_INSTRUMENT_OPENAI_PATH)
+    @patch("opentelemetry.sdk.trace.export.BatchSpanProcessor")
     def test_cloud_trace_in_additional_processors_on_gcp(
-        self, mock_openai, mock_anthropic, mock_configure, mock_is_gcp
+        self, mock_bsp, mock_openai, mock_anthropic, mock_configure, mock_is_gcp
     ):
         import src.monitoring.observability as obs_mod
 
@@ -182,3 +183,49 @@ class TestObservabilityConfigureParams:
         assert call_kwargs["service_name"] == "my-service"
         assert call_kwargs["service_version"] == "1.2.3"
         assert call_kwargs["environment"] == "staging"
+
+    @patch(GCP_DETECTOR_PATH, return_value=False)
+    @patch(LOGFIRE_CONFIGURE_PATH)
+    @patch(LOGFIRE_INSTRUMENT_ANTHROPIC_PATH)
+    @patch(LOGFIRE_INSTRUMENT_OPENAI_PATH)
+    def test_sample_rate_forwarded(self, mock_openai, mock_anthropic, mock_configure, mock_is_gcp):
+        import src.monitoring.observability as obs_mod
+
+        obs_mod._observability_initialized = False
+
+        obs_mod.setup_observability(service_name="test", environment="test", sample_rate=0.5)
+
+        call_kwargs = mock_configure.call_args[1]
+        assert call_kwargs["sampling"].head == 0.5
+
+    @patch(GCP_DETECTOR_PATH, return_value=False)
+    @patch(LOGFIRE_CONFIGURE_PATH)
+    @patch(LOGFIRE_INSTRUMENT_ANTHROPIC_PATH)
+    @patch(LOGFIRE_INSTRUMENT_OPENAI_PATH)
+    def test_scrubbing_disabled_when_trace_content_true(
+        self, mock_openai, mock_anthropic, mock_configure, mock_is_gcp
+    ):
+        import src.monitoring.observability as obs_mod
+
+        obs_mod._observability_initialized = False
+
+        obs_mod.setup_observability(service_name="test", environment="test", trace_content=True)
+
+        call_kwargs = mock_configure.call_args[1]
+        assert call_kwargs["scrubbing"] is False
+
+    @patch(GCP_DETECTOR_PATH, return_value=False)
+    @patch(LOGFIRE_CONFIGURE_PATH)
+    @patch(LOGFIRE_INSTRUMENT_ANTHROPIC_PATH)
+    @patch(LOGFIRE_INSTRUMENT_OPENAI_PATH)
+    def test_scrubbing_default_when_trace_content_false(
+        self, mock_openai, mock_anthropic, mock_configure, mock_is_gcp
+    ):
+        import src.monitoring.observability as obs_mod
+
+        obs_mod._observability_initialized = False
+
+        obs_mod.setup_observability(service_name="test", environment="test", trace_content=False)
+
+        call_kwargs = mock_configure.call_args[1]
+        assert call_kwargs["scrubbing"] is None
