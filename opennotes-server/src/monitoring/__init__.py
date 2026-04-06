@@ -12,12 +12,11 @@ from src.monitoring.health import (
 )
 from src.monitoring.instance import InstanceMetadata, initialize_instance_metadata
 from src.monitoring.logging import get_logger, parse_log_level_overrides, setup_logging
-from src.monitoring.otel import (
-    is_otel_configured,
-    setup_otel,
-    shutdown_otel,
+from src.monitoring.observability import (
+    setup_observability,
+    shutdown_observability,
 )
-from src.monitoring.traceloop import shutdown_traceloop
+from src.monitoring.otel import is_otel_configured
 
 __all__ = [
     "DistributedHealthCoordinator",
@@ -34,13 +33,11 @@ __all__ = [
     "parse_log_level_overrides",
     "record_span_error",
     "setup_logging",
-    "setup_otel",
+    "setup_observability",
     "shutdown_monitoring",
-    "shutdown_otel",
-    "shutdown_traceloop",
+    "shutdown_observability",
 ]
 
 
 def shutdown_monitoring(flush_timeout_millis: int | None = None) -> None:
-    shutdown_otel(flush_timeout_millis=flush_timeout_millis)
-    shutdown_traceloop()
+    shutdown_observability(flush_timeout_millis=flush_timeout_millis)

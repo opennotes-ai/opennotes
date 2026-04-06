@@ -646,17 +646,23 @@ class Settings(BaseSettings):
         description="Use GCP-native exporters on Cloud Run (set False to force OTLP)",
     )
 
-    TRACELOOP_ENABLED: bool = Field(
+    LOGFIRE_ENABLED: bool = Field(
         default=True,
-        description="Enable Traceloop SDK for LLM observability. "
+        description="Enable Logfire for LLM observability. "
         "Provides automatic instrumentation of OpenAI, Anthropic, and Google calls "
-        "with GenAI semantic conventions (gen_ai.*, llm.*).",
+        "via pydantic-ai native integration with GenAI semantic conventions.",
     )
-    TRACELOOP_TRACE_CONTENT: bool = Field(
+    LOGFIRE_TRACE_CONTENT: bool = Field(
         default=False,
         description="Enable logging of prompts and completions in traces. "
         "Set to False (default) for production to avoid logging sensitive data. "
         "Set to True for development/debugging to see full prompt/completion content.",
+    )
+    LOGFIRE_TOKEN: str | None = Field(
+        default=None,
+        repr=False,
+        description="Logfire write token for sending telemetry to logfire.dev. "
+        "If absent, Logfire operates in if-token-present mode (no remote export).",
     )
 
     OTEL_SERVICE_NAME: str | None = Field(

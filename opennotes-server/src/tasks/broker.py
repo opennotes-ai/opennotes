@@ -262,8 +262,7 @@ def get_broker() -> PullBasedJetStreamBroker:
     if _broker_instance is None:
         from src.config import get_settings
         from src.monitoring.logging import parse_log_level_overrides, setup_logging
-        from src.monitoring.otel import setup_otel
-        from src.monitoring.traceloop import setup_traceloop
+        from src.monitoring.observability import setup_observability
 
         settings = get_settings()
         setup_logging(
@@ -273,29 +272,15 @@ def get_broker() -> PullBasedJetStreamBroker:
             module_levels=parse_log_level_overrides(settings.LOG_LEVEL_OVERRIDES),
         )
 
-        if settings.ENABLE_TRACING:
-            setup_otel(
+        if settings.ENABLE_TRACING and settings.LOGFIRE_ENABLED:
+            setup_observability(
                 service_name="opennotes-taskiq-worker",
                 service_version=settings.VERSION,
                 environment=settings.ENVIRONMENT,
-                otlp_endpoint=settings.OTLP_ENDPOINT,
-                otlp_headers=settings.OTLP_HEADERS,
-                otlp_insecure=settings.OTLP_INSECURE,
+                logfire_token=settings.LOGFIRE_TOKEN,
+                trace_content=settings.LOGFIRE_TRACE_CONTENT,
                 sample_rate=settings.TRACING_SAMPLE_RATE,
                 use_gcp_exporters=settings.USE_GCP_EXPORTERS,
-                skip_batch_export=settings.TRACELOOP_ENABLED,
-            )
-
-        if settings.TRACELOOP_ENABLED:
-            setup_traceloop(
-                app_name=settings.PROJECT_NAME,
-                service_name="opennotes-taskiq-worker",
-                version=settings.VERSION,
-                environment=settings.ENVIRONMENT,
-                instance_id=settings.INSTANCE_ID,
-                otlp_endpoint=settings.OTLP_ENDPOINT,
-                otlp_headers=settings.OTLP_HEADERS,
-                trace_content=settings.TRACELOOP_TRACE_CONTENT,
             )
 
         _broker_instance = _create_broker()
