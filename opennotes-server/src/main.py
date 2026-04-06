@@ -714,7 +714,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         name="startup-init",
     )
 
-    yield
+    if (
+        _otel_settings.ENABLE_TRACING
+        and _otel_settings.LOGFIRE_ENABLED
+        and not _otel_settings.TESTING
+    ):
+        from src.monitoring.observability import instrument_fastapi_app
+
+        with instrument_fastapi_app(app):
+            yield
+    else:
+        yield
 
     init_task.cancel()
     try:

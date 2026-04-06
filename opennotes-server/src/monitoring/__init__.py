@@ -13,6 +13,7 @@ from src.monitoring.health import (
 from src.monitoring.instance import InstanceMetadata, initialize_instance_metadata
 from src.monitoring.logging import get_logger, parse_log_level_overrides, setup_logging
 from src.monitoring.observability import (
+    instrument_fastapi_app,
     setup_observability,
     shutdown_observability,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "detect_gcp_cloud_run_resource",
     "get_logger",
     "initialize_instance_metadata",
+    "instrument_fastapi_app",
     "is_cloud_run_environment",
     "is_otel_configured",
     "parse_log_level_overrides",
