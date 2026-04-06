@@ -351,7 +351,7 @@ class TestUnifiedRelevanceFilter:
         ]
 
         test_model = TestModel(
-            custom_result_args=RelevanceCheckResult(
+            custom_output_args=RelevanceCheckResult(
                 is_relevant=True, reasoning="Contains a claim", confidence=0.9
             )
         )
@@ -388,7 +388,7 @@ class TestUpdatedRelevancePrompt:
         from src.claim_relevance_check.schemas import RelevanceCheckResult
 
         test_model = TestModel(
-            custom_result_args=RelevanceCheckResult(
+            custom_output_args=RelevanceCheckResult(
                 is_relevant=False,
                 reasoning="No verifiable claim, just a name mention",
                 confidence=0.9,
@@ -459,7 +459,7 @@ class TestUpdatedRelevancePrompt:
         from src.claim_relevance_check.schemas import RelevanceCheckResult
 
         test_model = TestModel(
-            custom_result_args=RelevanceCheckResult(
+            custom_output_args=RelevanceCheckResult(
                 is_relevant=True,
                 reasoning="Contains verifiable claim about Biden being Confederate soldier",
                 confidence=0.95,
@@ -654,7 +654,7 @@ class TestCandidateFlaggedLogging:
         from src.claim_relevance_check.schemas import RelevanceCheckResult
 
         test_model = TestModel(
-            custom_result_args=RelevanceCheckResult(
+            custom_output_args=RelevanceCheckResult(
                 is_relevant=True, reasoning="Contains a claim", confidence=0.9
             )
         )
