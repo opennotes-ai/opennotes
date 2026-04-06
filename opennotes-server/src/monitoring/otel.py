@@ -61,30 +61,23 @@ class InvalidAttributeTypeFilter(logging.Filter):
         return all(not msg.startswith(prefix) for prefix in self._SUPPRESSED_PREFIXES)
 
 
-_attribute_filter_installed = False
-
-
 def _install_attribute_warning_filter() -> None:
     """Install the InvalidAttributeTypeFilter on the opentelemetry.attributes logger.
 
     Idempotent: safe to call multiple times.
     """
-    global _attribute_filter_installed
-    if _attribute_filter_installed:
-        return
     otel_attr_logger = logging.getLogger("opentelemetry.attributes")
+    if any(isinstance(f, InvalidAttributeTypeFilter) for f in otel_attr_logger.filters):
+        return
     otel_attr_logger.addFilter(InvalidAttributeTypeFilter())
-    _attribute_filter_installed = True
 
 
 def _remove_attribute_warning_filter() -> None:
     """Remove all InvalidAttributeTypeFilter instances from the logger."""
-    global _attribute_filter_installed
     otel_attr_logger = logging.getLogger("opentelemetry.attributes")
     for f in otel_attr_logger.filters[:]:
         if isinstance(f, InvalidAttributeTypeFilter):
             otel_attr_logger.removeFilter(f)
-    _attribute_filter_installed = False
 
 
 class AttributeSanitizingSpanProcessor:
