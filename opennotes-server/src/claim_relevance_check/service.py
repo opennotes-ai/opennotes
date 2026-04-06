@@ -10,9 +10,10 @@ from typing import Any
 
 from pydantic import ValidationError
 from pydantic_ai import Agent
+from pydantic_ai.direct import model_request as pydantic_model_request
 from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.messages import ModelRequest
 from pydantic_ai.settings import ModelSettings
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.claim_relevance_check.prompt_optimization.prompts import get_optimized_prompts
 from src.claim_relevance_check.schemas import (
@@ -20,32 +21,34 @@ from src.claim_relevance_check.schemas import (
     RelevanceOutcome,
 )
 from src.config import settings as default_settings
-from src.llm_config.providers.base import LLMMessage
-from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 from src.monitoring.metrics import relevance_check_total
 
 logger = get_logger(__name__)
+
+relevance_agent: Agent[None, RelevanceCheckResult] = Agent(
+    output_type=RelevanceCheckResult,
+    instrument=True,
+)
 
 
 class ClaimRelevanceService:
     """Checks whether a matched fact-check is relevant to a user message using LLM.
 
     Handles content filter detection, retry logic, and fail-open semantics.
-    Thread-safe and stateless beyond the injected LLMService dependency.
+    Thread-safe and stateless; uses the module-level ``relevance_agent`` for
+    structured output and ``pydantic_ai.direct.model_request`` for the retry path.
 
     The settings parameter allows callers to inject their own module-scoped
     settings reference, enabling existing test patches to work transparently.
     When not provided, the global settings singleton is used.
     """
 
-    def __init__(self, llm_service: LLMService | None, settings: Any = None) -> None:
-        self.llm_service = llm_service
+    def __init__(self, settings: Any = None) -> None:
         self._settings = settings if settings is not None else default_settings
 
     async def check_relevance(
         self,
-        db: AsyncSession,
         original_message: str,
         matched_content: str,
         matched_source: str | None,
@@ -56,7 +59,6 @@ class ClaimRelevanceService:
         to distinguish between problematic user messages and problematic fact-checks.
 
         Args:
-            db: Database session (required by LLMService.complete)
             original_message: The user's original message
             matched_content: The matched fact-check content
             matched_source: Optional source URL
@@ -76,10 +78,10 @@ class ClaimRelevanceService:
             relevance_check_total.add(1, {"outcome": "disabled", "decision": "skipped"})
             return (RelevanceOutcome.RELEVANT, "Relevance check disabled")
 
-        if not self.llm_service:
-            logger.warning("LLM service not configured for relevance check")
+        if not cfg.RELEVANCE_CHECK_MODEL:
+            logger.warning("Relevance check model not configured")
             relevance_check_total.add(1, {"outcome": "not_configured", "decision": "fail_open"})
-            return (RelevanceOutcome.INDETERMINATE, "LLM service not configured")
+            return (RelevanceOutcome.INDETERMINATE, "Relevance check model not configured")
 
         start_time = time.monotonic()
 
@@ -118,13 +120,10 @@ Step 3: How confident are you in this assessment? (0.0 = uncertain, 1.0 = certai
 
 Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the response."""
 
-            relevance_agent = Agent(
-                model=cfg.RELEVANCE_CHECK_MODEL.to_pydantic_ai(),
-                output_type=RelevanceCheckResult,
-            )
             agent_result = await asyncio.wait_for(
                 relevance_agent.run(
                     user_prompt,
+                    model=cfg.RELEVANCE_CHECK_MODEL.to_pydantic_ai(),
                     instructions=system_prompt,
                     model_settings=ModelSettings(
                         max_tokens=cfg.RELEVANCE_CHECK_MAX_TOKENS,
@@ -176,7 +175,7 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
                     "latency_ms": round(latency_ms, 2),
                 },
             )
-            return await self._retry_without_fact_check(db, original_message, start_time)
+            return await self._retry_without_fact_check(original_message, start_time)
 
         except Exception as e:
             return self._handle_check_error(e, start_time, cfg)
@@ -224,7 +223,6 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
 
     async def _retry_without_fact_check(
         self,
-        db: AsyncSession,  # noqa: ARG002
         original_message: str,
         start_time: float,
     ) -> tuple[RelevanceOutcome, str]:
@@ -236,7 +234,6 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
         - If retry succeeds: fact-check content was the problem, treat as indeterminate
 
         Args:
-            db: Database session
             original_message: The user's original message (without fact-check content)
             start_time: Start time of the original check for latency tracking
 
@@ -245,36 +242,39 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
             - CONTENT_FILTERED: User message itself triggers content filter
             - INDETERMINATE: Fact-check content was the issue, can't determine relevance
         """
-        if not self.llm_service:
+        cfg = self._settings
+
+        if not cfg.RELEVANCE_CHECK_MODEL:
             return (
                 RelevanceOutcome.INDETERMINATE,
-                "LLM service not configured for retry",
+                "Relevance check model not configured for retry",
             )
-
-        cfg = self._settings
 
         simplified_system_prompt = """Analyze this message for factual claims.
 Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"""
 
-        messages = [
-            LLMMessage(role="system", content=simplified_system_prompt),
-            LLMMessage(role="user", content=original_message),
-        ]
-
         try:
             response = await asyncio.wait_for(
-                self.llm_service.complete(
-                    messages=messages,
-                    model=cfg.RELEVANCE_CHECK_MODEL,
-                    max_tokens=cfg.RELEVANCE_CHECK_MAX_TOKENS,
-                    temperature=0.0,
+                pydantic_model_request(
+                    model=cfg.RELEVANCE_CHECK_MODEL.to_pydantic_ai(),
+                    messages=[
+                        ModelRequest.user_text_prompt(
+                            original_message,
+                            instructions=simplified_system_prompt,
+                        ),
+                    ],
+                    model_settings=ModelSettings(
+                        max_tokens=cfg.RELEVANCE_CHECK_MAX_TOKENS,
+                        temperature=0.0,
+                    ),
                 ),
                 timeout=cfg.RELEVANCE_CHECK_TIMEOUT,
             )
 
             latency_ms = (time.monotonic() - start_time) * 1000
+            finish_reason = response.finish_reason or "stop"
 
-            if response.finish_reason == "content_filter":
+            if finish_reason == "content_filter":
                 logger.warning(
                     "Content filter triggered on user message alone",
                     extra={
@@ -290,12 +290,12 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
                     "Message content triggered safety filter",
                 )
 
-            if response.finish_reason == "stop":
+            if finish_reason == "stop":
                 log_level = "info"
                 log_message = "Retry succeeded - fact-check content triggered original filter"
                 metric_outcome = "content_filter"
                 reasoning = "Fact-check content triggered safety filter; relevance indeterminate"
-            elif response.finish_reason == "length":
+            elif finish_reason == "length":
                 log_level = "warning"
                 log_message = "Retry response truncated (max_tokens reached)"
                 metric_outcome = "content_filter_retry_truncated"
@@ -304,9 +304,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
                 log_level = "warning"
                 log_message = "Unexpected finish_reason in retry response"
                 metric_outcome = "content_filter_retry_unexpected"
-                reasoning = (
-                    f"Unexpected finish_reason: {response.finish_reason}; relevance indeterminate"
-                )
+                reasoning = f"Unexpected finish_reason: {finish_reason}; relevance indeterminate"
 
             log_fn = logger.info if log_level == "info" else logger.warning
             log_fn(
@@ -314,7 +312,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
                 extra={
                     "message_length": len(original_message),
                     "latency_ms": round(latency_ms, 2),
-                    "finish_reason": response.finish_reason,
+                    "finish_reason": finish_reason,
                 },
             )
             relevance_check_total.add(
@@ -322,7 +320,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
                 {
                     "outcome": metric_outcome,
                     "decision": "factcheck_filtered"
-                    if response.finish_reason == "stop"
+                    if finish_reason == "stop"
                     else "indeterminate",
                 },
             )
