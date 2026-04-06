@@ -18,7 +18,7 @@ def test_unit_test_job_generates_the_report_uploaded_to_codecov() -> None:
     unit_job = workflow["jobs"]["unit-tests-python"]
     steps = unit_job["steps"]
 
-    test_step = _step_by_name(steps, "Run unit tests with coverage")
+    test_step = _step_by_name(steps, "Run unit tests with coverage (parallel)")
     upload_step = _step_by_name(steps, "Upload coverage to Codecov")
 
     assert upload_step["with"]["files"] == "opennotes-server/coverage.xml"
