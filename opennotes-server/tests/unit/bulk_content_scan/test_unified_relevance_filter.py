@@ -11,8 +11,10 @@ from uuid import uuid4
 
 import pendulum
 import pytest
+from pydantic_ai.models.test import TestModel
 
 from src.bulk_content_scan.scan_types import ScanType
+from src.claim_relevance_check.service import relevance_agent
 from src.llm_config.model_id import ModelId
 
 
@@ -289,13 +291,6 @@ class TestUnifiedRelevanceFilter:
         from src.bulk_content_scan.service import BulkContentScanService
         from src.claim_relevance_check.schemas import RelevanceCheckResult
 
-        mock_agent_result = MagicMock()
-        mock_agent_result.output = RelevanceCheckResult(
-            is_relevant=True, reasoning="Contains a claim", confidence=0.9
-        )
-        mock_agent = MagicMock()
-        mock_agent.run = AsyncMock(return_value=mock_agent_result)
-
         service = BulkContentScanService(
             session=mock_session,
             embedding_service=mock_embedding_service,
@@ -355,9 +350,15 @@ class TestUnifiedRelevanceFilter:
             ),
         ]
 
+        test_model = TestModel(
+            custom_result_args=RelevanceCheckResult(
+                is_relevant=True, reasoning="Contains a claim", confidence=0.9
+            )
+        )
+
         with (
             patch("src.bulk_content_scan.service.settings") as mock_settings,
-            patch("src.claim_relevance_check.service.Agent", return_value=mock_agent),
+            relevance_agent.override(model=test_model),
         ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
@@ -371,7 +372,6 @@ class TestUnifiedRelevanceFilter:
                 scan_id=scan_id,
             )
 
-        assert mock_agent.run.call_count == 2
         assert len(flagged) == 2
 
 
@@ -387,14 +387,13 @@ class TestUpdatedRelevancePrompt:
         from src.bulk_content_scan.service import BulkContentScanService
         from src.claim_relevance_check.schemas import RelevanceCheckResult
 
-        mock_agent_result = MagicMock()
-        mock_agent_result.output = RelevanceCheckResult(
-            is_relevant=False,
-            reasoning="No verifiable claim, just a name mention",
-            confidence=0.9,
+        test_model = TestModel(
+            custom_result_args=RelevanceCheckResult(
+                is_relevant=False,
+                reasoning="No verifiable claim, just a name mention",
+                confidence=0.9,
+            )
         )
-        mock_agent = MagicMock()
-        mock_agent.run = AsyncMock(return_value=mock_agent_result)
 
         service = BulkContentScanService(
             session=mock_session,
@@ -433,7 +432,7 @@ class TestUpdatedRelevancePrompt:
 
         with (
             patch("src.bulk_content_scan.service.settings") as mock_settings,
-            patch("src.claim_relevance_check.service.Agent", return_value=mock_agent),
+            relevance_agent.override(model=test_model),
         ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
@@ -459,14 +458,13 @@ class TestUpdatedRelevancePrompt:
         from src.bulk_content_scan.service import BulkContentScanService
         from src.claim_relevance_check.schemas import RelevanceCheckResult
 
-        mock_agent_result = MagicMock()
-        mock_agent_result.output = RelevanceCheckResult(
-            is_relevant=True,
-            reasoning="Contains verifiable claim about Biden being Confederate soldier",
-            confidence=0.95,
+        test_model = TestModel(
+            custom_result_args=RelevanceCheckResult(
+                is_relevant=True,
+                reasoning="Contains verifiable claim about Biden being Confederate soldier",
+                confidence=0.95,
+            )
         )
-        mock_agent = MagicMock()
-        mock_agent.run = AsyncMock(return_value=mock_agent_result)
 
         service = BulkContentScanService(
             session=mock_session,
@@ -505,7 +503,7 @@ class TestUpdatedRelevancePrompt:
 
         with (
             patch("src.bulk_content_scan.service.settings") as mock_settings,
-            patch("src.claim_relevance_check.service.Agent", return_value=mock_agent),
+            relevance_agent.override(model=test_model),
         ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
@@ -655,17 +653,16 @@ class TestCandidateFlaggedLogging:
 
         from src.claim_relevance_check.schemas import RelevanceCheckResult
 
-        mock_agent_result = MagicMock()
-        mock_agent_result.output = RelevanceCheckResult(
-            is_relevant=True, reasoning="Contains a claim", confidence=0.9
+        test_model = TestModel(
+            custom_result_args=RelevanceCheckResult(
+                is_relevant=True, reasoning="Contains a claim", confidence=0.9
+            )
         )
-        mock_agent = MagicMock()
-        mock_agent.run = AsyncMock(return_value=mock_agent_result)
 
         with (
             patch("src.bulk_content_scan.service.settings") as mock_settings,
             patch("src.bulk_content_scan.service.logger") as mock_logger,
-            patch("src.claim_relevance_check.service.Agent", return_value=mock_agent),
+            relevance_agent.override(model=test_model),
         ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
