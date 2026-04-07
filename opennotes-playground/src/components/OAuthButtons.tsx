@@ -1,3 +1,5 @@
+import { createSignal } from "solid-js";
+import { Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { Separator } from "~/components/ui/separator";
 import { createClient } from "~/lib/supabase-browser";
@@ -6,29 +8,45 @@ interface OAuthButtonsProps {
   returnTo?: string;
 }
 
-async function signInWith(provider: "google" | "twitter", returnTo: string) {
-  const supabase = createClient();
-  const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(returnTo || "/")}`;
-
-  await supabase.auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo,
-      ...(provider === "twitter" && { scopes: "users.read tweet.read" }),
-    },
-  });
-}
-
 export function OAuthButtons(props: OAuthButtonsProps) {
   const returnTo = () => props.returnTo || "/";
+  const [error, setError] = createSignal<string | null>(null);
+  const [pending, setPending] = createSignal(false);
+
+  async function signInWith(provider: "google" | "twitter") {
+    setError(null);
+    setPending(true);
+    try {
+      const supabase = createClient();
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(returnTo())}`;
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          ...(provider === "twitter" && { scopes: "users.read" }),
+        },
+      });
+      if (oauthError) {
+        setError(oauthError.message);
+      }
+    } catch {
+      setError("Failed to start sign-in. Please try again.");
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
     <div class="space-y-4">
+      <Show when={error()}>
+        <p class="text-sm text-red-600 dark:text-red-400">{error()}</p>
+      </Show>
       <div class="space-y-2">
         <Button
           variant="outline"
           class="w-full"
-          onClick={() => signInWith("google", returnTo())}
+          disabled={pending()}
+          onClick={() => signInWith("google")}
         >
           <GoogleIcon />
           Sign in with Google
@@ -36,7 +54,8 @@ export function OAuthButtons(props: OAuthButtonsProps) {
         <Button
           variant="outline"
           class="w-full"
-          onClick={() => signInWith("twitter", returnTo())}
+          disabled={pending()}
+          onClick={() => signInWith("twitter")}
         >
           <XIcon />
           Sign in with X

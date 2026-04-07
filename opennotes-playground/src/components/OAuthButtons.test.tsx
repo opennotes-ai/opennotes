@@ -52,7 +52,7 @@ describe("OAuthButtons", () => {
       provider: "twitter",
       options: {
         redirectTo: "http://localhost:3000/auth/callback?next=%2F",
-        scopes: "users.read tweet.read",
+        scopes: "users.read",
       },
     });
   });

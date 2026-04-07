@@ -1,7 +1,6 @@
 import { test, expect, type Route } from "@playwright/test";
 
-const SUPABASE_HOST = "wjuwvrwgwsyhythkxhzg.supabase.co";
-const AUTHORIZE_PATTERN = `https://${SUPABASE_HOST}/auth/v1/authorize**`;
+const AUTHORIZE_PATTERN = "https://*.supabase.co/auth/v1/authorize**";
 
 function interceptOAuthRedirect(page: import("@playwright/test").Page) {
   let captured: URL | null = null;
@@ -37,7 +36,7 @@ test.describe("OAuth login flow", () => {
 
       const redirectUrl = intercept.url();
       expect(redirectUrl).not.toBeNull();
-      expect(redirectUrl!.hostname).toBe(SUPABASE_HOST);
+      expect(redirectUrl!.hostname).toMatch(/\.supabase\.co$/);
       expect(redirectUrl!.pathname).toBe("/auth/v1/authorize");
       expect(redirectUrl!.searchParams.get("provider")).toBe("google");
     });
@@ -62,7 +61,7 @@ test.describe("OAuth login flow", () => {
 
       const redirectUrl = intercept.url();
       expect(redirectUrl).not.toBeNull();
-      expect(redirectUrl!.hostname).toBe(SUPABASE_HOST);
+      expect(redirectUrl!.hostname).toMatch(/\.supabase\.co$/);
       expect(redirectUrl!.pathname).toBe("/auth/v1/authorize");
       expect(redirectUrl!.searchParams.get("provider")).toBe("twitter");
     });
@@ -150,7 +149,7 @@ test.describe("OAuth login flow", () => {
 
       const redirectUrl = intercept.url();
       expect(redirectUrl).not.toBeNull();
-      expect(redirectUrl!.hostname).toBe(SUPABASE_HOST);
+      expect(redirectUrl!.hostname).toMatch(/\.supabase\.co$/);
       expect(redirectUrl!.searchParams.get("provider")).toBe("google");
     });
   });

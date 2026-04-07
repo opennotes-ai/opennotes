@@ -5,9 +5,11 @@ import solidPlugin from "vite-plugin-solid";
 export default defineConfig({
   plugins: [solidPlugin()],
   test: {
-    environment: "jsdom",
     exclude: ["tests/**", "node_modules/**"],
     globals: true,
+    environmentMatchGlobs: [
+      ["src/components/**", "jsdom"],
+    ],
     server: {
       deps: {
         inline: [/solid-js/, /@kobalte/, /@solidjs/],
