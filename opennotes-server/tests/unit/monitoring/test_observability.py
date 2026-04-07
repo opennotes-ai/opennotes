@@ -188,15 +188,25 @@ class TestObservabilityConfigureParams:
     @patch(LOGFIRE_CONFIGURE_PATH)
     @patch(LOGFIRE_INSTRUMENT_ANTHROPIC_PATH)
     @patch(LOGFIRE_INSTRUMENT_OPENAI_PATH)
-    def test_sample_rate_forwarded(self, mock_openai, mock_anthropic, mock_configure, mock_is_gcp):
+    def test_tail_sampling_with_level_or_duration(
+        self, mock_openai, mock_anthropic, mock_configure, mock_is_gcp
+    ):
         import src.monitoring.observability as obs_mod
 
         obs_mod._observability_initialized = False
 
-        obs_mod.setup_observability(service_name="test", environment="test", sample_rate=0.5)
+        obs_mod.setup_observability(
+            service_name="test",
+            environment="test",
+            sample_rate=0.3,
+            tail_level_threshold="warning",
+            tail_duration_threshold=10.0,
+        )
 
         call_kwargs = mock_configure.call_args[1]
-        assert call_kwargs["sampling"].head == 0.5
+        sampling = call_kwargs["sampling"]
+        assert sampling.head == 1.0
+        assert sampling.tail is not None
 
     @patch(GCP_DETECTOR_PATH, return_value=False)
     @patch(LOGFIRE_CONFIGURE_PATH)

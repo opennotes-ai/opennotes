@@ -545,11 +545,26 @@ class Settings(BaseSettings):
     )
     TRACING_SAMPLE_RATE: float = Field(
         default=1.0,
-        description="Trace sampling rate (0.0-1.0). 1.0 = 100% of traces sampled (full observability). "
-        "Set to lower value (e.g., 0.1) in high-volume production to reduce costs.",
+        description="Logfire tail sampling background rate (0.0-1.0). Controls what fraction of "
+        "routine traces are sent to Logfire. Errors, warnings, and slow traces are always sent "
+        "regardless of this rate. Cloud Trace always receives 100% of traces.",
         ge=0.0,
         le=1.0,
         validation_alias=AliasChoices("TRACING_SAMPLE_RATE", "TRACE_SAMPLE_RATE"),
+    )
+    LOGFIRE_TAIL_LEVEL_THRESHOLD: (
+        Literal["trace", "debug", "info", "notice", "warn", "warning", "error", "fatal"] | None
+    ) = Field(
+        default="notice",
+        description="Minimum log level that always passes Logfire tail sampling "
+        "(e.g., notice, warning, error). Traces with spans at or above this level "
+        "are always sent to Logfire regardless of TRACING_SAMPLE_RATE.",
+    )
+    LOGFIRE_TAIL_DURATION_THRESHOLD: float | None = Field(
+        default=5.0,
+        description="Minimum trace duration in seconds that always passes Logfire tail sampling. "
+        "Traces longer than this are always sent to Logfire regardless of TRACING_SAMPLE_RATE.",
+        ge=0.0,
     )
 
     @field_validator("TRACING_SAMPLE_RATE", mode="before")

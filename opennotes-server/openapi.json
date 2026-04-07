@@ -12616,28 +12616,6 @@
         }
       }
     },
-    "/health/taskiq": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "Taskiq Health",
-        "description": "Check taskiq broker health status.\n\nReturns status information about the taskiq background task system:\n- Whether the broker is initialized\n- The configured stream name\n- Number of registered tasks",
-        "operationId": "taskiq_health_health_taskiq_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ServiceStatus"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/health/dbos": {
       "get": {
         "tags": [

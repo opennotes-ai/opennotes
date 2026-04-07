@@ -30,6 +30,8 @@ if _otel_settings.ENABLE_TRACING and _otel_settings.LOGFIRE_ENABLED and not _ote
         sample_rate=_otel_settings.TRACING_SAMPLE_RATE,
         use_gcp_exporters=_otel_settings.USE_GCP_EXPORTERS,
         enable_console_export=_otel_settings.ENABLE_CONSOLE_TRACING,
+        tail_level_threshold=_otel_settings.LOGFIRE_TAIL_LEVEL_THRESHOLD,
+        tail_duration_threshold=_otel_settings.LOGFIRE_TAIL_DURATION_THRESHOLD,
     )
 
 from src.batch_jobs.router import router as batch_jobs_router
