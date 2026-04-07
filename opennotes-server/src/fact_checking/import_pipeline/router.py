@@ -20,10 +20,9 @@ from src.auth.dependencies import get_current_user_or_api_key
 from src.batch_jobs import ActiveJobExistsError
 from src.batch_jobs.import_service import ImportBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
-from src.common.base_schemas import ResponseSchema, StrictInputSchema
+from src.common.base_schemas import StrictInputSchema
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
-from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
 from src.monitoring import get_logger
 from src.users.models import User
 
@@ -79,12 +78,6 @@ class ScrapeProcessingRequest(BatchProcessingRequest):
         le=30.0,
         description="Minimum delay in seconds between requests to the same domain",
     )
-
-
-class EnqueueScrapeResponse(ResponseSchema):
-    """Response for enqueue scrapes operation."""
-
-    enqueued: int = Field(description="Number of scrape tasks enqueued")
 
 
 def get_import_service(
@@ -163,27 +156,42 @@ async def import_fact_check_bureau_endpoint(
 
 @router.post(
     "/enqueue-scrapes",
-    response_model=EnqueueScrapeResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Enqueue scrape tasks for pending candidates",
-    description="Enqueue scrape tasks for candidates with status=pending. "
-    "This is a synchronous operation that returns the count of enqueued tasks.",
+    response_model=BatchJobResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Start scrape job for pending candidates",
+    description="Start an asynchronous batch job to scrape content for pending candidates. "
+    "Returns immediately with a BatchJob that can be polled for status. "
+    "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+    responses={
+        429: {"description": "A scrape job is already in progress (rate limited)"},
+    },
 )
 async def enqueue_scrapes_endpoint(
     request: ScrapeProcessingRequest,
+    service: Annotated[ImportBatchJobService, Depends(get_import_service)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
-) -> EnqueueScrapeResponse:
-    """Enqueue scrape tasks for pending candidates.
+) -> BatchJobResponse:
+    """Start a scrape job for pending candidates via DBOS.
 
-    Finds candidates with status=pending and no content,
-    then enqueues scrape tasks for each.
+    Requires authentication via API key (X-API-Key header) or Bearer token.
+
+    This endpoint returns immediately with a BatchJob in PENDING status.
+    The actual scraping runs asynchronously as a DBOS durable workflow.
+
+    Poll the job status at:
+    - GET /api/v1/batch-jobs/{job_id} - Full job status
+    - GET /api/v1/batch-jobs/{job_id}/progress - Real-time progress
 
     Args:
         request: Scrape configuration parameters including batch_size and base_delay.
+        service: Import batch job service.
         current_user: Authenticated user (via API key or JWT).
 
     Returns:
-        Count of enqueued tasks.
+        BatchJobResponse with job ID for status polling.
+
+    Raises:
+        HTTPException: 429 if a scrape job is already active.
     """
     logger.info(
         "Enqueue scrapes request",
@@ -194,19 +202,27 @@ async def enqueue_scrapes_endpoint(
         },
     )
 
-    result = await enqueue_scrape_batch(
-        batch_size=request.batch_size,
-        base_delay=request.base_delay,
-    )
+    try:
+        job = await service.start_scrape_job(
+            batch_size=request.batch_size,
+            base_delay=request.base_delay,
+            user_id=str(current_user.id),
+        )
+    except ActiveJobExistsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+        )
 
     logger.info(
-        "Scrape tasks enqueued",
+        "Scrape job created via enqueue-scrapes",
         extra={
-            "enqueued": result["enqueued"],
+            "job_id": str(job.id),
+            "user_id": str(current_user.id),
         },
     )
 
-    return EnqueueScrapeResponse(enqueued=result["enqueued"])
+    return BatchJobResponse.model_validate(job)
 
 
 @router.post(
