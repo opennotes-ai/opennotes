@@ -121,7 +121,6 @@ from src.simulation.sim_channel_messages_jsonapi_router import (
 from src.simulation.simulations_jsonapi_router import router as simulations_jsonapi_router
 from src.startup_migrations import run_startup_migrations
 from src.startup_validation import run_startup_checks
-from src.tasks.broker import PullBasedJetStreamBroker, get_broker, reset_broker
 from src.users.admin_router import router as admin_router
 from src.users.communities_jsonapi_router import router as communities_jsonapi_router
 from src.users.profile_router import router as profile_auth_router
@@ -170,21 +169,6 @@ async def _connect_nats() -> None:
             logger.warning("Running in test mode - continuing without NATS connection")
         else:
             raise
-
-
-async def _start_taskiq_broker() -> PullBasedJetStreamBroker | None:
-    """Start taskiq broker for background task dispatch, allowing failure in test mode."""
-    try:
-        taskiq_broker = get_broker()
-        await taskiq_broker.startup()
-        logger.info("Taskiq broker started for task dispatch")
-        return taskiq_broker
-    except Exception as e:
-        logger.error(f"Failed to start taskiq broker: {e}")
-        if settings.TESTING or settings.ENVIRONMENT == "test":
-            logger.warning("Running in test mode - continuing without taskiq broker")
-            return None
-        raise
 
 
 async def _init_ai_services() -> tuple[
@@ -508,10 +492,8 @@ async def _init_worker_services(
     ai_note_writer = None
     vision_service = None
     if is_dbos_worker:
-        logger.info("DBOS worker mode - skipping TaskIQ, AI services, and event handlers")
-        app.state.taskiq_broker = None
+        logger.info("DBOS worker mode - skipping AI services and event handlers")
     else:
-        app.state.taskiq_broker = await _start_taskiq_broker()
         ai_note_writer, vision_service, llm_service = await _init_ai_services()
         await _register_bulk_scan_handlers(llm_service=llm_service)
         await _register_outbound_webhook_handlers()
@@ -606,14 +588,6 @@ async def _shutdown_services(app: FastAPI, is_dbos_worker: bool) -> None:
 
     await distributed_health.stop_heartbeat()
     logger.info("Distributed health heartbeat stopped")
-
-    if hasattr(app.state, "taskiq_broker") and app.state.taskiq_broker:
-        try:
-            await app.state.taskiq_broker.shutdown()
-            reset_broker()
-            logger.info("Taskiq broker shutdown complete")
-        except Exception as e:
-            logger.warning(f"Error shutting down taskiq broker: {e}")
 
     try:
         await nats_client.disconnect()
