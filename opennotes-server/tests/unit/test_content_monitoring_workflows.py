@@ -1,7 +1,6 @@
 """Unit tests for DBOS content monitoring workflows.
 
 Tests cover:
-- Deprecated TaskIQ stubs return {"status": "deprecated"}
 - start_ai_note_workflow calls content_monitoring_queue.enqueue() correctly
 - call_persist_audit_log calls content_monitoring_queue.enqueue() correctly
 - Audit middleware calls call_persist_audit_log instead of NATS
@@ -12,56 +11,6 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-
-
-class TestDeprecatedTaskIQStubs:
-    @pytest.mark.asyncio
-    async def test_generate_ai_note_task_returns_deprecated(self):
-        from src.tasks.content_monitoring_tasks import generate_ai_note_task
-
-        result = await generate_ai_note_task(
-            community_server_id="platform123",
-            request_id="req123",
-            content="test content",
-            scan_type="similarity",
-            db_url="postgresql+asyncpg://test:test@localhost/test",
-        )
-
-        assert result["status"] == "deprecated"
-        assert result["migrated_to"] == "dbos"
-
-    @pytest.mark.asyncio
-    async def test_process_vision_description_task_returns_deprecated(self):
-        from src.tasks.content_monitoring_tasks import process_vision_description_task
-
-        result = await process_vision_description_task(
-            message_archive_id=str(uuid4()),
-            image_url="https://example.com/image.jpg",
-            community_server_id="platform123",
-            db_url="postgresql+asyncpg://test:test@localhost/test",
-        )
-
-        assert result["status"] == "deprecated"
-        assert result["migrated_to"] == "dbos"
-
-    @pytest.mark.asyncio
-    async def test_persist_audit_log_task_returns_deprecated(self):
-        from src.tasks.content_monitoring_tasks import persist_audit_log_task
-
-        result = await persist_audit_log_task(
-            user_id=str(uuid4()),
-            community_server_id=None,
-            action="test.action",
-            resource="test",
-            resource_id=None,
-            details=None,
-            ip_address=None,
-            user_agent=None,
-            db_url="postgresql+asyncpg://test:test@localhost/test",
-        )
-
-        assert result["status"] == "deprecated"
-        assert result["migrated_to"] == "dbos"
 
 
 class TestStartAINoteWorkflow:
@@ -226,7 +175,7 @@ class TestAuditMiddlewareUsesDBOS:
 
 class TestHelperFunctionsStillAccessible:
     def test_build_fact_check_prompt_accessible(self):
-        from src.tasks.content_monitoring_tasks import _build_fact_check_prompt
+        from src.dbos_workflows.content_monitoring_workflows import _build_fact_check_prompt
 
         mock_item = MagicMock()
         mock_item.title = "Test"
@@ -240,41 +189,14 @@ class TestHelperFunctionsStillAccessible:
         assert "85.00%" in result
 
     def test_build_general_explanation_prompt_accessible(self):
-        from src.tasks.content_monitoring_tasks import _build_general_explanation_prompt
+        from src.dbos_workflows.content_monitoring_workflows import (
+            _build_general_explanation_prompt,
+        )
 
         result = _build_general_explanation_prompt("test message")
         assert "test message" in result
 
     def test_get_llm_service_accessible(self):
-        from src.tasks.content_monitoring_tasks import _get_llm_service
+        from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
 
         assert callable(_get_llm_service)
-
-
-class TestTaskIQLabelsStillRegistered:
-    def test_ai_note_task_has_labels(self):
-        from src.tasks.broker import _all_registered_tasks
-
-        assert "content:ai_note" in _all_registered_tasks
-
-        _, labels = _all_registered_tasks["content:ai_note"]
-        assert labels.get("component") == "content_monitoring"
-        assert labels.get("task_type") == "generation"
-
-    def test_vision_task_has_labels(self):
-        from src.tasks.broker import _all_registered_tasks
-
-        assert "content:vision_description" in _all_registered_tasks
-
-        _, labels = _all_registered_tasks["content:vision_description"]
-        assert labels.get("component") == "content_monitoring"
-        assert labels.get("task_type") == "vision"
-
-    def test_audit_log_task_has_labels(self):
-        from src.tasks.broker import _all_registered_tasks
-
-        assert "content:audit_log" in _all_registered_tasks
-
-        _, labels = _all_registered_tasks["content:audit_log"]
-        assert labels.get("component") == "content_monitoring"
-        assert labels.get("task_type") == "audit"

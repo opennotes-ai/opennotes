@@ -814,9 +814,9 @@ def process_batch_messages_step(
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
     from src.database import get_session_maker
+    from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
     from src.fact_checking.embedding_service import EmbeddingService
     from src.llm_config.models import CommunityServer
-    from src.tasks.content_monitoring_tasks import _get_llm_service
 
     settings = get_settings()
     scan_uuid = UUID(scan_id)
@@ -971,9 +971,9 @@ def preprocess_batch_step(
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
     from src.database import get_session_maker
+    from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
     from src.fact_checking.embedding_service import EmbeddingService
     from src.llm_config.models import CommunityServer
-    from src.tasks.content_monitoring_tasks import _get_llm_service
 
     settings = get_settings()
     scan_uuid = UUID(scan_id)
@@ -1135,9 +1135,9 @@ def similarity_scan_step(
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
     from src.database import get_session_maker
+    from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
     from src.fact_checking.embedding_service import EmbeddingService
     from src.llm_config.models import CommunityServer
-    from src.tasks.content_monitoring_tasks import _get_llm_service
 
     settings = get_settings()
     scan_uuid = UUID(scan_id)
@@ -1250,8 +1250,8 @@ def flashpoint_scan_step(
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
     from src.database import get_session_maker
+    from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
     from src.fact_checking.embedding_service import EmbeddingService
-    from src.tasks.content_monitoring_tasks import _get_llm_service
 
     settings = get_settings()
     scan_uuid = UUID(scan_id)
@@ -1362,8 +1362,8 @@ def relevance_filter_step(
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
     from src.database import get_session_maker
+    from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
     from src.fact_checking.embedding_service import EmbeddingService
-    from src.tasks.content_monitoring_tasks import _get_llm_service
 
     settings = get_settings()
     scan_uuid = UUID(scan_id)
@@ -1546,6 +1546,7 @@ def finalize_scan_step(
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
     from src.database import get_session_maker
+    from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
     from src.events.publisher import create_worker_event_publisher
     from src.events.schemas import (
         BulkScanFailedEvent,
@@ -1555,7 +1556,6 @@ def finalize_scan_step(
     )
     from src.fact_checking.embedding_service import EmbeddingService
     from src.monitoring.metrics import bulk_scan_finalization_dispatch_total
-    from src.tasks.content_monitoring_tasks import _get_llm_service
 
     settings = get_settings()
     scan_uuid = UUID(scan_id)

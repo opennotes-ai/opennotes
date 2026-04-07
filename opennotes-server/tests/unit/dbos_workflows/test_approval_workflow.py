@@ -1,7 +1,6 @@
 """Unit tests for DBOS bulk approval workflow.
 
 Tests cover:
-- Deprecated TaskIQ stub returns {"status": "deprecated"}
 - Workflow name constant matches __qualname__
 - Workflow processes batches and finalizes correctly
 - Empty candidate set completes immediately
@@ -20,31 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 from uuid import uuid4
 
 import pytest
-
-
-class TestDeprecatedTaskIQStub:
-    @pytest.mark.asyncio
-    async def test_process_bulk_approval_returns_deprecated(self):
-        from src.tasks.approval_tasks import process_bulk_approval
-
-        result = await process_bulk_approval(
-            job_id="fake-id",
-            threshold=0.9,
-            auto_promote=False,
-            limit=100,
-        )
-
-        assert result["status"] == "deprecated"
-        assert result["migrated_to"] == "dbos"
-
-    def test_task_is_registered_with_correct_name(self):
-        from src.tasks.broker import _all_registered_tasks
-
-        assert "approve:candidates" in _all_registered_tasks
-
-        _, labels = _all_registered_tasks["approve:candidates"]
-        assert labels["component"] == "fact_checking"
-        assert labels["task_type"] == "deprecated"
 
 
 class TestWorkflowNameConstants:

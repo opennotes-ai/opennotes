@@ -3146,8 +3146,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Enqueue scrape tasks for pending candidates
-         * @description Enqueue scrape tasks for candidates with status=pending. This is a synchronous operation that returns the count of enqueued tasks.
+         * Start scrape job for pending candidates
+         * @description Start an asynchronous batch job to scrape content for pending candidates. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
          */
         post: operations["enqueue_scrapes_endpoint_api_v1_fact_checking_import_enqueue_scrapes_post"];
         delete?: never;
@@ -5657,17 +5657,6 @@ export interface components {
              * @description URL to user's avatar image (optional override)
              */
             avatar_url?: string | null;
-        };
-        /**
-         * EnqueueScrapeResponse
-         * @description Response for enqueue scrapes operation.
-         */
-        EnqueueScrapeResponse: {
-            /**
-             * Enqueued
-             * @description Number of scrape tasks enqueued
-             */
-            enqueued: number;
         };
         /** EnrollmentData */
         EnrollmentData: {
@@ -16436,12 +16425,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EnqueueScrapeResponse"];
+                    "application/json": components["schemas"]["BatchJobResponse"];
                 };
             };
             /** @description Not authenticated */
@@ -16459,6 +16448,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description A scrape job is already in progress (rate limited) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

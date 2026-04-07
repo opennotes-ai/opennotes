@@ -24,11 +24,6 @@ from src.fact_checking.import_pipeline.router import (
     router as import_router,
 )
 from src.fact_checking.import_pipeline.schemas import ClaimReviewRow, NormalizedCandidate
-from src.fact_checking.import_pipeline.scrape_tasks import (
-    enqueue_scrape_batch,
-    scrape_candidate_content,
-    scrape_url_content,
-)
 
 __all__ = [
     "ClaimReviewRow",
@@ -37,13 +32,10 @@ __all__ = [
     "NormalizedCandidate",
     "RowCountMismatchError",
     "bulk_promote_scraped",
-    "enqueue_scrape_batch",
     "import_fact_check_bureau",
     "import_router",
     "normalize_rating",
     "promote_candidate",
-    "scrape_candidate_content",
-    "scrape_url_content",
     "upsert_candidates",
     "validate_and_normalize_batch",
 ]

@@ -28,7 +28,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.config import get_settings
 from src.database import get_db
 from src.fact_checking.import_pipeline.importer import import_fact_check_bureau
-from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
 from src.monitoring.logging import setup_logging
 
 
@@ -78,10 +77,12 @@ async def main() -> int:
     logger = logging.getLogger(__name__)
 
     if args.enqueue_scrapes:
-        logger.info("Enqueueing scrape tasks for pending candidates...")
-        result = await enqueue_scrape_batch(batch_size=args.batch_size)
-        logger.info(f"Enqueued {result['enqueued']} scrape tasks")
-        return 0
+        logger.error(
+            "The --enqueue-scrapes flag has been removed. "
+            "Use the CLI instead: opennotes candidates scrape --batch-size %d",
+            args.batch_size,
+        )
+        return 1
 
     logger.info("Starting fact-check-bureau import...")
     if args.dry_run:

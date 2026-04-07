@@ -10125,8 +10125,8 @@
         "tags": [
           "fact-checking-import"
         ],
-        "summary": "Enqueue scrape tasks for pending candidates",
-        "description": "Enqueue scrape tasks for candidates with status=pending. This is a synchronous operation that returns the count of enqueued tasks.",
+        "summary": "Start scrape job for pending candidates",
+        "description": "Start an asynchronous batch job to scrape content for pending candidates. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.",
         "operationId": "enqueue_scrapes_endpoint_api_v1_fact_checking_import_enqueue_scrapes_post",
         "security": [
           {
@@ -10162,18 +10162,21 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnqueueScrapeResponse"
+                  "$ref": "#/components/schemas/BatchJobResponse"
                 }
               }
             }
           },
           "401": {
             "description": "Not authenticated"
+          },
+          "429": {
+            "description": "A scrape job is already in progress (rate limited)"
           },
           "422": {
             "description": "Validation Error",
@@ -16096,21 +16099,6 @@
         ],
         "title": "DiscordOAuthRegisterRequest",
         "description": "Request schema for Discord OAuth2 registration."
-      },
-      "EnqueueScrapeResponse": {
-        "properties": {
-          "enqueued": {
-            "type": "integer",
-            "title": "Enqueued",
-            "description": "Number of scrape tasks enqueued"
-          }
-        },
-        "type": "object",
-        "required": [
-          "enqueued"
-        ],
-        "title": "EnqueueScrapeResponse",
-        "description": "Response for enqueue scrapes operation."
       },
       "EnrollmentData": {
         "properties": {

@@ -406,24 +406,6 @@ search_analytics_failures_total = meter.create_counter(
     unit="1",
 )
 
-semaphore_release_failures_total = meter.create_counter(
-    "semaphore.release_failures",
-    description="Total semaphore release failures after all retries exhausted",
-    unit="1",
-)
-
-semaphore_release_retries_total = meter.create_counter(
-    "semaphore.release_retries",
-    description="Total semaphore release retry attempts",
-    unit="1",
-)
-
-semaphore_leak_prevented_total = meter.create_counter(
-    "semaphore.leak_prevented",
-    description="Total semaphore leaks prevented by checking existing task_id tracking",
-    unit="1",
-)
-
 batch_job_stuck_count = meter.create_gauge(
     "batch_job.stuck_count",
     description="Number of batch jobs stuck in non-terminal state with zero progress",
@@ -463,30 +445,5 @@ audit_publish_timeouts_total = meter.create_counter(
 dbos_pickle_fallback_total = meter.create_counter(
     "dbos.pickle_fallback",
     description="Number of times DBOS deserialization fell back to pickle from JSON",
-    unit="1",
-)
-
-taskiq_task_duration_seconds = meter.create_histogram(
-    "taskiq.task.duration",
-    description="Duration of TaskIQ task execution in seconds",
-    unit="s",
-    explicit_bucket_boundaries_advisory=(
-        0.1,
-        0.25,
-        0.5,
-        1.0,
-        2.5,
-        5.0,
-        10.0,
-        30.0,
-        60.0,
-        120.0,
-        300.0,
-    ),
-)
-
-taskiq_tasks_total = meter.create_counter(
-    "taskiq.tasks",
-    description="Total TaskIQ tasks executed",
     unit="1",
 )

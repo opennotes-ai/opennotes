@@ -11,7 +11,6 @@ pytestmark = pytest.mark.serial
 def _build_mock_app():
     app = MagicMock()
     app.state = MagicMock()
-    app.state.taskiq_broker = None
     return app
 
 
