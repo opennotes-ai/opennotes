@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import orjson
@@ -41,11 +41,121 @@ AI_NOTE_GENERATION_WORKFLOW_NAME = "ai_note_generation_workflow"
 VISION_DESCRIPTION_WORKFLOW_NAME = "vision_description_workflow"
 AUDIT_LOG_WORKFLOW_NAME = "_audit_log_wrapper_workflow"
 
+if TYPE_CHECKING:
+    from src.fact_checking.models import FactCheckItem
+
 content_monitoring_queue = Queue(
     name="content_monitoring",
     worker_concurrency=6,
     concurrency=12,
 )
+
+
+def _get_llm_service() -> Any:
+    from src.config import get_settings
+    from src.llm_config.encryption import EncryptionService
+    from src.llm_config.manager import LLMClientManager
+    from src.llm_config.service import LLMService
+
+    settings = get_settings()
+    llm_client_manager = LLMClientManager(
+        encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
+    )
+    return LLMService(client_manager=llm_client_manager)
+
+
+def _build_fact_check_prompt(
+    original_message: str,
+    fact_check_item: FactCheckItem,
+    similarity_score: float,
+) -> str:
+    return f"""Original Message:
+{original_message}
+
+Fact-Check Information:
+Title: {fact_check_item.title}
+Rating: {fact_check_item.rating}
+Summary: {fact_check_item.summary}
+Content: {fact_check_item.content}
+Source: {fact_check_item.source_url}
+
+Match Confidence: {similarity_score:.2%}
+
+Please write a concise, informative community note that:
+1. Addresses the claim in the original message
+2. Provides context from the fact-check information
+3. Maintains a neutral, factual tone
+4. Is clear and easy to understand
+5. Is no more than 280 characters if possible
+
+Community Note:"""
+
+
+def _build_general_explanation_prompt(
+    original_message: str,
+    moderation_metadata: dict[str, Any] | None = None,
+) -> str:
+    prompt_parts = [f"Original Message:\n{original_message}"]
+
+    if moderation_metadata:
+        moderation_context = "\nContent Moderation Analysis:"
+        flagged_categories = moderation_metadata.get("flagged_categories", [])
+        scores = moderation_metadata.get("scores", {})
+
+        if flagged_categories:
+            moderation_context += f"\nFlagged Categories: {', '.join(flagged_categories)}"
+            relevant_scores = {
+                cat: f"{score:.2%}" for cat, score in scores.items() if cat in flagged_categories
+            }
+            if relevant_scores:
+                moderation_context += f"\nConfidence Scores: {relevant_scores}"
+
+        prompt_parts.append(moderation_context)
+
+    prompt_parts.append("""
+Please analyze this content and write a concise, informative community note that:
+1. Explains the message content
+2. Provides helpful context and clarification
+3. Addresses any potential misunderstandings
+4. Maintains a neutral, factual tone
+5. Is clear and easy to understand
+6. Is no more than 280 characters if possible
+
+Focus on helping readers understand what the content is about, what context might be important, and any relevant information that would be helpful to know.
+
+Community Note:""")
+
+    return "\n".join(prompt_parts)
+
+
+def _build_flashpoint_prompt(
+    original_message: str,
+    flashpoint_metadata: dict[str, Any],
+) -> str:
+    derailment_score = flashpoint_metadata.get("derailment_score", 0)
+    risk_level = flashpoint_metadata.get("risk_level", "unknown")
+    reasoning = flashpoint_metadata.get("reasoning", "")
+    context_messages = flashpoint_metadata.get("context_messages", 0)
+
+    prompt_parts = [f"Original Message:\n{original_message}"]
+    prompt_parts.append(f"""
+Conversation Flashpoint Analysis:
+Derailment Risk Score: {derailment_score}/100 ({risk_level} risk)
+Context Messages Analyzed: {context_messages}
+Escalation Signals: {reasoning}
+
+Please write a concise, informative community note that:
+1. Acknowledges the conversation dynamics at play
+2. Provides context about why this exchange may be escalating
+3. Offers de-escalation perspective without taking sides
+4. Maintains a neutral, constructive tone
+5. Is clear and easy to understand
+6. Is no more than 280 characters if possible
+
+Focus on helping readers understand the conversation context and providing a balanced perspective.
+
+Community Note:""")
+    return "\n".join(prompt_parts)
 
 
 def _retry_llm_call(func):
@@ -77,12 +187,6 @@ def generate_ai_note_step(
         from src.llm_config.models import CommunityServer
         from src.llm_config.providers.base import LLMMessage
         from src.notes.models import Note
-        from src.tasks.content_monitoring_tasks import (
-            _build_fact_check_prompt,
-            _build_flashpoint_prompt,
-            _build_general_explanation_prompt,
-            _get_llm_service,
-        )
         from src.users import PLACEHOLDER_USER_ID
         from src.webhooks.rate_limit import rate_limiter
 
@@ -293,7 +397,6 @@ def generate_vision_description_step(
         from src.database import get_engine
         from src.notes.message_archive_models import MessageArchive
         from src.services.vision_service import VisionService
-        from src.tasks.content_monitoring_tasks import _get_llm_service
 
         archive_uuid = UUID(message_archive_id)
 

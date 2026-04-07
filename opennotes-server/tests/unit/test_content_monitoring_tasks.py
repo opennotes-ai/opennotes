@@ -36,7 +36,9 @@ class TestGenerateAINoteTask:
 
 class TestBuildGeneralExplanationPrompt:
     def test_prompt_without_moderation_metadata(self):
-        from src.tasks.content_monitoring_tasks import _build_general_explanation_prompt
+        from src.dbos_workflows.content_monitoring_workflows import (
+            _build_general_explanation_prompt,
+        )
 
         prompt = _build_general_explanation_prompt("Test message content")
 
@@ -44,7 +46,9 @@ class TestBuildGeneralExplanationPrompt:
         assert "Content Moderation Analysis" not in prompt
 
     def test_prompt_includes_moderation_metadata(self):
-        from src.tasks.content_monitoring_tasks import _build_general_explanation_prompt
+        from src.dbos_workflows.content_monitoring_workflows import (
+            _build_general_explanation_prompt,
+        )
 
         moderation_metadata = {
             "categories": {"harassment": True, "violence": False, "hate": True},
@@ -62,7 +66,9 @@ class TestBuildGeneralExplanationPrompt:
         assert "75.00%" in prompt
 
     def test_prompt_with_empty_flagged_categories(self):
-        from src.tasks.content_monitoring_tasks import _build_general_explanation_prompt
+        from src.dbos_workflows.content_monitoring_workflows import (
+            _build_general_explanation_prompt,
+        )
 
         moderation_metadata = {
             "categories": {},
@@ -145,7 +151,7 @@ class TestTaskIQLabels:
 
 class TestHelperFunctionsAccessible:
     def test_build_fact_check_prompt(self):
-        from src.tasks.content_monitoring_tasks import _build_fact_check_prompt
+        from src.dbos_workflows.content_monitoring_workflows import _build_fact_check_prompt
 
         mock_item = MagicMock()
         mock_item.title = "Test Title"
@@ -160,7 +166,7 @@ class TestHelperFunctionsAccessible:
         assert "85.00%" in result
 
     def test_get_llm_service_accessible(self):
-        from src.tasks.content_monitoring_tasks import _get_llm_service
+        from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
 
         assert callable(_get_llm_service)
 

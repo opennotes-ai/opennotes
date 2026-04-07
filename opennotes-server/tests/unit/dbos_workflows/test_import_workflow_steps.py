@@ -536,7 +536,7 @@ class TestImportCsvStepCsvProcessing:
                 return_value=True,
             ),
             patch(
-                "src.tasks.import_tasks._check_row_accounting",
+                "src.dbos_workflows.import_workflow._check_row_accounting",
                 return_value=True,
             ),
             patch(
@@ -596,7 +596,7 @@ class TestImportCsvStepCsvProcessing:
                 return_value=True,
             ),
             patch(
-                "src.tasks.import_tasks._check_row_accounting",
+                "src.dbos_workflows.import_workflow._check_row_accounting",
                 return_value=True,
             ),
             patch(
@@ -650,7 +650,7 @@ class TestImportCsvStepCsvProcessing:
                 return_value=True,
             ),
             patch(
-                "src.tasks.import_tasks._check_row_accounting",
+                "src.dbos_workflows.import_workflow._check_row_accounting",
                 return_value=True,
             ),
             patch(
@@ -699,7 +699,7 @@ class TestImportCsvStepCsvProcessing:
                 return_value=True,
             ),
             patch(
-                "src.tasks.import_tasks._check_row_accounting",
+                "src.dbos_workflows.import_workflow._check_row_accounting",
                 return_value=True,
             ),
             patch(
@@ -757,7 +757,7 @@ class TestImportCsvStepCsvProcessing:
                 return_value=True,
             ),
             patch(
-                "src.tasks.import_tasks._check_row_accounting",
+                "src.dbos_workflows.import_workflow._check_row_accounting",
                 return_value=True,
             ),
             patch(
@@ -1332,29 +1332,29 @@ class TestProcessPromotionBatchStep:
 
 class TestCheckRowAccounting:
     def test_valid_accounting_returns_true(self) -> None:
+        from src.dbos_workflows.import_workflow import _check_row_accounting
         from src.fact_checking.import_pipeline.importer import ImportStats
-        from src.tasks.import_tasks import _check_row_accounting
 
         stats = ImportStats(total_rows=100, valid_rows=90, invalid_rows=10)
         assert _check_row_accounting("job-1", stats) is True
 
     def test_mismatch_returns_false(self) -> None:
+        from src.dbos_workflows.import_workflow import _check_row_accounting
         from src.fact_checking.import_pipeline.importer import ImportStats
-        from src.tasks.import_tasks import _check_row_accounting
 
         stats = ImportStats(total_rows=100, valid_rows=80, invalid_rows=10)
         assert _check_row_accounting("job-1", stats) is False
 
     def test_zero_total_rows_returns_true(self) -> None:
+        from src.dbos_workflows.import_workflow import _check_row_accounting
         from src.fact_checking.import_pipeline.importer import ImportStats
-        from src.tasks.import_tasks import _check_row_accounting
 
         stats = ImportStats(total_rows=0, valid_rows=0, invalid_rows=0)
         assert _check_row_accounting("job-1", stats) is True
 
     def test_span_attributes_set_on_mismatch(self) -> None:
+        from src.dbos_workflows.import_workflow import _check_row_accounting
         from src.fact_checking.import_pipeline.importer import ImportStats
-        from src.tasks.import_tasks import _check_row_accounting
 
         stats = ImportStats(total_rows=100, valid_rows=50, invalid_rows=30)
         mock_span = MagicMock()

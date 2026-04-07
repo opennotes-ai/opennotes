@@ -25,7 +25,7 @@ class TestAggregateErrors:
 
     def test_aggregate_errors_under_max_limit(self):
         """Errors under max limit are all included."""
-        from src.tasks.import_tasks import _aggregate_errors
+        from src.dbos_workflows.import_workflow import _aggregate_errors
 
         errors = [f"Error {i}" for i in range(10)]
         result = _aggregate_errors(errors, max_errors=50)
@@ -36,7 +36,7 @@ class TestAggregateErrors:
 
     def test_aggregate_errors_truncates_at_max(self):
         """Errors exceeding max limit are truncated."""
-        from src.tasks.import_tasks import _aggregate_errors
+        from src.dbos_workflows.import_workflow import _aggregate_errors
 
         errors = [f"Error {i}" for i in range(100)]
         result = _aggregate_errors(errors, max_errors=50)
@@ -47,7 +47,7 @@ class TestAggregateErrors:
 
     def test_aggregate_errors_empty_list(self):
         """Empty error list produces valid result."""
-        from src.tasks.import_tasks import _aggregate_errors
+        from src.dbos_workflows.import_workflow import _aggregate_errors
 
         result = _aggregate_errors([])
 
@@ -61,6 +61,7 @@ class TestTaskIQLabels:
 
     def test_import_task_has_deprecated_labels(self):
         """Verify import task has component and deprecated task_type labels."""
+        import src.tasks.import_tasks  # noqa: F401
         from src.tasks.broker import _all_registered_tasks
 
         assert "import:fact_check_bureau" in _all_registered_tasks
@@ -71,6 +72,7 @@ class TestTaskIQLabels:
 
     def test_scrape_task_has_deprecated_labels(self):
         """Verify scrape task has component and deprecated task_type labels."""
+        import src.tasks.import_tasks  # noqa: F401
         from src.tasks.broker import _all_registered_tasks
 
         assert "scrape:candidates" in _all_registered_tasks
@@ -81,6 +83,7 @@ class TestTaskIQLabels:
 
     def test_promote_task_has_deprecated_labels(self):
         """Verify promote task has component and deprecated task_type labels."""
+        import src.tasks.import_tasks  # noqa: F401
         from src.tasks.broker import _all_registered_tasks
 
         assert "promote:candidates" in _all_registered_tasks
@@ -97,7 +100,7 @@ class TestRecoverStuckCandidates:
     async def test_recover_stuck_scraping_candidates_recovers_old(self):
         """Candidates stuck in SCRAPING state beyond timeout are recovered."""
 
-        from src.tasks.import_tasks import _recover_stuck_scraping_candidates
+        from src.dbos_workflows.import_workflow import _recover_stuck_scraping_candidates
 
         mock_result = MagicMock()
         mock_result.rowcount = 5
@@ -119,7 +122,7 @@ class TestRecoverStuckCandidates:
     @pytest.mark.asyncio
     async def test_recover_stuck_scraping_candidates_none_found(self):
         """No candidates stuck means zero recovered."""
-        from src.tasks.import_tasks import _recover_stuck_scraping_candidates
+        from src.dbos_workflows.import_workflow import _recover_stuck_scraping_candidates
 
         mock_result = MagicMock()
         mock_result.rowcount = 0
@@ -139,7 +142,7 @@ class TestRecoverStuckCandidates:
     @pytest.mark.asyncio
     async def test_recover_stuck_promoting_candidates_recovers_old(self):
         """Candidates stuck in PROMOTING state beyond timeout are recovered."""
-        from src.tasks.import_tasks import _recover_stuck_promoting_candidates
+        from src.dbos_workflows.import_workflow import _recover_stuck_promoting_candidates
 
         mock_result = MagicMock()
         mock_result.rowcount = 3
@@ -163,7 +166,7 @@ class TestRecoverStuckCandidates:
     @pytest.mark.asyncio
     async def test_recover_stuck_promoting_candidates_none_found(self):
         """No candidates stuck in PROMOTING means zero recovered."""
-        from src.tasks.import_tasks import _recover_stuck_promoting_candidates
+        from src.dbos_workflows.import_workflow import _recover_stuck_promoting_candidates
 
         mock_result = MagicMock()
         mock_result.rowcount = 0
@@ -188,7 +191,7 @@ class TestRecoverStuckCandidates:
         Recovery must clear content=None so the scrape selection query
         (which filters by content.is_(None)) will pick them up again.
         """
-        from src.tasks.import_tasks import _recover_stuck_scraping_candidates
+        from src.dbos_workflows.import_workflow import _recover_stuck_scraping_candidates
 
         mock_result = MagicMock()
         mock_result.rowcount = 1
@@ -246,7 +249,7 @@ class TestRecoverStuckCandidates:
         a row lock. The recovery function must skip such rows to avoid resetting
         candidates that are legitimately being processed.
         """
-        from src.tasks.import_tasks import _recover_stuck_scraping_candidates
+        from src.dbos_workflows.import_workflow import _recover_stuck_scraping_candidates
 
         mock_result = MagicMock()
         mock_result.rowcount = 0
@@ -280,7 +283,7 @@ class TestRecoverStuckCandidates:
         a row lock. The recovery function must skip such rows to avoid resetting
         candidates that are legitimately being processed.
         """
-        from src.tasks.import_tasks import _recover_stuck_promoting_candidates
+        from src.dbos_workflows.import_workflow import _recover_stuck_promoting_candidates
 
         mock_result = MagicMock()
         mock_result.rowcount = 0

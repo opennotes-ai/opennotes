@@ -62,7 +62,7 @@ class TestWorkflowNameConstants:
 
 class TestAggregateErrors:
     def test_returns_all_errors_within_limit(self) -> None:
-        from src.tasks.import_tasks import _aggregate_errors
+        from src.dbos_workflows.import_workflow import _aggregate_errors
 
         errors = ["error1", "error2", "error3"]
         result = _aggregate_errors(errors)
@@ -72,7 +72,7 @@ class TestAggregateErrors:
         assert result["truncated"] is False
 
     def test_truncates_errors_over_limit(self) -> None:
-        from src.tasks.import_tasks import _aggregate_errors
+        from src.dbos_workflows.import_workflow import _aggregate_errors
 
         errors = [f"error_{i}" for i in range(100)]
         result = _aggregate_errors(errors, max_errors=10)
@@ -82,7 +82,7 @@ class TestAggregateErrors:
         assert result["truncated"] is True
 
     def test_empty_errors(self) -> None:
-        from src.tasks.import_tasks import _aggregate_errors
+        from src.dbos_workflows.import_workflow import _aggregate_errors
 
         result = _aggregate_errors([])
 

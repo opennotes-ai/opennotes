@@ -1809,7 +1809,7 @@ class TestFinalizeScanStep:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -1903,7 +1903,7 @@ class TestFinalizeScanStep:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -1993,7 +1993,7 @@ class TestFinalizeScanStep:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -2082,7 +2082,7 @@ class TestFinalizeScanStep:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -3477,7 +3477,7 @@ class TestPreprocessBatchStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -3563,7 +3563,7 @@ class TestPreprocessBatchStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -3644,7 +3644,7 @@ class TestPreprocessBatchStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -3737,7 +3737,7 @@ class TestPreprocessBatchStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -3815,7 +3815,7 @@ class TestPreprocessBatchStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -3899,7 +3899,7 @@ class TestSimilarityScanStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -3973,7 +3973,7 @@ class TestSimilarityScanStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4038,7 +4038,7 @@ class TestSimilarityScanStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4093,7 +4093,7 @@ class TestSimilarityScanStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4164,7 +4164,7 @@ class TestSimilarityScanStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4245,7 +4245,7 @@ class TestFlashpointScanStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4324,7 +4324,7 @@ class TestFlashpointScanStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4394,7 +4394,7 @@ class TestFlashpointScanStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4504,7 +4504,7 @@ class TestRelevanceFilterStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4607,7 +4607,7 @@ class TestRelevanceFilterStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4697,7 +4697,7 @@ class TestRelevanceFilterStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4758,7 +4758,7 @@ class TestRelevanceFilterStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4825,7 +4825,7 @@ class TestRelevanceFilterStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4888,7 +4888,7 @@ class TestRelevanceFilterStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(
@@ -4952,7 +4952,7 @@ class TestRelevanceFilterStepInnerLogic:
                 return_value=self._make_session_context(mock_session),
             ),
             patch(
-                "src.tasks.content_monitoring_tasks._get_llm_service",
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
                 return_value=MagicMock(),
             ),
             patch(

@@ -161,7 +161,6 @@ from .discord_o_auth_register_request import DiscordOAuthRegisterRequest
 from .distributed_health_check_health_distributed_get_response_distributed_health_check_health_distributed_get import (
     DistributedHealthCheckHealthDistributedGetResponseDistributedHealthCheckHealthDistributedGet,
 )
-from .enqueue_scrape_response import EnqueueScrapeResponse
 from .enrollment_data import EnrollmentData
 from .explanation_create_attributes import ExplanationCreateAttributes
 from .explanation_create_data import ExplanationCreateData
@@ -765,7 +764,6 @@ __all__ = (
     "DiscordOAuthLoginRequest",
     "DiscordOAuthRegisterRequest",
     "DistributedHealthCheckHealthDistributedGetResponseDistributedHealthCheckHealthDistributedGet",
-    "EnqueueScrapeResponse",
     "EnrollmentData",
     "ExplanationCreateAttributes",
     "ExplanationCreateData",

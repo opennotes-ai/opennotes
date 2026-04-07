@@ -5,7 +5,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.enqueue_scrape_response import EnqueueScrapeResponse
+from ...models.batch_job_response import BatchJobResponse
 from ...models.http_validation_error import HTTPValidationError
 from ...models.scrape_processing_request import ScrapeProcessingRequest
 from ...types import UNSET, Response, Unset
@@ -35,11 +35,11 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Any | EnqueueScrapeResponse | HTTPValidationError | None:
-    if response.status_code == 200:
-        response_200 = EnqueueScrapeResponse.from_dict(response.json())
+) -> Any | BatchJobResponse | HTTPValidationError | None:
+    if response.status_code == 201:
+        response_201 = BatchJobResponse.from_dict(response.json())
 
-        return response_200
+        return response_201
 
     if response.status_code == 401:
         response_401 = cast(Any, None)
@@ -50,6 +50,10 @@ def _parse_response(
 
         return response_422
 
+    if response.status_code == 429:
+        response_429 = cast(Any, None)
+        return response_429
+
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -58,7 +62,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[Any | EnqueueScrapeResponse | HTTPValidationError]:
+) -> Response[Any | BatchJobResponse | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -72,11 +76,11 @@ def sync_detailed(
     client: AuthenticatedClient,
     body: ScrapeProcessingRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[Any | EnqueueScrapeResponse | HTTPValidationError]:
-    """Enqueue scrape tasks for pending candidates
+) -> Response[Any | BatchJobResponse | HTTPValidationError]:
+    """Start scrape job for pending candidates
 
-     Enqueue scrape tasks for candidates with status=pending. This is a synchronous operation that
-    returns the count of enqueued tasks.
+     Start an asynchronous batch job to scrape content for pending candidates. Returns immediately with a
+    BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
 
     Args:
         x_api_key (None | str | Unset):
@@ -88,7 +92,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | EnqueueScrapeResponse | HTTPValidationError]
+        Response[Any | BatchJobResponse | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -108,11 +112,11 @@ def sync(
     client: AuthenticatedClient,
     body: ScrapeProcessingRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> Any | EnqueueScrapeResponse | HTTPValidationError | None:
-    """Enqueue scrape tasks for pending candidates
+) -> Any | BatchJobResponse | HTTPValidationError | None:
+    """Start scrape job for pending candidates
 
-     Enqueue scrape tasks for candidates with status=pending. This is a synchronous operation that
-    returns the count of enqueued tasks.
+     Start an asynchronous batch job to scrape content for pending candidates. Returns immediately with a
+    BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
 
     Args:
         x_api_key (None | str | Unset):
@@ -124,7 +128,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | EnqueueScrapeResponse | HTTPValidationError
+        Any | BatchJobResponse | HTTPValidationError
     """
 
     return sync_detailed(
@@ -139,11 +143,11 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     body: ScrapeProcessingRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[Any | EnqueueScrapeResponse | HTTPValidationError]:
-    """Enqueue scrape tasks for pending candidates
+) -> Response[Any | BatchJobResponse | HTTPValidationError]:
+    """Start scrape job for pending candidates
 
-     Enqueue scrape tasks for candidates with status=pending. This is a synchronous operation that
-    returns the count of enqueued tasks.
+     Start an asynchronous batch job to scrape content for pending candidates. Returns immediately with a
+    BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
 
     Args:
         x_api_key (None | str | Unset):
@@ -155,7 +159,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | EnqueueScrapeResponse | HTTPValidationError]
+        Response[Any | BatchJobResponse | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -173,11 +177,11 @@ async def asyncio(
     client: AuthenticatedClient,
     body: ScrapeProcessingRequest,
     x_api_key: None | str | Unset = UNSET,
-) -> Any | EnqueueScrapeResponse | HTTPValidationError | None:
-    """Enqueue scrape tasks for pending candidates
+) -> Any | BatchJobResponse | HTTPValidationError | None:
+    """Start scrape job for pending candidates
 
-     Enqueue scrape tasks for candidates with status=pending. This is a synchronous operation that
-    returns the count of enqueued tasks.
+     Start an asynchronous batch job to scrape content for pending candidates. Returns immediately with a
+    BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
 
     Args:
         x_api_key (None | str | Unset):
@@ -189,7 +193,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | EnqueueScrapeResponse | HTTPValidationError
+        Any | BatchJobResponse | HTTPValidationError
     """
 
     return (

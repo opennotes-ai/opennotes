@@ -226,7 +226,7 @@ class TestAuditMiddlewareUsesDBOS:
 
 class TestHelperFunctionsStillAccessible:
     def test_build_fact_check_prompt_accessible(self):
-        from src.tasks.content_monitoring_tasks import _build_fact_check_prompt
+        from src.dbos_workflows.content_monitoring_workflows import _build_fact_check_prompt
 
         mock_item = MagicMock()
         mock_item.title = "Test"
@@ -240,13 +240,15 @@ class TestHelperFunctionsStillAccessible:
         assert "85.00%" in result
 
     def test_build_general_explanation_prompt_accessible(self):
-        from src.tasks.content_monitoring_tasks import _build_general_explanation_prompt
+        from src.dbos_workflows.content_monitoring_workflows import (
+            _build_general_explanation_prompt,
+        )
 
         result = _build_general_explanation_prompt("test message")
         assert "test message" in result
 
     def test_get_llm_service_accessible(self):
-        from src.tasks.content_monitoring_tasks import _get_llm_service
+        from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
 
         assert callable(_get_llm_service)
 

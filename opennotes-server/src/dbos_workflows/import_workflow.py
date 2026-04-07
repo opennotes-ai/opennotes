@@ -27,10 +27,13 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
+import pendulum
 from dbos import DBOS, Queue
+from sqlalchemy import CursorResult, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.batch_jobs.constants import (
     DEFAULT_SCRAPE_CONCURRENCY,
@@ -42,12 +45,137 @@ from src.dbos_workflows.batch_job_helpers import (
 from src.dbos_workflows.enqueue_utils import safe_enqueue
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
+from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
+from src.fact_checking.import_pipeline.importer import ImportStats
 from src.monitoring import get_logger
 from src.utils.async_compat import run_sync
 
 logger = get_logger(__name__)
 
 FAILURE_THRESHOLD = 0.5
+MAX_STORED_ERRORS = 50
+SCRAPING_TIMEOUT_MINUTES = 120
+PROMOTING_TIMEOUT_MINUTES = 120
+
+
+def _check_row_accounting(
+    job_id: str,
+    stats: ImportStats,
+    span: Any = None,
+) -> bool:
+    processed_count = stats.valid_rows + stats.invalid_rows
+    if processed_count == stats.total_rows:
+        return True
+
+    missing = stats.total_rows - processed_count
+    missing_pct = round(missing / stats.total_rows * 100, 2) if stats.total_rows > 0 else 0
+
+    logger.error(
+        "Row accounting integrity check failed",
+        extra={
+            "job_id": job_id,
+            "total_rows": stats.total_rows,
+            "valid_rows": stats.valid_rows,
+            "invalid_rows": stats.invalid_rows,
+            "processed": processed_count,
+            "missing": missing,
+            "missing_percentage": missing_pct,
+        },
+    )
+    if span is not None:
+        span.set_attribute("import.row_mismatch", True)
+        span.set_attribute("import.missing_rows", missing)
+    return False
+
+
+def _aggregate_errors(
+    errors: list[str],
+    max_errors: int = MAX_STORED_ERRORS,
+) -> dict[str, Any]:
+    return {
+        "validation_errors": errors[:max_errors],
+        "total_validation_errors": len(errors),
+        "truncated": len(errors) > max_errors,
+    }
+
+
+async def _recover_stuck_scraping_candidates(
+    session: async_sessionmaker[AsyncSession],
+    timeout_minutes: int = SCRAPING_TIMEOUT_MINUTES,
+) -> int:
+    cutoff_time = pendulum.now("UTC") - pendulum.duration(minutes=timeout_minutes)
+
+    async with session() as db:
+        subquery = (
+            select(FactCheckedItemCandidate.id)
+            .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPING.value)
+            .where(FactCheckedItemCandidate.updated_at < cutoff_time)
+            .with_for_update(skip_locked=True)
+        )
+        result = cast(
+            CursorResult[Any],
+            await db.execute(
+                update(FactCheckedItemCandidate)
+                .where(FactCheckedItemCandidate.id.in_(subquery))
+                .values(
+                    status=CandidateStatus.PENDING.value,
+                    content=None,
+                    error_message="Recovered from stuck SCRAPING state",
+                )
+            ),
+        )
+        await db.commit()
+        recovered_count = result.rowcount
+
+        if recovered_count > 0:
+            logger.info(
+                "Recovered candidates stuck in SCRAPING state",
+                extra={
+                    "recovered_count": recovered_count,
+                    "timeout_minutes": timeout_minutes,
+                },
+            )
+
+        return recovered_count
+
+
+async def _recover_stuck_promoting_candidates(
+    session: async_sessionmaker[AsyncSession],
+    timeout_minutes: int = PROMOTING_TIMEOUT_MINUTES,
+) -> int:
+    cutoff_time = pendulum.now("UTC") - pendulum.duration(minutes=timeout_minutes)
+
+    async with session() as db:
+        subquery = (
+            select(FactCheckedItemCandidate.id)
+            .where(FactCheckedItemCandidate.status == CandidateStatus.PROMOTING.value)
+            .where(FactCheckedItemCandidate.updated_at < cutoff_time)
+            .with_for_update(skip_locked=True)
+        )
+        result = cast(
+            CursorResult[Any],
+            await db.execute(
+                update(FactCheckedItemCandidate)
+                .where(FactCheckedItemCandidate.id.in_(subquery))
+                .values(
+                    status=CandidateStatus.SCRAPED.value,
+                    error_message="Recovered from stuck PROMOTING state",
+                )
+            ),
+        )
+        await db.commit()
+        recovered_count = result.rowcount
+
+        if recovered_count > 0:
+            logger.info(
+                "Recovered candidates stuck in PROMOTING state",
+                extra={
+                    "recovered_count": recovered_count,
+                    "timeout_minutes": timeout_minutes,
+                },
+            )
+
+        return recovered_count
 
 
 def _finalize_job(
@@ -235,7 +363,6 @@ def import_csv_step(
         upsert_candidates,
         validate_and_normalize_batch,
     )
-    from src.tasks.import_tasks import _check_row_accounting
 
     job_uuid = UUID(batch_job_id)
 
@@ -320,8 +447,6 @@ def import_csv_step(
         }
 
         if all_errors:
-            from src.tasks.import_tasks import _aggregate_errors
-
             final_stats["errors"] = _aggregate_errors(all_errors)
 
         if enqueue_scrapes and not dry_run:
@@ -441,8 +566,6 @@ def fact_check_import_workflow(
 
 @DBOS.step()
 def recover_and_count_scrape_step(batch_job_id: str) -> dict[str, Any]:
-    from src.tasks.import_tasks import _recover_stuck_scraping_candidates
-
     job_uuid = UUID(batch_job_id)
 
     async def _impl() -> dict[str, Any]:
@@ -794,8 +917,6 @@ def scrape_candidates_workflow(
 
 @DBOS.step()
 def recover_and_count_promote_step(batch_job_id: str) -> dict[str, Any]:
-    from src.tasks.import_tasks import _recover_stuck_promoting_candidates
-
     job_uuid = UUID(batch_job_id)
 
     async def _impl() -> dict[str, Any]:
