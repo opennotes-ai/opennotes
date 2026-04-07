@@ -25,7 +25,6 @@ from src.monitoring.metrics import (
     batch_job_stuck_count,
     batch_job_stuck_duration_seconds,
 )
-from src.tasks.broker import get_broker_health, is_broker_initialized
 
 logger = logging.getLogger(__name__)
 
@@ -226,49 +225,6 @@ async def nats_health() -> ServiceStatus:
         )
 
 
-@router.get("/health/taskiq", response_model=ServiceStatus)
-async def taskiq_health() -> ServiceStatus:
-    """
-    Check taskiq broker health status.
-
-    Returns status information about the taskiq background task system:
-    - Whether the broker is initialized
-    - The configured stream name
-    - Number of registered tasks
-    """
-    start = time.time()
-
-    try:
-        is_initialized = is_broker_initialized()
-        latency_ms = (time.time() - start) * 1000
-
-        if not is_initialized:
-            return ServiceStatus(
-                status="degraded",
-                latency_ms=latency_ms,
-                message="Taskiq broker not initialized",
-                details=get_broker_health(),
-            )
-
-        health_info = get_broker_health()
-
-        return ServiceStatus(
-            status="healthy",
-            latency_ms=latency_ms,
-            message="Taskiq broker is operational",
-            details=health_info,
-        )
-
-    except Exception as e:
-        latency_ms = (time.time() - start) * 1000
-        logger.error(f"Taskiq health check failed: {e}")
-        return ServiceStatus(
-            status="unhealthy",
-            latency_ms=latency_ms,
-            message=f"Taskiq health check failed: {e!s}",
-        )
-
-
 @router.get("/health/dbos", response_model=ServiceStatus)
 async def dbos_health() -> ServiceStatus:
     """Check DBOS health and connectivity.
@@ -396,11 +352,10 @@ async def detailed_health(
 ) -> HealthCheckResponse:
     redis_status = await redis_health()
     nats_status = await nats_health()
-    taskiq_status = await taskiq_health()
     dbos_status = await dbos_health()
     batch_jobs_status = await batch_jobs_health(db)
 
-    all_statuses = [redis_status, nats_status, taskiq_status, dbos_status, batch_jobs_status]
+    all_statuses = [redis_status, nats_status, dbos_status, batch_jobs_status]
 
     overall_status = "healthy"
     if any(s.status == "unhealthy" for s in all_statuses):
@@ -414,7 +369,6 @@ async def detailed_health(
         components={
             "redis": redis_status,
             "nats": nats_status,
-            "taskiq": taskiq_status,
             "dbos": dbos_status,
             "batch_jobs": batch_jobs_status,
         },
