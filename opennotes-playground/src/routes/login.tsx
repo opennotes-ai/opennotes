@@ -5,6 +5,7 @@ import { createClient } from "~/lib/supabase-server";
 import { safeRedirectPath } from "~/lib/safe-redirect";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { OAuthButtons } from "~/components/OAuthButtons";
 
 const loginAction = action(async (formData: FormData) => {
   "use server";
@@ -36,7 +37,10 @@ export default function LoginPage() {
   return (
     <main class="mx-auto max-w-sm px-4 py-12">
       <h1 class="text-2xl font-bold tracking-tight">Sign In</h1>
-      <form action={loginAction} method="post" class="mt-6 space-y-4">
+      <div class="mt-6">
+        <OAuthButtons returnTo={searchParams.returnTo as string | undefined} />
+      </div>
+      <form action={loginAction} method="post" class="mt-4 space-y-4">
         <input type="hidden" name="returnTo" value={searchParams.returnTo ?? ""} />
         <div class="space-y-1.5">
           <label for="email" class="text-sm font-medium">Email</label>
