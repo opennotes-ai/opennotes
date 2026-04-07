@@ -7,13 +7,11 @@ Reference: https://jsonapi.org/format/
 """
 
 import uuid
-from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
 from src.claim_relevance_check.schemas import (
@@ -31,11 +29,6 @@ from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
 from src.common.responses import AUTHENTICATED_RESPONSES
-from src.config import settings
-from src.database import get_db
-from src.llm_config.encryption import EncryptionService
-from src.llm_config.manager import LLMClientManager
-from src.llm_config.service import LLMService
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
 from src.users.models import User
@@ -45,25 +38,9 @@ logger = get_logger(__name__)
 router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
 
-@lru_cache
-def _get_encryption_service() -> EncryptionService:
-    """Get or create thread-safe encryption service singleton."""
-    return EncryptionService(settings.ENCRYPTION_MASTER_KEY)
-
-
-@lru_cache
-def _get_llm_service() -> LLMService:
-    """Get or create LLM service singleton."""
-    encryption_service = _get_encryption_service()
-    client_manager = LLMClientManager(encryption_service)
-    return LLMService(client_manager)
-
-
-def _get_relevance_service(
-    llm_service: Annotated[LLMService, Depends(_get_llm_service)],
-) -> ClaimRelevanceService:
-    """Get claim relevance service with LLM service dependency."""
-    return ClaimRelevanceService(llm_service)
+def _get_relevance_service() -> ClaimRelevanceService:
+    """Get claim relevance service."""
+    return ClaimRelevanceService()
 
 
 def _create_error_response(
@@ -100,7 +77,6 @@ SHOULD_FLAG_OUTCOMES = {
 async def create_claim_relevance_check(
     request: HTTPRequest,
     body: ClaimRelevanceCheckRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     relevance_service: Annotated[ClaimRelevanceService, Depends(_get_relevance_service)],
 ) -> JSONResponse:
@@ -128,7 +104,6 @@ async def create_claim_relevance_check(
         )
 
         outcome, reasoning = await relevance_service.check_relevance(
-            db=db,
             original_message=attrs.original_message,
             matched_content=attrs.matched_content,
             matched_source=attrs.matched_source,

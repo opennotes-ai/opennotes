@@ -1301,9 +1301,8 @@ class BulkContentScanService:
         Returns:
             Tuple of (RelevanceOutcome, reasoning)
         """
-        relevance_service = ClaimRelevanceService(self.llm_service, settings=settings)
+        relevance_service = ClaimRelevanceService(settings=settings)
         return await relevance_service.check_relevance(
-            db=self.session,
             original_message=original_message,
             matched_content=matched_content,
             matched_source=matched_source,
