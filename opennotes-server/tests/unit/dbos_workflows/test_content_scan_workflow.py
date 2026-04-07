@@ -15,7 +15,7 @@ import collections.abc
 import json
 import time
 from contextlib import ExitStack
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -3502,7 +3502,11 @@ class TestPreprocessBatchStepInnerLogic:
                 side_effect=lambda sid, bn, suffix: f"test:{suffix}:{sid}:{bn}",
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = preprocess_batch_step.__wrapped__(
                 scan_id=scan_id,
@@ -3588,7 +3592,11 @@ class TestPreprocessBatchStepInnerLogic:
                 side_effect=lambda sid, bn, suffix: f"test:{suffix}:{sid}:{bn}",
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = preprocess_batch_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -3670,7 +3678,11 @@ class TestPreprocessBatchStepInnerLogic:
                 return_value="test:filtered",
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = preprocess_batch_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -3699,7 +3711,11 @@ class TestPreprocessBatchStepInnerLogic:
                 side_effect=ValueError("Redis key not found or expired"),
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             with pytest.raises(ValueError, match="not found or expired"):
                 preprocess_batch_step.__wrapped__(
@@ -3763,7 +3779,11 @@ class TestPreprocessBatchStepInnerLogic:
                 return_value=True,
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = preprocess_batch_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -3841,7 +3861,11 @@ class TestPreprocessBatchStepInnerLogic:
                 side_effect=[False, True],
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = preprocess_batch_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -3929,7 +3953,11 @@ class TestSimilarityScanStepInnerLogic:
                 return_value="test:similarity_candidates:scan:1",
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = similarity_scan_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4003,7 +4031,11 @@ class TestSimilarityScanStepInnerLogic:
                 return_value="test:sim",
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = similarity_scan_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4055,7 +4087,11 @@ class TestSimilarityScanStepInnerLogic:
                 return_value=messages,
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = similarity_scan_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4123,7 +4159,11 @@ class TestSimilarityScanStepInnerLogic:
                 return_value=True,
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = similarity_scan_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4194,7 +4234,11 @@ class TestSimilarityScanStepInnerLogic:
                 side_effect=[False, True],
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = similarity_scan_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4279,7 +4323,11 @@ class TestFlashpointScanStepInnerLogic:
                 return_value=False,
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = flashpoint_scan_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4354,7 +4402,11 @@ class TestFlashpointScanStepInnerLogic:
                 return_value=True,
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = flashpoint_scan_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4424,7 +4476,11 @@ class TestFlashpointScanStepInnerLogic:
                 side_effect=[False, True],
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = flashpoint_scan_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4437,6 +4493,284 @@ class TestFlashpointScanStepInnerLogic:
         assert result == {"flashpoint_candidates_key": "", "candidate_count": 0}
         mock_service_instance._flashpoint_scan_candidate.assert_awaited_once()
         mock_store.assert_not_awaited()
+
+
+class TestFlashpointScanStepTimeoutAndBatchCap:
+    """Tests for configurable timeout and batch cap in flashpoint_scan_step."""
+
+    def _make_session_context(self, mock_session):
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        return MagicMock(return_value=mock_session_ctx)
+
+    def test_flashpoint_step_timeout_proportional_to_settings(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import flashpoint_scan_step
+
+        mock_settings = MagicMock()
+        mock_settings.FLASHPOINT_TIMEOUT_PER_MESSAGE = 8.0
+        mock_settings.FLASHPOINT_MAX_BATCH_MESSAGES = 60
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.run_sync") as mock_run_sync,
+            patch("src.config.get_settings", return_value=mock_settings),
+        ):
+            mock_run_sync.return_value = {"flashpoint_candidates_key": "", "candidate_count": 0}
+
+            flashpoint_scan_step.__wrapped__(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                filtered_messages_key="test:filtered",
+                context_maps_key="test:context",
+            )
+
+        expected_timeout = max(120.0, 60 * 8.0)
+        assert mock_run_sync.call_count == 1
+        _, kwargs = mock_run_sync.call_args
+        assert kwargs["timeout"] == expected_timeout
+
+    def test_flashpoint_batch_cap_truncates_messages(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import flashpoint_scan_step
+
+        messages = [_make_test_message(f"msg_{i}") for i in range(100)]
+        candidate = MagicMock()
+        candidate.model_dump.return_value = {"message_id": "msg_0"}
+
+        mock_service_instance = MagicMock()
+        mock_service_instance._build_message_id_index.return_value = {}
+        mock_service_instance._get_context_for_message.return_value = []
+        mock_service_instance._flashpoint_scan_candidate = AsyncMock(return_value=candidate)
+
+        mock_session = AsyncMock()
+        mock_redis = MagicMock()
+
+        mock_settings = MagicMock()
+        mock_settings.REDIS_URL = "redis://test"
+        mock_settings.FLASHPOINT_TIMEOUT_PER_MESSAGE = 5.0
+        mock_settings.FLASHPOINT_MAX_BATCH_MESSAGES = 50
+
+        with (
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=mock_redis,
+            ),
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch(
+                "src.database.get_session_maker",
+                return_value=self._make_session_context(mock_session),
+            ),
+            patch(
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.fact_checking.embedding_service.EmbeddingService",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service_instance,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.load_messages_from_redis",
+                new_callable=AsyncMock,
+                side_effect=[messages, [{}]],
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.get_batch_redis_key",
+                return_value="test:flashpoint",
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            flashpoint_scan_step.__wrapped__(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                filtered_messages_key="test:filtered",
+                context_maps_key="test:context",
+            )
+
+        assert mock_service_instance._flashpoint_scan_candidate.await_count == 50
+
+    def test_flashpoint_batch_cap_logs_warning_when_exceeded(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import flashpoint_scan_step
+
+        messages = [_make_test_message(f"msg_{i}") for i in range(100)]
+        candidate = MagicMock()
+        candidate.model_dump.return_value = {"message_id": "msg_0"}
+
+        mock_service_instance = MagicMock()
+        mock_service_instance._build_message_id_index.return_value = {}
+        mock_service_instance._get_context_for_message.return_value = []
+        mock_service_instance._flashpoint_scan_candidate = AsyncMock(return_value=candidate)
+
+        mock_session = AsyncMock()
+        mock_redis = MagicMock()
+
+        mock_settings = MagicMock()
+        mock_settings.REDIS_URL = "redis://test"
+        mock_settings.FLASHPOINT_TIMEOUT_PER_MESSAGE = 5.0
+        mock_settings.FLASHPOINT_MAX_BATCH_MESSAGES = 50
+
+        with (
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=mock_redis,
+            ),
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch(
+                "src.database.get_session_maker",
+                return_value=self._make_session_context(mock_session),
+            ),
+            patch(
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.fact_checking.embedding_service.EmbeddingService",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service_instance,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.load_messages_from_redis",
+                new_callable=AsyncMock,
+                side_effect=[messages, [{}]],
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.get_batch_redis_key",
+                return_value="test:flashpoint",
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.logger",
+            ) as mock_logger,
+        ):
+            flashpoint_scan_step.__wrapped__(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                filtered_messages_key="test:filtered",
+                context_maps_key="test:context",
+            )
+
+        mock_logger.warning.assert_any_call(
+            "Flashpoint batch exceeds cap, processing first %d of %d messages",
+            50,
+            100,
+            extra={
+                "scan_id": ANY,
+                "batch_number": 1,
+                "original_count": 100,
+                "capped_count": 50,
+            },
+        )
+
+    def test_flashpoint_small_batch_passes_through(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import flashpoint_scan_step
+
+        messages = [_make_test_message(f"msg_{i}") for i in range(30)]
+        candidate = MagicMock()
+        candidate.model_dump.return_value = {"message_id": "msg_0"}
+
+        mock_service_instance = MagicMock()
+        mock_service_instance._build_message_id_index.return_value = {}
+        mock_service_instance._get_context_for_message.return_value = []
+        mock_service_instance._flashpoint_scan_candidate = AsyncMock(return_value=candidate)
+
+        mock_session = AsyncMock()
+        mock_redis = MagicMock()
+
+        mock_settings = MagicMock()
+        mock_settings.REDIS_URL = "redis://test"
+        mock_settings.FLASHPOINT_TIMEOUT_PER_MESSAGE = 5.0
+        mock_settings.FLASHPOINT_MAX_BATCH_MESSAGES = 50
+
+        with (
+            patch(
+                "src.cache.redis_client.get_shared_redis_client",
+                new_callable=AsyncMock,
+                return_value=mock_redis,
+            ),
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch(
+                "src.database.get_session_maker",
+                return_value=self._make_session_context(mock_session),
+            ),
+            patch(
+                "src.dbos_workflows.content_monitoring_workflows._get_llm_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.fact_checking.embedding_service.EmbeddingService",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service_instance,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.load_messages_from_redis",
+                new_callable=AsyncMock,
+                side_effect=[messages, [{}]],
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow.get_batch_redis_key",
+                return_value="test:flashpoint",
+            ),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._scan_is_terminal_async",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            result = flashpoint_scan_step.__wrapped__(
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                filtered_messages_key="test:filtered",
+                context_maps_key="test:context",
+            )
+
+        assert mock_service_instance._flashpoint_scan_candidate.await_count == 30
+        assert result["candidate_count"] == 30
 
 
 class TestRelevanceFilterStepInnerLogic:
@@ -4524,7 +4858,11 @@ class TestRelevanceFilterStepInnerLogic:
                 side_effect=mock_load,
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = relevance_filter_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4559,7 +4897,11 @@ class TestRelevanceFilterStepInnerLogic:
                 side_effect=mock_load,
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = relevance_filter_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4627,7 +4969,11 @@ class TestRelevanceFilterStepInnerLogic:
                 side_effect=mock_load,
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = relevance_filter_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4659,7 +5005,11 @@ class TestRelevanceFilterStepInnerLogic:
                 return_value=[],
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = relevance_filter_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4718,7 +5068,11 @@ class TestRelevanceFilterStepInnerLogic:
                 return_value=candidates,
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = relevance_filter_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4784,7 +5138,11 @@ class TestRelevanceFilterStepInnerLogic:
                 side_effect=[False, True],
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = relevance_filter_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4851,7 +5209,11 @@ class TestRelevanceFilterStepInnerLogic:
                 side_effect=[False, True],
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = relevance_filter_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4914,7 +5276,11 @@ class TestRelevanceFilterStepInnerLogic:
                 return_value=True,
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = relevance_filter_step.__wrapped__(
                 scan_id=str(uuid4()),
@@ -4978,7 +5344,11 @@ class TestRelevanceFilterStepInnerLogic:
                 side_effect=[False, True],
             ),
         ):
-            mock_settings.return_value = MagicMock(REDIS_URL="redis://test")
+            mock_settings.return_value = MagicMock(
+                REDIS_URL="redis://test",
+                FLASHPOINT_TIMEOUT_PER_MESSAGE=5.0,
+                FLASHPOINT_MAX_BATCH_MESSAGES=50,
+            )
 
             result = relevance_filter_step.__wrapped__(
                 scan_id=str(uuid4()),
