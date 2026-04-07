@@ -1,0 +1,41 @@
+#!/bin/bash
+set -e
+
+SHARED_DIR="/var/discourse/shared"
+REDIS_DIR="${SHARED_DIR}/redis"
+
+mkdir -p "${REDIS_DIR}"
+chown redis:redis "${REDIS_DIR}"
+
+for script in /etc/runit/1.d/*; do
+  [ -x "$script" ] && "$script"
+done
+
+echo "Starting Redis for pre-boot tasks..."
+chpst -u redis redis-server --port 6379 --loglevel notice --dir "${REDIS_DIR}" --daemonize yes
+
+echo "Waiting for Redis..."
+for i in $(seq 1 30); do
+  if redis-cli ping 2>/dev/null | grep -q PONG; then
+    echo "Redis is ready."
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "Redis failed to start within 30 seconds." >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+cd /var/www/discourse
+
+if [ -n "$DATABASE_URL" ]; then
+  echo "Running database migrations..."
+  sudo -u discourse bundle exec rake db:migrate
+  echo "Migrations complete."
+fi
+
+echo "Stopping pre-boot Redis (runit will manage it)..."
+redis-cli shutdown || true
+
+exec /usr/bin/runsvdir -P /etc/service
