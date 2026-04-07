@@ -500,6 +500,178 @@ class TestNonStringLargeAttributes:
         mock_logger.log_struct.assert_not_called()
 
 
+class TestPayloadSplitting:
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
+    @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
+    @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
+    def test_small_payload_single_log_struct_call(
+        self, mock_gcl, mock_parent_export, _mock_init
+    ) -> None:
+        mock_parent_export.return_value = SpanExportResult.SUCCESS
+        mock_logging_client = MagicMock()
+        mock_logger = MagicMock()
+        mock_logging_client.logger.return_value = mock_logger
+
+        from src.monitoring.cloud_trace_logging_exporter import CloudTraceLoggingSpanExporter
+
+        exporter = CloudTraceLoggingSpanExporter(
+            project_id="test-project",
+            logging_client=mock_logging_client,
+            max_attribute_length=10,
+        )
+
+        spans = [_make_span(attributes={"attr1": "a" * 500, "attr2": "b" * 500})]
+        exporter.export(spans)
+
+        mock_logger.log_struct.assert_called_once()
+        call_kwargs = mock_logger.log_struct.call_args[1]
+        assert "part" not in call_kwargs["labels"]
+
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
+    @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
+    @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
+    def test_oversized_payload_splits_into_multiple_entries(
+        self, mock_gcl, mock_parent_export, _mock_init
+    ) -> None:
+        mock_parent_export.return_value = SpanExportResult.SUCCESS
+        mock_logging_client = MagicMock()
+        mock_logger = MagicMock()
+        mock_logging_client.logger.return_value = mock_logger
+
+        from src.monitoring.cloud_trace_logging_exporter import CloudTraceLoggingSpanExporter
+
+        exporter = CloudTraceLoggingSpanExporter(
+            project_id="test-project",
+            logging_client=mock_logging_client,
+            max_attribute_length=10,
+        )
+
+        attrs = {f"attr_{i}": "x" * 80_000 for i in range(4)}
+        spans = [_make_span(attributes=attrs)]
+        exporter.export(spans)
+
+        assert mock_logger.log_struct.call_count >= 2
+        labels_list = [call[1]["labels"] for call in mock_logger.log_struct.call_args_list]
+        total = len(labels_list)
+        for idx, labels in enumerate(labels_list, 1):
+            assert labels["part"] == f"{idx}/{total}"
+            assert labels["type"] == "span_telemetry"
+            assert "span_id" in labels
+            assert "trace_id" in labels
+
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
+    @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
+    @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
+    def test_split_preserves_all_attributes(self, mock_gcl, mock_parent_export, _mock_init) -> None:
+        mock_parent_export.return_value = SpanExportResult.SUCCESS
+        mock_logging_client = MagicMock()
+        mock_logger = MagicMock()
+        mock_logging_client.logger.return_value = mock_logger
+
+        from src.monitoring.cloud_trace_logging_exporter import CloudTraceLoggingSpanExporter
+
+        exporter = CloudTraceLoggingSpanExporter(
+            project_id="test-project",
+            logging_client=mock_logging_client,
+            max_attribute_length=10,
+        )
+
+        original_attrs = {f"attr_{i}": "x" * 80_000 for i in range(4)}
+        spans = [_make_span(attributes=original_attrs)]
+        exporter.export(spans)
+
+        all_logged_keys: set[str] = set()
+        all_logged_values: dict[str, str] = {}
+        for call in mock_logger.log_struct.call_args_list:
+            data = call[0][0]
+            for k, v in data.items():
+                all_logged_keys.add(k)
+                all_logged_values[k] = v
+
+        assert all_logged_keys == set(original_attrs.keys())
+        for key, value in original_attrs.items():
+            assert all_logged_values[key] == value
+
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
+    @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
+    @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
+    def test_partial_failure_continues_remaining_parts(
+        self, mock_gcl, mock_parent_export, _mock_init
+    ) -> None:
+        mock_parent_export.return_value = SpanExportResult.SUCCESS
+        mock_logging_client = MagicMock()
+        mock_logger = MagicMock()
+        mock_logger.log_struct.side_effect = [
+            Exception("Cloud Logging unavailable"),
+            None,
+        ]
+        mock_logging_client.logger.return_value = mock_logger
+
+        from src.monitoring.cloud_trace_logging_exporter import CloudTraceLoggingSpanExporter
+
+        exporter = CloudTraceLoggingSpanExporter(
+            project_id="test-project",
+            logging_client=mock_logging_client,
+            max_attribute_length=10,
+        )
+
+        attrs = {f"attr_{i}": "x" * 150_000 for i in range(2)}
+        spans = [_make_span(attributes=attrs)]
+        exporter.export(spans)
+
+        assert mock_logger.log_struct.call_count == 2
+
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
+    @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
+    @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
+    def test_single_huge_attribute_gets_own_partition(
+        self, mock_gcl, mock_parent_export, _mock_init
+    ) -> None:
+        mock_parent_export.return_value = SpanExportResult.SUCCESS
+        mock_logging_client = MagicMock()
+        mock_logger = MagicMock()
+        mock_logging_client.logger.return_value = mock_logger
+
+        from src.monitoring.cloud_trace_logging_exporter import CloudTraceLoggingSpanExporter
+
+        exporter = CloudTraceLoggingSpanExporter(
+            project_id="test-project",
+            logging_client=mock_logging_client,
+            max_attribute_length=10,
+        )
+
+        attrs = {
+            "huge": "x" * 250_000,
+            "small_large": "y" * 500,
+        }
+        spans = [_make_span(attributes=attrs)]
+        exporter.export(spans)
+
+        assert mock_logger.log_struct.call_count >= 2
+        found_huge = False
+        for call in mock_logger.log_struct.call_args_list:
+            data = call[0][0]
+            if "huge" in data:
+                assert len(data) == 1
+                found_huge = True
+        assert found_huge
+
+
 class TestShutdown:
     @patch(
         "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
