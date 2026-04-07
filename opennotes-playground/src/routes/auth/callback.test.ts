@@ -8,9 +8,6 @@ vi.mock("~/lib/supabase-server", () => ({
   createClient: (...args: any[]) => mockCreateClient(...args),
 }));
 
-vi.mock("~/lib/safe-redirect", () => ({
-  safeRedirectPath: (value: string | null) => safeRedirectPath(value),
-}));
 
 describe("safeRedirectPath", () => {
   it("returns / for null", () => {
