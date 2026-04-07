@@ -634,26 +634,3 @@ class TestDispatchPromoteWorkflow:
                 batch_size=500,
                 dry_run=False,
             )
-
-
-class TestDeprecatedTaskIQStubs:
-    @pytest.mark.asyncio
-    async def test_import_stub_returns_discarded_dict(self) -> None:
-        from src.tasks.import_tasks import process_fact_check_import
-
-        result = await process_fact_check_import("arg1", key="val")
-        assert result["status"] == "discarded"
-
-    @pytest.mark.asyncio
-    async def test_scrape_stub_returns_discarded_dict(self) -> None:
-        from src.tasks.import_tasks import process_scrape_batch
-
-        result = await process_scrape_batch("arg1", key="val")
-        assert result["status"] == "discarded"
-
-    @pytest.mark.asyncio
-    async def test_promote_stub_returns_discarded_dict(self) -> None:
-        from src.tasks.import_tasks import process_promotion_batch
-
-        result = await process_promotion_batch("arg1", key="val")
-        assert result["status"] == "discarded"
