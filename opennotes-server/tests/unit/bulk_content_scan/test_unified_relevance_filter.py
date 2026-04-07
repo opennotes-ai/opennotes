@@ -556,9 +556,13 @@ class TestDebugModeUnification:
             )
         )
 
-        mock_llm_response = MagicMock()
-        mock_llm_response.content = '{"is_relevant": false, "reasoning": "No claim"}'
-        mock_llm_service.complete = AsyncMock(return_value=mock_llm_response)
+        from src.claim_relevance_check.schemas import RelevanceCheckResult
+
+        test_model = TestModel(
+            custom_output_args=RelevanceCheckResult(
+                is_relevant=False, reasoning="No claim", confidence=0.9
+            )
+        )
 
         service = BulkContentScanService(
             session=mock_session,
@@ -577,7 +581,10 @@ class TestDebugModeUnification:
             timestamp=pendulum.now("UTC"),
         )
 
-        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+        with (
+            patch("src.bulk_content_scan.service.settings") as mock_settings,
+            relevance_agent.override(model=test_model),
+        ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
             mock_settings.RELEVANCE_CHECK_MODEL = ModelId.from_pydantic_ai("openai:gpt-5-mini")
@@ -611,10 +618,6 @@ class TestCandidateFlaggedLogging:
         """AC #4: Should log candidates_count vs flagged_count after filtering."""
         from src.bulk_content_scan.schemas import BulkScanMessage, ScanCandidate, SimilarityMatch
         from src.bulk_content_scan.service import BulkContentScanService
-
-        mock_llm_response = MagicMock()
-        mock_llm_response.content = '{"is_relevant": true, "reasoning": "Has claim"}'
-        mock_llm_service.complete = AsyncMock(return_value=mock_llm_response)
 
         service = BulkContentScanService(
             session=mock_session,
