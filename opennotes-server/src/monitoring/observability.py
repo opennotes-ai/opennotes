@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+    from logfire._internal.constants import LevelName
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,13 @@ def setup_observability(
     sample_rate: float = 0.1,
     use_gcp_exporters: bool = True,
     enable_console_export: bool = False,
+    tail_level_threshold: LevelName | None = "notice",
+    tail_duration_threshold: float | None = 5.0,
 ) -> bool:
     """Initialize observability with Logfire + Cloud Trace dual export.
+
+    Uses tail sampling so Logfire receives a filtered subset of traces while
+    Cloud Trace (via additional_span_processors) receives 100%.
 
     Args:
         service_name: Service name for identification in traces
@@ -43,9 +49,11 @@ def setup_observability(
         environment: Deployment environment
         logfire_token: Logfire write token (also reads LOGFIRE_TOKEN env var)
         trace_content: Enable logging prompts/completions in traces
-        sample_rate: Trace sampling rate 0.0-1.0
+        sample_rate: Logfire tail sampling background rate 0.0-1.0
         use_gcp_exporters: Use GCP-native exporters on Cloud Run
         enable_console_export: Enable console span export for debugging
+        tail_level_threshold: Min log level that always passes tail sampling
+        tail_duration_threshold: Min trace duration (seconds) that always passes
 
     Returns:
         True if initialization succeeded, False otherwise
@@ -116,7 +124,12 @@ def setup_observability(
                 environment=environment,
                 send_to_logfire="if-token-present" if not logfire_token else True,
                 additional_span_processors=additional_processors,
-                sampling=SamplingOptions(head=sample_rate),
+                sampling=SamplingOptions.level_or_duration(
+                    head=1.0,
+                    level_threshold=tail_level_threshold,
+                    duration_threshold=tail_duration_threshold,
+                    background_rate=sample_rate,
+                ),
                 scrubbing=False if trace_content else None,
             )
 
