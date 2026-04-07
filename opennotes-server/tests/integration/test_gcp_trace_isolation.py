@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from src.middleware.gcp_trace_filter import GCPTraceHeaderFilter
@@ -22,16 +22,6 @@ from src.middleware.gcp_trace_filter import GCPTraceHeaderFilter
 def span_exporter() -> InMemorySpanExporter:
     """Create an in-memory span exporter for capturing traces."""
     return InMemorySpanExporter()
-
-
-@pytest.fixture
-def tracer_provider(span_exporter: InMemorySpanExporter) -> TracerProvider:
-    """Create a tracer provider with in-memory exporter."""
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-
-    provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
-    return provider
 
 
 @pytest.fixture
@@ -54,19 +44,21 @@ def test_app() -> FastAPI:
 @pytest.fixture
 def instrumented_app(
     test_app: FastAPI,
-    tracer_provider: TracerProvider,
+    span_exporter: InMemorySpanExporter,
 ) -> FastAPI:
-    """Instrument the test app with OpenTelemetry."""
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    """Instrument the test app via logfire with an in-memory exporter."""
+    import logfire
 
     original_provider = trace.get_tracer_provider()
-    trace.set_tracer_provider(tracer_provider)
 
-    FastAPIInstrumentor.instrument_app(test_app)
+    logfire.configure(
+        send_to_logfire=False,
+        additional_span_processors=[SimpleSpanProcessor(span_exporter)],
+    )
 
-    yield test_app
+    with logfire.instrument_fastapi(test_app):
+        yield test_app
 
-    FastAPIInstrumentor.uninstrument_app(test_app)
     trace.set_tracer_provider(original_provider)
 
 
@@ -236,12 +228,7 @@ class TestGCPTraceFilterWithRealApp:
     @pytest.mark.asyncio
     async def test_env_var_controls_filter(self) -> None:
         """STRIP_GCP_TRACE_HEADERS env var should control filtering."""
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-        from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
-            InMemorySpanExporter,
-        )
+        import logfire
 
         app = FastAPI()
 
@@ -252,21 +239,24 @@ class TestGCPTraceFilterWithRealApp:
             return {"trace_id": format(span_context.trace_id, "032x")}
 
         original_provider = trace.get_tracer_provider()
-        provider = TracerProvider()
-        provider.add_span_processor(SimpleSpanProcessor(InMemorySpanExporter()))
-        trace.set_tracer_provider(provider)
-        FastAPIInstrumentor.instrument_app(app)
 
-        try:
-            with patch.dict(os.environ, {"STRIP_GCP_TRACE_HEADERS": "false"}):
-                wrapped_app = GCPTraceHeaderFilter(app)
+        logfire.configure(
+            send_to_logfire=False,
+            additional_span_processors=[
+                SimpleSpanProcessor(InMemorySpanExporter()),
+            ],
+        )
 
-            assert wrapped_app.strip_headers is False
+        with logfire.instrument_fastapi(app):
+            try:
+                with patch.dict(os.environ, {"STRIP_GCP_TRACE_HEADERS": "false"}):
+                    wrapped_app = GCPTraceHeaderFilter(app)
 
-            with patch.dict(os.environ, {"STRIP_GCP_TRACE_HEADERS": "true"}):
-                wrapped_app = GCPTraceHeaderFilter(app)
+                assert wrapped_app.strip_headers is False
 
-            assert wrapped_app.strip_headers is True
-        finally:
-            FastAPIInstrumentor.uninstrument_app(app)
-            trace.set_tracer_provider(original_provider)
+                with patch.dict(os.environ, {"STRIP_GCP_TRACE_HEADERS": "true"}):
+                    wrapped_app = GCPTraceHeaderFilter(app)
+
+                assert wrapped_app.strip_headers is True
+            finally:
+                trace.set_tracer_provider(original_provider)

@@ -212,6 +212,7 @@ class TestGetDbosConfig:
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = TEST_DATABASE_URL
             mock_settings.OTLP_ENDPOINT = "http://tempo:4317"
+            mock_settings.LOGFIRE_ENABLED = False
             mock_settings.OTEL_SERVICE_NAME = "opennotes-server"
             mock_settings.PROJECT_NAME = "Open Notes Server"
             mock_settings.DBOS_CONDUCTOR_KEY = None

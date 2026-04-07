@@ -8,9 +8,16 @@ Call setup_observability() early in main.py BEFORE importing instrumented
 libraries (FastAPI, SQLAlchemy, Redis, etc.) for auto-instrumentation to work.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import threading
+from contextlib import AbstractContextManager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 
@@ -115,20 +122,15 @@ def setup_observability(
 
             logfire.instrument_anthropic()
             logfire.instrument_openai()
+            logfire.instrument_httpx(capture_all=True)
 
             try:
-                from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-                from opentelemetry.instrumentation.httpx import (
-                    HTTPXClientInstrumentor,
-                )
                 from opentelemetry.instrumentation.logging import LoggingInstrumentor
                 from opentelemetry.instrumentation.redis import RedisInstrumentor
                 from opentelemetry.instrumentation.sqlalchemy import (
                     SQLAlchemyInstrumentor,
                 )
 
-                FastAPIInstrumentor().instrument()
-                HTTPXClientInstrumentor().instrument()
                 RedisInstrumentor().instrument()
                 SQLAlchemyInstrumentor().instrument(enable_commenter=True)
                 LoggingInstrumentor().instrument(set_logging_format=False)
@@ -155,7 +157,11 @@ def setup_observability(
 
 
 def shutdown_observability(flush_timeout_millis: int | None = None) -> None:
-    """Gracefully shutdown observability (Logfire TracerProvider + instrumentors)."""
+    """Gracefully shutdown observability (Logfire TracerProvider + instrumentors).
+
+    FastAPI instrumentation cleanup is handled by the app lifespan context
+    manager (instrument_fastapi_app), not here.
+    """
     global _observability_initialized
 
     with _observability_lock:
@@ -164,14 +170,10 @@ def shutdown_observability(flush_timeout_millis: int | None = None) -> None:
             return
 
         try:
-            from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-            from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
             from opentelemetry.instrumentation.logging import LoggingInstrumentor
             from opentelemetry.instrumentation.redis import RedisInstrumentor
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
-            FastAPIInstrumentor().uninstrument()
-            HTTPXClientInstrumentor().uninstrument()
             LoggingInstrumentor().uninstrument()
             RedisInstrumentor().uninstrument()
             SQLAlchemyInstrumentor().uninstrument()
@@ -205,3 +207,15 @@ def shutdown_observability(flush_timeout_millis: int | None = None) -> None:
         finally:
             _observability_initialized = False
             logger.debug("Observability state reset")
+
+
+def instrument_fastapi_app(app: FastAPI) -> AbstractContextManager[None]:
+    """Instrument a FastAPI app with Logfire's enhanced instrumentation.
+
+    Returns a context manager -- use in the FastAPI lifespan so cleanup
+    is app-scoped. Captures endpoint arguments, validation errors,
+    and timing breakdowns beyond what the raw OTel instrumentor provides.
+    """
+    import logfire
+
+    return logfire.instrument_fastapi(app)
