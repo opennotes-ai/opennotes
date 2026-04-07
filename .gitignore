@@ -254,3 +254,6 @@ node_modules/
 .pnpm-store/
 .pnpm-debug.log
 node_modules/.pnpm/
+
+.sqry-index/
+.sqry/
