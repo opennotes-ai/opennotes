@@ -25,7 +25,11 @@ module Opennotes
       data = client.get("/api/v2/community-servers/#{server_uuid}/scoring-analysis")
       render json: data
     rescue OpenNotes::ApiError => e
-      render json: { error: e.message }, status: e.status
+      if e.status == 404
+        render json: { activity: {}, classification: {}, consensus: {}, top_reviewers: [] }
+      else
+        render json: { error: e.message }, status: e.status
+      end
     rescue Faraday::Error
       render json: { error: I18n.t("opennotes.errors.server_unavailable") }, status: :service_unavailable
     end
