@@ -929,10 +929,10 @@ async def get_scoring_analysis(
     Returns the latest scoring snapshot with rater and note factor matrices,
     enriched with agent identity information for simulation agents.
 
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
     """
     try:
-        require_scope_or_admin(current_user, request, "simulations:read")
+        require_scope_or_admin(current_user, request, "community-servers:read")
     except HTTPException as e:
         return create_error_response(e.status_code, "Forbidden", e.detail)
 
@@ -980,10 +980,10 @@ async def get_scoring_history(
     """List available historical scoring snapshots from GCS.
 
     Returns a list of available snapshots with timestamps and sizes.
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
     """
     try:
-        require_scope_or_admin(current_user, request, "simulations:read")
+        require_scope_or_admin(current_user, request, "community-servers:read")
     except HTTPException as e:
         return create_error_response(e.status_code, "Forbidden", e.detail)
 
@@ -1036,10 +1036,10 @@ async def get_scoring_history_snapshot(
     """Fetch a specific historical scoring snapshot from GCS.
 
     Returns the full scoring snapshot data for a given timestamp.
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
     """
     try:
-        require_scope_or_admin(current_user, request, "simulations:read")
+        require_scope_or_admin(current_user, request, "community-servers:read")
     except HTTPException as e:
         return create_error_response(e.status_code, "Forbidden", e.detail)
 
