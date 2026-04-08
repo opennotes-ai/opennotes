@@ -829,6 +829,52 @@ description = "Generate Greenmask anonymization config from SQLAlchemy models"
 dir = "{{vars.server_dir}}"
 run = 'uv run python ../scripts/fixtures/generate_greenmask_config.py "$@"'
 
+[tasks."fixture:export"]
+description = "Export anonymized database fixtures (optionally upload to GCS)"
+depends = ["_db:ensure-postgres"]
+dir = "{{vars.server_dir}}"
+run = '''
+set -euo pipefail
+
+# Check greenmask is installed
+if ! command -v greenmask &> /dev/null; then
+    echo "Error: greenmask not installed. Run: mise run tools:greenmask" >&2
+    exit 1
+fi
+
+# Parse --tables flag if present
+TABLES_FLAG=""
+for arg in "$@"; do
+    case "$arg" in
+        --tables=*) TABLES_FLAG="--tables ${arg#--tables=}" ;;
+        --tables) TABLES_FLAG="--tables" ;;
+    esac
+done
+
+# Generate Greenmask config
+echo "Generating anonymization config..."
+uv run python ../scripts/fixtures/generate_greenmask_config.py $TABLES_FLAG --output /tmp/greenmask-config.yml
+
+# Run Greenmask dump
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+DUMP_DIR="/tmp/opennotes-fixture-${TIMESTAMP}"
+echo "Running Greenmask dump to ${DUMP_DIR}..."
+greenmask dump --config /tmp/greenmask-config.yml --output "$DUMP_DIR" --jobs 4
+
+echo "Export complete: ${DUMP_DIR}"
+
+# Upload to GCS if configured
+BUCKET="${FIXTURE_GCS_BUCKET:-}"
+if [ -n "$BUCKET" ]; then
+    echo "Uploading to GCS: gs://${BUCKET}/fixtures/${TIMESTAMP}/"
+    uv run python ../scripts/fixtures/upload_to_gcs.py "$DUMP_DIR" "$TIMESTAMP" "$BUCKET"
+else
+    echo "FIXTURE_GCS_BUCKET not set — skipping GCS upload (local-only mode)"
+fi
+
+echo "Done. Fixture timestamp: ${TIMESTAMP}"
+'''
+
 # ========================================
 # Task Configuration
 # ========================================

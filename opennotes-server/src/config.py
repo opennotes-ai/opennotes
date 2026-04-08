@@ -522,6 +522,11 @@ class Settings(BaseSettings):
         "Format: gs://bucket-name/{community_server_id}/{timestamp}.json",
     )
 
+    FIXTURE_GCS_BUCKET: str = Field(
+        default="",
+        description="GCS bucket for fixture export/import. Empty disables GCS upload.",
+    )
+
     ENABLE_METRICS: bool = Field(default=True, description="Enable metrics middleware")
     ENABLE_TRACING: bool = Field(default=True, description="Enable OpenTelemetry tracing")
     ENABLE_JSON_LOGGING: bool = Field(default=True, description="Enable JSON structured logging")
