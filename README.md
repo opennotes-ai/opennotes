@@ -18,6 +18,7 @@
 - [Current Status](#current-status)
 - [Modules and Directory Structure](#modules-and-directory-structure)
 - [Quick Start](#quick-start)
+- [Standalone Setup](#standalone-setup)
 - [Development Setup](#development-setup)
 - [Configuration](#configuration)
 - [Documentation](#documentation)
@@ -171,6 +172,12 @@ pnpm run build
 pnpm start
 ```
 
+## Standalone Setup
+
+For running Open Notes independently without the multiverse monorepo, see [docs/STANDALONE-SETUP.md](docs/STANDALONE-SETUP.md).
+
+The standalone setup uses Docker Compose and mise tasks (`mise run dev:up`, `mise run dev:down`, `mise run dev:ps`) and does not require OpenTofu or yq.
+
 ## Development Setup
 
 ### Server Development
@@ -248,6 +255,7 @@ Copy `.env.example` to `.env` and configure:
 
 ## Documentation
 
+- [docs/STANDALONE-SETUP.md](docs/STANDALONE-SETUP.md) - Full standalone setup guide (Docker Compose, mise tasks, fixtures)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and infrastructure components
 - [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md) - OAuth/JWT authentication flow
 - [docs/SCHEMA_AND_API_WORKFLOW.md](docs/SCHEMA_AND_API_WORKFLOW.md) - API schemas and workflows
