@@ -7,10 +7,12 @@ Supports flashpoint detection as an optional tool registered on the agent.
 Follows the ClaimRelevanceService pattern from src/claim_relevance_check/service.py.
 """
 
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import Agent
 from pydantic_ai.tools import RunContext
@@ -24,6 +26,9 @@ from src.bulk_content_scan.schemas import (
     SimilarityMatch,
 )
 from src.config import settings as default_settings
+
+if TYPE_CHECKING:
+    from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
@@ -40,7 +45,7 @@ class ContentReviewerDeps:
         flashpoint detection context.
     """
 
-    flashpoint_service: object
+    flashpoint_service: FlashpointDetectionService | None
     context_items: list[ContentItem] = field(default_factory=list)
 
 
@@ -183,7 +188,7 @@ class ContentReviewerService:
             SimilarityMatch | OpenAIModerationMatch | ConversationFlashpointMatch
         ],
         context_items: list[ContentItem] | None = None,
-        flashpoint_service: object = None,
+        flashpoint_service: FlashpointDetectionService | None = None,
         model: Any = None,
     ) -> ContentModerationClassificationResult:
         """Classify content using the agent with pre-computed evidence.
