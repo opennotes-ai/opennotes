@@ -206,7 +206,7 @@ class Settings(BaseSettings):
         return v
 
     DB_POOL_SIZE: int = Field(
-        default=5,
+        default=10,
         ge=1,
         description="SQLAlchemy QueuePool size (number of persistent connections to Supavisor).",
     )
