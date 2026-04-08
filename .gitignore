@@ -170,6 +170,7 @@ venv.bak/
 # Exception: Allow tracked env files for CI and examples
 !.env.ci
 !.env.example
+!.env.md
 
 # Open Notes environment files (in opennotes/ directory)
 opennotes/.env

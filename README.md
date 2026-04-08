@@ -102,7 +102,7 @@ opennotes/
 │   ├── alembic/             # Database migrations
 │   ├── tests/               # Test suite
 │   ├── pyproject.toml       # Python dependencies
-│   └── .env.yaml.example    # Configuration template
+│   └── .env.example          # Configuration template
 │
 ├── opennotes-discord/        # Discord bot (TypeScript)
 │   ├── src/                  # Source code
@@ -116,7 +116,7 @@ opennotes/
 │   │   ├── services/        # Business logic layer
 │   │   └── lib/             # Shared utilities
 │   ├── package.json         # Node.js dependencies (pnpm)
-│   └── .env.yaml.example    # Configuration template
+│   └── .env.example          # Configuration template
 │
 ├── docs/                     # Documentation
 │   ├── ARCHITECTURE.md      # System architecture and infrastructure
@@ -152,8 +152,8 @@ git submodule update --init --recursive
 
 ```console
 cd opennotes-server
-cp .env.yaml.example .env.yaml
-# Edit .env.yaml with your credentials and configuration
+cp .env.example .env
+# Edit .env with your credentials (see .env.md for variable reference)
 uv sync --extra scoring
 uv run python -m src.main
 ```
@@ -164,8 +164,8 @@ Server runs at http://localhost:8000
 
 ```console
 cd opennotes-discord
-cp .env.yaml.example .env.yaml
-# Edit .env.yaml with your Discord credentials
+cp .env.example .env
+# Edit .env with your Discord credentials (see .env.md for variable reference)
 pnpm install
 pnpm run build
 pnpm start
@@ -228,7 +228,7 @@ When the server is running, visit:
 
 ### Server Configuration
 
-Copy `.env.yaml.example` to `.env.yaml` and configure:
+Copy `.env.example` to `.env` and configure (see `.env.md` for full reference):
 
 - Database connection (PostgreSQL)
 - Redis connection
@@ -240,7 +240,7 @@ Copy `.env.yaml.example` to `.env.yaml` and configure:
 
 ### Bot Configuration
 
-Copy `.env.yaml.example` to `.env.yaml` and configure:
+Copy `.env.example` to `.env` and configure:
 
 - Discord bot token and client ID
 - Server URL
