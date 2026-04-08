@@ -206,7 +206,11 @@ class TestAPIKeys:
 
             response = await client.post(
                 "/api/v1/users/me/api-keys",
-                json={"name": "Test API Key", "expires_in_days": 30},
+                json={
+                    "name": "Test API Key",
+                    "expires_in_days": 30,
+                    "scopes": ["simulations:read"],
+                },
                 headers={"Authorization": f"Bearer {token}"},
             )
 
@@ -235,7 +239,11 @@ class TestAPIKeys:
             # Create API key
             create_response = await client.post(
                 "/api/v1/users/me/api-keys",
-                json={"name": "Auth Test Key", "expires_in_days": 7},
+                json={
+                    "name": "Auth Test Key",
+                    "expires_in_days": 7,
+                    "scopes": ["simulations:read"],
+                },
                 headers={"Authorization": f"Bearer {jwt_token}"},
             )
             api_key = create_response.json()["key"]
@@ -280,13 +288,13 @@ class TestAPIKeys:
 
             await client.post(
                 "/api/v1/users/me/api-keys",
-                json={"name": "Test API Key 1"},
+                json={"name": "Test API Key 1", "scopes": ["simulations:read"]},
                 headers={"Authorization": f"Bearer {token}"},
             )
 
             await client.post(
                 "/api/v1/users/me/api-keys",
-                json={"name": "Test API Key 2"},
+                json={"name": "Test API Key 2", "scopes": ["simulations:read"]},
                 headers={"Authorization": f"Bearer {token}"},
             )
 
@@ -314,7 +322,7 @@ class TestAPIKeys:
 
             create_response = await client.post(
                 "/api/v1/users/me/api-keys",
-                json={"name": "Test API Key"},
+                json={"name": "Test API Key", "scopes": ["simulations:read"]},
                 headers={"Authorization": f"Bearer {token}"},
             )
             api_key_id = create_response.json()["id"]
