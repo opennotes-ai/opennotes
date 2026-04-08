@@ -4,7 +4,7 @@ import logging
 import threading
 from collections.abc import AsyncGenerator
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 from cryptography.fernet import Fernet
 from sqlalchemy import TypeDecorator, event, text
@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import QueuePool
 
 from src.config import get_settings
 from src.monitoring.metrics import (
@@ -118,7 +119,7 @@ SUPAVISOR_CONNECT_ARGS: MappingProxyType[str, object] = MappingProxyType(
 
 
 def _register_pool_metrics(engine: AsyncEngine) -> None:
-    pool = engine.sync_engine.pool
+    pool = cast(QueuePool, engine.sync_engine.pool)
 
     def _update_gauges(*args: object, **kwargs: object) -> None:
         try:
