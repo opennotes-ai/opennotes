@@ -30,11 +30,15 @@ def download_fixture(bucket_name: str, timestamp: str = "latest") -> str:
     local_dir = f"/tmp/opennotes-fixture-{timestamp}"
     Path(local_dir).mkdir(parents=True, exist_ok=True)
 
+    local_dir_resolved = Path(local_dir).resolve()
     for blob in blobs:
         relative = blob.name[len(prefix):]
         if not relative:
             continue
-        local_path = Path(local_dir) / relative
+        local_path = (Path(local_dir) / relative).resolve()
+        if not str(local_path).startswith(str(local_dir_resolved)):
+            print(f"  Skipping suspicious path: {relative}", file=sys.stderr)
+            continue
         local_path.parent.mkdir(parents=True, exist_ok=True)
         blob.download_to_filename(str(local_path))
         print(f"  Downloaded: {blob.name}", file=sys.stderr)

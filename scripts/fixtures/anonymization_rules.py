@@ -10,6 +10,7 @@ RULES: dict[tuple[str, str], dict] = {
     ("user_profiles", "display_name"): {"name": "RandomFirstName"},
     ("user_profiles", "avatar_url"): {"name": "RandomURL"},
     ("user_profiles", "bio"): {"name": "RandomString", "params": {"min_length": 10, "max_length": 100}},
+    ("user_profiles", "banned_reason"): {"name": "SetNull"},
 
     # user_identities table
     ("user_identities", "provider_user_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
@@ -58,7 +59,7 @@ RULES: dict[tuple[str, str], dict] = {
     ("note_publisher_config", "updated_by"): {"name": "Hash", "params": {"algorithm": "sha256"}},
 
     # community_server_llm_config table
-    ("community_server_llm_config", "api_key_encrypted"): {"name": "SetNull"},
+    ("community_server_llm_config", "api_key_encrypted"): {"name": "Hash", "params": {"algorithm": "sha256"}},
     ("community_server_llm_config", "api_key_preview"): {"name": "RandomString", "params": {"min_length": 4, "max_length": 4}},
 
     # community_members table
