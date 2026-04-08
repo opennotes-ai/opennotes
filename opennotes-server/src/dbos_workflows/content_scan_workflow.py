@@ -1261,6 +1261,21 @@ def flashpoint_scan_step(
         raw_messages = await load_messages_from_redis(redis_conn, filtered_messages_key)
         typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
 
+        max_msgs = settings.FLASHPOINT_MAX_BATCH_MESSAGES
+        if len(typed_messages) > max_msgs:
+            logger.warning(
+                "Flashpoint batch exceeds cap, processing first %d of %d messages",
+                max_msgs,
+                len(typed_messages),
+                extra={
+                    "scan_id": scan_id,
+                    "batch_number": batch_number,
+                    "original_count": len(typed_messages),
+                    "capped_count": max_msgs,
+                },
+            )
+            typed_messages = typed_messages[:max_msgs]
+
         context_data = await load_messages_from_redis(redis_conn, context_maps_key)
         channel_context_raw: dict[str, list[dict[str, Any]]] = (
             context_data[0] if context_data else {}
@@ -1330,7 +1345,10 @@ def flashpoint_scan_step(
                 "candidate_count": len(candidates),
             }
 
-    return run_sync(_flashpoint_scan())
+    timeout = max(
+        120.0, settings.FLASHPOINT_MAX_BATCH_MESSAGES * settings.FLASHPOINT_TIMEOUT_PER_MESSAGE
+    )
+    return run_sync(_flashpoint_scan(), timeout=timeout)
 
 
 @DBOS.step()

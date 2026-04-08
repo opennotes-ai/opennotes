@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections.abc import Sequence
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CLOUD_LOGGING_LOG_NAME = "span_telemetry"
+_MAX_PAYLOAD_BYTES = 200_000
 
 CLOUD_LOGGING_URL_TEMPLATE = (
     "https://console.cloud.google.com/logs/query"
@@ -73,19 +75,14 @@ class CloudTraceLoggingSpanExporter(CloudTraceSpanExporter):
         span_id = format(span_ctx.span_id, "016x")
         trace_id = format(span_ctx.trace_id, "032x")
 
-        try:
-            self._cloud_logger.log_struct(
-                large_attrs,
-                labels={
-                    "type": CLOUD_LOGGING_LOG_NAME,
-                    "span_id": span_id,
-                    "trace_id": trace_id,
-                    "span_name": span.name,
-                },
-                severity="INFO",
-            )
-        except Exception:
-            logger.warning("Failed to log span attributes to Cloud Logging", exc_info=True)
+        base_labels = {
+            "type": CLOUD_LOGGING_LOG_NAME,
+            "span_id": span_id,
+            "trace_id": trace_id,
+            "span_name": span.name,
+        }
+
+        if not self._log_large_attrs(large_attrs, base_labels):
             return
 
         modified_attrs = dict(original_attrs)
@@ -99,3 +96,48 @@ class CloudTraceLoggingSpanExporter(CloudTraceSpanExporter):
 
         modified_attrs["cloud_logging_url"] = cloud_logging_url
         span._attributes = modified_attrs  # pyright: ignore[reportPrivateUsage]
+
+    def _log_large_attrs(self, large_attrs: dict[str, str], base_labels: dict[str, str]) -> bool:
+        total_size = len(json.dumps(large_attrs))
+
+        if total_size <= _MAX_PAYLOAD_BYTES:
+            try:
+                self._cloud_logger.log_struct(large_attrs, labels=base_labels, severity="INFO")
+            except Exception:
+                logger.warning("Failed to log span attributes to Cloud Logging", exc_info=True)
+                return False
+            return True
+
+        partitions: list[dict[str, str]] = []
+        current_partition: dict[str, str] = {}
+        current_size = 2  # empty JSON object "{}"
+
+        for key, value in large_attrs.items():
+            entry_size = len(json.dumps({key: value})) - 2 + 2
+            if current_partition and current_size + entry_size > _MAX_PAYLOAD_BYTES:
+                partitions.append(current_partition)
+                current_partition = {}
+                current_size = 2
+
+            current_partition[key] = value
+            current_size += entry_size
+
+        if current_partition:
+            partitions.append(current_partition)
+
+        total_parts = len(partitions)
+        any_succeeded = False
+        for idx, partition in enumerate(partitions, 1):
+            labels = {**base_labels, "part": f"{idx}/{total_parts}"}
+            try:
+                self._cloud_logger.log_struct(partition, labels=labels, severity="INFO")
+                any_succeeded = True
+            except Exception:
+                logger.warning(
+                    "Failed to log span attributes part %d/%d to Cloud Logging",
+                    idx,
+                    total_parts,
+                    exc_info=True,
+                )
+
+        return any_succeeded
