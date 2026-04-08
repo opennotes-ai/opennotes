@@ -892,9 +892,16 @@ fi
 # Parse flags
 TIMESTAMP="latest"
 CLEAN=false
+NEXT_IS_TIMESTAMP=false
 for arg in "$@"; do
+    if [ "$NEXT_IS_TIMESTAMP" = true ]; then
+        TIMESTAMP="$arg"
+        NEXT_IS_TIMESTAMP=false
+        continue
+    fi
     case "$arg" in
         --timestamp=*) TIMESTAMP="${arg#--timestamp=}" ;;
+        --timestamp) NEXT_IS_TIMESTAMP=true ;;
         --clean) CLEAN=true ;;
     esac
 done
@@ -913,13 +920,21 @@ DB_URL="${DATABASE_URL:-postgresql+asyncpg://opennotes:opennotes_dev_password@lo
 # Convert asyncpg URL to standard postgres URL for pg_restore
 PG_URL=$(echo "$DB_URL" | sed 's|postgresql+asyncpg://|postgresql://|')
 
+# Extract database name and base URL for admin operations
+DB_NAME=$(echo "$PG_URL" | sed 's|.*/||')
+BASE_URL=$(echo "$PG_URL" | sed "s|/$DB_NAME\$|/postgres|")
+
 # Handle --clean flag: drop and recreate the database
 if [ "$CLEAN" = true ]; then
     echo "Dropping and recreating database..."
-    DB_NAME=$(echo "$PG_URL" | sed 's|.*/||')
-    BASE_URL=$(echo "$PG_URL" | sed "s|/$DB_NAME\$|/postgres|")
     psql "$BASE_URL" -c "DROP DATABASE IF EXISTS \"$DB_NAME\";" 2>/dev/null || true
     psql "$BASE_URL" -c "CREATE DATABASE \"$DB_NAME\";" 2>/dev/null || true
+else
+    # Create database if it does not exist
+    if ! psql "$BASE_URL" -lqt 2>/dev/null | grep -qw "$DB_NAME"; then
+        echo "Database '$DB_NAME' does not exist, creating..."
+        psql "$BASE_URL" -c "CREATE DATABASE \"$DB_NAME\";" 2>/dev/null || true
+    fi
 fi
 
 # Restore with pg_restore (parallel, clean existing objects)
