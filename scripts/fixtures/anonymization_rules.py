@@ -3,7 +3,7 @@ RULES: dict[tuple[str, str], dict] = {
     ("users", "email"): {"name": "RandomEmail"},
     ("users", "username"): {"name": "RandomFirstName"},
     ("users", "hashed_password"): {"name": "Hash", "params": {"algorithm": "sha256"}},
-    ("users", "discord_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
+    ("users", "discord_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
     ("users", "full_name"): {"name": "RandomLastName"},
 
     # user_profiles table
@@ -12,7 +12,7 @@ RULES: dict[tuple[str, str], dict] = {
     ("user_profiles", "bio"): {"name": "RandomString", "params": {"min_length": 10, "max_length": 100}},
 
     # user_identities table
-    ("user_identities", "provider_user_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
+    ("user_identities", "provider_user_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
     ("user_identities", "credentials"): {"name": "SetNull"},
     ("user_identities", "email_verification_token"): {"name": "Hash", "params": {"algorithm": "sha256"}},
 
@@ -27,38 +27,44 @@ RULES: dict[tuple[str, str], dict] = {
     # audit_logs table
     ("audit_logs", "ip_address"): {"name": "RandomIPv4"},
     ("audit_logs", "user_agent"): {"name": "RandomString", "params": {"min_length": 10, "max_length": 50}},
+    ("audit_logs", "details"): {"name": "SetNull"},
 
     # message_archive table
-    ("message_archive", "platform_author_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
-    ("message_archive", "platform_message_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
-    ("message_archive", "platform_channel_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
+    ("message_archive", "platform_author_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
+    ("message_archive", "platform_message_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
+    ("message_archive", "platform_channel_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
     ("message_archive", "content_text"): {"name": "RandomString", "params": {"min_length": 10, "max_length": 200}},
 
     # monitored_channels table
-    ("monitored_channels", "channel_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
-    ("monitored_channels", "updated_by"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
+    ("monitored_channels", "channel_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
+    ("monitored_channels", "updated_by"): {"name": "Hash", "params": {"algorithm": "sha256"}},
 
     # webhooks table
     ("webhooks", "url"): {"name": "RandomURL"},
     ("webhooks", "secret"): {"name": "Hash", "params": {"algorithm": "sha256"}},
-    ("webhooks", "channel_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
+    ("webhooks", "channel_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
 
     # interactions table
-    ("interactions", "user_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
-    ("interactions", "channel_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
+    ("interactions", "user_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
+    ("interactions", "channel_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
+    ("interactions", "data"): {"name": "SetNull"},
 
     # note_publisher_posts table
-    ("note_publisher_posts", "original_message_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
-    ("note_publisher_posts", "channel_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
+    ("note_publisher_posts", "original_message_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
+    ("note_publisher_posts", "channel_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
 
     # note_publisher_config table
-    ("note_publisher_config", "channel_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
-    ("note_publisher_config", "updated_by"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
+    ("note_publisher_config", "channel_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
+    ("note_publisher_config", "updated_by"): {"name": "Hash", "params": {"algorithm": "sha256"}},
 
     # community_server_llm_config table
     ("community_server_llm_config", "api_key_encrypted"): {"name": "SetNull"},
     ("community_server_llm_config", "api_key_preview"): {"name": "RandomString", "params": {"min_length": 4, "max_length": 4}},
 
+    # community_members table
+    ("community_members", "banned_reason"): {"name": "SetNull"},
+    ("community_members", "invitation_reason"): {"name": "SetNull"},
+
     # previously_seen_messages table
-    ("previously_seen_messages", "original_message_id"): {"name": "RandomInt", "params": {"min": 100000000000000000, "max": 999999999999999999}},
+    ("previously_seen_messages", "original_message_id"): {"name": "Hash", "params": {"algorithm": "sha256"}},
 }
