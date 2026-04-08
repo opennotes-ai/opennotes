@@ -1082,6 +1082,192 @@
         }
       }
     },
+    "/api/v2/admin/api-keys": {
+      "post": {
+        "tags": [
+          "admin-api-keys"
+        ],
+        "summary": "Create Admin Api Key",
+        "operationId": "create_admin_api_key_api_v2_admin_api_keys_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAPIKeyCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAPIKeyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "admin-api-keys"
+        ],
+        "summary": "List Admin Api Keys",
+        "operationId": "list_admin_api_keys_api_v2_admin_api_keys_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminAPIKeyListItem"
+                  },
+                  "title": "Response List Admin Api Keys Api V2 Admin Api Keys Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/admin/api-keys/{key_id}": {
+      "delete": {
+        "tags": [
+          "admin-api-keys"
+        ],
+        "summary": "Revoke Admin Api Key",
+        "operationId": "revoke_admin_api_key_api_v2_admin_api_keys__key_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Key Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/fusion-weights": {
       "get": {
         "tags": [
@@ -4151,7 +4337,7 @@
           "scoring-jsonapi"
         ],
         "summary": "Get Scoring Analysis",
-        "description": "Get scoring factor analysis for a community server.\n\nReturns the latest scoring snapshot with rater and note factor matrices,\nenriched with agent identity information for simulation agents.\n\nRequires simulations:read scope or admin privileges.",
+        "description": "Get scoring factor analysis for a community server.\n\nReturns the latest scoring snapshot with rater and note factor matrices,\nenriched with agent identity information for simulation agents.\n\nRequires community-servers:read scope or admin privileges.",
         "operationId": "get_scoring_analysis_api_v2_community_servers__community_server_id__scoring_analysis_get",
         "security": [
           {
@@ -4219,7 +4405,7 @@
           "scoring-jsonapi"
         ],
         "summary": "Get Scoring History",
-        "description": "List available historical scoring snapshots from GCS.\n\nReturns a list of available snapshots with timestamps and sizes.\nRequires simulations:read scope or admin privileges.",
+        "description": "List available historical scoring snapshots from GCS.\n\nReturns a list of available snapshots with timestamps and sizes.\nRequires community-servers:read scope or admin privileges.",
         "operationId": "get_scoring_history_api_v2_community_servers__community_server_id__scoring_history_get",
         "security": [
           {
@@ -4287,7 +4473,7 @@
           "scoring-jsonapi"
         ],
         "summary": "Get Scoring History Snapshot",
-        "description": "Fetch a specific historical scoring snapshot from GCS.\n\nReturns the full scoring snapshot data for a given timestamp.\nRequires simulations:read scope or admin privileges.",
+        "description": "Fetch a specific historical scoring snapshot from GCS.\n\nReturns the full scoring snapshot data for a given timestamp.\nRequires community-servers:read scope or admin privileges.",
         "operationId": "get_scoring_history_snapshot_api_v2_community_servers__community_server_id__scoring_history__timestamp__get",
         "security": [
           {
@@ -12899,6 +13085,187 @@
         ],
         "title": "AddCommunityAdminRequest",
         "description": "Request schema for adding a community admin."
+      },
+      "AdminAPIKeyCreate": {
+        "properties": {
+          "user_email": {
+            "type": "string",
+            "format": "email",
+            "title": "User Email"
+          },
+          "user_display_name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "User Display Name"
+          },
+          "key_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Key Name"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Scopes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "user_email",
+          "user_display_name",
+          "key_name",
+          "scopes"
+        ],
+        "title": "AdminAPIKeyCreate"
+      },
+      "AdminAPIKeyListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "key_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Prefix"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
+          },
+          "user_email": {
+            "type": "string",
+            "title": "User Email"
+          },
+          "user_display_name": {
+            "type": "string",
+            "title": "User Display Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "user_email",
+          "user_display_name",
+          "created_at",
+          "is_active"
+        ],
+        "title": "AdminAPIKeyListItem"
+      },
+      "AdminAPIKeyResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
+          },
+          "user_email": {
+            "type": "string",
+            "title": "User Email"
+          },
+          "user_display_name": {
+            "type": "string",
+            "title": "User Display Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "key",
+          "user_email",
+          "user_display_name",
+          "created_at"
+        ],
+        "title": "AdminAPIKeyResponse"
       },
       "AdminSource": {
         "type": "string",
