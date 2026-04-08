@@ -8,6 +8,7 @@ Follows the ClaimRelevanceService pattern from src/claim_relevance_check/service
 """
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -88,6 +89,7 @@ def _fail_open(reason: str) -> ContentModerationClassificationResult:
     return ContentModerationClassificationResult(
         confidence=0.0,
         category_labels={},
+        category_scores=None,
         recommended_action=None,
         action_tier=None,
         explanation=f"Classification failed: {reason}",
@@ -116,7 +118,7 @@ class ContentReviewerService:
     def _build_instructions(
         self,
         content_item: ContentItem,
-        pre_computed_evidence: list[
+        pre_computed_evidence: Sequence[
             SimilarityMatch | OpenAIModerationMatch | ConversationFlashpointMatch
         ],
     ) -> str:
@@ -177,7 +179,7 @@ class ContentReviewerService:
     async def classify(
         self,
         content_item: ContentItem,
-        pre_computed_evidence: list[
+        pre_computed_evidence: Sequence[
             SimilarityMatch | OpenAIModerationMatch | ConversationFlashpointMatch
         ],
         context_items: list[ContentItem] | None = None,

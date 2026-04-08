@@ -89,6 +89,9 @@ async def create_moderation_action_from_policy(
     action_state = ActionState.APPLIED if is_tier1 else ActionState.PROPOSED
     applied_at = pendulum.now("UTC") if is_tier1 else None
 
+    assert policy_decision.action_type is not None
+    assert policy_decision.review_group is not None
+
     create_data = ModerationActionCreate(
         request_id=request_id,
         community_server_id=community_server_id,

@@ -1,11 +1,18 @@
 """Flashpoint detection capability for bulk content scanning."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from src.bulk_content_scan.schemas import (
     BulkScanMessage,
     ContentItem,
     ConversationFlashpointMatch,
 )
 from src.monitoring import get_logger
+
+if TYPE_CHECKING:
+    from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
 
 logger = get_logger(__name__)
 
@@ -25,13 +32,14 @@ def _content_item_to_bulk_scan_message(item: ContentItem) -> BulkScanMessage:
         author_username=item.author_username,
         timestamp=item.timestamp,
         attachment_urls=item.attachment_urls,
+        embed_content=item.platform_metadata.get("embed_content"),
     )
 
 
 async def detect_flashpoint(
     content_item: ContentItem,
     context_items: list[ContentItem],
-    flashpoint_service: object,
+    flashpoint_service: FlashpointDetectionService | None,
 ) -> ConversationFlashpointMatch | None:
     """Run flashpoint detection on the given content item.
 
