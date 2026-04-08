@@ -1495,7 +1495,7 @@ def content_reviewer_step(
                     ]
                     classification = await reviewer_service.classify(
                         content_item=content_item,
-                        pre_computed_evidence=pre_computed,
+                        pre_computed_evidence=pre_computed,  # type: ignore[arg-type]
                         context_items=context_items_for_msg,
                         flashpoint_service=flashpoint_service,
                     )
