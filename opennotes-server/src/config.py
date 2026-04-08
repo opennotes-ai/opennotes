@@ -890,10 +890,12 @@ class Settings(BaseSettings):
     )
     FLASHPOINT_TIMEOUT_PER_MESSAGE: float = Field(
         default=5.0,
+        gt=0,
         description="Seconds per message for flashpoint scan step timeout budget.",
     )
     FLASHPOINT_MAX_BATCH_MESSAGES: int = Field(
         default=50,
+        ge=1,
         description="Maximum messages to process per flashpoint scan step. Messages beyond this cap are skipped with a warning log.",
     )
 
