@@ -7,7 +7,7 @@ from types import MappingProxyType
 from typing import Any
 
 from cryptography.fernet import Fernet
-from sqlalchemy import TypeDecorator, text
+from sqlalchemy import TypeDecorator, event, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -18,6 +18,12 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from src.config import get_settings
+from src.monitoring.metrics import (
+    db_pool_checked_in,
+    db_pool_checked_out,
+    db_pool_overflow,
+    db_pool_size,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +117,24 @@ SUPAVISOR_CONNECT_ARGS: MappingProxyType[str, object] = MappingProxyType(
 )
 
 
+def _register_pool_metrics(engine: AsyncEngine) -> None:
+    pool = engine.sync_engine.pool
+
+    def _update_gauges(*args: object, **kwargs: object) -> None:
+        try:
+            db_pool_checked_out.set(pool.checkedout())
+            db_pool_checked_in.set(pool.checkedin())
+            db_pool_overflow.set(pool.overflow())
+            db_pool_size.set(pool.size())
+        except Exception:
+            pass
+
+    event.listen(pool, "checkout", _update_gauges)
+    event.listen(pool, "checkin", _update_gauges)
+
+    _update_gauges()
+
+
 def _create_engine() -> AsyncEngine:
     """Create the async engine with two-tier pooling (app QueuePool -> Supavisor -> PG).
 
@@ -124,7 +148,7 @@ def _create_engine() -> AsyncEngine:
     All three are required for Supavisor transaction-mode pooling.
     """
     cfg = get_settings()
-    return create_async_engine(
+    eng = create_async_engine(
         cfg.DATABASE_URL,
         echo=cfg.DEBUG,
         future=True,
@@ -135,6 +159,8 @@ def _create_engine() -> AsyncEngine:
         pool_pre_ping=True,
         connect_args=SUPAVISOR_CONNECT_ARGS,
     )
+    _register_pool_metrics(eng)
+    return eng
 
 
 def get_engine() -> AsyncEngine:
