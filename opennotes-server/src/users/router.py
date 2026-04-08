@@ -588,6 +588,12 @@ async def create_user_api_key(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> APIKeyResponse:
+    if api_key_create.scopes is None and not is_service_account(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Non-service accounts must specify explicit scopes",
+        )
+
     if api_key_create.scopes:
         requested_restricted = RESTRICTED_SCOPES.intersection(api_key_create.scopes)
         if requested_restricted and not is_service_account(current_user):

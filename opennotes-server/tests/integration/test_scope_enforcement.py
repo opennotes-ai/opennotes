@@ -89,3 +89,26 @@ class TestRestrictedScopeEnforcement:
             assert response.status_code == status.HTTP_201_CREATED
             data = response.json()
             assert data["scopes"] == ["api-keys:create"]
+
+    async def test_regular_user_cannot_create_unrestricted_key(
+        self, test_user_data, registered_user
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            login_response = await client.post(
+                "/api/v1/auth/login",
+                data={
+                    "username": test_user_data["username"],
+                    "password": test_user_data["password"],
+                },
+            )
+            token = login_response.json()["access_token"]
+
+            response = await client.post(
+                "/api/v1/users/me/api-keys",
+                json={"name": "Unrestricted Key", "scopes": None},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+            assert response.status_code == status.HTTP_403_FORBIDDEN
+            assert "explicit scopes" in response.json()["detail"].lower()
