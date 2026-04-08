@@ -150,7 +150,7 @@ services:
 
   tempo:
     ports:
-      - "3200:3200"  # Tempo HTTP
+      - "3201:3200"  # Tempo HTTP (3201 to avoid conflict with opennotes-platform on 3200)
       - "4317:4317"  # OTLP gRPC
       - "4318:4318"  # OTLP HTTP
     restart: unless-stopped
