@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.admin.schemas import AdminAPIKeyCreate, AdminAPIKeyListItem, AdminAPIKeyResponse
@@ -57,7 +58,15 @@ async def _find_or_create_user(
         role="user",
     )
     db.add(user)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        existing = await db.execute(select(User).where(User.email == email))
+        user = existing.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=409, detail="User creation conflict")
+        return user
     await db.refresh(user)
     return user
 
