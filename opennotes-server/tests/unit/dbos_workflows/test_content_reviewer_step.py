@@ -177,13 +177,14 @@ class TestContentReviewerStep:
 
         candidate_dict = _make_scan_candidate_dict(message_id="msg-42")
 
-        mock_classification = MagicMock(spec=ContentModerationClassificationResult)
-        mock_classification.confidence = 0.9
-        mock_classification.category_labels = {"misinformation": True}
-        mock_classification.category_scores = None
-        mock_classification.recommended_action = "hide"
-        mock_classification.action_tier = "tier_1_immediate"
-        mock_classification.explanation = "Matches known claim"
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.9,
+            category_labels={"misinformation": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Matches known claim",
+        )
 
         mock_policy_decision = MagicMock()
         mock_policy_decision.action_tier = MagicMock(value="tier_1_immediate")
@@ -259,13 +260,14 @@ class TestContentReviewerStep:
             },
         }
 
-        mock_classification = MagicMock(spec=ContentModerationClassificationResult)
-        mock_classification.confidence = 0.8
-        mock_classification.category_labels = {"harassment": True}
-        mock_classification.category_scores = None
-        mock_classification.recommended_action = "review"
-        mock_classification.action_tier = "tier_2_consensus"
-        mock_classification.explanation = "Flashpoint detected"
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.8,
+            category_labels={"harassment": True},
+            category_scores=None,
+            recommended_action="review",
+            action_tier="tier_2_consensus",
+            explanation="Flashpoint detected",
+        )
 
         mock_policy_decision = MagicMock()
         mock_policy_decision.action_tier = MagicMock(value="tier_2_consensus")
@@ -371,13 +373,14 @@ class TestContentReviewerStep:
 
         candidate_dict = _make_scan_candidate_dict()
 
-        mock_classification = MagicMock(spec=ContentModerationClassificationResult)
-        mock_classification.confidence = 0.9
-        mock_classification.category_labels = {"misinformation": True}
-        mock_classification.category_scores = None
-        mock_classification.recommended_action = "hide"
-        mock_classification.action_tier = "tier_1_immediate"
-        mock_classification.explanation = "Matches known claim"
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.9,
+            category_labels={"misinformation": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Matches known claim",
+        )
 
         mock_policy_decision = MagicMock()
         mock_policy_decision.action_tier = MagicMock(value="tier_1_immediate")
@@ -474,13 +477,14 @@ class TestContentReviewerStep:
 
         candidate_dict = _make_scan_candidate_dict(message_id="msg-77")
 
-        mock_classification = MagicMock(spec=ContentModerationClassificationResult)
-        mock_classification.confidence = 0.95
-        mock_classification.category_labels = {"violence": True}
-        mock_classification.category_scores = None
-        mock_classification.recommended_action = "hide"
-        mock_classification.action_tier = "tier_1_immediate"
-        mock_classification.explanation = "Violent content detected"
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.95,
+            category_labels={"violence": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Violent content detected",
+        )
 
         real_decision = PolicyDecision(
             action_tier=ActionTier.TIER_1_IMMEDIATE,
@@ -537,6 +541,235 @@ class TestContentReviewerStep:
         assert decision["action_type"] == "hide"
         assert decision["review_group"] == "staff"
         assert "reason" in decision
+
+    def test_pass_decision_not_flagged(self) -> None:
+        """Pass decisions (action_tier=None) do NOT get added to flagged_messages."""
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(message_id="msg-pass")
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.1,
+            category_labels={},
+            category_scores=None,
+            recommended_action="pass",
+            action_tier=None,
+            explanation="No issues found",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = None
+        mock_policy_decision.action_type = None
+        mock_policy_decision.review_group = None
+        mock_policy_decision.reason = "pass"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            result = content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        assert result["flagged_count"] == 0
+        assert len(result["policy_decisions"]) == 1
+        assert result["policy_decisions"][0]["action_tier"] is None
+        mock_service.append_flagged_result.assert_not_awaited()
+
+    def test_classification_result_in_flagged_message_matches(self) -> None:
+        """Classification result is appended to FlaggedMessage.matches for consumers."""
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(message_id="msg-cls")
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.9,
+            category_labels={"misinformation": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Classification evidence",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = MagicMock(value="tier_1_immediate")
+        mock_policy_decision.action_type = MagicMock(value="hide")
+        mock_policy_decision.review_group = MagicMock(value="staff")
+        mock_policy_decision.reason = "Tier 1 triggered"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        captured_flagged: list = []
+
+        async def capture_flagged(scan_uuid, flagged_msg):
+            captured_flagged.append(flagged_msg)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock(side_effect=capture_flagged)
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            result = content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        assert result["flagged_count"] == 1
+        assert len(captured_flagged) == 1
+        flagged_msg = captured_flagged[0]
+        assert mock_classification in flagged_msg.matches
+
+    def test_context_items_and_flashpoint_service_passed_to_classify(self) -> None:
+        """context_items and flashpoint_service are forwarded to classify()."""
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(message_id="msg-ctx")
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.9,
+            category_labels={"harassment": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Context check",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = MagicMock(value="tier_1_immediate")
+        mock_policy_decision.action_type = MagicMock(value="hide")
+        mock_policy_decision.review_group = MagicMock(value="staff")
+        mock_policy_decision.reason = "Tier 1"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_fp_service = MagicMock()
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
+                    return_value=mock_fp_service,
+                )
+            )
+            result = content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        assert result["flagged_count"] == 1
+        classify_call = mock_reviewer_service.classify.call_args
+        assert "context_items" in classify_call.kwargs
+        assert isinstance(classify_call.kwargs["context_items"], list)
+        assert len(classify_call.kwargs["context_items"]) >= 1
+        assert "flashpoint_service" in classify_call.kwargs
+        assert classify_call.kwargs["flashpoint_service"] is mock_fp_service
 
 
 class TestRunBatchScanStepsDispatch:

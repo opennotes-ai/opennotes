@@ -5466,12 +5466,12 @@ export interface components {
              * Recommended Action
              * @description Recommended action (hide, review, pass)
              */
-            recommended_action?: string | null;
+            recommended_action?: ("hide" | "review" | "pass") | null;
             /**
              * Action Tier
              * @description Action tier (tier_1_immediate, tier_2_consensus)
              */
-            action_tier?: string | null;
+            action_tier?: ("tier_1_immediate" | "tier_2_consensus") | null;
             /**
              * Explanation
              * @description Human-readable explanation of the classification
@@ -6622,8 +6622,6 @@ export interface components {
                 [key: string]: unknown;
             };
             review_group: components["schemas"]["ReviewGroup"];
-            /** Applied At */
-            applied_at?: string | null;
         };
         /** ModerationActionUpdate */
         ModerationActionUpdate: {

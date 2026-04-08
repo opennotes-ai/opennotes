@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import datetime
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 from uuid import UUID
 
 from attrs import define as _attrs_define
-from dateutil.parser import isoparse
 
 from ..models.action_state import ActionState
 from ..models.action_tier import ActionTier
@@ -35,7 +33,6 @@ class ModerationActionCreate:
         review_group (ReviewGroup):
         note_id (None | Unset | UUID):
         action_state (ActionState | Unset):
-        applied_at (datetime.datetime | None | Unset):
     """
 
     request_id: UUID
@@ -46,7 +43,6 @@ class ModerationActionCreate:
     review_group: ReviewGroup
     note_id: None | Unset | UUID = UNSET
     action_state: ActionState | Unset = UNSET
-    applied_at: datetime.datetime | None | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         request_id = str(self.request_id)
@@ -73,14 +69,6 @@ class ModerationActionCreate:
         if not isinstance(self.action_state, Unset):
             action_state = self.action_state.value
 
-        applied_at: None | str | Unset
-        if isinstance(self.applied_at, Unset):
-            applied_at = UNSET
-        elif isinstance(self.applied_at, datetime.datetime):
-            applied_at = self.applied_at.isoformat()
-        else:
-            applied_at = self.applied_at
-
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -97,8 +85,6 @@ class ModerationActionCreate:
             field_dict["note_id"] = note_id
         if action_state is not UNSET:
             field_dict["action_state"] = action_state
-        if applied_at is not UNSET:
-            field_dict["applied_at"] = applied_at
 
         return field_dict
 
@@ -147,23 +133,6 @@ class ModerationActionCreate:
         else:
             action_state = ActionState(_action_state)
 
-        def _parse_applied_at(data: object) -> datetime.datetime | None | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            try:
-                if not isinstance(data, str):
-                    raise TypeError()
-                applied_at_type_0 = isoparse(data)
-
-                return applied_at_type_0
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(datetime.datetime | None | Unset, data)
-
-        applied_at = _parse_applied_at(d.pop("applied_at", UNSET))
-
         moderation_action_create = cls(
             request_id=request_id,
             community_server_id=community_server_id,
@@ -173,7 +142,6 @@ class ModerationActionCreate:
             review_group=review_group,
             note_id=note_id,
             action_state=action_state,
-            applied_at=applied_at,
         )
 
         return moderation_action_create

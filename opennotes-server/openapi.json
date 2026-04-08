@@ -15683,7 +15683,12 @@
           "recommended_action": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "hide",
+                  "review",
+                  "pass"
+                ]
               },
               {
                 "type": "null"
@@ -15695,7 +15700,11 @@
           "action_tier": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "tier_1_immediate",
+                  "tier_2_consensus"
+                ]
               },
               {
                 "type": "null"
@@ -18068,18 +18077,6 @@
           },
           "review_group": {
             "$ref": "#/components/schemas/ReviewGroup"
-          },
-          "applied_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Applied At"
           }
         },
         "additionalProperties": false,
