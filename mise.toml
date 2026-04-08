@@ -365,11 +365,6 @@ description = "First-time Discourse dev environment setup"
 dir = "opennotes-discourse"
 run = "mise run discourse:bootstrap"
 
-[tasks."discourse:up"]
-description = "Start Discourse dev environment"
-dir = "opennotes-discourse"
-run = "mise run discourse:up"
-
 [tasks."discourse:down"]
 description = "Stop Discourse dev environment"
 dir = "opennotes-discourse"
@@ -394,6 +389,78 @@ run = "mise run discourse:test:e2e"
 description = "Run Discourse E2E tests in headed browser mode"
 dir = "opennotes-discourse"
 run = "mise run discourse:test:e2e:headed"
+
+# ========================================
+# Local Deploy Tasks
+# ========================================
+
+[tasks."deploy:services:discourse:local"]
+description = "Start Discourse dev environment (alias: discourse:up)"
+alias = "discourse:up"
+dir = "opennotes-discourse"
+run = '''
+if [ ! -d "docker/.discourse" ]; then
+  echo "Discourse not bootstrapped yet. Run: mise run discourse:bootstrap"
+  exit 1
+fi
+cd docker/.discourse && DOCKER_ARGS="--add-host=host.docker.internal:host-gateway" d/boot_dev
+'''
+
+[tasks."deploy:services:discourse-dev-stack:local"]
+description = "Bring up full Discourse dev stack: postgres, redis, nats, opennotes-server, and Discourse"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "==> Starting Discourse development stack"
+echo ""
+
+echo "[1/4] Starting postgres..."
+docker start opennotes-postgres 2>/dev/null || echo "  postgres not found — ensure local infra is applied"
+
+echo "[2/4] Starting redis..."
+docker start opennotes-redis 2>/dev/null || echo "  redis not found — ensure local infra is applied"
+
+echo "[3/4] Starting NATS..."
+docker start opennotes-nats 2>/dev/null || echo "  nats not found — ensure local infra is applied"
+
+echo "[4/4] Starting opennotes-server..."
+docker start opennotes-server 2>/dev/null || echo "  opennotes-server not found — ensure local infra is applied"
+
+echo ""
+echo "==> Starting Discourse..."
+cd opennotes-discourse
+mise run discourse:up
+
+echo ""
+echo "==> Discourse dev stack ready"
+echo "  Server:    http://localhost:8000"
+echo "  Discourse: http://localhost:4200"
+'''
+
+[tasks."deploy:services:all:local"]
+description = "Start all local services including Discourse"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "==> Starting all local services"
+
+echo "[1/2] Starting core services (postgres, redis, nats, server, discord)..."
+for svc in opennotes-postgres opennotes-redis opennotes-nats opennotes-server opennotes-discord; do
+  docker start "$svc" 2>/dev/null || echo "  $svc not found — ensure local infra is applied"
+done
+
+echo "[2/2] Starting Discourse..."
+cd opennotes-discourse
+mise run discourse:up 2>/dev/null || echo "  Discourse not bootstrapped — run: mise run discourse:bootstrap"
+
+echo ""
+echo "==> All services started"
+echo "  Server:    http://localhost:8000"
+echo "  Discord:   http://localhost:3000"
+echo "  Discourse: http://localhost:4200"
+'''
 
 # ========================================
 # Database Branching Tasks

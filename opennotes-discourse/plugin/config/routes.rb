@@ -5,7 +5,7 @@ Discourse::Application.routes.append do
 
   get "community-reviews" => "list#latest"
 
-  scope "/admin/plugins/opennotes", constraints: StaffConstraint.new, defaults: { format: :json } do
+  scope "/admin/plugins/discourse-opennotes", constraints: StaffConstraint.new, defaults: { format: :json } do
     get "/dashboard" => "opennotes/admin#dashboard"
     get "/categories/:category_id/settings" => "opennotes/admin#category_settings"
     put "/categories/:category_id/settings" => "opennotes/admin#category_settings"

@@ -54,7 +54,7 @@ if docker ps -q -f name=discourse_dev | grep -q .; then
 else
   echo "==> Booting Discourse dev container..."
   cd docker/.discourse
-  d/boot_dev 2>&1 || true
+  DOCKER_ARGS="--add-host=host.docker.internal:host-gateway" d/boot_dev 2>&1 || true
   cd "$SCRIPT_DIR/.."
 
   # Verify container is actually running

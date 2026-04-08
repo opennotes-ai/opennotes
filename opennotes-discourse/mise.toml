@@ -22,7 +22,7 @@ if [ ! -d "docker/.discourse" ]; then
   echo "Discourse not bootstrapped yet. Run: mise run discourse:bootstrap"
   exit 1
 fi
-cd docker/.discourse && d/boot_dev
+cd docker/.discourse && DOCKER_ARGS="--add-host=host.docker.internal:host-gateway" d/boot_dev
 '''
 
 [tasks."discourse:down"]
