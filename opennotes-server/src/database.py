@@ -118,19 +118,20 @@ SUPAVISOR_CONNECT_ARGS: MappingProxyType[str, object] = MappingProxyType(
 )
 
 
-def _register_pool_metrics(engine: AsyncEngine) -> None:
+def _register_pool_metrics(engine: AsyncEngine, loop_name: str = "main") -> None:
     raw_pool = engine.sync_engine.pool
     if not isinstance(raw_pool, QueuePool):
         logger.debug("Pool is %s, not QueuePool — skipping pool metrics", type(raw_pool).__name__)
         return
     pool = raw_pool
+    attrs = {"pool": loop_name}
 
     def _update_gauges(*args: object, **kwargs: object) -> None:
         try:
-            db_pool_checked_out.set(pool.checkedout())
-            db_pool_checked_in.set(pool.checkedin())
-            db_pool_overflow.set(pool.overflow())
-            db_pool_size.set(pool.size())
+            db_pool_checked_out.set(pool.checkedout(), attrs)
+            db_pool_checked_in.set(pool.checkedin(), attrs)
+            db_pool_overflow.set(pool.overflow(), attrs)
+            db_pool_size.set(pool.size(), attrs)
         except Exception:
             logger.debug("pool metric update failed", exc_info=True)
 
@@ -153,7 +154,7 @@ def _create_engine() -> AsyncEngine:
     All three are required for Supavisor transaction-mode pooling.
     """
     cfg = get_settings()
-    eng = create_async_engine(
+    return create_async_engine(
         cfg.DATABASE_URL,
         echo=cfg.DEBUG,
         future=True,
@@ -164,8 +165,6 @@ def _create_engine() -> AsyncEngine:
         pool_pre_ping=True,
         connect_args=SUPAVISOR_CONNECT_ARGS,
     )
-    _register_pool_metrics(eng)
-    return eng
 
 
 def get_engine() -> AsyncEngine:
@@ -194,7 +193,9 @@ def get_engine() -> AsyncEngine:
             del _engines[k]
             _session_makers.pop(k, None)
 
+        loop_name = "main" if loop_key == 0 or loop is None else "background"
         engine = _create_engine()
+        _register_pool_metrics(engine, loop_name)
         _engines[loop_key] = (engine, loop)
         return engine
 

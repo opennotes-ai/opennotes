@@ -53,10 +53,11 @@ class TestRegisterPoolMetrics:
         ):
             _register_pool_metrics(engine)
 
-            mock_checked_out.assert_called_with(0)
-            mock_checked_in.assert_called_with(5)
-            mock_overflow.assert_called_with(0)
-            mock_size.assert_called_with(5)
+            attrs = {"pool": "main"}
+            mock_checked_out.assert_called_with(0, attrs)
+            mock_checked_in.assert_called_with(5, attrs)
+            mock_overflow.assert_called_with(0, attrs)
+            mock_size.assert_called_with(5, attrs)
 
     def test_checkout_event_updates_gauges(self) -> None:
         engine = _make_mock_engine(checkedout=3, checkedin=2, overflow=1, size=5)
@@ -81,10 +82,11 @@ class TestRegisterPoolMetrics:
         ):
             captured_handler("dbapi_conn", "conn_record", "conn_proxy")
 
-            mock_checked_out.assert_called_with(3)
-            mock_checked_in.assert_called_with(2)
-            mock_overflow.assert_called_with(1)
-            mock_size.assert_called_with(5)
+            attrs = {"pool": "main"}
+            mock_checked_out.assert_called_with(3, attrs)
+            mock_checked_in.assert_called_with(2, attrs)
+            mock_overflow.assert_called_with(1, attrs)
+            mock_size.assert_called_with(5, attrs)
 
     def test_checkin_event_updates_gauges(self) -> None:
         engine = _make_mock_engine(checkedout=1, checkedin=4, overflow=0, size=5)
@@ -109,10 +111,11 @@ class TestRegisterPoolMetrics:
         ):
             captured_handler("dbapi_conn", "conn_record")
 
-            mock_checked_out.assert_called_with(1)
-            mock_checked_in.assert_called_with(4)
-            mock_overflow.assert_called_with(0)
-            mock_size.assert_called_with(5)
+            attrs = {"pool": "main"}
+            mock_checked_out.assert_called_with(1, attrs)
+            mock_checked_in.assert_called_with(4, attrs)
+            mock_overflow.assert_called_with(0, attrs)
+            mock_size.assert_called_with(5, attrs)
 
     def test_gauge_exception_does_not_propagate(self) -> None:
         engine = _make_mock_engine()

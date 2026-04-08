@@ -40,7 +40,6 @@ class TestDatabaseEngineQueuePool:
     def test_create_engine_passes_pool_kwargs(self) -> None:
         with (
             patch("src.database.create_async_engine") as mock_create,
-            patch("src.database._register_pool_metrics"),
         ):
             mock_create.return_value = MagicMock()
 
@@ -68,7 +67,6 @@ class TestDatabaseEngineQueuePool:
     def test_create_engine_does_not_use_null_pool(self) -> None:
         with (
             patch("src.database.create_async_engine") as mock_create,
-            patch("src.database._register_pool_metrics"),
         ):
             mock_create.return_value = MagicMock()
 
@@ -95,7 +93,6 @@ class TestStatementCacheDisabled:
     def test_connect_args_disables_statement_cache(self) -> None:
         with (
             patch("src.database.create_async_engine") as mock_create,
-            patch("src.database._register_pool_metrics"),
         ):
             mock_create.return_value = MagicMock()
 
@@ -124,7 +121,6 @@ class TestNoAsyncCreatorOrRetry:
     def test_no_async_creator_in_engine(self) -> None:
         with (
             patch("src.database.create_async_engine") as mock_create,
-            patch("src.database._register_pool_metrics"),
         ):
             mock_create.return_value = MagicMock()
 
@@ -183,7 +179,6 @@ class TestAnonymousPreparedStatements:
     def test_connect_args_has_prepared_statement_name_func(self) -> None:
         with (
             patch("src.database.create_async_engine") as mock_create,
-            patch("src.database._register_pool_metrics"),
         ):
             mock_create.return_value = MagicMock()
 
