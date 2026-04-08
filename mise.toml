@@ -80,8 +80,8 @@ if [ -n "${DATABASE_URL:-}" ]; then
             echo "Fix: Update .env.yaml to use 'localhost' instead of '$DB_HOST':" >&2
             echo "    DATABASE_URL=postgresql+asyncpg://...@localhost:5432/..." >&2
             echo "" >&2
-            echo "Containers receive their own URLs via OpenTofu env vars," >&2
-            echo "so this change only affects host-side tools (mise, alembic, pytest)." >&2
+            echo "Containers receive their own URLs via Docker Compose environment configuration." >&2
+            echo "This change only affects host-side tools (mise, alembic, pytest)." >&2
             exit 1
         fi
     fi
