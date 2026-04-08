@@ -875,6 +875,64 @@ fi
 echo "Done. Fixture timestamp: ${TIMESTAMP}"
 '''
 
+[tasks."fixture:load"]
+description = "Load anonymized database fixtures from GCS"
+depends = ["_db:ensure-postgres"]
+dir = "{{vars.server_dir}}"
+run = '''
+set -euo pipefail
+
+BUCKET="${FIXTURE_GCS_BUCKET:-}"
+if [ -z "$BUCKET" ]; then
+    echo "Error: FIXTURE_GCS_BUCKET not configured." >&2
+    echo "Set FIXTURE_GCS_BUCKET in .env to enable fixture loading." >&2
+    exit 1
+fi
+
+# Parse flags
+TIMESTAMP="latest"
+CLEAN=false
+for arg in "$@"; do
+    case "$arg" in
+        --timestamp=*) TIMESTAMP="${arg#--timestamp=}" ;;
+        --clean) CLEAN=true ;;
+    esac
+done
+
+# Download from GCS
+echo "Downloading fixture (timestamp: ${TIMESTAMP})..."
+DUMP_DIR=$(uv run python ../scripts/fixtures/download_from_gcs.py "$BUCKET" "$TIMESTAMP")
+
+if [ ! -d "$DUMP_DIR" ]; then
+    echo "Error: Download failed — dump directory not found: $DUMP_DIR" >&2
+    exit 1
+fi
+
+# Get database URL components
+DB_URL="${DATABASE_URL:-postgresql+asyncpg://opennotes:opennotes_dev_password@localhost:5432/opennotes}"
+# Convert asyncpg URL to standard postgres URL for pg_restore
+PG_URL=$(echo "$DB_URL" | sed 's|postgresql+asyncpg://|postgresql://|')
+
+# Handle --clean flag: drop and recreate the database
+if [ "$CLEAN" = true ]; then
+    echo "Dropping and recreating database..."
+    DB_NAME=$(echo "$PG_URL" | sed 's|.*/||')
+    BASE_URL=$(echo "$PG_URL" | sed "s|/$DB_NAME\$|/postgres|")
+    psql "$BASE_URL" -c "DROP DATABASE IF EXISTS \"$DB_NAME\";" 2>/dev/null || true
+    psql "$BASE_URL" -c "CREATE DATABASE \"$DB_NAME\";" 2>/dev/null || true
+fi
+
+# Restore with pg_restore (parallel, clean existing objects)
+echo "Restoring fixture to database..."
+pg_restore --dbname="$PG_URL" --jobs=4 --clean --if-exists "$DUMP_DIR" || true
+
+# Run migrations to ensure schema is at head
+echo "Running migrations..."
+uv run alembic upgrade head
+
+echo "Fixture loaded successfully."
+'''
+
 # ========================================
 # Task Configuration
 # ========================================
