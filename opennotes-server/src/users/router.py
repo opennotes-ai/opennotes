@@ -42,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.auth import create_access_token, create_refresh_token, verify_refresh_token
 from src.auth.dependencies import get_current_active_user
 from src.auth.models import (
+    RESTRICTED_SCOPES,
     APIKeyCreate,
     APIKeyResponse,
     AuditLogResponse,
@@ -51,6 +52,7 @@ from src.auth.models import (
     UserResponse,
     UserUpdate,
 )
+from src.auth.permissions import is_service_account
 from src.auth.revocation import revoke_all_user_tokens, revoke_token
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
@@ -586,6 +588,23 @@ async def create_user_api_key(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> APIKeyResponse:
+    if api_key_create.scopes is None and not is_service_account(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Non-service accounts must specify explicit scopes",
+        )
+
+    if api_key_create.scopes:
+        requested_restricted = RESTRICTED_SCOPES.intersection(api_key_create.scopes)
+        if requested_restricted and not is_service_account(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Restricted scope(s): {', '.join(sorted(requested_restricted))}. "
+                    "Only service accounts may request these scopes."
+                ),
+            )
+
     try:
         ip_address, user_agent = extract_request_context(request)
         api_key, raw_key = await create_api_key(

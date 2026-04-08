@@ -34,6 +34,7 @@ if _otel_settings.ENABLE_TRACING and _otel_settings.LOGFIRE_ENABLED and not _ote
         tail_duration_threshold=_otel_settings.LOGFIRE_TAIL_DURATION_THRESHOLD,
     )
 
+from src.admin.api_key_admin_router import router as api_key_admin_router
 from src.batch_jobs.router import router as batch_jobs_router
 from src.bulk_content_scan.jsonapi_router import router as bulk_content_scan_jsonapi_router
 from src.bulk_content_scan.nats_handler import BulkScanEventHandler
@@ -773,6 +774,7 @@ app.add_middleware(StartupGateMiddleware)
 app.include_router(auth_router)
 app.include_router(profile_auth_router)
 app.include_router(admin_router)
+app.include_router(api_key_admin_router)
 app.include_router(fusion_weights_router)
 
 # JSON:API v2 routes

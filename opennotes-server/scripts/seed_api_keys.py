@@ -48,6 +48,13 @@ PLAYGROUND_SERVICE_USER_USERNAME = "playground-service"
 PLAYGROUND_SERVICE_USER_EMAIL = "playground@opennotes.local"
 PLAYGROUND_SCOPES = ["simulations:read"]
 
+PLATFORM_DEV_API_KEY = "opk_platform_dev_api_keys_create_2026"
+PLATFORM_API_KEY_NAME = "Platform (Development)"
+PROD_PLATFORM_API_KEY_NAME = "Platform (Production)"
+PLATFORM_SERVICE_USER_USERNAME = "platform-service"
+PLATFORM_SERVICE_USER_EMAIL = "platform@opennotes.local"
+PLATFORM_SCOPES = ["api-keys:create"]
+
 
 def generate_api_key() -> tuple[str, str]:
     """Generate a new API key in the format: opk_<prefix>_<secret>"""
@@ -228,6 +235,57 @@ async def get_or_create_playground_user(db: AsyncSession):
     return user_id
 
 
+async def get_or_create_platform_user(db: AsyncSession):
+    result = await db.execute(
+        text("SELECT id, username, is_service_account FROM users WHERE username = :username"),
+        {"username": PLATFORM_SERVICE_USER_USERNAME},
+    )
+    row = result.first()
+
+    if row:
+        user_id = row[0]
+        is_service_account = row[2]
+
+        if not is_service_account:
+            await db.execute(
+                text(
+                    "UPDATE users SET is_service_account = true, role = 'admin' WHERE id = :user_id"
+                ),
+                {"user_id": user_id},
+            )
+            print(
+                f"✓ Platform user '{PLATFORM_SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - updated is_service_account flag"
+            )
+        else:
+            print(
+                f"✓ Platform user '{PLATFORM_SERVICE_USER_USERNAME}' already exists (ID: {user_id})"
+            )
+        return user_id
+
+    hashed_password = get_password_hash(secrets.token_urlsafe(64))
+
+    result = await db.execute(
+        text("""
+            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, created_at, updated_at)
+            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, NOW(), NOW())
+            RETURNING id
+        """),
+        {
+            "username": PLATFORM_SERVICE_USER_USERNAME,
+            "email": PLATFORM_SERVICE_USER_EMAIL,
+            "hashed_password": hashed_password,
+            "full_name": "Platform Service Account",
+            "role": "admin",
+            "is_active": True,
+            "is_superuser": False,
+            "is_service_account": True,
+        },
+    )
+    user_id = result.scalar_one()
+    print(f"✓ Created platform user '{PLATFORM_SERVICE_USER_USERNAME}' (ID: {user_id})")
+    return user_id
+
+
 async def seed_playground_api_key(db: AsyncSession) -> None:
     user_id = await get_or_create_playground_user(db)
     key_hash = get_password_hash(PLAYGROUND_DEV_API_KEY)
@@ -238,6 +296,19 @@ async def seed_playground_api_key(db: AsyncSession) -> None:
         key_prefix="playground",
         user_id=user_id,
         scopes=PLAYGROUND_SCOPES,
+    )
+
+
+async def seed_platform_api_key(db: AsyncSession) -> None:
+    user_id = await get_or_create_platform_user(db)
+    key_hash = get_password_hash(PLATFORM_DEV_API_KEY)
+    await seed_api_key(
+        db,
+        key_hash,
+        PLATFORM_API_KEY_NAME,
+        key_prefix="platform",
+        user_id=user_id,
+        scopes=PLATFORM_SCOPES,
     )
 
 
@@ -302,6 +373,38 @@ async def _seed_and_save_prod_playground_key(db: AsyncSession) -> None:
         os.close(fd)
 
 
+async def _seed_and_save_prod_platform_key(db: AsyncSession) -> None:
+    provided_key = os.environ.get("PLATFORM_API_KEY", "")
+
+    if provided_key and not provided_key.startswith("CHANGE_THIS"):
+        api_key = provided_key
+        key_prefix = None
+        if api_key.startswith("opk_"):
+            parts = api_key.split("_", 2)
+            if len(parts) == 3:
+                key_prefix = parts[1]
+    else:
+        api_key, key_prefix = generate_api_key()
+
+    user_id = await get_or_create_platform_user(db)
+    key_hash = get_password_hash(api_key)
+    await seed_api_key(
+        db,
+        key_hash,
+        PROD_PLATFORM_API_KEY_NAME,
+        key_prefix,
+        user_id=user_id,
+        scopes=PLATFORM_SCOPES,
+    )
+
+    key_path = "/tmp/platform-api-key.txt"
+    fd = os.open(key_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, api_key.encode())
+    finally:
+        os.close(fd)
+
+
 async def main() -> None:
     environment = os.environ.get("ENVIRONMENT", "unknown")
     is_production = environment == "production"
@@ -327,25 +430,31 @@ async def main() -> None:
             if is_production:
                 await _seed_and_save_prod_key(session)
                 await _seed_and_save_prod_playground_key(session)
+                await _seed_and_save_prod_platform_key(session)
                 await session.commit()
                 print()
                 print("=" * 60)
                 print("API keys written (mode 0600):")
                 print("  - Discord bot:  /tmp/opennotes-api-key.txt")
                 print("  - Playground:   /tmp/playground-api-key.txt")
+                print("  - Platform:     /tmp/platform-api-key.txt")
                 print("=" * 60)
                 print()
                 print("  1. Read the keys:")
                 print("       cat /tmp/opennotes-api-key.txt")
                 print("       cat /tmp/playground-api-key.txt")
+                print("       cat /tmp/platform-api-key.txt")
                 print("  2. Add to secrets.yaml and re-encrypt with SOPS")
                 print("  3. Delete the files:")
-                print("       rm /tmp/opennotes-api-key.txt /tmp/playground-api-key.txt")
+                print(
+                    "       rm /tmp/opennotes-api-key.txt /tmp/playground-api-key.txt /tmp/platform-api-key.txt"
+                )
                 print("  4. Redeploy for the changes to take effect")
                 print("=" * 60)
             elif environment in ["development", "local"]:
                 await seed_dev_api_key(session)
                 await seed_playground_api_key(session)
+                await seed_platform_api_key(session)
                 await session.commit()
                 print()
                 print("✓ API key seeding completed successfully")
