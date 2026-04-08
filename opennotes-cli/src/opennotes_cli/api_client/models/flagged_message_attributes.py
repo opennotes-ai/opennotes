@@ -11,6 +11,9 @@ from dateutil.parser import isoparse
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.content_moderation_classification_result import (
+        ContentModerationClassificationResult,
+    )
     from ..models.conversation_flashpoint_match import ConversationFlashpointMatch
     from ..models.open_ai_moderation_match import OpenAIModerationMatch
     from ..models.similarity_match import SimilarityMatch
@@ -28,8 +31,8 @@ class FlaggedMessageAttributes:
         content (str): Message content
         author_id (str): Author ID
         timestamp (datetime.datetime): Message timestamp
-        matches (list[ConversationFlashpointMatch | OpenAIModerationMatch | SimilarityMatch] | Unset): List of match
-            results from different scan types
+        matches (list[ContentModerationClassificationResult | ConversationFlashpointMatch | OpenAIModerationMatch |
+            SimilarityMatch] | Unset): List of match results from different scan types
     """
 
     channel_id: str
@@ -37,12 +40,18 @@ class FlaggedMessageAttributes:
     author_id: str
     timestamp: datetime.datetime
     matches: (
-        list[ConversationFlashpointMatch | OpenAIModerationMatch | SimilarityMatch]
+        list[
+            ContentModerationClassificationResult
+            | ConversationFlashpointMatch
+            | OpenAIModerationMatch
+            | SimilarityMatch
+        ]
         | Unset
     ) = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.conversation_flashpoint_match import ConversationFlashpointMatch
         from ..models.open_ai_moderation_match import OpenAIModerationMatch
         from ..models.similarity_match import SimilarityMatch
 
@@ -62,6 +71,8 @@ class FlaggedMessageAttributes:
                 if isinstance(matches_item_data, SimilarityMatch):
                     matches_item = matches_item_data.to_dict()
                 elif isinstance(matches_item_data, OpenAIModerationMatch):
+                    matches_item = matches_item_data.to_dict()
+                elif isinstance(matches_item_data, ConversationFlashpointMatch):
                     matches_item = matches_item_data.to_dict()
                 else:
                     matches_item = matches_item_data.to_dict()
@@ -85,6 +96,9 @@ class FlaggedMessageAttributes:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.content_moderation_classification_result import (
+            ContentModerationClassificationResult,
+        )
         from ..models.conversation_flashpoint_match import ConversationFlashpointMatch
         from ..models.open_ai_moderation_match import OpenAIModerationMatch
         from ..models.similarity_match import SimilarityMatch
@@ -100,7 +114,12 @@ class FlaggedMessageAttributes:
 
         _matches = d.pop("matches", UNSET)
         matches: (
-            list[ConversationFlashpointMatch | OpenAIModerationMatch | SimilarityMatch]
+            list[
+                ContentModerationClassificationResult
+                | ConversationFlashpointMatch
+                | OpenAIModerationMatch
+                | SimilarityMatch
+            ]
             | Unset
         ) = UNSET
         if _matches is not UNSET:
@@ -110,7 +129,8 @@ class FlaggedMessageAttributes:
                 def _parse_matches_item(
                     data: object,
                 ) -> (
-                    ConversationFlashpointMatch
+                    ContentModerationClassificationResult
+                    | ConversationFlashpointMatch
                     | OpenAIModerationMatch
                     | SimilarityMatch
                 ):
@@ -130,11 +150,23 @@ class FlaggedMessageAttributes:
                         return matches_item_type_1
                     except (TypeError, ValueError, AttributeError, KeyError):
                         pass
+                    try:
+                        if not isinstance(data, dict):
+                            raise TypeError()
+                        matches_item_type_2 = ConversationFlashpointMatch.from_dict(
+                            data
+                        )
+
+                        return matches_item_type_2
+                    except (TypeError, ValueError, AttributeError, KeyError):
+                        pass
                     if not isinstance(data, dict):
                         raise TypeError()
-                    matches_item_type_2 = ConversationFlashpointMatch.from_dict(data)
+                    matches_item_type_3 = (
+                        ContentModerationClassificationResult.from_dict(data)
+                    )
 
-                    return matches_item_type_2
+                    return matches_item_type_3
 
                 matches_item = _parse_matches_item(matches_item_data)
 
