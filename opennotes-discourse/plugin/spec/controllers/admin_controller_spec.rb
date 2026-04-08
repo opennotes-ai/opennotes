@@ -12,22 +12,27 @@ RSpec.describe Opennotes::AdminController, type: :controller do
     SiteSetting.opennotes_enabled = true
     SiteSetting.opennotes_server_url = "http://localhost:8000"
     SiteSetting.opennotes_api_key = "test-api-key"
-    PluginStore.set("discourse-opennotes", "community_server_id", "cs-uuid-1")
+    PluginStore.set("discourse-opennotes", "community_server_id", "discourse-dev-1")
   end
 
   describe "GET /admin/plugins/discourse-opennotes/dashboard" do
     context "when logged in as staff" do
       before { sign_in(admin) }
 
-      it "returns JSON with scoring analysis data" do
+      it "resolves platform ID to UUID and returns scoring analysis" do
         mock_client = instance_double(OpenNotes::Client)
         allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
-        allow(mock_client).to receive(:get).and_return({
-          "activity" => { "total_posts" => 100 },
-          "classification" => { "spam" => 10 },
-          "consensus" => { "helpful" => 50 },
-          "top_reviewers" => [],
-        })
+        allow(mock_client).to receive(:get)
+          .with("/api/v2/community-servers/lookup", params: { platform: "discourse", platform_community_server_id: "discourse-dev-1" })
+          .and_return({ "data" => { "id" => "019d473a-0b2e-795b-b6a1-4919403313b8" } })
+        allow(mock_client).to receive(:get)
+          .with("/api/v2/community-servers/019d473a-0b2e-795b-b6a1-4919403313b8/scoring-analysis")
+          .and_return({
+            "activity" => { "total_posts" => 100 },
+            "classification" => { "spam" => 10 },
+            "consensus" => { "helpful" => 50 },
+            "top_reviewers" => [],
+          })
 
         get :dashboard, format: :json
         expect(response).to have_http_status(:ok)
@@ -37,7 +42,7 @@ RSpec.describe Opennotes::AdminController, type: :controller do
         expect(body).to have_key("classification")
       end
 
-      it "returns 404 when community server is not registered" do
+      it "returns 404 when community server is not registered in PluginStore" do
         PluginStore.remove("discourse-opennotes", "community_server_id")
 
         get :dashboard, format: :json
@@ -45,6 +50,20 @@ RSpec.describe Opennotes::AdminController, type: :controller do
 
         body = JSON.parse(response.body)
         expect(body["error"]).to eq("Community server not registered")
+      end
+
+      it "returns 404 when lookup returns no server" do
+        mock_client = instance_double(OpenNotes::Client)
+        allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
+        allow(mock_client).to receive(:get)
+          .with("/api/v2/community-servers/lookup", params: { platform: "discourse", platform_community_server_id: "discourse-dev-1" })
+          .and_return({ "data" => nil })
+
+        get :dashboard, format: :json
+        expect(response).to have_http_status(:not_found)
+
+        body = JSON.parse(response.body)
+        expect(body["error"]).to eq("Community server not found on OpenNotes")
       end
 
       it "returns 503 when opennotes server is unavailable" do
