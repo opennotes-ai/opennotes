@@ -111,6 +111,7 @@ async def create_admin_api_key(
         key_hash=key_hash,
         is_active=True,
         scopes=effective_scopes,
+        created_by_user_id=current_user.id,
     )
     db.add(api_key)
     await db.flush()
@@ -163,7 +164,7 @@ async def list_admin_api_keys(
         .join(User, APIKey.user_id == User.id)
         .where(
             APIKey.is_active == True,
-            User.is_service_account == False,
+            APIKey.created_by_user_id == current_user.id,
         )
         .order_by(APIKey.created_at.desc())
     )
@@ -200,7 +201,12 @@ async def revoke_admin_api_key(
 ) -> None:
     require_scope_or_admin(current_user, request, "api-keys:create")
 
-    result = await db.execute(select(APIKey).where(APIKey.id == key_id))
+    result = await db.execute(
+        select(APIKey).where(
+            APIKey.id == key_id,
+            APIKey.created_by_user_id == current_user.id,
+        )
+    )
     api_key = result.scalar_one_or_none()
 
     if api_key is None:
