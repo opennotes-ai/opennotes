@@ -27,6 +27,7 @@ async def create_moderation_action(
         action_state=data.action_state,
         review_group=data.review_group,
         classifier_evidence=data.classifier_evidence,
+        applied_at=data.applied_at,
     )
     db.add(action)
     await db.commit()
