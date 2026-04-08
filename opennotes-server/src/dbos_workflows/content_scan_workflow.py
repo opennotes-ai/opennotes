@@ -54,7 +54,11 @@ from uuid import UUID
 import orjson
 from dbos import DBOS, Queue, SetEnqueueOptions, SetWorkflowID
 
-from src.bulk_content_scan.schemas import BulkScanStatus
+from src.bulk_content_scan.schemas import (
+    BulkScanMessage,
+    BulkScanStatus,
+    ContentItem,
+)
 from src.dbos_workflows.enqueue_utils import safe_enqueue
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
@@ -65,6 +69,30 @@ if TYPE_CHECKING:
     from redis.asyncio import Redis
 
 logger = get_logger(__name__)
+
+
+def _deserialize_to_bulk_scan_message(msg_data: dict) -> BulkScanMessage:
+    """Deserialize a Redis message dict to BulkScanMessage, handling both formats.
+
+    During rollout, Redis may contain either ContentItem format (with content_id)
+    written by the updated NATS handler, or legacy BulkScanMessage format (with
+    message_id) written before the migration. Both are supported transparently.
+    """
+    if "content_id" in msg_data:
+        content_item = ContentItem.model_validate(msg_data)
+        return BulkScanMessage(
+            message_id=content_item.content_id,
+            channel_id=content_item.channel_id,
+            community_server_id=content_item.community_server_id,
+            content=content_item.content_text,
+            author_id=content_item.author_id,
+            author_username=content_item.author_username,
+            timestamp=content_item.timestamp,
+            attachment_urls=content_item.attachment_urls,
+            embed_content=content_item.platform_metadata.get("embed_content"),
+        )
+    return BulkScanMessage.model_validate(msg_data)
+
 
 REDIS_BATCH_TTL_SECONDS = 86400
 REDIS_REPLAY_TTL_SECONDS = 7 * 24 * 3600
@@ -966,7 +994,6 @@ def preprocess_batch_step(
                    skipped_count
     """
     from src.bulk_content_scan.scan_types import ScanType
-    from src.bulk_content_scan.schemas import BulkScanMessage
     from src.bulk_content_scan.service import BulkContentScanService
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
@@ -985,7 +1012,7 @@ def preprocess_batch_step(
 
         redis_conn = await get_shared_redis_client(settings.REDIS_URL)
         raw_messages = await load_messages_from_redis(redis_conn, messages_redis_key)
-        typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
+        typed_messages = [_deserialize_to_bulk_scan_message(msg) for msg in raw_messages]
         original_count = len(typed_messages)
 
         async with get_session_maker()() as session:
@@ -1130,7 +1157,6 @@ def similarity_scan_step(
         dict with: similarity_candidates_key, candidate_count
     """
     from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
-    from src.bulk_content_scan.schemas import BulkScanMessage
     from src.bulk_content_scan.service import BulkContentScanService
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
@@ -1148,7 +1174,7 @@ def similarity_scan_step(
 
         redis_conn = await get_shared_redis_client(settings.REDIS_URL)
         raw_messages = await load_messages_from_redis(redis_conn, filtered_messages_key)
-        typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
+        typed_messages = [_deserialize_to_bulk_scan_message(msg) for msg in raw_messages]
 
         async with get_session_maker()() as session:
             result = await session.execute(
@@ -1245,7 +1271,6 @@ def flashpoint_scan_step(
         dict with: flashpoint_candidates_key, candidate_count
     """
     from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
-    from src.bulk_content_scan.schemas import BulkScanMessage
     from src.bulk_content_scan.service import BulkContentScanService
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
@@ -1259,7 +1284,7 @@ def flashpoint_scan_step(
     async def _flashpoint_scan() -> dict[str, Any]:
         redis_conn = await get_shared_redis_client(settings.REDIS_URL)
         raw_messages = await load_messages_from_redis(redis_conn, filtered_messages_key)
-        typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
+        typed_messages = [_deserialize_to_bulk_scan_message(msg) for msg in raw_messages]
 
         max_msgs = settings.FLASHPOINT_MAX_BATCH_MESSAGES
         if len(typed_messages) > max_msgs:
@@ -1282,7 +1307,7 @@ def flashpoint_scan_step(
         )
         channel_context_map: dict[str, list[BulkScanMessage]] = {}
         for ch_id, msg_dicts in channel_context_raw.items():
-            channel_context_map[ch_id] = [BulkScanMessage.model_validate(m) for m in msg_dicts]
+            channel_context_map[ch_id] = [_deserialize_to_bulk_scan_message(m) for m in msg_dicts]
 
         async with get_session_maker()() as session:
             llm_service = _get_llm_service()
