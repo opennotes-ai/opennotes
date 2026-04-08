@@ -38,7 +38,9 @@ class TestDatabaseEngineQueuePool:
                 await engine.dispose()
 
     def test_create_engine_passes_pool_kwargs(self) -> None:
-        with patch("src.database.create_async_engine") as mock_create:
+        with (
+            patch("src.database.create_async_engine") as mock_create,
+        ):
             mock_create.return_value = MagicMock()
 
             from src.database import _create_engine
@@ -54,15 +56,18 @@ class TestDatabaseEngineQueuePool:
                 )
                 _create_engine()
 
+            settings = mock_settings.return_value
             call_kwargs = mock_create.call_args[1]
-            assert call_kwargs["pool_size"] == 5
-            assert call_kwargs["max_overflow"] == 5
-            assert call_kwargs["pool_timeout"] == 30
-            assert call_kwargs["pool_recycle"] == 1800
+            assert call_kwargs["pool_size"] == settings.DB_POOL_SIZE
+            assert call_kwargs["max_overflow"] == settings.DB_POOL_MAX_OVERFLOW
+            assert call_kwargs["pool_timeout"] == settings.DB_POOL_TIMEOUT
+            assert call_kwargs["pool_recycle"] == settings.DB_POOL_RECYCLE
             assert call_kwargs["pool_pre_ping"] is True
 
     def test_create_engine_does_not_use_null_pool(self) -> None:
-        with patch("src.database.create_async_engine") as mock_create:
+        with (
+            patch("src.database.create_async_engine") as mock_create,
+        ):
             mock_create.return_value = MagicMock()
 
             from src.database import _create_engine
@@ -86,7 +91,9 @@ class TestStatementCacheDisabled:
     """AC#3: statement_cache_size=0 and prepared_statement_cache_size=0 in connect_args."""
 
     def test_connect_args_disables_statement_cache(self) -> None:
-        with patch("src.database.create_async_engine") as mock_create:
+        with (
+            patch("src.database.create_async_engine") as mock_create,
+        ):
             mock_create.return_value = MagicMock()
 
             from src.database import _create_engine
@@ -112,7 +119,9 @@ class TestNoAsyncCreatorOrRetry:
     """AC#4: async_creator and connection_retry wrapper removed."""
 
     def test_no_async_creator_in_engine(self) -> None:
-        with patch("src.database.create_async_engine") as mock_create:
+        with (
+            patch("src.database.create_async_engine") as mock_create,
+        ):
             mock_create.return_value = MagicMock()
 
             from src.database import _create_engine
@@ -168,7 +177,9 @@ class TestAnonymousPreparedStatements:
     """Verify prepared_statement_name_func returns empty string (anonymous statements)."""
 
     def test_connect_args_has_prepared_statement_name_func(self) -> None:
-        with patch("src.database.create_async_engine") as mock_create:
+        with (
+            patch("src.database.create_async_engine") as mock_create,
+        ):
             mock_create.return_value = MagicMock()
 
             from src.database import _create_engine

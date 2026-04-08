@@ -7,7 +7,7 @@ from types import MappingProxyType
 from typing import Any
 
 from cryptography.fernet import Fernet
-from sqlalchemy import TypeDecorator, text
+from sqlalchemy import TypeDecorator, event, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -16,8 +16,15 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import QueuePool
 
 from src.config import get_settings
+from src.monitoring.metrics import (
+    db_pool_checked_in,
+    db_pool_checked_out,
+    db_pool_overflow,
+    db_pool_size,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +118,29 @@ SUPAVISOR_CONNECT_ARGS: MappingProxyType[str, object] = MappingProxyType(
 )
 
 
+def _register_pool_metrics(engine: AsyncEngine, loop_name: str = "main") -> None:
+    raw_pool = engine.sync_engine.pool
+    if not isinstance(raw_pool, QueuePool):
+        logger.debug("Pool is %s, not QueuePool — skipping pool metrics", type(raw_pool).__name__)
+        return
+    pool = raw_pool
+    attrs = {"pool": loop_name}
+
+    def _update_gauges(*args: object, **kwargs: object) -> None:
+        try:
+            db_pool_checked_out.set(pool.checkedout(), attrs)
+            db_pool_checked_in.set(pool.checkedin(), attrs)
+            db_pool_overflow.set(pool.overflow(), attrs)
+            db_pool_size.set(pool.size(), attrs)
+        except Exception:
+            logger.debug("pool metric update failed", exc_info=True)
+
+    event.listen(pool, "checkout", _update_gauges)
+    event.listen(pool, "checkin", _update_gauges)
+
+    _update_gauges()
+
+
 def _create_engine() -> AsyncEngine:
     """Create the async engine with two-tier pooling (app QueuePool -> Supavisor -> PG).
 
@@ -163,7 +193,9 @@ def get_engine() -> AsyncEngine:
             del _engines[k]
             _session_makers.pop(k, None)
 
+        loop_name = "main" if loop_key == 0 or loop is None else "background"
         engine = _create_engine()
+        _register_pool_metrics(engine, loop_name)
         _engines[loop_key] = (engine, loop)
         return engine
 

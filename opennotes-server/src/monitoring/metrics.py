@@ -146,9 +146,27 @@ system_memory_available = meter.create_gauge(
     unit="By",
 )
 
-database_connections = meter.create_gauge(
-    "database.connections",
-    description="Number of active database connections",
+db_pool_checked_out = meter.create_gauge(
+    "db.pool.checked_out",
+    description="Connections currently checked out from pool",
+    unit="1",
+)
+
+db_pool_checked_in = meter.create_gauge(
+    "db.pool.checked_in",
+    description="Idle connections in pool",
+    unit="1",
+)
+
+db_pool_overflow = meter.create_gauge(
+    "db.pool.overflow",
+    description="Current overflow connections beyond pool_size",
+    unit="1",
+)
+
+db_pool_size = meter.create_gauge(
+    "db.pool.size",
+    description="Configured pool size",
     unit="1",
 )
 
