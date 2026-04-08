@@ -844,10 +844,16 @@ fi
 
 # Parse --tables flag if present
 TABLES_FLAG=""
+NEXT_IS_TABLES=false
 for arg in "$@"; do
+    if [ "$NEXT_IS_TABLES" = true ]; then
+        TABLES_FLAG="--tables $arg"
+        NEXT_IS_TABLES=false
+        continue
+    fi
     case "$arg" in
         --tables=*) TABLES_FLAG="--tables ${arg#--tables=}" ;;
-        --tables) TABLES_FLAG="--tables" ;;
+        --tables) NEXT_IS_TABLES=true ;;
     esac
 done
 

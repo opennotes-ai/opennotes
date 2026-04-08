@@ -425,7 +425,7 @@ def test_services():
             )
             print("")
             print("   Note: Ensure local services are running before executing tests:")
-            print("   $ docker compose up -d && mise run dev:up")
+            print("   $ mise run dev:up")
             print("")
 
             # Skip testcontainers setup, use existing environment
@@ -444,8 +444,7 @@ def test_services():
                 "   - Start Docker daemon\n"
                 "   - Tests will automatically use testcontainers\n"
                 "\n2. LOCAL SERVICES (Recommended for local development):\n"
-                "   - Start services: docker compose up -d\n"
-                "   - Wait for readiness: mise run dev:up\n"
+                "   - Start services: mise run dev:up\n"
                 "   - Export environment variables:\n"
                 "     export DATABASE_URL='postgresql+asyncpg://opennotes:testpass@localhost:5432/opennotes'\n"
                 "     export REDIS_URL='redis://localhost:6379/0'\n"

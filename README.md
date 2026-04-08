@@ -149,24 +149,27 @@ cd opennotes
 git submodule update --init --recursive
 ```
 
-### 2. Start the Server
+### 2. Configure Environment
+
+```console
+cp .env.example .env
+# Edit .env with your credentials (see .env.md for variable reference)
+```
+
+### 3. Start the Server
 
 ```console
 cd opennotes-server
-cp .env.example .env
-# Edit .env with your credentials (see .env.md for variable reference)
 uv sync --extra scoring
 uv run python -m src.main
 ```
 
 Server runs at http://localhost:8000
 
-### 3. Start the Discord Bot
+### 4. Start the Discord Bot
 
 ```console
 cd opennotes-discord
-cp .env.example .env
-# Edit .env with your Discord credentials (see .env.md for variable reference)
 pnpm install
 pnpm run build
 pnpm start
