@@ -5430,6 +5430,55 @@ export interface components {
             total_notes_rated: number;
         };
         /**
+         * ContentModerationClassificationResult
+         * @description Structured output from the ContentReviewerAgent.
+         *
+         *     Contains the agent's classification decision: confidence, category labels,
+         *     recommended action, action tier, and explanation. Added to MatchResult
+         *     union alongside existing match types.
+         */
+        ContentModerationClassificationResult: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            scan_type: "content_moderation_classification";
+            /**
+             * Confidence
+             * @description Classification confidence score
+             */
+            confidence: number;
+            /**
+             * Category Labels
+             * @description Category labels with flagged/not-flagged status
+             */
+            category_labels: {
+                [key: string]: boolean;
+            };
+            /**
+             * Category Scores
+             * @description Per-category confidence scores
+             */
+            category_scores?: {
+                [key: string]: number;
+            } | null;
+            /**
+             * Recommended Action
+             * @description Recommended action (hide, review, pass)
+             */
+            recommended_action?: string | null;
+            /**
+             * Action Tier
+             * @description Action tier (tier_1_immediate, tier_2_consensus)
+             */
+            action_tier?: string | null;
+            /**
+             * Explanation
+             * @description Human-readable explanation of the classification
+             */
+            explanation: string;
+        };
+        /**
          * ConversationFlashpointMatch
          * @description Match result from conversation flashpoint detection scan.
          */
@@ -5835,7 +5884,7 @@ export interface components {
              * Matches
              * @description List of match results from different scan types
              */
-            matches?: (components["schemas"]["SimilarityMatch"] | components["schemas"]["OpenAIModerationMatch"] | components["schemas"]["ConversationFlashpointMatch"])[];
+            matches?: (components["schemas"]["SimilarityMatch"] | components["schemas"]["OpenAIModerationMatch"] | components["schemas"]["ConversationFlashpointMatch"] | components["schemas"]["ContentModerationClassificationResult"])[];
         };
         /**
          * FlaggedMessageResource

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import Discriminator, Field, field_validator
@@ -46,6 +46,30 @@ class BulkScanMessage(StrictInputSchema):
     timestamp: datetime = Field(..., description="When the message was posted")
     attachment_urls: list[str] | None = Field(None, description="URLs of message attachments")
     embed_content: str | None = Field(None, description="Extracted text from message embeds")
+
+
+class ContentItem(StrictInputSchema):
+    """Platform-agnostic content item for the content reviewer agent.
+
+    Replaces BulkScanMessage at service boundaries. Each platform adapter
+    maps its native event to this schema, with platform-specific metadata
+    preserved in the platform_metadata bag.
+    """
+
+    content_id: str = Field(..., description="Platform-specific content identifier")
+    platform: str = Field(..., description="Source platform (discord, discourse, etc.)")
+    content_text: str = Field(..., description="Text content to be reviewed")
+    author_id: str = Field(..., description="Platform-specific author identifier")
+    author_username: str | None = Field(None, description="Author display name")
+    timestamp: datetime = Field(..., description="When the content was posted")
+    channel_id: str = Field(..., description="Platform-specific channel/topic identifier")
+    community_server_id: str = Field(
+        ..., description="Community server ID (platform-agnostic identifier)"
+    )
+    attachment_urls: list[str] | None = Field(None, description="URLs of content attachments")
+    platform_metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Platform-specific metadata bag"
+    )
 
 
 class BulkScanCreateRequest(StrictInputSchema):
@@ -112,8 +136,36 @@ class ConversationFlashpointMatch(StrictInputSchema):
     context_messages: int = Field(..., ge=0, description="Number of context messages analyzed")
 
 
+class ContentModerationClassificationResult(StrictInputSchema):
+    """Structured output from the ContentReviewerAgent.
+
+    Contains the agent's classification decision: confidence, category labels,
+    recommended action, action tier, and explanation. Added to MatchResult
+    union alongside existing match types.
+    """
+
+    scan_type: Literal["content_moderation_classification"] = "content_moderation_classification"
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Classification confidence score")
+    category_labels: dict[str, bool] = Field(
+        ..., description="Category labels with flagged/not-flagged status"
+    )
+    category_scores: dict[str, float] | None = Field(
+        None, description="Per-category confidence scores"
+    )
+    recommended_action: str | None = Field(
+        None, description="Recommended action (hide, review, pass)"
+    )
+    action_tier: str | None = Field(
+        None, description="Action tier (tier_1_immediate, tier_2_consensus)"
+    )
+    explanation: str = Field(..., description="Human-readable explanation of the classification")
+
+
 MatchResult = Annotated[
-    SimilarityMatch | OpenAIModerationMatch | ConversationFlashpointMatch,
+    SimilarityMatch
+    | OpenAIModerationMatch
+    | ConversationFlashpointMatch
+    | ContentModerationClassificationResult,
     Discriminator("scan_type"),
 ]
 

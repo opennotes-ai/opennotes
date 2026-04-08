@@ -15642,6 +15642,84 @@
         ],
         "title": "ConsensusMetricsData"
       },
+      "ContentModerationClassificationResult": {
+        "properties": {
+          "scan_type": {
+            "type": "string",
+            "const": "content_moderation_classification",
+            "title": "Scan Type",
+            "default": "content_moderation_classification"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "Classification confidence score"
+          },
+          "category_labels": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Category Labels",
+            "description": "Category labels with flagged/not-flagged status"
+          },
+          "category_scores": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Scores",
+            "description": "Per-category confidence scores"
+          },
+          "recommended_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended Action",
+            "description": "Recommended action (hide, review, pass)"
+          },
+          "action_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Tier",
+            "description": "Action tier (tier_1_immediate, tier_2_consensus)"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation",
+            "description": "Human-readable explanation of the classification"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confidence",
+          "category_labels",
+          "explanation"
+        ],
+        "title": "ContentModerationClassificationResult",
+        "description": "Structured output from the ContentReviewerAgent.\n\nContains the agent's classification decision: confidence, category labels,\nrecommended action, action tier, and explanation. Added to MatchResult\nunion alongside existing match types."
+      },
       "ConversationFlashpointMatch": {
         "properties": {
           "scan_type": {
@@ -16425,11 +16503,15 @@
                 },
                 {
                   "$ref": "#/components/schemas/ConversationFlashpointMatch"
+                },
+                {
+                  "$ref": "#/components/schemas/ContentModerationClassificationResult"
                 }
               ],
               "discriminator": {
                 "propertyName": "scan_type",
                 "mapping": {
+                  "content_moderation_classification": "#/components/schemas/ContentModerationClassificationResult",
                   "conversation_flashpoint": "#/components/schemas/ConversationFlashpointMatch",
                   "openai_moderation": "#/components/schemas/OpenAIModerationMatch",
                   "similarity": "#/components/schemas/SimilarityMatch"
