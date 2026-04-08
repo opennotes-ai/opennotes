@@ -23,7 +23,7 @@ export default class OpennotesAdminDashboard extends Component {
     this.error = null;
 
     try {
-      this.data = await ajax("/admin/plugins/opennotes/dashboard.json");
+      this.data = await ajax("/admin/plugins/discourse-opennotes/dashboard.json");
     } catch (e) {
       this.error = I18n.t("opennotes.dashboard.error");
     } finally {

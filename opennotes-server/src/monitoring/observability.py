@@ -35,7 +35,7 @@ def setup_observability(
     sample_rate: float = 0.1,
     use_gcp_exporters: bool = True,
     enable_console_export: bool = False,
-    tail_level_threshold: LevelName | None = "notice",
+    tail_level_threshold: LevelName | None = "warning",
     tail_duration_threshold: float | None = 5.0,
 ) -> bool:
     """Initialize observability with Logfire + Cloud Trace dual export.

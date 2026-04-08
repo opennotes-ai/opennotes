@@ -3803,31 +3803,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/health/taskiq": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Taskiq Health
-         * @description Check taskiq broker health status.
-         *
-         *     Returns status information about the taskiq background task system:
-         *     - Whether the broker is initialized
-         *     - The configured stream name
-         *     - Number of registered tasks
-         */
-        get: operations["taskiq_health_health_taskiq_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/health/dbos": {
         parameters: {
             query?: never;
@@ -17728,26 +17703,6 @@ export interface operations {
         };
     };
     nats_health_health_nats_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServiceStatus"];
-                };
-            };
-        };
-    };
-    taskiq_health_health_taskiq_get: {
         parameters: {
             query?: never;
             header?: never;

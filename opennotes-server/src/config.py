@@ -555,7 +555,7 @@ class Settings(BaseSettings):
     LOGFIRE_TAIL_LEVEL_THRESHOLD: (
         Literal["trace", "debug", "info", "notice", "warn", "warning", "error", "fatal"] | None
     ) = Field(
-        default="notice",
+        default="warning",
         description="Minimum log level that always passes Logfire tail sampling "
         "(e.g., notice, warning, error). Traces with spans at or above this level "
         "are always sent to Logfire regardless of TRACING_SAMPLE_RATE.",
