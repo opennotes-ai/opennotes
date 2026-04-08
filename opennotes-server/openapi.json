@@ -18435,6 +18435,18 @@
           },
           "review_group": {
             "$ref": "#/components/schemas/ReviewGroup"
+          },
+          "applied_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied At"
           }
         },
         "additionalProperties": false,

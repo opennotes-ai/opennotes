@@ -34,6 +34,7 @@ class ModerationActionCreate(StrictInputSchema):
     action_state: ActionState = ActionState.PROPOSED
     classifier_evidence: dict[str, Any]
     review_group: ReviewGroup
+    applied_at: datetime | None = None
 
     @field_validator("classifier_evidence")
     @classmethod

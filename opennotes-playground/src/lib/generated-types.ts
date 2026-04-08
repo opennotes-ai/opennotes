@@ -6622,6 +6622,8 @@ export interface components {
                 [key: string]: unknown;
             };
             review_group: components["schemas"]["ReviewGroup"];
+            /** Applied At */
+            applied_at?: string | null;
         };
         /** ModerationActionUpdate */
         ModerationActionUpdate: {
