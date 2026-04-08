@@ -802,6 +802,36 @@ run = "python3 opennotes/scripts/validate-api-endpoints.py"
 alias = "validate-api"
 
 # ========================================
+# Fixture Tasks
+# ========================================
+
+[tasks."tools:greenmask"]
+description = "Install Greenmask CLI for database anonymization"
+run = '''
+VERSION="0.2.5"
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+esac
+INSTALL_DIR="$HOME/.local/bin"
+mkdir -p "$INSTALL_DIR"
+URL="https://github.com/GreenmaskIO/greenmask/releases/download/v${VERSION}/greenmask-${VERSION}-${OS}-${ARCH}.tar.gz"
+echo "Downloading Greenmask v${VERSION}..."
+curl -fsSL "$URL" | tar xz -C "$INSTALL_DIR" greenmask
+chmod +x "$INSTALL_DIR/greenmask"
+echo "Greenmask installed to $INSTALL_DIR/greenmask"
+'''
+
+[tasks."fixture:generate-config"]
+description = "Generate Greenmask anonymization config from SQLAlchemy models"
+run = '''
+cd opennotes-server
+uv run python ../scripts/fixtures/generate_greenmask_config.py "$@"
+'''
+
+# ========================================
 # Task Configuration
 # ========================================
 
