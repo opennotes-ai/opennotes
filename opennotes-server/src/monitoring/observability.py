@@ -116,6 +116,33 @@ def setup_observability(
                     )
 
             from logfire import SamplingOptions
+            from logfire.sampling import TailSamplingSpanInfo
+
+            def _module_aware_tail_sampler(info: TailSamplingSpanInfo) -> float:
+                if info.level >= "warning":
+                    return 1.0
+                if tail_duration_threshold and info.duration >= tail_duration_threshold:
+                    return 1.0
+
+                span = info.span
+                attrs = dict(span.attributes) if span.attributes else {}
+                scope = (
+                    span.instrumentation_scope.name if span.instrumentation_scope else ""
+                ) or ""
+                name = span.name or ""
+
+                if (
+                    attrs.get("gen_ai.system")
+                    or "anthropic" in name.lower()
+                    or "openai" in name.lower()
+                ):
+                    return 0.2
+                if "dbos" in name.lower() or "dbos" in scope.lower():
+                    return 0.01
+                if "sqlalchemy" in scope or attrs.get("db.system"):
+                    return 0.01
+
+                return sample_rate
 
             logfire.configure(
                 token=logfire_token,
@@ -124,11 +151,9 @@ def setup_observability(
                 environment=environment,
                 send_to_logfire="if-token-present" if not logfire_token else True,
                 additional_span_processors=additional_processors,
-                sampling=SamplingOptions.level_or_duration(
+                sampling=SamplingOptions(
                     head=1.0,
-                    level_threshold=tail_level_threshold,
-                    duration_threshold=tail_duration_threshold,
-                    background_rate=sample_rate,
+                    tail=_module_aware_tail_sampler,
                 ),
                 scrubbing=False if trace_content else None,
             )

@@ -188,7 +188,7 @@ class TestObservabilityConfigureParams:
     @patch(LOGFIRE_CONFIGURE_PATH)
     @patch(LOGFIRE_INSTRUMENT_ANTHROPIC_PATH)
     @patch(LOGFIRE_INSTRUMENT_OPENAI_PATH)
-    def test_tail_sampling_with_level_or_duration(
+    def test_tail_sampling_with_custom_module_sampler(
         self, mock_openai, mock_anthropic, mock_configure, mock_is_gcp
     ):
         import src.monitoring.observability as obs_mod
@@ -207,6 +207,7 @@ class TestObservabilityConfigureParams:
         sampling = call_kwargs["sampling"]
         assert sampling.head == 1.0
         assert sampling.tail is not None
+        assert callable(sampling.tail)
 
     @patch(GCP_DETECTOR_PATH, return_value=False)
     @patch(LOGFIRE_CONFIGURE_PATH)
