@@ -37,6 +37,8 @@ def upgrade() -> None:
             BEGIN
                 IF NOT (SELECT relrowsecurity FROM pg_class WHERE relname = '{table}') THEN
                     EXECUTE 'ALTER TABLE {table} ENABLE ROW LEVEL SECURITY';
+                END IF;
+                IF NOT (SELECT relforcerowsecurity FROM pg_class WHERE relname = '{table}') THEN
                     EXECUTE 'ALTER TABLE {table} FORCE ROW LEVEL SECURITY';
                 END IF;
             END

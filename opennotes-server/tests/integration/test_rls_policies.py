@@ -142,6 +142,77 @@ class TestRLSPolicies:
             await conn.execute(text("RESET ROLE"))
 
     @pytest.mark.asyncio
+    async def test_member_cannot_see_other_community_moderation_actions(self):
+        ids = await self._seed_test_data()
+
+        other_community_id = uuid4()
+        other_request_id = uuid4()
+        other_action_id = uuid4()
+
+        async with get_session_maker()() as session:
+            await session.execute(
+                insert(CommunityServer).values(
+                    id=other_community_id,
+                    platform="discord",
+                    platform_community_server_id=f"rls-test-other-{other_community_id}",
+                    name="Other Community",
+                )
+            )
+            await session.execute(
+                insert(Request).values(
+                    id=other_request_id,
+                    request_id=f"rls-test-other-req-{other_request_id}",
+                    community_server_id=other_community_id,
+                    requested_by="other-user",
+                    status="COMPLETED",
+                )
+            )
+            await session.execute(
+                insert(ModerationAction).values(
+                    id=other_action_id,
+                    request_id=other_request_id,
+                    community_server_id=other_community_id,
+                    action_type="hide",
+                    action_tier="tier_1_immediate",
+                    action_state="proposed",
+                    review_group="community",
+                )
+            )
+            await session.commit()
+
+        engine = get_engine()
+        async with engine.connect() as conn, conn.begin():
+            await conn.execute(text("GRANT USAGE ON SCHEMA public TO authenticated"))
+            await conn.execute(text("GRANT USAGE ON SCHEMA auth TO authenticated"))
+            await conn.execute(text("GRANT SELECT ON moderation_actions TO authenticated"))
+            await conn.execute(text("GRANT SELECT ON community_members TO authenticated"))
+            await conn.execute(text("GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated"))
+            await conn.execute(
+                text("GRANT EXECUTE ON FUNCTION public.is_community_member(uuid) TO authenticated")
+            )
+
+            await conn.execute(
+                text(f"""
+                    CREATE OR REPLACE FUNCTION auth.uid()
+                    RETURNS uuid
+                    LANGUAGE sql
+                    STABLE
+                    AS $$ SELECT '{ids["member_profile_id"]}'::uuid $$
+                """)
+            )
+
+            await conn.execute(text("SET LOCAL ROLE authenticated"))
+
+            result = await conn.execute(text("SELECT id FROM moderation_actions"))
+            rows = result.fetchall()
+
+            assert len(rows) == 1
+            assert rows[0][0] == ids["moderation_action_id"]
+            assert other_action_id not in [r[0] for r in rows]
+
+            await conn.execute(text("RESET ROLE"))
+
+    @pytest.mark.asyncio
     async def test_non_member_sees_zero_moderation_actions(self):
         await self._seed_test_data()
 
