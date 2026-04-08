@@ -78,8 +78,8 @@ if [ -n "${DATABASE_URL:-}" ]; then
             echo "Fix: Update .env.yaml to use 'localhost' instead of '$DB_HOST':" >&2
             echo "    DATABASE_URL=postgresql+asyncpg://...@localhost:5432/..." >&2
             echo "" >&2
-            echo "Containers receive their own URLs via OpenTofu env vars," >&2
-            echo "so this change only affects host-side tools (mise, alembic, pytest)." >&2
+            echo "Containers receive their own URLs via Docker Compose environment configuration." >&2
+            echo "This change only affects host-side tools (mise, alembic, pytest)." >&2
             exit 1
         fi
     fi
@@ -93,8 +93,8 @@ CONTAINER_NAME="opennotes-postgres"
 if ! docker ps -a -q -f name="$CONTAINER_NAME" | grep -q .; then
     echo "Error: Container '$CONTAINER_NAME' does not exist." >&2
     echo "" >&2
-    echo "The database container is managed by OpenTofu. Please run:" >&2
-    echo "    mise run apply:infra:local" >&2
+    echo "The database container is managed by Docker Compose. Start it with:" >&2
+    echo "    docker compose up -d postgres" >&2
     echo "" >&2
     exit 1
 fi

@@ -68,11 +68,6 @@ jobs:
           path: ~/.local/share/mise/installs
           key: mise-${{ runner.os }}-${{ hashFiles('**/mise.toml', '**/.mise.toml') }}
 
-      - name: Install OpenTofu
-        uses: opentofu/setup-opentofu@v1
-        with:
-          tofu_version: 1.8.2
-
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
