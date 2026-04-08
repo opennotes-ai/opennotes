@@ -163,6 +163,19 @@ dir = "{{vars.playground_dir}}"
 run = "pnpm dev"
 env = { PORT = "3100" }
 
+[tasks."dev:up"]
+description = "Start all services via Docker Compose"
+depends = ["build:containers:postgres"]
+run = "docker compose up -d"
+
+[tasks."dev:down"]
+description = "Stop all services via Docker Compose"
+run = "docker compose down"
+
+[tasks."dev:ps"]
+description = "Show service status"
+run = "docker compose ps"
+
 # ========================================
 # Testing Tasks
 # ========================================
