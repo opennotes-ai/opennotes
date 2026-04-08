@@ -645,7 +645,7 @@ def _run_batch_scan_steps(
             step_errors.append(f"flashpoint: {e}")
 
     try:
-        filter_result = relevance_filter_step(
+        filter_result = content_reviewer_step(
             scan_id=scan_id,
             community_server_id=community_server_id,
             batch_number=batch_number,
@@ -656,8 +656,8 @@ def _run_batch_scan_steps(
         errors = filter_result.get("errors", 0) + len(step_errors)
         return flagged_count, errors
     except Exception as e:
-        logger.error("relevance_filter_step failed", exc_info=True)
-        step_errors.append(f"relevance: {e}")
+        logger.error("content_reviewer_step failed", exc_info=True)
+        step_errors.append(f"content_reviewer: {e}")
         return 0, len(step_errors)
 
 
@@ -1377,6 +1377,216 @@ def flashpoint_scan_step(
 
 
 @DBOS.step()
+def content_reviewer_step(
+    scan_id: str,
+    community_server_id: str,
+    batch_number: int,
+    similarity_candidates_key: str,
+    flashpoint_candidates_key: str,
+) -> dict[str, Any]:
+    """Run ContentReviewerAgent + ModerationPolicyEvaluator on all scan candidates.
+
+    Loads similarity and flashpoint candidates from Redis, groups them by message_id
+    into evidence bundles, invokes ContentReviewerService.classify() once per unique
+    message with all pre-computed evidence, applies ModerationPolicyEvaluator, and
+    stores flagged results.
+
+    Args:
+        scan_id: UUID string of the scan
+        community_server_id: UUID string of the community server
+        batch_number: Batch number being processed
+        similarity_candidates_key: Redis key with similarity candidates
+        flashpoint_candidates_key: Redis key with flashpoint candidates
+
+    Returns:
+        dict with: flagged_count, errors, policy_decisions
+    """
+    from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+    from src.bulk_content_scan.policy_evaluator import (
+        ModerationPolicyConfig,
+        ModerationPolicyEvaluator,
+    )
+    from src.bulk_content_scan.schemas import (
+        FlaggedMessage,
+        ScanCandidate,
+        bulk_scan_message_to_content_item,
+    )
+    from src.bulk_content_scan.service import BulkContentScanService
+    from src.cache.redis_client import get_shared_redis_client
+    from src.config import get_settings
+    from src.database import get_session_maker
+    from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
+    from src.fact_checking.embedding_service import EmbeddingService
+
+    settings = get_settings()
+    scan_uuid = UUID(scan_id)
+
+    async def _content_reviewer() -> dict[str, Any]:
+        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
+
+        all_candidates: list[ScanCandidate] = []
+        errors = 0
+
+        if similarity_candidates_key:
+            try:
+                sim_data = await load_messages_from_redis(redis_conn, similarity_candidates_key)
+                all_candidates.extend(ScanCandidate.model_validate(c) for c in sim_data)
+            except ValueError:
+                logger.warning(
+                    "Similarity candidates Redis key expired or missing",
+                    extra={"scan_id": scan_id, "key": similarity_candidates_key},
+                )
+                errors += 1
+
+        if flashpoint_candidates_key:
+            try:
+                fp_data = await load_messages_from_redis(redis_conn, flashpoint_candidates_key)
+                all_candidates.extend(ScanCandidate.model_validate(c) for c in fp_data)
+            except ValueError:
+                logger.warning(
+                    "Flashpoint candidates Redis key expired or missing",
+                    extra={"scan_id": scan_id, "key": flashpoint_candidates_key},
+                )
+                errors += 1
+
+        if not all_candidates:
+            return {"flagged_count": 0, "errors": errors, "policy_decisions": []}
+
+        async with get_session_maker()() as session:
+            llm_service = _get_llm_service()
+            embedding_service = EmbeddingService(llm_service)
+            from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
+
+            flashpoint_service = get_flashpoint_service()
+            service = BulkContentScanService(
+                session=session,
+                embedding_service=embedding_service,
+                redis_client=redis_conn,
+                llm_service=llm_service,
+                flashpoint_service=flashpoint_service,
+            )
+
+            if await _scan_is_inactive_async(session, redis_conn, scan_uuid):
+                logger.info(
+                    "Content reviewer step skipped because scan is already terminal/finalizing",
+                    extra={"scan_id": scan_id, "batch_number": batch_number},
+                )
+                return {"flagged_count": 0, "errors": errors, "policy_decisions": []}
+
+            evidence_by_message: dict[str, list[ScanCandidate]] = {}
+            for candidate in all_candidates:
+                msg_id = candidate.message.message_id
+                evidence_by_message.setdefault(msg_id, []).append(candidate)
+
+            reviewer_service = ContentReviewerService()
+            evaluator = ModerationPolicyEvaluator()
+            policy_config = ModerationPolicyConfig()
+
+            flagged_messages: list[FlaggedMessage] = []
+            policy_decisions: list[dict[str, Any]] = []
+
+            try:
+                for msg_id, candidates in evidence_by_message.items():
+                    pre_computed = [c.match_data for c in candidates]
+                    content_item = bulk_scan_message_to_content_item(candidates[0].message)
+
+                    classification = await reviewer_service.classify(
+                        content_item=content_item,
+                        pre_computed_evidence=pre_computed,
+                    )
+
+                    policy_decision = evaluator.evaluate(classification, policy_config)
+
+                    first_candidate = candidates[0]
+                    flagged_msg = FlaggedMessage(
+                        message_id=first_candidate.message.message_id,
+                        channel_id=first_candidate.message.channel_id,
+                        content=first_candidate.message.content,
+                        author_id=first_candidate.message.author_id,
+                        timestamp=first_candidate.message.timestamp,
+                        matches=[c.match_data for c in candidates],
+                    )
+                    flagged_messages.append(flagged_msg)
+
+                    action_tier_value = (
+                        policy_decision.action_tier.value
+                        if policy_decision.action_tier is not None
+                        else None
+                    )
+                    action_type_value = (
+                        policy_decision.action_type.value
+                        if policy_decision.action_type is not None
+                        else None
+                    )
+                    review_group_value = (
+                        policy_decision.review_group.value
+                        if policy_decision.review_group is not None
+                        else None
+                    )
+                    policy_decisions.append(
+                        {
+                            "message_id": msg_id,
+                            "action_tier": action_tier_value,
+                            "action_type": action_type_value,
+                            "review_group": review_group_value,
+                            "reason": policy_decision.reason,
+                        }
+                    )
+
+                if await _skip_step_persist_if_scan_terminal(
+                    session,
+                    redis_conn,
+                    scan_uuid,
+                    step_name="ContentReviewer",
+                    scan_id=scan_id,
+                    batch_number=batch_number,
+                ):
+                    return {"flagged_count": 0, "errors": errors, "policy_decisions": []}
+
+                for msg in flagged_messages:
+                    await service.append_flagged_result(scan_uuid, msg)
+
+                return {
+                    "flagged_count": len(flagged_messages),
+                    "errors": errors,
+                    "policy_decisions": policy_decisions,
+                }
+
+            except Exception as e:
+                logger.warning(
+                    "Error in content reviewer step",
+                    extra={
+                        "scan_id": scan_id,
+                        "batch_number": batch_number,
+                        "error": str(e),
+                    },
+                )
+                if await _skip_step_persist_if_scan_terminal(
+                    session,
+                    redis_conn,
+                    scan_uuid,
+                    step_name="ContentReviewer",
+                    scan_id=scan_id,
+                    batch_number=batch_number,
+                ):
+                    return {"flagged_count": 0, "errors": errors, "policy_decisions": []}
+
+                await service.record_error(
+                    scan_id=scan_uuid,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    batch_number=batch_number,
+                )
+                return {
+                    "flagged_count": 0,
+                    "errors": errors + len(all_candidates),
+                    "policy_decisions": [],
+                }
+
+    return run_sync(_content_reviewer())
+
+
+@DBOS.step()
 def relevance_filter_step(
     scan_id: str,
     community_server_id: str,
@@ -1385,6 +1595,9 @@ def relevance_filter_step(
     flashpoint_candidates_key: str,
 ) -> dict[str, Any]:
     """Run unified relevance filtering on all candidates.
+
+    DEPRECATED: Use content_reviewer_step instead. This step is preserved for
+    backward compatibility and will be removed in a follow-up task.
 
     Reads similarity and flashpoint candidates from Redis, runs the LLM
     relevance check, and appends flagged results to scan results.
