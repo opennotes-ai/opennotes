@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.pool import QueuePool
 
 from src.database import _register_pool_metrics
 from src.monitoring.metrics import (
@@ -10,12 +12,14 @@ from src.monitoring.metrics import (
     db_pool_size,
 )
 
+pytestmark = pytest.mark.unit
+
 
 def _make_mock_engine(
     checkedout: int = 2, checkedin: int = 3, overflow: int = 1, size: int = 5
 ) -> MagicMock:
     engine = MagicMock(spec=AsyncEngine)
-    pool = MagicMock()
+    pool = MagicMock(spec=QueuePool)
     pool.checkedout.return_value = checkedout
     pool.checkedin.return_value = checkedin
     pool.overflow.return_value = overflow

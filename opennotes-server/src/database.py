@@ -4,7 +4,7 @@ import logging
 import threading
 from collections.abc import AsyncGenerator
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any
 
 from cryptography.fernet import Fernet
 from sqlalchemy import TypeDecorator, event, text
@@ -119,7 +119,11 @@ SUPAVISOR_CONNECT_ARGS: MappingProxyType[str, object] = MappingProxyType(
 
 
 def _register_pool_metrics(engine: AsyncEngine) -> None:
-    pool = cast(QueuePool, engine.sync_engine.pool)
+    raw_pool = engine.sync_engine.pool
+    if not isinstance(raw_pool, QueuePool):
+        logger.debug("Pool is %s, not QueuePool — skipping pool metrics", type(raw_pool).__name__)
+        return
+    pool = raw_pool
 
     def _update_gauges(*args: object, **kwargs: object) -> None:
         try:
@@ -128,7 +132,7 @@ def _register_pool_metrics(engine: AsyncEngine) -> None:
             db_pool_overflow.set(pool.overflow())
             db_pool_size.set(pool.size())
         except Exception:
-            pass
+            logger.debug("pool metric update failed", exc_info=True)
 
     event.listen(pool, "checkout", _update_gauges)
     event.listen(pool, "checkin", _update_gauges)
