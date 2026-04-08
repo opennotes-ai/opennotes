@@ -218,7 +218,7 @@ export default function DashboardPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      console.error("Failed to copy to clipboard");
+      alert("Failed to copy. Please select and copy the key manually.");
     }
   }
 
