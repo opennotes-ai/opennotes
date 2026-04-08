@@ -826,10 +826,8 @@ echo "Greenmask installed to $INSTALL_DIR/greenmask"
 
 [tasks."fixture:generate-config"]
 description = "Generate Greenmask anonymization config from SQLAlchemy models"
-run = '''
-cd opennotes-server
-uv run python ../scripts/fixtures/generate_greenmask_config.py "$@"
-'''
+dir = "{{vars.server_dir}}"
+run = 'uv run python ../scripts/fixtures/generate_greenmask_config.py "$@"'
 
 # ========================================
 # Task Configuration

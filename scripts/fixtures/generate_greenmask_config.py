@@ -17,7 +17,8 @@ def _load_rules() -> dict:
         "_anonymization_rules",
         _SCRIPTS_FIXTURES_DIR / "anonymization_rules.py",
     )
-    assert spec is not None and spec.loader is not None
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load anonymization_rules.py from {_SCRIPTS_FIXTURES_DIR}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)  # type: ignore[union-attr]
     return module.RULES  # type: ignore[attr-defined]

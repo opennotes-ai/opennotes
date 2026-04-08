@@ -51,6 +51,7 @@ class TestGenerateConfig:
             "note_publisher_posts",
             "note_publisher_config",
             "community_server_llm_config",
+            "community_members",
             "previously_seen_messages",
         }
         for table in expected_tables:
@@ -63,7 +64,7 @@ class TestGenerateConfig:
         assert col_to_transformer["email"] == "RandomEmail"
         assert col_to_transformer["username"] == "RandomFirstName"
         assert col_to_transformer["hashed_password"] == "Hash"
-        assert col_to_transformer["discord_id"] == "RandomInt"
+        assert col_to_transformer["discord_id"] == "Hash"
         assert col_to_transformer["full_name"] == "RandomLastName"
 
     def test_audit_logs_pii_columns(self):
@@ -72,6 +73,16 @@ class TestGenerateConfig:
         col_to_transformer = {t["params"]["column"]: t["name"] for t in entry["transformers"]}
         assert col_to_transformer["ip_address"] == "RandomIPv4"
         assert col_to_transformer["user_agent"] == "RandomString"
+        assert col_to_transformer["details"] == "SetNull"
+
+    def test_community_members_pii_columns(self):
+        config = generate_config()
+        entry = next(
+            e for e in config["dump"]["transformation"] if e["name"] == "community_members"
+        )
+        col_to_transformer = {t["params"]["column"]: t["name"] for t in entry["transformers"]}
+        assert col_to_transformer["banned_reason"] == "SetNull"
+        assert col_to_transformer["invitation_reason"] == "SetNull"
 
     def test_api_keys_pii_columns(self):
         config = generate_config()
@@ -127,15 +138,14 @@ class TestGenerateConfig:
         assert hash_transformer["name"] == "Hash"
         assert hash_transformer["params"]["algorithm"] == "sha256"
 
-    def test_random_int_transformer_includes_min_max(self):
+    def test_hash_transformer_for_string_id_columns(self):
         config = generate_config()
         users_entry = next(e for e in config["dump"]["transformation"] if e["name"] == "users")
         discord_transformer = next(
             t for t in users_entry["transformers"] if t["params"]["column"] == "discord_id"
         )
-        assert discord_transformer["name"] == "RandomInt"
-        assert discord_transformer["params"]["min"] == 100000000000000000
-        assert discord_transformer["params"]["max"] == 999999999999999999
+        assert discord_transformer["name"] == "Hash"
+        assert discord_transformer["params"]["algorithm"] == "sha256"
 
     def test_database_url_placeholder_in_config(self):
         config = generate_config()
