@@ -12,12 +12,18 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.bulk_content_scan.capabilities import (
+    check_content_moderation,
+    detect_flashpoint,
+    search_similar_claims,
+)
 from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
 from src.bulk_content_scan.schemas import (
     BulkScanMessage,
     BulkScanStatus,
+    ContentItem,
     ConversationFlashpointMatch,
     FlaggedMessage,
     OpenAIModerationMatch,
@@ -103,6 +109,30 @@ def _get_redis_skipped_count_key(scan_id: UUID) -> str:
     Example: production:bulk_scan:skipped:abc-123
     """
     return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:skipped:{scan_id}"
+
+
+def _bulk_scan_message_to_content_item(
+    message: BulkScanMessage,
+    community_server_platform_id: str,
+) -> ContentItem:
+    """Convert a BulkScanMessage to a ContentItem for capability functions.
+
+    BulkScanMessage is the legacy Discord-centric schema. ContentItem is the
+    platform-agnostic schema expected by capability functions. This bridge
+    allows the service layer to keep working with BulkScanMessage internally
+    while capability functions operate on ContentItem.
+    """
+    return ContentItem(
+        content_id=message.message_id,
+        platform="discord",
+        content_text=message.content,
+        author_id=message.author_id,
+        author_username=message.author_username,
+        timestamp=message.timestamp,
+        channel_id=message.channel_id,
+        community_server_id=community_server_platform_id,
+        attachment_urls=message.attachment_urls,
+    )
 
 
 class BulkContentScanService:
@@ -371,7 +401,7 @@ class BulkContentScanService:
 
     async def _generate_candidate(
         self,
-        scan_id: UUID,
+        _scan_id: UUID,
         message: BulkScanMessage,
         community_server_platform_id: str,
         scan_type: ScanType,
@@ -379,8 +409,9 @@ class BulkContentScanService:
     ) -> ScanCandidate | None:
         """Generate a ScanCandidate using the appropriate scanner.
 
-        This dispatches to _similarity_scan_candidate(), _moderation_scan_candidate(),
-        or _flashpoint_scan_candidate() based on scan_type.
+        Delegates to standalone capability functions (search_similar_claims,
+        check_content_moderation, detect_flashpoint) and wraps their results
+        in a ScanCandidate for the unified relevance filter.
 
         Args:
             scan_id: UUID of the scan
@@ -392,20 +423,65 @@ class BulkContentScanService:
         Returns:
             ScanCandidate if match found, None otherwise
         """
+        content_item = _bulk_scan_message_to_content_item(message, community_server_platform_id)
+
         match scan_type:
             case ScanType.SIMILARITY:
-                return await self._similarity_scan_candidate(
-                    scan_id, message, community_server_platform_id
+                similarity_match = await search_similar_claims(
+                    content_item=content_item,
+                    embedding_service=self.embedding_service,
+                    session=self.session,
                 )
+                if similarity_match is not None:
+                    return ScanCandidate(
+                        message=message,
+                        scan_type=ScanType.SIMILARITY.value,
+                        match_data=similarity_match,
+                        score=similarity_match.score,
+                        matched_content=similarity_match.matched_claim,
+                        matched_source=similarity_match.matched_source or None,
+                    )
+
             case ScanType.OPENAI_MODERATION:
-                return await self._moderation_scan_candidate(scan_id, message)
-            case ScanType.CONVERSATION_FLASHPOINT:
-                return await self._flashpoint_scan_candidate(
-                    scan_id, message, context_messages or []
+                moderation_match = await check_content_moderation(
+                    content_item=content_item,
+                    moderation_service=self.moderation_service,
                 )
+                if moderation_match is not None:
+                    matched_content = ", ".join(moderation_match.flagged_categories)
+                    return ScanCandidate(
+                        message=message,
+                        scan_type=ScanType.OPENAI_MODERATION.value,
+                        match_data=moderation_match,
+                        score=moderation_match.max_score,
+                        matched_content=matched_content,
+                        matched_source=None,
+                    )
+
+            case ScanType.CONVERSATION_FLASHPOINT:
+                context_items = [
+                    _bulk_scan_message_to_content_item(m, community_server_platform_id)
+                    for m in (context_messages or [])
+                ]
+                flashpoint_match = await detect_flashpoint(
+                    content_item=content_item,
+                    context_items=context_items,
+                    flashpoint_service=self.flashpoint_service,
+                )
+                if flashpoint_match is not None:
+                    return ScanCandidate(
+                        message=message,
+                        scan_type=ScanType.CONVERSATION_FLASHPOINT.value,
+                        match_data=flashpoint_match,
+                        score=flashpoint_match.derailment_score / 100.0,
+                        matched_content=flashpoint_match.reasoning,
+                        matched_source=None,
+                    )
+
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
-                return None
+
+        return None
 
     def _build_score_info_from_candidate(self, candidate: ScanCandidate) -> dict:
         """Build score_info dict from a ScanCandidate for debug mode.

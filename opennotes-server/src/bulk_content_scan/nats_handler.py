@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
-from src.bulk_content_scan.schemas import BulkScanStatus, FlaggedMessage
+from src.bulk_content_scan.schemas import (
+    BulkScanStatus,
+    FlaggedMessage,
+    bulk_scan_message_to_content_item,
+)
 from src.community_config.models import CommunityConfig
 from src.config import settings
 from src.database import get_session_maker
@@ -266,7 +270,8 @@ class BulkScanEventHandler:
         scan_types = await self._get_scan_types_for_community(event.community_server_id)
         orchestrator_workflow_id = str(event.scan_id)
 
-        messages_data = [msg.model_dump(mode="json") for msg in event.messages]
+        content_items = [bulk_scan_message_to_content_item(msg) for msg in event.messages]
+        messages_data = [item.model_dump(mode="json") for item in content_items]
         messages_redis_key = get_batch_redis_key(str(event.scan_id), event.batch_number, "messages")
         await store_messages_in_redis(self.redis_client, messages_redis_key, messages_data)
 

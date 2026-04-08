@@ -72,6 +72,27 @@ class ContentItem(StrictInputSchema):
     )
 
 
+def bulk_scan_message_to_content_item(msg: "BulkScanMessage") -> "ContentItem":
+    """Convert a Discord BulkScanMessage to a platform-agnostic ContentItem.
+
+    Discord-specific fields (embed_content) are preserved in platform_metadata.
+    """
+    return ContentItem(
+        content_id=msg.message_id,
+        platform="discord",
+        content_text=msg.content,
+        author_id=msg.author_id,
+        author_username=msg.author_username,
+        timestamp=msg.timestamp,
+        channel_id=msg.channel_id,
+        community_server_id=msg.community_server_id,
+        attachment_urls=msg.attachment_urls,
+        platform_metadata={
+            "embed_content": msg.embed_content,
+        },
+    )
+
+
 class BulkScanCreateRequest(StrictInputSchema):
     """Request schema for initiating a new bulk content scan."""
 
