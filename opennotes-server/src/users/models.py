@@ -109,6 +109,12 @@ class APIKey(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     scopes: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True, default=None)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: pendulum.now("UTC")
