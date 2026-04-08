@@ -18,11 +18,21 @@ run = "bash docker/bootstrap.sh"
 [tasks."discourse:up"]
 description = "Start Discourse dev environment"
 run = '''
-if [ ! -d "docker/.discourse" ]; then
-  echo "Discourse not bootstrapped yet. Run: mise run discourse:bootstrap"
-  exit 1
+if docker ps -q -f name=discourse_dev 2>/dev/null | grep -q .; then
+  echo "discourse_dev container already running"
+else
+  if [ ! -d "docker/.discourse" ]; then
+    echo "Discourse not bootstrapped yet. Run: mise run discourse:bootstrap"
+    exit 1
+  fi
+  cd docker/.discourse && d/boot_dev
 fi
-cd docker/.discourse && d/boot_dev
+
+if ! docker exec discourse_dev getent hosts host.docker.internal > /dev/null 2>&1; then
+  GATEWAY_IP=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+  docker exec discourse_dev bash -c "echo '$GATEWAY_IP host.docker.internal' >> /etc/hosts"
+  echo "Added host.docker.internal -> $GATEWAY_IP"
+fi
 '''
 
 [tasks."discourse:down"]

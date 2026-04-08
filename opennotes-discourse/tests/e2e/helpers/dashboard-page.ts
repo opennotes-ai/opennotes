@@ -4,7 +4,7 @@ export class DashboardPage {
   constructor(private page: Page) {}
 
   async goToDashboard(): Promise<void> {
-    await this.page.goto("/admin/plugins/opennotes");
+    await this.page.goto("/admin/plugins/discourse-opennotes");
     await this.page.waitForLoadState("domcontentloaded");
   }
 

@@ -61,6 +61,23 @@ test.describe("Discourse smoke tests", () => {
     expect(text).toContain("server");
   });
 
+  test("admin dashboard route resolves without routing error", async ({ page }) => {
+    const login = new LoginPage(page);
+    await login.loginAsAdmin();
+    await page.goto("/admin/plugins/discourse-opennotes/dashboard", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(3000);
+    const text = await page.textContent("body");
+    expect(text).not.toContain("No route matches");
+    expect(text).not.toContain("Routing Error");
+    const dashboardOrPlugin = await page
+      .locator(".opennotes-admin-dashboard, .admin-plugin-outlet")
+      .first()
+      .isVisible()
+      .catch(() => false);
+    const hasOpennotesContent = text?.toLowerCase().includes("opennotes") ?? false;
+    expect(dashboardOrPlugin || hasOpennotesContent).toBe(true);
+  });
+
   test("reviewer can navigate to categories", async ({ page }) => {
     const login = new LoginPage(page);
     const nav = new NavigationPage(page);

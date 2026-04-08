@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 # name: discourse-opennotes
-# about: Community moderation powered by OpenNotes — community-driven context notes with consensus scoring
+# about: Open Notes - Moderation — community-driven context notes with consensus scoring
 # version: 0.1.0
-# authors: OpenNotes
+# authors: Open Notes
 # url: https://github.com/opennotes-ai/discourse-opennotes
 # required_version: 3.2.0
 

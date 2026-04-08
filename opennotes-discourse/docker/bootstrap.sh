@@ -67,6 +67,14 @@ else
   echo "==> Container is running"
 fi
 
+# Ensure host.docker.internal resolves inside container
+# (d/boot_dev doesn't support DOCKER_ARGS for --add-host)
+if ! docker exec discourse_dev getent hosts host.docker.internal > /dev/null 2>&1; then
+  GATEWAY_IP=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+  docker exec discourse_dev bash -c "echo '$GATEWAY_IP host.docker.internal' >> /etc/hosts"
+  echo "==> Added host.docker.internal -> $GATEWAY_IP"
+fi
+
 # Step 4: Install dependencies
 echo "==> Installing Ruby gems..."
 docker exec -u discourse discourse_dev bash -c "cd /src && bundle install"
