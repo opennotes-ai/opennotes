@@ -54,7 +54,7 @@ if docker ps -q -f name=discourse_dev | grep -q .; then
 else
   echo "==> Booting Discourse dev container..."
   cd docker/.discourse
-  DOCKER_ARGS="--add-host=host.docker.internal:host-gateway" d/boot_dev 2>&1 || true
+  d/boot_dev 2>&1 || true
   cd "$SCRIPT_DIR/.."
 
   # Verify container is actually running
@@ -65,6 +65,14 @@ else
     exit 1
   fi
   echo "==> Container is running"
+fi
+
+# Ensure host.docker.internal resolves inside container
+# (d/boot_dev doesn't support DOCKER_ARGS for --add-host)
+if ! docker exec discourse_dev getent hosts host.docker.internal > /dev/null 2>&1; then
+  GATEWAY_IP=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+  docker exec discourse_dev bash -c "echo '$GATEWAY_IP host.docker.internal' >> /etc/hosts"
+  echo "==> Added host.docker.internal -> $GATEWAY_IP"
 fi
 
 # Step 4: Install dependencies

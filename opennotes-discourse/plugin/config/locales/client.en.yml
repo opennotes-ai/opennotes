@@ -1,4 +1,9 @@
 en:
+  admin_js:
+    admin:
+      site_settings:
+        categories:
+          discourse_opennotes: "Open Notes - Moderation"
   js:
     opennotes:
       title: "OpenNotes"

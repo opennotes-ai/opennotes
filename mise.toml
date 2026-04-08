@@ -401,13 +401,19 @@ dir = "opennotes-discourse"
 run = '''
 if docker ps -q -f name=discourse_dev 2>/dev/null | grep -q .; then
   echo "discourse_dev container already running"
-  exit 0
+else
+  if [ ! -d "docker/.discourse" ]; then
+    echo "Discourse not bootstrapped yet. Run: mise run discourse:bootstrap"
+    exit 1
+  fi
+  cd docker/.discourse && d/boot_dev
 fi
-if [ ! -d "docker/.discourse" ]; then
-  echo "Discourse not bootstrapped yet. Run: mise run discourse:bootstrap"
-  exit 1
+
+if ! docker exec discourse_dev getent hosts host.docker.internal > /dev/null 2>&1; then
+  GATEWAY_IP=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+  docker exec discourse_dev bash -c "echo '$GATEWAY_IP host.docker.internal' >> /etc/hosts"
+  echo "Added host.docker.internal -> $GATEWAY_IP"
 fi
-cd docker/.discourse && DOCKER_ARGS="--add-host=host.docker.internal:host-gateway" d/boot_dev
 '''
 
 [tasks."deploy:services:discourse-dev-stack:local"]
