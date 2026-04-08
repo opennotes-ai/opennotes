@@ -132,6 +132,9 @@ def _bulk_scan_message_to_content_item(
         channel_id=message.channel_id,
         community_server_id=community_server_platform_id,
         attachment_urls=message.attachment_urls,
+        platform_metadata={
+            "embed_content": message.embed_content,
+        },
     )
 
 

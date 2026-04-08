@@ -13,7 +13,9 @@ from pydantic_ai.models.test import TestModel
 from src.bulk_content_scan.schemas import (
     ContentItem,
     ContentModerationClassificationResult,
+    ConversationFlashpointMatch,
     OpenAIModerationMatch,
+    RiskLevel,
     SimilarityMatch,
 )
 
@@ -66,6 +68,20 @@ def make_openai_moderation_match(
         categories=categories,
         scores=scores,
         flagged_categories=flagged_categories,
+    )
+
+
+def make_flashpoint_match(
+    derailment_score: int = 75,
+    risk_level: RiskLevel = RiskLevel.HOSTILE,
+    reasoning: str = "Escalating hostility and personal attacks detected",
+    context_messages: int = 3,
+) -> ConversationFlashpointMatch:
+    return ConversationFlashpointMatch(
+        derailment_score=derailment_score,
+        risk_level=risk_level,
+        reasoning=reasoning,
+        context_messages=context_messages,
     )
 
 
@@ -535,3 +551,109 @@ class TestFlashpointToolIntegration:
         )
 
         assert isinstance(result.output, ContentModerationClassificationResult)
+
+
+class TestFlashpointEvidenceInInstructions:
+    """Tests verifying ConversationFlashpointMatch evidence appears in agent instructions."""
+
+    def test_flashpoint_evidence_in_instructions(self):
+        """Flashpoint risk_level, derailment_score, and reasoning should appear in instructions."""
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+        flashpoint_match = make_flashpoint_match(
+            derailment_score=75,
+            risk_level=RiskLevel.HOSTILE,
+            reasoning="Escalating hostility and personal attacks detected",
+        )
+
+        instructions = service._build_instructions(
+            content_item=content_item,
+            pre_computed_evidence=[flashpoint_match],
+        )
+
+        assert "Conversation flashpoint detected" in instructions
+        assert "Hostile" in instructions
+        assert "75/100" in instructions
+        assert "Escalating hostility and personal attacks detected" in instructions
+
+    def test_flashpoint_evidence_with_low_risk_level(self):
+        """Low-risk flashpoint should still appear in instructions."""
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+        flashpoint_match = make_flashpoint_match(
+            derailment_score=30,
+            risk_level=RiskLevel.GUARDED,
+            reasoning="Minor tension present but manageable",
+        )
+
+        instructions = service._build_instructions(
+            content_item=content_item,
+            pre_computed_evidence=[flashpoint_match],
+        )
+
+        assert "Conversation flashpoint detected" in instructions
+        assert "Guarded" in instructions
+        assert "30/100" in instructions
+        assert "Minor tension present but manageable" in instructions
+
+    def test_flashpoint_evidence_mixed_with_other_evidence(self):
+        """Flashpoint evidence should appear alongside similarity and moderation evidence."""
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+        similarity_match = make_similarity_match(
+            score=0.88, matched_claim="Vaccines do not cause autism"
+        )
+        flashpoint_match = make_flashpoint_match(
+            derailment_score=65,
+            risk_level=RiskLevel.HEATED,
+            reasoning="Heated debate with inflammatory language",
+        )
+
+        instructions = service._build_instructions(
+            content_item=content_item,
+            pre_computed_evidence=[similarity_match, flashpoint_match],
+        )
+
+        assert "Vaccines do not cause autism" in instructions
+        assert "0.88" in instructions
+        assert "Conversation flashpoint detected" in instructions
+        assert "Heated" in instructions
+        assert "65/100" in instructions
+        assert "Heated debate with inflammatory language" in instructions
+
+    @pytest.mark.asyncio
+    async def test_classify_with_flashpoint_evidence(self):
+        """classify() should accept and process ConversationFlashpointMatch evidence."""
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        expected = make_classification_result(
+            confidence=0.91,
+            category_labels={"harassment": True},
+            recommended_action="review",
+            action_tier="tier_2_consensus",
+            explanation="Flashpoint evidence indicates escalating conflict",
+        )
+        test_model = TestModel(custom_output_args=expected, call_tools=[])
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+        flashpoint_match = make_flashpoint_match(
+            derailment_score=80,
+            risk_level=RiskLevel.HOSTILE,
+            reasoning="Strong personal attack patterns detected",
+        )
+
+        result = await service.classify(
+            content_item=content_item,
+            pre_computed_evidence=[flashpoint_match],
+            model=test_model,
+        )
+
+        assert isinstance(result, ContentModerationClassificationResult)
+        assert result.confidence == 0.91

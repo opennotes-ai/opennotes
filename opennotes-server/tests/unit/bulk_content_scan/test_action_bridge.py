@@ -190,8 +190,8 @@ class TestCreateModerationActionFromPolicy:
             )
 
         call_args = mock_create.call_args
-        create_data = call_args[1]["data"] if "data" in call_args[1] else call_args[0][1]
-        assert create_data.applied_at is not None
+        applied_at = call_args[1].get("applied_at") if call_args[1] else None
+        assert applied_at is not None
 
     @pytest.mark.asyncio
     async def test_tier2_decision_creates_action_with_proposed_state(self):
@@ -272,8 +272,8 @@ class TestCreateModerationActionFromPolicy:
             )
 
         call_args = mock_create.call_args
-        create_data = call_args[1]["data"] if "data" in call_args[1] else call_args[0][1]
-        assert create_data.applied_at is None
+        applied_at = call_args[1].get("applied_at") if call_args[1] else None
+        assert applied_at is None
 
     @pytest.mark.asyncio
     async def test_pass_decision_returns_none(self):
@@ -321,7 +321,7 @@ class TestCreateModerationActionFromPolicy:
         mock_action = _make_mock_action()
         captured_evidence: dict[str, Any] = {}
 
-        async def capture_create(db, data):
+        async def capture_create(db, data, **kwargs):
             captured_evidence.update(data.classifier_evidence)
             return mock_action
 
@@ -366,7 +366,7 @@ class TestCreateModerationActionFromPolicy:
         mock_action = _make_mock_action()
         captured_evidence: dict[str, Any] = {}
 
-        async def capture_create(db, data):
+        async def capture_create(db, data, **kwargs):
             captured_evidence.update(data.classifier_evidence)
             return mock_action
 
@@ -408,7 +408,7 @@ class TestCreateModerationActionFromPolicy:
         mock_action = _make_mock_action()
         captured_evidence: dict[str, Any] = {}
 
-        async def capture_create(db, data):
+        async def capture_create(db, data, **kwargs):
             captured_evidence.update(data.classifier_evidence)
             return mock_action
 
@@ -460,7 +460,7 @@ class TestCreateModerationActionFromPolicy:
         mock_action = _make_mock_action()
         captured_evidence: dict[str, Any] = {}
 
-        async def capture_create(db, data):
+        async def capture_create(db, data, **kwargs):
             captured_evidence.update(data.classifier_evidence)
             return mock_action
 
@@ -505,7 +505,7 @@ class TestCreateModerationActionFromPolicy:
         mock_action = _make_mock_action()
         captured_evidence: dict[str, Any] = {}
 
-        async def capture_create(db, data):
+        async def capture_create(db, data, **kwargs):
             captured_evidence.update(data.classifier_evidence)
             return mock_action
 
@@ -546,7 +546,7 @@ class TestCreateModerationActionFromPolicy:
         mock_action = _make_mock_action(request_id=request_id)
         captured_data = {}
 
-        async def capture_create(db, data):
+        async def capture_create(db, data, **kwargs):
             captured_data["data"] = data
             return mock_action
 
@@ -588,7 +588,7 @@ class TestCreateModerationActionFromPolicy:
         mock_action = _make_mock_action(community_server_id=community_server_id)
         captured_data = {}
 
-        async def capture_create(db, data):
+        async def capture_create(db, data, **kwargs):
             captured_data["data"] = data
             return mock_action
 
@@ -669,7 +669,7 @@ class TestCreateModerationActionFromPolicy:
         mock_action = _make_mock_action()
         captured_evidence: dict[str, Any] = {}
 
-        async def capture_create(db, data):
+        async def capture_create(db, data, **kwargs):
             captured_evidence.update(data.classifier_evidence)
             return mock_action
 

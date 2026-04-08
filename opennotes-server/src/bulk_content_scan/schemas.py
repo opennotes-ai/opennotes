@@ -173,10 +173,10 @@ class ContentModerationClassificationResult(StrictInputSchema):
     category_scores: dict[str, float] | None = Field(
         None, description="Per-category confidence scores"
     )
-    recommended_action: str | None = Field(
+    recommended_action: Literal["hide", "review", "pass"] | None = Field(
         None, description="Recommended action (hide, review, pass)"
     )
-    action_tier: str | None = Field(
+    action_tier: Literal["tier_1_immediate", "tier_2_consensus"] | None = Field(
         None, description="Action tier (tier_1_immediate, tier_2_consensus)"
     )
     explanation: str = Field(..., description="Human-readable explanation of the classification")

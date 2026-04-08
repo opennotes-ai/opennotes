@@ -11,6 +11,12 @@ from typing import (
 
 from attrs import define as _attrs_define
 
+from ..models.content_moderation_classification_result_action_tier_type_0 import (
+    ContentModerationClassificationResultActionTierType0,
+)
+from ..models.content_moderation_classification_result_recommended_action_type_0 import (
+    ContentModerationClassificationResultRecommendedActionType0,
+)
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -41,8 +47,10 @@ class ContentModerationClassificationResult:
             scan_type (Literal['content_moderation_classification'] | Unset):  Default: 'content_moderation_classification'.
             category_scores (ContentModerationClassificationResultCategoryScoresType0 | None | Unset): Per-category
                 confidence scores
-            recommended_action (None | str | Unset): Recommended action (hide, review, pass)
-            action_tier (None | str | Unset): Action tier (tier_1_immediate, tier_2_consensus)
+            recommended_action (ContentModerationClassificationResultRecommendedActionType0 | None | Unset): Recommended
+                action (hide, review, pass)
+            action_tier (ContentModerationClassificationResultActionTierType0 | None | Unset): Action tier
+                (tier_1_immediate, tier_2_consensus)
     """
 
     confidence: float
@@ -54,8 +62,12 @@ class ContentModerationClassificationResult:
     category_scores: (
         ContentModerationClassificationResultCategoryScoresType0 | None | Unset
     ) = UNSET
-    recommended_action: None | str | Unset = UNSET
-    action_tier: None | str | Unset = UNSET
+    recommended_action: (
+        ContentModerationClassificationResultRecommendedActionType0 | None | Unset
+    ) = UNSET
+    action_tier: ContentModerationClassificationResultActionTierType0 | None | Unset = (
+        UNSET
+    )
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.content_moderation_classification_result_category_scores_type_0 import (
@@ -84,12 +96,21 @@ class ContentModerationClassificationResult:
         recommended_action: None | str | Unset
         if isinstance(self.recommended_action, Unset):
             recommended_action = UNSET
+        elif isinstance(
+            self.recommended_action,
+            ContentModerationClassificationResultRecommendedActionType0,
+        ):
+            recommended_action = self.recommended_action.value
         else:
             recommended_action = self.recommended_action
 
         action_tier: None | str | Unset
         if isinstance(self.action_tier, Unset):
             action_tier = UNSET
+        elif isinstance(
+            self.action_tier, ContentModerationClassificationResultActionTierType0
+        ):
+            action_tier = self.action_tier.value
         else:
             action_tier = self.action_tier
 
@@ -168,23 +189,55 @@ class ContentModerationClassificationResult:
 
         category_scores = _parse_category_scores(d.pop("category_scores", UNSET))
 
-        def _parse_recommended_action(data: object) -> None | str | Unset:
+        def _parse_recommended_action(
+            data: object,
+        ) -> ContentModerationClassificationResultRecommendedActionType0 | None | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
-            return cast(None | str | Unset, data)
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                recommended_action_type_0 = (
+                    ContentModerationClassificationResultRecommendedActionType0(data)
+                )
+
+                return recommended_action_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(
+                ContentModerationClassificationResultRecommendedActionType0
+                | None
+                | Unset,
+                data,
+            )
 
         recommended_action = _parse_recommended_action(
             d.pop("recommended_action", UNSET)
         )
 
-        def _parse_action_tier(data: object) -> None | str | Unset:
+        def _parse_action_tier(
+            data: object,
+        ) -> ContentModerationClassificationResultActionTierType0 | None | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
-            return cast(None | str | Unset, data)
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                action_tier_type_0 = (
+                    ContentModerationClassificationResultActionTierType0(data)
+                )
+
+                return action_tier_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(
+                ContentModerationClassificationResultActionTierType0 | None | Unset,
+                data,
+            )
 
         action_tier = _parse_action_tier(d.pop("action_tier", UNSET))
 

@@ -1421,7 +1421,7 @@ def content_reviewer_step(
     settings = get_settings()
     scan_uuid = UUID(scan_id)
 
-    async def _content_reviewer() -> dict[str, Any]:
+    async def _content_reviewer() -> dict[str, Any]:  # noqa: PLR0912
         redis_conn = await get_shared_redis_client(settings.REDIS_URL)
 
         all_candidates: list[ScanCandidate] = []
@@ -1490,45 +1490,38 @@ def content_reviewer_step(
                     pre_computed = [c.match_data for c in candidates]
                     content_item = bulk_scan_message_to_content_item(candidates[0].message)
 
+                    context_items_for_msg = [
+                        bulk_scan_message_to_content_item(c.message) for c in candidates
+                    ]
                     classification = await reviewer_service.classify(
                         content_item=content_item,
                         pre_computed_evidence=pre_computed,
+                        context_items=context_items_for_msg,
+                        flashpoint_service=flashpoint_service,
                     )
 
                     policy_decision = evaluator.evaluate(classification, policy_config)
 
-                    first_candidate = candidates[0]
-                    flagged_msg = FlaggedMessage(
-                        message_id=first_candidate.message.message_id,
-                        channel_id=first_candidate.message.channel_id,
-                        content=first_candidate.message.content,
-                        author_id=first_candidate.message.author_id,
-                        timestamp=first_candidate.message.timestamp,
-                        matches=[c.match_data for c in candidates],
-                    )
-                    flagged_messages.append(flagged_msg)
+                    if policy_decision.action_tier is not None:
+                        first_candidate = candidates[0]
+                        matches = [c.match_data for c in candidates]
+                        matches.append(classification)
+                        flagged_msg = FlaggedMessage(
+                            message_id=first_candidate.message.message_id,
+                            channel_id=first_candidate.message.channel_id,
+                            content=first_candidate.message.content,
+                            author_id=first_candidate.message.author_id,
+                            timestamp=first_candidate.message.timestamp,
+                            matches=matches,
+                        )
+                        flagged_messages.append(flagged_msg)
 
-                    action_tier_value = (
-                        policy_decision.action_tier.value
-                        if policy_decision.action_tier is not None
-                        else None
-                    )
-                    action_type_value = (
-                        policy_decision.action_type.value
-                        if policy_decision.action_type is not None
-                        else None
-                    )
-                    review_group_value = (
-                        policy_decision.review_group.value
-                        if policy_decision.review_group is not None
-                        else None
-                    )
                     policy_decisions.append(
                         {
                             "message_id": msg_id,
-                            "action_tier": action_tier_value,
-                            "action_type": action_type_value,
-                            "review_group": review_group_value,
+                            "action_tier": getattr(policy_decision.action_tier, "value", None),
+                            "action_type": getattr(policy_decision.action_type, "value", None),
+                            "review_group": getattr(policy_decision.review_group, "value", None),
                             "reason": policy_decision.reason,
                         }
                     )

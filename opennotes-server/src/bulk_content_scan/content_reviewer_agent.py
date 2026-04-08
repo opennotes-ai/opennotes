@@ -18,6 +18,7 @@ from src.bulk_content_scan.capabilities.flashpoint import detect_flashpoint
 from src.bulk_content_scan.schemas import (
     ContentItem,
     ContentModerationClassificationResult,
+    ConversationFlashpointMatch,
     OpenAIModerationMatch,
     SimilarityMatch,
 )
@@ -115,7 +116,9 @@ class ContentReviewerService:
     def _build_instructions(
         self,
         content_item: ContentItem,
-        pre_computed_evidence: list[SimilarityMatch | OpenAIModerationMatch],
+        pre_computed_evidence: list[
+            SimilarityMatch | OpenAIModerationMatch | ConversationFlashpointMatch
+        ],
     ) -> str:
         """Build dynamic system instructions from pre-computed evidence.
 
@@ -149,6 +152,12 @@ class ContentReviewerService:
                         f"- OpenAI moderation flagged: {flagged} "
                         f"(max_score: {evidence.max_score:.2f})"
                     )
+                elif isinstance(evidence, ConversationFlashpointMatch):
+                    lines.append(
+                        f"- Conversation flashpoint detected: risk_level={evidence.risk_level}, "
+                        f"derailment_score={evidence.derailment_score}/100, "
+                        f"reasoning: {evidence.reasoning}"
+                    )
             lines.append("")
 
         lines.extend(
@@ -168,7 +177,9 @@ class ContentReviewerService:
     async def classify(
         self,
         content_item: ContentItem,
-        pre_computed_evidence: list[SimilarityMatch | OpenAIModerationMatch],
+        pre_computed_evidence: list[
+            SimilarityMatch | OpenAIModerationMatch | ConversationFlashpointMatch
+        ],
         context_items: list[ContentItem] | None = None,
         flashpoint_service: object = None,
         model: Any = None,

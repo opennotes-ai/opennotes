@@ -37,12 +37,18 @@ async def _fetch_existing_action(
     request_id: UUID,
     action_tier: ActionTier,
 ) -> ModerationAction | None:
-    """SELECT existing ModerationAction for idempotency on DBOS retries."""
+    """SELECT existing ModerationAction for idempotency on DBOS retries.
+
+    Uses FOR UPDATE SKIP LOCKED to prevent duplicate creation under
+    concurrent DBOS retries or parallel workers.
+    """
     result = await session.execute(
-        select(ModerationAction).where(
+        select(ModerationAction)
+        .where(
             ModerationAction.request_id == request_id,
             ModerationAction.action_tier == action_tier.value,
         )
+        .with_for_update(skip_locked=True)
     )
     return result.scalar_one_or_none()
 
@@ -91,10 +97,9 @@ async def create_moderation_action_from_policy(
         action_state=action_state,
         review_group=policy_decision.review_group,
         classifier_evidence=classifier_evidence,
-        applied_at=applied_at,
     )
 
-    action = await create_moderation_action(session, create_data)
+    action = await create_moderation_action(session, create_data, applied_at=applied_at)
     logger.info(
         "Created ModerationAction id=%s state=%s tier=%s for request_id=%s",
         action.id,
