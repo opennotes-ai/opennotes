@@ -399,6 +399,10 @@ description = "Start Discourse dev environment (alias: discourse:up)"
 alias = "discourse:up"
 dir = "opennotes-discourse"
 run = '''
+if docker ps -q -f name=discourse_dev 2>/dev/null | grep -q .; then
+  echo "discourse_dev container already running"
+  exit 0
+fi
 if [ ! -d "docker/.discourse" ]; then
   echo "Discourse not bootstrapped yet. Run: mise run discourse:bootstrap"
   exit 1
