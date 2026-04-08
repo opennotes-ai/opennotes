@@ -120,6 +120,12 @@ services:
       - ./opennotes-discord/package.json:/workspace/opennotes-discord/package.json:ro
       - ./opennotes-discord/tsconfig.json:/workspace/opennotes-discord/tsconfig.json:ro
 
+  # Open Notes Platform - Development overrides
+  opennotes-platform:
+    ports:
+      - "3200:3200"
+    restart: unless-stopped
+
   # Monitoring Stack - Development overrides (enabled with --profile monitoring)
   prometheus:
     ports:

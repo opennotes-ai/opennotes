@@ -198,6 +198,29 @@ services:
     networks:
       - opennotes
 
+  # Open Notes Platform - SolidStart community management app
+  opennotes-platform:
+    build:
+      context: .
+      dockerfile: ./opennotes-platform/Dockerfile
+    environment:
+      - VITE_SUPABASE_URL=${PLATFORM_SUPABASE_URL:-}
+      - VITE_SUPABASE_PUBLISHABLE_KEY=${PLATFORM_SUPABASE_PUBLISHABLE_KEY:-}
+      - OPENNOTES_SERVER_URL=http://opennotes-server:8000
+      - OPENNOTES_API_KEY=${PLATFORM_API_KEY:-opk_platform_dev_api_keys_create_2026}
+      - PORT=3200
+    depends_on:
+      opennotes-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3200/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - opennotes
+
   # Open Notes Audit Worker - Background worker for async audit log processing
   opennotes-audit-worker:
     build:
