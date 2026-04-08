@@ -1,6 +1,9 @@
 import { GoogleAuth } from "google-auth-library";
+import type { IdTokenClient } from "google-auth-library";
 
 const FETCH_TIMEOUT_MS = 10_000;
+const IDENTITY_TOKEN_MAX_RETRIES = 3;
+const TOKEN_FETCH_TIMEOUT_MS = 5_000;
 
 export class PlatformApiError extends Error {
   constructor(
@@ -13,6 +16,7 @@ export class PlatformApiError extends Error {
 }
 
 let authInstance: GoogleAuth | null = null;
+const idTokenClientCache = new Map<string, IdTokenClient>();
 
 function getAuthInstance(): GoogleAuth {
   if (!authInstance) authInstance = new GoogleAuth();
@@ -23,10 +27,50 @@ async function getAuthorizationHeader(
   targetAudience: string,
 ): Promise<string | null> {
   if (process.env.NODE_ENV !== "production") return null;
-  const auth = getAuthInstance();
-  const client = await auth.getIdTokenClient(targetAudience);
-  const headers = await client.getRequestHeaders();
-  return headers.get("Authorization") || null;
+
+  return new Promise<string | null>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error("Identity token fetch timed out after 5s"));
+      }
+    }, TOKEN_FETCH_TIMEOUT_MS);
+
+    (async () => {
+      for (let attempt = 0; attempt < IDENTITY_TOKEN_MAX_RETRIES; attempt++) {
+        try {
+          const auth = getAuthInstance();
+          let client = idTokenClientCache.get(targetAudience);
+          if (!client) {
+            client = await auth.getIdTokenClient(targetAudience);
+            idTokenClientCache.set(targetAudience, client);
+          }
+          const headers = await client.getRequestHeaders();
+          return headers.get("Authorization") || null;
+        } catch (error) {
+          if (attempt === IDENTITY_TOKEN_MAX_RETRIES - 1) throw error;
+          await new Promise((r) => setTimeout(r, 100 * 2 ** attempt));
+        }
+      }
+      return null;
+    })().then(
+      (value) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timeoutId);
+          resolve(value);
+        }
+      },
+      (error) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timeoutId);
+          reject(error);
+        }
+      },
+    );
+  });
 }
 
 function getBaseConfig() {
@@ -110,5 +154,10 @@ export async function listAdminApiKeys(): Promise<AdminAPIKey[]> {
 }
 
 export async function revokeAdminApiKey(keyId: string): Promise<void> {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(keyId)) {
+    throw new PlatformApiError("Invalid key ID format", 400);
+  }
   await apiFetch(`/api/v2/admin/api-keys/${keyId}`, { method: "DELETE" });
 }
