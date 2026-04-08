@@ -282,7 +282,12 @@ def _make_recv_dispatcher(
 def _patch_process_content_scan_batch_dependencies(
     stack: ExitStack,
 ) -> dict[str, MagicMock]:
-    """Patch workflow-level batch dependencies with a non-terminal default seam."""
+    """Patch workflow-level batch dependencies with a non-terminal default seam.
+
+    Note: "relevance" key now patches content_reviewer_step (which replaced
+    relevance_filter_step). Existing tests use mocks["relevance"] to control
+    the step's return value; the key name is preserved for backward compatibility.
+    """
     return {
         "preprocess": stack.enter_context(
             patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step")
@@ -294,7 +299,7 @@ def _patch_process_content_scan_batch_dependencies(
             patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step")
         ),
         "relevance": stack.enter_context(
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step")
+            patch("src.dbos_workflows.content_scan_workflow.content_reviewer_step")
         ),
         "terminal": stack.enter_context(
             patch(
@@ -1497,7 +1502,7 @@ class TestProcessContentScanBatch:
                 side_effect=RuntimeError("flash boom"),
             ),
             patch(
-                "src.dbos_workflows.content_scan_workflow.relevance_filter_step",
+                "src.dbos_workflows.content_scan_workflow.content_reviewer_step",
                 side_effect=RuntimeError("relevance boom"),
             ),
         ):
@@ -1515,7 +1520,7 @@ class TestProcessContentScanBatch:
         assert step_errors == [
             "similarity: sim boom",
             "flashpoint: flash boom",
-            "relevance: relevance boom",
+            "content_reviewer: relevance boom",
         ]
 
     def test_run_batch_scan_steps_uses_empty_candidate_keys_when_optional_steps_skipped(
@@ -1533,9 +1538,9 @@ class TestProcessContentScanBatch:
                 "src.dbos_workflows.content_scan_workflow.flashpoint_scan_step"
             ) as mock_flashpoint,
             patch(
-                "src.dbos_workflows.content_scan_workflow.relevance_filter_step",
-                return_value={"flagged_count": 4, "errors": 1},
-            ) as mock_relevance,
+                "src.dbos_workflows.content_scan_workflow.content_reviewer_step",
+                return_value={"flagged_count": 4, "errors": 1, "policy_decisions": []},
+            ) as mock_reviewer,
         ):
             flagged_count, errors = _run_batch_scan_steps(
                 scan_id=str(uuid4()),
@@ -1550,8 +1555,8 @@ class TestProcessContentScanBatch:
         assert (flagged_count, errors) == (4, 1)
         mock_similarity.assert_not_called()
         mock_flashpoint.assert_not_called()
-        assert mock_relevance.call_args.kwargs["similarity_candidates_key"] == ""
-        assert mock_relevance.call_args.kwargs["flashpoint_candidates_key"] == ""
+        assert mock_reviewer.call_args.kwargs["similarity_candidates_key"] == ""
+        assert mock_reviewer.call_args.kwargs["flashpoint_candidates_key"] == ""
 
 
 class TestProcessBatchMessagesStep:
