@@ -81,7 +81,6 @@ module Jobs
       OpenNotes::Client.new(
         server_url: SiteSetting.opennotes_server_url,
         api_key: SiteSetting.opennotes_api_key,
-        jwt_secret: SiteSetting.opennotes_api_key,
       )
     end
   end

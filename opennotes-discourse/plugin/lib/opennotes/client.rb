@@ -18,9 +18,8 @@ module OpenNotes
 
     attr_reader :server_url
 
-    def initialize(server_url:, api_key:, jwt_secret:)
+    def initialize(server_url:, api_key:)
       @api_key = api_key
-      @jwt_secret = jwt_secret
       @connection = Faraday.new(url: server_url) do |f|
         f.request :json
         f.response :json
@@ -70,8 +69,13 @@ module OpenNotes
         req.headers["X-Platform-Type"] = "discourse"
 
         if user
-          token = PlatformClaims.sign(user: user, secret: @jwt_secret)
-          req.headers["X-Platform-Claims"] = token
+          req.headers["X-Adapter-Platform"] = "discourse"
+          req.headers["X-Adapter-User-Id"] = user.id.to_s
+          req.headers["X-Adapter-Username"] = user.username
+          req.headers["X-Adapter-Trust-Level"] = user.trust_level.to_s
+          req.headers["X-Adapter-Admin"] = user.admin?.to_s
+          req.headers["X-Adapter-Moderator"] = user.moderator?.to_s
+          req.headers["X-Adapter-Scope"] = Discourse.current_hostname
         end
 
         req.params = params if params&.any?
