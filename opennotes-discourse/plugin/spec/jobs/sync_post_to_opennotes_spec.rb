@@ -65,6 +65,48 @@ RSpec.describe Jobs::SyncPostToOpennotes do
       expect(client).not_to have_received(:post)
     end
 
+    context "with subcategory slug paths" do
+      fab!(:parent_category) { Fabricate(:category, slug: "parent") }
+      fab!(:child_category) { Fabricate(:category, slug: "child", parent_category: parent_category) }
+      fab!(:child_topic) { Fabricate(:topic, category: child_category) }
+      fab!(:child_post) { Fabricate(:post, topic: child_topic) }
+
+      it "matches subcategory by full slug path" do
+        SiteSetting.opennotes_monitored_categories = "parent/child"
+        allow(client).to receive(:post).and_return({ "data" => { "id" => "req-sub-1" } })
+
+        described_class.new.execute(post_id: child_post.id)
+
+        expect(client).to have_received(:post)
+      end
+
+      it "does not match subcategory by leaf slug alone" do
+        SiteSetting.opennotes_monitored_categories = "child"
+        allow(client).to receive(:post)
+
+        described_class.new.execute(post_id: child_post.id)
+
+        expect(client).not_to have_received(:post)
+      end
+
+      it "distinguishes ambiguous leaf slugs under different parents" do
+        other_parent = Fabricate(:category, slug: "other-parent")
+        other_child = Fabricate(:category, slug: "child", parent_category: other_parent)
+        other_topic = Fabricate(:topic, category: other_child)
+        other_post = Fabricate(:post, topic: other_topic)
+
+        SiteSetting.opennotes_monitored_categories = "parent/child"
+        allow(client).to receive(:post).and_return({ "data" => { "id" => "req-sub-2" } })
+
+        described_class.new.execute(post_id: child_post.id)
+        expect(client).to have_received(:post).once
+
+        allow(client).to receive(:post)
+        described_class.new.execute(post_id: other_post.id)
+        expect(client).not_to have_received(:post)
+      end
+    end
+
     it "skips when post does not exist" do
       allow(client).to receive(:post)
 
