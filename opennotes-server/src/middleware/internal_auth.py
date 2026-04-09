@@ -12,6 +12,7 @@ Security Model:
 
 Headers Protected:
     - Any header starting with X-Platform-* (except X-Platform-Claims)
+    - Any header starting with X-Adapter-*
     - X-Internal-Auth (always stripped after validation)
 
 Usage:
@@ -35,7 +36,7 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-PROTECTED_HEADER_PREFIXES = (b"x-platform-",)
+PROTECTED_HEADER_PREFIXES = (b"x-platform-", b"x-adapter-")
 
 PROTECTED_HEADERS = {
     b"x-internal-auth",

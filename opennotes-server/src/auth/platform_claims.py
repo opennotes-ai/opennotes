@@ -213,17 +213,11 @@ def resolve_platform_identity(request: Request) -> PlatformIdentity | None:
 
 def get_platform_admin_status(request: Request) -> bool:
     identity = getattr(request.state, "platform_identity", None)
+
+    if not isinstance(identity, PlatformIdentity):
+        identity = resolve_platform_identity(request)
+
     if isinstance(identity, PlatformIdentity):
         return identity.can_administer_community
 
-    claims_token = request.headers.get("x-platform-claims", "")
-
-    if not claims_token:
-        return False
-
-    claims = validate_platform_claims(claims_token)
-
-    if claims is None:
-        return False
-
-    return claims.get("can_administer_community", False)
+    return False

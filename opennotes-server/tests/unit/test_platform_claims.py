@@ -1,5 +1,34 @@
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+from uuid import uuid4
+
 import pendulum
 import pytest
+
+from src.users.models import APIKey
+
+
+def _make_api_key(scopes: list[str] | None) -> APIKey:
+    return APIKey(
+        user_id=uuid4(),
+        name="test-key",
+        key_hash="fake-hash-value",
+        scopes=scopes,
+    )
+
+
+def _make_request(
+    headers: dict[str, str] | None = None,
+    api_key: APIKey | None = None,
+) -> MagicMock:
+    request = MagicMock()
+    request.headers = headers or {}
+    state = MagicMock(spec=[])
+    if api_key is not None:
+        state.api_key = api_key
+    request.state = state
+    return request
 
 
 @pytest.mark.unit
@@ -367,5 +396,54 @@ class TestGetPlatformAdminStatus:
         request = MagicMock()
         request.headers = {"x-platform-claims": token}
         request.state.platform_identity = identity
+        result = get_platform_admin_status(request)
+        assert result is False
+
+    def test_lazy_resolves_adapter_headers_when_api_key_on_state(self) -> None:
+        from src.auth.platform_claims import get_platform_admin_status
+
+        api_key = _make_api_key(scopes=["platform:adapter"])
+        request = _make_request(
+            headers={
+                "x-adapter-platform": "discourse",
+                "x-adapter-user-id": "42",
+                "x-adapter-scope": "forum.example.com",
+                "x-adapter-admin": "true",
+            },
+            api_key=api_key,
+        )
+
+        result = get_platform_admin_status(request)
+        assert result is True
+
+    def test_lazy_resolve_returns_false_when_no_api_key(self) -> None:
+        from src.auth.platform_claims import get_platform_admin_status
+
+        request = _make_request(
+            headers={
+                "x-adapter-platform": "discourse",
+                "x-adapter-user-id": "42",
+                "x-adapter-scope": "forum.example.com",
+                "x-adapter-admin": "true",
+            },
+        )
+
+        result = get_platform_admin_status(request)
+        assert result is False
+
+    def test_lazy_resolve_returns_false_when_wrong_scope(self) -> None:
+        from src.auth.platform_claims import get_platform_admin_status
+
+        api_key = _make_api_key(scopes=["simulations:read"])
+        request = _make_request(
+            headers={
+                "x-adapter-platform": "discourse",
+                "x-adapter-user-id": "42",
+                "x-adapter-scope": "forum.example.com",
+                "x-adapter-admin": "true",
+            },
+            api_key=api_key,
+        )
+
         result = get_platform_admin_status(request)
         assert result is False
