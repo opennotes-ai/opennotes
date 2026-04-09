@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validat
 
 from src.common.base_schemas import StrictInputSchema
 
-ALLOWED_API_KEY_SCOPES = frozenset({"simulations:read"})
+ALLOWED_API_KEY_SCOPES = frozenset({"simulations:read", "platform:adapter"})
 
 
 class Token(BaseModel):

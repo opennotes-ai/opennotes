@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from src.auth.models import APIKeyCreate
 from src.users.models import APIKey
 
 
@@ -42,6 +43,32 @@ class TestAPIKeyHasScope:
     def test_multiple_scopes_no_match(self):
         key = _make_api_key(scopes=["simulations:read", "notes:read"])
         assert key.has_scope("admin:all") is False
+
+    def test_platform_adapter_scope(self):
+        key = _make_api_key(scopes=["platform:adapter"])
+        assert key.has_scope("platform:adapter") is True
+        assert key.has_scope("simulations:read") is False
+
+
+@pytest.mark.unit
+class TestAPIKeyScopeValidation:
+    def test_platform_adapter_scope_accepted(self):
+        key_create = APIKeyCreate(name="adapter-key", scopes=["platform:adapter"])
+        assert key_create.scopes == ["platform:adapter"]
+
+    def test_simulations_read_scope_accepted(self):
+        key_create = APIKeyCreate(name="sim-key", scopes=["simulations:read"])
+        assert key_create.scopes == ["simulations:read"]
+
+    def test_invalid_scope_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="Invalid scope"):
+            APIKeyCreate(name="bad-key", scopes=["nonexistent:scope"])
+
+    def test_none_scopes_accepted(self):
+        key_create = APIKeyCreate(name="admin-key", scopes=None)
+        assert key_create.scopes is None
 
 
 @pytest.mark.unit
