@@ -215,6 +215,10 @@ def resolve_platform_identity(request: Request) -> PlatformIdentity | None:
 
 def get_request_platform(request: Request, default: str = "discord") -> str:
     identity = getattr(request.state, "platform_identity", None)
+
+    if not isinstance(identity, PlatformIdentity):
+        identity = resolve_platform_identity(request)
+
     if isinstance(identity, PlatformIdentity):
         return identity.platform
 

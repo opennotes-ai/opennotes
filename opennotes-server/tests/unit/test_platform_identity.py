@@ -347,3 +347,47 @@ class TestGetRequestPlatform:
         request.state = MagicMock(spec=[])
 
         assert get_request_platform(request) == "discord"
+
+    def test_lazily_resolves_adapter_headers_when_identity_not_set(self) -> None:
+        from src.auth.platform_claims import get_request_platform
+
+        api_key = _make_api_key(scopes=["platform:adapter"])
+        request = _make_request(
+            headers={
+                "x-adapter-platform": "discourse",
+                "x-adapter-user-id": "42",
+                "x-adapter-scope": "forum.example.com",
+            },
+            api_key=api_key,
+        )
+
+        assert get_request_platform(request) == "discourse"
+
+    def test_lazy_resolution_skipped_without_adapter_scope(self) -> None:
+        from src.auth.platform_claims import get_request_platform
+
+        api_key = _make_api_key(scopes=["simulations:read"])
+        request = _make_request(
+            headers={
+                "x-adapter-platform": "discourse",
+                "x-adapter-user-id": "42",
+                "x-adapter-scope": "forum.example.com",
+            },
+            api_key=api_key,
+        )
+
+        assert get_request_platform(request) == "discord"
+
+    def test_lazy_resolution_falls_back_to_header_without_api_key(self) -> None:
+        from src.auth.platform_claims import get_request_platform
+
+        request = _make_request(
+            headers={
+                "x-adapter-platform": "discourse",
+                "x-adapter-user-id": "42",
+                "x-adapter-scope": "forum.example.com",
+                "x-platform-type": "discourse",
+            },
+        )
+
+        assert get_request_platform(request) == "discourse"
