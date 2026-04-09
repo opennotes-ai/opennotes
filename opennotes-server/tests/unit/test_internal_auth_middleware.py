@@ -591,21 +591,21 @@ class TestHeaderProtection:
         assert _is_protected_header(b"x-discord-has-manage-server") is False
         assert _is_protected_header(b"x-guild-id") is False
 
-    def test_adapter_headers_are_protected(self) -> None:
+    def test_adapter_headers_are_not_protected(self) -> None:
         from src.middleware.internal_auth import _is_protected_header
 
-        assert _is_protected_header(b"x-adapter-platform") is True
-        assert _is_protected_header(b"X-Adapter-Platform") is True
-        assert _is_protected_header(b"x-adapter-user-id") is True
-        assert _is_protected_header(b"x-adapter-scope") is True
-        assert _is_protected_header(b"x-adapter-admin") is True
-        assert _is_protected_header(b"x-adapter-username") is True
-        assert _is_protected_header(b"x-adapter-trust-level") is True
-        assert _is_protected_header(b"x-adapter-moderator") is True
+        assert _is_protected_header(b"x-adapter-platform") is False
+        assert _is_protected_header(b"X-Adapter-Platform") is False
+        assert _is_protected_header(b"x-adapter-user-id") is False
+        assert _is_protected_header(b"x-adapter-scope") is False
+        assert _is_protected_header(b"x-adapter-admin") is False
+        assert _is_protected_header(b"x-adapter-username") is False
+        assert _is_protected_header(b"x-adapter-trust-level") is False
+        assert _is_protected_header(b"x-adapter-moderator") is False
 
 
 @pytest.mark.unit
-def test_external_request_strips_adapter_headers(monkeypatch):
+def test_external_request_preserves_adapter_headers_for_api_key_validation(monkeypatch):
     from src import config
 
     test_settings = config.Settings(
@@ -650,7 +650,11 @@ def test_external_request_strips_adapter_headers(monkeypatch):
 
     assert response.status_code == 200
     data = response.json()
-    assert data["adapter_headers"] == {}
+    assert data["adapter_headers"]["x-adapter-platform"] == "discourse"
+    assert data["adapter_headers"]["x-adapter-user-id"] == "42"
+    assert data["adapter_headers"]["x-adapter-scope"] == "forum.example.com"
+    assert data["adapter_headers"]["x-adapter-admin"] == "true"
+    assert data["adapter_headers"]["x-adapter-username"] == "attacker"
 
 
 @pytest.mark.unit

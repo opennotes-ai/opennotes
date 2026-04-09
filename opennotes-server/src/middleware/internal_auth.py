@@ -12,8 +12,10 @@ Security Model:
 
 Headers Protected:
     - Any header starting with X-Platform-* (except X-Platform-Claims)
-    - Any header starting with X-Adapter-*
     - X-Internal-Auth (always stripped after validation)
+
+Note: X-Adapter-* headers are NOT stripped by this middleware. They are
+validated via API key scope (platform:adapter) in resolve_platform_identity().
 
 Usage:
     This middleware should be registered early in the middleware chain (before
@@ -36,7 +38,7 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-PROTECTED_HEADER_PREFIXES = (b"x-platform-", b"x-adapter-")
+PROTECTED_HEADER_PREFIXES = (b"x-platform-",)
 
 PROTECTED_HEADERS = {
     b"x-internal-auth",

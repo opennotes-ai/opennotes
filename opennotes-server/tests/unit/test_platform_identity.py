@@ -198,7 +198,7 @@ class TestResolvePlatformIdentityFromAdapterHeaders:
         assert identity is not None
         assert identity.can_administer_community is False
 
-    def test_unscoped_api_key_trusts_adapter_headers(self) -> None:
+    def test_unscoped_api_key_rejects_adapter_headers(self) -> None:
         from src.auth.platform_claims import resolve_platform_identity
 
         api_key = _make_api_key(scopes=None)
@@ -212,8 +212,7 @@ class TestResolvePlatformIdentityFromAdapterHeaders:
         )
 
         identity = resolve_platform_identity(request)
-        assert identity is not None
-        assert identity.platform == "discourse"
+        assert identity is None
 
 
 @pytest.mark.unit

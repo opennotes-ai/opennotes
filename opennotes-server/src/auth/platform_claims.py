@@ -133,7 +133,9 @@ def _has_platform_adapter_scope(request: Request) -> bool:
     api_key = getattr(request.state, "api_key", None)
     if api_key is None:
         return False
-    return api_key.has_scope("platform:adapter")
+    if api_key.scopes is None:
+        return False
+    return "platform:adapter" in api_key.scopes
 
 
 def _resolve_from_adapter_headers(request: Request) -> PlatformIdentity | None:
