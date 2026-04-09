@@ -123,7 +123,10 @@ def is_cloud_run_environment() -> bool:
     Returns:
         True if running in Cloud Run, False otherwise.
     """
-    return bool(os.getenv("K_SERVICE") or os.getenv("CLOUD_RUN_WORKER_POOL"))
+    if os.getenv("K_SERVICE"):
+        return True
+    cloud_run_wp = os.getenv("CLOUD_RUN_WORKER_POOL", "")
+    return cloud_run_wp.lower() == "true"
 
 
 def _collect_apphub_attributes(service_name: str) -> dict[str, str]:
