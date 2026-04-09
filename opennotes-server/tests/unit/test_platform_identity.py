@@ -288,3 +288,62 @@ class TestResolvePlatformIdentityFromJWT:
         assert identity.sub == "adapter-user"
         assert identity.community_id == "adapter-community"
         assert identity.can_administer_community is True
+
+
+@pytest.mark.unit
+class TestGetRequestPlatform:
+    def test_returns_platform_from_platform_identity(self) -> None:
+        from src.auth.platform_claims import PlatformIdentity, get_request_platform
+
+        request = _make_request(headers={"x-platform-type": "discord"})
+        request.state.platform_identity = PlatformIdentity(
+            platform="discourse",
+            scope="forum.example.com",
+            sub="42",
+            community_id="forum.example.com",
+        )
+
+        assert get_request_platform(request) == "discourse"
+
+    def test_falls_back_to_x_platform_type_header(self) -> None:
+        from src.auth.platform_claims import get_request_platform
+
+        request = _make_request(headers={"x-platform-type": "discourse"})
+
+        assert get_request_platform(request) == "discourse"
+
+    def test_defaults_to_discord_when_no_identity_or_header(self) -> None:
+        from src.auth.platform_claims import get_request_platform
+
+        request = _make_request()
+
+        assert get_request_platform(request) == "discord"
+
+    def test_identity_takes_priority_over_header(self) -> None:
+        from src.auth.platform_claims import PlatformIdentity, get_request_platform
+
+        request = _make_request(headers={"x-platform-type": "discord"})
+        request.state.platform_identity = PlatformIdentity(
+            platform="discourse",
+            scope="forum.example.com",
+            sub="42",
+            community_id="forum.example.com",
+        )
+
+        assert get_request_platform(request) == "discourse"
+
+    def test_skips_identity_when_not_set_on_state(self) -> None:
+        from src.auth.platform_claims import get_request_platform
+
+        request = _make_request(headers={"x-platform-type": "discourse"})
+
+        assert get_request_platform(request) == "discourse"
+
+    def test_handles_mock_state_without_platform_identity_attr(self) -> None:
+        from src.auth.platform_claims import get_request_platform
+
+        request = MagicMock()
+        request.headers = {}
+        request.state = MagicMock(spec=[])
+
+        assert get_request_platform(request) == "discord"

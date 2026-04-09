@@ -267,11 +267,9 @@ class TestServiceAccountCommunityMembership:
                 role="admin",
             )
 
-            # Mock request object
             mock_request = MagicMock()
-            mock_request.headers.get.return_value = "false"
+            mock_request.headers = {}
 
-            # Call verify_community_membership - should auto-create everything
             membership = await verify_community_membership("123456789", user, db, mock_request)
 
             # Verify membership was created
@@ -507,9 +505,8 @@ class TestServiceAccountCommunityMembership:
                 role="user",
             )
 
-            # Mock request object
             mock_request = MagicMock()
-            mock_request.headers.get.return_value = "false"
+            mock_request.headers = {}
 
             # Should NOT raise 403 for banned service account
             result_membership = await verify_community_membership(
@@ -591,9 +588,8 @@ class TestServiceAccountCommunityMembership:
                 role="user",
             )
 
-            # Mock request object
             mock_request = MagicMock()
-            mock_request.headers.get.return_value = "false"
+            mock_request.headers = {}
 
             # Should raise 403 for banned human user
             with pytest.raises(HTTPException) as exc_info:

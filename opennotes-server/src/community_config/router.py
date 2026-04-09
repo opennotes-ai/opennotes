@@ -15,6 +15,7 @@ from src.auth.community_dependencies import (
 )
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
+from src.auth.platform_claims import get_request_platform
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.community_config.models import CommunityConfig
@@ -163,7 +164,7 @@ async def get_community_config(
     if not is_service_account(current_user):
         await verify_community_membership(community_server_id, current_user, db, request)
 
-    platform = request.headers.get("x-platform-type", "discord")
+    platform = get_request_platform(request)
     community_server = await get_community_server_by_platform_id(
         db=db,
         community_server_id=community_server_id,
@@ -209,7 +210,7 @@ async def set_community_config(
 
     Requires: User must be an admin or moderator of the community server.
     """
-    platform = request.headers.get("x-platform-type", "discord")
+    platform = get_request_platform(request)
     community_server = await get_community_server_by_platform_id(
         db=db,
         community_server_id=community_server_id,
@@ -275,7 +276,7 @@ async def reset_community_config(
 
     Requires: User must be an admin or moderator of the community server.
     """
-    platform = request.headers.get("x-platform-type", "discord")
+    platform = get_request_platform(request)
     community_server = await get_community_server_by_platform_id(
         db=db,
         community_server_id=community_server_id,

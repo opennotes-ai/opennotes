@@ -66,7 +66,6 @@ module OpenNotes
     def execute_request(method, path, params: nil, body: nil, user: nil)
       @connection.send(method, path) do |req|
         req.headers["Authorization"] = "Bearer #{@api_key}"
-        req.headers["X-Platform-Type"] = "discourse"
 
         if user
           req.headers["X-Adapter-Platform"] = "discourse"

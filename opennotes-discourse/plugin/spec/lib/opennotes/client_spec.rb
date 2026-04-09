@@ -38,7 +38,7 @@ RSpec.describe OpenNotes::Client do
     it "sends a GET request with authorization headers" do
       stubs.get("/api/v2/requests") do |env|
         expect(env.request_headers["Authorization"]).to eq("Bearer test-api-key")
-        expect(env.request_headers["X-Platform-Type"]).to eq("discourse")
+        expect(env.request_headers).not_to have_key("X-Platform-Type")
         [200, { "Content-Type" => "application/json" }, '{"data": []}']
       end
 

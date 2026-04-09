@@ -31,6 +31,7 @@ from src.auth.community_dependencies import (
     verify_community_admin_by_uuid,
 )
 from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.platform_claims import get_request_platform
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
@@ -320,7 +321,7 @@ async def list_monitored_channels_jsonapi(
 
         await verify_community_admin(filter_community_server_id, current_user, db, request)
 
-        platform = request.headers.get("x-platform-type", "discord")
+        platform = get_request_platform(request)
         cs_result = await db.execute(
             select(CommunityServer.id).where(
                 CommunityServer.platform_community_server_id == filter_community_server_id,
@@ -458,7 +459,7 @@ async def create_monitored_channel_jsonapi(
 
         await verify_community_admin(attrs.community_server_id, current_user, db, request)
 
-        platform = request.headers.get("x-platform-type", "discord")
+        platform = get_request_platform(request)
         cs_result = await db.execute(
             select(CommunityServer.id).where(
                 CommunityServer.platform_community_server_id == attrs.community_server_id,

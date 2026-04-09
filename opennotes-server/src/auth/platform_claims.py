@@ -213,6 +213,18 @@ def resolve_platform_identity(request: Request) -> PlatformIdentity | None:
     return identity
 
 
+def get_request_platform(request: Request, default: str = "discord") -> str:
+    identity = getattr(request.state, "platform_identity", None)
+    if isinstance(identity, PlatformIdentity):
+        return identity.platform
+
+    header_value = request.headers.get("x-platform-type")
+    if header_value:
+        return header_value
+
+    return default
+
+
 def get_platform_admin_status(request: Request) -> bool:
     identity = getattr(request.state, "platform_identity", None)
 
