@@ -181,6 +181,8 @@ def mock_request():
     """Create a mock FastAPI request with no Discord permission headers."""
     request = MagicMock()
     request.headers = {}
+    request.state.platform_identity = None
+    request.state.api_key = None
     return request
 
 

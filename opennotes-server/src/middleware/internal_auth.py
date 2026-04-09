@@ -14,6 +14,9 @@ Headers Protected:
     - Any header starting with X-Platform-* (except X-Platform-Claims)
     - X-Internal-Auth (always stripped after validation)
 
+Note: X-Adapter-* headers are NOT stripped by this middleware. They are
+validated via API key scope (platform:adapter) in resolve_platform_identity().
+
 Usage:
     This middleware should be registered early in the middleware chain (before
     any other middleware that reads platform headers).

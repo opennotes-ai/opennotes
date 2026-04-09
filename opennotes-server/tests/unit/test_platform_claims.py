@@ -1,5 +1,34 @@
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+from uuid import uuid4
+
 import pendulum
 import pytest
+
+from src.users.models import APIKey
+
+
+def _make_api_key(scopes: list[str] | None) -> APIKey:
+    return APIKey(
+        user_id=uuid4(),
+        name="test-key",
+        key_hash="fake-hash-value",
+        scopes=scopes,
+    )
+
+
+def _make_request(
+    headers: dict[str, str] | None = None,
+    api_key: APIKey | None = None,
+) -> MagicMock:
+    request = MagicMock()
+    request.headers = headers or {}
+    state = MagicMock(spec=[])
+    if api_key is not None:
+        state.api_key = api_key
+    request.state = state
+    return request
 
 
 @pytest.mark.unit
@@ -245,6 +274,7 @@ class TestGetPlatformAdminStatus:
 
         request = MagicMock()
         request.headers = {"x-platform-claims": token}
+        request.state = MagicMock(spec=[])
         result = get_platform_admin_status(request)
         assert result is True
 
@@ -263,6 +293,7 @@ class TestGetPlatformAdminStatus:
 
         request = MagicMock()
         request.headers = {"x-platform-claims": token}
+        request.state = MagicMock(spec=[])
         result = get_platform_admin_status(request)
         assert result is False
 
@@ -273,6 +304,7 @@ class TestGetPlatformAdminStatus:
 
         request = MagicMock()
         request.headers = {}
+        request.state = MagicMock(spec=[])
         result = get_platform_admin_status(request)
         assert result is False
 
@@ -283,6 +315,7 @@ class TestGetPlatformAdminStatus:
 
         request = MagicMock()
         request.headers = {"x-platform-claims": "invalid.jwt.token"}
+        request.state = MagicMock(spec=[])
         result = get_platform_admin_status(request)
         assert result is False
 
@@ -293,5 +326,124 @@ class TestGetPlatformAdminStatus:
 
         request = MagicMock()
         request.headers = {"x-discord-claims": "some-token", "x-discord-has-manage-server": "true"}
+        request.state = MagicMock(spec=[])
+        result = get_platform_admin_status(request)
+        assert result is False
+
+    def test_reads_from_platform_identity_on_request_state(self) -> None:
+        from unittest.mock import MagicMock
+
+        from src.auth.platform_claims import PlatformIdentity, get_platform_admin_status
+
+        identity = PlatformIdentity(
+            platform="discourse",
+            scope="forum.example.com",
+            sub="42",
+            community_id="forum.example.com",
+            can_administer_community=True,
+        )
+
+        request = MagicMock()
+        request.headers = {}
+        request.state.platform_identity = identity
+        result = get_platform_admin_status(request)
+        assert result is True
+
+    def test_platform_identity_non_admin(self) -> None:
+        from unittest.mock import MagicMock
+
+        from src.auth.platform_claims import PlatformIdentity, get_platform_admin_status
+
+        identity = PlatformIdentity(
+            platform="discourse",
+            scope="forum.example.com",
+            sub="42",
+            community_id="forum.example.com",
+            can_administer_community=False,
+        )
+
+        request = MagicMock()
+        request.headers = {}
+        request.state.platform_identity = identity
+        result = get_platform_admin_status(request)
+        assert result is False
+
+    def test_platform_identity_takes_priority_over_jwt(self) -> None:
+        from unittest.mock import MagicMock
+
+        from src.auth.platform_claims import (
+            PlatformIdentity,
+            create_platform_claims_token,
+            get_platform_admin_status,
+        )
+
+        token = create_platform_claims_token(
+            platform="discord",
+            scope="*",
+            sub="123",
+            community_id="456",
+            can_administer_community=True,
+        )
+
+        identity = PlatformIdentity(
+            platform="discourse",
+            scope="forum.example.com",
+            sub="42",
+            community_id="forum.example.com",
+            can_administer_community=False,
+        )
+
+        request = MagicMock()
+        request.headers = {"x-platform-claims": token}
+        request.state.platform_identity = identity
+        result = get_platform_admin_status(request)
+        assert result is False
+
+    def test_lazy_resolves_adapter_headers_when_api_key_on_state(self) -> None:
+        from src.auth.platform_claims import get_platform_admin_status
+
+        api_key = _make_api_key(scopes=["platform:adapter"])
+        request = _make_request(
+            headers={
+                "x-adapter-platform": "discourse",
+                "x-adapter-user-id": "42",
+                "x-adapter-scope": "forum.example.com",
+                "x-adapter-admin": "true",
+            },
+            api_key=api_key,
+        )
+
+        result = get_platform_admin_status(request)
+        assert result is True
+
+    def test_lazy_resolve_returns_false_when_no_api_key(self) -> None:
+        from src.auth.platform_claims import get_platform_admin_status
+
+        request = _make_request(
+            headers={
+                "x-adapter-platform": "discourse",
+                "x-adapter-user-id": "42",
+                "x-adapter-scope": "forum.example.com",
+                "x-adapter-admin": "true",
+            },
+        )
+
+        result = get_platform_admin_status(request)
+        assert result is False
+
+    def test_lazy_resolve_returns_false_when_wrong_scope(self) -> None:
+        from src.auth.platform_claims import get_platform_admin_status
+
+        api_key = _make_api_key(scopes=["simulations:read"])
+        request = _make_request(
+            headers={
+                "x-adapter-platform": "discourse",
+                "x-adapter-user-id": "42",
+                "x-adapter-scope": "forum.example.com",
+                "x-adapter-admin": "true",
+            },
+            api_key=api_key,
+        )
+
         result = get_platform_admin_status(request)
         assert result is False

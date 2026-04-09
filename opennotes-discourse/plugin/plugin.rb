@@ -12,7 +12,7 @@ enabled_site_setting :opennotes_enabled
 register_asset "stylesheets/opennotes.scss"
 
 after_initialize do
-  %w[client platform_claims user_mapper post_mapper action_executor].each do |f|
+  %w[client user_mapper post_mapper action_executor].each do |f|
     load File.expand_path("../lib/opennotes/#{f}.rb", __FILE__)
   end
 

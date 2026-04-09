@@ -3,8 +3,7 @@
 RSpec.describe OpenNotes::Client do
   let(:server_url) { "https://opennotes.example.com" }
   let(:api_key) { "test-api-key" }
-  let(:jwt_secret) { "test-jwt-secret" }
-  let(:client) { described_class.new(server_url: server_url, api_key: api_key, jwt_secret: jwt_secret) }
+  let(:client) { described_class.new(server_url: server_url, api_key: api_key) }
 
   let(:user) do
     instance_double(
@@ -39,7 +38,7 @@ RSpec.describe OpenNotes::Client do
     it "sends a GET request with authorization headers" do
       stubs.get("/api/v2/requests") do |env|
         expect(env.request_headers["Authorization"]).to eq("Bearer test-api-key")
-        expect(env.request_headers["X-Platform-Type"]).to eq("discourse")
+        expect(env.request_headers).not_to have_key("X-Platform-Type")
         [200, { "Content-Type" => "application/json" }, '{"data": []}']
       end
 
@@ -47,16 +46,29 @@ RSpec.describe OpenNotes::Client do
       expect(result).to eq("data" => [])
     end
 
-    it "includes platform claims when user is provided" do
+    it "includes adapter headers when user is provided" do
       stubs.get("/api/v2/requests") do |env|
-        expect(env.request_headers["X-Platform-Claims"]).not_to be_nil
-        token = env.request_headers["X-Platform-Claims"]
-        decoded = JWT.decode(token, jwt_secret, true, algorithm: "HS256").first
-        expect(decoded["sub"]).to eq("42")
+        expect(env.request_headers["X-Adapter-Platform"]).to eq("discourse")
+        expect(env.request_headers["X-Adapter-User-Id"]).to eq("42")
+        expect(env.request_headers["X-Adapter-Username"]).to eq("alice")
+        expect(env.request_headers["X-Adapter-Trust-Level"]).to eq("2")
+        expect(env.request_headers["X-Adapter-Admin"]).to eq("false")
+        expect(env.request_headers["X-Adapter-Moderator"]).to eq("false")
+        expect(env.request_headers["X-Adapter-Scope"]).to eq("community.example.com")
         [200, { "Content-Type" => "application/json" }, '{"data": []}']
       end
 
       client.get("/api/v2/requests", user: user)
+    end
+
+    it "does not include adapter headers when no user is provided" do
+      stubs.get("/api/v2/requests") do |env|
+        expect(env.request_headers).not_to have_key("X-Adapter-Platform")
+        expect(env.request_headers).not_to have_key("X-Adapter-User-Id")
+        [200, { "Content-Type" => "application/json" }, '{"data": []}']
+      end
+
+      client.get("/api/v2/requests")
     end
 
     it "passes query parameters" do

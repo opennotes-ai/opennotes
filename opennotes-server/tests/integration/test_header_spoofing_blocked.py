@@ -169,18 +169,20 @@ async def service_account_membership(
         return membership
 
 
-def create_mock_request_with_spoofed_header() -> MagicMock:
+def _make_mock_request(headers: dict[str, str] | None = None) -> MagicMock:
     request = MagicMock()
-    request.headers = {
-        "x-discord-has-manage-server": "true",
-    }
+    request.headers = headers or {}
+    request.state.platform_identity = None
+    request.state.api_key = None
     return request
+
+
+def create_mock_request_with_spoofed_header() -> MagicMock:
+    return _make_mock_request({"x-discord-has-manage-server": "true"})
 
 
 def create_mock_request_no_header() -> MagicMock:
-    request = MagicMock()
-    request.headers = {}
-    return request
+    return _make_mock_request()
 
 
 def create_mock_request_with_valid_platform_claims(
@@ -198,19 +200,11 @@ def create_mock_request_with_valid_platform_claims(
         community_id=community_id,
         can_administer_community=can_administer_community,
     )
-    request = MagicMock()
-    request.headers = {
-        "x-platform-claims": token,
-    }
-    return request
+    return _make_mock_request({"x-platform-claims": token})
 
 
 def create_mock_request_with_invalid_claims() -> MagicMock:
-    request = MagicMock()
-    request.headers = {
-        "x-platform-claims": "invalid.jwt.token",
-    }
-    return request
+    return _make_mock_request({"x-platform-claims": "invalid.jwt.token"})
 
 
 @pytest.mark.asyncio

@@ -29,7 +29,7 @@ from src.auth.permissions import (
     has_community_admin_access,
     is_service_account,
 )
-from src.auth.platform_claims import get_platform_admin_status
+from src.auth.platform_claims import get_platform_admin_status, get_request_platform
 from src.database import get_db
 from src.llm_config.models import (
     COMMUNITY_SERVER_PLATFORM_ID_UNIQUE_CONSTRAINT,
@@ -353,7 +353,7 @@ async def verify_community_membership(
     Raises:
         HTTPException: 403 if user is not a member or is banned
     """
-    platform = request.headers.get("x-platform-type", "discord")
+    platform = get_request_platform(request)
     community = await get_community_server_by_platform_id(
         db, community_server_id, platform=platform, auto_create=True
     )

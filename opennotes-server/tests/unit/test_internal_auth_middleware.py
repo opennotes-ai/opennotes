@@ -590,3 +590,114 @@ class TestHeaderProtection:
         assert _is_protected_header(b"x-discord-user-id") is False
         assert _is_protected_header(b"x-discord-has-manage-server") is False
         assert _is_protected_header(b"x-guild-id") is False
+
+    def test_adapter_headers_are_not_protected(self) -> None:
+        from src.middleware.internal_auth import _is_protected_header
+
+        assert _is_protected_header(b"x-adapter-platform") is False
+        assert _is_protected_header(b"X-Adapter-Platform") is False
+        assert _is_protected_header(b"x-adapter-user-id") is False
+        assert _is_protected_header(b"x-adapter-scope") is False
+        assert _is_protected_header(b"x-adapter-admin") is False
+        assert _is_protected_header(b"x-adapter-username") is False
+        assert _is_protected_header(b"x-adapter-trust-level") is False
+        assert _is_protected_header(b"x-adapter-moderator") is False
+
+
+@pytest.mark.unit
+def test_external_request_preserves_adapter_headers_for_api_key_validation(monkeypatch):
+    from src import config
+
+    test_settings = config.Settings(
+        _env_file=None,
+        ENVIRONMENT="development",
+        JWT_SECRET_KEY=TEST_JWT_SECRET_KEY,
+        CREDENTIALS_ENCRYPTION_KEY=TEST_CREDENTIALS_ENCRYPTION_KEY,
+        ENCRYPTION_MASTER_KEY=TEST_ENCRYPTION_MASTER_KEY,
+        INTERNAL_SERVICE_SECRET=TEST_INTERNAL_SERVICE_SECRET,
+    )
+    monkeypatch.setattr(config, "settings", test_settings)
+
+    from src.middleware.internal_auth import InternalHeaderValidationMiddleware
+
+    app = FastAPI()
+    app.add_middleware(InternalHeaderValidationMiddleware)
+
+    @app.get("/test")
+    async def test_endpoint(request: Request):
+        adapter_headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower().startswith("x-adapter-")
+        }
+        return {"adapter_headers": adapter_headers}
+
+    import src.middleware.internal_auth
+
+    monkeypatch.setattr(src.middleware.internal_auth, "settings", test_settings)
+
+    client = TestClient(app)
+    response = client.get(
+        "/test",
+        headers={
+            "X-Adapter-Platform": "discourse",
+            "X-Adapter-User-Id": "42",
+            "X-Adapter-Scope": "forum.example.com",
+            "X-Adapter-Admin": "true",
+            "X-Adapter-Username": "attacker",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["adapter_headers"]["x-adapter-platform"] == "discourse"
+    assert data["adapter_headers"]["x-adapter-user-id"] == "42"
+    assert data["adapter_headers"]["x-adapter-scope"] == "forum.example.com"
+    assert data["adapter_headers"]["x-adapter-admin"] == "true"
+    assert data["adapter_headers"]["x-adapter-username"] == "attacker"
+
+
+@pytest.mark.unit
+def test_internal_request_preserves_adapter_headers(monkeypatch):
+    from src import config
+
+    test_settings = config.Settings(
+        _env_file=None,
+        ENVIRONMENT="development",
+        JWT_SECRET_KEY=TEST_JWT_SECRET_KEY,
+        CREDENTIALS_ENCRYPTION_KEY=TEST_CREDENTIALS_ENCRYPTION_KEY,
+        ENCRYPTION_MASTER_KEY=TEST_ENCRYPTION_MASTER_KEY,
+        INTERNAL_SERVICE_SECRET=TEST_INTERNAL_SERVICE_SECRET,
+    )
+    monkeypatch.setattr(config, "settings", test_settings)
+
+    from src.middleware.internal_auth import InternalHeaderValidationMiddleware
+
+    app = FastAPI()
+    app.add_middleware(InternalHeaderValidationMiddleware)
+
+    @app.get("/test")
+    async def test_endpoint(request: Request):
+        return {
+            "adapter_platform": request.headers.get("X-Adapter-Platform"),
+            "adapter_user_id": request.headers.get("X-Adapter-User-Id"),
+        }
+
+    import src.middleware.internal_auth
+
+    monkeypatch.setattr(src.middleware.internal_auth, "settings", test_settings)
+
+    client = TestClient(app)
+    response = client.get(
+        "/test",
+        headers={
+            "X-Adapter-Platform": "discourse",
+            "X-Adapter-User-Id": "42",
+            "X-Internal-Auth": TEST_INTERNAL_SERVICE_SECRET,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["adapter_platform"] == "discourse"
+    assert data["adapter_user_id"] == "42"
