@@ -79,6 +79,7 @@ after_initialize do
     monitored = SiteSetting.opennotes_monitored_categories.to_s.split(",").map(&:strip)
     return true if monitored.empty?
 
-    monitored.include?(category.slug) || monitored.include?(category.id.to_s)
+    full_slug = category.slug_path.join("/")
+    monitored.include?(full_slug) || monitored.include?(category.id.to_s)
   end
 end

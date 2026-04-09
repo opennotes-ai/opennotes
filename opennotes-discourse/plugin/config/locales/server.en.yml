@@ -3,7 +3,7 @@ en:
     opennotes_enabled: "Enable OpenNotes community moderation"
     opennotes_server_url: "URL of the OpenNotes server"
     opennotes_api_key: "API key for authenticating with the OpenNotes server"
-    opennotes_monitored_categories: "Comma-separated category slugs to monitor for moderation"
+    opennotes_monitored_categories: "Comma-separated category slug paths to monitor (e.g. 'parent/child' for subcategories)"
     opennotes_reviewer_min_trust_level: "Minimum trust level required to participate in community review"
     opennotes_auto_hide_on_consensus: "Automatically hide posts when community consensus is reached"
     opennotes_staff_approval_required: "Require staff approval before executing consensus actions"

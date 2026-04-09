@@ -1,0 +1,580 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "description": "Seed content corpus for OpenNotes Discourse demo",
+    "source_attribution": {
+      "wikiforum": "Inspired by wiki community edit dispute patterns (Wikipedia Talk pages, Fandom Discussions)",
+      "threadhub": "Inspired by tech community forum patterns (Stack Overflow Meta, Hacker News discussions)",
+      "craftworld": "Inspired by creative/gaming community patterns (Reddit creative subs, Steam Community forums)"
+    }
+  },
+  "categories": [
+    {
+      "name": "Wikiforum",
+      "slug": "wikiforum",
+      "color": "0088CC",
+      "text_color": "FFFFFF",
+      "subcategories": [
+        { "name": "Edit Disputes", "slug": "edit-disputes", "color": "3AB54A", "text_color": "FFFFFF" },
+        { "name": "Policy Discussion", "slug": "policy-discussion", "color": "F7941D", "text_color": "FFFFFF" },
+        { "name": "Source Verification", "slug": "source-verification", "color": "9EB83B", "text_color": "FFFFFF" }
+      ]
+    },
+    {
+      "name": "ThreadHub",
+      "slug": "threadhub",
+      "color": "ED207B",
+      "text_color": "FFFFFF",
+      "subcategories": [
+        { "name": "Meta Discussion", "slug": "meta-discussion", "color": "B3B5B4", "text_color": "FFFFFF" },
+        { "name": "Moderation Feedback", "slug": "moderation-feedback", "color": "0E76BD", "text_color": "FFFFFF" },
+        { "name": "Feature Requests", "slug": "feature-requests", "color": "652D90", "text_color": "FFFFFF" }
+      ]
+    },
+    {
+      "name": "CraftWorld",
+      "slug": "craftworld",
+      "color": "12A89D",
+      "text_color": "FFFFFF",
+      "subcategories": [
+        { "name": "Build Showcases", "slug": "build-showcases", "color": "F15D22", "text_color": "FFFFFF" },
+        { "name": "Server Rules", "slug": "server-rules", "color": "231F20", "text_color": "FFFFFF" },
+        { "name": "Player Reports", "slug": "player-reports", "color": "BF1E2E", "text_color": "FFFFFF" }
+      ]
+    },
+    {
+      "name": "General Discussion",
+      "slug": "general-discussion",
+      "color": "3AB54A",
+      "text_color": "FFFFFF",
+      "subcategories": []
+    },
+    {
+      "name": "Announcements",
+      "slug": "announcements",
+      "color": "BF1E2E",
+      "text_color": "FFFFFF",
+      "subcategories": []
+    }
+  ],
+  "users": [
+    { "username": "editor_alice", "email": "editor_alice@seed.local", "trust_level": 2 },
+    { "username": "editor_bob", "email": "editor_bob@seed.local", "trust_level": 2 },
+    { "username": "editor_carol", "email": "editor_carol@seed.local", "trust_level": 3 },
+    { "username": "mod_diana", "email": "mod_diana@seed.local", "trust_level": 4 },
+    { "username": "newbie_evan", "email": "newbie_evan@seed.local", "trust_level": 0 },
+    { "username": "newbie_fiona", "email": "newbie_fiona@seed.local", "trust_level": 0 },
+    { "username": "regular_grace", "email": "regular_grace@seed.local", "trust_level": 1 },
+    { "username": "regular_hank", "email": "regular_hank@seed.local", "trust_level": 1 },
+    { "username": "veteran_irene", "email": "veteran_irene@seed.local", "trust_level": 3 },
+    { "username": "dev_jack", "email": "dev_jack@seed.local", "trust_level": 2 },
+    { "username": "dev_karen", "email": "dev_karen@seed.local", "trust_level": 2 },
+    { "username": "troll_larry", "email": "troll_larry@seed.local", "trust_level": 0 },
+    { "username": "helper_maria", "email": "helper_maria@seed.local", "trust_level": 2 },
+    { "username": "critic_noah", "email": "critic_noah@seed.local", "trust_level": 1 },
+    { "username": "builder_olive", "email": "builder_olive@seed.local", "trust_level": 2 },
+    { "username": "builder_pete", "email": "builder_pete@seed.local", "trust_level": 2 },
+    { "username": "gamer_quinn", "email": "gamer_quinn@seed.local", "trust_level": 1 },
+    { "username": "gamer_rosa", "email": "gamer_rosa@seed.local", "trust_level": 1 },
+    { "username": "admin_sam", "email": "admin_sam@seed.local", "trust_level": 4 },
+    { "username": "lurker_tina", "email": "lurker_tina@seed.local", "trust_level": 0 },
+    { "username": "scholar_uma", "email": "scholar_uma@seed.local", "trust_level": 2 },
+    { "username": "debater_vic", "email": "debater_vic@seed.local", "trust_level": 1 },
+    { "username": "writer_wendy", "email": "writer_wendy@seed.local", "trust_level": 2 },
+    { "username": "archivist_xander", "email": "archivist_xander@seed.local", "trust_level": 3 },
+    { "username": "newbie_yara", "email": "newbie_yara@seed.local", "trust_level": 0 },
+    { "username": "regular_zach", "email": "regular_zach@seed.local", "trust_level": 1 },
+    { "username": "filler_user01", "email": "filler01@seed.local", "trust_level": 0 },
+    { "username": "filler_user02", "email": "filler02@seed.local", "trust_level": 0 },
+    { "username": "filler_user03", "email": "filler03@seed.local", "trust_level": 0 },
+    { "username": "filler_user04", "email": "filler04@seed.local", "trust_level": 1 },
+    { "username": "filler_user05", "email": "filler05@seed.local", "trust_level": 1 },
+    { "username": "filler_user06", "email": "filler06@seed.local", "trust_level": 1 },
+    { "username": "filler_user07", "email": "filler07@seed.local", "trust_level": 1 },
+    { "username": "filler_user08", "email": "filler08@seed.local", "trust_level": 2 },
+    { "username": "filler_user09", "email": "filler09@seed.local", "trust_level": 2 },
+    { "username": "filler_user10", "email": "filler10@seed.local", "trust_level": 2 },
+    { "username": "filler_user11", "email": "filler11@seed.local", "trust_level": 2 },
+    { "username": "filler_user12", "email": "filler12@seed.local", "trust_level": 0 },
+    { "username": "filler_user13", "email": "filler13@seed.local", "trust_level": 0 },
+    { "username": "filler_user14", "email": "filler14@seed.local", "trust_level": 1 },
+    { "username": "filler_user15", "email": "filler15@seed.local", "trust_level": 1 },
+    { "username": "filler_user16", "email": "filler16@seed.local", "trust_level": 2 },
+    { "username": "filler_user17", "email": "filler17@seed.local", "trust_level": 3 },
+    { "username": "filler_user18", "email": "filler18@seed.local", "trust_level": 0 },
+    { "username": "filler_user19", "email": "filler19@seed.local", "trust_level": 0 },
+    { "username": "filler_user20", "email": "filler20@seed.local", "trust_level": 1 },
+    { "username": "filler_user21", "email": "filler21@seed.local", "trust_level": 1 },
+    { "username": "filler_user22", "email": "filler22@seed.local", "trust_level": 2 },
+    { "username": "filler_user23", "email": "filler23@seed.local", "trust_level": 2 },
+    { "username": "filler_user24", "email": "filler24@seed.local", "trust_level": 0 },
+    { "username": "filler_user25", "email": "filler25@seed.local", "trust_level": 1 }
+  ],
+  "topics": [
+    {
+      "title": "Should fan theories be included in main wiki articles?",
+      "category": "wikiforum/edit-disputes",
+      "author": "editor_alice",
+      "posts": [
+        {
+          "author": "editor_alice",
+          "body": "I've been noticing a trend where users are inserting unverified fan theories into main wiki articles as if they were established canon. Last week, someone added an entire section about a supposed hidden timeline to the Lore Overview page with zero sources.\n\nI think we need a clear policy: fan theories belong in dedicated theory pages, not in the main article body. What does everyone think?"
+        },
+        {
+          "author": "editor_bob",
+          "body": "I disagree. Some fan theories have strong textual evidence and eventually get confirmed by creators. Excluding them entirely means our wiki misses important context that readers are looking for.\n\nThe real issue is sourcing quality, not whether something is a 'theory' or 'canon.'"
+        },
+        {
+          "author": "newbie_evan",
+          "body": "This is so dumb. Just let people write whatever they want. You wiki editors are the worst power-trippers on the internet. Nobody cares about your precious 'sourcing standards.'"
+        },
+        {
+          "author": "editor_carol",
+          "body": "I've been editing wikis for 8 years and @editor_alice is right. The sourcing standard exists because without it, articles degrade into speculation dumps.\n\nThat said, @editor_bob raises a valid point about well-evidenced theories. Maybe we can create a 'Theories' subsection within articles that clearly labels speculative content?"
+        },
+        {
+          "author": "mod_diana",
+          "body": "Let's keep this civil. @newbie_evan, please review our discussion guidelines — personal attacks aren't productive.\n\nI like the compromise @editor_carol suggests. We could implement a template tag like `{{theory}}` that clearly marks speculative sections while keeping them accessible."
+        }
+      ],
+      "flags": [
+        { "post_index": 2, "flag_type": "inappropriate", "flagged_by": "editor_alice" },
+        { "post_index": 2, "flag_type": "inappropriate", "flagged_by": "editor_carol" }
+      ]
+    },
+    {
+      "title": "Reverting the Dragon Lore page — admin overreach or justified?",
+      "category": "wikiforum/edit-disputes",
+      "author": "debater_vic",
+      "posts": [
+        {
+          "author": "debater_vic",
+          "body": "Yesterday, @mod_diana reverted 47 edits on the Dragon Lore page made by various contributors over the past month. The revert message just said 'restoring quality standard.' No discussion, no talk page notice, nothing.\n\nThis is exactly the kind of top-down moderation that drives contributors away. Those 47 edits included corrections, updated references, and formatting improvements — not just fan theories."
+        },
+        {
+          "author": "mod_diana",
+          "body": "I understand the frustration, and I should have posted on the talk page first. That was my mistake.\n\nHowever, I want to clarify: the bulk revert was because several of those edits introduced circular references and broke the citation numbering. I'm happy to work through the edits individually to restore the good changes."
+        },
+        {
+          "author": "newbie_fiona",
+          "body": "I was one of the editors who made changes. I spent hours updating the references section and it all got wiped without warning. This makes me not want to contribute anymore."
+        },
+        {
+          "author": "veteran_irene",
+          "body": "I've reviewed the diff. @mod_diana is right that the citation chain was broken, but a selective revert would have been better than a bulk one. Maybe we need a policy requiring talk page discussion before reverting more than 5 edits at once?"
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "Citation needed: Recent claims on the Ancient History page",
+      "category": "wikiforum/source-verification",
+      "author": "scholar_uma",
+      "posts": [
+        {
+          "author": "scholar_uma",
+          "body": "I've flagged 12 unsourced claims on the Ancient History page. Several appear to be copy-pasted from a blog post that itself doesn't cite primary sources. The claims include:\n\n1. 'The eastern trade routes were established in 3000 BCE' — no archaeological evidence cited\n2. 'Population estimates suggest 50,000 inhabitants' — which population estimates?\n3. 'The council governed through democratic processes' — contradicts Harker (2019)\n\nI'm tagging these with `{{citation needed}}` but wanted to flag here for discussion."
+        },
+        {
+          "author": "archivist_xander",
+          "body": "Good catch. I traced claim #1 back to a 2018 blog post by user HistoryBuff99 that was deleted last year. The original source was a popularization of a misread archaeological survey.\n\nFor claim #3, Harker (2019) explicitly argues against the 'democratic council' interpretation. The article should cite Chen & Patel (2021) which provides the current scholarly consensus."
+        },
+        {
+          "author": "editor_bob",
+          "body": "I added some of those claims based on a documentary I watched. Didn't realize the sourcing was that weak. Happy to help update with proper citations — can someone point me to the Chen & Patel paper?"
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "Proposal: Adopt a three-tier verification system for wiki sources",
+      "category": "wikiforum/policy-discussion",
+      "author": "veteran_irene",
+      "posts": [
+        {
+          "author": "veteran_irene",
+          "body": "Based on recurring disputes about source quality, I'm proposing a three-tier verification system:\n\n**Tier 1 — Primary Sources:** Peer-reviewed papers, official documents, creator statements. Can be cited directly in main articles.\n\n**Tier 2 — Secondary Sources:** Reputable journalism, established reference works. Acceptable with attribution.\n\n**Tier 3 — Community Sources:** Blog posts, forum discussions, YouTube analyses. Only acceptable in Theory/Community sections.\n\nThis gives us clear guidelines without banning any source type entirely."
+        },
+        {
+          "author": "editor_alice",
+          "body": "Strong support. This would have prevented half the edit disputes we've had this quarter. One addition: I'd suggest a 'Tier 0' for directly verifiable facts (dates, names, publicly observable events) that don't need a source citation at all."
+        },
+        {
+          "author": "critic_noah",
+          "body": "This is going to create a bureaucratic nightmare. Every edit will turn into a debate about which tier a source falls into. Who decides if a YouTube video with 5M views counts as 'established' enough for Tier 2?\n\nWe already have 'citation needed' tags. Adding more process won't fix the fundamental problem that some editors just don't care about accuracy."
+        },
+        {
+          "author": "writer_wendy",
+          "body": "I see both sides. The tier system gives structure, but @critic_noah is right that enforcement could be tedious. What if we made it advisory rather than mandatory — a style guide recommendation rather than a hard rule?"
+        },
+        {
+          "author": "mod_diana",
+          "body": "I'd support a trial run. Let's apply the tier system to five high-traffic pages for three months and measure the impact on edit disputes and source quality. If it works, we expand. If not, we learn from the data."
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "Why is my answer being downvoted? Factually correct response getting buried",
+      "category": "threadhub/meta-discussion",
+      "author": "dev_jack",
+      "posts": [
+        {
+          "author": "dev_jack",
+          "body": "I answered a question about database indexing strategies with a technically correct explanation of B-tree vs. hash indexes, including benchmarks from PostgreSQL 16. The answer has -3 votes while a simpler but incomplete answer has +15.\n\nIs this community just hostile to detailed technical answers? Or is there a voting ring I should know about?"
+        },
+        {
+          "author": "dev_karen",
+          "body": "I read your answer. It's technically correct but 2,000 words long for a question that asked 'should I add an index?' Sometimes being right isn't enough — you need to match the depth to the question.\n\nThe highly-voted answer gave a practical 'yes, and here's how' response in 3 sentences. That's what the asker needed."
+        },
+        {
+          "author": "helper_maria",
+          "body": "I actually bookmarked your answer for reference! It's great as a deep-dive resource. Maybe you could restructure it with a TL;DR at the top followed by the detailed analysis? Best of both worlds."
+        },
+        {
+          "author": "troll_larry",
+          "body": "lol imagine writing a dissertation for a forum post and then crying about downvotes. touch grass buddy"
+        },
+        {
+          "author": "dev_jack",
+          "body": "@helper_maria That's a really good suggestion, thank you. I'll restructure it.\n\n@dev_karen Fair point about matching depth to question. I tend to over-explain because I've seen too many 'just add an index' answers that lead to worse performance.\n\n@troll_larry Cool contribution, very helpful."
+        }
+      ],
+      "flags": [
+        { "post_index": 3, "flag_type": "inappropriate", "flagged_by": "dev_jack" },
+        { "post_index": 3, "flag_type": "inappropriate", "flagged_by": "helper_maria" }
+      ]
+    },
+    {
+      "title": "Moderation transparency report — March 2026",
+      "category": "threadhub/moderation-feedback",
+      "author": "admin_sam",
+      "posts": [
+        {
+          "author": "admin_sam",
+          "body": "Here's our monthly transparency report:\n\n- **Posts removed:** 23 (17 spam, 4 harassment, 2 doxxing attempts)\n- **Users suspended:** 5 (3 spam bots, 2 repeat harassment)\n- **Appeals processed:** 8 (3 upheld, 5 overturned)\n- **Average response time:** 4.2 hours\n\nNotable: Our false positive rate for automated removals was 22% this month, up from 15% last month. We're investigating the pattern."
+        },
+        {
+          "author": "critic_noah",
+          "body": "22% false positive rate is terrible. That means roughly 1 in 5 automated removals was wrong. What's the plan to fix this before it gets worse?\n\nAlso, can you break down the 5 overturned appeals? Were they all from the automated system?"
+        },
+        {
+          "author": "admin_sam",
+          "body": "Fair question. Yes, 4 of the 5 overturned appeals were from automated removals. The spike correlates with a filter update we pushed mid-month that was too aggressive on technical terminology.\n\nWe've already rolled back that specific filter. The remaining overturned appeal was a manual removal that was reconsidered after the poster provided additional context."
+        },
+        {
+          "author": "regular_grace",
+          "body": "I was one of the false positives. My post about network security tools got auto-removed because it mentioned specific tool names. It took 6 hours to get restored. During that time, the thread moved on and my contribution was basically irrelevant.\n\n6 hours might be fast for you, but it's an eternity in a live discussion."
+        },
+        {
+          "author": "regular_hank",
+          "body": "Appreciate the transparency. Most communities wouldn't share these numbers at all. But I agree with @regular_grace — the impact of false positives is worse than the raw numbers suggest."
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "Request: Ability to see why my post was flagged",
+      "category": "threadhub/feature-requests",
+      "author": "regular_grace",
+      "posts": [
+        {
+          "author": "regular_grace",
+          "body": "Currently when a post gets flagged, the author just sees 'This post was hidden by community flags.' No reason, no guidance, nothing.\n\nCould we at least show the flag category (spam, inappropriate, off-topic) so the author knows what to fix? Right now it feels like a black box."
+        },
+        {
+          "author": "dev_karen",
+          "body": "Seconded. I've had posts flagged as 'inappropriate' when they were actually flagged for being off-topic. If I'd known the actual reason, I could have moved the post to the right category instead of deleting it."
+        },
+        {
+          "author": "admin_sam",
+          "body": "This is on our roadmap. The concern has been that showing detailed flag reasons could help bad actors game the system. But I think showing the category (without the specific flagger) is a reasonable middle ground.\n\nI'll bring this to the next mod team meeting."
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "Player using exploits in competitive match — evidence inside",
+      "category": "craftworld/player-reports",
+      "author": "gamer_quinn",
+      "posts": [
+        {
+          "author": "gamer_quinn",
+          "body": "Player `xX_Shadow_Xx` was using the wall clip exploit in last night's ranked match on the Crystal Caverns map. I have timestamps and replay file:\n\n- 12:34 — clipped through south wall to bypass checkpoint\n- 15:02 — used the same exploit to access the locked vault area\n- 18:45 — clipped into the ceiling to avoid PvP zone\n\nReplay file ID: `RC-20260405-2234`\n\nThis exploit has been known since patch 3.2 but still hasn't been fixed."
+        },
+        {
+          "author": "gamer_rosa",
+          "body": "I was in that match. Can confirm the wall clips happened. It's especially frustrating because they won by 3 points — exactly the points they got from the vault area they shouldn't have been able to access."
+        },
+        {
+          "author": "builder_pete",
+          "body": "I know this player. They've been reported before for the same exploit on different maps. Last time the report was closed as 'insufficient evidence.' Hopefully the replay file is enough this time."
+        },
+        {
+          "author": "troll_larry",
+          "body": "cry more. its not an exploit its a game mechanic. if the devs didn't want you to clip through walls they would have fixed it. git gud scrubs"
+        },
+        {
+          "author": "admin_sam",
+          "body": "Thanks for the detailed report with timestamps. I'll review the replay file. Using known exploits in competitive matches is a violation of our competitive integrity policy regardless of whether the underlying bug has been patched.\n\n@troll_larry, exploiting known bugs for competitive advantage is explicitly against our rules. Please review the Server Rules category."
+        }
+      ],
+      "flags": [
+        { "post_index": 3, "flag_type": "inappropriate", "flagged_by": "gamer_quinn" },
+        { "post_index": 3, "flag_type": "inappropriate", "flagged_by": "gamer_rosa" }
+      ]
+    },
+    {
+      "title": "New server rules proposal: Building height limits in shared zones",
+      "category": "craftworld/server-rules",
+      "author": "builder_olive",
+      "posts": [
+        {
+          "author": "builder_olive",
+          "body": "With the server growing, builds in shared zones are getting massive and causing lag for players with lower-end hardware. I'm proposing a 128-block height limit in shared building zones.\n\nThe wilderness and private plots would remain unlimited. This only affects the 4 shared community zones."
+        },
+        {
+          "author": "builder_pete",
+          "body": "I support this with a caveat: what about builds that are already above 128 blocks? Are they grandfathered in, or do existing builds need to be trimmed?\n\nI have a tower at 156 blocks in Zone 2 that I've been working on for two months."
+        },
+        {
+          "author": "gamer_quinn",
+          "body": "128 feels low. The default world height is 320. Could we compromise at 192? That still limits the mega-builds while giving creative builders room to work."
+        },
+        {
+          "author": "newbie_yara",
+          "body": "As someone with a lower-end laptop, I really appreciate this proposal. Zone 3 is basically unplayable for me right now because of all the massive structures."
+        },
+        {
+          "author": "builder_olive",
+          "body": "Good points all around. How about:\n- Existing builds grandfathered (no forced teardowns)\n- New builds capped at 192 blocks (compromise)\n- If lag persists after 30 days, we reassess the limit\n\nFair?"
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "Build showcase: Underwater Observatory (50 hours, 12000 blocks)",
+      "category": "craftworld/build-showcases",
+      "author": "builder_olive",
+      "posts": [
+        {
+          "author": "builder_olive",
+          "body": "Finally finished my underwater observatory build! 50 hours over 3 weeks. Key features:\n\n- Glass dome with reinforced frame (2400 blocks)\n- Functioning airlock system using redstone\n- Coral garden with 15 species arranged by biome\n- Observation deck with 360-degree ocean views\n- Connected tunnel system to the main base (800 blocks)\n\nCoordinates: -1240, 38, 892 in the Ocean Zone. Come visit!"
+        },
+        {
+          "author": "builder_pete",
+          "body": "This is incredible. The redstone airlock alone must have taken forever to get right. How did you handle the water physics during construction? Every time I try underwater builds, the source blocks drive me crazy."
+        },
+        {
+          "author": "gamer_rosa",
+          "body": "Visited earlier today, it's even more impressive in person. The way light filters through the glass dome at sunset is beautiful. This should be a featured build."
+        },
+        {
+          "author": "newbie_evan",
+          "body": "Bet you used creative mode for this. 12000 blocks in 50 hours? Sure buddy."
+        },
+        {
+          "author": "builder_olive",
+          "body": "All survival mode. I have the full timelapse recorded if anyone wants proof. Also, 12000 blocks over 50 hours is about 240 blocks per hour, which is pretty standard for a focused builder."
+        }
+      ],
+      "flags": [
+        { "post_index": 3, "flag_type": "inappropriate", "flagged_by": "builder_pete" }
+      ]
+    },
+    {
+      "title": "Is the voting system being gamed? Suspicious patterns in recent threads",
+      "category": "threadhub/meta-discussion",
+      "author": "regular_zach",
+      "posts": [
+        {
+          "author": "regular_zach",
+          "body": "I've been tracking voting patterns in the Feature Requests category and noticed something weird:\n\n- 5 posts by the same author all received exactly 8 upvotes within 3 minutes of posting\n- The upvoting accounts were all created within the same week\n- None of the upvoting accounts have any other activity\n\nI'm not naming names yet, but this looks like vote manipulation. Is the mod team aware?"
+        },
+        {
+          "author": "admin_sam",
+          "body": "We're aware and investigating. Our detection systems flagged the same pattern last week. I can't share details about ongoing investigations, but we take vote integrity seriously.\n\nIf you have specific post IDs, please DM them to me."
+        },
+        {
+          "author": "debater_vic",
+          "body": "This has been happening for months. I reported similar patterns back in January and got a generic 'we'll look into it' response. Three months later, still happening.\n\nAt what point do we admit the voting system needs technical fixes, not just manual investigation?"
+        },
+        {
+          "author": "dev_jack",
+          "body": "From a technical perspective, vote manipulation is an arms race. Any automated detection can be circumvented with enough effort. The real question is: what's the cost-benefit of the manipulation?\n\nIf fake votes are inflating feature requests, the impact is relatively low. If they're suppressing legitimate content, that's a bigger problem."
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "WARNING: Scam link circulating in direct messages",
+      "category": "threadhub/moderation-feedback",
+      "author": "helper_maria",
+      "posts": [
+        {
+          "author": "helper_maria",
+          "body": "Several users have reported receiving DMs with a link claiming to be a 'free premium membership upgrade.' The link leads to a phishing site that mimics our login page.\n\n**DO NOT click links in DMs claiming to offer free upgrades.**\n\nThe accounts sending these DMs are: `premium_support_official`, `threadhub_rewards`, and `community_upgrade_bot`. None of these are real staff accounts.\n\nI've reported all three to the mod team."
+        },
+        {
+          "author": "admin_sam",
+          "body": "Thanks for the quick alert, @helper_maria. All three accounts have been suspended and their DM history is being reviewed.\n\nReminder to everyone: Staff will never DM you unsolicited about account upgrades. Official communications come through the Announcements category or from accounts with the staff badge."
+        },
+        {
+          "author": "newbie_fiona",
+          "body": "I almost clicked that link yesterday. The fake login page looked completely real. Thanks for the warning."
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "Accusations of plagiarism on the Technology Overview page",
+      "category": "wikiforum/edit-disputes",
+      "author": "writer_wendy",
+      "posts": [
+        {
+          "author": "writer_wendy",
+          "body": "I've found that approximately 40% of the Technology Overview page appears to be lifted directly from a copyrighted textbook (Henderson, 'Digital Fundamentals', 6th edition, 2024). The copied sections include:\n\n- The entire 'Network Architecture' subsection\n- Three diagrams described in text (matching the book's figure descriptions)\n- Two tables of specifications\n\nThis is a serious copyright issue. I've tagged the sections with `{{copyvio}}` but we may need to blank the page until original content can be written."
+        },
+        {
+          "author": "editor_bob",
+          "body": "I can confirm. I have the Henderson textbook and the wording matches nearly verbatim in several places. The contributor who added most of this content is no longer active on the wiki.\n\nI volunteer to rewrite the Network Architecture section from scratch using open-access sources."
+        },
+        {
+          "author": "archivist_xander",
+          "body": "I've checked the page history. The copyrighted content was added in 15 edits over two weeks by a single account. Given the scope, I recommend:\n\n1. Immediate blanking of confirmed copyvio sections\n2. Replace with stub templates\n3. Community rewrite project to restore the content properly\n\nWe've handled similar situations before — the Crystal Structures page had the same issue last year."
+        },
+        {
+          "author": "mod_diana",
+          "body": "Blanking the confirmed sections now. I'll create a project page for the rewrite effort. @editor_bob, your volunteer offer is appreciated — I'll add you as the lead editor.\n\nThis is a good reminder why we need the source verification tier system that @veteran_irene proposed."
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "Hate speech in build showcase comments — ongoing problem",
+      "category": "craftworld/player-reports",
+      "author": "builder_olive",
+      "posts": [
+        {
+          "author": "builder_olive",
+          "body": "For the third time this month, someone posted slurs in the comments of build showcases. This time it was on @gamer_rosa's pagoda build. The comments were removed but the account is still active.\n\nI'm not going to repeat what was said, but it was targeted at the builder's cultural background based on the build style. This goes beyond 'inappropriate' into hate speech territory."
+        },
+        {
+          "author": "gamer_rosa",
+          "body": "Thank you for bringing this up. It's discouraging to share cultural builds and get that kind of response. I've seen similar comments on other culturally-themed builds by different builders."
+        },
+        {
+          "author": "admin_sam",
+          "body": "This is unacceptable and we're taking it seriously. The account has been permanently banned. We're also implementing an automatic filter for known slurs in the Build Showcases category specifically.\n\nTo anyone affected: our DMs are open if you need support or want to report incidents privately."
+        },
+        {
+          "author": "troll_larry",
+          "body": "people are so sensitive these days. its just words on a screen. maybe dont post if you cant handle criticism"
+        },
+        {
+          "author": "mod_diana",
+          "body": "Hate speech is not criticism, @troll_larry. This is your second warning this month. One more violation and your account will be suspended per our escalation policy."
+        }
+      ],
+      "flags": [
+        { "post_index": 3, "flag_type": "inappropriate", "flagged_by": "builder_olive" },
+        { "post_index": 3, "flag_type": "inappropriate", "flagged_by": "gamer_rosa" },
+        { "post_index": 3, "flag_type": "inappropriate", "flagged_by": "admin_sam" }
+      ]
+    },
+    {
+      "title": "Welcome to the community — introduce yourself!",
+      "category": "general-discussion",
+      "author": "admin_sam",
+      "posts": [
+        {
+          "author": "admin_sam",
+          "body": "Welcome to our community! This is the place to introduce yourself. Tell us:\n\n- What brought you here?\n- What topics interest you most?\n- Any skills or expertise you'd like to share?\n\nLooking forward to getting to know everyone."
+        },
+        {
+          "author": "filler_user01",
+          "body": "Hey everyone! Found this place through a friend's recommendation. Mostly interested in the gaming discussions and build showcases."
+        },
+        {
+          "author": "filler_user04",
+          "body": "Hi! I'm a software developer interested in the tech discussions. Looking forward to contributing."
+        },
+        {
+          "author": "filler_user08",
+          "body": "Hello! Been lurking for a while but finally made an account. I'm into wiki editing and knowledge management."
+        },
+        {
+          "author": "filler_user12",
+          "body": "New here. Interested in the moderation discussion — I run a small Discord server and want to learn from how this community handles things."
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "Community update: New features and upcoming changes",
+      "category": "announcements",
+      "author": "admin_sam",
+      "posts": [
+        {
+          "author": "admin_sam",
+          "body": "Quick update on what's coming:\n\n1. **Community Notes**: We're piloting a new system where community members can add context notes to posts. More details soon.\n2. **Updated trust levels**: We've adjusted the requirements for trust level progression to reward quality contributions.\n3. **New categories**: We've added subcategories to better organize discussions.\n\nFeedback welcome in the Meta Discussion category."
+        },
+        {
+          "author": "regular_grace",
+          "body": "The community notes feature sounds interesting. Will it be available to all trust levels or just higher-level users?"
+        },
+        {
+          "author": "admin_sam",
+          "body": "All trust levels can view notes. Writing notes will require TL1+, and rating notes will require TL2+. We want broad participation while ensuring some baseline familiarity with the community."
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "Tips for new members: How to get the most out of this community",
+      "category": "general-discussion",
+      "author": "helper_maria",
+      "posts": [
+        {
+          "author": "helper_maria",
+          "body": "Welcome, new members! Here are some tips:\n\n1. **Read the rules** in the Server Rules category before posting\n2. **Use the search** before asking — your question might already be answered\n3. **Be specific** in your posts — vague questions get vague answers\n4. **Engage constructively** — disagreement is fine, personal attacks are not\n5. **Earn trust levels** by participating regularly — this unlocks more features"
+        },
+        {
+          "author": "filler_user02",
+          "body": "This is really helpful, thanks! How long does it usually take to reach TL1?"
+        },
+        {
+          "author": "helper_maria",
+          "body": "Usually a few days of active reading and some initial posts. The system looks at time spent reading, topics viewed, and posts read rather than just post count. Quality over quantity!"
+        }
+      ],
+      "flags": []
+    },
+    {
+      "title": "The moderation here is a joke",
+      "category": "threadhub/moderation-feedback",
+      "author": "troll_larry",
+      "posts": [
+        {
+          "author": "troll_larry",
+          "body": "Every time I post anything slightly controversial the mods are on it within minutes. But when people are actually breaking rules in the gaming section, nothing happens for days.\n\nThis place has favorites and everyone knows it. The mods protect their friends and punish anyone who disagrees with them."
+        },
+        {
+          "author": "regular_hank",
+          "body": "I've been here for a year and haven't seen favoritism. What I have seen is that you get flagged a lot because your posts tend to be combative. Maybe the common factor isn't mod bias?"
+        },
+        {
+          "author": "troll_larry",
+          "body": "classic bootlicker response. keep defending the people who silence anyone who thinks differently. this is why forums are dying"
+        },
+        {
+          "author": "admin_sam",
+          "body": "@troll_larry, I've reviewed your recent flags. In every case, your posts were flagged by multiple community members — not moderators. The community is telling you something.\n\nI'm open to discussing specific moderation decisions you think were unfair. But broad accusations without specifics aren't productive."
+        }
+      ],
+      "flags": [
+        { "post_index": 2, "flag_type": "inappropriate", "flagged_by": "regular_hank" }
+      ]
+    }
+  ]
+}

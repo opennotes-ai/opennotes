@@ -117,6 +117,39 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
       expect(client).not_to have_received(:post)
     end
 
+    context "with subcategory slug paths" do
+      fab!(:parent_category) { Fabricate(:category, slug: "parent") }
+      fab!(:child_category) { Fabricate(:category, slug: "child", parent_category: parent_category) }
+      fab!(:child_topic) { Fabricate(:topic, category: child_category) }
+      fab!(:child_post) { Fabricate(:post, topic: child_topic) }
+
+      let(:child_args) do
+        {
+          post_id: child_post.id,
+          flag_type: PostActionType.types[:inappropriate],
+          flagged_by_id: flagger.id,
+        }
+      end
+
+      it "matches subcategory by full slug path" do
+        SiteSetting.opennotes_monitored_categories = "parent/child"
+        allow(client).to receive(:post).and_return({ "data" => { "id" => "req-flag-sub-1" } })
+
+        described_class.new.execute(child_args)
+
+        expect(client).to have_received(:post)
+      end
+
+      it "does not match subcategory by leaf slug alone" do
+        SiteSetting.opennotes_monitored_categories = "child"
+        allow(client).to receive(:post)
+
+        described_class.new.execute(child_args)
+
+        expect(client).not_to have_received(:post)
+      end
+    end
+
     it "skips when community_server_id is not set" do
       PluginStore.remove("discourse-opennotes", "community_server_id")
       allow(client).to receive(:post)
