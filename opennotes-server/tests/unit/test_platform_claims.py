@@ -245,6 +245,7 @@ class TestGetPlatformAdminStatus:
 
         request = MagicMock()
         request.headers = {"x-platform-claims": token}
+        request.state = MagicMock(spec=[])
         result = get_platform_admin_status(request)
         assert result is True
 
@@ -263,6 +264,7 @@ class TestGetPlatformAdminStatus:
 
         request = MagicMock()
         request.headers = {"x-platform-claims": token}
+        request.state = MagicMock(spec=[])
         result = get_platform_admin_status(request)
         assert result is False
 
@@ -273,6 +275,7 @@ class TestGetPlatformAdminStatus:
 
         request = MagicMock()
         request.headers = {}
+        request.state = MagicMock(spec=[])
         result = get_platform_admin_status(request)
         assert result is False
 
@@ -283,6 +286,7 @@ class TestGetPlatformAdminStatus:
 
         request = MagicMock()
         request.headers = {"x-platform-claims": "invalid.jwt.token"}
+        request.state = MagicMock(spec=[])
         result = get_platform_admin_status(request)
         assert result is False
 
@@ -293,5 +297,75 @@ class TestGetPlatformAdminStatus:
 
         request = MagicMock()
         request.headers = {"x-discord-claims": "some-token", "x-discord-has-manage-server": "true"}
+        request.state = MagicMock(spec=[])
+        result = get_platform_admin_status(request)
+        assert result is False
+
+    def test_reads_from_platform_identity_on_request_state(self) -> None:
+        from unittest.mock import MagicMock
+
+        from src.auth.platform_claims import PlatformIdentity, get_platform_admin_status
+
+        identity = PlatformIdentity(
+            platform="discourse",
+            scope="forum.example.com",
+            sub="42",
+            community_id="forum.example.com",
+            can_administer_community=True,
+        )
+
+        request = MagicMock()
+        request.headers = {}
+        request.state.platform_identity = identity
+        result = get_platform_admin_status(request)
+        assert result is True
+
+    def test_platform_identity_non_admin(self) -> None:
+        from unittest.mock import MagicMock
+
+        from src.auth.platform_claims import PlatformIdentity, get_platform_admin_status
+
+        identity = PlatformIdentity(
+            platform="discourse",
+            scope="forum.example.com",
+            sub="42",
+            community_id="forum.example.com",
+            can_administer_community=False,
+        )
+
+        request = MagicMock()
+        request.headers = {}
+        request.state.platform_identity = identity
+        result = get_platform_admin_status(request)
+        assert result is False
+
+    def test_platform_identity_takes_priority_over_jwt(self) -> None:
+        from unittest.mock import MagicMock
+
+        from src.auth.platform_claims import (
+            PlatformIdentity,
+            create_platform_claims_token,
+            get_platform_admin_status,
+        )
+
+        token = create_platform_claims_token(
+            platform="discord",
+            scope="*",
+            sub="123",
+            community_id="456",
+            can_administer_community=True,
+        )
+
+        identity = PlatformIdentity(
+            platform="discourse",
+            scope="forum.example.com",
+            sub="42",
+            community_id="forum.example.com",
+            can_administer_community=False,
+        )
+
+        request = MagicMock()
+        request.headers = {"x-platform-claims": token}
+        request.state.platform_identity = identity
         result = get_platform_admin_status(request)
         assert result is False

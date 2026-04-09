@@ -325,6 +325,7 @@ class TestVerifyCommunityMembershipByUUID:
         )
         mock_request = MagicMock()
         mock_request.headers = {"x-platform-claims": token}
+        mock_request.state = MagicMock(spec=[])
 
         ensure_membership_mock = AsyncMock(return_value=membership)
 

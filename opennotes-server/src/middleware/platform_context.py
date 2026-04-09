@@ -5,7 +5,7 @@ from fastapi import Request, Response
 from opentelemetry import baggage, context, trace
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.auth.platform_claims import validate_platform_claims
+from src.auth.platform_claims import resolve_platform_identity
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,6 @@ class PlatformContextMiddleware(BaseHTTPMiddleware):
         span = trace.get_current_span()
 
         platform_type = request.headers.get("x-platform-type")
-        platform_claims_token = request.headers.get("x-platform-claims")
         request_id = request.headers.get("x-request-id")
 
         ctx = context.get_current()
@@ -26,24 +25,21 @@ class PlatformContextMiddleware(BaseHTTPMiddleware):
             span.set_attribute("platform.type", platform_type)
             ctx = baggage.set_baggage("platform.type", platform_type, ctx)
 
-        if platform_claims_token:
-            claims = validate_platform_claims(platform_claims_token)
-            if claims:
-                user_id = claims.get("sub")
-                scope = claims.get("scope")
-                community_id = claims.get("community_id")
+        identity = resolve_platform_identity(request)
+        if identity is not None:
+            request.state.platform_identity = identity
 
-                if user_id:
-                    span.set_attribute("platform.user_id", user_id)
-                    ctx = baggage.set_baggage("platform.user_id", user_id, ctx)
+            span.set_attribute("platform.type", identity.platform)
+            ctx = baggage.set_baggage("platform.type", identity.platform, ctx)
 
-                if scope:
-                    span.set_attribute("platform.scope", scope)
-                    ctx = baggage.set_baggage("platform.scope", scope, ctx)
+            span.set_attribute("platform.user_id", identity.sub)
+            ctx = baggage.set_baggage("platform.user_id", identity.sub, ctx)
 
-                if community_id:
-                    span.set_attribute("platform.community_id", community_id)
-                    ctx = baggage.set_baggage("platform.community_id", community_id, ctx)
+            span.set_attribute("platform.scope", identity.scope)
+            ctx = baggage.set_baggage("platform.scope", identity.scope, ctx)
+
+            span.set_attribute("platform.community_id", identity.community_id)
+            ctx = baggage.set_baggage("platform.community_id", identity.community_id, ctx)
 
         if request_id:
             span.set_attribute("http.request_id", request_id)
