@@ -43,6 +43,16 @@ class TestIsCloudRunEnvironment:
         with patch.dict("os.environ", env, clear=True):
             assert is_cloud_run_environment() is True
 
+    def test_returns_false_when_cloud_run_worker_pool_is_false_uppercase(self) -> None:
+        env = {"CLOUD_RUN_WORKER_POOL": "FALSE"}
+        with patch.dict("os.environ", env, clear=True):
+            assert is_cloud_run_environment() is False
+
+    def test_returns_false_when_cloud_run_worker_pool_is_arbitrary_string(self) -> None:
+        env = {"CLOUD_RUN_WORKER_POOL": "yes"}
+        with patch.dict("os.environ", env, clear=True):
+            assert is_cloud_run_environment() is False
+
     def test_returns_false_when_cloud_run_worker_pool_is_empty(self) -> None:
         env = {"CLOUD_RUN_WORKER_POOL": ""}
         with patch.dict("os.environ", env, clear=True):
