@@ -212,8 +212,8 @@ def resolve_platform_identity(request: Request) -> PlatformIdentity | None:
 
 
 def get_platform_admin_status(request: Request) -> bool:
-    identity: PlatformIdentity | None = getattr(request.state, "platform_identity", None)
-    if identity is not None:
+    identity = getattr(request.state, "platform_identity", None)
+    if isinstance(identity, PlatformIdentity):
         return identity.can_administer_community
 
     claims_token = request.headers.get("x-platform-claims", "")
