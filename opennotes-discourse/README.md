@@ -1,8 +1,14 @@
-# discourse-opennotes
+# OpenNotes for Discourse
 
-A thin adapter plugin that connects Discourse to the OpenNotes community moderation system. Posts flagged by community members are routed through OpenNotes for consensus-based review, with results surfaced back into Discourse as context notes and moderation actions.
+A Discourse plugin that adds AI-powered content moderation with community oversight to your forum.
 
-## Quick Start
+When enabled, the plugin monitors categories you choose and classifies new posts automatically. Content the AI is confident is harmful gets acted on immediately. Everything else goes to a community review queue where members vote using a bridging-based consensus algorithm — the same approach used by Twitter/X Community Notes, where agreement across people who usually disagree carries more weight. Every automated decision can be reviewed and reversed.
+
+**For forum administrators:** The plugin installs with a single line in your `app.yml`, connects to an OpenNotes server, and gives you per-category control over monitoring thresholds, review groups, and automation behavior. See the [Admin Guide](docs/ADMIN-GUIDE.md).
+
+**For community members:** You'll see review banners on flagged posts and can participate in moderation decisions through a dedicated review page. No special setup needed — just meet the trust level your admin has configured. See the [User Guide](docs/USER-GUIDE.md).
+
+## Development Quick Start
 
 ```bash
 mise run discourse:bootstrap
