@@ -87,7 +87,7 @@ RUN mkdir -p /etc/service/redis /var/log/redis && \
     chmod +x /etc/service/redis/log/run
 
 RUN mkdir -p /etc/service/rails /var/log/rails && \
-    printf '#!/bin/bash\nexport BUNDLE_APP_CONFIG=/usr/local/bundle\nexport HOME=/home/discourse\nexport PGSSLCERT=""\nexport PGSSLKEY=""\ncd /var/www/discourse\nexec chpst -u discourse bundle exec puma -C config/puma.rb\n' \
+    printf '#!/bin/bash\nexport BUNDLE_APP_CONFIG=/usr/local/bundle\nexport HOME=/home/discourse\nexport PGSSLCERT=""\nexport PGSSLKEY=""\ncd /var/www/discourse\nexec chpst -u discourse bundle exec pitchfork -E production -c config/pitchfork.conf.rb\n' \
       > /etc/service/rails/run && \
     chmod +x /etc/service/rails/run && \
     mkdir -p /etc/service/rails/log && \
