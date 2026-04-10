@@ -50,6 +50,7 @@ class ContentReviewerDeps:
 
 
 content_reviewer_agent: Agent[ContentReviewerDeps, ContentModerationClassificationResult] = Agent(
+    name="content-reviewer",
     output_type=ContentModerationClassificationResult,
     deps_type=ContentReviewerDeps,
     instrument=True,

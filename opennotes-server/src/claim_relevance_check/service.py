@@ -27,6 +27,7 @@ from src.monitoring.metrics import relevance_check_total
 logger = get_logger(__name__)
 
 relevance_agent: Agent[None, RelevanceCheckResult] = Agent(
+    name="claim-relevance-checker",
     output_type=RelevanceCheckResult,
     instrument=True,
 )
