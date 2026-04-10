@@ -31,7 +31,7 @@ cd /var/www/discourse
 
 if [ -n "$DATABASE_URL" ]; then
   echo "Running database migrations..."
-  sudo -E -u discourse bundle exec rake db:migrate
+  sudo -E -u discourse env HOME=/home/discourse PGSSLCERT="" PGSSLKEY="" bundle exec rake db:migrate
   echo "Migrations complete."
 fi
 
