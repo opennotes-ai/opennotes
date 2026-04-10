@@ -405,6 +405,209 @@ class TestBulkScanMessage:
         assert message.embed_content == "Embedded article title: Fake News Spreads"
 
 
+class TestContentItem:
+    """Test ContentItem platform-agnostic input schema."""
+
+    def test_can_create_with_required_fields(self):
+        from src.bulk_content_scan.schemas import ContentItem
+
+        now = pendulum.now("UTC")
+        item = ContentItem(
+            content_id="msg_12345",
+            platform="discord",
+            content_text="Some message content",
+            author_id="user_54321",
+            timestamp=now,
+            channel_id="ch_67890",
+            community_server_id="server_11111",
+        )
+
+        assert item.content_id == "msg_12345"
+        assert item.platform == "discord"
+        assert item.content_text == "Some message content"
+        assert item.author_id == "user_54321"
+        assert item.timestamp == now
+        assert item.channel_id == "ch_67890"
+        assert item.community_server_id == "server_11111"
+        assert item.author_username is None
+        assert item.attachment_urls is None
+        assert item.platform_metadata == {}
+
+    def test_accepts_arbitrary_platform_metadata(self):
+        from src.bulk_content_scan.schemas import ContentItem
+
+        item = ContentItem(
+            content_id="msg_1",
+            platform="discourse",
+            content_text="Post content",
+            author_id="user_1",
+            timestamp=pendulum.now("UTC"),
+            channel_id="topic_42",
+            community_server_id="site_1",
+            platform_metadata={
+                "topic_id": 42,
+                "post_number": 3,
+                "nested": {"key": "value"},
+            },
+        )
+
+        assert item.platform_metadata["topic_id"] == 42
+        assert item.platform_metadata["nested"]["key"] == "value"
+
+    def test_optional_fields(self):
+        from src.bulk_content_scan.schemas import ContentItem
+
+        item = ContentItem(
+            content_id="msg_1",
+            platform="discord",
+            content_text="Test",
+            author_id="user_1",
+            author_username="testuser",
+            timestamp=pendulum.now("UTC"),
+            channel_id="ch_1",
+            community_server_id="server_1",
+            attachment_urls=["https://cdn.example.com/img.png"],
+        )
+
+        assert item.author_username == "testuser"
+        assert item.attachment_urls == ["https://cdn.example.com/img.png"]
+
+
+class TestContentModerationClassificationResult:
+    """Test ContentModerationClassificationResult agent output schema."""
+
+    def test_can_create_with_required_fields(self):
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+
+        result = ContentModerationClassificationResult(
+            confidence=0.92,
+            category_labels={"harassment": True, "misinformation": False},
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="High confidence harassment detected.",
+        )
+
+        assert result.scan_type == "content_moderation_classification"
+        assert result.confidence == 0.92
+        assert result.category_labels == {"harassment": True, "misinformation": False}
+        assert result.category_scores is None
+        assert result.recommended_action == "hide"
+        assert result.action_tier == "tier_1_immediate"
+        assert result.explanation == "High confidence harassment detected."
+
+    def test_confidence_must_be_in_range(self):
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+
+        with pytest.raises(ValidationError):
+            ContentModerationClassificationResult(
+                confidence=1.5,
+                category_labels={"test": True},
+                explanation="Test",
+            )
+
+        with pytest.raises(ValidationError):
+            ContentModerationClassificationResult(
+                confidence=-0.1,
+                category_labels={"test": True},
+                explanation="Test",
+            )
+
+    def test_optional_category_scores(self):
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+
+        result = ContentModerationClassificationResult(
+            confidence=0.85,
+            category_labels={"harassment": True},
+            category_scores={"harassment": 0.95, "spam": 0.1},
+            explanation="Harassment detected with scores.",
+        )
+
+        assert result.category_scores == {"harassment": 0.95, "spam": 0.1}
+
+    def test_optional_action_fields(self):
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+
+        result = ContentModerationClassificationResult(
+            confidence=0.3,
+            category_labels={"spam": False},
+            explanation="No issues detected.",
+        )
+
+        assert result.recommended_action is None
+        assert result.action_tier is None
+
+
+class TestMatchResultUnionWithClassification:
+    """Test MatchResult discriminated union includes ContentModerationClassificationResult."""
+
+    def test_match_result_accepts_classification(self):
+        from pydantic import TypeAdapter
+
+        from src.bulk_content_scan.schemas import (
+            ContentModerationClassificationResult,
+            MatchResult,
+        )
+
+        adapter = TypeAdapter(MatchResult)
+        data = {
+            "scan_type": "content_moderation_classification",
+            "confidence": 0.88,
+            "category_labels": {"misinformation": True},
+            "explanation": "Misinformation detected.",
+        }
+        result = adapter.validate_python(data)
+        assert isinstance(result, ContentModerationClassificationResult)
+        assert result.confidence == 0.88
+
+    def test_match_result_still_accepts_similarity(self):
+        from pydantic import TypeAdapter
+
+        from src.bulk_content_scan.schemas import MatchResult, SimilarityMatch
+
+        adapter = TypeAdapter(MatchResult)
+        data = {
+            "scan_type": "similarity",
+            "score": 0.85,
+            "matched_claim": "Claim text",
+            "matched_source": "https://example.com",
+            "fact_check_item_id": str(SAMPLE_FACT_CHECK_ID),
+        }
+        result = adapter.validate_python(data)
+        assert isinstance(result, SimilarityMatch)
+
+    def test_match_result_still_accepts_moderation(self):
+        from pydantic import TypeAdapter
+
+        from src.bulk_content_scan.schemas import MatchResult, OpenAIModerationMatch
+
+        adapter = TypeAdapter(MatchResult)
+        data = {
+            "scan_type": "openai_moderation",
+            "max_score": 0.95,
+            "categories": {"violence": True},
+            "scores": {"violence": 0.95},
+            "flagged_categories": ["violence"],
+        }
+        result = adapter.validate_python(data)
+        assert isinstance(result, OpenAIModerationMatch)
+
+    def test_match_result_still_accepts_flashpoint(self):
+        from pydantic import TypeAdapter
+
+        from src.bulk_content_scan.schemas import ConversationFlashpointMatch, MatchResult
+
+        adapter = TypeAdapter(MatchResult)
+        data = {
+            "scan_type": "conversation_flashpoint",
+            "derailment_score": 75,
+            "risk_level": "Heated",
+            "reasoning": "Escalation detected",
+            "context_messages": 5,
+        }
+        result = adapter.validate_python(data)
+        assert isinstance(result, ConversationFlashpointMatch)
+
+
 class TestMatchTypes:
     """Test SimilarityMatch and OpenAIModerationMatch discriminated union types."""
 

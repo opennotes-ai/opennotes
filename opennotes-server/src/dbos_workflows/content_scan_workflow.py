@@ -54,7 +54,11 @@ from uuid import UUID
 import orjson
 from dbos import DBOS, Queue, SetEnqueueOptions, SetWorkflowID
 
-from src.bulk_content_scan.schemas import BulkScanStatus
+from src.bulk_content_scan.schemas import (
+    BulkScanMessage,
+    BulkScanStatus,
+    ContentItem,
+)
 from src.dbos_workflows.enqueue_utils import safe_enqueue
 from src.dbos_workflows.token_bucket.config import WorkflowWeight
 from src.dbos_workflows.token_bucket.gate import TokenGate
@@ -65,6 +69,30 @@ if TYPE_CHECKING:
     from redis.asyncio import Redis
 
 logger = get_logger(__name__)
+
+
+def _deserialize_to_bulk_scan_message(msg_data: dict) -> BulkScanMessage:
+    """Deserialize a Redis message dict to BulkScanMessage, handling both formats.
+
+    During rollout, Redis may contain either ContentItem format (with content_id)
+    written by the updated NATS handler, or legacy BulkScanMessage format (with
+    message_id) written before the migration. Both are supported transparently.
+    """
+    if "content_id" in msg_data:
+        content_item = ContentItem.model_validate(msg_data)
+        return BulkScanMessage(
+            message_id=content_item.content_id,
+            channel_id=content_item.channel_id,
+            community_server_id=content_item.community_server_id,
+            content=content_item.content_text,
+            author_id=content_item.author_id,
+            author_username=content_item.author_username,
+            timestamp=content_item.timestamp,
+            attachment_urls=content_item.attachment_urls,
+            embed_content=content_item.platform_metadata.get("embed_content"),
+        )
+    return BulkScanMessage.model_validate(msg_data)
+
 
 REDIS_BATCH_TTL_SECONDS = 86400
 REDIS_REPLAY_TTL_SECONDS = 7 * 24 * 3600
@@ -617,7 +645,7 @@ def _run_batch_scan_steps(
             step_errors.append(f"flashpoint: {e}")
 
     try:
-        filter_result = relevance_filter_step(
+        filter_result = content_reviewer_step(
             scan_id=scan_id,
             community_server_id=community_server_id,
             batch_number=batch_number,
@@ -628,8 +656,8 @@ def _run_batch_scan_steps(
         errors = filter_result.get("errors", 0) + len(step_errors)
         return flagged_count, errors
     except Exception as e:
-        logger.error("relevance_filter_step failed", exc_info=True)
-        step_errors.append(f"relevance: {e}")
+        logger.error("content_reviewer_step failed", exc_info=True)
+        step_errors.append(f"content_reviewer: {e}")
         return 0, len(step_errors)
 
 
@@ -966,7 +994,6 @@ def preprocess_batch_step(
                    skipped_count
     """
     from src.bulk_content_scan.scan_types import ScanType
-    from src.bulk_content_scan.schemas import BulkScanMessage
     from src.bulk_content_scan.service import BulkContentScanService
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
@@ -985,7 +1012,7 @@ def preprocess_batch_step(
 
         redis_conn = await get_shared_redis_client(settings.REDIS_URL)
         raw_messages = await load_messages_from_redis(redis_conn, messages_redis_key)
-        typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
+        typed_messages = [_deserialize_to_bulk_scan_message(msg) for msg in raw_messages]
         original_count = len(typed_messages)
 
         async with get_session_maker()() as session:
@@ -1130,7 +1157,6 @@ def similarity_scan_step(
         dict with: similarity_candidates_key, candidate_count
     """
     from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
-    from src.bulk_content_scan.schemas import BulkScanMessage
     from src.bulk_content_scan.service import BulkContentScanService
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
@@ -1148,7 +1174,7 @@ def similarity_scan_step(
 
         redis_conn = await get_shared_redis_client(settings.REDIS_URL)
         raw_messages = await load_messages_from_redis(redis_conn, filtered_messages_key)
-        typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
+        typed_messages = [_deserialize_to_bulk_scan_message(msg) for msg in raw_messages]
 
         async with get_session_maker()() as session:
             result = await session.execute(
@@ -1245,7 +1271,6 @@ def flashpoint_scan_step(
         dict with: flashpoint_candidates_key, candidate_count
     """
     from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
-    from src.bulk_content_scan.schemas import BulkScanMessage
     from src.bulk_content_scan.service import BulkContentScanService
     from src.cache.redis_client import get_shared_redis_client
     from src.config import get_settings
@@ -1259,7 +1284,7 @@ def flashpoint_scan_step(
     async def _flashpoint_scan() -> dict[str, Any]:
         redis_conn = await get_shared_redis_client(settings.REDIS_URL)
         raw_messages = await load_messages_from_redis(redis_conn, filtered_messages_key)
-        typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
+        typed_messages = [_deserialize_to_bulk_scan_message(msg) for msg in raw_messages]
 
         max_msgs = settings.FLASHPOINT_MAX_BATCH_MESSAGES
         if len(typed_messages) > max_msgs:
@@ -1282,7 +1307,7 @@ def flashpoint_scan_step(
         )
         channel_context_map: dict[str, list[BulkScanMessage]] = {}
         for ch_id, msg_dicts in channel_context_raw.items():
-            channel_context_map[ch_id] = [BulkScanMessage.model_validate(m) for m in msg_dicts]
+            channel_context_map[ch_id] = [_deserialize_to_bulk_scan_message(m) for m in msg_dicts]
 
         async with get_session_maker()() as session:
             llm_service = _get_llm_service()
@@ -1352,6 +1377,209 @@ def flashpoint_scan_step(
 
 
 @DBOS.step()
+def content_reviewer_step(
+    scan_id: str,
+    community_server_id: str,
+    batch_number: int,
+    similarity_candidates_key: str,
+    flashpoint_candidates_key: str,
+) -> dict[str, Any]:
+    """Run ContentReviewerAgent + ModerationPolicyEvaluator on all scan candidates.
+
+    Loads similarity and flashpoint candidates from Redis, groups them by message_id
+    into evidence bundles, invokes ContentReviewerService.classify() once per unique
+    message with all pre-computed evidence, applies ModerationPolicyEvaluator, and
+    stores flagged results.
+
+    Args:
+        scan_id: UUID string of the scan
+        community_server_id: UUID string of the community server
+        batch_number: Batch number being processed
+        similarity_candidates_key: Redis key with similarity candidates
+        flashpoint_candidates_key: Redis key with flashpoint candidates
+
+    Returns:
+        dict with: flagged_count, errors, policy_decisions
+    """
+    from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+    from src.bulk_content_scan.policy_evaluator import (
+        ModerationPolicyConfig,
+        ModerationPolicyEvaluator,
+    )
+    from src.bulk_content_scan.schemas import (
+        FlaggedMessage,
+        ScanCandidate,
+        bulk_scan_message_to_content_item,
+    )
+    from src.bulk_content_scan.service import BulkContentScanService
+    from src.cache.redis_client import get_shared_redis_client
+    from src.config import get_settings
+    from src.database import get_session_maker
+    from src.dbos_workflows.content_monitoring_workflows import _get_llm_service
+    from src.fact_checking.embedding_service import EmbeddingService
+
+    settings = get_settings()
+    scan_uuid = UUID(scan_id)
+
+    async def _content_reviewer() -> dict[str, Any]:  # noqa: PLR0912
+        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
+
+        all_candidates: list[ScanCandidate] = []
+        errors = 0
+
+        if similarity_candidates_key:
+            try:
+                sim_data = await load_messages_from_redis(redis_conn, similarity_candidates_key)
+                all_candidates.extend(ScanCandidate.model_validate(c) for c in sim_data)
+            except ValueError:
+                logger.warning(
+                    "Similarity candidates Redis key expired or missing",
+                    extra={"scan_id": scan_id, "key": similarity_candidates_key},
+                )
+                errors += 1
+
+        if flashpoint_candidates_key:
+            try:
+                fp_data = await load_messages_from_redis(redis_conn, flashpoint_candidates_key)
+                all_candidates.extend(ScanCandidate.model_validate(c) for c in fp_data)
+            except ValueError:
+                logger.warning(
+                    "Flashpoint candidates Redis key expired or missing",
+                    extra={"scan_id": scan_id, "key": flashpoint_candidates_key},
+                )
+                errors += 1
+
+        if not all_candidates:
+            return {"flagged_count": 0, "errors": errors, "policy_decisions": []}
+
+        async with get_session_maker()() as session:
+            llm_service = _get_llm_service()
+            embedding_service = EmbeddingService(llm_service)
+            from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
+
+            flashpoint_service = get_flashpoint_service()
+            service = BulkContentScanService(
+                session=session,
+                embedding_service=embedding_service,
+                redis_client=redis_conn,
+                llm_service=llm_service,
+                flashpoint_service=flashpoint_service,
+            )
+
+            if await _scan_is_inactive_async(session, redis_conn, scan_uuid):
+                logger.info(
+                    "Content reviewer step skipped because scan is already terminal/finalizing",
+                    extra={"scan_id": scan_id, "batch_number": batch_number},
+                )
+                return {"flagged_count": 0, "errors": errors, "policy_decisions": []}
+
+            evidence_by_message: dict[str, list[ScanCandidate]] = {}
+            for candidate in all_candidates:
+                msg_id = candidate.message.message_id
+                evidence_by_message.setdefault(msg_id, []).append(candidate)
+
+            reviewer_service = ContentReviewerService()
+            evaluator = ModerationPolicyEvaluator()
+            policy_config = ModerationPolicyConfig()
+
+            flagged_messages: list[FlaggedMessage] = []
+            policy_decisions: list[dict[str, Any]] = []
+
+            try:
+                for msg_id, candidates in evidence_by_message.items():
+                    pre_computed = [c.match_data for c in candidates]
+                    content_item = bulk_scan_message_to_content_item(candidates[0].message)
+
+                    context_items_for_msg = [
+                        bulk_scan_message_to_content_item(c.message) for c in candidates
+                    ]
+                    classification = await reviewer_service.classify(
+                        content_item=content_item,
+                        pre_computed_evidence=pre_computed,  # type: ignore[arg-type]
+                        context_items=context_items_for_msg,
+                        flashpoint_service=flashpoint_service,
+                    )
+
+                    policy_decision = evaluator.evaluate(classification, policy_config)
+
+                    if policy_decision.action_tier is not None:
+                        first_candidate = candidates[0]
+                        matches = [c.match_data for c in candidates]
+                        matches.append(classification)
+                        flagged_msg = FlaggedMessage(
+                            message_id=first_candidate.message.message_id,
+                            channel_id=first_candidate.message.channel_id,
+                            content=first_candidate.message.content,
+                            author_id=first_candidate.message.author_id,
+                            timestamp=first_candidate.message.timestamp,
+                            matches=matches,
+                        )
+                        flagged_messages.append(flagged_msg)
+
+                    policy_decisions.append(
+                        {
+                            "message_id": msg_id,
+                            "action_tier": getattr(policy_decision.action_tier, "value", None),
+                            "action_type": getattr(policy_decision.action_type, "value", None),
+                            "review_group": getattr(policy_decision.review_group, "value", None),
+                            "reason": policy_decision.reason,
+                        }
+                    )
+
+                if await _skip_step_persist_if_scan_terminal(
+                    session,
+                    redis_conn,
+                    scan_uuid,
+                    step_name="ContentReviewer",
+                    scan_id=scan_id,
+                    batch_number=batch_number,
+                ):
+                    return {"flagged_count": 0, "errors": errors, "policy_decisions": []}
+
+                for msg in flagged_messages:
+                    await service.append_flagged_result(scan_uuid, msg)
+
+                return {
+                    "flagged_count": len(flagged_messages),
+                    "errors": errors,
+                    "policy_decisions": policy_decisions,
+                }
+
+            except Exception as e:
+                logger.warning(
+                    "Error in content reviewer step",
+                    extra={
+                        "scan_id": scan_id,
+                        "batch_number": batch_number,
+                        "error": str(e),
+                    },
+                )
+                if await _skip_step_persist_if_scan_terminal(
+                    session,
+                    redis_conn,
+                    scan_uuid,
+                    step_name="ContentReviewer",
+                    scan_id=scan_id,
+                    batch_number=batch_number,
+                ):
+                    return {"flagged_count": 0, "errors": errors, "policy_decisions": []}
+
+                await service.record_error(
+                    scan_id=scan_uuid,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    batch_number=batch_number,
+                )
+                return {
+                    "flagged_count": 0,
+                    "errors": errors + len(all_candidates),
+                    "policy_decisions": [],
+                }
+
+    return run_sync(_content_reviewer())
+
+
+@DBOS.step()
 def relevance_filter_step(
     scan_id: str,
     community_server_id: str,
@@ -1360,6 +1588,9 @@ def relevance_filter_step(
     flashpoint_candidates_key: str,
 ) -> dict[str, Any]:
     """Run unified relevance filtering on all candidates.
+
+    DEPRECATED: Use content_reviewer_step instead. This step is preserved for
+    backward compatibility and will be removed in a follow-up task.
 
     Reads similarity and flashpoint candidates from Redis, runs the LLM
     relevance check, and appends flagged results to scan results.
