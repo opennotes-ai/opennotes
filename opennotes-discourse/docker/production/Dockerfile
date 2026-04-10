@@ -34,6 +34,7 @@ RUN echo "deb http://deb.debian.org/debian ${DEBIAN_RELEASE}-backports main" \
     libpq-dev \
     gawk psmisc brotli libunwind-dev \
     pngcrush pngquant poppler-utils \
+    imagemagick \
     ghostscript libjbig0 libtiff6 libpng16-16 libfontconfig1 \
     libwebpdemux2 libwebpmux3 libxext6 librsvg2-2 libgomp1 \
     fonts-urw-base35 \
@@ -51,6 +52,8 @@ RUN curl --silent --location https://deb.nodesource.com/setup_${NODE_MAJOR}.x | 
     apt-get -y update && DEBIAN_FRONTEND=noninteractive apt-get -y install nodejs && \
     npm install -g pnpm@10 && \
     rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/convert /usr/local/bin/magick
 
 RUN ln -sf /usr/lib/$(dpkg --print-architecture)-linux-gnu/libjemalloc.so.2 /usr/lib/libjemalloc.so
 ENV RUBY_ALLOCATOR=/usr/lib/libjemalloc.so
