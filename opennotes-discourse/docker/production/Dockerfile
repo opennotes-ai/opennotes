@@ -65,11 +65,9 @@ RUN echo "discourse ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/discourse && \
 WORKDIR /var/www/discourse
 RUN git clone https://github.com/discourse/discourse . --depth 1 --branch ${DISCOURSE_VERSION}
 
-ENV BUNDLE_DEPLOYMENT=true \
-    BUNDLE_WITHOUT="development:test"
-
-RUN bundle install --jobs $(nproc) && \
-    rm -rf vendor/bundle/ruby/*/cache/*
+RUN bundle config set --local without "development test" && \
+    bundle install --jobs $(nproc) && \
+    rm -rf /usr/local/bundle/cache/*
 
 RUN if [ -f yarn.lock ]; then yarn install --production; else CI=1 pnpm install --frozen-lockfile; fi
 
