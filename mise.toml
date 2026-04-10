@@ -20,11 +20,9 @@ python = "3.11"
 uv = "latest"
 node = "20"
 pnpm = "latest"
-yq = "latest"
-
 [env]
 IMAGE_TAG = "local"
-_.file = ".env.yaml"
+_.file = ".env"
 
 [vars]
 server_dir = "opennotes-server"
@@ -34,33 +32,6 @@ playground_dir = "opennotes-playground"
 # ========================================
 # Internal Helper Tasks
 # ========================================
-
-[tasks."_env:convert"]
-description = "Convert .env.yaml files to .env format for docker-compose"
-run = '''
-# Convert main .env.yaml for docker-compose
-if [ -f ".env.yaml" ]; then
-    echo "Converting .env.yaml -> .env"
-    yq eval -o=shell '.' ".env.yaml" > ".env"
-fi
-
-# Convert service-specific .env.yaml files
-for yaml_file in opennotes-*/.env.yaml; do
-    if [ -f "$yaml_file" ]; then
-        env_file="${yaml_file%.yaml}"
-        echo "Converting $yaml_file -> $env_file"
-        yq eval -o=shell '.' "$yaml_file" > "$env_file"
-    fi
-done
-'''
-
-[tasks."_env:cleanup"]
-description = "Remove generated .env files (keep .env.yaml as source of truth)"
-run = '''
-rm -f .env
-find opennotes-* -name ".env" -not -name "*.yaml" -type f -delete
-echo "Cleaned up generated .env files"
-'''
 
 [tasks."_db:ensure-postgres"]
 description = "Internal: Ensure PostgreSQL is available (container or DATABASE_URL)"
@@ -72,14 +43,14 @@ if [ -n "${DATABASE_URL:-}" ]; then
         if ! ping -c1 -W1 "$DB_HOST" >/dev/null 2>&1; then
             echo "Error: Cannot resolve hostname '$DB_HOST' from DATABASE_URL." >&2
             echo "" >&2
-            echo "This typically happens when .env.yaml uses Docker-internal hostnames" >&2
+            echo "This typically happens when .env uses Docker-internal hostnames" >&2
             echo "(e.g., 'postgres') which only resolve inside Docker containers." >&2
             echo "" >&2
-            echo "Fix: Update .env.yaml to use 'localhost' instead of '$DB_HOST':" >&2
+            echo "Fix: Update .env to use 'localhost' instead of '$DB_HOST':" >&2
             echo "    DATABASE_URL=postgresql+asyncpg://...@localhost:5432/..." >&2
             echo "" >&2
-            echo "Containers receive their own URLs via OpenTofu env vars," >&2
-            echo "so this change only affects host-side tools (mise, alembic, pytest)." >&2
+            echo "Containers receive their own URLs via Docker Compose environment configuration." >&2
+            echo "This change only affects host-side tools (mise, alembic, pytest)." >&2
             exit 1
         fi
     fi
@@ -93,8 +64,8 @@ CONTAINER_NAME="opennotes-postgres"
 if ! docker ps -a -q -f name="$CONTAINER_NAME" | grep -q .; then
     echo "Error: Container '$CONTAINER_NAME' does not exist." >&2
     echo "" >&2
-    echo "The database container is managed by OpenTofu. Please run:" >&2
-    echo "    mise run apply:infra:local" >&2
+    echo "The database container is managed by Docker Compose. Start it with:" >&2
+    echo "    docker compose up -d postgres" >&2
     echo "" >&2
     exit 1
 fi
@@ -191,6 +162,19 @@ description = "Run playground dev server on port 3100"
 dir = "{{vars.playground_dir}}"
 run = "pnpm dev"
 env = { PORT = "3100" }
+
+[tasks."dev:up"]
+description = "Start all services via Docker Compose"
+depends = ["build:containers:postgres"]
+run = "docker compose up -d"
+
+[tasks."dev:down"]
+description = "Stop all services via Docker Compose"
+run = "docker compose down"
+
+[tasks."dev:ps"]
+description = "Show service status"
+run = "docker compose ps"
 
 # ========================================
 # Testing Tasks
@@ -698,17 +682,17 @@ depends = ["build:containers:server", "build:containers:discord", "build:contain
 alias = "build"
 
 [tasks."build:containers:server"]
-depends = ["_env:convert", "build:types:openapi", "build:deps:server"]
+depends = ["build:types:openapi", "build:deps:server"]
 description = "Build opennotes-server image"
 run = "docker build -t opennotes-server:{{env.IMAGE_TAG}} -f {{vars.server_dir}}/Dockerfile ."
 
 [tasks."build:containers:discord"]
-depends = ["_env:convert", "build:types:openapi", "build:deps:discord"]
+depends = ["build:types:openapi", "build:deps:discord"]
 description = "Build opennotes-discord image"
 run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} -f {{vars.discord_dir}}/Dockerfile ."
 
 [tasks."build:containers:playground"]
-depends = ["_env:convert", "build:types:openapi", "build:deps:playground"]
+depends = ["build:types:openapi", "build:deps:playground"]
 description = "Build opennotes-playground image"
 run = "docker build -t opennotes-playground:{{env.IMAGE_TAG}} {{vars.playground_dir}}/"
 
@@ -816,6 +800,159 @@ description = "Validate Discord bot endpoints against OpenAPI spec"
 depends = ["build:types:openapi"]
 run = "python3 opennotes/scripts/validate-api-endpoints.py"
 alias = "validate-api"
+
+# ========================================
+# Fixture Tasks
+# ========================================
+
+[tasks."tools:greenmask"]
+description = "Install Greenmask CLI for database anonymization"
+run = '''
+VERSION="0.2.5"
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+esac
+INSTALL_DIR="$HOME/.local/bin"
+mkdir -p "$INSTALL_DIR"
+URL="https://github.com/GreenmaskIO/greenmask/releases/download/v${VERSION}/greenmask-${VERSION}-${OS}-${ARCH}.tar.gz"
+echo "Downloading Greenmask v${VERSION}..."
+curl -fsSL "$URL" | tar xz -C "$INSTALL_DIR" greenmask
+chmod +x "$INSTALL_DIR/greenmask"
+echo "Greenmask installed to $INSTALL_DIR/greenmask"
+'''
+
+[tasks."fixture:generate-config"]
+description = "Generate Greenmask anonymization config from SQLAlchemy models"
+dir = "{{vars.server_dir}}"
+run = 'uv run python ../scripts/fixtures/generate_greenmask_config.py "$@"'
+
+[tasks."fixture:export"]
+description = "Export anonymized database fixtures (optionally upload to GCS)"
+depends = ["_db:ensure-postgres"]
+dir = "{{vars.server_dir}}"
+run = '''
+set -euo pipefail
+
+# Check greenmask is installed
+if ! command -v greenmask &> /dev/null; then
+    echo "Error: greenmask not installed. Run: mise run tools:greenmask" >&2
+    exit 1
+fi
+
+# Parse --tables flag if present
+TABLES_FLAG=""
+NEXT_IS_TABLES=false
+for arg in "$@"; do
+    if [ "$NEXT_IS_TABLES" = true ]; then
+        TABLES_FLAG="--tables $arg"
+        NEXT_IS_TABLES=false
+        continue
+    fi
+    case "$arg" in
+        --tables=*) TABLES_FLAG="--tables ${arg#--tables=}" ;;
+        --tables) NEXT_IS_TABLES=true ;;
+    esac
+done
+
+# Generate Greenmask config
+echo "Generating anonymization config..."
+uv run python ../scripts/fixtures/generate_greenmask_config.py $TABLES_FLAG --output /tmp/greenmask-config.yml
+
+# Run Greenmask dump
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+DUMP_DIR="/tmp/opennotes-fixture-${TIMESTAMP}"
+echo "Running Greenmask dump to ${DUMP_DIR}..."
+greenmask dump --config /tmp/greenmask-config.yml --output "$DUMP_DIR" --jobs 4
+
+echo "Export complete: ${DUMP_DIR}"
+
+# Upload to GCS if configured
+BUCKET="${FIXTURE_GCS_BUCKET:-}"
+if [ -n "$BUCKET" ]; then
+    echo "Uploading to GCS: gs://${BUCKET}/fixtures/${TIMESTAMP}/"
+    uv run python ../scripts/fixtures/upload_to_gcs.py "$DUMP_DIR" "$TIMESTAMP" "$BUCKET"
+else
+    echo "FIXTURE_GCS_BUCKET not set — skipping GCS upload (local-only mode)"
+fi
+
+echo "Done. Fixture timestamp: ${TIMESTAMP}"
+'''
+
+[tasks."fixture:load"]
+description = "Load anonymized database fixtures from GCS"
+depends = ["_db:ensure-postgres"]
+dir = "{{vars.server_dir}}"
+run = '''
+set -euo pipefail
+
+BUCKET="${FIXTURE_GCS_BUCKET:-}"
+if [ -z "$BUCKET" ]; then
+    echo "Error: FIXTURE_GCS_BUCKET not configured." >&2
+    echo "Set FIXTURE_GCS_BUCKET in .env to enable fixture loading." >&2
+    exit 1
+fi
+
+# Parse flags
+TIMESTAMP="latest"
+CLEAN=false
+NEXT_IS_TIMESTAMP=false
+for arg in "$@"; do
+    if [ "$NEXT_IS_TIMESTAMP" = true ]; then
+        TIMESTAMP="$arg"
+        NEXT_IS_TIMESTAMP=false
+        continue
+    fi
+    case "$arg" in
+        --timestamp=*) TIMESTAMP="${arg#--timestamp=}" ;;
+        --timestamp) NEXT_IS_TIMESTAMP=true ;;
+        --clean) CLEAN=true ;;
+    esac
+done
+
+# Download from GCS
+echo "Downloading fixture (timestamp: ${TIMESTAMP})..."
+DUMP_DIR=$(uv run python ../scripts/fixtures/download_from_gcs.py "$BUCKET" "$TIMESTAMP")
+
+if [ ! -d "$DUMP_DIR" ]; then
+    echo "Error: Download failed — dump directory not found: $DUMP_DIR" >&2
+    exit 1
+fi
+
+# Get database URL components
+DB_URL="${DATABASE_URL:-postgresql+asyncpg://opennotes:opennotes_dev_password@localhost:5432/opennotes}"
+# Convert asyncpg URL to standard postgres URL for pg_restore
+PG_URL=$(echo "$DB_URL" | sed 's|postgresql+asyncpg://|postgresql://|')
+
+# Extract database name and base URL for admin operations
+DB_NAME=$(echo "$PG_URL" | sed 's|.*/||')
+BASE_URL=$(echo "$PG_URL" | sed "s|/$DB_NAME\$|/postgres|")
+
+# Handle --clean flag: drop and recreate the database
+if [ "$CLEAN" = true ]; then
+    echo "Dropping and recreating database..."
+    psql "$BASE_URL" -c "DROP DATABASE IF EXISTS \"$DB_NAME\";" 2>/dev/null || true
+    psql "$BASE_URL" -c "CREATE DATABASE \"$DB_NAME\";" 2>/dev/null || true
+else
+    # Create database if it does not exist
+    if ! psql "$BASE_URL" -lqt 2>/dev/null | grep -qw "$DB_NAME"; then
+        echo "Database '$DB_NAME' does not exist, creating..."
+        psql "$BASE_URL" -c "CREATE DATABASE \"$DB_NAME\";" 2>/dev/null || true
+    fi
+fi
+
+# Restore with pg_restore (parallel, clean existing objects)
+echo "Restoring fixture to database..."
+pg_restore --dbname="$PG_URL" --jobs=4 --clean --if-exists "$DUMP_DIR" || true
+
+# Run migrations to ensure schema is at head
+echo "Running migrations..."
+uv run alembic upgrade head
+
+echo "Fixture loaded successfully."
+'''
 
 # ========================================
 # Task Configuration

@@ -68,11 +68,6 @@ jobs:
           path: ~/.local/share/mise/installs
           key: mise-${{ runner.os }}-${{ hashFiles('**/mise.toml', '**/.mise.toml') }}
 
-      - name: Install OpenTofu
-        uses: opentofu/setup-opentofu@v1
-        with:
-          tofu_version: 1.8.2
-
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -89,8 +84,8 @@ jobs:
 
       - name: Setup CI environment
         run: |
-          echo "Setting up CI environment from .env.ci.yaml..."
-          cp .env.ci.yaml .env.yaml
+          echo "Setting up CI environment from .env.ci..."
+          cp .env.ci .env
 
       - name: Install Node dependencies (discord)
         working-directory: opennotes-discord
@@ -149,8 +144,8 @@ jobs:
 
       - name: Setup CI environment
         run: |
-          echo "Setting up CI environment from .env.ci.yaml..."
-          cp .env.ci.yaml .env.yaml
+          echo "Setting up CI environment from .env.ci..."
+          cp .env.ci .env
 
       - name: Load cached venv
         id: cached-uv-dependencies
@@ -279,8 +274,8 @@ jobs:
 
       - name: Setup CI environment
         run: |
-          echo "Setting up CI environment from .env.ci.yaml..."
-          cp .env.ci.yaml .env.yaml
+          echo "Setting up CI environment from .env.ci..."
+          cp .env.ci .env
 
       - name: Load cached venv
         id: cached-uv-dependencies
@@ -354,8 +349,8 @@ jobs:
 
       - name: Setup CI environment
         run: |
-          echo "Setting up CI environment from .env.ci.yaml..."
-          cp .env.ci.yaml .env.yaml
+          echo "Setting up CI environment from .env.ci..."
+          cp .env.ci .env
 
       - name: Load cached venv
         id: cached-uv-dependencies
@@ -465,8 +460,8 @@ jobs:
 
       - name: Setup CI environment
         run: |
-          echo "Setting up CI environment from .env.ci.yaml..."
-          cp .env.ci.yaml .env.yaml
+          echo "Setting up CI environment from .env.ci..."
+          cp .env.ci .env
 
       - name: Load cached venv
         id: cached-uv-dependencies
@@ -562,8 +557,8 @@ jobs:
 
       - name: Setup CI environment
         run: |
-          echo "Setting up CI environment from .env.ci.yaml..."
-          cp .env.ci.yaml .env.yaml
+          echo "Setting up CI environment from .env.ci..."
+          cp .env.ci .env
 
       - name: Load cached venv
         id: cached-uv-dependencies
