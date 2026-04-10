@@ -14,6 +14,7 @@
 <div>
 
 - [What is Open Notes?](#what-is-open-notes)
+- [Why Open Notes?](#why-open-notes)
 - [How It Works](#how-it-works)
 - [Current Status](#current-status)
 - [Modules and Directory Structure](#modules-and-directory-structure)
@@ -28,44 +29,29 @@
 
 ## What is Open Notes?
 
-Open Notes is a system for community-driven constructive moderation and annotation that can be added to anything, powered by the open-source Twitter/X Community Notes algorithm.
+Open Notes is an AI-powered content moderation system that catches harmful content immediately and lets communities review those decisions afterward.
 
-Discord is the demo/reference integration, but we want it go anywhere. Reddit is planned next, with more suggestions welcome!
+It works as a plugin for platforms you already use. Discourse is the first supported platform, with Discord available as a bot integration and Reddit planned next.
+
+## Why Open Notes?
+
+Existing community moderation approaches have real weaknesses:
+
+- **No enforcement mechanism.** Systems like Twitter/X Community Notes annotate content but can't act on it. Harmful content stays up while the annotation process plays out.
+- **Slow convergence.** Notes take hours or days to accumulate enough ratings to reach consensus. In the meantime, the damage is done.
+- **Vulnerable to brigading.** After a Community Note gets published, it's often inundated with highly partisan voting. A significant percentage of published notes get un-published as a result.
+
+These are structural problems, not implementation bugs. Open Notes addresses them by leading with AI moderation and using community oversight as a check on those automated decisions.
 
 ## How It Works
 
-The system has three parts.
+Open Notes has two layers that work together.
 
-**Requests** flag content without doing the work yourself. See something fishy? Hit "request note"—you're saying "someone should annotate this." Reasons include:
-- "I want more context"
-- "This is confusing"
-- "This seems misleading"
-- "Needs sources"
+**AI moderation acts first.** When content is posted to a monitored channel, Open Notes classifies it immediately. Content that's clearly harmful gets acted on right away—hidden, flagged, or whatever action the community has configured. This happens in seconds, not hours.
 
-Requests queue publicly for anyone to fulfill.
+**Community oversight reviews those decisions.** Every automated action creates a review item. Community members vote on whether the action was correct using the same bridging-based algorithm from Twitter/X Community Notes—where agreement across people who usually *disagree* counts for more than echo-chamber consensus. If the community decides the AI got it wrong, the action is reversed.
 
-**Notes** can come from anyone. We're on Discord, so servers are already gated—no need for Twitter's elaborate contributor vetting. Two paths to create a note:
-- Write one yourself
-- Punt to AI--it drafts a note, but *doesn't auto-post*
-
-Every note, human or AI, goes through voting. Your community doesn't become the target of an AI slop firehose.
-
-**Voting** early days it'll start simple—with helpful/unhelpful votes getting tallied[^vote-mechanism] after a minimum vote threshold is reached. A key difference from voting systems like Reddit's: we pick one winner per message, not create a comment section. The annotation should be *the* context, not a debate.
-
-When enough voting history accumulates, it enables the real magic: bridging-based ranking (the Community Notes algorithm):
-- Notes upvoted by people who usually *disagree* with each other rank higher
-- Same vote count from an echo chamber loses to cross-divide consensus
-- That's constructive moderation: communities self-regulating through annotations, not bans
-
-**Content Monitoring** (opt-in)
-
-- Matches posts against fact-check databases (currently a subset of Snopes)
-- Matches auto-generate requests plus create draft notes in the regular note queue: human votes still required to actually publish the notes
-- Approved notes feed back into the matching pool
-- Fact-check DBs shared across servers; user-generated notes stay server-local
-- Admins choose which channels to monitor, if any
-
-[^vote-mechanism]: Using a bayesian average initially, and using more and more of the Community Notes algorithm as the scale increases.
+This means harmful content gets addressed immediately, but no decision is permanent. The AI handles speed; the community handles judgment. Communities still control what gets monitored, what thresholds trigger action, and who can participate in reviews.
 
 ## Current Status
 
@@ -78,6 +64,7 @@ Contributor docs, issue templates, and the like are coming. Prioritizing core fu
 ## Modules and Directory Structure
 
 - **opennotes-server**: FastAPI backend with PostgreSQL persistence, Redis caching, NATS messaging, OAuth/JWT authentication, and OpenTelemetry observability
+- **opennotes-discourse**: Discourse plugin providing AI moderation, community review queue, and admin dashboard
 - **opennotes-discord**: Discord bot with TypeScript/Discord.js providing slash commands and context menu integration
 - **communitynotes**: Official Twitter/X Community Notes algorithm (git submodule)
 
@@ -103,6 +90,15 @@ opennotes/
 │   ├── tests/               # Test suite
 │   ├── pyproject.toml       # Python dependencies
 │   └── .env.yaml.example    # Configuration template
+│
+├── opennotes-discourse/       # Discourse plugin (Ruby/Ember)
+│   ├── plugin/               # Plugin source
+│   │   ├── plugin.rb         # Entry point, event hooks, settings
+│   │   ├── app/              # Controllers, models, serializers
+│   │   ├── assets/           # Ember/Glimmer UI components
+│   │   └── config/           # Settings, locales
+│   ├── docs/                 # Admin and user guides
+│   └── tests/                # E2E test suite (Playwright)
 │
 ├── opennotes-discord/        # Discord bot (TypeScript)
 │   ├── src/                  # Source code
@@ -251,6 +247,8 @@ Copy `.env.yaml.example` to `.env.yaml` and configure:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and infrastructure components
 - [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md) - OAuth/JWT authentication flow
 - [docs/SCHEMA_AND_API_WORKFLOW.md](docs/SCHEMA_AND_API_WORKFLOW.md) - API schemas and workflows
+- [opennotes-discourse/docs/ADMIN-GUIDE.md](opennotes-discourse/docs/ADMIN-GUIDE.md) - Discourse plugin setup and configuration
+- [opennotes-discourse/docs/USER-GUIDE.md](opennotes-discourse/docs/USER-GUIDE.md) - How community review works for participants
 - [communitynotes/README.md](communitynotes/README.md) - Community Notes Algorithm overview
 
 ## License
