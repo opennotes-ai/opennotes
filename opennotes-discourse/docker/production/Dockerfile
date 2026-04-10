@@ -73,6 +73,9 @@ RUN if [ -f yarn.lock ]; then yarn install --production; else CI=1 pnpm install 
 
 COPY plugin/ /var/www/discourse/plugins/discourse-opennotes/
 
+RUN echo 'export BUNDLE_APP_CONFIG=/usr/local/bundle' >> /etc/profile.d/bundle.sh && \
+    echo 'BUNDLE_APP_CONFIG=/usr/local/bundle' >> /etc/environment
+
 RUN mkdir -p /etc/runit/1.d /etc/service /shared /var/discourse/shared/redis
 
 RUN mkdir -p /etc/service/redis /var/log/redis && \
@@ -84,7 +87,7 @@ RUN mkdir -p /etc/service/redis /var/log/redis && \
     chmod +x /etc/service/redis/log/run
 
 RUN mkdir -p /etc/service/rails /var/log/rails && \
-    printf '#!/bin/bash\ncd /var/www/discourse\nexec chpst -u discourse bundle exec puma -C config/puma.rb\n' \
+    printf '#!/bin/bash\nexport BUNDLE_APP_CONFIG=/usr/local/bundle\ncd /var/www/discourse\nexec chpst -u discourse bundle exec puma -C config/puma.rb\n' \
       > /etc/service/rails/run && \
     chmod +x /etc/service/rails/run && \
     mkdir -p /etc/service/rails/log && \
@@ -92,7 +95,7 @@ RUN mkdir -p /etc/service/rails /var/log/rails && \
     chmod +x /etc/service/rails/log/run
 
 RUN mkdir -p /etc/service/sidekiq /var/log/sidekiq && \
-    printf '#!/bin/bash\ncd /var/www/discourse\nexec chpst -u discourse bundle exec sidekiq\n' \
+    printf '#!/bin/bash\nexport BUNDLE_APP_CONFIG=/usr/local/bundle\ncd /var/www/discourse\nexec chpst -u discourse bundle exec sidekiq\n' \
       > /etc/service/sidekiq/run && \
     chmod +x /etc/service/sidekiq/run && \
     mkdir -p /etc/service/sidekiq/log && \
