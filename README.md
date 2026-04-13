@@ -19,6 +19,7 @@
 - [Current Status](#current-status)
 - [Modules and Directory Structure](#modules-and-directory-structure)
 - [Quick Start](#quick-start)
+- [Standalone Setup](#standalone-setup)
 - [Development Setup](#development-setup)
 - [Configuration](#configuration)
 - [Documentation](#documentation)
@@ -89,7 +90,7 @@ opennotes/
 │   ├── alembic/             # Database migrations
 │   ├── tests/               # Test suite
 │   ├── pyproject.toml       # Python dependencies
-│   └── .env.yaml.example    # Configuration template
+│   └── .env.example          # Configuration template
 │
 ├── opennotes-discourse/       # Discourse plugin (Ruby/Ember)
 │   ├── plugin/               # Plugin source
@@ -112,7 +113,7 @@ opennotes/
 │   │   ├── services/        # Business logic layer
 │   │   └── lib/             # Shared utilities
 │   ├── package.json         # Node.js dependencies (pnpm)
-│   └── .env.yaml.example    # Configuration template
+│   └── .env.example          # Configuration template
 │
 ├── docs/                     # Documentation
 │   ├── ARCHITECTURE.md      # System architecture and infrastructure
@@ -144,28 +145,37 @@ cd opennotes
 git submodule update --init --recursive
 ```
 
-### 2. Start the Server
+### 2. Configure Environment
+
+```console
+cp .env.example .env
+# Edit .env with your credentials (see .env.md for variable reference)
+```
+
+### 3. Start the Server
 
 ```console
 cd opennotes-server
-cp .env.yaml.example .env.yaml
-# Edit .env.yaml with your credentials and configuration
 uv sync --extra scoring
 uv run python -m src.main
 ```
 
 Server runs at http://localhost:8000
 
-### 3. Start the Discord Bot
+### 4. Start the Discord Bot
 
 ```console
 cd opennotes-discord
-cp .env.yaml.example .env.yaml
-# Edit .env.yaml with your Discord credentials
 pnpm install
 pnpm run build
 pnpm start
 ```
+
+## Standalone Setup
+
+For running Open Notes independently without the multiverse monorepo, see [docs/STANDALONE-SETUP.md](docs/STANDALONE-SETUP.md).
+
+The standalone setup uses Docker Compose and mise tasks (`mise run dev:up`, `mise run dev:down`, `mise run dev:ps`) and does not require OpenTofu or yq.
 
 ## Development Setup
 
@@ -224,7 +234,7 @@ When the server is running, visit:
 
 ### Server Configuration
 
-Copy `.env.yaml.example` to `.env.yaml` and configure:
+Copy `.env.example` to `.env` and configure (see `.env.md` for full reference):
 
 - Database connection (PostgreSQL)
 - Redis connection
@@ -236,7 +246,7 @@ Copy `.env.yaml.example` to `.env.yaml` and configure:
 
 ### Bot Configuration
 
-Copy `.env.yaml.example` to `.env.yaml` and configure:
+Copy `.env.example` to `.env` and configure:
 
 - Discord bot token and client ID
 - Server URL
@@ -244,6 +254,7 @@ Copy `.env.yaml.example` to `.env.yaml` and configure:
 
 ## Documentation
 
+- [docs/STANDALONE-SETUP.md](docs/STANDALONE-SETUP.md) - Full standalone setup guide (Docker Compose, mise tasks, fixtures)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and infrastructure components
 - [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md) - OAuth/JWT authentication flow
 - [docs/SCHEMA_AND_API_WORKFLOW.md](docs/SCHEMA_AND_API_WORKFLOW.md) - API schemas and workflows
