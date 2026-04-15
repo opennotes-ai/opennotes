@@ -4,16 +4,8 @@ module Jobs
   class SyncScoringStatus < ::Jobs::Scheduled
     every 5.minutes
 
-    TERMINAL_STATES = %w[
-      resolved
-      restored
-      dismissed
-      action_confirmed
-      action_overturned
-      consensus_helpful
-      consensus_not_helpful
-      staff_overridden
-    ].freeze
+    TERMINAL_STATES = %w[resolved restored dismissed].freeze
+    PROCESSABLE_STATES = %w[under_review retro_review].freeze
 
     def execute(_args)
       return unless SiteSetting.opennotes_enabled
@@ -71,9 +63,9 @@ module Jobs
     def sync_reviewable_state(reviewable, attrs, post, _client)
       note_status = attrs["note_status"] || attrs.dig("scoring", "status")
       return unless note_status
-      return if reviewable.opennotes_state.in?(TERMINAL_STATES)
 
-      ensure_reviewable_processable(reviewable)
+      ensure_reviewable_processable(reviewable, post)
+      return unless reviewable.opennotes_state.in?(PROCESSABLE_STATES)
 
       recommended_action = attrs["recommended_action"]
 
@@ -85,19 +77,38 @@ module Jobs
       end
     end
 
-    def ensure_reviewable_processable(reviewable)
+    def ensure_reviewable_processable(reviewable, post)
       case reviewable.opennotes_state
       when "pending"
-        Rails.logger.warn(
-          "[opennotes] Auto-advancing reviewable #{reviewable.id} from pending to under_review",
-        )
+        warn_advance(reviewable, "pending", "under_review")
         reviewable.transition_to(:under_review)
       when "auto_actioned"
-        Rails.logger.warn(
-          "[opennotes] Auto-advancing reviewable #{reviewable.id} from auto_actioned to retro_review",
-        )
+        warn_advance(reviewable, "auto_actioned", "retro_review")
         reviewable.transition_to(:retro_review)
+      when "action_confirmed"
+        warn_advance(reviewable, "action_confirmed", "resolved")
+        reviewable.transition_to(:resolved)
+      when "action_overturned"
+        warn_advance(reviewable, "action_overturned", "restored")
+        reviewable.transition_to(:restored)
+      when "consensus_helpful"
+        unless SiteSetting.opennotes_staff_approval_required
+          warn_advance(reviewable, "consensus_helpful", "resolved")
+          reviewable.transition_to(:resolved)
+        end
+      when "consensus_not_helpful"
+        warn_advance(reviewable, "consensus_not_helpful", "resolved")
+        reviewable.transition_to(:resolved)
+      when "staff_overridden"
+        warn_advance(reviewable, "staff_overridden", "resolved")
+        reviewable.transition_to(:resolved)
       end
+    end
+
+    def warn_advance(reviewable, from_state, to_state)
+      Rails.logger.warn(
+        "[opennotes] Auto-advancing stranded reviewable #{reviewable.id} from #{from_state} to #{to_state}",
+      )
     end
 
     def handle_helpful_consensus(reviewable, post, recommended_action)

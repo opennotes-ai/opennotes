@@ -61,6 +61,86 @@ RSpec.describe Jobs::SyncScoringStatus do
     end
   end
 
+  describe "stranded intermediate auto-finish" do
+    it "advances stranded action_confirmed to resolved" do
+      reviewable = create_reviewable(:under_review)
+      reviewable.opennotes_state = "action_confirmed"
+      reviewable.save!
+
+      stub_response(note_status: "CURRENTLY_RATED_HELPFUL")
+
+      expect(Rails.logger).to receive(:warn).with(/action_confirmed to resolved/)
+
+      described_class.new.execute({})
+
+      expect(reviewable.reload.opennotes_state).to eq("resolved")
+    end
+
+    it "advances stranded action_overturned to restored" do
+      reviewable = create_reviewable(:under_review)
+      reviewable.opennotes_state = "action_overturned"
+      reviewable.save!
+
+      stub_response(note_status: "CURRENTLY_RATED_NOT_HELPFUL")
+
+      expect(Rails.logger).to receive(:warn).with(/action_overturned to restored/)
+
+      described_class.new.execute({})
+
+      expect(reviewable.reload.opennotes_state).to eq("restored")
+    end
+
+    it "advances stranded consensus_not_helpful to resolved" do
+      reviewable = create_reviewable(:under_review)
+      reviewable.opennotes_state = "consensus_not_helpful"
+      reviewable.save!
+
+      stub_response(note_status: "CURRENTLY_RATED_NOT_HELPFUL")
+
+      described_class.new.execute({})
+
+      expect(reviewable.reload.opennotes_state).to eq("resolved")
+    end
+
+    it "advances stranded consensus_helpful to resolved when staff approval not required" do
+      SiteSetting.opennotes_staff_approval_required = false
+      reviewable = create_reviewable(:under_review)
+      reviewable.opennotes_state = "consensus_helpful"
+      reviewable.save!
+
+      stub_response(note_status: "CURRENTLY_RATED_HELPFUL")
+
+      described_class.new.execute({})
+
+      expect(reviewable.reload.opennotes_state).to eq("resolved")
+    end
+
+    it "leaves stranded consensus_helpful alone when staff approval required" do
+      SiteSetting.opennotes_staff_approval_required = true
+      reviewable = create_reviewable(:under_review)
+      reviewable.opennotes_state = "consensus_helpful"
+      reviewable.save!
+
+      stub_response(note_status: "CURRENTLY_RATED_HELPFUL")
+
+      described_class.new.execute({})
+
+      expect(reviewable.reload.opennotes_state).to eq("consensus_helpful")
+    end
+
+    it "advances stranded staff_overridden to resolved" do
+      reviewable = create_reviewable(:under_review)
+      reviewable.opennotes_state = "staff_overridden"
+      reviewable.save!
+
+      stub_response(note_status: "CURRENTLY_RATED_HELPFUL")
+
+      described_class.new.execute({})
+
+      expect(reviewable.reload.opennotes_state).to eq("resolved")
+    end
+  end
+
   describe "auto-advance guard" do
     it "advances pending to under_review before processing consensus" do
       create_reviewable(:pending)
