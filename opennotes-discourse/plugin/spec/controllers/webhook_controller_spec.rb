@@ -201,6 +201,55 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
       expect(reviewable).to be_present
       expect(reviewable.opennotes_state).to eq("under_review")
     end
+
+    context "when an existing under_review reviewable receives a later action-bearing proposed webhook" do
+      let!(:existing_reviewable) do
+        ReviewableOpennotesItem.create_for(
+          post_record,
+          state: :under_review,
+          opennotes_request_id: "req-uuid-1",
+        )
+      end
+
+      it "escalates the existing row to retro_review and persists the action_id" do
+        allow(OpenNotes::ActionExecutor).to receive(:execute_action)
+
+        payload = {
+          event: "moderation_action.proposed",
+          action_id: "act-late",
+          request_id: "req-uuid-1",
+          action_type: "hide_post",
+        }
+        send_webhook(payload)
+
+        existing_reviewable.reload
+        expect(existing_reviewable.opennotes_state).to eq("retro_review")
+        expect(existing_reviewable.opennotes_action_id).to eq("act-late")
+      end
+
+      it "lets a follow-up moderation_action.confirmed webhook reach resolved on the same row" do
+        allow(OpenNotes::ActionExecutor).to receive(:execute_action)
+
+        send_webhook(
+          {
+            event: "moderation_action.proposed",
+            action_id: "act-late",
+            request_id: "req-uuid-1",
+            action_type: "hide_post",
+          },
+        )
+
+        send_webhook(
+          {
+            event: "moderation_action.confirmed",
+            action_id: "act-late",
+            note_id: "note-late",
+          },
+        )
+
+        expect(existing_reviewable.reload.opennotes_state).to eq("resolved")
+      end
+    end
   end
 
   describe "handle_action_dismissed" do

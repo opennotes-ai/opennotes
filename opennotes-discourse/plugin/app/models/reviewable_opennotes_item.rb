@@ -17,8 +17,8 @@ class ReviewableOpennotesItem < Reviewable
   ].freeze
 
   VALID_TRANSITIONS = {
-    pending: %i[under_review auto_actioned dismissed],
-    under_review: %i[consensus_helpful consensus_not_helpful staff_overridden dismissed],
+    pending: %i[under_review auto_actioned retro_review dismissed],
+    under_review: %i[consensus_helpful consensus_not_helpful staff_overridden retro_review dismissed],
     auto_actioned: %i[retro_review],
     retro_review: %i[action_confirmed action_overturned staff_overridden],
     consensus_helpful: %i[resolved],

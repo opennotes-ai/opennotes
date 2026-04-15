@@ -173,7 +173,10 @@ module Opennotes
 
     def find_or_create_reviewable(post, request_id:, action_id:, state: :under_review)
       existing = ReviewableOpennotesItem.find_by_opennotes_request_id(request_id)
-      return existing if existing
+      if existing
+        reconcile_existing_reviewable(existing, action_id: action_id, target_state: state)
+        return existing
+      end
 
       post.custom_fields["opennotes_request_id"] = request_id
       post.custom_fields["opennotes_action_id"] = action_id if action_id.present?
@@ -185,6 +188,25 @@ module Opennotes
         opennotes_request_id: request_id,
         opennotes_action_id: action_id,
       )
+    end
+
+    def reconcile_existing_reviewable(reviewable, action_id:, target_state:)
+      payload_changed = false
+
+      if action_id.present? && reviewable.opennotes_action_id != action_id
+        reviewable.opennotes_action_id = action_id
+        payload_changed = true
+      end
+
+      should_escalate =
+        target_state == :retro_review &&
+        reviewable.opennotes_state.to_sym.in?(%i[pending under_review])
+
+      if should_escalate
+        reviewable.transition_to(:retro_review)
+      elsif payload_changed
+        reviewable.save!
+      end
     end
   end
 end
