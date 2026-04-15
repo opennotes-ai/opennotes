@@ -46,7 +46,7 @@ async def test_unknown_tool_call_does_not_exhaust_retry_counter() -> None:
     validator_calls = {"n": 0}
 
     @agent.output_validator
-    def reject_first_then_accept(data: str) -> str:
+    def reject_first_then_accept(data: str) -> str:  # pyright: ignore[reportUnusedFunction]
         validator_calls["n"] += 1
         if data == "needs-retry":
             raise ModelRetry("validator asked for one retry")
@@ -55,6 +55,7 @@ async def test_unknown_tool_call_does_not_exhaust_retry_counter() -> None:
     model_calls = {"n": 0}
 
     def function_model(messages: list[ModelMessage], agent_info: AgentInfo) -> ModelResponse:
+        del messages, agent_info
         model_calls["n"] += 1
         if model_calls["n"] == 1:
             return ModelResponse(
