@@ -128,6 +128,44 @@ RSpec.describe ReviewableOpennotesItem do
     end
   end
 
+  describe "#transition_to consensus_type payload" do
+    let(:reviewable) do
+      described_class.create_for(
+        post,
+        state: :pending,
+        opennotes_request_id: "req-mutations",
+      )
+    end
+
+    it "stamps consensus_type=helpful on consensus_helpful transition" do
+      reviewable.transition_to(:under_review)
+      reviewable.transition_to(:consensus_helpful)
+
+      expect(reviewable.payload["consensus_type"]).to eq("helpful")
+    end
+
+    it "stamps consensus_type=not_helpful on consensus_not_helpful transition" do
+      reviewable.transition_to(:under_review)
+      reviewable.transition_to(:consensus_not_helpful)
+
+      expect(reviewable.payload["consensus_type"]).to eq("not_helpful")
+    end
+
+    it "preserves consensus_type after transition to resolved" do
+      reviewable.transition_to(:under_review)
+      reviewable.transition_to(:consensus_helpful)
+      reviewable.transition_to(:resolved)
+
+      expect(reviewable.reload.payload["consensus_type"]).to eq("helpful")
+    end
+
+    it "does not set consensus_type for non-consensus transitions" do
+      reviewable.transition_to(:under_review)
+
+      expect(reviewable.payload["consensus_type"]).to be_nil
+    end
+  end
+
   describe "#perform_agree" do
     let(:reviewable) do
       described_class.create_for(

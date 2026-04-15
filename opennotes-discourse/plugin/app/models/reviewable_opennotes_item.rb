@@ -100,6 +100,7 @@ class ReviewableOpennotesItem < Reviewable
     end
 
     self.opennotes_state = new_state
+    transition_mutations(new_state)
     update_discourse_status(new_state)
     save!
   end
@@ -228,6 +229,16 @@ class ReviewableOpennotesItem < Reviewable
       self.status = Reviewable.statuses[:approved]
     when :staff_overridden
       self.status = Reviewable.statuses[:rejected]
+    end
+  end
+
+  def transition_mutations(new_state)
+    self.payload ||= {}
+    case new_state
+    when :consensus_helpful
+      payload["consensus_type"] = "helpful"
+    when :consensus_not_helpful
+      payload["consensus_type"] = "not_helpful"
     end
   end
 
