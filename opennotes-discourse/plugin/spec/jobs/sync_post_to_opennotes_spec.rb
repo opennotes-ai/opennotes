@@ -157,12 +157,12 @@ RSpec.describe Jobs::SyncPostToOpennotes do
         expect(post.hidden?).to eq(true)
       end
 
-      it "creates a ReviewableOpennotesItem with auto_actioned state" do
+      it "creates a ReviewableOpennotesItem and transitions it to retro_review" do
         described_class.new.execute(post_id: post.id)
 
         reviewable = ReviewableOpennotesItem.find_by_opennotes_request_id("req-1")
         expect(reviewable).to be_present
-        expect(reviewable.opennotes_state).to eq("auto_actioned")
+        expect(reviewable.opennotes_state).to eq("retro_review")
         expect(reviewable.opennotes_note_id).to eq("note-1")
         expect(reviewable.opennotes_action_id).to eq("action-1")
       end
