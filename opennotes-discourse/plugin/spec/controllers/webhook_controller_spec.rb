@@ -249,6 +249,34 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
 
         expect(existing_reviewable.reload.opennotes_state).to eq("resolved")
       end
+
+      it "is a clean no-op when a duplicate proposed arrives after the row already reached retro_review" do
+        allow(OpenNotes::ActionExecutor).to receive(:execute_action)
+
+        send_webhook(
+          {
+            event: "moderation_action.proposed",
+            action_id: "act-late",
+            request_id: "req-uuid-1",
+            action_type: "hide_post",
+          },
+        )
+
+        # Duplicate proposed delivery — should not crash or regress state.
+        expect {
+          send_webhook(
+            {
+              event: "moderation_action.proposed",
+              action_id: "act-late",
+              request_id: "req-uuid-1",
+              action_type: "hide_post",
+            },
+          )
+        }.not_to raise_error
+
+        expect(response).to have_http_status(:ok)
+        expect(existing_reviewable.reload.opennotes_state).to eq("retro_review")
+      end
     end
   end
 
