@@ -6,7 +6,7 @@ RSpec.describe "discourse-opennotes plugin hooks" do
   fab!(:parent_category) { Fabricate(:category, slug: "gaming") }
   fab!(:child_category) { Fabricate(:category, slug: "disputes", parent_category: parent_category) }
   fab!(:unmonitored_category) { Fabricate(:category, slug: "off-topic") }
-  fab!(:user) { Fabricate(:user) }
+  fab!(:user) { Fabricate(:admin) }
   fab!(:flagger) { Fabricate(:user, trust_level: 2) }
 
   before do

@@ -170,19 +170,181 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
       send_webhook(payload)
       expect(response).to have_http_status(:ok)
     end
+
+    it "creates the reviewable in retro_review when an action_type is present" do
+      payload = {
+        event: "moderation_action.proposed",
+        action_id: "act-uuid-new",
+        request_id: "req-uuid-1",
+        action_type: "hide_post",
+      }
+
+      allow(OpenNotes::ActionExecutor).to receive(:execute_action)
+
+      send_webhook(payload)
+
+      reviewable = ReviewableOpennotesItem.find_by_opennotes_request_id("req-uuid-1")
+      expect(reviewable).to be_present
+      expect(reviewable.opennotes_state).to eq("retro_review")
+    end
+
+    it "creates the reviewable in under_review when no action_type is present" do
+      payload = {
+        event: "moderation_action.proposed",
+        action_id: "act-uuid-new",
+        request_id: "req-uuid-1",
+      }
+
+      send_webhook(payload)
+
+      reviewable = ReviewableOpennotesItem.find_by_opennotes_request_id("req-uuid-1")
+      expect(reviewable).to be_present
+      expect(reviewable.opennotes_state).to eq("under_review")
+    end
+
+    context "when an existing under_review reviewable receives a later action-bearing proposed webhook" do
+      let!(:existing_reviewable) do
+        ReviewableOpennotesItem.create_for(
+          post_record,
+          state: :under_review,
+          opennotes_request_id: "req-uuid-1",
+        )
+      end
+
+      it "escalates the existing row to retro_review and persists the action_id" do
+        allow(OpenNotes::ActionExecutor).to receive(:execute_action)
+
+        payload = {
+          event: "moderation_action.proposed",
+          action_id: "act-late",
+          request_id: "req-uuid-1",
+          action_type: "hide_post",
+        }
+        send_webhook(payload)
+
+        existing_reviewable.reload
+        expect(existing_reviewable.opennotes_state).to eq("retro_review")
+        expect(existing_reviewable.opennotes_action_id).to eq("act-late")
+      end
+
+      it "lets a follow-up moderation_action.confirmed webhook reach resolved on the same row" do
+        allow(OpenNotes::ActionExecutor).to receive(:execute_action)
+
+        send_webhook(
+          {
+            event: "moderation_action.proposed",
+            action_id: "act-late",
+            request_id: "req-uuid-1",
+            action_type: "hide_post",
+          },
+        )
+
+        send_webhook(
+          {
+            event: "moderation_action.confirmed",
+            action_id: "act-late",
+            note_id: "note-late",
+          },
+        )
+
+        expect(existing_reviewable.reload.opennotes_state).to eq("resolved")
+      end
+
+      it "is a clean no-op when a duplicate proposed arrives after the row already reached retro_review" do
+        allow(OpenNotes::ActionExecutor).to receive(:execute_action)
+
+        send_webhook(
+          {
+            event: "moderation_action.proposed",
+            action_id: "act-late",
+            request_id: "req-uuid-1",
+            action_type: "hide_post",
+          },
+        )
+
+        # Duplicate proposed delivery — should not crash or regress state.
+        expect {
+          send_webhook(
+            {
+              event: "moderation_action.proposed",
+              action_id: "act-late",
+              request_id: "req-uuid-1",
+              action_type: "hide_post",
+            },
+          )
+        }.not_to raise_error
+
+        expect(response).to have_http_status(:ok)
+        expect(existing_reviewable.reload.opennotes_state).to eq("retro_review")
+      end
+    end
   end
 
-  describe "handle_action_overturned" do
-    let!(:reviewable_for_overturn) do
-      ReviewableOpennotesItem.create_for(
+  describe "handle_action_dismissed" do
+    [:pending, :under_review].each do |starting_state|
+      context "when reviewable is in #{starting_state}" do
+        let!(:reviewable_for_dismissal) do
+          ReviewableOpennotesItem.create_for(
+            post_record,
+            state: starting_state,
+            opennotes_request_id: "req-uuid-1",
+            opennotes_action_id: "act-uuid-1",
+          )
+        end
+
+        it "transitions to dismissed and sets ignored Discourse status" do
+          payload = {
+            event: "moderation_action.dismissed",
+            action_id: "act-uuid-1",
+            request_id: "req-uuid-1",
+          }
+          send_webhook(payload)
+
+          reviewable_for_dismissal.reload
+          expect(reviewable_for_dismissal.opennotes_state).to eq("dismissed")
+          expect(reviewable_for_dismissal.status).to eq("ignored")
+        end
+      end
+    end
+  end
+
+  describe "handle_action_confirmed" do
+    let!(:reviewable_for_confirm) do
+      r = ReviewableOpennotesItem.create_for(
         post_record,
         state: :auto_actioned,
         opennotes_request_id: "req-uuid-1",
         opennotes_action_id: "act-uuid-1",
       )
+      r.transition_to(:retro_review)
+      r
     end
 
-    it "unhides the post, sets scan exempt, and adds staff annotation" do
+    it "transitions a retro_review reviewable through action_confirmed to resolved" do
+      payload = {
+        event: "moderation_action.confirmed",
+        action_id: "act-uuid-1",
+        note_id: "note-uuid-1",
+      }
+      send_webhook(payload)
+
+      expect(reviewable_for_confirm.reload.opennotes_state).to eq("resolved")
+    end
+  end
+
+  describe "handle_action_overturned" do
+    let!(:reviewable_for_overturn) do
+      r = ReviewableOpennotesItem.create_for(
+        post_record,
+        state: :auto_actioned,
+        opennotes_request_id: "req-uuid-1",
+        opennotes_action_id: "act-uuid-1",
+      )
+      r.transition_to(:retro_review)
+      r
+    end
+
+    it "unhides the post, sets scan exempt, adds annotation, and reaches restored" do
       expect(OpenNotes::ActionExecutor).to receive(:unhide_post)
       expect(OpenNotes::ActionExecutor).to receive(:set_scan_exempt)
       expect(OpenNotes::ActionExecutor).to receive(:add_staff_annotation)
@@ -194,6 +356,7 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
       }
       send_webhook(payload)
       expect(response).to have_http_status(:ok)
+      expect(reviewable_for_overturn.reload.opennotes_state).to eq("restored")
     end
   end
 
@@ -252,6 +415,35 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
         }
         send_webhook(payload)
         expect(response).to have_http_status(:ok)
+      end
+    end
+
+    context "when reviewable is in retro_review" do
+      let(:retro_post) { Fabricate(:post) }
+      let!(:retro_reviewable) do
+        r = ReviewableOpennotesItem.create_for(
+          retro_post,
+          state: :auto_actioned,
+          opennotes_request_id: "req-uuid-retro",
+        )
+        r.transition_to(:retro_review)
+        r
+      end
+
+      it "does not transition retro_review on CURRENTLY_RATED_HELPFUL (handled by polling job + moderation_action.confirmed)" do
+        SiteSetting.opennotes_auto_hide_on_consensus = true
+        allow(OpenNotes::ActionExecutor).to receive(:hide_post)
+
+        payload = {
+          event: "note.status_changed",
+          note_id: "note-retro",
+          status: "CURRENTLY_RATED_HELPFUL",
+          request_id: "req-uuid-retro",
+          recommended_action: "hide_post",
+        }
+        send_webhook(payload)
+
+        expect(retro_reviewable.reload.opennotes_state).to eq("retro_review")
       end
     end
   end

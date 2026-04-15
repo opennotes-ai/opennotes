@@ -57,11 +57,13 @@ module Opennotes
       post = find_post_by_request_id(request_id)
       return unless post
 
+      initial_state = action_type.present? ? :retro_review : :under_review
+
       reviewable = find_or_create_reviewable(
         post,
         request_id: request_id,
         action_id: action_id,
-        state: :pending,
+        state: initial_state,
       )
 
       if action_type.present?
@@ -122,12 +124,8 @@ module Opennotes
       reviewable ||= ReviewableOpennotesItem.find_by_opennotes_request_id(request_id) if request_id.present?
       return unless reviewable
 
-      if reviewable.opennotes_state.to_sym == :pending
+      if reviewable.opennotes_state.to_sym.in?(%i[pending under_review])
         reviewable.transition_to(:dismissed)
-      elsif reviewable.opennotes_state.to_sym == :under_review
-        reviewable.opennotes_state = "dismissed"
-        reviewable.status = Reviewable.statuses[:ignored]
-        reviewable.save!
       end
     end
 
@@ -173,9 +171,12 @@ module Opennotes
       ReviewableOpennotesItem.where("payload->>'opennotes_action_id' = ?", action_id).first
     end
 
-    def find_or_create_reviewable(post, request_id:, action_id:, state: :pending)
+    def find_or_create_reviewable(post, request_id:, action_id:, state: :under_review)
       existing = ReviewableOpennotesItem.find_by_opennotes_request_id(request_id)
-      return existing if existing
+      if existing
+        reconcile_existing_reviewable(existing, action_id: action_id, target_state: state)
+        return existing
+      end
 
       post.custom_fields["opennotes_request_id"] = request_id
       post.custom_fields["opennotes_action_id"] = action_id if action_id.present?
@@ -187,6 +188,25 @@ module Opennotes
         opennotes_request_id: request_id,
         opennotes_action_id: action_id,
       )
+    end
+
+    def reconcile_existing_reviewable(reviewable, action_id:, target_state:)
+      payload_changed = false
+
+      if action_id.present? && reviewable.opennotes_action_id != action_id
+        reviewable.opennotes_action_id = action_id
+        payload_changed = true
+      end
+
+      should_escalate =
+        target_state == :retro_review &&
+        reviewable.opennotes_state.to_sym.in?(%i[pending under_review])
+
+      if should_escalate
+        reviewable.transition_to(:retro_review)
+      elsif payload_changed
+        reviewable.save!
+      end
     end
   end
 end

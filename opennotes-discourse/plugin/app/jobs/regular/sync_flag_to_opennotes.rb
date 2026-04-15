@@ -62,7 +62,7 @@ module Jobs
 
       ReviewableOpennotesItem.create_for(
         post,
-        state: :pending,
+        state: :under_review,
         opennotes_request_id: request_id,
         opennotes_note_id: note_id,
       )

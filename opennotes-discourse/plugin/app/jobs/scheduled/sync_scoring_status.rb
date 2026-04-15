@@ -4,6 +4,9 @@ module Jobs
   class SyncScoringStatus < ::Jobs::Scheduled
     every 5.minutes
 
+    TERMINAL_STATES = %w[resolved restored dismissed].freeze
+    PROCESSABLE_STATES = %w[under_review retro_review].freeze
+
     def execute(_args)
       return unless SiteSetting.opennotes_enabled
 
@@ -60,7 +63,9 @@ module Jobs
     def sync_reviewable_state(reviewable, attrs, post, _client)
       note_status = attrs["note_status"] || attrs.dig("scoring", "status")
       return unless note_status
-      return if reviewable.opennotes_state == "resolved"
+
+      ensure_reviewable_processable(reviewable, post)
+      return unless reviewable.opennotes_state.in?(PROCESSABLE_STATES)
 
       recommended_action = attrs["recommended_action"]
 
@@ -72,9 +77,56 @@ module Jobs
       end
     end
 
+    def ensure_reviewable_processable(reviewable, post)
+      case reviewable.opennotes_state
+      when "pending"
+        warn_advance(reviewable, "pending", "under_review")
+        reviewable.transition_to(:under_review)
+      when "auto_actioned"
+        warn_advance(reviewable, "auto_actioned", "retro_review")
+        reviewable.transition_to(:retro_review)
+      when "action_confirmed"
+        warn_advance(reviewable, "action_confirmed", "resolved")
+        reviewable.transition_to(:resolved)
+      when "action_overturned"
+        warn_advance(reviewable, "action_overturned", "restored")
+        replay_overturn_side_effects(post)
+        reviewable.transition_to(:restored)
+      when "consensus_helpful"
+        unless SiteSetting.opennotes_staff_approval_required
+          warn_advance(reviewable, "consensus_helpful", "resolved")
+          replay_consensus_helpful_side_effects(post)
+          reviewable.transition_to(:resolved)
+        end
+      when "consensus_not_helpful"
+        warn_advance(reviewable, "consensus_not_helpful", "resolved")
+        reviewable.transition_to(:resolved)
+      when "staff_overridden"
+        warn_advance(reviewable, "staff_overridden", "resolved")
+        reviewable.transition_to(:resolved)
+      end
+    end
+
+    def replay_overturn_side_effects(post)
+      OpenNotes::ActionExecutor.unhide_post(post) if post.hidden?
+      OpenNotes::ActionExecutor.set_scan_exempt(post, content_hash: Digest::SHA256.hexdigest(post.raw))
+    end
+
+    def replay_consensus_helpful_side_effects(post)
+      return unless SiteSetting.opennotes_auto_hide_on_consensus
+      OpenNotes::ActionExecutor.hide_post(post) unless post.hidden?
+    end
+
+    def warn_advance(reviewable, from_state, to_state)
+      Rails.logger.warn(
+        "[opennotes] Auto-advancing stranded reviewable #{reviewable.id} from #{from_state} to #{to_state}",
+      )
+    end
+
     def handle_helpful_consensus(reviewable, post, recommended_action)
       if reviewable.opennotes_state == "retro_review"
         reviewable.transition_to(:action_confirmed)
+        reviewable.transition_to(:resolved)
       else
         reviewable.transition_to(:consensus_helpful)
 

@@ -57,7 +57,7 @@ module Jobs
 
       ReviewableOpennotesItem.create_for(
         post,
-        state: :auto_actioned,
+        state: :retro_review,
         opennotes_request_id: request_id,
         opennotes_note_id: note_id,
         opennotes_action_id: action_id,
@@ -71,7 +71,7 @@ module Jobs
 
       ReviewableOpennotesItem.create_for(
         post,
-        state: :pending,
+        state: :under_review,
         opennotes_request_id: request_id,
         opennotes_note_id: note_id,
       )

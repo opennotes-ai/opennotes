@@ -17,8 +17,8 @@ class ReviewableOpennotesItem < Reviewable
   ].freeze
 
   VALID_TRANSITIONS = {
-    pending: %i[under_review auto_actioned dismissed],
-    under_review: %i[consensus_helpful consensus_not_helpful staff_overridden],
+    pending: %i[under_review auto_actioned retro_review dismissed],
+    under_review: %i[consensus_helpful consensus_not_helpful staff_overridden retro_review dismissed],
     auto_actioned: %i[retro_review],
     retro_review: %i[action_confirmed action_overturned staff_overridden],
     consensus_helpful: %i[resolved],
@@ -100,6 +100,7 @@ class ReviewableOpennotesItem < Reviewable
     end
 
     self.opennotes_state = new_state
+    transition_mutations(new_state)
     update_discourse_status(new_state)
     save!
   end
@@ -224,10 +225,22 @@ class ReviewableOpennotesItem < Reviewable
 
   def update_discourse_status(new_state)
     case new_state
-    when :resolved, :restored, :dismissed
+    when :resolved, :restored
       self.status = Reviewable.statuses[:approved]
+    when :dismissed
+      self.status = Reviewable.statuses[:ignored]
     when :staff_overridden
       self.status = Reviewable.statuses[:rejected]
+    end
+  end
+
+  def transition_mutations(new_state)
+    self.payload ||= {}
+    case new_state
+    when :consensus_helpful
+      payload["consensus_type"] = "helpful"
+    when :consensus_not_helpful
+      payload["consensus_type"] = "not_helpful"
     end
   end
 

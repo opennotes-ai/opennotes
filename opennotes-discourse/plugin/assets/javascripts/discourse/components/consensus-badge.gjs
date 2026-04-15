@@ -18,6 +18,10 @@ const STATUS_CONFIG = {
     className: "opennotes-badge--auto-actioned",
     i18nKey: "opennotes.badge.auto_actioned",
   },
+  retro_review: {
+    className: "opennotes-badge--auto-actioned",
+    i18nKey: "opennotes.badge.auto_actioned",
+  },
 };
 
 export default class ConsensusBadge extends Component {

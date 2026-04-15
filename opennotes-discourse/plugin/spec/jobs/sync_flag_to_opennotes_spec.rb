@@ -71,7 +71,7 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
 
       reviewable = ReviewableOpennotesItem.find_by_opennotes_request_id("req-flag-1")
       expect(reviewable).to be_present
-      expect(reviewable.opennotes_state).to eq("pending")
+      expect(reviewable.opennotes_state).to eq("under_review")
     end
 
     it "skips when opennotes is disabled" do
