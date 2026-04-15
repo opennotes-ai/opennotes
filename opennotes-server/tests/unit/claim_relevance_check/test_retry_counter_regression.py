@@ -18,15 +18,11 @@ hallucinated tool call before producing a valid structured response.
 
 from __future__ import annotations
 
-from typing import cast
-
-import pytest
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 
-@pytest.mark.asyncio
 async def test_unknown_tool_call_does_not_exhaust_retry_counter() -> None:
     """Unknown tool calls must not consume the global retry budget (pydantic-ai v1.80+).
 
@@ -73,6 +69,6 @@ async def test_unknown_tool_call_does_not_exhaust_retry_counter() -> None:
 
     result = await agent.run("prompt", model=FunctionModel(function_model))
 
-    assert cast(str, result.output) == "final-valid"
+    assert result.output == "final-valid"
     assert model_calls["n"] == 3
     assert validator_calls["n"] == 2
