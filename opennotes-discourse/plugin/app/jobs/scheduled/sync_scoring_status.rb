@@ -90,10 +90,12 @@ module Jobs
         reviewable.transition_to(:resolved)
       when "action_overturned"
         warn_advance(reviewable, "action_overturned", "restored")
+        replay_overturn_side_effects(post)
         reviewable.transition_to(:restored)
       when "consensus_helpful"
         unless SiteSetting.opennotes_staff_approval_required
           warn_advance(reviewable, "consensus_helpful", "resolved")
+          replay_consensus_helpful_side_effects(post)
           reviewable.transition_to(:resolved)
         end
       when "consensus_not_helpful"
@@ -103,6 +105,16 @@ module Jobs
         warn_advance(reviewable, "staff_overridden", "resolved")
         reviewable.transition_to(:resolved)
       end
+    end
+
+    def replay_overturn_side_effects(post)
+      OpenNotes::ActionExecutor.unhide_post(post) if post.hidden?
+      OpenNotes::ActionExecutor.set_scan_exempt(post, content_hash: Digest::SHA256.hexdigest(post.raw))
+    end
+
+    def replay_consensus_helpful_side_effects(post)
+      return unless SiteSetting.opennotes_auto_hide_on_consensus
+      OpenNotes::ActionExecutor.hide_post(post) unless post.hidden?
     end
 
     def warn_advance(reviewable, from_state, to_state)

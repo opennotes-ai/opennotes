@@ -76,15 +76,33 @@ RSpec.describe Jobs::SyncScoringStatus do
       expect(reviewable.reload.opennotes_state).to eq("resolved")
     end
 
-    it "advances stranded action_overturned to restored" do
+    it "advances stranded action_overturned to restored, replaying side effects" do
+      reviewable = create_reviewable(:under_review)
+      reviewable.opennotes_state = "action_overturned"
+      reviewable.save!
+      post.update!(hidden: true)
+
+      expect(OpenNotes::ActionExecutor).to receive(:unhide_post).with(post)
+      expect(OpenNotes::ActionExecutor).to receive(:set_scan_exempt) do |arg_post, content_hash:|
+        expect(arg_post).to eq(post)
+        expect(content_hash).to be_a(String)
+      end
+
+      stub_response(note_status: "CURRENTLY_RATED_NOT_HELPFUL")
+      described_class.new.execute({})
+
+      expect(reviewable.reload.opennotes_state).to eq("restored")
+    end
+
+    it "skips unhide for already-unhidden post in stranded action_overturned" do
       reviewable = create_reviewable(:under_review)
       reviewable.opennotes_state = "action_overturned"
       reviewable.save!
 
+      expect(OpenNotes::ActionExecutor).not_to receive(:unhide_post)
+      allow(OpenNotes::ActionExecutor).to receive(:set_scan_exempt)
+
       stub_response(note_status: "CURRENTLY_RATED_NOT_HELPFUL")
-
-      expect(Rails.logger).to receive(:warn).with(/action_overturned to restored/)
-
       described_class.new.execute({})
 
       expect(reviewable.reload.opennotes_state).to eq("restored")
@@ -110,6 +128,37 @@ RSpec.describe Jobs::SyncScoringStatus do
 
       stub_response(note_status: "CURRENTLY_RATED_HELPFUL")
 
+      described_class.new.execute({})
+
+      expect(reviewable.reload.opennotes_state).to eq("resolved")
+    end
+
+    it "replays hide_post when stranded consensus_helpful auto-finishes with auto_hide_on_consensus" do
+      SiteSetting.opennotes_staff_approval_required = false
+      SiteSetting.opennotes_auto_hide_on_consensus = true
+      reviewable = create_reviewable(:under_review)
+      reviewable.opennotes_state = "consensus_helpful"
+      reviewable.save!
+
+      expect(OpenNotes::ActionExecutor).to receive(:hide_post).with(post)
+
+      stub_response(note_status: "CURRENTLY_RATED_HELPFUL")
+      described_class.new.execute({})
+
+      expect(reviewable.reload.opennotes_state).to eq("resolved")
+    end
+
+    it "skips hide for already-hidden post in stranded consensus_helpful" do
+      SiteSetting.opennotes_staff_approval_required = false
+      SiteSetting.opennotes_auto_hide_on_consensus = true
+      reviewable = create_reviewable(:under_review)
+      reviewable.opennotes_state = "consensus_helpful"
+      reviewable.save!
+      post.update!(hidden: true)
+
+      expect(OpenNotes::ActionExecutor).not_to receive(:hide_post)
+
+      stub_response(note_status: "CURRENTLY_RATED_HELPFUL")
       described_class.new.execute({})
 
       expect(reviewable.reload.opennotes_state).to eq("resolved")
