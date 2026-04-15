@@ -16,6 +16,7 @@ def test_all_scopes_present():
         "community-servers:read",
         "moderation-actions:read",
         "api-keys:create",
+        "platform:adapter",
     }
     assert expected == ALLOWED_API_KEY_SCOPES
 
