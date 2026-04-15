@@ -221,6 +221,11 @@ exclude_lines = [
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.uv]
 link-mode = "hardlink"
 # bitsandbytes: convokit -> transformers -> bitsandbytes pulls an incompatible version.
@@ -229,6 +234,9 @@ override-dependencies = [
     "bitsandbytes==0.48.0",
     "numpy>=1.26.4,<2.0.0",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [build-system]
 requires = ["hatchling"]
