@@ -183,12 +183,12 @@ RSpec.describe Jobs::SyncPostToOpennotes do
 
       before { allow(client).to receive(:post).and_return(response) }
 
-      it "creates a ReviewableOpennotesItem with pending state" do
+      it "creates a ReviewableOpennotesItem in under_review state" do
         described_class.new.execute(post_id: post.id)
 
         reviewable = ReviewableOpennotesItem.find_by_opennotes_request_id("req-2")
         expect(reviewable).to be_present
-        expect(reviewable.opennotes_state).to eq("pending")
+        expect(reviewable.opennotes_state).to eq("under_review")
       end
 
       it "does not hide the post" do

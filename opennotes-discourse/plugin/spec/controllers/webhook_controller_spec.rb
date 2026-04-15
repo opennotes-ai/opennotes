@@ -170,6 +170,23 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
       send_webhook(payload)
       expect(response).to have_http_status(:ok)
     end
+
+    it "creates the reviewable in under_review state" do
+      payload = {
+        event: "moderation_action.proposed",
+        action_id: "act-uuid-new",
+        request_id: "req-uuid-2",
+        action_type: "hide_post",
+      }
+
+      allow(OpenNotes::ActionExecutor).to receive(:execute_action)
+
+      send_webhook(payload)
+
+      reviewable = ReviewableOpennotesItem.find_by_opennotes_request_id("req-uuid-2")
+      expect(reviewable).to be_present
+      expect(reviewable.opennotes_state).to eq("under_review")
+    end
   end
 
   describe "handle_action_overturned" do

@@ -61,7 +61,7 @@ module Opennotes
         post,
         request_id: request_id,
         action_id: action_id,
-        state: :pending,
+        state: :under_review,
       )
 
       if action_type.present?
@@ -173,7 +173,7 @@ module Opennotes
       ReviewableOpennotesItem.where("payload->>'opennotes_action_id' = ?", action_id).first
     end
 
-    def find_or_create_reviewable(post, request_id:, action_id:, state: :pending)
+    def find_or_create_reviewable(post, request_id:, action_id:, state: :under_review)
       existing = ReviewableOpennotesItem.find_by_opennotes_request_id(request_id)
       return existing if existing
 
