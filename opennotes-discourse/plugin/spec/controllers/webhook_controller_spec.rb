@@ -175,7 +175,7 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
       payload = {
         event: "moderation_action.proposed",
         action_id: "act-uuid-new",
-        request_id: "req-uuid-2",
+        request_id: "req-uuid-1",
         action_type: "hide_post",
       }
 
@@ -183,7 +183,7 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
 
       send_webhook(payload)
 
-      reviewable = ReviewableOpennotesItem.find_by_opennotes_request_id("req-uuid-2")
+      reviewable = ReviewableOpennotesItem.find_by_opennotes_request_id("req-uuid-1")
       expect(reviewable).to be_present
       expect(reviewable.opennotes_state).to eq("under_review")
     end

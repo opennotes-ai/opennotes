@@ -101,9 +101,8 @@ RSpec.describe Jobs::SyncPostToOpennotes do
         described_class.new.execute(post_id: child_post.id)
         expect(client).to have_received(:post).once
 
-        allow(client).to receive(:post)
         described_class.new.execute(post_id: other_post.id)
-        expect(client).not_to have_received(:post)
+        expect(client).to have_received(:post).once
       end
     end
 
