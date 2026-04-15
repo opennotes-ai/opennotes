@@ -55,14 +55,13 @@ module Jobs
         text: I18n.t("opennotes.staff_annotations.auto_hidden"),
       )
 
-      reviewable = ReviewableOpennotesItem.create_for(
+      ReviewableOpennotesItem.create_for(
         post,
-        state: :auto_actioned,
+        state: :retro_review,
         opennotes_request_id: request_id,
         opennotes_note_id: note_id,
         opennotes_action_id: action_id,
       )
-      reviewable.transition_to(:retro_review)
     end
 
     def handle_tier2_action(post, response)
