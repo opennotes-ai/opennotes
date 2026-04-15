@@ -171,7 +171,7 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
       expect(response).to have_http_status(:ok)
     end
 
-    it "creates the reviewable in under_review state" do
+    it "creates the reviewable in retro_review when an action_type is present" do
       payload = {
         event: "moderation_action.proposed",
         action_id: "act-uuid-new",
@@ -185,7 +185,49 @@ RSpec.describe Opennotes::WebhookController, type: :controller do
 
       reviewable = ReviewableOpennotesItem.find_by_opennotes_request_id("req-uuid-1")
       expect(reviewable).to be_present
+      expect(reviewable.opennotes_state).to eq("retro_review")
+    end
+
+    it "creates the reviewable in under_review when no action_type is present" do
+      payload = {
+        event: "moderation_action.proposed",
+        action_id: "act-uuid-new",
+        request_id: "req-uuid-1",
+      }
+
+      send_webhook(payload)
+
+      reviewable = ReviewableOpennotesItem.find_by_opennotes_request_id("req-uuid-1")
+      expect(reviewable).to be_present
       expect(reviewable.opennotes_state).to eq("under_review")
+    end
+  end
+
+  describe "handle_action_dismissed" do
+    [:pending, :under_review].each do |starting_state|
+      context "when reviewable is in #{starting_state}" do
+        let!(:reviewable_for_dismissal) do
+          ReviewableOpennotesItem.create_for(
+            post_record,
+            state: starting_state,
+            opennotes_request_id: "req-uuid-1",
+            opennotes_action_id: "act-uuid-1",
+          )
+        end
+
+        it "transitions to dismissed and sets ignored Discourse status" do
+          payload = {
+            event: "moderation_action.dismissed",
+            action_id: "act-uuid-1",
+            request_id: "req-uuid-1",
+          }
+          send_webhook(payload)
+
+          reviewable_for_dismissal.reload
+          expect(reviewable_for_dismissal.opennotes_state).to eq("dismissed")
+          expect(reviewable_for_dismissal.status).to eq("ignored")
+        end
+      end
     end
   end
 

@@ -18,7 +18,7 @@ class ReviewableOpennotesItem < Reviewable
 
   VALID_TRANSITIONS = {
     pending: %i[under_review auto_actioned dismissed],
-    under_review: %i[consensus_helpful consensus_not_helpful staff_overridden],
+    under_review: %i[consensus_helpful consensus_not_helpful staff_overridden dismissed],
     auto_actioned: %i[retro_review],
     retro_review: %i[action_confirmed action_overturned staff_overridden],
     consensus_helpful: %i[resolved],
@@ -225,8 +225,10 @@ class ReviewableOpennotesItem < Reviewable
 
   def update_discourse_status(new_state)
     case new_state
-    when :resolved, :restored, :dismissed
+    when :resolved, :restored
       self.status = Reviewable.statuses[:approved]
+    when :dismissed
+      self.status = Reviewable.statuses[:ignored]
     when :staff_overridden
       self.status = Reviewable.statuses[:rejected]
     end

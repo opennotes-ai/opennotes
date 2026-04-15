@@ -57,11 +57,13 @@ module Opennotes
       post = find_post_by_request_id(request_id)
       return unless post
 
+      initial_state = action_type.present? ? :retro_review : :under_review
+
       reviewable = find_or_create_reviewable(
         post,
         request_id: request_id,
         action_id: action_id,
-        state: :under_review,
+        state: initial_state,
       )
 
       if action_type.present?
@@ -122,12 +124,8 @@ module Opennotes
       reviewable ||= ReviewableOpennotesItem.find_by_opennotes_request_id(request_id) if request_id.present?
       return unless reviewable
 
-      if reviewable.opennotes_state.to_sym == :pending
+      if reviewable.opennotes_state.to_sym.in?(%i[pending under_review])
         reviewable.transition_to(:dismissed)
-      elsif reviewable.opennotes_state.to_sym == :under_review
-        reviewable.opennotes_state = "dismissed"
-        reviewable.status = Reviewable.statuses[:ignored]
-        reviewable.save!
       end
     end
 
