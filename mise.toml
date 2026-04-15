@@ -30,6 +30,7 @@ _.file = ".env.yaml"
 server_dir = "opennotes-server"
 discord_dir = "opennotes-discord"
 playground_dir = "opennotes-playground"
+platform_dir = "opennotes-platform"
 
 # ========================================
 # Internal Helper Tasks
@@ -167,6 +168,7 @@ run = [
     "cd {{vars.server_dir}} && uv sync --link-mode hardlink",
     "cd {{vars.discord_dir}} && pnpm install",
     "cd {{vars.playground_dir}} && pnpm install",
+    "cd {{vars.platform_dir}} && pnpm install",
     "cd opennotes-cli && uv sync"
 ]
 
@@ -184,6 +186,7 @@ echo "Development environment ready!"
 echo "   Server: http://localhost:8000"
 echo "   Discord: http://localhost:3000"
 echo "   Playground: http://localhost:3100"
+echo "   Platform: http://localhost:3200"
 '''
 
 [tasks."dev:playground"]
@@ -192,13 +195,19 @@ dir = "{{vars.playground_dir}}"
 run = "pnpm dev"
 env = { PORT = "3100" }
 
+[tasks."dev:platform"]
+description = "Run platform dev server on port 3200"
+dir = "{{vars.platform_dir}}"
+run = "pnpm dev"
+env = { PORT = "3200" }
+
 # ========================================
 # Testing Tasks
 # ========================================
 
 [tasks.test]
 description = "Run all tests"
-depends = ["test:server", "test:discord", "test:playground"]
+depends = ["test:server", "test:discord", "test:playground", "test:platform"]
 
 [tasks."test:server"]
 description = "Run server tests (pass options via --)"
@@ -216,6 +225,12 @@ sources = ["src/**/*.ts", "tests/**/*.ts"]
 [tasks."test:playground"]
 description = "Run Playground tests (pass options via --)"
 dir = "{{vars.playground_dir}}"
+run = "pnpm test \"$@\""
+sources = ["src/**/*.ts", "src/**/*.tsx"]
+
+[tasks."test:platform"]
+description = "Run Platform tests (pass options via --)"
+dir = "{{vars.platform_dir}}"
 run = "pnpm test \"$@\""
 sources = ["src/**/*.ts", "src/**/*.tsx"]
 
@@ -238,7 +253,7 @@ env = { PYTHONPATH = ".", RATE_LIMIT_ENABLED = "false" }
 
 [tasks.lint]
 description = "Run all linters"
-depends = ["lint:server", "lint:discord", "lint:playground"]
+depends = ["lint:server", "lint:discord", "lint:playground", "lint:platform"]
 
 [tasks."lint:server"]
 description = "Run Python linters (use -- --fix to auto-fix)"
@@ -271,6 +286,11 @@ fi
 [tasks."lint:playground"]
 description = "Run Playground type-check"
 dir = "{{vars.playground_dir}}"
+run = "pnpm run type-check"
+
+[tasks."lint:platform"]
+description = "Run Platform type-check"
+dir = "{{vars.platform_dir}}"
 run = "pnpm run type-check"
 
 # ========================================
@@ -692,9 +712,16 @@ run = "pnpm install"
 sources = ["pnpm-lock.yaml"]
 outputs = ["node_modules/.modules.yaml"]
 
+[tasks."build:deps:platform"]
+description = "Install Platform dependencies (skipped if lock files unchanged)"
+dir = "{{vars.platform_dir}}"
+run = "pnpm install"
+sources = ["pnpm-lock.yaml"]
+outputs = ["node_modules/.modules.yaml"]
+
 [tasks."build:containers:all"]
 description = "Build all Docker images"
-depends = ["build:containers:server", "build:containers:discord", "build:containers:playground", "build:containers:postgres"]
+depends = ["build:containers:server", "build:containers:discord", "build:containers:playground", "build:containers:platform", "build:containers:postgres"]
 alias = "build"
 
 [tasks."build:containers:server"]
@@ -711,6 +738,11 @@ run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} -f {{vars.discord_dir
 depends = ["_env:convert", "build:types:openapi", "build:deps:playground"]
 description = "Build opennotes-playground image"
 run = "docker build -t opennotes-playground:{{env.IMAGE_TAG}} {{vars.playground_dir}}/"
+
+[tasks."build:containers:platform"]
+depends = ["build:deps:platform"]
+description = "Build opennotes-platform image"
+run = "docker build -t opennotes-platform:{{env.IMAGE_TAG}} {{vars.platform_dir}}/"
 
 [tasks."build:containers:postgres"]
 description = "Build PostgreSQL image with pgvector, pgroonga, and pg_cron (smart rebuild)"

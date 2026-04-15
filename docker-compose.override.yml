@@ -120,6 +120,12 @@ services:
       - ./opennotes-discord/package.json:/workspace/opennotes-discord/package.json:ro
       - ./opennotes-discord/tsconfig.json:/workspace/opennotes-discord/tsconfig.json:ro
 
+  # Open Notes Platform - Development overrides
+  opennotes-platform:
+    ports:
+      - "3200:3200"
+    restart: unless-stopped
+
   # Monitoring Stack - Development overrides (enabled with --profile monitoring)
   prometheus:
     ports:
@@ -144,7 +150,7 @@ services:
 
   tempo:
     ports:
-      - "3200:3200"  # Tempo HTTP
+      - "3201:3200"  # Tempo HTTP (3201 to avoid conflict with opennotes-platform on 3200)
       - "4317:4317"  # OTLP gRPC
       - "4318:4318"  # OTLP HTTP
     restart: unless-stopped

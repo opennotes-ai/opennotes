@@ -20,7 +20,7 @@ class User(Base):
         server_default=text("uuidv7()"),
         index=True,
     )
-    username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    username: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -109,6 +109,12 @@ class APIKey(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     scopes: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True, default=None)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: pendulum.now("UTC")
