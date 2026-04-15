@@ -12,7 +12,7 @@ enabled_site_setting :opennotes_enabled
 register_asset "stylesheets/opennotes.scss"
 
 after_initialize do
-  %w[client user_mapper post_mapper action_executor].each do |f|
+  %w[client user_mapper post_mapper action_executor status_mapper].each do |f|
     load File.expand_path("../lib/opennotes/#{f}.rb", __FILE__)
   end
 
@@ -65,12 +65,12 @@ after_initialize do
     return unless first_post
 
     reviewable = ReviewableOpennotesItem.where(target: first_post).order(created_at: :desc).first
-    reviewable&.opennotes_state
+    OpenNotes::StatusMapper.display_status(reviewable)
   end
 
   add_to_serializer(:post, :opennotes_status, include_condition: -> { SiteSetting.opennotes_enabled }) do
     reviewable = ReviewableOpennotesItem.where(target: object).order(created_at: :desc).first
-    reviewable&.opennotes_state
+    OpenNotes::StatusMapper.display_status(reviewable)
   end
 
   def opennotes_monitored_category?(category)
