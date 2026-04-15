@@ -4,6 +4,17 @@ module Jobs
   class SyncScoringStatus < ::Jobs::Scheduled
     every 5.minutes
 
+    TERMINAL_STATES = %w[
+      resolved
+      restored
+      dismissed
+      action_confirmed
+      action_overturned
+      consensus_helpful
+      consensus_not_helpful
+      staff_overridden
+    ].freeze
+
     def execute(_args)
       return unless SiteSetting.opennotes_enabled
 
@@ -60,7 +71,9 @@ module Jobs
     def sync_reviewable_state(reviewable, attrs, post, _client)
       note_status = attrs["note_status"] || attrs.dig("scoring", "status")
       return unless note_status
-      return if reviewable.opennotes_state == "resolved"
+      return if reviewable.opennotes_state.in?(TERMINAL_STATES)
+
+      ensure_reviewable_processable(reviewable)
 
       recommended_action = attrs["recommended_action"]
 
@@ -72,9 +85,25 @@ module Jobs
       end
     end
 
+    def ensure_reviewable_processable(reviewable)
+      case reviewable.opennotes_state
+      when "pending"
+        Rails.logger.warn(
+          "[opennotes] Auto-advancing reviewable #{reviewable.id} from pending to under_review",
+        )
+        reviewable.transition_to(:under_review)
+      when "auto_actioned"
+        Rails.logger.warn(
+          "[opennotes] Auto-advancing reviewable #{reviewable.id} from auto_actioned to retro_review",
+        )
+        reviewable.transition_to(:retro_review)
+      end
+    end
+
     def handle_helpful_consensus(reviewable, post, recommended_action)
       if reviewable.opennotes_state == "retro_review"
         reviewable.transition_to(:action_confirmed)
+        reviewable.transition_to(:resolved)
       else
         reviewable.transition_to(:consensus_helpful)
 
