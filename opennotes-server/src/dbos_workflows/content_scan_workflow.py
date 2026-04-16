@@ -1531,6 +1531,7 @@ def content_reviewer_step(
                         pre_computed_evidence=pre_computed,  # type: ignore[arg-type]
                         context_items=context_items_for_msg,
                         flashpoint_service=flashpoint_service,
+                        model=settings.CONTENT_REVIEWER_MODEL,
                     )
 
                     policy_decision = evaluator.evaluate(classification, policy_config)

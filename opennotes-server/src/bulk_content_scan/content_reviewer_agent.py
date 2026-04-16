@@ -251,7 +251,7 @@ class ContentReviewerService:
         """
         cfg = self._settings
         timeout = getattr(cfg, "CONTENT_REVIEWER_TIMEOUT", _DEFAULT_CONTENT_REVIEWER_TIMEOUT)
-        model_override = model or getattr(cfg, "CONTENT_REVIEWER_MODEL", None)
+        model_override = model or cfg.CONTENT_REVIEWER_MODEL
         max_tokens = getattr(cfg, "CONTENT_REVIEWER_MAX_TOKENS", _DEFAULT_MAX_TOKENS)
         request_limit = getattr(cfg, "CONTENT_REVIEWER_REQUEST_LIMIT", _DEFAULT_REQUEST_LIMIT)
         total_tokens_limit = getattr(

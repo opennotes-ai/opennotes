@@ -1074,3 +1074,95 @@ class TestStructuredExceptionHandling:
 
         assert isinstance(result, ContentModerationClassificationResult)
         assert result.confidence == 0.0
+
+
+class TestContentReviewerModelFromConfig:
+    """AC2, AC3, AC5: Model is read from config, not via getattr fallback."""
+
+    @pytest.mark.asyncio
+    async def test_classify_uses_config_model_when_no_override(self):
+        """classify() uses cfg.CONTENT_REVIEWER_MODEL (not getattr fallback) when model=None."""
+        from unittest.mock import MagicMock, patch
+
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        expected = make_classification_result()
+        mock_result = MagicMock()
+        mock_result.output = expected
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        sentinel_model = object()
+
+        class MockSettings:
+            CONTENT_REVIEWER_TIMEOUT = 30.0
+            CONTENT_REVIEWER_MODEL = sentinel_model
+            CONTENT_REVIEWER_MAX_TOKENS = 1024
+            CONTENT_REVIEWER_REQUEST_LIMIT = 5
+            CONTENT_REVIEWER_TOTAL_TOKENS_LIMIT = 8192
+
+        service._settings = MockSettings()
+
+        with patch(
+            "src.bulk_content_scan.content_reviewer_agent.content_reviewer_agent.run"
+        ) as mock_run:
+
+            async def fake_run(*args, **kwargs):
+                return mock_result
+
+            mock_run.side_effect = fake_run
+
+            await service.classify(
+                content_item=content_item,
+                pre_computed_evidence=[],
+            )
+
+            assert mock_run.called
+            call_kwargs = mock_run.call_args.kwargs
+            assert call_kwargs.get("model") is sentinel_model
+
+    @pytest.mark.asyncio
+    async def test_classify_explicit_model_override_takes_precedence(self):
+        """classify(model=X) uses X even when cfg.CONTENT_REVIEWER_MODEL is set."""
+        from unittest.mock import MagicMock, patch
+
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        expected = make_classification_result()
+        mock_result = MagicMock()
+        mock_result.output = expected
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        explicit_model = object()
+        config_model = object()
+
+        class MockSettings:
+            CONTENT_REVIEWER_TIMEOUT = 30.0
+            CONTENT_REVIEWER_MODEL = config_model
+            CONTENT_REVIEWER_MAX_TOKENS = 1024
+            CONTENT_REVIEWER_REQUEST_LIMIT = 5
+            CONTENT_REVIEWER_TOTAL_TOKENS_LIMIT = 8192
+
+        service._settings = MockSettings()
+
+        with patch(
+            "src.bulk_content_scan.content_reviewer_agent.content_reviewer_agent.run"
+        ) as mock_run:
+
+            async def fake_run(*args, **kwargs):
+                return mock_result
+
+            mock_run.side_effect = fake_run
+
+            await service.classify(
+                content_item=content_item,
+                pre_computed_evidence=[],
+                model=explicit_model,
+            )
+
+            assert mock_run.called
+            call_kwargs = mock_run.call_args.kwargs
+            assert call_kwargs.get("model") is explicit_model

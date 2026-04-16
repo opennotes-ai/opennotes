@@ -860,6 +860,11 @@ class Settings(BaseSettings):
         description="System prompt for AI note generation",
     )
 
+    CONTENT_REVIEWER_MODEL: PydanticAIModelId = Field(
+        default_factory=lambda: ModelId.from_pydantic_ai("openai:gpt-5-mini"),
+        description="LLM model in provider:model format for content moderation classification (should be fast and cheap)",
+    )
+
     BULK_CONTENT_SCAN_REPROMPT_DAYS: int = Field(
         default=90,
         ge=1,
@@ -1029,6 +1034,7 @@ class Settings(BaseSettings):
             self.VISION_MODEL,
             self.RELEVANCE_CHECK_MODEL,
             self.AI_NOTE_WRITER_MODEL,
+            self.CONTENT_REVIEWER_MODEL,
         ]
         has_vertex_ai = any(m.canonical_provider == "vertex_ai" for m in model_fields)
         if has_vertex_ai and not self.VERTEXAI_PROJECT:
