@@ -141,7 +141,7 @@ class TestCreateModerationActionFromPolicy:
                 return_value=None,
             ),
         ):
-            result = await create_moderation_action_from_policy(
+            result, newly_created = await create_moderation_action_from_policy(
                 session=mock_session,
                 policy_decision=decision,
                 classification=classification,
@@ -151,6 +151,7 @@ class TestCreateModerationActionFromPolicy:
             )
 
         assert result is not None
+        assert newly_created is True
         call_args = mock_create.call_args
         create_data = call_args[1]["data"] if "data" in call_args[1] else call_args[0][1]
         assert create_data.action_state == ActionState.APPLIED
@@ -223,7 +224,7 @@ class TestCreateModerationActionFromPolicy:
                 return_value=None,
             ),
         ):
-            result = await create_moderation_action_from_policy(
+            result, newly_created = await create_moderation_action_from_policy(
                 session=mock_session,
                 policy_decision=decision,
                 classification=classification,
@@ -233,6 +234,7 @@ class TestCreateModerationActionFromPolicy:
             )
 
         assert result is not None
+        assert newly_created is True
         call_args = mock_create.call_args
         create_data = call_args[1]["data"] if "data" in call_args[1] else call_args[0][1]
         assert create_data.action_state == ActionState.PROPOSED
@@ -292,7 +294,7 @@ class TestCreateModerationActionFromPolicy:
             "src.bulk_content_scan.action_bridge.create_moderation_action",
             new_callable=AsyncMock,
         ) as mock_create:
-            result = await create_moderation_action_from_policy(
+            result, newly_created = await create_moderation_action_from_policy(
                 session=mock_session,
                 policy_decision=decision,
                 classification=classification,
@@ -302,6 +304,7 @@ class TestCreateModerationActionFromPolicy:
             )
 
         assert result is None
+        assert newly_created is False
         mock_create.assert_not_called()
 
     @pytest.mark.asyncio
@@ -562,7 +565,7 @@ class TestCreateModerationActionFromPolicy:
                 return_value=None,
             ),
         ):
-            result = await create_moderation_action_from_policy(
+            result, newly_created = await create_moderation_action_from_policy(
                 session=mock_session,
                 policy_decision=decision,
                 classification=classification,
@@ -572,6 +575,7 @@ class TestCreateModerationActionFromPolicy:
             )
 
         assert result is not None
+        assert newly_created is True
         assert captured_data["data"].request_id == request_id
 
     @pytest.mark.asyncio
@@ -643,7 +647,7 @@ class TestCreateModerationActionFromPolicy:
                 return_value=existing_action,
             ),
         ):
-            result = await create_moderation_action_from_policy(
+            result, newly_created = await create_moderation_action_from_policy(
                 session=mock_session,
                 policy_decision=decision,
                 classification=classification,
@@ -653,6 +657,7 @@ class TestCreateModerationActionFromPolicy:
             )
 
         assert result is existing_action
+        assert newly_created is False
         mock_create.assert_not_called()
 
     @pytest.mark.asyncio
@@ -822,7 +827,7 @@ class TestIntegrityErrorHandling:
                 side_effect=[None, existing_action],
             ),
         ):
-            result = await create_moderation_action_from_policy(
+            result, newly_created = await create_moderation_action_from_policy(
                 session=mock_session,
                 policy_decision=decision,
                 classification=classification,
@@ -832,6 +837,7 @@ class TestIntegrityErrorHandling:
             )
 
         assert result is existing_action
+        assert newly_created is False
         mock_session.rollback.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -873,7 +879,7 @@ class TestIntegrityErrorHandling:
                 side_effect=track_fetch,
             ),
         ):
-            result = await create_moderation_action_from_policy(
+            result, newly_created = await create_moderation_action_from_policy(
                 session=mock_session,
                 policy_decision=decision,
                 classification=classification,
@@ -883,6 +889,7 @@ class TestIntegrityErrorHandling:
             )
 
         assert result is existing_action
+        assert newly_created is False
         assert rollback_order == ["rollback"]
 
     @pytest.mark.asyncio
@@ -930,7 +937,7 @@ class TestIntegrityErrorHandling:
                 side_effect=stateful_fetch,
             ),
         ):
-            first = await create_moderation_action_from_policy(
+            first, first_new = await create_moderation_action_from_policy(
                 session=mock_session,
                 policy_decision=decision,
                 classification=classification,
@@ -938,7 +945,7 @@ class TestIntegrityErrorHandling:
                 request_id=request_id,
                 community_server_id=community_server_id,
             )
-            second = await create_moderation_action_from_policy(
+            second, second_new = await create_moderation_action_from_policy(
                 session=mock_session,
                 policy_decision=decision,
                 classification=classification,
@@ -949,3 +956,115 @@ class TestIntegrityErrorHandling:
 
         assert first is created_action
         assert second is created_action
+        assert first_new is True
+        assert second_new is False
+
+
+class TestNewlyCreatedFlag:
+    """Tests for AC#4 and AC#5: newly_created flag semantics."""
+
+    @pytest.mark.asyncio
+    async def test_precheck_returns_newly_created_false(self):
+        """Pre-check path (existing row found before insert) returns newly_created=False (AC#4)."""
+        from src.bulk_content_scan.action_bridge import create_moderation_action_from_policy
+
+        mock_session = AsyncMock()
+        request_id = uuid4()
+        community_server_id = uuid4()
+        decision = _make_tier1_decision()
+        classification = _make_classification()
+        content_item = _make_content_item()
+
+        existing_action = _make_mock_action(
+            request_id=request_id,
+            action_state=ActionState.APPLIED,
+        )
+
+        with (
+            patch(
+                "src.bulk_content_scan.action_bridge.create_moderation_action",
+                new_callable=AsyncMock,
+            ) as mock_create,
+            patch(
+                "src.bulk_content_scan.action_bridge._fetch_existing_action",
+                new_callable=AsyncMock,
+                return_value=existing_action,
+            ),
+        ):
+            action, newly_created = await create_moderation_action_from_policy(
+                session=mock_session,
+                policy_decision=decision,
+                classification=classification,
+                content_item=content_item,
+                request_id=request_id,
+                community_server_id=community_server_id,
+            )
+
+        assert action is existing_action
+        assert newly_created is False
+        mock_create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_integrity_error_returns_newly_created_false(self):
+        """IntegrityError recovery path returns newly_created=False (AC#5)."""
+        from src.bulk_content_scan.action_bridge import create_moderation_action_from_policy
+
+        mock_session = AsyncMock()
+        request_id = uuid4()
+        community_server_id = uuid4()
+        decision = _make_tier1_decision()
+        classification = _make_classification()
+        content_item = _make_content_item()
+
+        existing_action = _make_mock_action(
+            request_id=request_id,
+            action_state=ActionState.APPLIED,
+        )
+
+        with (
+            patch(
+                "src.bulk_content_scan.action_bridge.create_moderation_action",
+                new_callable=AsyncMock,
+                side_effect=IntegrityError("duplicate key", {}, None),
+            ),
+            patch(
+                "src.bulk_content_scan.action_bridge._fetch_existing_action",
+                new_callable=AsyncMock,
+                side_effect=[None, existing_action],
+            ),
+        ):
+            action, newly_created = await create_moderation_action_from_policy(
+                session=mock_session,
+                policy_decision=decision,
+                classification=classification,
+                content_item=content_item,
+                request_id=request_id,
+                community_server_id=community_server_id,
+            )
+
+        assert action is existing_action
+        assert newly_created is False
+
+    @pytest.mark.asyncio
+    async def test_pass_decision_returns_newly_created_false(self):
+        """Pass decision (action_tier=None) returns (None, False)."""
+        from src.bulk_content_scan.action_bridge import create_moderation_action_from_policy
+
+        mock_session = AsyncMock()
+        request_id = uuid4()
+        community_server_id = uuid4()
+        decision = _make_pass_decision()
+        classification = _make_classification()
+        content_item = _make_content_item()
+
+        action, newly_created = await create_moderation_action_from_policy(
+            session=mock_session,
+            policy_decision=decision,
+            classification=classification,
+            content_item=content_item,
+            request_id=request_id,
+            community_server_id=community_server_id,
+        )
+
+        assert action is None
+        assert newly_created is False

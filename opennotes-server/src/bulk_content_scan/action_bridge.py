@@ -61,10 +61,15 @@ async def create_moderation_action_from_policy(
     request_id: UUID,
     community_server_id: UUID,
     pre_computed_evidence: list[SimilarityMatch | OpenAIModerationMatch] | None = None,
-) -> ModerationAction | None:
-    """Create ModerationAction from policy decision. Returns None for pass."""
+) -> tuple[ModerationAction | None, bool]:
+    """Create ModerationAction from policy decision.
+
+    Returns (action, newly_created). newly_created is True only when this call
+    performed the INSERT; callers use it to suppress duplicate side effects
+    (e.g. NATS events) on DBOS retries.
+    """
     if policy_decision.action_tier is None:
-        return None
+        return None, False
 
     existing = await _fetch_existing_action(session, request_id, policy_decision.action_tier)
     if existing is not None:
@@ -73,7 +78,7 @@ async def create_moderation_action_from_policy(
             request_id,
             policy_decision.action_tier,
         )
-        return existing
+        return existing, False
 
     classifier_evidence = {
         "labels": classification.category_labels,
@@ -118,7 +123,7 @@ async def create_moderation_action_from_policy(
             request_id,
             policy_decision.action_tier,
         )
-        return action
+        return action, False
 
     logger.info(
         "Created ModerationAction id=%s state=%s tier=%s for request_id=%s",
@@ -127,7 +132,7 @@ async def create_moderation_action_from_policy(
         action.action_tier,
         request_id,
     )
-    return action
+    return action, True
 
 
 async def emit_platform_action_event(

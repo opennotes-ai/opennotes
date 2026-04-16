@@ -118,7 +118,7 @@ def _base_patches(
         patch(
             "src.bulk_content_scan.action_bridge.create_moderation_action_from_policy",
             new_callable=AsyncMock,
-            return_value=_make_mock_action(),
+            return_value=(_make_mock_action(), True),
         ),
         patch(
             "src.bulk_content_scan.action_bridge.emit_platform_action_event",
@@ -1299,7 +1299,7 @@ class TestActionBridgeWiring:
         mock_action.action_state = "applied"
         mock_action.action_tier = "tier_1_immediate"
 
-        mock_create_action = AsyncMock(return_value=mock_action)
+        mock_create_action = AsyncMock(return_value=(mock_action, True))
         mock_emit_event = AsyncMock()
 
         patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
@@ -1383,7 +1383,7 @@ class TestActionBridgeWiring:
         mock_service = MagicMock()
         mock_service.append_flagged_result = AsyncMock()
 
-        mock_create_action = AsyncMock(return_value=None)
+        mock_create_action = AsyncMock(return_value=(None, False))
 
         patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
 
@@ -1480,7 +1480,7 @@ class TestActionBridgeWiring:
             **kwargs,
         ):
             captured_request_ids.append(request_id)
-            return mock_action
+            return mock_action, True
 
         patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
 
@@ -1582,7 +1582,7 @@ class TestActionBridgeWiring:
         mock_action.action_state = "applied"
         mock_action.action_tier = "tier_1_immediate"
 
-        mock_create_action = AsyncMock(return_value=mock_action)
+        mock_create_action = AsyncMock(return_value=(mock_action, True))
         mock_emit_event = AsyncMock()
 
         patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
@@ -1675,7 +1675,107 @@ class TestActionBridgeWiring:
         mock_action.action_state = "proposed"
         mock_action.action_tier = "tier_2_consensus"
 
-        mock_create_action = AsyncMock(return_value=mock_action)
+        mock_create_action = AsyncMock(return_value=(mock_action, True))
+        mock_emit_event = AsyncMock()
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.create_moderation_action_from_policy",
+                    mock_create_action,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.emit_platform_action_event",
+                    mock_emit_event,
+                )
+            )
+            result = content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        assert result["flagged_count"] == 1
+        mock_create_action.assert_awaited_once()
+        mock_emit_event.assert_not_awaited()
+
+    def test_dbos_retry_does_not_emit_duplicate_event(self) -> None:
+        """When action_bridge returns newly_created=False, emit_platform_action_event is NOT called (AC#3).
+
+        Simulates a DBOS retry where the ModerationAction already exists. The tier-1
+        emit must be skipped so that each moderation action produces exactly one
+        `moderation.action.applied` NATS event, preventing duplicate outbound
+        webhooks.
+        """
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+        from src.moderation_actions.models import ActionTier, ActionType, ReviewGroup
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(message_id="msg-retry")
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.95,
+            category_labels={"harassment": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Duplicate retry",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = ActionTier.TIER_1_IMMEDIATE
+        mock_policy_decision.action_type = ActionType.HIDE
+        mock_policy_decision.review_group = ReviewGroup.STAFF
+        mock_policy_decision.reason = "Tier 1"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_action = MagicMock()
+        mock_action.id = uuid4()
+        mock_action.request_id = uuid4()
+        mock_action.community_server_id = uuid4()
+        mock_action.action_type = "hide"
+        mock_action.action_state = "applied"
+        mock_action.action_tier = "tier_1_immediate"
+
+        mock_create_action = AsyncMock(return_value=(mock_action, False))
         mock_emit_event = AsyncMock()
 
         patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
