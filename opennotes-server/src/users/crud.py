@@ -439,7 +439,7 @@ async def _publish_api_key_used_event(api_key_id: UUID) -> None:
     await nats_client.publish_fire_and_forget("events.api_key.used", event_data)
 
 
-async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] | None:  # noqa: PLR0911
+async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] | None:  # noqa: PLR0911, PLR0912
     """
     Verify an API key and return the associated APIKey and User.
 
@@ -484,6 +484,9 @@ async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] 
             if not is_account_active(user):
                 return None
 
+            if not api_key.is_scoped():
+                return None
+
             await _publish_api_key_used_event(api_key.id)
             return api_key, user
 
@@ -499,6 +502,9 @@ async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] 
         if is_valid:
             if api_key.expires_at and api_key.expires_at < pendulum.now("UTC"):
                 continue
+
+            if not api_key.is_scoped():
+                return None
 
             user = await get_user_by_id(db, api_key.user_id)
             if user and is_account_active(user):
