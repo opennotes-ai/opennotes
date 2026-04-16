@@ -4,10 +4,13 @@ TDD tests written first (RED phase) before implementation.
 Uses pydantic-ai TestModel - no real LLM calls.
 """
 
-from unittest.mock import AsyncMock
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pendulum
 import pytest
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
 from src.bulk_content_scan.schemas import (
@@ -657,3 +660,417 @@ class TestFlashpointEvidenceInInstructions:
 
         assert isinstance(result, ContentModerationClassificationResult)
         assert result.confidence == 0.91
+
+
+class TestAgentRetries:
+    """AC1: Agent declares retries=2."""
+
+    def test_agent_has_retries_2(self):
+        """content_reviewer_agent must declare retries=2."""
+        from src.bulk_content_scan.content_reviewer_agent import content_reviewer_agent
+
+        assert content_reviewer_agent._max_result_retries == 2
+
+
+class TestOutputValidator:
+    """AC2 & AC8: output_validator enforces cross-field invariants."""
+
+    @pytest.mark.asyncio
+    async def test_output_validator_rejects_action_tier_without_recommended_action(self):
+        """output_validator raises ModelRetry when action_tier set without recommended_action."""
+        from src.bulk_content_scan.content_reviewer_agent import (
+            ContentReviewerDeps,
+            content_reviewer_agent,
+        )
+
+        call_count = {"n": 0}
+
+        def model_fn(messages: list[ModelMessage], agent_info: AgentInfo) -> ModelResponse:
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                bad_output = {
+                    "scan_type": "content_moderation_classification",
+                    "confidence": 0.8,
+                    "category_labels": {"test": True},
+                    "category_scores": None,
+                    "recommended_action": None,
+                    "action_tier": "tier_1_immediate",
+                    "explanation": "bad output",
+                }
+                return ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name=agent_info.output_tools[0].name,
+                            args=json.dumps(bad_output),
+                            tool_call_id="call-1",
+                        )
+                    ]
+                )
+            good_output = {
+                "scan_type": "content_moderation_classification",
+                "confidence": 0.8,
+                "category_labels": {"test": True},
+                "category_scores": None,
+                "recommended_action": "review",
+                "action_tier": "tier_1_immediate",
+                "explanation": "good output",
+            }
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name=agent_info.output_tools[0].name,
+                        args=json.dumps(good_output),
+                        tool_call_id="call-2",
+                    )
+                ]
+            )
+
+        deps = ContentReviewerDeps(flashpoint_service=None, context_items=[])
+        result = await content_reviewer_agent.run(
+            "Classify content.",
+            deps=deps,
+            model=FunctionModel(model_fn),
+        )
+
+        assert result.output.recommended_action == "review"
+        assert result.output.action_tier == "tier_1_immediate"
+        assert call_count["n"] == 2
+
+    @pytest.mark.asyncio
+    async def test_output_validator_rejects_category_scores_not_subset_of_labels(self):
+        """output_validator raises ModelRetry when category_scores keys not in category_labels."""
+        from src.bulk_content_scan.content_reviewer_agent import (
+            ContentReviewerDeps,
+            content_reviewer_agent,
+        )
+
+        call_count = {"n": 0}
+
+        def model_fn(messages: list[ModelMessage], agent_info: AgentInfo) -> ModelResponse:
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                bad_output = {
+                    "scan_type": "content_moderation_classification",
+                    "confidence": 0.7,
+                    "category_labels": {"hate": True},
+                    "category_scores": {"hate": 0.9, "extra_category": 0.5},
+                    "recommended_action": "review",
+                    "action_tier": "tier_2_consensus",
+                    "explanation": "bad cross-field output",
+                }
+                return ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name=agent_info.output_tools[0].name,
+                            args=json.dumps(bad_output),
+                            tool_call_id="call-1",
+                        )
+                    ]
+                )
+            good_output = {
+                "scan_type": "content_moderation_classification",
+                "confidence": 0.7,
+                "category_labels": {"hate": True},
+                "category_scores": {"hate": 0.9},
+                "recommended_action": "review",
+                "action_tier": "tier_2_consensus",
+                "explanation": "valid output",
+            }
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name=agent_info.output_tools[0].name,
+                        args=json.dumps(good_output),
+                        tool_call_id="call-2",
+                    )
+                ]
+            )
+
+        deps = ContentReviewerDeps(flashpoint_service=None, context_items=[])
+        result = await content_reviewer_agent.run(
+            "Classify content.",
+            deps=deps,
+            model=FunctionModel(model_fn),
+        )
+
+        assert result.output.category_scores == {"hate": 0.9}
+        assert call_count["n"] == 2
+
+
+class TestStaticInstructions:
+    """AC3 & AC4: Static preamble+schema block hoisted to _STATIC_INSTRUCTIONS module constant."""
+
+    def test_static_instructions_constant_exists(self):
+        """_STATIC_INSTRUCTIONS module constant must exist."""
+        import src.bulk_content_scan.content_reviewer_agent as m
+
+        assert hasattr(m, "_STATIC_INSTRUCTIONS")
+        assert isinstance(m._STATIC_INSTRUCTIONS, str)
+        assert len(m._STATIC_INSTRUCTIONS) > 0
+
+    def test_static_instructions_contains_preamble(self):
+        """_STATIC_INSTRUCTIONS must contain preamble text about content moderation."""
+        import src.bulk_content_scan.content_reviewer_agent as m
+
+        assert "content moderation" in m._STATIC_INSTRUCTIONS.lower()
+
+    def test_static_instructions_contains_output_schema_block(self):
+        """_STATIC_INSTRUCTIONS must describe the output schema."""
+        import src.bulk_content_scan.content_reviewer_agent as m
+
+        assert "ContentModerationClassificationResult" in m._STATIC_INSTRUCTIONS
+
+    def test_agent_instructions_is_static_constant(self):
+        """Agent must be created with instructions=_STATIC_INSTRUCTIONS."""
+        import src.bulk_content_scan.content_reviewer_agent as m
+
+        instructions_list = m.content_reviewer_agent._instructions
+        assert isinstance(instructions_list, list)
+        assert len(instructions_list) == 1
+        assert instructions_list[0] == m._STATIC_INSTRUCTIONS
+
+    def test_build_instructions_returns_only_dynamic_content(self):
+        """_build_instructions must return only dynamic tail (content+evidence), no preamble."""
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        service = ContentReviewerService()
+        content_item = make_content_item(content_text="Test message about vaccines")
+
+        instructions = service._build_instructions(
+            content_item=content_item,
+            pre_computed_evidence=[],
+        )
+
+        assert "Test message about vaccines" in instructions
+        assert "content moderation classifier" not in instructions.lower()
+
+
+class TestDynamicContentInUserPrompt:
+    """AC12: Dynamic content goes in user prompt, not instructions block."""
+
+    @pytest.mark.asyncio
+    async def test_classify_passes_dynamic_content_as_user_prompt(self):
+        """classify() must pass dynamic evidence as user prompt content."""
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        expected = make_classification_result()
+        test_model = TestModel(custom_output_args=expected, call_tools=[])
+
+        service = ContentReviewerService()
+        content_item = make_content_item(content_text="Unique vaccine claim content")
+        similarity_match = make_similarity_match(matched_claim="Vaccines do not cause autism")
+
+        result = await service.classify(
+            content_item=content_item,
+            pre_computed_evidence=[similarity_match],
+            model=test_model,
+        )
+
+        assert isinstance(result, ContentModerationClassificationResult)
+
+    def test_build_instructions_does_not_include_preamble(self):
+        """_build_instructions must not include preamble (it's in _STATIC_INSTRUCTIONS)."""
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        instructions = service._build_instructions(
+            content_item=content_item,
+            pre_computed_evidence=[],
+        )
+
+        assert "content moderation classifier" not in instructions.lower()
+        assert "ContentModerationClassificationResult" not in instructions
+
+
+class TestModelSettingsAndUsageLimits:
+    """AC9 & AC10: ModelSettings and UsageLimits passed to agent.run()."""
+
+    @pytest.mark.asyncio
+    async def test_classify_uses_model_settings(self):
+        """classify() must pass ModelSettings(temperature=0.0) to agent.run()."""
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        expected = make_classification_result()
+        test_model = TestModel(custom_output_args=expected, call_tools=[])
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        with patch(
+            "src.bulk_content_scan.content_reviewer_agent.content_reviewer_agent.run"
+        ) as mock_run:
+            future_result = MagicMock()
+            future_result.output = expected
+
+            async def fake_run(*args, **kwargs):
+                return future_result
+
+            mock_run.side_effect = fake_run
+
+            await service.classify(
+                content_item=content_item,
+                pre_computed_evidence=[],
+                model=test_model,
+            )
+
+            assert mock_run.called
+            call_kwargs = mock_run.call_args.kwargs
+            assert "model_settings" in call_kwargs
+            ms = call_kwargs["model_settings"]
+            assert isinstance(ms, dict)
+            assert ms.get("temperature") == 0.0
+
+    @pytest.mark.asyncio
+    async def test_classify_uses_usage_limits(self):
+        """classify() must pass UsageLimits to agent.run()."""
+        from pydantic_ai.usage import UsageLimits
+
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        expected = make_classification_result()
+        test_model = TestModel(custom_output_args=expected, call_tools=[])
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        with patch(
+            "src.bulk_content_scan.content_reviewer_agent.content_reviewer_agent.run"
+        ) as mock_run:
+            future_result = MagicMock()
+            future_result.output = expected
+
+            async def fake_run(*args, **kwargs):
+                return future_result
+
+            mock_run.side_effect = fake_run
+
+            await service.classify(
+                content_item=content_item,
+                pre_computed_evidence=[],
+                model=test_model,
+            )
+
+            assert mock_run.called
+            call_kwargs = mock_run.call_args.kwargs
+            assert "usage_limits" in call_kwargs
+            ul = call_kwargs["usage_limits"]
+            assert isinstance(ul, UsageLimits)
+
+
+class TestRetryRegression:
+    """AC5: FunctionModel retry regression — first call fails validation, second succeeds."""
+
+    @pytest.mark.asyncio
+    async def test_output_validator_retry_succeeds_on_second_call(self):
+        """First JSON validation failure -> valid second call -> valid result."""
+        from src.bulk_content_scan.content_reviewer_agent import (
+            ContentReviewerDeps,
+            content_reviewer_agent,
+        )
+
+        call_count = {"n": 0}
+
+        def model_fn(messages: list[ModelMessage], agent_info: AgentInfo) -> ModelResponse:
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                invalid_output = {
+                    "scan_type": "content_moderation_classification",
+                    "confidence": 0.9,
+                    "category_labels": {"hate": True},
+                    "category_scores": None,
+                    "recommended_action": None,
+                    "action_tier": "tier_1_immediate",
+                    "explanation": "invalid: tier without action",
+                }
+                return ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name=agent_info.output_tools[0].name,
+                            args=json.dumps(invalid_output),
+                            tool_call_id="call-1",
+                        )
+                    ]
+                )
+            valid_output = {
+                "scan_type": "content_moderation_classification",
+                "confidence": 0.9,
+                "category_labels": {"hate": True},
+                "category_scores": None,
+                "recommended_action": "hide",
+                "action_tier": "tier_1_immediate",
+                "explanation": "valid output on retry",
+            }
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name=agent_info.output_tools[0].name,
+                        args=json.dumps(valid_output),
+                        tool_call_id="call-2",
+                    )
+                ]
+            )
+
+        deps = ContentReviewerDeps(flashpoint_service=None, context_items=[])
+        result = await content_reviewer_agent.run(
+            "Classify content.",
+            deps=deps,
+            model=FunctionModel(model_fn),
+        )
+
+        assert result.output.recommended_action == "hide"
+        assert result.output.action_tier == "tier_1_immediate"
+        assert call_count["n"] == 2
+
+
+class TestStructuredExceptionHandling:
+    """AC11: Structured pydantic-ai exception handling."""
+
+    @pytest.mark.asyncio
+    async def test_unexpected_model_behavior_returns_fail_open(self):
+        """UnexpectedModelBehavior triggers fail-open path."""
+        from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        def error_model(messages: list[ModelMessage], agent_info: AgentInfo) -> ModelResponse:
+            raise UnexpectedModelBehavior("Model returned garbage output")
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        result = await service.classify(
+            content_item=content_item,
+            pre_computed_evidence=[],
+            model=FunctionModel(error_model),
+        )
+
+        assert isinstance(result, ContentModerationClassificationResult)
+        assert result.confidence == 0.0
+
+    @pytest.mark.asyncio
+    async def test_model_http_error_returns_fail_open(self):
+        """ModelHTTPError triggers fail-open path."""
+        from pydantic_ai.exceptions import ModelHTTPError
+
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        def error_model(messages: list[ModelMessage], agent_info: AgentInfo) -> ModelResponse:
+            raise ModelHTTPError(
+                status_code=503,
+                model_name="test-model",
+                body="Service Unavailable",
+            )
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        result = await service.classify(
+            content_item=content_item,
+            pre_computed_evidence=[],
+            model=FunctionModel(error_model),
+        )
+
+        assert isinstance(result, ContentModerationClassificationResult)
+        assert result.confidence == 0.0

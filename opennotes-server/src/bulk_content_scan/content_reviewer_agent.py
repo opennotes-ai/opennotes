@@ -14,8 +14,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ModelRetry
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError, UnexpectedModelBehavior
+from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext
+from pydantic_ai.usage import UsageLimits
 
 from src.bulk_content_scan.capabilities.flashpoint import detect_flashpoint
 from src.bulk_content_scan.schemas import (
@@ -34,6 +37,25 @@ from src.monitoring import get_logger
 logger = get_logger(__name__)
 
 _DEFAULT_CONTENT_REVIEWER_TIMEOUT = 30.0
+
+_DEFAULT_MAX_TOKENS = 1024
+
+_DEFAULT_REQUEST_LIMIT = 5
+
+_DEFAULT_TOTAL_TOKENS_LIMIT = 8192
+
+_STATIC_INSTRUCTIONS = """\
+You are a content moderation classifier. Analyze the content and any pre-computed \
+evidence to produce a structured classification decision.
+
+Produce a ContentModerationClassificationResult with:
+- confidence: float 0.0-1.0 reflecting your certainty
+- category_labels: dict mapping category names to true/false
+- category_scores: optional per-category confidence scores (keys must be a subset of category_labels keys)
+- recommended_action: one of 'pass', 'review', 'hide' (or null)
+- action_tier: one of 'tier_1_immediate', 'tier_2_consensus' (or null; only set when recommended_action is also set)
+- explanation: brief human-readable reasoning\
+"""
 
 
 @dataclass
@@ -54,7 +76,38 @@ content_reviewer_agent: Agent[ContentReviewerDeps, ContentModerationClassificati
     output_type=ContentModerationClassificationResult,
     deps_type=ContentReviewerDeps,
     instrument=True,
+    retries=2,
+    instructions=_STATIC_INSTRUCTIONS,
 )
+
+
+@content_reviewer_agent.output_validator
+def _validate_output(
+    output: ContentModerationClassificationResult,
+) -> ContentModerationClassificationResult:
+    """Enforce cross-field invariants on the classification result.
+
+    Raises ModelRetry if:
+    - action_tier is set without recommended_action
+    - category_scores keys are not a subset of category_labels keys
+    """
+    if output.action_tier is not None and output.recommended_action is None:
+        raise ModelRetry(
+            "action_tier must not be set when recommended_action is null. "
+            "Either set recommended_action or clear action_tier."
+        )
+
+    if output.category_scores is not None:
+        label_keys = set(output.category_labels.keys())
+        score_keys = set(output.category_scores.keys())
+        extra_keys = score_keys - label_keys
+        if extra_keys:
+            raise ModelRetry(
+                f"category_scores keys {extra_keys!r} are not present in category_labels. "
+                "category_scores keys must be a subset of category_labels keys."
+            )
+
+    return output
 
 
 @content_reviewer_agent.tool
@@ -106,8 +159,9 @@ class ContentReviewerService:
     """Classifies content using the ContentReviewerAgent with pre-computed evidence.
 
     Pre-computed evidence (similarity hits, OpenAI moderation results) is formatted
-    and injected as dynamic agent instructions so the agent can reason over it alongside
-    the raw content.
+    and injected as the user prompt so the agent can reason over it alongside
+    the raw content. The static system instructions are set once at module level
+    via Agent(instructions=_STATIC_INSTRUCTIONS) to enable Anthropic prompt caching.
 
     Implements fail-open semantics: on timeout or unexpected error, returns a
     classification with confidence=0.0 so downstream logic can decide how to handle
@@ -128,15 +182,13 @@ class ContentReviewerService:
             SimilarityMatch | OpenAIModerationMatch | ConversationFlashpointMatch
         ],
     ) -> str:
-        """Build dynamic system instructions from pre-computed evidence.
+        """Build dynamic user prompt content from the content item and pre-computed evidence.
 
-        Formats similarity hits as fact-check matches and moderation flags as
-        OpenAI moderation results, then injects them into the agent's reasoning context.
+        Returns only the dynamic portion (ContentItem + evidence). The static preamble
+        and output schema description live in _STATIC_INSTRUCTIONS and are set on the
+        Agent directly.
         """
         lines: list[str] = [
-            "You are a content moderation classifier. Analyze the content and any pre-computed "
-            "evidence to produce a structured classification decision.",
-            "",
             f"Content to classify (platform={content_item.platform}, id={content_item.content_id}):",
             content_item.content_text,
             "",
@@ -168,18 +220,6 @@ class ContentReviewerService:
                     )
             lines.append("")
 
-        lines.extend(
-            [
-                "Produce a ContentModerationClassificationResult with:",
-                "- confidence: float 0.0-1.0 reflecting your certainty",
-                "- category_labels: dict mapping category names to true/false",
-                "- category_scores: optional per-category confidence scores",
-                "- recommended_action: one of 'pass', 'review', 'hide' (or null)",
-                "- action_tier: one of 'tier_1_immediate', 'tier_2_consensus' (or null)",
-                "- explanation: brief human-readable reasoning",
-            ]
-        )
-
         return "\n".join(lines)
 
     async def classify(
@@ -194,8 +234,8 @@ class ContentReviewerService:
     ) -> ContentModerationClassificationResult:
         """Classify content using the agent with pre-computed evidence.
 
-        Builds dynamic system instructions from pre-computed evidence, runs the agent,
-        and returns the structured classification result.
+        Builds a dynamic user prompt from the content item and evidence, runs the
+        agent, and returns the structured classification result.
 
         Args:
             content_item: The content item to classify.
@@ -212,8 +252,13 @@ class ContentReviewerService:
         cfg = self._settings
         timeout = getattr(cfg, "CONTENT_REVIEWER_TIMEOUT", _DEFAULT_CONTENT_REVIEWER_TIMEOUT)
         model_override = model or getattr(cfg, "CONTENT_REVIEWER_MODEL", None)
+        max_tokens = getattr(cfg, "CONTENT_REVIEWER_MAX_TOKENS", _DEFAULT_MAX_TOKENS)
+        request_limit = getattr(cfg, "CONTENT_REVIEWER_REQUEST_LIMIT", _DEFAULT_REQUEST_LIMIT)
+        total_tokens_limit = getattr(
+            cfg, "CONTENT_REVIEWER_TOTAL_TOKENS_LIMIT", _DEFAULT_TOTAL_TOKENS_LIMIT
+        )
 
-        instructions = self._build_instructions(
+        user_prompt = self._build_instructions(
             content_item=content_item,
             pre_computed_evidence=pre_computed_evidence,
         )
@@ -225,14 +270,21 @@ class ContentReviewerService:
         try:
             run_kwargs: dict[str, Any] = {
                 "deps": deps,
-                "instructions": instructions,
+                "model_settings": ModelSettings(
+                    temperature=0.0,
+                    max_tokens=max_tokens,
+                ),
+                "usage_limits": UsageLimits(
+                    request_limit=request_limit,
+                    total_tokens_limit=total_tokens_limit,
+                ),
             }
             if model_override is not None:
                 run_kwargs["model"] = model_override
 
             agent_result = await asyncio.wait_for(
                 content_reviewer_agent.run(
-                    f"Classify this content: {content_item.content_text[:200]}",
+                    user_prompt,
                     **run_kwargs,
                 ),
                 timeout=timeout,
@@ -248,6 +300,28 @@ class ContentReviewerService:
                 },
             )
             return _fail_open(f"timeout after {timeout}s")
+
+        except UnexpectedModelBehavior as e:
+            logger.warning(
+                "ContentReviewerAgent output parse failure",
+                extra={
+                    "content_id": content_item.content_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
+            return _fail_open(str(e))
+
+        except (ModelHTTPError, ModelAPIError) as e:
+            logger.warning(
+                "ContentReviewerAgent transport error",
+                extra={
+                    "content_id": content_item.content_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
+            return _fail_open(str(e))
 
         except Exception as e:
             logger.warning(

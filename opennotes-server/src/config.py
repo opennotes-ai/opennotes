@@ -712,7 +712,7 @@ class Settings(BaseSettings):
         "Set automatically on Cloud Run via env var.",
     )
     VERTEXAI_LOCATION: str = Field(
-        default="us-central1",
+        default="global",
         description="GCP region for Vertex AI API calls",
     )
 

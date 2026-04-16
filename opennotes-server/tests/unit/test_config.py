@@ -1348,4 +1348,4 @@ class TestVertexAIDefaults:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.VERTEXAI_LOCATION == "us-central1"
+            assert settings.VERTEXAI_LOCATION == "global"
