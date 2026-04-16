@@ -55,12 +55,17 @@ def upgrade() -> None:
 
     scopes_json = json.dumps(_CONSERVATIVE_SCOPES)
     conn = op.get_bind()
+    # Active NULL-scope keys: backfill with conservative scope set
     conn.execute(
         sa.text(
             "UPDATE api_keys SET scopes = CAST(:scopes AS jsonb) WHERE scopes IS NULL AND is_active = TRUE"
         ),
         {"scopes": scopes_json},
     )
+    # Inactive NULL-scope keys: backfill with empty array so migration 15c
+    # (ALTER COLUMN SET NOT NULL) doesn't fail on legacy inactive keys.
+    # Empty scopes on inactive keys is safe — has_scope() returns False anyway.
+    conn.execute(sa.text("UPDATE api_keys SET scopes = '[]'::jsonb WHERE scopes IS NULL"))
 
 
 def downgrade() -> None:
