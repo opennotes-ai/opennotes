@@ -90,6 +90,18 @@ async def register(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     try:
+        if user_create.username.endswith("-service"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reserved username pattern: usernames ending in '-service' are reserved for service accounts",
+            )
+
+        if user_create.email.endswith("@opennotes.local"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reserved email pattern: @opennotes.local is reserved for platform-internal accounts",
+            )
+
         existing_user = await get_user_by_username_for_update(db, user_create.username)
         if existing_user:
             raise HTTPException(
