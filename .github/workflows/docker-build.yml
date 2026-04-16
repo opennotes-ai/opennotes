@@ -87,7 +87,7 @@ jobs:
             VERSION=${{ github.ref_name }}
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # 0.35.0 — pre-compromise, pins trivy v0.69.3 (see https://www.stepsecurity.io/blog/trivy-compromised-a-second-time---malicious-v0-69-4-release)
         with:
           image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-server:${{ github.sha }}
           format: 'sarif'
@@ -102,7 +102,7 @@ jobs:
           category: 'trivy-server'
 
       - name: Run Trivy in table format
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # 0.35.0 — pre-compromise, pins trivy v0.69.3 (see https://www.stepsecurity.io/blog/trivy-compromised-a-second-time---malicious-v0-69-4-release)
         with:
           image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-server:${{ github.sha }}
           format: 'table'
@@ -193,7 +193,7 @@ jobs:
             VERSION=${{ github.ref_name }}
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # 0.35.0 — pre-compromise, pins trivy v0.69.3 (see https://www.stepsecurity.io/blog/trivy-compromised-a-second-time---malicious-v0-69-4-release)
         with:
           image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-discord:${{ github.sha }}
           format: 'sarif'
@@ -208,7 +208,7 @@ jobs:
           category: 'trivy-discord'
 
       - name: Run Trivy in table format
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # 0.35.0 — pre-compromise, pins trivy v0.69.3 (see https://www.stepsecurity.io/blog/trivy-compromised-a-second-time---malicious-v0-69-4-release)
         with:
           image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-discord:${{ github.sha }}
           format: 'table'
