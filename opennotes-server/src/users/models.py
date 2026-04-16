@@ -26,13 +26,7 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    role: Mapped[str] = mapped_column(
-        String(50), nullable=False, default="user", server_default="user"
-    )
-
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
-    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    is_service_account: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     principal_type: Mapped[str | None] = mapped_column(
         sa.String,
@@ -58,7 +52,7 @@ class User(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
+        return f"<User(id={self.id}, username='{self.username}', principal_type='{self.principal_type}')>"
 
 
 class RefreshToken(Base):

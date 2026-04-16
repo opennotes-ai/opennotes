@@ -41,10 +41,8 @@ async def set_platform_admin(db: AsyncSession, user: User, is_admin: bool) -> No
     if is_admin:
         if "platform_admin" not in (user.platform_roles or []):
             user.platform_roles = (user.platform_roles or []) + ["platform_admin"]
-        user.is_superuser = True
     else:
         user.platform_roles = [r for r in (user.platform_roles or []) if r != "platform_admin"]
-        user.is_superuser = False
     await db.flush()
 
 

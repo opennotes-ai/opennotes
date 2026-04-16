@@ -632,7 +632,6 @@ async def migrate_legacy_user_to_profile(
             display_name=current_user.username,
             avatar_url=None,
             bio=None,
-            role=current_user.role,
             is_opennotes_admin=False,
             is_human=True,
             is_active=True,

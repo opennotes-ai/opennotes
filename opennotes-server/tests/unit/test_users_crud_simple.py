@@ -48,16 +48,16 @@ class TestUserModel:
             username="testuser",
             email="test@example.com",
             hashed_password="hashed_pwd",
-            role="user",
             is_active=True,
-            is_superuser=False,
+            principal_type="human",
+            platform_roles=[],
         )
 
         assert user.id == test_user_id
         assert user.username == "testuser"
         assert user.email == "test@example.com"
         assert user.is_active is True
-        assert user.is_superuser is False
+        assert user.principal_type == "human"
 
     def test_user_with_optional_fields(self):
         """Test user with optional fields."""
@@ -69,15 +69,14 @@ class TestUserModel:
             hashed_password="hashed",
             full_name="User Two",
             discord_id="discord123",
-            role="admin",
             is_active=True,
-            is_superuser=True,
+            principal_type="human",
+            platform_roles=["platform_admin"],
         )
 
         assert user.full_name == "User Two"
         assert user.discord_id == "discord123"
-        assert user.role == "admin"
-        assert user.is_superuser is True
+        assert user.platform_roles == ["platform_admin"]
 
 
 @pytest.mark.asyncio
@@ -96,7 +95,6 @@ async def test_simple_user_operations():
         username="test",
         email="test@test.com",
         hashed_password="hash",
-        role="user",
         is_active=True,
     )
     mock_result.scalar_one_or_none.return_value = user
@@ -126,7 +124,6 @@ async def test_get_user_by_discord_id():
         email="test@test.com",
         hashed_password="hash",
         discord_id="discord123",
-        role="user",
         is_active=True,
     )
 
@@ -158,7 +155,6 @@ async def test_authenticate_user():
         username="testuser",
         email="test@test.com",
         hashed_password=get_password_hash(password),
-        role="user",
         is_active=True,
     )
 
@@ -203,7 +199,6 @@ async def test_update_user():
         email="old@test.com",
         hashed_password=get_password_hash("old_password"),
         full_name="Old Name",
-        role="user",
         is_active=True,
     )
 

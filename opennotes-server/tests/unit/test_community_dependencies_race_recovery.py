@@ -139,8 +139,8 @@ class TestCommunityDependencyRaceRecovery:
             username="discord-bot-service",
             email="discord-bot@opennotes.local",
             hashed_password="unused",
-            role="admin",
             principal_type="agent",
+            platform_roles=[],
         )
 
         get_identity = AsyncMock(side_effect=[None, identity])
@@ -177,8 +177,8 @@ class TestCommunityDependencyRaceRecovery:
             username="discord-bot-service",
             email="discord-bot@opennotes.local",
             hashed_password="unused",
-            role="admin",
             principal_type="agent",
+            platform_roles=[],
         )
 
         get_identity = AsyncMock(side_effect=[None, identity])
@@ -210,8 +210,8 @@ class TestCommunityDependencyRaceRecovery:
             username="discord-bot-service",
             email="discord-bot@opennotes.local",
             hashed_password="unused",
-            role="admin",
             principal_type="agent",
+            platform_roles=[],
         )
 
         get_identity = AsyncMock(return_value=None)

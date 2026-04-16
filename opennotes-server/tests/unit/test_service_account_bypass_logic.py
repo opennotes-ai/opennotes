@@ -13,7 +13,6 @@ class TestServiceAccountDetection:
             username="regular_user",
             hashed_password="hash",
             is_active=True,
-            role="user",
             principal_type="human",
         )
         assert _is_service_account(user) is False
@@ -24,7 +23,6 @@ class TestServiceAccountDetection:
             username="discord-bot-service",
             hashed_password="hash",
             is_active=True,
-            role="user",
             principal_type="human",
         )
         assert _is_service_account(user) is False
@@ -35,7 +33,6 @@ class TestServiceAccountDetection:
             username="discord-bot-service",
             hashed_password="hash",
             is_active=True,
-            role="user",
             principal_type="human",
         )
         assert _is_service_account(user) is False
@@ -46,7 +43,6 @@ class TestServiceAccountDetection:
             username="human_user",
             hashed_password="hash",
             is_active=True,
-            role="user",
             principal_type="human",
         )
         assert _is_service_account(user) is False
@@ -57,7 +53,6 @@ class TestServiceAccountDetection:
             username="regular_user",
             hashed_password="hash",
             is_active=True,
-            role="user",
             principal_type=None,
         )
         assert _is_service_account(user) is False
@@ -68,7 +63,6 @@ class TestServiceAccountDetection:
             username="my-agent",
             hashed_password="hash",
             is_active=True,
-            role="user",
             principal_type="agent",
         )
         assert _is_service_account(user) is True
@@ -79,9 +73,8 @@ class TestServiceAccountDetection:
             username="platform-service",
             hashed_password="hash",
             is_active=True,
-            role="user",
-            is_superuser=True,
             principal_type="system",
+            platform_roles=["platform_admin"],
         )
         assert _is_service_account(user) is True
 
@@ -91,8 +84,6 @@ class TestServiceAccountDetection:
             username="regular_user",
             hashed_password="hash",
             is_active=True,
-            role="user",
-            is_service_account=True,
             principal_type="human",
         )
         assert _is_service_account(user) is False

@@ -165,13 +165,11 @@ async def login(
 
         access_token_expires = pendulum.duration(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": str(user.id), "username": user.username, "role": user.role},
+            data={"sub": str(user.id), "username": user.username},
             expires_delta=access_token_expires,
         )
 
-        refresh_token = create_refresh_token(
-            data={"sub": str(user.id), "username": user.username, "role": user.role}
-        )
+        refresh_token = create_refresh_token(data={"sub": str(user.id), "username": user.username})
 
         await db_create_refresh_token(
             db, user.id, refresh_token, settings.REFRESH_TOKEN_EXPIRE_DAYS
@@ -287,7 +285,6 @@ async def refresh_access_token(
             data={
                 "sub": str(token_data.user_id),
                 "username": token_data.username,
-                "role": token_data.role,
             },
             expires_delta=access_token_expires,
         )

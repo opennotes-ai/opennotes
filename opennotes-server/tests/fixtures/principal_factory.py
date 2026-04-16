@@ -27,9 +27,6 @@ async def make_human_user(
         email=email or f"human-{uid.hex[:8]}@test.example",
         hashed_password="fakehash",
         is_active=True,
-        is_service_account=False,
-        is_superuser=False,
-        role="user",
         principal_type="human",
         platform_roles=platform_roles if platform_roles is not None else [],
         banned_at=None,
@@ -51,9 +48,6 @@ async def make_agent_user(
         email=f"agent-{uid.hex[:8]}@opennotes.local",
         hashed_password="fakehash",
         is_active=True,
-        is_service_account=True,
-        is_superuser=False,
-        role="user",
         principal_type="agent",
         platform_roles=[],
     )
@@ -74,9 +68,6 @@ async def make_system_user(
         email=f"{name}@opennotes.local",
         hashed_password="fakehash",
         is_active=True,
-        is_service_account=True,
-        is_superuser=True,
-        role="user",
         principal_type="system",
         platform_roles=["platform_admin"],
     )
@@ -89,10 +80,7 @@ async def make_platform_admin(
     db: AsyncSession,
     **kwargs,
 ) -> User:
-    user = await make_human_user(db, platform_roles=["platform_admin"], **kwargs)
-    user.is_superuser = True
-    await db.flush()
-    return user
+    return await make_human_user(db, platform_roles=["platform_admin"], **kwargs)
 
 
 async def make_api_key(

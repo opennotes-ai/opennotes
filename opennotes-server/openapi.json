@@ -26495,17 +26495,27 @@
             ],
             "title": "Full Name"
           },
-          "role": {
-            "type": "string",
-            "title": "Role"
-          },
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
           },
-          "is_superuser": {
-            "type": "boolean",
-            "title": "Is Superuser"
+          "principal_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principal Type"
+          },
+          "platform_roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Platform Roles"
           },
           "created_at": {
             "type": "string",
@@ -26524,9 +26534,9 @@
           "username",
           "email",
           "full_name",
-          "role",
           "is_active",
-          "is_superuser",
+          "principal_type",
+          "platform_roles",
           "created_at",
           "updated_at"
         ],

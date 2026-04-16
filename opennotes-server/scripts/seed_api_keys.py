@@ -66,22 +66,22 @@ def generate_api_key() -> tuple[str, str]:
 
 async def get_or_create_service_user(db: AsyncSession):
     result = await db.execute(
-        text("SELECT id, username, is_service_account FROM users WHERE username = :username"),
+        text("SELECT id, username, principal_type FROM users WHERE username = :username"),
         {"username": SERVICE_USER_USERNAME},
     )
     row = result.first()
 
     if row:
         user_id = row[0]
-        is_service_account = row[2]
+        principal_type = row[2]
 
-        if not is_service_account:
+        if principal_type != "system":
             await db.execute(
-                text("UPDATE users SET is_service_account = true WHERE id = :user_id"),
+                text("UPDATE users SET principal_type = 'system' WHERE id = :user_id"),
                 {"user_id": user_id},
             )
             print(
-                f"✓ Service user '{SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - updated is_service_account flag"
+                f"✓ Service user '{SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - updated principal_type to system"
             )
         else:
             print(f"✓ Service user '{SERVICE_USER_USERNAME}' already exists (ID: {user_id})")
@@ -91,8 +91,8 @@ async def get_or_create_service_user(db: AsyncSession):
 
     result = await db.execute(
         text("""
-            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, principal_type, created_at, updated_at)
-            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, :principal_type, NOW(), NOW())
+            INSERT INTO users (username, email, hashed_password, full_name, is_active, principal_type, platform_roles, created_at, updated_at)
+            VALUES (:username, :email, :hashed_password, :full_name, :is_active, :principal_type, '[]'::json, NOW(), NOW())
             RETURNING id
         """),
         {
@@ -100,10 +100,7 @@ async def get_or_create_service_user(db: AsyncSession):
             "email": SERVICE_USER_EMAIL,
             "hashed_password": hashed_password,
             "full_name": "Discord Bot Service Account",
-            "role": "admin",
             "is_active": True,
-            "is_superuser": False,
-            "is_service_account": True,
             "principal_type": "system",
         },
     )
@@ -188,22 +185,22 @@ async def seed_api_key(
 
 async def get_or_create_playground_user(db: AsyncSession):
     result = await db.execute(
-        text("SELECT id, username, is_service_account FROM users WHERE username = :username"),
+        text("SELECT id, username, principal_type FROM users WHERE username = :username"),
         {"username": PLAYGROUND_SERVICE_USER_USERNAME},
     )
     row = result.first()
 
     if row:
         user_id = row[0]
-        is_service_account = row[2]
+        principal_type = row[2]
 
-        if is_service_account:
+        if principal_type != "agent":
             await db.execute(
-                text("UPDATE users SET is_service_account = false WHERE id = :user_id"),
+                text("UPDATE users SET principal_type = 'agent' WHERE id = :user_id"),
                 {"user_id": user_id},
             )
             print(
-                f"✓ Playground user '{PLAYGROUND_SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - cleared is_service_account flag"
+                f"✓ Playground user '{PLAYGROUND_SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - updated principal_type to agent"
             )
         else:
             print(
@@ -215,8 +212,8 @@ async def get_or_create_playground_user(db: AsyncSession):
 
     result = await db.execute(
         text("""
-            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, principal_type, created_at, updated_at)
-            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, :principal_type, NOW(), NOW())
+            INSERT INTO users (username, email, hashed_password, full_name, is_active, principal_type, platform_roles, created_at, updated_at)
+            VALUES (:username, :email, :hashed_password, :full_name, :is_active, :principal_type, '[]'::json, NOW(), NOW())
             RETURNING id
         """),
         {
@@ -224,10 +221,7 @@ async def get_or_create_playground_user(db: AsyncSession):
             "email": PLAYGROUND_SERVICE_USER_EMAIL,
             "hashed_password": hashed_password,
             "full_name": "Playground User",
-            "role": "user",
             "is_active": True,
-            "is_superuser": False,
-            "is_service_account": False,
             "principal_type": "agent",
         },
     )
@@ -239,24 +233,22 @@ async def get_or_create_playground_user(db: AsyncSession):
 
 async def get_or_create_platform_user(db: AsyncSession):
     result = await db.execute(
-        text("SELECT id, username, is_service_account FROM users WHERE username = :username"),
+        text("SELECT id, username, principal_type FROM users WHERE username = :username"),
         {"username": PLATFORM_SERVICE_USER_USERNAME},
     )
     row = result.first()
 
     if row:
         user_id = row[0]
-        is_service_account = row[2]
+        principal_type = row[2]
 
-        if not is_service_account:
+        if principal_type != "system":
             await db.execute(
-                text(
-                    "UPDATE users SET is_service_account = true, role = 'admin' WHERE id = :user_id"
-                ),
+                text("UPDATE users SET principal_type = 'system' WHERE id = :user_id"),
                 {"user_id": user_id},
             )
             print(
-                f"✓ Platform user '{PLATFORM_SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - updated is_service_account flag"
+                f"✓ Platform user '{PLATFORM_SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - updated principal_type to system"
             )
         else:
             print(
@@ -268,8 +260,8 @@ async def get_or_create_platform_user(db: AsyncSession):
 
     result = await db.execute(
         text("""
-            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, principal_type, created_at, updated_at)
-            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, :principal_type, NOW(), NOW())
+            INSERT INTO users (username, email, hashed_password, full_name, is_active, principal_type, platform_roles, created_at, updated_at)
+            VALUES (:username, :email, :hashed_password, :full_name, :is_active, :principal_type, '["platform_admin"]'::json, NOW(), NOW())
             RETURNING id
         """),
         {
@@ -277,10 +269,7 @@ async def get_or_create_platform_user(db: AsyncSession):
             "email": PLATFORM_SERVICE_USER_EMAIL,
             "hashed_password": hashed_password,
             "full_name": "Platform Service Account",
-            "role": "admin",
             "is_active": True,
-            "is_superuser": False,
-            "is_service_account": True,
             "principal_type": "system",
         },
     )

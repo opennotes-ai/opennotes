@@ -25,13 +25,17 @@ def create_mock_user(
     if is_service_account:
         email = f"{username}@opennotes.local"
         username = f"{username}-service"
+        principal_type = "agent"
+    else:
+        principal_type = "human"
 
     return User(
         id=user_id,
         username=username,
         email=email,
         hashed_password="unused",
-        role="user",
+        principal_type=principal_type,
+        platform_roles=[],
     )
 
 

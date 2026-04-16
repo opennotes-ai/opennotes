@@ -41,7 +41,6 @@ async def test_auth_dependencies_basic():
         username="test",
         email="test@test.com",
         hashed_password="hash",
-        role="user",
         is_active=True,
     )
 
@@ -111,7 +110,6 @@ async def test_users_crud_get_functions():
         username="test",
         email="test@test.com",
         hashed_password="hash",
-        role="user",
         is_active=True,
     )
     mock_result.scalar_one_or_none.return_value = user

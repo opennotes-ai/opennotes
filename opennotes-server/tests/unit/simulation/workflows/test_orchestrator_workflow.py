@@ -348,7 +348,7 @@ class TestSpawnAgentsStep:
 
         user_objects = [obj for obj in added_objects if isinstance(obj, User)]
         assert len(user_objects) == 1
-        assert user_objects[0].is_service_account is True
+        assert user_objects[0].principal_type == "agent"
 
     def test_spawn_agents_respects_max_cap(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import spawn_agents_step

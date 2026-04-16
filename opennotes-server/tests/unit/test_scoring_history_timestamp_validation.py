@@ -23,10 +23,10 @@ def mock_admin_user():
     user.email = None
     user.username = "testadmin"
     user.full_name = "Test Admin"
-    user.role = "admin"
-    user.is_superuser = True
-    user.is_service_account = False
+    user.platform_roles = ["platform_admin"]
+    user.principal_type = "human"
     user.is_active = True
+    user.banned_at = None
     return user
 
 

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.models import APIKeyCreate, UserCreate, UserUpdate
 from src.auth.password import get_password_hash, verify_password
-from src.auth.permissions import is_account_active
+from src.auth.permissions import is_account_active, is_service_account
 from src.events.nats_client import nats_client
 from src.users.audit_helper import create_audit_log
 from src.users.models import APIKey, AuditLog, RefreshToken, User
@@ -79,9 +79,7 @@ async def create_user(
         email=user_create.email,
         hashed_password=hashed_password,
         full_name=user_create.full_name,
-        role="user",
         is_active=True,
-        is_superuser=False,
         principal_type="human",
     )
 
@@ -213,7 +211,7 @@ async def authenticate_user(
         await db.commit()
         return None
 
-    if user.is_service_account:
+    if is_service_account(user):
         _ = verify_password(password, DUMMY_PASSWORD_HASH)
         await asyncio.sleep(secrets.randbelow(41) / 1000)
         await create_audit_log(

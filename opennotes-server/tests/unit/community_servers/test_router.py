@@ -28,7 +28,8 @@ async def test_create_community_server_returns_409_for_asyncpg_unique_conflict()
         username="create-cs-service",
         email="create-cs-service@opennotes.local",
         hashed_password="unused",
-        role="admin",
+        principal_type="system",
+        platform_roles=["platform_admin"],
     )
     db = MagicMock()
     db.add = MagicMock()

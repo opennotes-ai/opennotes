@@ -54,7 +54,7 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     user_id: UUID
     username: str
-    role: str
+    role: str | None = None
     iat: int | None = None
 
 
@@ -143,9 +143,9 @@ class UserResponse(BaseModel):
     username: str
     email: str
     full_name: str | None
-    role: str
     is_active: bool
-    is_superuser: bool
+    principal_type: str | None
+    platform_roles: list[str]
     created_at: datetime
     updated_at: datetime
 

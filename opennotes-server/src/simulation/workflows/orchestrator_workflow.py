@@ -412,7 +412,6 @@ def spawn_agents_step(
                         email=f"simagent-{user_profile.id}@sim.opennotes.local",
                         hashed_password="!sim-agent-only",
                         is_active=True,
-                        is_service_account=True,
                         principal_type="agent",
                     )
                     session.add(sim_user)

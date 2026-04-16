@@ -9,13 +9,13 @@ from src.users.models import APIKey, User
 
 
 def _make_user(
-    is_superuser: bool = False,
+    is_platform_admin: bool = False,
     is_service_account: bool = False,
     is_active: bool = True,
 ) -> User:
     user = MagicMock(spec=User)
-    user.is_superuser = is_superuser
-    user.is_service_account = is_service_account
+    user.platform_roles = ["platform_admin"] if is_platform_admin else []
+    user.principal_type = "system" if is_service_account else "human"
     user.is_active = is_active
     user.banned_at = None
     return user
@@ -50,7 +50,7 @@ def _make_api_key(scopes: list[str] | None = None) -> APIKey:
 @pytest.mark.unit
 class TestRequireScopeOrAdmin:
     def test_superuser_without_api_key_gets_unrestricted(self):
-        user = _make_user(is_superuser=True)
+        user = _make_user(is_platform_admin=True)
         request = _make_request(api_key=None)
         result = require_scope_or_admin(user, request, "simulations:read")
         assert result is False
@@ -107,7 +107,7 @@ class TestRequireScopeOrAdmin:
         assert exc_info.value.status_code == 403
 
     def test_superuser_with_unscoped_key_gets_403(self):
-        user = _make_user(is_superuser=True)
+        user = _make_user(is_platform_admin=True)
         api_key = _make_api_key(scopes=None)
         request = _make_request(api_key=api_key)
         with pytest.raises(HTTPException) as exc_info:
@@ -132,7 +132,7 @@ class TestServiceAccountPasswordLogin:
 
         password = "test-password-123"
         mock_user = MagicMock(spec=User)
-        mock_user.is_service_account = True
+        mock_user.principal_type = "system"
         mock_user.is_active = True
         mock_user.banned_at = None
         mock_user.hashed_password = get_password_hash(password)
@@ -156,7 +156,7 @@ class TestServiceAccountPasswordLogin:
         from src.users.crud import authenticate_user
 
         mock_user = MagicMock(spec=User)
-        mock_user.is_service_account = False
+        mock_user.principal_type = "human"
         mock_user.is_active = True
         mock_user.banned_at = None
         mock_user.id = uuid4()
