@@ -47,9 +47,7 @@ class TestSyntheticPlatformEmail:
 
 @pytest.mark.asyncio
 class TestGetOrCreatePlatformUser:
-    async def test_creates_new_user_for_discord_provider(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_creates_new_user_for_discord_provider(self, db_session: AsyncSession) -> None:
         """New Discord provider → creates User with discord_id set and principal_type='human'."""
         user = await _get_or_create_platform_user(
             db_session, AuthProvider.DISCORD, "discord_new_12345"
@@ -62,9 +60,7 @@ class TestGetOrCreatePlatformUser:
         assert user.hashed_password == "!platform-auth-only"
         assert user.principal_type == "human"
 
-    async def test_creates_new_user_for_email_provider(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_creates_new_user_for_email_provider(self, db_session: AsyncSession) -> None:
         """Non-Discord provider → creates User with discord_id=None."""
         user = await _get_or_create_platform_user(
             db_session, AuthProvider.EMAIL, "email_new@test.local"
@@ -103,9 +99,7 @@ class TestGetOrCreatePlatformUser:
         matches = result.scalars().all()
         assert len(matches) == 1
 
-    async def test_finds_existing_user_by_discord_id(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_finds_existing_user_by_discord_id(self, db_session: AsyncSession) -> None:
         """If a User with matching discord_id exists but different username, return it."""
         pre_existing = User(
             username="pre_existing_user",
@@ -127,8 +121,6 @@ class TestGetOrCreatePlatformUser:
 
     async def test_accepts_string_provider(self, db_session: AsyncSession) -> None:
         """Provider can be a string, not just an AuthProvider enum value."""
-        user = await _get_or_create_platform_user(
-            db_session, "discord", "discord_str_444"
-        )
+        user = await _get_or_create_platform_user(db_session, "discord", "discord_str_444")
         assert user.discord_id == "discord_str_444"
         assert user.principal_type == "human"
