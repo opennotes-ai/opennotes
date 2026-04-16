@@ -13,11 +13,14 @@ ALLOWED_API_KEY_SCOPES minus the keys of PRIVILEGED_SCOPE_REQUIREMENTS
 legitimate integrations while removing the implicit super-power and
 without letting legacy keys mint new scoped keys.
 
-Inactive keys are left alone — they will stay NULL and be deactivated when
-they are never upgraded.
+Inactive keys with NULL scopes are backfilled to `[]` (empty array) so that
+migration 15c (ALTER COLUMN scopes SET NOT NULL) does not fail on legacy
+inactive rows. Empty scopes on inactive keys is safe — has_scope() returns
+False regardless and the key cannot authenticate.
 
-Idempotency: WHERE scopes IS NULL AND is_active = TRUE matches zero rows on
-a second run once all active keys have been backfilled.
+Idempotency: the active-keys UPDATE matches zero rows on a second run once
+all active keys have been backfilled; the inactive-keys UPDATE is also a
+no-op once all NULLs are gone.
 
 Ref: authorization-redesign-design.md Section 5, Phase 1.5
 """

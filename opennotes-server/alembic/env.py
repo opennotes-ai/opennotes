@@ -62,12 +62,20 @@ def include_object(obj, name, type_, reflected, compare_to):
       Verified locally that alembic check passes cleanly against a fresh DB.
       This is a known SQLAlchemy/Alembic reflection quirk with certain
       postgres extensions (pgvector+pgroonga custom image).
+    - users.role, users.is_superuser, users.is_service_account: legacy columns
+      whose drop is intentionally DEFERRED to a future R4 PR per TASK-1451.17
+      (SDK coordination gate). The ORM no longer references them but the DB
+      retains them until the rolling-deploy bridge completes. Suppress drift
+      to keep CI green during the deferral window.
     """
     del obj, reflected, compare_to
     if type_ == "index" and name and "pgroonga" in name.lower():
         return False
     # Phase 1.1 auth redesign column exclusions (CI reflection quirk only):
     if type_ == "column" and name in ("platform_roles", "principal_type"):
+        return False
+    # TASK-1451.17 deferred-drop columns (R4 SDK coordination gate):
+    if type_ == "column" and name in ("role", "is_superuser", "is_service_account"):
         return False
     return not (
         type_ == "index"
