@@ -1497,7 +1497,7 @@ def content_reviewer_step(
                         f":{community_server_id}:{channel_id}:data"
                     )
                     try:
-                        cached_channel_data = await redis_conn.hgetall(flashpoint_ctx_data_key)
+                        cached_channel_data = await redis_conn.hgetall(flashpoint_ctx_data_key)  # type: ignore[misc]
                         context_items_for_msg = [
                             bulk_scan_message_to_content_item(
                                 BulkScanMessage.model_validate_json(raw_json)
