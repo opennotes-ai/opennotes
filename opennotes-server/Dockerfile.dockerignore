@@ -1,0 +1,26 @@
+# Sibling services (not needed for opennotes-server build)
+opennotes-discord/
+opennotes-platform/
+opennotes-playground/
+opennotes-cli/
+opennotes-discourse/
+
+# opennotes-server contents not COPY'd by Dockerfile
+opennotes-server/tests/
+opennotes-server/data/
+!opennotes-server/data/flashpoints/
+!opennotes-server/data/flashpoints/optimized_detector.json
+
+# CommunityNotes non-scoring code (Dockerfile only COPYs scoring/src)
+communitynotes/*
+!communitynotes/scoring/
+!communitynotes/scoring/src/
+
+# Test/scratch artifacts
+test-results/
+tests/
+.pytest_cache/
+.sqry-cache/
+.mypy_cache/
+.ruff_cache/
+tmp/
