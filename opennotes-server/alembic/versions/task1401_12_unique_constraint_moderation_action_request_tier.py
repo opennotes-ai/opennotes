@@ -27,7 +27,7 @@ def upgrade() -> None:
                 SELECT 1
                 FROM pg_constraint
                 WHERE conname = '{CONSTRAINT_NAME}'
-                  AND conrelid = '{TABLE_NAME}'::regclass
+                  AND conrelid = 'public.{TABLE_NAME}'::regclass
             ) THEN
                 ALTER TABLE {TABLE_NAME}
                     ADD CONSTRAINT {CONSTRAINT_NAME}

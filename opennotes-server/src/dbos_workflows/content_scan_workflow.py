@@ -1502,8 +1502,13 @@ def content_reviewer_step(
                             bulk_scan_message_to_content_item(
                                 BulkScanMessage.model_validate_json(raw_json)
                             )
-                            for cached_msg_id, raw_json in cached_channel_data.items()
-                            if cached_msg_id != msg_id
+                            for cached_msg_id_raw, raw_json in cached_channel_data.items()
+                            if (
+                                cached_msg_id_raw.decode("utf-8")
+                                if isinstance(cached_msg_id_raw, bytes)
+                                else cached_msg_id_raw
+                            )
+                            != msg_id
                         ]
                         if not context_items_for_msg:
                             logger.warning(

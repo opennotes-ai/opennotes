@@ -40,16 +40,15 @@ async def _fetch_existing_action(
 ) -> ModerationAction | None:
     """SELECT existing ModerationAction for idempotency on DBOS retries.
 
-    Uses FOR UPDATE SKIP LOCKED to prevent duplicate creation under
-    concurrent DBOS retries or parallel workers.
+    Plain SELECT without row lock — the unique constraint + IntegrityError
+    handler is the actual concurrency guard. FOR UPDATE SKIP LOCKED would
+    silently return None under lock contention, defeating idempotency.
     """
     result = await session.execute(
-        select(ModerationAction)
-        .where(
+        select(ModerationAction).where(
             ModerationAction.request_id == request_id,
             ModerationAction.action_tier == action_tier.value,
         )
-        .with_for_update(skip_locked=True)
     )
     return result.scalar_one_or_none()
 
@@ -90,8 +89,14 @@ async def create_moderation_action_from_policy(
     action_state = ActionState.APPLIED if is_tier1 else ActionState.PROPOSED
     applied_at = pendulum.now("UTC") if is_tier1 else None
 
-    assert policy_decision.action_type is not None
-    assert policy_decision.review_group is not None
+    if policy_decision.action_type is None:
+        raise ValueError(
+            f"PolicyDecision has action_tier={policy_decision.action_tier} but action_type is None"
+        )
+    if policy_decision.review_group is None:
+        raise ValueError(
+            f"PolicyDecision has action_tier={policy_decision.action_tier} but review_group is None"
+        )
 
     create_data = ModerationActionCreate(
         request_id=request_id,

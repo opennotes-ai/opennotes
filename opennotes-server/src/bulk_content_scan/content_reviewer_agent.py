@@ -15,7 +15,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import Agent, ModelRetry
-from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError, UnexpectedModelBehavior
+from pydantic_ai.exceptions import (
+    ModelAPIError,
+    ModelHTTPError,
+    UnexpectedModelBehavior,
+    UsageLimitExceeded,
+)
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext, ToolDefinition
 from pydantic_ai.usage import UsageLimits
@@ -338,6 +343,17 @@ class ContentReviewerService:
                 },
             )
             return _fail_open(str(e), error_type="transport_error")
+
+        except UsageLimitExceeded as e:
+            logger.warning(
+                "ContentReviewerAgent usage limit exceeded",
+                extra={
+                    "content_id": content_item.content_id,
+                    "error": str(e),
+                    "classification_error_type": "usage_limit_exceeded",
+                },
+            )
+            return _fail_open(str(e), error_type="usage_limit_exceeded")
 
         except Exception as e:
             logger.warning(
