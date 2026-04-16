@@ -16084,6 +16084,18 @@
             "type": "string",
             "title": "Explanation",
             "description": "Human-readable explanation of the classification"
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type",
+            "description": "None for normal classification; 'timeout', 'transport_error', 'parse_error', or 'unexpected_error' for failures"
           }
         },
         "additionalProperties": false,

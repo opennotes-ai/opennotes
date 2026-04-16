@@ -180,6 +180,13 @@ class ContentModerationClassificationResult(StrictInputSchema):
         None, description="Action tier (tier_1_immediate, tier_2_consensus)"
     )
     explanation: str = Field(..., description="Human-readable explanation of the classification")
+    error_type: str | None = Field(
+        default=None,
+        description=(
+            "None for normal classification; "
+            "'timeout', 'transport_error', 'parse_error', or 'unexpected_error' for failures"
+        ),
+    )
 
 
 MatchResult = Annotated[

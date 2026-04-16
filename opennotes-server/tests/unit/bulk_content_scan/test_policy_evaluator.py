@@ -719,3 +719,115 @@ class TestModerationPolicyEvaluatorMultiLabel:
         decision = evaluator.evaluate(classification, config)
 
         assert decision.action_tier is None
+
+
+class TestModerationPolicyEvaluatorErrorTypeSkip:
+    """AC2: Policy evaluator skips evaluation when error_type is set."""
+
+    def _make_classification(
+        self,
+        category_labels: dict[str, bool],
+        category_scores: dict[str, float] | None = None,
+        confidence: float = 0.0,
+        explanation: str = "Classification failed",
+        error_type: str | None = None,
+    ) -> ContentModerationClassificationResult:
+        return ContentModerationClassificationResult(
+            confidence=confidence,
+            category_labels=category_labels,
+            category_scores=category_scores,
+            explanation=explanation,
+            error_type=error_type,
+        )
+
+    def test_evaluator_returns_pass_when_error_type_is_set(self):
+        """evaluate() should skip policy evaluation and return pass when error_type is set."""
+        from src.bulk_content_scan.policy_evaluator import (
+            ModerationPolicyConfig,
+            ModerationPolicyEvaluator,
+        )
+
+        evaluator = ModerationPolicyEvaluator()
+        config = ModerationPolicyConfig(
+            auto_action_labels=["harassment"],
+            auto_action_min_score=0.90,
+            review_labels=["*"],
+            review_min_score=0.50,
+        )
+        classification = self._make_classification(
+            category_labels={},
+            error_type="timeout",
+        )
+
+        decision = evaluator.evaluate(classification, config)
+
+        assert decision.action_tier is None
+        assert decision.action_type is None
+        assert decision.review_group is None
+
+    def test_evaluator_reason_includes_error_type_when_set(self):
+        """evaluate() reason should include the error_type string when error occurred."""
+        from src.bulk_content_scan.policy_evaluator import (
+            ModerationPolicyConfig,
+            ModerationPolicyEvaluator,
+        )
+
+        evaluator = ModerationPolicyEvaluator()
+        config = ModerationPolicyConfig()
+        classification = self._make_classification(
+            category_labels={},
+            error_type="transport_error",
+        )
+
+        decision = evaluator.evaluate(classification, config)
+
+        assert "transport_error" in decision.reason
+
+    def test_evaluator_skips_for_all_error_types(self):
+        """evaluate() should skip for all error_type values: timeout, transport_error, parse_error, unexpected_error."""
+        from src.bulk_content_scan.policy_evaluator import (
+            ModerationPolicyConfig,
+            ModerationPolicyEvaluator,
+        )
+
+        evaluator = ModerationPolicyEvaluator()
+        config = ModerationPolicyConfig(
+            auto_action_labels=["harassment"],
+            auto_action_min_score=0.90,
+            review_labels=["*"],
+            review_min_score=0.50,
+        )
+
+        for error_type in ("timeout", "transport_error", "parse_error", "unexpected_error"):
+            classification = self._make_classification(
+                category_labels={"harassment": True},
+                category_scores={"harassment": 0.99},
+                error_type=error_type,
+            )
+            decision = evaluator.evaluate(classification, config)
+            assert decision.action_tier is None, f"Expected pass for error_type={error_type!r}"
+
+    def test_evaluator_proceeds_normally_when_error_type_is_none(self):
+        """evaluate() should run normal policy evaluation when error_type is None."""
+        from src.bulk_content_scan.policy_evaluator import (
+            ModerationPolicyConfig,
+            ModerationPolicyEvaluator,
+        )
+
+        evaluator = ModerationPolicyEvaluator()
+        config = ModerationPolicyConfig(
+            auto_action_labels=["harassment"],
+            auto_action_min_score=0.90,
+            review_labels=["*"],
+            review_min_score=0.50,
+        )
+        classification = self._make_classification(
+            category_labels={"harassment": True},
+            category_scores={"harassment": 0.95},
+            confidence=0.95,
+            error_type=None,
+        )
+
+        decision = evaluator.evaluate(classification, config)
+
+        assert decision.action_tier == ActionTier.TIER_1_IMMEDIATE

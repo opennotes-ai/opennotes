@@ -58,6 +58,14 @@ class ModerationPolicyEvaluator:
         classification: ContentModerationClassificationResult,
         config: ModerationPolicyConfig,
     ) -> PolicyDecision:
+        if classification.error_type is not None:
+            return PolicyDecision(
+                action_tier=None,
+                action_type=None,
+                review_group=None,
+                reason=f"Classification failed: {classification.error_type}",
+            )
+
         flagged_labels = [
             label for label, flagged in classification.category_labels.items() if flagged
         ]

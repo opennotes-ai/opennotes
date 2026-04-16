@@ -1166,3 +1166,160 @@ class TestContentReviewerModelFromConfig:
             assert mock_run.called
             call_kwargs = mock_run.call_args.kwargs
             assert call_kwargs.get("model") is explicit_model
+
+
+class TestErrorTypeDiscrimination:
+    """AC1-5: error_type field distinguishes hard failures from low-confidence."""
+
+    @pytest.mark.asyncio
+    async def test_normal_classification_has_no_error_type(self):
+        """Successful classification should have error_type=None."""
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        expected = make_classification_result(confidence=0.85)
+        test_model = TestModel(custom_output_args=expected, call_tools=[])
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        result = await service.classify(
+            content_item=content_item,
+            pre_computed_evidence=[],
+            model=test_model,
+        )
+
+        assert result.error_type is None
+
+    @pytest.mark.asyncio
+    async def test_timeout_sets_error_type_timeout(self):
+        """Timeout failure should set error_type='timeout'."""
+        import asyncio
+
+        from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        async def slow_model(messages: list, agent_info: AgentInfo) -> ModelResponse:
+            await asyncio.sleep(999)
+            raise RuntimeError("Should not reach here")
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        class MockSettings:
+            CONTENT_REVIEWER_TIMEOUT = 0.01
+            CONTENT_REVIEWER_MODEL = None
+
+        service._settings = MockSettings()
+
+        result = await service.classify(
+            content_item=content_item,
+            pre_computed_evidence=[],
+            model=FunctionModel(slow_model),
+        )
+
+        assert result.error_type == "timeout"
+        assert result.confidence == 0.0
+
+    @pytest.mark.asyncio
+    async def test_transport_error_sets_error_type(self):
+        """ModelHTTPError should set error_type='transport_error'."""
+        from pydantic_ai.exceptions import ModelHTTPError
+        from pydantic_ai.messages import ModelResponse
+        from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        def error_model(messages: list, agent_info: AgentInfo) -> ModelResponse:
+            raise ModelHTTPError(
+                status_code=503,
+                model_name="test-model",
+                body="Service Unavailable",
+            )
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        result = await service.classify(
+            content_item=content_item,
+            pre_computed_evidence=[],
+            model=FunctionModel(error_model),
+        )
+
+        assert result.error_type == "transport_error"
+        assert result.confidence == 0.0
+
+    @pytest.mark.asyncio
+    async def test_parse_error_sets_error_type(self):
+        """UnexpectedModelBehavior should set error_type='parse_error'."""
+        from pydantic_ai.exceptions import UnexpectedModelBehavior
+        from pydantic_ai.messages import ModelResponse
+        from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        def error_model(messages: list, agent_info: AgentInfo) -> ModelResponse:
+            raise UnexpectedModelBehavior("Model returned garbage output")
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        result = await service.classify(
+            content_item=content_item,
+            pre_computed_evidence=[],
+            model=FunctionModel(error_model),
+        )
+
+        assert result.error_type == "parse_error"
+        assert result.confidence == 0.0
+
+    @pytest.mark.asyncio
+    async def test_unexpected_error_sets_error_type(self):
+        """Unexpected RuntimeError should set error_type='unexpected_error'."""
+        from pydantic_ai.messages import ModelResponse
+        from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+        from src.bulk_content_scan.content_reviewer_agent import ContentReviewerService
+
+        def error_model(messages: list, agent_info: AgentInfo) -> ModelResponse:
+            raise RuntimeError("Unexpected crash")
+
+        service = ContentReviewerService()
+        content_item = make_content_item()
+
+        result = await service.classify(
+            content_item=content_item,
+            pre_computed_evidence=[],
+            model=FunctionModel(error_model),
+        )
+
+        assert result.error_type == "unexpected_error"
+        assert result.confidence == 0.0
+
+    def test_low_confidence_classification_has_no_error_type(self):
+        """Low confidence from a normal model result should NOT set error_type."""
+        result = make_classification_result(
+            confidence=0.0,
+            explanation="Agent determined this content is low-risk",
+        )
+        assert result.error_type is None
+
+    def test_error_type_field_exists_on_schema(self):
+        """ContentModerationClassificationResult must have an error_type field."""
+        result = ContentModerationClassificationResult(
+            confidence=0.5,
+            category_labels={"test": True},
+            explanation="test",
+        )
+        assert hasattr(result, "error_type")
+        assert result.error_type is None
+
+    def test_error_type_can_be_set(self):
+        """error_type can be set to a string value."""
+        result = ContentModerationClassificationResult(
+            confidence=0.0,
+            category_labels={},
+            explanation="Classification failed: timeout after 30s",
+            error_type="timeout",
+        )
+        assert result.error_type == "timeout"

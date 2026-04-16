@@ -139,11 +139,14 @@ async def detect_flashpoint_tool(
     )
 
 
-def _fail_open(reason: str) -> ContentModerationClassificationResult:
+def _fail_open(
+    reason: str, error_type: str = "unexpected_error"
+) -> ContentModerationClassificationResult:
     """Return a fail-open classification result on timeout or error.
 
     Confidence=0.0 signals that the classification could not be completed and
-    downstream code should treat this as unreviewed content.
+    downstream code should treat this as unreviewed content. error_type allows
+    callers to distinguish hard failures from low-confidence normal results.
     """
     return ContentModerationClassificationResult(
         confidence=0.0,
@@ -152,6 +155,7 @@ def _fail_open(reason: str) -> ContentModerationClassificationResult:
         recommended_action=None,
         action_tier=None,
         explanation=f"Classification failed: {reason}",
+        error_type=error_type,
     )
 
 
@@ -297,9 +301,10 @@ class ContentReviewerService:
                 extra={
                     "content_id": content_item.content_id,
                     "timeout_seconds": timeout,
+                    "classification_error_type": "timeout",
                 },
             )
-            return _fail_open(f"timeout after {timeout}s")
+            return _fail_open(f"timeout after {timeout}s", error_type="timeout")
 
         except UnexpectedModelBehavior as e:
             logger.warning(
@@ -308,9 +313,10 @@ class ContentReviewerService:
                     "content_id": content_item.content_id,
                     "error": str(e),
                     "error_type": type(e).__name__,
+                    "classification_error_type": "parse_error",
                 },
             )
-            return _fail_open(str(e))
+            return _fail_open(str(e), error_type="parse_error")
 
         except (ModelHTTPError, ModelAPIError) as e:
             logger.warning(
@@ -319,9 +325,10 @@ class ContentReviewerService:
                     "content_id": content_item.content_id,
                     "error": str(e),
                     "error_type": type(e).__name__,
+                    "classification_error_type": "transport_error",
                 },
             )
-            return _fail_open(str(e))
+            return _fail_open(str(e), error_type="transport_error")
 
         except Exception as e:
             logger.warning(
@@ -330,6 +337,7 @@ class ContentReviewerService:
                     "content_id": content_item.content_id,
                     "error": str(e),
                     "error_type": type(e).__name__,
+                    "classification_error_type": "unexpected_error",
                 },
             )
-            return _fail_open(str(e))
+            return _fail_open(str(e), error_type="unexpected_error")

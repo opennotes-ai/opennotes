@@ -51,6 +51,8 @@ class ContentModerationClassificationResult:
                 action (hide, review, pass)
             action_tier (ContentModerationClassificationResultActionTierType0 | None | Unset): Action tier
                 (tier_1_immediate, tier_2_consensus)
+            error_type (None | str | Unset): None for normal classification; 'timeout', 'transport_error', 'parse_error', or
+                'unexpected_error' for failures
     """
 
     confidence: float
@@ -68,6 +70,7 @@ class ContentModerationClassificationResult:
     action_tier: ContentModerationClassificationResultActionTierType0 | None | Unset = (
         UNSET
     )
+    error_type: None | str | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.content_moderation_classification_result_category_scores_type_0 import (
@@ -114,6 +117,12 @@ class ContentModerationClassificationResult:
         else:
             action_tier = self.action_tier
 
+        error_type: None | str | Unset
+        if isinstance(self.error_type, Unset):
+            error_type = UNSET
+        else:
+            error_type = self.error_type
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -131,6 +140,8 @@ class ContentModerationClassificationResult:
             field_dict["recommended_action"] = recommended_action
         if action_tier is not UNSET:
             field_dict["action_tier"] = action_tier
+        if error_type is not UNSET:
+            field_dict["error_type"] = error_type
 
         return field_dict
 
@@ -241,6 +252,15 @@ class ContentModerationClassificationResult:
 
         action_tier = _parse_action_tier(d.pop("action_tier", UNSET))
 
+        def _parse_error_type(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        error_type = _parse_error_type(d.pop("error_type", UNSET))
+
         content_moderation_classification_result = cls(
             confidence=confidence,
             category_labels=category_labels,
@@ -249,6 +269,7 @@ class ContentModerationClassificationResult:
             category_scores=category_scores,
             recommended_action=recommended_action,
             action_tier=action_tier,
+            error_type=error_type,
         )
 
         return content_moderation_classification_result

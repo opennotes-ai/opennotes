@@ -1534,6 +1534,24 @@ def content_reviewer_step(
                         model=settings.CONTENT_REVIEWER_MODEL,
                     )
 
+                    if classification.error_type is not None:
+                        from src.monitoring.metrics import (
+                            content_reviewer_error_classifications_total,
+                        )
+
+                        logger.warning(
+                            "ContentReviewerAgent hard failure; routing as pass (fail-open)",
+                            extra={
+                                "scan_id": scan_id,
+                                "msg_id": msg_id,
+                                "classification_error_type": classification.error_type,
+                                "explanation": classification.explanation,
+                            },
+                        )
+                        content_reviewer_error_classifications_total.add(
+                            1, {"error_type": classification.error_type}
+                        )
+
                     policy_decision = evaluator.evaluate(classification, policy_config)
 
                     if policy_decision.action_tier is not None:

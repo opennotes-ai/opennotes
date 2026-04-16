@@ -5578,6 +5578,11 @@ export interface components {
              * @description Human-readable explanation of the classification
              */
             explanation: string;
+            /**
+             * Error Type
+             * @description None for normal classification; 'timeout', 'transport_error', 'parse_error', or 'unexpected_error' for failures
+             */
+            error_type?: string | null;
         };
         /**
          * ConversationFlashpointMatch
