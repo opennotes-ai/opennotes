@@ -31,24 +31,19 @@ def upgrade() -> None:
     op.add_column("users", sa.Column("banned_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("users", sa.Column("ban_reason", sa.String(), nullable=True))
 
-    with op.get_context().autocommit_block():
-        op.create_index(
-            "idx_users_principal_type", "users", ["principal_type"], postgresql_concurrently=True
-        )
-        op.create_index(
-            "idx_users_banned_at",
-            "users",
-            ["banned_at"],
-            postgresql_concurrently=True,
-            postgresql_where=sa.text("banned_at IS NOT NULL"),
-        )
-        op.create_index(
-            "idx_users_platform_roles_gin",
-            "users",
-            ["platform_roles"],
-            postgresql_concurrently=True,
-            postgresql_using="gin",
-        )
+    op.create_index("idx_users_principal_type", "users", ["principal_type"])
+    op.create_index(
+        "idx_users_banned_at",
+        "users",
+        ["banned_at"],
+        postgresql_where=sa.text("banned_at IS NOT NULL"),
+    )
+    op.create_index(
+        "idx_users_platform_roles_gin",
+        "users",
+        ["platform_roles"],
+        postgresql_using="gin",
+    )
 
 
 def downgrade() -> None:
