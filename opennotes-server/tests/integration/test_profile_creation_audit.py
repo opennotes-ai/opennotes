@@ -46,7 +46,7 @@ class TestCreateProfileWithIdentityCreatesUser:
 
         assert user is not None, f"Expected User with username '{expected_username}' to be created"
         assert user.is_active is True
-        assert user.is_service_account is False
+        assert user.principal_type == "human"
         assert user.hashed_password == "!platform-auth-only"
 
     async def test_email_profile_creates_user_row(self, db: AsyncSession):
@@ -65,7 +65,7 @@ class TestCreateProfileWithIdentityCreatesUser:
 
         assert user is not None
         assert user.is_active is True
-        assert user.is_service_account is False
+        assert user.principal_type == "human"
 
     async def test_github_profile_creates_user_row(self, db: AsyncSession):
         profile_create = UserProfileCreate(display_name="github_audit_test", is_human=True)
@@ -138,7 +138,7 @@ class TestGetOrCreateProfileFromPlatformCreatesUser:
 
         assert user is not None
         assert user.is_active is True
-        assert user.is_service_account is False
+        assert user.principal_type == "human"
 
     async def test_existing_profile_does_not_duplicate_user(self, db: AsyncSession):
         user_info = PlatformIdentityInput(
@@ -182,7 +182,7 @@ class TestOrchestratorSimAgentCreatesUser:
             email=email,
             hashed_password="!sim-agent-only",
             is_active=True,
-            is_service_account=True,
+            principal_type="agent",
         )
         db.add(user)
         await db.flush()
@@ -192,6 +192,6 @@ class TestOrchestratorSimAgentCreatesUser:
         stored_user = result.scalar_one_or_none()
 
         assert stored_user is not None
-        assert stored_user.is_service_account is True
+        assert stored_user.principal_type == "agent"
         assert stored_user.is_active is True
         assert stored_user.hashed_password == "!sim-agent-only"

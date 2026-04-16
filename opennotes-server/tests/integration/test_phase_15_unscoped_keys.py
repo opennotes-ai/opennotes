@@ -58,9 +58,7 @@ class TestEmptyScopesRejectedAtCreation:
             await session.commit()
             await session.refresh(user)
 
-        token = create_access_token(
-            data={"sub": str(user.id), "username": user.username, "role": user.role}
-        )
+        token = create_access_token(data={"sub": str(user.id), "username": user.username})
         headers = {"Authorization": f"Bearer {token}"}
 
         transport = ASGITransport(app=app)

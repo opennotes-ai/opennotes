@@ -31,7 +31,6 @@ def _make_bearer_headers(user: User) -> dict[str, str]:
         data={
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
     )
     return {"Authorization": f"Bearer {token}"}
