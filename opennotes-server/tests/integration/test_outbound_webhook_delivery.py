@@ -422,8 +422,7 @@ async def test_duplicate_event_does_not_create_second_delivery_row(
 
     # Prove the IntegrityError swallow branch ran, not some earlier short-circuit.
     assert any(
-        "already exists" in rec.message and str(webhook.id) in rec.message
-        for rec in caplog.records
+        "already exists" in rec.message and str(webhook.id) in rec.message for rec in caplog.records
     ), (
         "Expected 'Webhook delivery already exists' INFO log on the retry call — "
         "if missing, the test passed for the wrong reason."
@@ -476,4 +475,6 @@ async def test_non_unique_integrity_error_is_not_swallowed(session_factory) -> N
     # returning None. Accept either a bare IntegrityError or something wrapping it.
     from sqlalchemy.exc import IntegrityError as _IE
 
-    assert isinstance(exc_info.value, _IE) or isinstance(getattr(exc_info.value, "__cause__", None), _IE)
+    assert isinstance(exc_info.value, _IE) or isinstance(
+        getattr(exc_info.value, "__cause__", None), _IE
+    )
