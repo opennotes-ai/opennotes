@@ -8,10 +8,17 @@ This module implements the permission hierarchy for admin access:
 4. Discord server admins (Manage Server permission) - fallback via Discord bot
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.users.models import User
 from src.users.profile_models import CommunityMember, UserProfile
+
+if TYPE_CHECKING:
+    from src.auth.platform_claims import PlatformIdentity
 
 
 def is_account_active(user: User) -> bool:
@@ -141,3 +148,20 @@ def has_community_member_access(
 
     # Check if membership exists and is active
     return bool(membership and membership.is_active and not membership.banned_at)
+
+
+def extract_identity_audit_fields(
+    identity: PlatformIdentity | None,
+    source: str | None = None,
+) -> dict[str, str]:
+    if identity is None:
+        return {}
+    fields: dict[str, str] = {
+        "platform_identity_sub": identity.sub,
+        "platform_identity_scope": identity.scope,
+        "platform_identity_community_id": identity.community_id,
+        "platform_identity_platform": identity.platform,
+    }
+    if source is not None:
+        fields["platform_identity_source"] = source
+    return fields
