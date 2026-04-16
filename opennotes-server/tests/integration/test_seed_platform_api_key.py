@@ -24,9 +24,7 @@ async def test_platform_service_account_created_with_correct_flags(db_session):
     from sqlalchemy import text
 
     result = await db_session.execute(
-        text(
-            "SELECT principal_type, platform_roles FROM users WHERE username = :username"
-        ),
+        text("SELECT principal_type, platform_roles FROM users WHERE username = :username"),
         {"username": "platform-service"},
     )
     row = result.first()
@@ -34,9 +32,7 @@ async def test_platform_service_account_created_with_correct_flags(db_session):
     assert row is not None, "platform-service user must exist after seeding"
     principal_type, platform_roles = row
     assert principal_type == "system", "platform-service must be a system principal"
-    assert "platform_admin" in platform_roles, (
-        "platform-service must have platform_admin role"
-    )
+    assert "platform_admin" in platform_roles, "platform-service must have platform_admin role"
 
 
 @pytest.mark.asyncio
