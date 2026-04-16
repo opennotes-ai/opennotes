@@ -88,4 +88,89 @@ RSpec.describe Opennotes::AdminController, type: :request do
       end
     end
   end
+
+  describe "POST /admin/plugins/discourse-opennotes/register" do
+    context "when logged in as staff" do
+      before { sign_in(admin) }
+
+      it "invalidates cache, registers, and returns UUID + name on success" do
+        expect(OpenNotes::CommunityServerResolver).to receive(:invalidate!).ordered
+        expect(OpenNotes::PlatformRegistrar).to receive(:register).ordered.and_return(
+          ok: true,
+          uuid: server_uuid,
+          name: "My Forum",
+          slug: "forum.example.com-abcd1234",
+        )
+
+        post "/admin/plugins/discourse-opennotes/register.json"
+        expect(response).to have_http_status(:ok)
+
+        body = response.parsed_body
+        expect(body["success"]).to be true
+        expect(body["community_server_uuid"]).to eq(server_uuid)
+        expect(body["name"]).to eq("My Forum")
+        expect(body["platform_community_server_id"]).to eq("forum.example.com-abcd1234")
+      end
+
+      it "returns 422 when settings are missing" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:invalidate!)
+        allow(OpenNotes::PlatformRegistrar).to receive(:register).and_return(
+          ok: false,
+          reason: :missing_settings,
+          message: "opennotes_server_url or opennotes_api_key is blank",
+        )
+
+        post "/admin/plugins/discourse-opennotes/register.json"
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["reason"]).to eq("missing_settings")
+      end
+
+      it "returns 502 on connection error" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:invalidate!)
+        allow(OpenNotes::PlatformRegistrar).to receive(:register).and_return(
+          ok: false,
+          reason: :connection_error,
+          message: "Failed to open TCP connection",
+        )
+
+        post "/admin/plugins/discourse-opennotes/register.json"
+        expect(response).to have_http_status(:bad_gateway)
+      end
+
+      it "maps 403 upstream to 401 Unauthorized" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:invalidate!)
+        allow(OpenNotes::PlatformRegistrar).to receive(:register).and_return(
+          ok: false,
+          reason: :api_error,
+          status: 403,
+          message: "API error 403",
+        )
+
+        post "/admin/plugins/discourse-opennotes/register.json"
+        expect(response).to have_http_status(:unauthorized)
+      end
+
+      it "maps 500 upstream to 502 Bad Gateway" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:invalidate!)
+        allow(OpenNotes::PlatformRegistrar).to receive(:register).and_return(
+          ok: false,
+          reason: :api_error,
+          status: 500,
+          message: "API error 500",
+        )
+
+        post "/admin/plugins/discourse-opennotes/register.json"
+        expect(response).to have_http_status(:bad_gateway)
+      end
+    end
+
+    context "when logged in as regular user" do
+      before { sign_in(regular_user) }
+
+      it "returns 403 or 404 (staff-only)" do
+        post "/admin/plugins/discourse-opennotes/register.json"
+        expect(response.status).to be_in([403, 404])
+      end
+    end
+  end
 end
