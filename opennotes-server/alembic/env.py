@@ -66,16 +66,24 @@ def include_object(obj, name, type_, reflected, compare_to):
       whose drop is intentionally DEFERRED to a future R4 PR per TASK-1451.17
       (SDK coordination gate). The ORM no longer references them but the DB
       retains them until the rolling-deploy bridge completes. Suppress drift
-      to keep CI green during the deferral window.
+      to keep CI green during the deferral window. Scoped to the `users`
+      table specifically so legitimate drift on `role` columns of
+      user_profiles / community_members is not silently swallowed.
     """
-    del obj, reflected, compare_to
+    del reflected, compare_to
     if type_ == "index" and name and "pgroonga" in name.lower():
         return False
     # Phase 1.1 auth redesign column exclusions (CI reflection quirk only):
     if type_ == "column" and name in ("platform_roles", "principal_type"):
         return False
-    # TASK-1451.17 deferred-drop columns (R4 SDK coordination gate):
-    if type_ == "column" and name in ("role", "is_superuser", "is_service_account"):
+    # TASK-1451.17 deferred-drop columns (R4 SDK coordination gate) —
+    # scoped to the users table only, since `role` also exists on user_profiles
+    # and community_members where future drift must remain visible.
+    if (
+        type_ == "column"
+        and name in ("role", "is_superuser", "is_service_account")
+        and getattr(getattr(obj, "table", None), "name", None) == "users"
+    ):
         return False
     return not (
         type_ == "index"
