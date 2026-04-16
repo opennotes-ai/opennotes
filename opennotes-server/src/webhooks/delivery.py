@@ -5,6 +5,7 @@ from uuid import UUID
 import httpx
 import pendulum
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.webhooks.delivery_models import WebhookDelivery
@@ -81,7 +82,17 @@ class OutboundWebhookDeliveryService:
                     attempts=0,
                 )
                 session.add(delivery)
-                await session.flush()
+                try:
+                    await session.flush()
+                except IntegrityError:
+                    await session.rollback()
+                    logger.info(
+                        "Webhook delivery already exists for (webhook_id=%s, event_id=%s); "
+                        "skipping duplicate emit.",
+                        webhook.id,
+                        event_id,
+                    )
+                    return
 
                 await self._retry_with_backoff(session, webhook, delivery, payload)
                 await session.commit()

@@ -1725,13 +1725,15 @@ class TestActionBridgeWiring:
         mock_create_action.assert_awaited_once()
         mock_emit_event.assert_not_awaited()
 
-    def test_dbos_retry_does_not_emit_duplicate_event(self) -> None:
-        """When action_bridge returns newly_created=False, emit_platform_action_event is NOT called (AC#3).
+    def test_dbos_retry_still_emits_relies_on_webhook_dedup(self) -> None:
+        """On a DBOS retry (action_bridge returns newly_created=False), emit still fires.
 
-        Simulates a DBOS retry where the ModerationAction already exists. The tier-1
-        emit must be skipped so that each moderation action produces exactly one
-        `moderation.action.applied` NATS event, preventing duplicate outbound
-        webhooks.
+        TASK-1401.17: reverted the newly_created gate. Duplicate prevention moved to
+        the webhook delivery layer (unique constraint on (webhook_id, event_id) +
+        deterministic event_id from (event_type, action_id)). That means retries
+        re-publish the same NATS event with the same event_id, and webhook delivery
+        rejects the duplicate row at flush time. This test locks in the updated
+        workflow contract: `content_reviewer_step` emits regardless of newly_created.
         """
         from src.bulk_content_scan.schemas import ContentModerationClassificationResult
         from src.dbos_workflows.content_scan_workflow import content_reviewer_step
@@ -1823,4 +1825,4 @@ class TestActionBridgeWiring:
 
         assert result["flagged_count"] == 1
         mock_create_action.assert_awaited_once()
-        mock_emit_event.assert_not_awaited()
+        mock_emit_event.assert_awaited_once()

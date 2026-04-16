@@ -1573,7 +1573,7 @@ def content_reviewer_step(
                         community_server_uuid = UUID(community_server_id)
                         (
                             moderation_action,
-                            newly_created,
+                            _newly_created,
                         ) = await create_moderation_action_from_policy(
                             session=session,
                             policy_decision=policy_decision,
@@ -1586,7 +1586,6 @@ def content_reviewer_step(
 
                         if (
                             moderation_action is not None
-                            and newly_created
                             and policy_decision.action_tier == ActionTier.TIER_1_IMMEDIATE
                         ):
                             from src.events.publisher import create_worker_event_publisher

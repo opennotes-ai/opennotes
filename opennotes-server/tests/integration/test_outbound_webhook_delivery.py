@@ -370,3 +370,63 @@ async def test_events_filter_allows_matching_event(
     assert "https://example.com/specific" in called_urls, (
         "Webhook filtered to 'moderation_action.proposed' should receive that event type"
     )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_event_does_not_create_second_delivery_row(
+    session_factory,
+) -> None:
+    """TASK-1401.17: duplicate (webhook_id, event_id) is rejected by the unique
+    constraint; only one WebhookDelivery row exists per (webhook, event) pair.
+
+    This is the correctness property that lets `publish_moderation_action_applied`
+    safely use a deterministic event_id — DBOS step retries re-emit the same
+    event_id, and the webhook layer dedupes at flush time instead of producing
+    duplicate outbound HTTP POSTs.
+    """
+    community_server_id = await _create_community_server(session_factory)
+    webhook = await _create_webhook(session_factory, community_server_id)
+
+    event_id = str(uuid4())
+    event_type = "moderation_action.applied"
+    payload = {"action_id": str(uuid4()), "attempt": 1}
+
+    call_count = 0
+
+    async def mock_attempt(self_obj, wh, pl):
+        nonlocal call_count
+        call_count += 1
+        return True, 200, ""
+
+    with (
+        patch(
+            "src.webhooks.delivery.OutboundWebhookDeliveryService._fetch_active_webhooks",
+            new=AsyncMock(return_value=[webhook]),
+        ),
+        patch.object(OutboundWebhookDeliveryService, "_attempt_delivery", new=mock_attempt),
+    ):
+        service = OutboundWebhookDeliveryService(session_factory)
+        await service.deliver_event(event_type, event_id, payload, community_server_id)
+        # Simulate a DBOS retry: same event_id, different payload attempt counter.
+        payload_retry = {**payload, "attempt": 2}
+        await service.deliver_event(event_type, event_id, payload_retry, community_server_id)
+
+    assert call_count == 1, (
+        "Second deliver_event call must be blocked by the unique constraint — "
+        "the duplicate HTTP POST is exactly what TASK-1401.17 prevents."
+    )
+
+    async with session_factory() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(WebhookDelivery).where(
+                WebhookDelivery.event_id == event_id,
+                WebhookDelivery.webhook_id == webhook.id,
+            )
+        )
+        rows = list(result.scalars().all())
+
+    assert len(rows) == 1, f"Expected exactly one delivery row, got {len(rows)}"
+    # The row preserves the first payload — the second attempt was fully rejected.
+    assert rows[0].payload == payload

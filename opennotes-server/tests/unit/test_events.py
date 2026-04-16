@@ -947,3 +947,72 @@ async def test_publish_event_increments_failure_metric_with_correct_error_type()
                 "error_type": "TimeoutError",
             },
         )
+
+
+class TestDeterministicEventId:
+    """TASK-1401.17: publish_moderation_action_applied uses deterministic event_id.
+
+    Retries of the same moderation-action publish must produce an identical event_id
+    so that webhook_deliveries can dedupe via the unique (webhook_id, event_id)
+    constraint introduced in alembic revision task1401_17.
+    """
+
+    def test_deterministic_event_id_helper_is_stable(self) -> None:
+        from src.events.publisher import _deterministic_event_id
+
+        action_id = uuid4()
+        first = _deterministic_event_id("moderation_action.applied", action_id)
+        second = _deterministic_event_id("moderation_action.applied", action_id)
+        assert first == second
+
+    def test_deterministic_event_id_differs_by_event_type(self) -> None:
+        from src.events.publisher import _deterministic_event_id
+
+        action_id = uuid4()
+        applied = _deterministic_event_id("moderation_action.applied", action_id)
+        proposed = _deterministic_event_id("moderation_action.proposed", action_id)
+        assert applied != proposed
+
+    def test_deterministic_event_id_differs_by_action(self) -> None:
+        from src.events.publisher import _deterministic_event_id
+
+        a = _deterministic_event_id("moderation_action.applied", uuid4())
+        b = _deterministic_event_id("moderation_action.applied", uuid4())
+        assert a != b
+
+    @pytest.mark.asyncio
+    async def test_publish_moderation_action_applied_reuses_event_id_on_retry(
+        self, setup_nats
+    ) -> None:
+        """Calling publish_moderation_action_applied twice with the same action_id
+        produces identical event_ids — the webhook-layer dedup guarantee relies on this."""
+        from src.events.publisher import event_publisher
+
+        action_id = uuid4()
+        request_id = uuid4()
+        community_server_id = uuid4()
+
+        captured_event_ids: list[str] = []
+
+        original_publish_event = event_publisher.publish_event
+
+        async def capture(event, *args, **kwargs):
+            captured_event_ids.append(event.event_id)
+            return await original_publish_event(event, *args, **kwargs)
+
+        with patch.object(event_publisher, "publish_event", side_effect=capture):
+            await event_publisher.publish_moderation_action_applied(
+                action_id=action_id,
+                request_id=request_id,
+                action_type="hide",
+                community_server_id=community_server_id,
+            )
+            await event_publisher.publish_moderation_action_applied(
+                action_id=action_id,
+                request_id=request_id,
+                action_type="hide",
+                community_server_id=community_server_id,
+            )
+
+        assert len(captured_event_ids) == 2
+        assert captured_event_ids[0] == captured_event_ids[1]

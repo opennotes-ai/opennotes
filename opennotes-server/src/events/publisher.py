@@ -1,6 +1,7 @@
 import logging
 import secrets
 import time
+import uuid as uuid_module
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -48,6 +49,18 @@ from src.monitoring.metrics import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _deterministic_event_id(event_type: str, action_id: UUID) -> str:
+    """Derive a deterministic event_id from (event_type, action_id).
+
+    Retries of the same moderation-action publish produce identical event_ids,
+    letting downstream consumers (e.g. webhook_deliveries) dedupe at the DB
+    layer via a unique (webhook_id, event_id) constraint. Prefixing the event
+    type prevents collisions when the same action emits multiple event kinds
+    (applied + retro-review-started + confirmed).
+    """
+    return str(uuid_module.uuid5(uuid_module.NAMESPACE_URL, f"{event_type}:{action_id}"))
 
 
 class EventPublisher:
@@ -367,7 +380,7 @@ class EventPublisher:
         platform_action_id: str | None = None,
     ) -> str:
         event = ModerationActionAppliedEvent(
-            event_id=secrets.token_urlsafe(16),
+            event_id=_deterministic_event_id(EventType.MODERATION_ACTION_APPLIED.value, action_id),
             action_id=action_id,
             request_id=request_id,
             action_type=action_type,
