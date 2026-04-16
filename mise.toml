@@ -21,6 +21,7 @@ uv = "latest"
 node = "20"
 pnpm = "latest"
 yq = "latest"
+jq = "latest"
 
 [env]
 IMAGE_TAG = "local"
@@ -88,8 +89,9 @@ if [ -n "${DATABASE_URL:-}" ]; then
     exit 0
 fi
 
-# Resolve a running postgres container (compose-aware via shared helper)
-CONTAINER_NAME=$(mise run _db:get-container opennotes-postgres)
+# Resolve a running postgres container (compose-aware via shared helper).
+# Compose service name is `postgres`; legacy OpenTofu-managed literal name is `opennotes-postgres`.
+CONTAINER_NAME=$(mise run _db:get-container postgres opennotes-postgres)
 
 if [ -n "$CONTAINER_NAME" ]; then
     # Already running — assume ready (matches prior fast-path behavior)
@@ -133,14 +135,16 @@ exit 1
 '''
 
 [tasks."_db:get-container"]
-description = "Internal: Resolve running container name for a service (compose-aware, with anchored fallback)"
+description = "Internal: Resolve running container name (compose-aware lookup with anchored literal fallback)"
 dir = "{{config_root}}"
 quiet = true
 run = '''
 SERVICE="{{arg(name="service")}}"
+LITERAL="{{arg(name="literal")}}"
+[ -z "$LITERAL" ] && LITERAL="$SERVICE"
 
-# 1. Compose-aware lookup: respects COMPOSE_PROJECT_NAME and container_name overrides
-ID=$(docker compose ps -q "$SERVICE" 2>/dev/null | head -n1)
+# 1. Compose-aware lookup by service name (respects COMPOSE_PROJECT_NAME and container_name overrides)
+ID=$(docker compose ps -q "$SERVICE" 2>/dev/null | head -n1 || true)
 if [ -n "$ID" ]; then
     NAME=$(docker inspect "$ID" 2>/dev/null | jq -r '.[0].Name // empty' | sed 's|^/||')
     if [ -n "$NAME" ]; then
@@ -149,17 +153,18 @@ if [ -n "$ID" ]; then
     fi
 fi
 
-# 2. Anchored fallback for ad-hoc `docker run --name <service>` (possibly vestigial; kept defensively)
-ID=$(docker ps -q --filter "name=^${SERVICE}$" | head -n1)
+# 2. Anchored fallback for ad-hoc `docker run --name <literal>` containers (possibly vestigial; kept defensively)
+ID=$(docker ps -q --filter "name=^${LITERAL}$" | head -n1)
 if [ -n "$ID" ]; then
-    echo "$SERVICE"
+    echo "$LITERAL"
     exit 0
 fi
 
 # 3. Nothing running — emit empty stdout, exit 0 (caller decides)
 '''
 usage = '''
-arg "service" help="Compose service name (e.g. opennotes-server)"
+arg "service" help="Compose service name (e.g. opennotes-server, postgres)"
+arg "literal" help="Literal container name for anchored fallback (defaults to service name)" default=""
 '''
 
 [tasks."_db:get-prefix"]
@@ -392,7 +397,7 @@ arg "revision" description="Target revision (use 'head' for latest)" default="he
 description = "Open database shell"
 depends = ["_db:ensure-postgres"]
 run = '''
-NAME=$(mise run _db:get-container opennotes-postgres)
+NAME=$(mise run _db:get-container postgres opennotes-postgres)
 if [ -z "$NAME" ]; then
     echo "Error: No postgres container running." >&2
     exit 1
