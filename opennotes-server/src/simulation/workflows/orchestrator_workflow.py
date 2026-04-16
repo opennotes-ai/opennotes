@@ -413,6 +413,7 @@ def spawn_agents_step(
                         hashed_password="!sim-agent-only",
                         is_active=True,
                         is_service_account=True,
+                        principal_type="agent",
                     )
                     session.add(sim_user)
                     await session.flush()

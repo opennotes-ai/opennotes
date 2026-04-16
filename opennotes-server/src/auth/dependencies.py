@@ -5,6 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2Pas
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.auth import verify_token
+from src.auth.permissions import is_account_active
 from src.database import get_db
 from src.users.crud import get_user_by_id, verify_api_key
 from src.users.models import APIKey, User
@@ -51,7 +52,7 @@ async def get_current_user(
 async def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    if not current_user.is_active:
+    if not is_account_active(current_user):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -88,7 +89,7 @@ async def get_current_user_or_api_key(
     token_data = await verify_token(token)
     if token_data:
         user = await get_user_by_id(db, token_data.user_id)
-        if user and user.is_active:
+        if user and is_account_active(user):
             if user.tokens_valid_after is not None:
                 if token_data.iat is None:
                     raise HTTPException(

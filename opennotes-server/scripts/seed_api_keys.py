@@ -91,8 +91,8 @@ async def get_or_create_service_user(db: AsyncSession):
 
     result = await db.execute(
         text("""
-            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, created_at, updated_at)
-            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, NOW(), NOW())
+            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, principal_type, created_at, updated_at)
+            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, :principal_type, NOW(), NOW())
             RETURNING id
         """),
         {
@@ -104,6 +104,7 @@ async def get_or_create_service_user(db: AsyncSession):
             "is_active": True,
             "is_superuser": False,
             "is_service_account": True,
+            "principal_type": "system",
         },
     )
     user_id = result.scalar_one()
@@ -214,8 +215,8 @@ async def get_or_create_playground_user(db: AsyncSession):
 
     result = await db.execute(
         text("""
-            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, created_at, updated_at)
-            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, NOW(), NOW())
+            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, principal_type, created_at, updated_at)
+            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, :principal_type, NOW(), NOW())
             RETURNING id
         """),
         {
@@ -227,6 +228,7 @@ async def get_or_create_playground_user(db: AsyncSession):
             "is_active": True,
             "is_superuser": False,
             "is_service_account": False,
+            "principal_type": "agent",
         },
     )
     user_id = result.scalar_one()
@@ -266,8 +268,8 @@ async def get_or_create_platform_user(db: AsyncSession):
 
     result = await db.execute(
         text("""
-            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, created_at, updated_at)
-            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, NOW(), NOW())
+            INSERT INTO users (username, email, hashed_password, full_name, role, is_active, is_superuser, is_service_account, principal_type, created_at, updated_at)
+            VALUES (:username, :email, :hashed_password, :full_name, :role, :is_active, :is_superuser, :is_service_account, :principal_type, NOW(), NOW())
             RETURNING id
         """),
         {
@@ -279,6 +281,7 @@ async def get_or_create_platform_user(db: AsyncSession):
             "is_active": True,
             "is_superuser": False,
             "is_service_account": True,
+            "principal_type": "system",
         },
     )
     user_id = result.scalar_one()

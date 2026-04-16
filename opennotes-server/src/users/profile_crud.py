@@ -102,6 +102,7 @@ async def _get_or_create_platform_user(
         is_active=True,
         is_service_account=is_service_account,
         discord_id=discord_id,
+        principal_type="agent" if is_service_account else "human",
     )
     db.add(user)
     await db.flush()

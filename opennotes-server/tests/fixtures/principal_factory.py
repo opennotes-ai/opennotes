@@ -18,6 +18,7 @@ async def make_human_user(
     *,
     username: str | None = None,
     email: str | None = None,
+    platform_roles: list[str] | None = None,
 ) -> User:
     uid = uuid4()
     user = User(
@@ -29,6 +30,9 @@ async def make_human_user(
         is_service_account=False,
         is_superuser=False,
         role="user",
+        principal_type="human",
+        platform_roles=platform_roles if platform_roles is not None else [],
+        banned_at=None,
     )
     db.add(user)
     await db.flush()
@@ -50,6 +54,8 @@ async def make_agent_user(
         is_service_account=True,
         is_superuser=False,
         role="user",
+        principal_type="agent",
+        platform_roles=[],
     )
     db.add(user)
     await db.flush()
@@ -71,6 +77,8 @@ async def make_system_user(
         is_service_account=True,
         is_superuser=True,
         role="user",
+        principal_type="system",
+        platform_roles=["platform_admin"],
     )
     db.add(user)
     await db.flush()
@@ -81,7 +89,7 @@ async def make_platform_admin(
     db: AsyncSession,
     **kwargs,
 ) -> User:
-    user = await make_human_user(db, **kwargs)
+    user = await make_human_user(db, platform_roles=["platform_admin"], **kwargs)
     user.is_superuser = True
     await db.flush()
     return user

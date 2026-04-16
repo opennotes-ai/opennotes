@@ -52,7 +52,7 @@ from src.auth.models import (
     UserResponse,
     UserUpdate,
 )
-from src.auth.permissions import is_service_account
+from src.auth.permissions import is_account_active, is_service_account
 from src.auth.revocation import revoke_all_user_tokens, revoke_token
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
@@ -230,7 +230,7 @@ async def refresh_access_token(
             )
 
         user = await get_user_by_id(db, token_data.user_id)
-        if user is None or not user.is_active:
+        if user is None or not is_account_active(user):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found or inactive",

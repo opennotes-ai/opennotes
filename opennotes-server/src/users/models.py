@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 import pendulum
+import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -32,6 +33,14 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     is_service_account: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+
+    principal_type: Mapped[str | None] = mapped_column(
+        sa.String,
+        nullable=True,
+    )
+    platform_roles: Mapped[list] = mapped_column(sa.JSON, server_default="[]", default=list)
+    banned_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    ban_reason: Mapped[str | None] = mapped_column(sa.String, nullable=True)
 
     discord_id: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
 

@@ -17,6 +17,7 @@ def _make_user(
     user.is_superuser = is_superuser
     user.is_service_account = is_service_account
     user.is_active = is_active
+    user.banned_at = None
     return user
 
 
@@ -130,6 +131,7 @@ class TestServiceAccountPasswordLogin:
         mock_user = MagicMock(spec=User)
         mock_user.is_service_account = True
         mock_user.is_active = True
+        mock_user.banned_at = None
         mock_user.hashed_password = get_password_hash(password)
         mock_user.id = uuid4()
         mock_user.username = "test-service"
@@ -153,6 +155,7 @@ class TestServiceAccountPasswordLogin:
         mock_user = MagicMock(spec=User)
         mock_user.is_service_account = False
         mock_user.is_active = True
+        mock_user.banned_at = None
         mock_user.id = uuid4()
         mock_user.username = "regular-user"
         mock_user.hashed_password = "$2b$12$dummyhashvalue"

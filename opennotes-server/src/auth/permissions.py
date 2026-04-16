@@ -8,8 +8,37 @@ This module implements the permission hierarchy for admin access:
 4. Discord server admins (Manage Server permission) - fallback via Discord bot
 """
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.users.models import User
 from src.users.profile_models import CommunityMember, UserProfile
+
+
+def is_account_active(user: User) -> bool:
+    return user.is_active and user.banned_at is None
+
+
+def has_platform_role(user: User, role: str) -> bool:
+    return role in (user.platform_roles or [])
+
+
+def is_platform_admin(user: User) -> bool:
+    return has_platform_role(user, "platform_admin")
+
+
+def is_system_principal(user: User) -> bool:
+    return user.principal_type == "system"
+
+
+async def set_platform_admin(db: AsyncSession, user: User, is_admin: bool) -> None:
+    if is_admin:
+        if "platform_admin" not in (user.platform_roles or []):
+            user.platform_roles = (user.platform_roles or []) + ["platform_admin"]
+        user.is_superuser = True
+    else:
+        user.platform_roles = [r for r in (user.platform_roles or []) if r != "platform_admin"]
+        user.is_superuser = False
+    await db.flush()
 
 
 def is_service_account(user: User) -> bool:
