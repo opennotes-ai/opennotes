@@ -55,8 +55,6 @@ async def _find_or_create_user(
         hashed_password=get_password_hash(secrets.token_urlsafe(32)),
         full_name=display_name,
         is_active=True,
-        is_service_account=False,
-        role="user",
     )
     db.add(user)
     try:

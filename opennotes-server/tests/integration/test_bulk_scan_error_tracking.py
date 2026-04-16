@@ -196,9 +196,7 @@ class TestBulkScanErrorSummaryInResponse:
             username="error_tracking_admin_user",
             email="error_tracking_admin@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_error_tracking_admin",
         )
         db.add(user)

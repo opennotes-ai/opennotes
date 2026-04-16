@@ -27,9 +27,7 @@ class TestVibecheckDebugModeFromCommunityConfig:
             username="vibecheck_test_user",
             email="vibecheck_test@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
         )
         db.add(user)
         await db.commit()

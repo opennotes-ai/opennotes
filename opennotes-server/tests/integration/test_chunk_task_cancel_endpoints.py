@@ -89,10 +89,8 @@ async def opennotes_admin_user(db):
         username="opennotes_admin_cancel",
         email="admin_cancel@opennotes.local",
         hashed_password="hashed_password_placeholder",
-        role="admin",
+        platform_roles=["platform_admin"],
         is_active=True,
-        is_superuser=False,
-        is_service_account=False,
         discord_id="discord_admin_cancel",
     )
     db.add(user)

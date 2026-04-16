@@ -103,7 +103,6 @@ async def jsonapi_auth_headers(jsonapi_registered_user):
     token_data = {
         "sub": str(jsonapi_registered_user["id"]),
         "username": jsonapi_registered_user["username"],
-        "role": jsonapi_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

@@ -77,9 +77,7 @@ class TestLatestScanFixtures:
             username="latest_scan_admin_user",
             email="latest_scan_admin@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_latest_scan_admin",
         )
         db.add(user)
@@ -145,9 +143,7 @@ class TestLatestScanFixtures:
             username="latest_scan_regular_user",
             email="latest_scan_regular@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_latest_scan_regular",
         )
         db.add(user)
@@ -213,9 +209,7 @@ class TestLatestScanFixtures:
             username="latest_scan_other_admin",
             email="latest_scan_other_admin@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_latest_scan_other_admin",
         )
         db.add(user)

@@ -79,9 +79,7 @@ class TestBulkScanAINoteGenerationFixtures:
             username="ai_note_test_admin",
             email="ai_note_admin@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_ai_note_admin",
         )
         db.add(user)

@@ -45,9 +45,7 @@ async def test_login_success_creates_audit_log(db):
         email="loginuser@example.com",
         hashed_password=get_password_hash("SecurePass123!"),
         full_name="Login User",
-        role="user",
         is_active=True,
-        is_superuser=False,
     )
     db.add(user)
     await db.commit()
@@ -80,9 +78,7 @@ async def test_login_failure_wrong_password_creates_audit_log(db):
         email="failuser@example.com",
         hashed_password=get_password_hash("SecurePass123!"),
         full_name="Fail User",
-        role="user",
         is_active=True,
-        is_superuser=False,
     )
     db.add(user)
     await db.commit()
@@ -139,9 +135,7 @@ async def test_token_refresh_success_creates_audit_log(db):
         email="refreshuser@example.com",
         hashed_password=get_password_hash("SecurePass123!"),
         full_name="Refresh User",
-        role="user",
         is_active=True,
-        is_superuser=False,
     )
     db.add(user)
     await db.commit()
@@ -275,9 +269,7 @@ async def test_get_login_history_only_returns_own_logs(db, auth_headers_for_user
         email="otheruser@example.com",
         hashed_password=get_password_hash("SecurePass123!"),
         full_name="Other User",
-        role="user",
         is_active=True,
-        is_superuser=False,
     )
     db.add(other_user)
     await db.commit()

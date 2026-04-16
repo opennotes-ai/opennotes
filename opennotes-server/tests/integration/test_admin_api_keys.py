@@ -18,8 +18,7 @@ async def _create_service_account_with_api_key(scopes: list[str]) -> tuple[User,
             email="admin-svc@opennotes.local",
             hashed_password=get_password_hash("unused"),
             is_active=True,
-            is_service_account=True,
-            role="user",
+            principal_type="agent",
         )
         session.add(user)
         await session.flush()
@@ -50,8 +49,6 @@ async def _create_regular_user_with_api_key(scopes: list[str]) -> tuple[User, st
             email="regular@example.com",
             hashed_password=get_password_hash("unused"),
             is_active=True,
-            is_service_account=False,
-            role="user",
         )
         session.add(user)
         await session.flush()

@@ -15,7 +15,6 @@ async def test_playground_key_with_correct_prefix_authenticates(db_session):
         email="playground@opennotes.local",
         hashed_password=get_password_hash("unused"),
         is_active=True,
-        is_service_account=False,
     )
     db_session.add(user)
     await db_session.flush()
@@ -50,7 +49,6 @@ async def test_playground_key_without_prefix_fails_authentication(db_session):
         email="playground-no-prefix@opennotes.local",
         hashed_password=get_password_hash("unused"),
         is_active=True,
-        is_service_account=False,
     )
     db_session.add(user)
     await db_session.flush()

@@ -129,7 +129,6 @@ async def community_server_with_data(db):
         username=f"test_user_{uuid4().hex[:8]}",
         email=f"test_{uuid4().hex[:8]}@example.com",
         hashed_password="hashed_password_placeholder",
-        role="user",
         is_active=True,
         discord_id=f"discord_test_{uuid4().hex[:8]}",
     )

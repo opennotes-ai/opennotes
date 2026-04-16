@@ -39,9 +39,7 @@ class TestAdminRouterFixtures:
             username="regular_user_admin_test",
             email="regular_admin@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_regular_admin_test",
         )
         db.add(user)

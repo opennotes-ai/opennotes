@@ -236,9 +236,6 @@ class TestAdminEndpointScopeGate:
                 email=agent_email,
                 hashed_password="fakehash",
                 is_active=True,
-                is_service_account=True,
-                is_superuser=False,
-                role="user",
                 principal_type="agent",
                 platform_roles=[],
             )

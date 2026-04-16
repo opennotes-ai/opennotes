@@ -234,7 +234,7 @@ class TestChannelMessagesScopedKey:
                 email=f"svc_{unique}@example.com",
                 hashed_password="unused-placeholder",
                 is_active=True,
-                is_service_account=True,
+                principal_type="agent",
             )
             session.add(user)
             await session.flush()
