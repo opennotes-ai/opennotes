@@ -5,26 +5,25 @@ require "rails_helper"
 RSpec.describe Opennotes::AdminController, type: :request do
   let(:admin) { Fabricate(:admin) }
   let(:regular_user) { Fabricate(:user) }
+  let(:server_uuid) { "019d473a-0b2e-795b-b6a1-4919403313b8" }
 
   before do
     SiteSetting.opennotes_enabled = true
     SiteSetting.opennotes_server_url = "http://localhost:8000"
     SiteSetting.opennotes_api_key = "test-api-key"
-    PluginStore.set("discourse-opennotes", "community_server_id", "discourse-dev-1")
+    SiteSetting.opennotes_platform_community_server_id = "forum.example.com-abcd1234"
   end
 
   describe "GET /admin/plugins/discourse-opennotes/dashboard" do
     context "when logged in as staff" do
       before { sign_in(admin) }
 
-      it "resolves platform ID to UUID and returns scoring analysis" do
+      it "resolves UUID via CommunityServerResolver and returns scoring analysis" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(server_uuid)
         mock_client = instance_double(OpenNotes::Client)
         allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
         allow(mock_client).to receive(:get)
-          .with("/api/v2/community-servers/lookup", params: { platform: "discourse", platform_community_server_id: "discourse-dev-1" })
-          .and_return({ "data" => { "id" => "019d473a-0b2e-795b-b6a1-4919403313b8" } })
-        allow(mock_client).to receive(:get)
-          .with("/api/v2/community-servers/019d473a-0b2e-795b-b6a1-4919403313b8/scoring-analysis")
+          .with("/api/v2/community-servers/#{server_uuid}/scoring-analysis")
           .and_return({
             "activity" => { "total_posts" => 100 },
             "classification" => { "spam" => 10 },
@@ -40,8 +39,8 @@ RSpec.describe Opennotes::AdminController, type: :request do
         expect(body).to have_key("classification")
       end
 
-      it "returns 404 when community server is not registered in PluginStore" do
-        PluginStore.remove("discourse-opennotes", "community_server_id")
+      it "returns 404 when resolver cannot obtain a UUID" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(nil)
 
         get "/admin/plugins/discourse-opennotes/dashboard.json"
         expect(response).to have_http_status(:not_found)
@@ -50,21 +49,20 @@ RSpec.describe Opennotes::AdminController, type: :request do
         expect(body["error"]).to eq("Community server not registered")
       end
 
-      it "returns 404 when lookup returns no server" do
+      it "does not call the server-side lookup endpoint directly" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(server_uuid)
         mock_client = instance_double(OpenNotes::Client)
         allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
+        expect(mock_client).not_to receive(:get).with("/api/v2/community-servers/lookup", any_args)
         allow(mock_client).to receive(:get)
-          .with("/api/v2/community-servers/lookup", params: { platform: "discourse", platform_community_server_id: "discourse-dev-1" })
-          .and_return({ "data" => nil })
+          .with("/api/v2/community-servers/#{server_uuid}/scoring-analysis")
+          .and_return({})
 
         get "/admin/plugins/discourse-opennotes/dashboard.json"
-        expect(response).to have_http_status(:not_found)
-
-        body = response.parsed_body
-        expect(body["error"]).to eq("Community server not found on OpenNotes")
       end
 
       it "returns 503 when opennotes server is unavailable" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(server_uuid)
         mock_client = instance_double(OpenNotes::Client)
         allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
         allow(mock_client).to receive(:get).and_raise(Faraday::ConnectionFailed.new("connection refused"))

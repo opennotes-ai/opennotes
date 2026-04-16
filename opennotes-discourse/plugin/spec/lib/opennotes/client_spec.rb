@@ -26,6 +26,7 @@ RSpec.describe OpenNotes::Client do
   end
 
   before do
+    SiteSetting.opennotes_platform_community_server_id = "community.example.com-abcd1234"
     allow(Discourse).to receive(:current_hostname).and_return("community.example.com")
     client.instance_variable_set(:@connection, test_connection)
   end
@@ -54,7 +55,7 @@ RSpec.describe OpenNotes::Client do
         expect(env.request_headers["X-Adapter-Trust-Level"]).to eq("2")
         expect(env.request_headers["X-Adapter-Admin"]).to eq("false")
         expect(env.request_headers["X-Adapter-Moderator"]).to eq("false")
-        expect(env.request_headers["X-Adapter-Scope"]).to eq("community.example.com")
+        expect(env.request_headers["X-Adapter-Scope"]).to eq("community.example.com-abcd1234")
         [200, { "Content-Type" => "application/json" }, '{"data": []}']
       end
 

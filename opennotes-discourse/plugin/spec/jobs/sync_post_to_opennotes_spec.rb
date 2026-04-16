@@ -17,8 +17,7 @@ RSpec.describe Jobs::SyncPostToOpennotes do
     SiteSetting.opennotes_api_key = "test-api-key"
     SiteSetting.opennotes_monitored_categories = category.slug
 
-    PluginStore.set("discourse-opennotes", "community_server_id", community_server_id)
-
+    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(community_server_id)
     allow(OpenNotes::Client).to receive(:new).and_return(client)
   end
 
@@ -114,13 +113,20 @@ RSpec.describe Jobs::SyncPostToOpennotes do
       expect(client).not_to have_received(:post)
     end
 
-    it "skips when community_server_id is not set" do
-      PluginStore.remove("discourse-opennotes", "community_server_id")
+    it "skips when resolver returns no community_server_id" do
+      allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(nil)
       allow(client).to receive(:post)
 
       described_class.new.execute(post_id: post.id)
 
       expect(client).not_to have_received(:post)
+    end
+
+    it "calls CommunityServerResolver instead of reading PluginStore directly" do
+      expect(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(community_server_id)
+      allow(client).to receive(:post).and_return({ "data" => { "id" => "req-x" } })
+
+      described_class.new.execute(post_id: post.id)
     end
 
     it "skips scan-exempt posts" do

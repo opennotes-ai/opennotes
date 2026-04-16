@@ -17,9 +17,10 @@ module Jobs
       flagged_by = User.find_by(id: flagged_by_id)
       return unless flagged_by
 
-      client = self.class.opennotes_client
-      community_server_id = PluginStore.get("discourse-opennotes", "community_server_id")
+      community_server_id = OpenNotes::CommunityServerResolver.community_server_id
       return unless community_server_id
+
+      client = self.class.opennotes_client
 
       payload = build_flag_payload(post, community_server_id, flag_type, flagged_by)
       response = client.post("/api/v2/requests", body: payload, user: flagged_by)

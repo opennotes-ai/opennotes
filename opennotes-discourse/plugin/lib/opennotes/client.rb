@@ -74,7 +74,7 @@ module OpenNotes
           req.headers["X-Adapter-Trust-Level"] = user.trust_level.to_s
           req.headers["X-Adapter-Admin"] = user.admin?.to_s
           req.headers["X-Adapter-Moderator"] = user.moderator?.to_s
-          req.headers["X-Adapter-Scope"] = Discourse.current_hostname
+          req.headers["X-Adapter-Scope"] = SiteSetting.opennotes_platform_community_server_id
         end
 
         req.params = params if params&.any?

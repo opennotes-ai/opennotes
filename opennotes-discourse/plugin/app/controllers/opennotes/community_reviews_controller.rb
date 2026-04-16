@@ -9,21 +9,10 @@ module Opennotes
     SCORE_FIELDS = %w[score scoring_status current_rating].freeze
 
     def index
-      client = self.class.opennotes_client
-
-      begin
-        community_server = client.get("/api/v2/community-servers/lookup", params: {
-          "platform" => "discourse",
-          "platform_community_server_id" => Discourse.current_hostname,
-        })
-      rescue OpenNotes::ApiError => e
-        return render json: { data: [] } if e.status == 404
-        raise
-      end
-
-      server_id = community_server.dig("data", "id")
+      server_id = OpenNotes::CommunityServerResolver.community_server_id
       return render json: { data: [] } unless server_id
 
+      client = self.class.opennotes_client
       actions = client.get("/api/v2/moderation-actions", params: {
         "filter[community_server_id]" => server_id,
         "filter[action_state]" => "under_review",

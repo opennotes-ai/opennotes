@@ -29,17 +29,18 @@ RSpec.describe OpenNotes::UserMapper do
   end
 
   before do
+    SiteSetting.opennotes_platform_community_server_id = "community.example.com-abcd1234"
     allow(Discourse).to receive(:current_hostname).and_return("community.example.com")
   end
 
   describe "#lookup_or_create" do
-    it "calls the server lookup endpoint" do
+    it "calls the server lookup endpoint with slug as provider_scope" do
       expect(client).to receive(:get).with(
         "/api/v2/user-profiles/lookup",
         params: {
           platform: "discourse",
           platform_user_id: "42",
-          provider_scope: "community.example.com",
+          provider_scope: "community.example.com-abcd1234",
         },
         user: discourse_user,
       ).and_return(profile_response)
