@@ -78,6 +78,13 @@ def mock_user():
     """Create a mock authenticated user."""
     user = MagicMock()
     user.id = uuid4()
+    user.principal_type = "human"
+    user.platform_roles = []
+    user.banned_at = None
+    user.is_active = True
+    user.discord_id = None
+    user.email = f"test-{user.id.hex[:8]}@test.example"
+    user.username = f"test-{user.id.hex[:8]}"
     return user
 
 
