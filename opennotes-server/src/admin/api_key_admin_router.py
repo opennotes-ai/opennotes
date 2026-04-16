@@ -106,16 +106,13 @@ async def create_admin_api_key(
                 detail=f"Scope '{scope}' requires {required_role}",
             )
 
-    if "platform:adapter" in body.scopes:
-        existing_target = await db.execute(select(User).where(User.email == body.user_email))
-        existing_target_user = existing_target.scalar_one_or_none()
-        if existing_target_user and existing_target_user.principal_type == "human":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Convention-reserved: platform:adapter keys are only for agent/system principals",
-            )
-
     target_user = await _find_or_create_user(db, body.user_email, body.user_display_name)
+
+    if "platform:adapter" in body.scopes and target_user.principal_type == "human":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Convention-reserved: platform:adapter keys are only for agent/system principals",
+        )
 
     raw_key, key_prefix = APIKey.generate_key()
     key_hash = get_password_hash(raw_key)

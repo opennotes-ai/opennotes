@@ -258,6 +258,41 @@ class TestAdminEndpointScopeGate:
         data = response.json()
         assert "platform:adapter" in data["scopes"]
 
+    async def test_adapter_key_fresh_email_human_target_rejected(self):
+        """Brand-new email (no existing User row) must NOT slip through the convention check.
+        Before fix: _find_or_create_user creates the user as principal_type='human' AFTER the
+        check, allowing the human-bound adapter key. After fix: check runs after resolution."""
+        _, admin_key = await _make_platform_admin_api_key()
+
+        fresh_email = "fresh-no-existing@nowhere.example"
+
+        async with get_session_maker()() as session:
+            from sqlalchemy import select
+
+            existing = await session.execute(select(User).where(User.email == fresh_email))
+            assert existing.scalar_one_or_none() is None
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/api/v2/admin/api-keys",
+                json={
+                    "user_email": fresh_email,
+                    "user_display_name": "Fresh Human",
+                    "key_name": "fresh-adapter-key",
+                    "scopes": ["platform:adapter"],
+                },
+                headers={"X-API-Key": admin_key},
+            )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "convention-reserved" in response.json()["detail"].lower()
+
+        async with get_session_maker()() as session:
+            from sqlalchemy import select
+
+            post = await session.execute(select(User).where(User.email == fresh_email))
+            assert post.scalar_one_or_none() is None, "Transaction should have rolled back"
+
     async def test_agent_without_platform_admin_denied_admin_scopes(self):
         """Agent principal_type does NOT bypass scope tier rules.
         An agent without platform_admin cannot grant platform:adapter."""
