@@ -190,7 +190,6 @@ async def auth_headers_for_user(test_user_with_profile):
     token_data = {
         "sub": str(user.id),
         "username": user.username,
-        "role": user.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

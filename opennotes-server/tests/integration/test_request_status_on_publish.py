@@ -126,7 +126,7 @@ class TestRequestStatusOnPublish:
         async with get_session_maker()() as session:
             user_result = await session.execute(select(User).where(User.id == user_id))
             user = user_result.scalar_one()
-            user.is_service_account = True
+            user.principal_type = "agent"
             await session.commit()
 
         note, request, _community_server = await create_note_with_request()
@@ -134,7 +134,6 @@ class TestRequestStatusOnPublish:
         token_data = {
             "sub": str(registered_user["id"]),
             "username": registered_user["username"],
-            "role": registered_user["role"],
         }
         access_token = create_access_token(token_data)
         headers = {
@@ -174,7 +173,7 @@ class TestRequestStatusOnPublish:
         async with get_session_maker()() as session:
             user_result = await session.execute(select(User).where(User.id == user_id))
             user = user_result.scalar_one()
-            user.is_service_account = True
+            user.principal_type = "agent"
             await session.commit()
 
         async with get_session_maker()() as session:
@@ -214,7 +213,6 @@ class TestRequestStatusOnPublish:
         token_data = {
             "sub": str(registered_user["id"]),
             "username": registered_user["username"],
-            "role": registered_user["role"],
         }
         access_token = create_access_token(token_data)
         headers = {
@@ -250,7 +248,6 @@ class TestRequestStatusOnPublish:
         token_data = {
             "sub": str(registered_user["id"]),
             "username": registered_user["username"],
-            "role": registered_user["role"],
         }
         access_token = create_access_token(token_data)
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -325,7 +322,6 @@ class TestRequestStatusOnPublish:
         token_data = {
             "sub": str(registered_user["id"]),
             "username": registered_user["username"],
-            "role": registered_user["role"],
         }
         access_token = create_access_token(token_data)
         headers = {
@@ -375,7 +371,7 @@ class TestRequestStatusOnPublish:
         async with get_session_maker()() as session:
             user_result = await session.execute(select(User).where(User.id == user_id))
             user = user_result.scalar_one()
-            user.is_service_account = True
+            user.principal_type = "agent"
             await session.commit()
 
         note, request, _community_server = await create_note_with_request()
@@ -383,7 +379,6 @@ class TestRequestStatusOnPublish:
         token_data = {
             "sub": str(registered_user["id"]),
             "username": registered_user["username"],
-            "role": registered_user["role"],
         }
         access_token = create_access_token(token_data)
         headers = {
@@ -465,7 +460,6 @@ class TestRequestStatusOnNoteCreation:
         token_data = {
             "sub": str(registered_user["id"]),
             "username": registered_user["username"],
-            "role": registered_user["role"],
         }
         access_token = create_access_token(token_data)
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -530,7 +524,6 @@ class TestRequestStatusOnNoteCreation:
         token_data = {
             "sub": str(registered_user["id"]),
             "username": registered_user["username"],
-            "role": registered_user["role"],
         }
         access_token = create_access_token(token_data)
         headers = {"Authorization": f"Bearer {access_token}"}

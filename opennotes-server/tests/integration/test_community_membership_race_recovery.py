@@ -139,7 +139,6 @@ async def test_concurrent_verify_membership_recovers_membership_duplicate(setup_
         username="verify-service",
         email="verify-service@opennotes.local",
         hashed_password="unused",
-        role="admin",
     )
     mock_request = MagicMock()
     mock_request.headers = {}

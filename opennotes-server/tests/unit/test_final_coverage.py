@@ -112,7 +112,6 @@ async def test_users_crud_verify_api_key():
         username="test",
         email="test@test.com",
         hashed_password="hash",
-        role="user",
         is_active=True,
     )
     api_key = APIKey(
@@ -121,6 +120,7 @@ async def test_users_crud_verify_api_key():
         name="Test Key",
         key_hash=get_password_hash(raw_key),
         is_active=True,
+        scopes=["notes:read"],
         expires_at=datetime.now(UTC) + timedelta(days=30),
     )
 
@@ -221,9 +221,8 @@ async def test_create_user():
     assert user.username == "newuser"
     assert user.email == "new@example.com"
     assert user.full_name == "New User"
-    assert user.role == "user"
     assert user.is_active is True
-    assert user.is_superuser is False
+    assert user.principal_type == "human"
 
     assert mock_db.add.call_count == 2
     assert mock_db.flush.call_count == 2

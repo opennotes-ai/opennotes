@@ -75,9 +75,27 @@ def mock_service(mock_flagged_messages):
 
 @pytest.fixture
 def mock_user():
-    """Create a mock authenticated user."""
+    """Create a mock authenticated user.
+
+    principal_type='agent' so is_service_account() returns True. This lets
+    verify_scan_owner_or_admin_access short-circuit without calling
+    get_profile_id_from_user against the AsyncMock db (which returns a
+    coroutine that has no .profile_id attribute).
+
+    Previously (before Phase 1.2 heuristic replacement), the legacy
+    is_service_account() returned True for MagicMock users because
+    MagicMock.is_service_account was a truthy MagicMock attribute. These
+    tests verify JSON:API response formatting, not authz logic.
+    """
     user = MagicMock()
     user.id = uuid4()
+    user.principal_type = "agent"
+    user.platform_roles = []
+    user.banned_at = None
+    user.is_active = True
+    user.discord_id = None
+    user.email = f"test-{user.id.hex[:8]}@test.example"
+    user.username = f"test-{user.id.hex[:8]}"
     return user
 
 
@@ -344,8 +362,8 @@ class TestCreateNoteRequestsEndpoint:
                 new=AsyncMock(return_value=["req_1", "req_2"]),
             ),
             patch(
-                "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
-                new=AsyncMock(return_value=mock_community_member),
+                "src.bulk_content_scan.jsonapi_router.verify_scan_owner_or_admin_access",
+                new=AsyncMock(return_value=None),
             ),
         ):
             response = client.post(
@@ -378,8 +396,8 @@ class TestCreateNoteRequestsEndpoint:
                 new=AsyncMock(return_value=["req_1", "req_2", "req_3"]),
             ),
             patch(
-                "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
-                new=AsyncMock(return_value=mock_community_member),
+                "src.bulk_content_scan.jsonapi_router.verify_scan_owner_or_admin_access",
+                new=AsyncMock(return_value=None),
             ),
         ):
             response = client.post(
@@ -443,8 +461,8 @@ class TestCreateNoteRequestsEndpoint:
         mock_service.get_flagged_results = AsyncMock(return_value=[])
 
         with patch(
-            "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
-            new=AsyncMock(return_value=mock_community_member),
+            "src.bulk_content_scan.jsonapi_router.verify_scan_owner_or_admin_access",
+            new=AsyncMock(return_value=None),
         ):
             response = client.post(
                 f"/api/v2/bulk-scans/{scan_id}/note-requests",

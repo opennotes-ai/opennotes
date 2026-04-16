@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.admin.schemas import AdminAPIKeyCreate, AdminAPIKeyListItem, AdminAPIKeyResponse
 from src.auth.dependencies import get_current_user_or_api_key, require_scope_or_admin
-from src.auth.models import ALLOWED_API_KEY_SCOPES, RESTRICTED_SCOPES
+from src.auth.models import ALLOWED_API_KEY_SCOPES, PRIVILEGED_SCOPE_REQUIREMENTS, RESTRICTED_SCOPES
 from src.auth.password import get_password_hash
+from src.auth.permissions import has_platform_role
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.users.audit_helper import create_audit_log, extract_request_context
@@ -54,8 +55,6 @@ async def _find_or_create_user(
         hashed_password=get_password_hash(secrets.token_urlsafe(32)),
         full_name=display_name,
         is_active=True,
-        is_service_account=False,
-        role="user",
     )
     db.add(user)
     try:
@@ -92,14 +91,28 @@ async def create_admin_api_key(
             detail=f"Invalid scope(s): {', '.join(invalid)}",
         )
 
-    effective_scopes = [s for s in body.scopes if s not in RESTRICTED_SCOPES]
-    if not effective_scopes:
+    restricted = [s for s in body.scopes if s in RESTRICTED_SCOPES]
+    if restricted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No valid scopes remain after removing restricted scopes",
+            detail=f"Restricted scope(s) not allowed: {', '.join(sorted(restricted))}",
         )
 
+    for scope in body.scopes:
+        required_role = PRIVILEGED_SCOPE_REQUIREMENTS.get(scope)
+        if required_role and not has_platform_role(current_user, required_role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Scope '{scope}' requires {required_role}",
+            )
+
     target_user = await _find_or_create_user(db, body.user_email, body.user_display_name)
+
+    if "platform:adapter" in body.scopes and target_user.principal_type == "human":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Convention-reserved: platform:adapter keys are only for agent/system principals",
+        )
 
     raw_key, key_prefix = APIKey.generate_key()
     key_hash = get_password_hash(raw_key)
@@ -110,7 +123,7 @@ async def create_admin_api_key(
         key_prefix=key_prefix,
         key_hash=key_hash,
         is_active=True,
-        scopes=effective_scopes,
+        scopes=body.scopes,
         created_by_user_id=current_user.id,
     )
     db.add(api_key)
@@ -127,7 +140,7 @@ async def create_admin_api_key(
         details={
             "target_user_email": body.user_email,
             "key_name": body.key_name,
-            "scopes": effective_scopes,
+            "scopes": body.scopes,
         },
         ip_address=ip_address,
         user_agent=user_agent,

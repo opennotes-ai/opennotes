@@ -39,9 +39,7 @@ async def config_registered_user(config_test_user):
                     "username": existing_user.username,
                     "email": existing_user.email,
                     "full_name": existing_user.full_name,
-                    "role": existing_user.role,
                     "is_active": existing_user.is_active,
-                    "is_superuser": existing_user.is_superuser,
                 }
 
         assert response.status_code == 201, f"Failed to create config test user: {response.text}"
@@ -56,7 +54,6 @@ async def config_auth_headers(config_registered_user):
     token_data = {
         "sub": str(config_registered_user["id"]),
         "username": config_registered_user["username"],
-        "role": config_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

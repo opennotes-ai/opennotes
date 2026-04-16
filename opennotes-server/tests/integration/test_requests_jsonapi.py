@@ -110,9 +110,7 @@ async def requests_jsonapi_registered_user(
                 "username": user.username,
                 "email": user.email,
                 "full_name": user.full_name,
-                "role": user.role,
                 "is_active": user.is_active,
-                "is_superuser": user.is_superuser,
                 "discord_id": user.discord_id,
                 "profile_id": profile.id,
             }
@@ -126,7 +124,6 @@ async def requests_jsonapi_auth_headers(requests_jsonapi_registered_user):
     token_data = {
         "sub": str(requests_jsonapi_registered_user["id"]),
         "username": requests_jsonapi_registered_user["username"],
-        "role": requests_jsonapi_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

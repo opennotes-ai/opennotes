@@ -85,9 +85,7 @@ class TestAuthorizationFixtures:
             username="user_a_auth_test",
             email="user_a_auth@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_user_a_auth",
         )
         db.add(user)
@@ -158,9 +156,7 @@ class TestAuthorizationFixtures:
             username="user_b_auth_test",
             email="user_b_auth@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_user_b_auth",
         )
         db.add(user)
@@ -231,9 +227,7 @@ class TestAuthorizationFixtures:
             username="admin_a_auth_test",
             email="admin_a_auth@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_admin_a_auth",
         )
         db.add(user)
@@ -297,10 +291,8 @@ class TestAuthorizationFixtures:
             username="bot-service",
             email="bot@opennotes.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
+            principal_type="agent",
             is_active=True,
-            is_superuser=False,
-            is_service_account=True,
             discord_id="discord_bot_service",
         )
         db.add(user)
@@ -315,7 +307,6 @@ class TestAuthorizationFixtures:
         token_data: dict[str, str | int] = {
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
         access_token = create_access_token(token_data)
         return {"Authorization": f"Bearer {access_token}"}
@@ -575,9 +566,7 @@ class TestCrossCommunityAccessPrevention(TestAuthorizationFixtures):
             username="orphan_user_auth_test",
             email="orphan_auth@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_orphan_auth",
         )
         db.add(user)
@@ -586,7 +575,6 @@ class TestCrossCommunityAccessPrevention(TestAuthorizationFixtures):
         token_data: dict[str, str | int] = {
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
         access_token = create_access_token(token_data)
         headers = {"Authorization": f"Bearer {access_token}"}

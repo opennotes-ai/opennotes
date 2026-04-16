@@ -23,8 +23,7 @@ async def service_account() -> User:
             username="welcome-test-service",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_service_account=True,
+            principal_type="agent",
         )
         db.add(user)
         await db.commit()
@@ -40,7 +39,6 @@ async def service_account_headers(service_account: User):
     token_data = {
         "sub": str(service_account.id),
         "username": service_account.username,
-        "role": service_account.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

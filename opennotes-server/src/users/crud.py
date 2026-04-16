@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.models import APIKeyCreate, UserCreate, UserUpdate
 from src.auth.password import get_password_hash, verify_password
+from src.auth.permissions import is_account_active, is_service_account
 from src.events.nats_client import nats_client
 from src.users.audit_helper import create_audit_log
 from src.users.models import APIKey, AuditLog, RefreshToken, User
@@ -78,9 +79,8 @@ async def create_user(
         email=user_create.email,
         hashed_password=hashed_password,
         full_name=user_create.full_name,
-        role="user",
         is_active=True,
-        is_superuser=False,
+        principal_type="human",
     )
 
     db.add(user)
@@ -211,7 +211,7 @@ async def authenticate_user(
         await db.commit()
         return None
 
-    if user.is_service_account:
+    if is_service_account(user):
         _ = verify_password(password, DUMMY_PASSWORD_HASH)
         await asyncio.sleep(secrets.randbelow(41) / 1000)
         await create_audit_log(
@@ -247,7 +247,7 @@ async def authenticate_user(
         user.hashed_password = get_password_hash(password)
         await db.flush()
 
-    if not user.is_active:
+    if not is_account_active(user):
         await asyncio.sleep(secrets.randbelow(41) / 1000)
         await create_audit_log(
             db=db,
@@ -439,7 +439,7 @@ async def _publish_api_key_used_event(api_key_id: UUID) -> None:
     await nats_client.publish_fire_and_forget("events.api_key.used", event_data)
 
 
-async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] | None:  # noqa: PLR0911
+async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] | None:  # noqa: PLR0911, PLR0912
     """
     Verify an API key and return the associated APIKey and User.
 
@@ -481,7 +481,10 @@ async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] 
             if user is None:
                 return None
 
-            if not user.is_active:
+            if not is_account_active(user):
+                return None
+
+            if not api_key.is_scoped():
                 return None
 
             await _publish_api_key_used_event(api_key.id)
@@ -500,8 +503,11 @@ async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] 
             if api_key.expires_at and api_key.expires_at < pendulum.now("UTC"):
                 continue
 
+            if not api_key.is_scoped():
+                return None
+
             user = await get_user_by_id(db, api_key.user_id)
-            if user and user.is_active:
+            if user and is_account_active(user):
                 await _publish_api_key_used_event(api_key.id)
                 return api_key, user
 

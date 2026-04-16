@@ -14,9 +14,10 @@ pytestmark = pytest.mark.unit
 def mock_user():
     user = MagicMock()
     user.id = uuid4()
-    user.role = "admin"
-    user.is_superuser = False
+    user.principal_type = "human"
+    user.platform_roles = ["platform_admin"]
     user.is_active = True
+    user.banned_at = None
     user.api_keys = []
     return user
 

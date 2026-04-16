@@ -110,7 +110,6 @@ async def modaction_registered_user(modaction_community_server):
         return {
             "id": user.id,
             "username": user.username,
-            "role": user.role,
             "profile_id": profile.id,
         }
 
@@ -123,7 +122,6 @@ async def modaction_auth_headers(modaction_registered_user):
     token_data = {
         "sub": str(modaction_registered_user["id"]),
         "username": modaction_registered_user["username"],
-        "role": modaction_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

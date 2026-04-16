@@ -19,9 +19,9 @@ class TestUserRegistration:
             assert data["username"] == test_user_data["username"]
             assert data["email"] == test_user_data["email"]
             assert data["full_name"] == test_user_data["full_name"]
-            assert data["role"] == "user"
             assert data["is_active"] is True
-            assert data["is_superuser"] is False
+            assert data["principal_type"] == "human"
+            assert data["platform_roles"] == []
             assert "id" in data
             assert "created_at" in data
 
@@ -377,7 +377,6 @@ class TestIATValidation:
             payload = {
                 "sub": str(registered_user["id"]),
                 "username": registered_user["username"],
-                "role": registered_user["role"],
                 "exp": int((datetime.now(UTC) + timedelta(hours=2)).timestamp()),
                 "iat": int(future_time.timestamp()),  # Future iat
                 "jti": "test_jti",
@@ -565,7 +564,6 @@ class TestTokenRevocation:
             payload = {
                 "sub": str(registered_user["id"]),
                 "username": registered_user["username"],
-                "role": registered_user["role"],
                 "exp": int((datetime.now(UTC) - timedelta(hours=1)).timestamp()),
                 "iat": int(past_time.timestamp()),
                 "jti": "expired_token_jti",

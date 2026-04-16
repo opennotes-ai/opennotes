@@ -19,10 +19,10 @@ def _make_api_key(scopes: list[str] | None) -> APIKey:
 
 @pytest.mark.unit
 class TestAPIKeyHasScope:
-    def test_none_scopes_grants_any_scope(self):
+    def test_none_scopes_denies_any_scope(self):
         key = _make_api_key(scopes=None)
-        assert key.has_scope("simulations:read") is True
-        assert key.has_scope("anything:else") is True
+        assert key.has_scope("simulations:read") is False
+        assert key.has_scope("anything:else") is False
 
     def test_empty_list_denies_all_scopes(self):
         key = _make_api_key(scopes=[])

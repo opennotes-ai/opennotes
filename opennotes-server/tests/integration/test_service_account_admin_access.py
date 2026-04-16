@@ -45,7 +45,7 @@ async def service_account_user() -> User:
             username="discord-bot-service",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
+            principal_type="agent",
         )
         db.add(user)
         await db.commit()
@@ -65,7 +65,6 @@ async def regular_user() -> User:
             username="human_user",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
         )
         db.add(user)
         await db.commit()

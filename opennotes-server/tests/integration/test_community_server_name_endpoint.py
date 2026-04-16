@@ -18,8 +18,7 @@ async def name_service_account():
             username="name-test-service",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_service_account=True,
+            principal_type="agent",
         )
         db.add(user)
         await db.commit()
@@ -40,7 +39,6 @@ async def name_service_account_headers(name_service_account: User):
     token_data = {
         "sub": str(name_service_account.id),
         "username": name_service_account.username,
-        "role": name_service_account.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
@@ -56,8 +54,6 @@ async def name_regular_user():
             username="name-regular-user",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_service_account=False,
         )
         db.add(user)
         await db.commit()
@@ -78,7 +74,6 @@ async def name_regular_user_headers(name_regular_user: User):
     token_data = {
         "sub": str(name_regular_user.id),
         "username": name_regular_user.username,
-        "role": name_regular_user.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

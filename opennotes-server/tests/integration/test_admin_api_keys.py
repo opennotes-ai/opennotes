@@ -18,8 +18,7 @@ async def _create_service_account_with_api_key(scopes: list[str]) -> tuple[User,
             email="admin-svc@opennotes.local",
             hashed_password=get_password_hash("unused"),
             is_active=True,
-            is_service_account=True,
-            role="user",
+            principal_type="agent",
         )
         session.add(user)
         await session.flush()
@@ -50,8 +49,6 @@ async def _create_regular_user_with_api_key(scopes: list[str]) -> tuple[User, st
             email="regular@example.com",
             hashed_password=get_password_hash("unused"),
             is_active=True,
-            is_service_account=False,
-            role="user",
         )
         session.add(user)
         await session.flush()
@@ -136,7 +133,10 @@ class TestAdminAPIKeyCreate:
             )
             assert count == 1
 
-    async def test_post_strips_restricted_scopes_from_issued_key(self):
+    async def test_post_rejects_restricted_scopes_explicitly(self):
+        """Phase 1.4 (TASK-1451.07): RESTRICTED_SCOPES are no longer silently
+        stripped — the admin endpoint now returns 400 so callers can't assume
+        their request was honored."""
         _, admin_key = await _create_service_account_with_api_key(["api-keys:create"])
 
         transport = ASGITransport(app=app)
@@ -144,18 +144,15 @@ class TestAdminAPIKeyCreate:
             response = await client.post(
                 "/api/v2/admin/api-keys",
                 json={
-                    "user_email": "stripped@example.com",
-                    "user_display_name": "Stripped Scopes User",
-                    "key_name": "Should Strip Restricted",
+                    "user_email": "rejected@example.com",
+                    "user_display_name": "Rejected Scopes User",
+                    "key_name": "Should Reject Restricted",
                     "scopes": ["notes:read", "api-keys:create"],
                 },
                 headers={"X-API-Key": admin_key},
             )
 
-        assert response.status_code == status.HTTP_201_CREATED
-        data = response.json()
-        assert "api-keys:create" not in data["scopes"]
-        assert "notes:read" in data["scopes"]
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 @pytest.mark.asyncio

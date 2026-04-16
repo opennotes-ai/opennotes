@@ -200,8 +200,11 @@ def _resolve_from_jwt(request: Request) -> PlatformIdentity | None:
 
 def resolve_platform_identity(request: Request) -> PlatformIdentity | None:
     identity = _resolve_from_adapter_headers(request)
-    if identity is None:
+    if identity is not None:
+        source = "adapter_headers"
+    else:
         identity = _resolve_from_jwt(request)
+        source = "jwt" if identity is not None else None
 
     if identity is not None:
         span = trace.get_current_span()
@@ -209,6 +212,7 @@ def resolve_platform_identity(request: Request) -> PlatformIdentity | None:
         span.set_attribute("platform.user_id", identity.sub)
         span.set_attribute("platform.scope", identity.scope)
         span.set_attribute("platform.community_id", identity.community_id)
+        request.state.platform_identity_source = source
 
     return identity
 

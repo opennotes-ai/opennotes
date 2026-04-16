@@ -13,8 +13,7 @@ def override_auth():
     mock_user = MagicMock()
     mock_user.id = uuid4()
     mock_user.username = "webhook_test_user"
-    mock_user.role = "admin"
-    mock_user.is_superuser = True
+    mock_user.platform_roles = ["platform_admin"]
     mock_user.is_active = True
     app.dependency_overrides[get_current_user_or_api_key] = lambda: mock_user
     yield

@@ -19,8 +19,7 @@ async def fp_service_account():
             username="fp-test-service",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_service_account=True,
+            principal_type="agent",
         )
         db.add(user)
         await db.commit()
@@ -42,7 +41,6 @@ async def fp_service_account_headers(fp_service_account: User):
     token_data = {
         "sub": str(fp_service_account.id),
         "username": fp_service_account.username,
-        "role": fp_service_account.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
@@ -59,8 +57,6 @@ async def fp_regular_user():
             username="fp-regular-user",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_service_account=False,
         )
         db.add(user)
         await db.commit()
@@ -82,7 +78,6 @@ async def fp_regular_user_headers(fp_regular_user: User):
     token_data = {
         "sub": str(fp_regular_user.id),
         "username": fp_regular_user.username,
-        "role": fp_regular_user.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

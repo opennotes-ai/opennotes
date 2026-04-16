@@ -22,8 +22,7 @@ async def create_service_account():
             username="create-cs-service",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_service_account=True,
+            principal_type="agent",
         )
         db.add(user)
         await db.commit()
@@ -44,7 +43,6 @@ async def create_service_account_headers(create_service_account: User):
     token_data = {
         "sub": str(create_service_account.id),
         "username": create_service_account.username,
-        "role": create_service_account.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
@@ -60,8 +58,7 @@ async def create_superuser():
             username="create-cs-superuser",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_superuser=True,
+            platform_roles=["platform_admin"],
         )
         db.add(user)
         await db.commit()
@@ -82,7 +79,6 @@ async def create_superuser_headers(create_superuser: User):
     token_data = {
         "sub": str(create_superuser.id),
         "username": create_superuser.username,
-        "role": create_superuser.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
@@ -98,9 +94,6 @@ async def create_regular_user():
             username="create-cs-regular",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_service_account=False,
-            is_superuser=False,
         )
         db.add(user)
         await db.commit()
@@ -121,7 +114,6 @@ async def create_regular_user_headers(create_regular_user: User):
     token_data = {
         "sub": str(create_regular_user.id),
         "username": create_regular_user.username,
-        "role": create_regular_user.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

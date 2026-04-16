@@ -30,6 +30,7 @@ from src.auth.permissions import (
 
 @dataclass
 class FakeUser:
+    principal_type: str | None = "human"
     is_service_account: bool = False
     email: str | None = "user@example.com"
     username: str | None = "testuser"
@@ -47,26 +48,7 @@ class FakeCommunityMember:
     banned_at: datetime | None = None
 
 
-service_account_flags = st.fixed_dictionaries(
-    {
-        "is_service_account": st.booleans(),
-        "email_is_service": st.booleans(),
-        "username_is_service": st.booleans(),
-    }
-)
-
-
-def make_user(
-    is_sa: bool = False,
-    email_is_service: bool = False,
-    username_is_service: bool = False,
-) -> FakeUser:
-    return FakeUser(
-        is_service_account=is_sa,
-        email="bot@opennotes.local" if email_is_service else "user@example.com",
-        username="deploy-service" if username_is_service else "regularuser",
-    )
-
+principal_type_strategy = st.sampled_from(["human", "agent", "system", None])
 
 role_strategy = st.sampled_from(["admin", "moderator", "member", "viewer", "guest"])
 
@@ -80,51 +62,33 @@ banned_at_strategy = st.one_of(
 )
 
 
+def make_sa_user() -> FakeUser:
+    return FakeUser(principal_type="agent")
+
+
+def make_human_user() -> FakeUser:
+    return FakeUser(principal_type="human")
+
+
 class TestIsServiceAccountProperties:
-    """Property tests for is_service_account detection."""
-
-    @given(sa_flags=service_account_flags)
-    def test_any_service_indicator_grants_service_status(self, sa_flags):
-        """If ANY of the 3 indicators is True, user is a service account."""
-        user = make_user(
-            is_sa=sa_flags["is_service_account"],
-            email_is_service=sa_flags["email_is_service"],
-            username_is_service=sa_flags["username_is_service"],
-        )
-
+    @given(principal_type=principal_type_strategy)
+    def test_service_account_iff_agent_or_system(self, principal_type):
+        user = FakeUser(principal_type=principal_type)
         result = is_service_account(user)
+        assert result == (principal_type in ("agent", "system"))
 
-        any_flag_set = (
-            sa_flags["is_service_account"]
-            or sa_flags["email_is_service"]
-            or sa_flags["username_is_service"]
-        )
-        assert result == any_flag_set
+    def test_human_principal_type_is_not_service_account(self):
+        user = FakeUser(principal_type="human")
+        assert not is_service_account(user)
 
-    @given(sa_flags=service_account_flags)
-    def test_no_service_indicator_denies_service_status(self, sa_flags):
-        """If NONE of the 3 indicators is True, user is NOT a service account."""
-        assume(
-            not sa_flags["is_service_account"]
-            and not sa_flags["email_is_service"]
-            and not sa_flags["username_is_service"]
-        )
-
-        user = make_user(
-            is_sa=False,
-            email_is_service=False,
-            username_is_service=False,
-        )
-
+    def test_none_principal_type_is_not_service_account(self):
+        user = FakeUser(principal_type=None)
         assert not is_service_account(user)
 
 
 class TestIsCommunityAdminProperties:
-    """Property tests for community admin role detection."""
-
     @given(role=role_strategy)
     def test_admin_and_moderator_are_community_admins(self, role):
-        """Only 'admin' and 'moderator' roles grant community admin status."""
         member = FakeCommunityMember(role=role)
         result = is_community_admin(member)
         assert result == (role in ["admin", "moderator"])
@@ -158,8 +122,7 @@ class TestHierarchyTransitivityProperties:
         banned_at,
         has_membership,
     ):
-        """Service accounts (tier 1) always have both admin and member access."""
-        user = FakeUser(is_service_account=True, email="regular@example.com", username="regular")
+        user = FakeUser(principal_type="agent")
         profile = FakeUserProfile(is_opennotes_admin=is_on_admin)
         membership = (
             FakeCommunityMember(role=role, is_active=is_active, banned_at=banned_at)
@@ -183,8 +146,7 @@ class TestHierarchyTransitivityProperties:
         banned_at,
         has_membership,
     ):
-        """OpenNotes admins (tier 2) always have both admin and member access."""
-        user = FakeUser(is_service_account=False, email="user@example.com", username="regular")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=True)
         membership = (
             FakeCommunityMember(role=role, is_active=is_active, banned_at=banned_at)
@@ -206,13 +168,7 @@ class TestHierarchyTransitivityProperties:
         is_active,
         banned_at,
     ):
-        """Community admin/moderator role grants admin access but member access
-        depends on is_active and banned_at independently.
-
-        This documents a design choice: admin and member access are checked
-        with different criteria at the community membership level.
-        """
-        user = FakeUser(is_service_account=False, email="user@example.com", username="regular")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=False)
         membership = FakeCommunityMember(role=role, is_active=is_active, banned_at=banned_at)
 
@@ -230,9 +186,7 @@ class TestHierarchyTransitivityProperties:
         )
 
     @given(
-        is_sa=st.booleans(),
-        email_is_service=st.booleans(),
-        username_is_service=st.booleans(),
+        principal_type=principal_type_strategy,
         is_on_admin=st.booleans(),
         role=role_strategy,
         is_active=st.booleans(),
@@ -241,19 +195,14 @@ class TestHierarchyTransitivityProperties:
     )
     def test_service_account_outranks_opennotes_admin(
         self,
-        is_sa,
-        email_is_service,
-        username_is_service,
+        principal_type,
         is_on_admin,
         role,
         is_active,
         banned_at,
         has_membership,
     ):
-        """Service account access is independent of opennotes_admin status."""
-        user = make_user(
-            is_sa=is_sa, email_is_service=email_is_service, username_is_service=username_is_service
-        )
+        user = FakeUser(principal_type=principal_type)
         user_is_sa = is_service_account(user)
 
         if user_is_sa:
@@ -269,8 +218,6 @@ class TestHierarchyTransitivityProperties:
 
 
 class TestServiceAccountSupremacyProperties:
-    """Property tests verifying service accounts always have access."""
-
     @given(
         is_on_admin=st.booleans(),
         role=role_strategy,
@@ -279,7 +226,7 @@ class TestServiceAccountSupremacyProperties:
         has_membership=st.booleans(),
         has_discord_manage_server=st.booleans(),
     )
-    def test_service_account_flag_always_grants_admin_access(
+    def test_agent_principal_always_grants_admin_access(
         self,
         is_on_admin,
         role,
@@ -288,8 +235,7 @@ class TestServiceAccountSupremacyProperties:
         has_membership,
         has_discord_manage_server,
     ):
-        """Service account (via flag) always gets admin access regardless of other state."""
-        user = FakeUser(is_service_account=True, email="regular@example.com", username="regular")
+        user = FakeUser(principal_type="agent")
         profile = FakeUserProfile(is_opennotes_admin=is_on_admin)
         membership = (
             FakeCommunityMember(role=role, is_active=is_active, banned_at=banned_at)
@@ -310,19 +256,18 @@ class TestServiceAccountSupremacyProperties:
         is_active=st.booleans(),
         banned_at=banned_at_strategy,
         has_membership=st.booleans(),
+        has_discord_manage_server=st.booleans(),
     )
-    def test_service_account_email_always_grants_admin_access(
+    def test_system_principal_always_grants_admin_access(
         self,
         is_on_admin,
         role,
         is_active,
         banned_at,
         has_membership,
+        has_discord_manage_server,
     ):
-        """Service account (via email) always gets admin access regardless of other state."""
-        user = FakeUser(
-            is_service_account=False, email="worker@opennotes.local", username="regular"
-        )
+        user = FakeUser(principal_type="system")
         profile = FakeUserProfile(is_opennotes_admin=is_on_admin)
         membership = (
             FakeCommunityMember(role=role, is_active=is_active, banned_at=banned_at)
@@ -330,35 +275,12 @@ class TestServiceAccountSupremacyProperties:
             else None
         )
 
-        assert has_community_admin_access(membership=membership, profile=profile, user=user)
-
-    @given(
-        is_on_admin=st.booleans(),
-        role=role_strategy,
-        is_active=st.booleans(),
-        banned_at=banned_at_strategy,
-        has_membership=st.booleans(),
-    )
-    def test_service_account_username_always_grants_admin_access(
-        self,
-        is_on_admin,
-        role,
-        is_active,
-        banned_at,
-        has_membership,
-    ):
-        """Service account (via username) always gets admin access regardless of other state."""
-        user = FakeUser(
-            is_service_account=False, email="regular@example.com", username="deploy-service"
+        assert has_community_admin_access(
+            membership=membership,
+            profile=profile,
+            user=user,
+            has_discord_manage_server=has_discord_manage_server,
         )
-        profile = FakeUserProfile(is_opennotes_admin=is_on_admin)
-        membership = (
-            FakeCommunityMember(role=role, is_active=is_active, banned_at=banned_at)
-            if has_membership
-            else None
-        )
-
-        assert has_community_admin_access(membership=membership, profile=profile, user=user)
 
     @given(
         is_on_admin=st.booleans(),
@@ -371,8 +293,7 @@ class TestServiceAccountSupremacyProperties:
         has_membership,
         banned_at,
     ):
-        """Service accounts get member access even without membership or when banned."""
-        user = FakeUser(is_service_account=True)
+        user = FakeUser(principal_type="agent")
         profile = FakeUserProfile(is_opennotes_admin=is_on_admin)
         membership = (
             FakeCommunityMember(is_active=False, banned_at=banned_at) if has_membership else None
@@ -382,8 +303,6 @@ class TestServiceAccountSupremacyProperties:
 
 
 class TestBannedMemberDenialProperties:
-    """Property tests verifying banned members are denied member access."""
-
     @given(
         role=role_strategy,
         is_active=st.booleans(),
@@ -394,8 +313,7 @@ class TestBannedMemberDenialProperties:
         ),
     )
     def test_banned_member_denied_member_access(self, role, is_active, ban_time):
-        """A member with banned_at set is denied member access, even if is_active=True."""
-        user = FakeUser(is_service_account=False, email="user@example.com", username="regular")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=False)
         membership = FakeCommunityMember(role=role, is_active=is_active, banned_at=ban_time)
 
@@ -427,7 +345,7 @@ class TestBannedMemberDenialProperties:
         admin access is revoked by changing role, not by banning).
         """
         assume(role in ["admin", "moderator"])
-        user = FakeUser(is_service_account=False, email="user@example.com", username="regular")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=False)
         membership = FakeCommunityMember(role=role, is_active=True, banned_at=ban_time)
 
@@ -444,14 +362,11 @@ class TestBannedMemberDenialProperties:
 
 
 class TestNullMembershipDenialProperties:
-    """Property tests verifying NULL membership blocks non-admin users."""
-
     @given(
         has_discord_manage_server=st.booleans(),
     )
     def test_null_membership_no_admin_no_sa_denies_member_access(self, has_discord_manage_server):
-        """Regular users without membership are denied member access."""
-        user = FakeUser(is_service_account=False, email="user@example.com", username="regular")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=False)
 
         result = has_community_member_access(
@@ -466,10 +381,9 @@ class TestNullMembershipDenialProperties:
         has_discord_manage_server=st.booleans(),
     )
     def test_null_membership_no_admin_no_sa_denies_admin_access(self, has_discord_manage_server):
-        """Regular users without membership and without Discord perms get no admin access."""
         assume(not has_discord_manage_server)
 
-        user = FakeUser(is_service_account=False, email="user@example.com", username="regular")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=False)
 
         result = has_community_admin_access(
@@ -482,22 +396,19 @@ class TestNullMembershipDenialProperties:
         assert not result, "NULL membership should deny admin access for regular users"
 
     def test_null_membership_with_opennotes_admin_grants_member_access(self):
-        """OpenNotes admins get member access even without membership."""
-        user = FakeUser(is_service_account=False, email="admin@example.com", username="onadmin")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=True)
 
         assert has_community_member_access(membership=None, profile=profile, user=user)
 
     def test_null_membership_with_opennotes_admin_grants_admin_access(self):
-        """OpenNotes admins get admin access even without membership."""
-        user = FakeUser(is_service_account=False, email="admin@example.com", username="onadmin")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=True)
 
         assert has_community_admin_access(membership=None, profile=profile, user=user)
 
     def test_null_membership_with_service_account_grants_both(self):
-        """Service accounts get both admin and member access without membership."""
-        user = FakeUser(is_service_account=True)
+        user = FakeUser(principal_type="agent")
         profile = FakeUserProfile(is_opennotes_admin=False)
 
         assert has_community_admin_access(membership=None, profile=profile, user=user)
@@ -505,12 +416,9 @@ class TestNullMembershipDenialProperties:
 
 
 class TestInactiveMemberProperties:
-    """Property tests for inactive (is_active=False) membership."""
-
     @given(role=role_strategy)
     def test_inactive_non_banned_member_denied_member_access(self, role):
-        """Inactive members (is_active=False, no ban) are denied member access."""
-        user = FakeUser(is_service_account=False, email="user@example.com", username="regular")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=False)
         membership = FakeCommunityMember(role=role, is_active=False, banned_at=None)
 
@@ -524,15 +432,12 @@ class TestInactiveMemberProperties:
 
 
 class TestNoneArgumentProperties:
-    """Property tests for None user/profile arguments."""
-
     @given(
         role=role_strategy,
         is_active=st.booleans(),
         banned_at=banned_at_strategy,
     )
     def test_none_user_none_profile_falls_through_to_membership(self, role, is_active, banned_at):
-        """With user=None and profile=None, only membership state matters."""
         membership = FakeCommunityMember(role=role, is_active=is_active, banned_at=banned_at)
 
         admin_result = has_community_admin_access(
@@ -550,14 +455,11 @@ class TestNoneArgumentProperties:
         assert member_result == (is_active and banned_at is None)
 
     def test_all_none_denies_everything(self):
-        """With all None arguments, both admin and member access are denied."""
         assert not has_community_admin_access(membership=None, profile=None, user=None)
         assert not has_community_member_access(membership=None, profile=None, user=None)
 
 
 class TestDiscordManageServerProperties:
-    """Property tests for Discord Manage Server permission interactions."""
-
     @given(
         role=role_strategy,
         is_active=st.booleans(),
@@ -567,8 +469,7 @@ class TestDiscordManageServerProperties:
     def test_discord_manage_server_grants_admin_without_membership(
         self, role, is_active, banned_at, has_membership
     ):
-        """Discord Manage Server permission grants admin access regardless of membership."""
-        user = FakeUser(is_service_account=False, email="user@example.com", username="regular")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=False)
         membership = (
             FakeCommunityMember(role=role, is_active=is_active, banned_at=banned_at)
@@ -596,7 +497,7 @@ class TestDiscordManageServerProperties:
         A user with Manage Server but no active membership is denied member access
         (unless they are also a service account or opennotes admin).
         """
-        user = FakeUser(is_service_account=False, email="user@example.com", username="regular")
+        user = FakeUser(principal_type="human")
         profile = FakeUserProfile(is_opennotes_admin=False)
         membership = FakeCommunityMember(role="member", is_active=is_active, banned_at=banned_at)
 

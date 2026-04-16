@@ -80,9 +80,7 @@ class TestBulkScanAuthorizationFixtures:
             username="bulk_scan_regular_user_a",
             email="bulk_scan_regular_a@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_bulk_scan_regular_a",
         )
         db.add(user)
@@ -150,9 +148,7 @@ class TestBulkScanAuthorizationFixtures:
             username="bulk_scan_admin_user_a",
             email="bulk_scan_admin_a@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_bulk_scan_admin_a",
         )
         db.add(user)
@@ -220,9 +216,7 @@ class TestBulkScanAuthorizationFixtures:
             username="bulk_scan_admin_user_b",
             email="bulk_scan_admin_b@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_bulk_scan_admin_b",
         )
         db.add(user)
@@ -284,10 +278,8 @@ class TestBulkScanAuthorizationFixtures:
             username="bulk-scan-service",
             email="bulk-scan-bot@opennotes.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
+            principal_type="agent",
             is_active=True,
-            is_superuser=False,
-            is_service_account=True,
             discord_id="discord_bulk_scan_bot_service",
         )
         db.add(user)
@@ -302,7 +294,6 @@ class TestBulkScanAuthorizationFixtures:
         token_data = {
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
         access_token = create_access_token(token_data)
         return {"Authorization": f"Bearer {access_token}"}
@@ -766,9 +757,7 @@ class TestNoteRequestScanOwnerAuthorization(TestBulkScanAuthorizationFixtures):
             username="bulk_scan_another_regular_user_a",
             email="bulk_scan_another_regular_a@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_bulk_scan_another_regular_a",
         )
         db.add(user)

@@ -20,9 +20,9 @@ class UserResponse:
         username (str):
         email (str):
         full_name (None | str):
-        role (str):
         is_active (bool):
-        is_superuser (bool):
+        principal_type (None | str):
+        platform_roles (list[str]):
         created_at (datetime.datetime):
         updated_at (datetime.datetime):
     """
@@ -31,9 +31,9 @@ class UserResponse:
     username: str
     email: str
     full_name: None | str
-    role: str
     is_active: bool
-    is_superuser: bool
+    principal_type: None | str
+    platform_roles: list[str]
     created_at: datetime.datetime
     updated_at: datetime.datetime
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -48,11 +48,12 @@ class UserResponse:
         full_name: None | str
         full_name = self.full_name
 
-        role = self.role
-
         is_active = self.is_active
 
-        is_superuser = self.is_superuser
+        principal_type: None | str
+        principal_type = self.principal_type
+
+        platform_roles = self.platform_roles
 
         created_at = self.created_at.isoformat()
 
@@ -66,9 +67,9 @@ class UserResponse:
                 "username": username,
                 "email": email,
                 "full_name": full_name,
-                "role": role,
                 "is_active": is_active,
-                "is_superuser": is_superuser,
+                "principal_type": principal_type,
+                "platform_roles": platform_roles,
                 "created_at": created_at,
                 "updated_at": updated_at,
             }
@@ -92,11 +93,16 @@ class UserResponse:
 
         full_name = _parse_full_name(d.pop("full_name"))
 
-        role = d.pop("role")
-
         is_active = d.pop("is_active")
 
-        is_superuser = d.pop("is_superuser")
+        def _parse_principal_type(data: object) -> None | str:
+            if data is None:
+                return data
+            return cast(None | str, data)
+
+        principal_type = _parse_principal_type(d.pop("principal_type"))
+
+        platform_roles = cast(list[str], d.pop("platform_roles"))
 
         created_at = isoparse(d.pop("created_at"))
 
@@ -107,9 +113,9 @@ class UserResponse:
             username=username,
             email=email,
             full_name=full_name,
-            role=role,
             is_active=is_active,
-            is_superuser=is_superuser,
+            principal_type=principal_type,
+            platform_roles=platform_roles,
             created_at=created_at,
             updated_at=updated_at,
         )

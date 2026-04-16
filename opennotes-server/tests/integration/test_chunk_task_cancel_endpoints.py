@@ -28,7 +28,6 @@ def _create_auth_headers(user_data: dict) -> dict:
     token_data = {
         "sub": str(user.id),
         "username": user.username,
-        "role": user.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
@@ -44,10 +43,8 @@ async def service_account_user(db):
         username="chunk-cancel-service-account",
         email="chunk-cancel-service@opennotes.local",
         hashed_password="hashed_password_placeholder",
-        role="user",
+        principal_type="agent",
         is_active=True,
-        is_superuser=False,
-        is_service_account=True,
         discord_id="discord_chunk_cancel_service",
     )
     db.add(user)
@@ -67,10 +64,7 @@ async def regular_user(db):
         username="regular_cancel_user",
         email="regular_cancel@example.com",
         hashed_password="hashed_password_placeholder",
-        role="user",
         is_active=True,
-        is_superuser=False,
-        is_service_account=False,
         discord_id="discord_regular_cancel",
     )
     db.add(user)
@@ -95,10 +89,8 @@ async def opennotes_admin_user(db):
         username="opennotes_admin_cancel",
         email="admin_cancel@opennotes.local",
         hashed_password="hashed_password_placeholder",
-        role="admin",
+        platform_roles=["platform_admin"],
         is_active=True,
-        is_superuser=False,
-        is_service_account=False,
         discord_id="discord_admin_cancel",
     )
     db.add(user)

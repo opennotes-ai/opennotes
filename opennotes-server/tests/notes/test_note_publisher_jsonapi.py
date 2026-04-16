@@ -112,7 +112,6 @@ async def note_publisher_jsonapi_registered_user(
                 "username": user.username,
                 "email": user.email,
                 "full_name": user.full_name,
-                "role": user.role,
                 "is_active": user.is_active,
                 "is_superuser": user.is_superuser,
                 "discord_id": user.discord_id,
@@ -128,7 +127,6 @@ async def note_publisher_jsonapi_auth_headers(note_publisher_jsonapi_registered_
     token_data = {
         "sub": str(note_publisher_jsonapi_registered_user["id"]),
         "username": note_publisher_jsonapi_registered_user["username"],
-        "role": note_publisher_jsonapi_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
@@ -226,7 +224,6 @@ async def note_publisher_jsonapi_unauth_registered_user(note_publisher_jsonapi_u
                 "username": user.username,
                 "email": user.email,
                 "full_name": user.full_name,
-                "role": user.role,
                 "is_active": user.is_active,
                 "is_superuser": user.is_superuser,
                 "discord_id": user.discord_id,
@@ -242,7 +239,6 @@ async def note_publisher_jsonapi_unauth_headers(note_publisher_jsonapi_unauth_re
     token_data = {
         "sub": str(note_publisher_jsonapi_unauth_registered_user["id"]),
         "username": note_publisher_jsonapi_unauth_registered_user["username"],
-        "role": note_publisher_jsonapi_unauth_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

@@ -3936,7 +3936,7 @@ export interface components {
             expires_in_days?: number | null;
             /**
              * Scopes
-             * @description List of permission scopes. None means unrestricted access.
+             * @description List of permission scopes. None is treated as empty (no access).
              */
             scopes?: string[] | null;
         };
@@ -10529,12 +10529,12 @@ export interface components {
             email: string;
             /** Full Name */
             full_name: string | null;
-            /** Role */
-            role: string;
             /** Is Active */
             is_active: boolean;
-            /** Is Superuser */
-            is_superuser: boolean;
+            /** Principal Type */
+            principal_type: string | null;
+            /** Platform Roles */
+            platform_roles: string[];
             /**
              * Created At
              * Format: date-time

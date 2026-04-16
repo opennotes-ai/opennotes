@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 import pendulum
+import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -25,13 +26,17 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    role: Mapped[str] = mapped_column(
-        String(50), nullable=False, default="user", server_default="user"
-    )
-
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
-    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    is_service_account: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+
+    principal_type: Mapped[str] = mapped_column(
+        sa.String,
+        nullable=False,
+        default="human",
+        server_default="human",
+    )
+    platform_roles: Mapped[list] = mapped_column(JSONB, server_default="[]", default=list)
+    banned_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    ban_reason: Mapped[str | None] = mapped_column(sa.String, nullable=True)
 
     discord_id: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
 
@@ -48,8 +53,18 @@ class User(Base):
         onupdate=lambda: pendulum.now("UTC"),
     )
 
+    __table_args__ = (
+        Index("idx_users_principal_type", "principal_type"),
+        Index(
+            "idx_users_banned_at",
+            "banned_at",
+            postgresql_where=sa.text("banned_at IS NOT NULL"),
+        ),
+        Index("idx_users_platform_roles_gin", "platform_roles", postgresql_using="gin"),
+    )
+
     def __repr__(self) -> str:
-        return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
+        return f"<User(id={self.id}, username='{self.username}', principal_type='{self.principal_type}')>"
 
 
 class RefreshToken(Base):
@@ -108,7 +123,9 @@ class APIKey(Base):
     key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
-    scopes: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True, default=None)
+    scopes: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"), default=list
+    )
     created_by_user_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -122,8 +139,8 @@ class APIKey(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def has_scope(self, scope: str) -> bool:
-        if self.scopes is None:
-            return True
+        if self.scopes is None or len(self.scopes) == 0:
+            return False
         return scope in self.scopes
 
     def is_scoped(self) -> bool:

@@ -18,9 +18,10 @@ def _mock_admin_user():
     user = MagicMock()
     user.id = uuid4()
     user.username = "admin_test"
-    user.role = "admin"
-    user.is_superuser = True
+    user.principal_type = "human"
+    user.platform_roles = ["platform_admin"]
     user.is_active = True
+    user.banned_at = None
     return user
 
 
@@ -28,10 +29,10 @@ def _mock_regular_user():
     user = MagicMock()
     user.id = uuid4()
     user.username = "regular_test"
-    user.role = "user"
-    user.is_superuser = False
-    user.is_service_account = False
+    user.principal_type = "human"
+    user.platform_roles = []
     user.is_active = True
+    user.banned_at = None
     return user
 
 

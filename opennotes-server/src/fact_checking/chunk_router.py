@@ -33,6 +33,7 @@ from src.auth.community_dependencies import (
     verify_community_admin_by_uuid,
 )
 from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.permissions import is_platform_admin, is_service_account
 from src.batch_jobs.constants import (
     RECHUNK_FACT_CHECK_JOB_TYPE,
     RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
@@ -423,7 +424,7 @@ async def cancel_rechunk_job(
             db=db,
             request=request,
         )
-    elif not getattr(user, "is_service_account", False):
+    elif not is_service_account(user) and not is_platform_admin(user):
         profile_id = await get_profile_id_from_user(db, user)
         profile = await get_profile_by_id(db, profile_id) if profile_id else None
         if not profile or not profile.is_opennotes_admin:

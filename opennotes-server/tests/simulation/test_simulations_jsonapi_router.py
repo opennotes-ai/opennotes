@@ -1705,9 +1705,7 @@ class TestPublishUnpublishAuth:
             result = await session.execute(stmt)
             user = result.scalar_one()
 
-        token = create_access_token(
-            {"sub": str(user.id), "username": user.username, "role": user.role}
-        )
+        token = create_access_token({"sub": str(user.id), "username": user.username})
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -1738,9 +1736,7 @@ class TestPublishUnpublishAuth:
             result = await session.execute(stmt)
             user = result.scalar_one()
 
-        token = create_access_token(
-            {"sub": str(user.id), "username": user.username, "role": user.role}
-        )
+        token = create_access_token({"sub": str(user.id), "username": user.username})
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -1812,7 +1808,7 @@ class TestScopedKeyFiltering:
                 email=f"svc_{unique}@example.com",
                 hashed_password="unused-placeholder",
                 is_active=True,
-                is_service_account=True,
+                principal_type="agent",
             )
             session.add(user)
             await session.flush()
@@ -1846,7 +1842,7 @@ class TestScopedKeyFiltering:
                 email=f"wrong_{unique}@example.com",
                 hashed_password="unused-placeholder",
                 is_active=True,
-                is_service_account=True,
+                principal_type="agent",
             )
             session.add(user)
             await session.flush()

@@ -36,7 +36,7 @@ class TestServiceAccountDetection:
             username="discord-bot-service",
             email="discord-bot@opennotes.local",
             hashed_password="unused",
-            role="admin",
+            platform_roles=["platform_admin"],
         )
         assert _is_service_account(user) is True
 
@@ -47,7 +47,6 @@ class TestServiceAccountDetection:
             username="test-service",
             email="test@example.com",
             hashed_password="unused",
-            role="user",
         )
         assert _is_service_account(user) is True
 
@@ -58,7 +57,6 @@ class TestServiceAccountDetection:
             username="regularuser",
             email="user@example.com",
             hashed_password="unused",
-            role="user",
         )
         assert _is_service_account(user) is False
 
@@ -77,7 +75,7 @@ class TestServiceAccountProfileCreation:
                 username="discord-bot-service",
                 email="discord-bot@opennotes.local",
                 hashed_password="unused",
-                role="admin",
+                platform_roles=["platform_admin"],
             )
 
             # First call should create profile and identity
@@ -112,7 +110,6 @@ class TestServiceAccountProfileCreation:
                 username="regularuser",
                 email="user@example.com",
                 hashed_password="unused",
-                role="user",
             )
 
             # Should return None since no identity exists and not a service account
@@ -132,7 +129,7 @@ class TestServiceAccountProfileCreation:
             username="discord-bot-service",
             email="discord-bot@opennotes.local",
             hashed_password="unused",
-            role="admin",
+            platform_roles=["platform_admin"],
         )
 
         ready_count = 0
@@ -264,7 +261,7 @@ class TestServiceAccountCommunityMembership:
                 username="discord-bot-service",
                 email="discord-bot@opennotes.local",
                 hashed_password="unused",
-                role="admin",
+                platform_roles=["platform_admin"],
             )
 
             mock_request = MagicMock()
@@ -301,7 +298,7 @@ class TestServiceAccountCommunityMembership:
             username=service_username,
             email=service_email,
             hashed_password="unused",
-            role="admin",
+            platform_roles=["platform_admin"],
         )
         community = MagicMock()
         community.id = uuid4()
@@ -502,7 +499,6 @@ class TestServiceAccountCommunityMembership:
                 username="test-bot-service",
                 email="test-bot@opennotes.local",
                 hashed_password="unused",
-                role="user",
             )
 
             mock_request = MagicMock()
@@ -585,7 +581,6 @@ class TestServiceAccountCommunityMembership:
                 username="humanuser",
                 email="human@example.com",
                 hashed_password="unused",
-                role="user",
             )
 
             mock_request = MagicMock()

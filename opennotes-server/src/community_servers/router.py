@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import get_community_server_by_platform_id
 from src.auth.dependencies import get_current_user_or_api_key, require_superuser_or_service_account
+from src.auth.permissions import is_service_account
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
@@ -286,7 +287,7 @@ async def lookup_community_server(
     )
 
     # Auto-create enabled for service accounts (bots), disabled for regular users
-    auto_create = current_user.is_service_account
+    auto_create = is_service_account(current_user)
 
     community_server = await get_community_server_by_platform_id(
         db=db,
@@ -359,7 +360,7 @@ async def update_community_server_name(
         },
     )
 
-    if not current_user.is_service_account:
+    if not is_service_account(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only service accounts can update community server name",
@@ -439,7 +440,7 @@ async def update_welcome_message(
     )
 
     # Only service accounts can update welcome message ID
-    if not current_user.is_service_account:
+    if not is_service_account(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only service accounts can update welcome message ID",
@@ -522,7 +523,7 @@ async def update_flashpoint_detection(
         },
     )
 
-    if not current_user.is_service_account:
+    if not is_service_account(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only service accounts can update flashpoint detection settings",

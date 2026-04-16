@@ -42,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.auth import create_access_token, create_refresh_token, verify_refresh_token
 from src.auth.dependencies import get_current_active_user
 from src.auth.models import (
+    PRIVILEGED_SCOPE_REQUIREMENTS,
     RESTRICTED_SCOPES,
     APIKeyCreate,
     APIKeyResponse,
@@ -52,7 +53,7 @@ from src.auth.models import (
     UserResponse,
     UserUpdate,
 )
-from src.auth.permissions import is_service_account
+from src.auth.permissions import has_platform_role, is_account_active, is_service_account
 from src.auth.revocation import revoke_all_user_tokens, revoke_token
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
@@ -90,6 +91,18 @@ async def register(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     try:
+        if user_create.username.endswith("-service"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reserved username pattern: usernames ending in '-service' are reserved for service accounts",
+            )
+
+        if user_create.email.endswith("@opennotes.local"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reserved email pattern: @opennotes.local is reserved for platform-internal accounts",
+            )
+
         existing_user = await get_user_by_username_for_update(db, user_create.username)
         if existing_user:
             raise HTTPException(
@@ -152,13 +165,11 @@ async def login(
 
         access_token_expires = pendulum.duration(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": str(user.id), "username": user.username, "role": user.role},
+            data={"sub": str(user.id), "username": user.username},
             expires_delta=access_token_expires,
         )
 
-        refresh_token = create_refresh_token(
-            data={"sub": str(user.id), "username": user.username, "role": user.role}
-        )
+        refresh_token = create_refresh_token(data={"sub": str(user.id), "username": user.username})
 
         await db_create_refresh_token(
             db, user.id, refresh_token, settings.REFRESH_TOKEN_EXPIRE_DAYS
@@ -230,7 +241,7 @@ async def refresh_access_token(
             )
 
         user = await get_user_by_id(db, token_data.user_id)
-        if user is None or not user.is_active:
+        if user is None or not is_account_active(user):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found or inactive",
@@ -274,7 +285,6 @@ async def refresh_access_token(
             data={
                 "sub": str(token_data.user_id),
                 "username": token_data.username,
-                "role": token_data.role,
             },
             expires_delta=access_token_expires,
         )
@@ -594,8 +604,16 @@ async def create_user_api_key(
             detail="Non-service accounts must specify explicit scopes",
         )
 
-    if api_key_create.scopes:
-        requested_restricted = RESTRICTED_SCOPES.intersection(api_key_create.scopes)
+    requested_scopes = api_key_create.scopes or []
+
+    if not requested_scopes and api_key_create.scopes is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API keys require explicit scopes",
+        )
+
+    if requested_scopes:
+        requested_restricted = RESTRICTED_SCOPES.intersection(requested_scopes)
         if requested_restricted and not is_service_account(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -604,6 +622,14 @@ async def create_user_api_key(
                     "Only service accounts may request these scopes."
                 ),
             )
+
+        for scope in requested_scopes:
+            required_role = PRIVILEGED_SCOPE_REQUIREMENTS.get(scope)
+            if required_role and not has_platform_role(current_user, required_role):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Scope '{scope}' requires platform_admin role",
+                )
 
     try:
         ip_address, user_agent = extract_request_context(request)

@@ -25,7 +25,6 @@ async def test_community_config_foreign_key_constraint():
             username=username,
             email=f"{username}@example.com",
             hashed_password="hashed",
-            role="admin",
             is_active=True,
         )
         session.add(user)
@@ -71,7 +70,6 @@ async def test_community_config_fk_rejects_invalid_server():
             username=username,
             email=f"{username}@example.com",
             hashed_password="hashed",
-            role="admin",
             is_active=True,
         )
         session.add(user)
@@ -104,7 +102,6 @@ async def test_community_config_cascade_delete_on_server_delete():
             username=username,
             email=f"{username}@example.com",
             hashed_password="hashed",
-            role="admin",
             is_active=True,
         )
         session.add(user)
@@ -165,7 +162,6 @@ async def test_community_config_relationship_loading():
             username=username,
             email=f"{username}@example.com",
             hashed_password="hashed",
-            role="admin",
             is_active=True,
         )
         session.add(user)
@@ -214,7 +210,6 @@ async def test_community_server_has_configs_relationship():
             username=username,
             email=f"{username}@example.com",
             hashed_password="hashed",
-            role="admin",
             is_active=True,
         )
         session.add(user)

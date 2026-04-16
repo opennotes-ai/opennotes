@@ -8,30 +8,46 @@ This module implements the permission hierarchy for admin access:
 4. Discord server admins (Manage Server permission) - fallback via Discord bot
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.users.models import User
 from src.users.profile_models import CommunityMember, UserProfile
 
+if TYPE_CHECKING:
+    from src.auth.platform_claims import PlatformIdentity
+
+
+def is_account_active(user: User) -> bool:
+    return user.is_active and user.banned_at is None
+
+
+def has_platform_role(user: User, role: str) -> bool:
+    return role in (user.platform_roles or [])
+
+
+def is_platform_admin(user: User) -> bool:
+    return has_platform_role(user, "platform_admin")
+
+
+def is_system_principal(user: User) -> bool:
+    return user.principal_type == "system"
+
+
+async def set_platform_admin(db: AsyncSession, user: User, is_admin: bool) -> None:
+    if is_admin:
+        if "platform_admin" not in (user.platform_roles or []):
+            user.platform_roles = (user.platform_roles or []) + ["platform_admin"]
+    else:
+        user.platform_roles = [r for r in (user.platform_roles or []) if r != "platform_admin"]
+    await db.flush()
+
 
 def is_service_account(user: User) -> bool:
-    """
-    Check if a User is a service account.
-
-    Service accounts are identified by:
-    - is_service_account flag on User model
-    - Email ending with @opennotes.local
-    - Username ending with -service
-
-    Args:
-        user: User instance to check
-
-    Returns:
-        True if user is a service account, False otherwise
-    """
-    return bool(
-        user.is_service_account
-        or (user.email and user.email.endswith("@opennotes.local"))
-        or (user.username and user.username.endswith("-service"))
-    )
+    return user.principal_type in ("agent", "system")
 
 
 def is_opennotes_admin(profile: UserProfile) -> bool:
@@ -130,3 +146,20 @@ def has_community_member_access(
 
     # Check if membership exists and is active
     return bool(membership and membership.is_active and not membership.banned_at)
+
+
+def extract_identity_audit_fields(
+    identity: PlatformIdentity | None,
+    source: str | None = None,
+) -> dict[str, str]:
+    if identity is None:
+        return {}
+    fields: dict[str, str] = {
+        "platform_identity_sub": identity.sub,
+        "platform_identity_scope": identity.scope,
+        "platform_identity_community_id": identity.community_id,
+        "platform_identity_platform": identity.platform,
+    }
+    if source is not None:
+        fields["platform_identity_source"] = source
+    return fields

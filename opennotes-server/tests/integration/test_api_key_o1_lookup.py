@@ -40,7 +40,7 @@ async def test_new_api_key_format_uses_prefix(test_user, db_session):
     api_key, raw_key = await create_api_key(
         db=db_session,
         user_id=test_user.id,
-        api_key_create=APIKeyCreate(name="Test API Key", expires_in_days=30),
+        api_key_create=APIKeyCreate(name="Test API Key", expires_in_days=30, scopes=["notes:read"]),
     )
 
     # Verify key format
@@ -63,7 +63,7 @@ async def test_o1_lookup_uses_key_prefix(test_user, db_session):
     api_key, raw_key = await create_api_key(
         db=db_session,
         user_id=test_user.id,
-        api_key_create=APIKeyCreate(name="Test Key", expires_in_days=30),
+        api_key_create=APIKeyCreate(name="Test Key", expires_in_days=30, scopes=["notes:read"]),
     )
 
     # Mock the database query to track what's being queried
@@ -137,14 +137,18 @@ async def test_performance_independent_of_total_keys(test_user, db_session):
             await create_api_key(
                 db=db_session,
                 user_id=user.id,
-                api_key_create=APIKeyCreate(name=f"Key for user {user.id}", expires_in_days=30),
+                api_key_create=APIKeyCreate(
+                    name=f"Key for user {user.id}",
+                    expires_in_days=30,
+                    scopes=["notes:read"],
+                ),
             )
 
     # Now create a key for our test user
     api_key, raw_key = await create_api_key(
         db=db_session,
         user_id=test_user.id,
-        api_key_create=APIKeyCreate(name="Test Key", expires_in_days=30),
+        api_key_create=APIKeyCreate(name="Test Key", expires_in_days=30, scopes=["notes:read"]),
     )
 
     # Verify: should still use O(1) lookup regardless of total key count
@@ -158,9 +162,10 @@ async def test_performance_independent_of_total_keys(test_user, db_session):
     assert result is not None
     assert result[0].id == api_key.id
 
-    # Verification should be fast (< 1 second for O(1) lookup)
-    # This is a loose bound since we're not doing precise benchmarking
-    assert elapsed_time < 1.0, f"O(1) lookup should be fast, took {elapsed_time}s"
+    # Verification should be fast (< 3 seconds for O(1) lookup)
+    # Loose bound — CI hardware varies. The point is to catch O(n) regressions,
+    # not set a precise benchmark.
+    assert elapsed_time < 3.0, f"O(1) lookup should be fast, took {elapsed_time}s"
 
 
 @pytest.mark.asyncio
@@ -178,6 +183,7 @@ async def test_backward_compatibility_with_legacy_keys(test_user, db_session):
         key_hash=hashed_key,
         key_prefix=None,  # No prefix for legacy keys
         is_active=True,
+        scopes=["notes:read"],
     )
     db_session.add(legacy_api_key)
     await db_session.commit()

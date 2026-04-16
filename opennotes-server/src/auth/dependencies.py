@@ -1,10 +1,11 @@
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.auth import verify_token
+from src.auth.permissions import is_account_active, is_platform_admin, is_service_account
 from src.database import get_db
 from src.users.crud import get_user_by_id, verify_api_key
 from src.users.models import APIKey, User
@@ -51,7 +52,7 @@ async def get_current_user(
 async def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    if not current_user.is_active:
+    if not is_account_active(current_user):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -88,7 +89,7 @@ async def get_current_user_or_api_key(
     token_data = await verify_token(token)
     if token_data:
         user = await get_user_by_id(db, token_data.user_id)
-        if user and user.is_active:
+        if user and is_account_active(user):
             if user.tokens_valid_after is not None:
                 if token_data.iat is None:
                     raise HTTPException(
@@ -119,34 +120,10 @@ async def get_current_user_or_api_key(
     )
 
 
-def require_role(required_role: str) -> Any:
-    async def role_checker(
-        current_user: Annotated[User, Depends(get_current_active_user)],
-    ) -> User:
-        role_hierarchy = {
-            "user": 0,
-            "moderator": 1,
-            "admin": 2,
-        }
-
-        user_level = role_hierarchy.get(current_user.role, -1)
-        required_level = role_hierarchy.get(required_role, 999)
-
-        if user_level < required_level:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. Required role: {required_role}",
-            )
-
-        return current_user
-
-    return role_checker
-
-
 def require_superuser(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
-    if not current_user.is_superuser:
+    if not is_platform_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Superuser access required",
@@ -155,7 +132,7 @@ def require_superuser(
 
 
 def require_admin(user: User) -> None:
-    if not (user.is_superuser or user.is_service_account):
+    if not (is_platform_admin(user) or is_service_account(user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required",
@@ -171,7 +148,7 @@ def require_scope_or_admin(user: User, request: Request, scope: str) -> bool:
 
     Raises HTTPException 403 if neither condition is met.
     """
-    is_admin = user.is_superuser or user.is_service_account
+    is_admin = is_platform_admin(user) or is_service_account(user)
 
     api_key: APIKey | None = getattr(request.state, "api_key", None)
     if api_key:

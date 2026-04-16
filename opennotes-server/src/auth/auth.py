@@ -98,7 +98,7 @@ async def verify_token(token: str, tokens_valid_after: datetime | None = None) -
         role: str | None = payload.get("role")
         iat: int | None = payload.get("iat")
 
-        if user_id_str is None or username is None or role is None:
+        if user_id_str is None or username is None:
             return None
 
         # Parse UUID from string
@@ -154,7 +154,7 @@ async def verify_refresh_token(  # noqa: PLR0911
         role: str | None = payload.get("role")
         iat: int | None = payload.get("iat")
 
-        if user_id_str is None or username is None or role is None:
+        if user_id_str is None or username is None:
             return None
 
         # Parse UUID from string

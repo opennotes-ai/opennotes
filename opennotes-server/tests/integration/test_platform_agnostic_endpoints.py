@@ -105,8 +105,7 @@ async def service_account_user() -> User:
             username=f"bot_{unique}",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_service_account=True,
+            principal_type="agent",
             discord_id=f"bot_discord_{unique}",
         )
         db.add(user)
@@ -124,7 +123,6 @@ async def service_account_headers(service_account_user: User) -> dict:
         {
             "sub": str(service_account_user.id),
             "username": service_account_user.username,
-            "role": service_account_user.role,
         }
     )
     return {"Authorization": f"Bearer {token}"}
@@ -140,8 +138,6 @@ async def admin_user_for_discord(discord_community_server: CommunityServer) -> U
             username=f"discordadmin_{unique}",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_service_account=False,
             discord_id=f"discord_admin_{unique}",
         )
         db.add(user)
@@ -183,7 +179,6 @@ async def admin_headers_for_discord(admin_user_for_discord: User) -> dict:
         {
             "sub": str(admin_user_for_discord.id),
             "username": admin_user_for_discord.username,
-            "role": admin_user_for_discord.role,
         }
     )
     return {"Authorization": f"Bearer {token}"}
@@ -199,8 +194,6 @@ async def admin_user_for_discourse(discourse_community_server: CommunityServer) 
             username=f"discourseadmin_{unique}",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
-            is_service_account=False,
             discord_id=f"discourse_admin_discord_{unique}",
         )
         db.add(user)
@@ -242,7 +235,6 @@ async def admin_headers_for_discourse(admin_user_for_discourse: User) -> dict:
         {
             "sub": str(admin_user_for_discourse.id),
             "username": admin_user_for_discourse.username,
-            "role": admin_user_for_discourse.role,
         }
     )
     return {"Authorization": f"Bearer {token}"}

@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.llm_config.models import CommunityServer
 from src.users import loaders
 from src.users.audit_helper import create_audit_log
+from src.users.models import User
 from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
 from src.users.profile_schemas import (
     AuthProvider,
@@ -56,6 +57,55 @@ logger = logging.getLogger(__name__)
 
 def _enum_val(v: Any) -> str:
     return v.value if hasattr(v, "value") else v
+
+
+def _synthetic_platform_username(provider: AuthProvider | str, provider_user_id: str) -> str:
+    pname = _enum_val(provider)
+    return f"{pname}-{provider_user_id}"
+
+
+def _synthetic_platform_email(provider: AuthProvider | str, provider_user_id: str) -> str:
+    pname = _enum_val(provider)
+    return f"{pname}-{provider_user_id}@platform.opennotes.local"
+
+
+async def _get_or_create_platform_user(
+    db: AsyncSession,
+    provider: AuthProvider | str,
+    provider_user_id: str,
+    is_service_account: bool = False,
+) -> User:
+    pname = _enum_val(provider)
+    username = _synthetic_platform_username(provider, provider_user_id)
+
+    result = await db.execute(select(User).where(User.username == username))
+    existing = result.scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    if pname == AuthProvider.DISCORD.value:
+        discord_result = await db.execute(select(User).where(User.discord_id == provider_user_id))
+        existing_by_discord = discord_result.scalar_one_or_none()
+        if existing_by_discord is not None:
+            return existing_by_discord
+
+    email = _synthetic_platform_email(provider, provider_user_id)
+
+    discord_id: str | None = None
+    if pname == AuthProvider.DISCORD.value:
+        discord_id = provider_user_id
+
+    user = User(
+        username=username,
+        email=email,
+        hashed_password="!platform-auth-only",
+        is_active=True,
+        discord_id=discord_id,
+        principal_type="agent" if is_service_account else "human",
+    )
+    db.add(user)
+    await db.flush()
+    return user
 
 
 async def get_profile_by_id(db: AsyncSession, profile_id: UUID) -> UserProfile | None:
@@ -329,6 +379,8 @@ async def create_profile_with_identity(
     credentials: dict[str, Any] | None = None,
     provider_scope: str = "*",
 ) -> tuple[UserProfile, UserIdentity]:
+    await _get_or_create_platform_user(db, provider, provider_user_id)
+
     profile = await create_profile(db, profile_create)
 
     identity_create = UserIdentityCreate(

@@ -297,6 +297,7 @@ def spawn_agents_step(
 ) -> list[str]:
     from src.database import get_session_maker
     from src.simulation.models import SimAgent
+    from src.users.models import User
     from src.users.profile_models import CommunityMember, UserProfile
 
     max_active = config["max_active_agents"]
@@ -404,6 +405,16 @@ def spawn_agents_step(
                         is_active=True,
                     )
                     session.add(user_profile)
+                    await session.flush()
+
+                    sim_user = User(
+                        username=f"simagent-{user_profile.id}",
+                        email=f"simagent-{user_profile.id}@sim.opennotes.local",
+                        hashed_password="!sim-agent-only",
+                        is_active=True,
+                        principal_type="agent",
+                    )
+                    session.add(sim_user)
                     await session.flush()
 
                     community_member = CommunityMember(
