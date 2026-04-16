@@ -9,6 +9,7 @@ Create Date: 2026-04-15 20:44:50.538699
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
 
 from alembic import op
 
@@ -25,7 +26,7 @@ def upgrade() -> None:
         "ALTER TABLE users ADD CONSTRAINT ck_users_principal_type CHECK (principal_type IN ('human','agent','system'))"
     )
     op.add_column(
-        "users", sa.Column("platform_roles", sa.JSON(), server_default="[]", nullable=False)
+        "users", sa.Column("platform_roles", JSONB(), server_default="[]", nullable=False)
     )
     op.add_column("users", sa.Column("banned_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("users", sa.Column("ban_reason", sa.String(), nullable=True))

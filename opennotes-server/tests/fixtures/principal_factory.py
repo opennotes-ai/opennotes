@@ -102,11 +102,12 @@ async def make_api_key(
     scopes: list[str] | None = None,
     name: str = "test-key",
 ) -> APIKey:
+    uid = uuid4()
     key = APIKey(
-        id=uuid4(),
+        id=uid,
         user_id=user.id,
         name=name,
-        key_hash="fakehash",
+        key_hash=f"fakehash-{uid.hex}",
         key_prefix="test_",
         scopes=scopes if scopes is not None else [],
         is_active=True,
