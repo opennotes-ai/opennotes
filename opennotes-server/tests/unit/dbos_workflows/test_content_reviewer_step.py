@@ -25,6 +25,7 @@ from uuid import uuid4
 def _make_mock_session_stack():
     """Build mock Redis connection and session context manager."""
     mock_redis = AsyncMock()
+    mock_redis.hgetall = AsyncMock(return_value={})
     mock_session = AsyncMock()
     mock_session_ctx = AsyncMock()
     mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
@@ -726,6 +727,8 @@ class TestContentReviewerStep:
 
         mock_fp_service = MagicMock()
 
+        mock_redis.hgetall = AsyncMock(return_value={})
+
         patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
 
         with __import__("contextlib").ExitStack() as stack:
@@ -767,9 +770,303 @@ class TestContentReviewerStep:
         classify_call = mock_reviewer_service.classify.call_args
         assert "context_items" in classify_call.kwargs
         assert isinstance(classify_call.kwargs["context_items"], list)
-        assert len(classify_call.kwargs["context_items"]) >= 1
         assert "flashpoint_service" in classify_call.kwargs
         assert classify_call.kwargs["flashpoint_service"] is mock_fp_service
+
+    def test_context_items_loaded_from_redis_cache(self) -> None:
+        """context_items are prior channel messages from Redis, not duplicates of classified msg."""
+        from src.bulk_content_scan.schemas import (
+            BulkScanMessage,
+            ContentModerationClassificationResult,
+        )
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(
+            message_id="msg-target",
+            community_server_id=community_server_id,
+        )
+
+        prior_msg = BulkScanMessage(
+            message_id="msg-prior-1",
+            channel_id="chan-1",
+            community_server_id=community_server_id,
+            content="prior message content",
+            author_id="author-prior",
+            author_username="prioruser",
+            timestamp="2024-01-01T00:00:00+00:00",
+            attachment_urls=None,
+            embed_content=None,
+        )
+
+        mock_redis.hgetall = AsyncMock(return_value={"msg-prior-1": prior_msg.model_dump_json()})
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.9,
+            category_labels={"harassment": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Cache context check",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = MagicMock(value="tier_1_immediate")
+        mock_policy_decision.action_type = MagicMock(value="hide")
+        mock_policy_decision.review_group = MagicMock(value="staff")
+        mock_policy_decision.reason = "Tier 1"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            result = content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        assert result["flagged_count"] == 1
+        classify_call = mock_reviewer_service.classify.call_args
+        context_items = classify_call.kwargs["context_items"]
+
+        context_ids = [item.content_id for item in context_items]
+        assert "msg-target" not in context_ids, (
+            "classified message must not appear in context_items"
+        )
+        assert "msg-prior-1" in context_ids, (
+            "prior channel message from Redis cache must be in context_items"
+        )
+
+    def test_context_items_empty_when_redis_cache_unavailable(self) -> None:
+        """When Redis cache returns no prior messages, classify gets empty context and a warning is logged."""
+
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(
+            message_id="msg-no-cache",
+            community_server_id=community_server_id,
+        )
+
+        mock_redis.hgetall = AsyncMock(return_value={})
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.5,
+            category_labels={},
+            category_scores=None,
+            recommended_action="pass",
+            action_tier=None,
+            explanation="No issues",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = None
+        mock_policy_decision.action_type = None
+        mock_policy_decision.review_group = None
+        mock_policy_decision.reason = "pass"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            with __import__("unittest.mock").mock.patch(
+                "src.dbos_workflows.content_scan_workflow.logger"
+            ) as mock_logger:
+                content_reviewer_step.__wrapped__(
+                    scan_id=scan_id,
+                    community_server_id=community_server_id,
+                    batch_number=1,
+                    similarity_candidates_key="sim-key",
+                    flashpoint_candidates_key="",
+                )
+
+        classify_call = mock_reviewer_service.classify.call_args
+        context_items = classify_call.kwargs["context_items"]
+        assert context_items == [], "empty list must be passed when cache has no prior messages"
+
+        warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
+        assert any(
+            "flashpoint" in c.lower() or "context" in c.lower() or "cache" in c.lower()
+            for c in warning_calls
+        ), "a warning must be logged when no channel context is available"
+
+    def test_context_items_exclude_classified_message_even_if_in_cache(self) -> None:
+        """If the classified message itself is in Redis cache, it must not appear in context_items."""
+        from src.bulk_content_scan.schemas import (
+            BulkScanMessage,
+            ContentModerationClassificationResult,
+        )
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(
+            message_id="msg-classified",
+            community_server_id=community_server_id,
+        )
+
+        same_msg = BulkScanMessage(
+            message_id="msg-classified",
+            channel_id="chan-1",
+            community_server_id=community_server_id,
+            content="test content",
+            author_id="author-1",
+            author_username="testuser",
+            timestamp="2024-01-01T00:00:00+00:00",
+            attachment_urls=None,
+            embed_content=None,
+        )
+        prior_msg = BulkScanMessage(
+            message_id="msg-earlier",
+            channel_id="chan-1",
+            community_server_id=community_server_id,
+            content="earlier message",
+            author_id="author-2",
+            author_username="otheruser",
+            timestamp="2023-12-31T23:59:00+00:00",
+            attachment_urls=None,
+            embed_content=None,
+        )
+
+        mock_redis.hgetall = AsyncMock(
+            return_value={
+                "msg-classified": same_msg.model_dump_json(),
+                "msg-earlier": prior_msg.model_dump_json(),
+            }
+        )
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.9,
+            category_labels={"harassment": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Exclusion check",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = MagicMock(value="tier_1_immediate")
+        mock_policy_decision.action_type = MagicMock(value="hide")
+        mock_policy_decision.review_group = MagicMock(value="staff")
+        mock_policy_decision.reason = "Tier 1"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        classify_call = mock_reviewer_service.classify.call_args
+        context_items = classify_call.kwargs["context_items"]
+        context_ids = [item.content_id for item in context_items]
+        assert "msg-classified" not in context_ids, (
+            "classified message must be excluded from context_items"
+        )
+        assert "msg-earlier" in context_ids, (
+            "other cached messages must be included in context_items"
+        )
 
 
 class TestRunBatchScanStepsDispatch:

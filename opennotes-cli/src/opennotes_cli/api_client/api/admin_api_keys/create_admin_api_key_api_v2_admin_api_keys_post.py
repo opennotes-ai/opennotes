@@ -1,20 +1,19 @@
 from http import HTTPStatus
 from typing import Any, cast
-from urllib.parse import quote
-from uuid import UUID
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.admin_api_key_create import AdminAPIKeyCreate
+from ...models.admin_api_key_response import AdminAPIKeyResponse
 from ...models.http_validation_error import HTTPValidationError
-from ...models.scoring_analysis_response import ScoringAnalysisResponse
 from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
-    community_server_id: UUID,
     *,
+    body: AdminAPIKeyCreate,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
@@ -22,11 +21,13 @@ def _get_kwargs(
         headers["X-API-Key"] = x_api_key
 
     _kwargs: dict[str, Any] = {
-        "method": "get",
-        "url": "/api/v2/community-servers/{community_server_id}/scoring-analysis".format(
-            community_server_id=quote(str(community_server_id), safe=""),
-        ),
+        "method": "post",
+        "url": "/api/v2/admin/api-keys",
     }
+
+    _kwargs["json"] = body.to_dict()
+
+    headers["Content-Type"] = "application/json"
 
     _kwargs["headers"] = headers
     return _kwargs
@@ -34,11 +35,11 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Any | HTTPValidationError | ScoringAnalysisResponse | None:
-    if response.status_code == 200:
-        response_200 = ScoringAnalysisResponse.from_dict(response.json())
+) -> AdminAPIKeyResponse | Any | HTTPValidationError | None:
+    if response.status_code == 201:
+        response_201 = AdminAPIKeyResponse.from_dict(response.json())
 
-        return response_200
+        return response_201
 
     if response.status_code == 401:
         response_401 = cast(Any, None)
@@ -57,7 +58,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[Any | HTTPValidationError | ScoringAnalysisResponse]:
+) -> Response[AdminAPIKeyResponse | Any | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -67,34 +68,27 @@ def _build_response(
 
 
 def sync_detailed(
-    community_server_id: UUID,
     *,
     client: AuthenticatedClient,
+    body: AdminAPIKeyCreate,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[Any | HTTPValidationError | ScoringAnalysisResponse]:
-    """Get Scoring Analysis
-
-     Get scoring factor analysis for a community server.
-
-    Returns the latest scoring snapshot with rater and note factor matrices,
-    enriched with agent identity information for simulation agents.
-
-    Requires community-servers:read scope or admin privileges.
+) -> Response[AdminAPIKeyResponse | Any | HTTPValidationError]:
+    """Create Admin Api Key
 
     Args:
-        community_server_id (UUID):
         x_api_key (None | str | Unset):
+        body (AdminAPIKeyCreate):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError | ScoringAnalysisResponse]
+        Response[AdminAPIKeyResponse | Any | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
-        community_server_id=community_server_id,
+        body=body,
         x_api_key=x_api_key,
     )
 
@@ -106,68 +100,54 @@ def sync_detailed(
 
 
 def sync(
-    community_server_id: UUID,
     *,
     client: AuthenticatedClient,
+    body: AdminAPIKeyCreate,
     x_api_key: None | str | Unset = UNSET,
-) -> Any | HTTPValidationError | ScoringAnalysisResponse | None:
-    """Get Scoring Analysis
-
-     Get scoring factor analysis for a community server.
-
-    Returns the latest scoring snapshot with rater and note factor matrices,
-    enriched with agent identity information for simulation agents.
-
-    Requires community-servers:read scope or admin privileges.
+) -> AdminAPIKeyResponse | Any | HTTPValidationError | None:
+    """Create Admin Api Key
 
     Args:
-        community_server_id (UUID):
         x_api_key (None | str | Unset):
+        body (AdminAPIKeyCreate):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError | ScoringAnalysisResponse
+        AdminAPIKeyResponse | Any | HTTPValidationError
     """
 
     return sync_detailed(
-        community_server_id=community_server_id,
         client=client,
+        body=body,
         x_api_key=x_api_key,
     ).parsed
 
 
 async def asyncio_detailed(
-    community_server_id: UUID,
     *,
     client: AuthenticatedClient,
+    body: AdminAPIKeyCreate,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[Any | HTTPValidationError | ScoringAnalysisResponse]:
-    """Get Scoring Analysis
-
-     Get scoring factor analysis for a community server.
-
-    Returns the latest scoring snapshot with rater and note factor matrices,
-    enriched with agent identity information for simulation agents.
-
-    Requires community-servers:read scope or admin privileges.
+) -> Response[AdminAPIKeyResponse | Any | HTTPValidationError]:
+    """Create Admin Api Key
 
     Args:
-        community_server_id (UUID):
         x_api_key (None | str | Unset):
+        body (AdminAPIKeyCreate):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError | ScoringAnalysisResponse]
+        Response[AdminAPIKeyResponse | Any | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
-        community_server_id=community_server_id,
+        body=body,
         x_api_key=x_api_key,
     )
 
@@ -177,36 +157,29 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    community_server_id: UUID,
     *,
     client: AuthenticatedClient,
+    body: AdminAPIKeyCreate,
     x_api_key: None | str | Unset = UNSET,
-) -> Any | HTTPValidationError | ScoringAnalysisResponse | None:
-    """Get Scoring Analysis
-
-     Get scoring factor analysis for a community server.
-
-    Returns the latest scoring snapshot with rater and note factor matrices,
-    enriched with agent identity information for simulation agents.
-
-    Requires community-servers:read scope or admin privileges.
+) -> AdminAPIKeyResponse | Any | HTTPValidationError | None:
+    """Create Admin Api Key
 
     Args:
-        community_server_id (UUID):
         x_api_key (None | str | Unset):
+        body (AdminAPIKeyCreate):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError | ScoringAnalysisResponse
+        AdminAPIKeyResponse | Any | HTTPValidationError
     """
 
     return (
         await asyncio_detailed(
-            community_server_id=community_server_id,
             client=client,
+            body=body,
             x_api_key=x_api_key,
         )
     ).parsed

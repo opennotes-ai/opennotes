@@ -80,7 +80,7 @@ def sync_detailed(
      Fetch a specific historical scoring snapshot from GCS.
 
     Returns the full scoring snapshot data for a given timestamp.
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):
@@ -120,7 +120,7 @@ def sync(
      Fetch a specific historical scoring snapshot from GCS.
 
     Returns the full scoring snapshot data for a given timestamp.
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):
@@ -155,7 +155,7 @@ async def asyncio_detailed(
      Fetch a specific historical scoring snapshot from GCS.
 
     Returns the full scoring snapshot data for a given timestamp.
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):
@@ -193,7 +193,7 @@ async def asyncio(
      Fetch a specific historical scoring snapshot from GCS.
 
     Returns the full scoring snapshot data for a given timestamp.
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):

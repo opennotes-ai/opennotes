@@ -8,12 +8,11 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...models.scoring_analysis_response import ScoringAnalysisResponse
 from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
-    community_server_id: UUID,
+    key_id: UUID,
     *,
     x_api_key: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
@@ -22,9 +21,9 @@ def _get_kwargs(
         headers["X-API-Key"] = x_api_key
 
     _kwargs: dict[str, Any] = {
-        "method": "get",
-        "url": "/api/v2/community-servers/{community_server_id}/scoring-analysis".format(
-            community_server_id=quote(str(community_server_id), safe=""),
+        "method": "delete",
+        "url": "/api/v2/admin/api-keys/{key_id}".format(
+            key_id=quote(str(key_id), safe=""),
         ),
     }
 
@@ -34,11 +33,10 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Any | HTTPValidationError | ScoringAnalysisResponse | None:
-    if response.status_code == 200:
-        response_200 = ScoringAnalysisResponse.from_dict(response.json())
-
-        return response_200
+) -> Any | HTTPValidationError | None:
+    if response.status_code == 204:
+        response_204 = cast(Any, None)
+        return response_204
 
     if response.status_code == 401:
         response_401 = cast(Any, None)
@@ -57,7 +55,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[Any | HTTPValidationError | ScoringAnalysisResponse]:
+) -> Response[Any | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -67,22 +65,15 @@ def _build_response(
 
 
 def sync_detailed(
-    community_server_id: UUID,
+    key_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[Any | HTTPValidationError | ScoringAnalysisResponse]:
-    """Get Scoring Analysis
-
-     Get scoring factor analysis for a community server.
-
-    Returns the latest scoring snapshot with rater and note factor matrices,
-    enriched with agent identity information for simulation agents.
-
-    Requires community-servers:read scope or admin privileges.
+) -> Response[Any | HTTPValidationError]:
+    """Revoke Admin Api Key
 
     Args:
-        community_server_id (UUID):
+        key_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -90,11 +81,11 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError | ScoringAnalysisResponse]
+        Response[Any | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
-        community_server_id=community_server_id,
+        key_id=key_id,
         x_api_key=x_api_key,
     )
 
@@ -106,22 +97,15 @@ def sync_detailed(
 
 
 def sync(
-    community_server_id: UUID,
+    key_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
-) -> Any | HTTPValidationError | ScoringAnalysisResponse | None:
-    """Get Scoring Analysis
-
-     Get scoring factor analysis for a community server.
-
-    Returns the latest scoring snapshot with rater and note factor matrices,
-    enriched with agent identity information for simulation agents.
-
-    Requires community-servers:read scope or admin privileges.
+) -> Any | HTTPValidationError | None:
+    """Revoke Admin Api Key
 
     Args:
-        community_server_id (UUID):
+        key_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -129,33 +113,26 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError | ScoringAnalysisResponse
+        Any | HTTPValidationError
     """
 
     return sync_detailed(
-        community_server_id=community_server_id,
+        key_id=key_id,
         client=client,
         x_api_key=x_api_key,
     ).parsed
 
 
 async def asyncio_detailed(
-    community_server_id: UUID,
+    key_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
-) -> Response[Any | HTTPValidationError | ScoringAnalysisResponse]:
-    """Get Scoring Analysis
-
-     Get scoring factor analysis for a community server.
-
-    Returns the latest scoring snapshot with rater and note factor matrices,
-    enriched with agent identity information for simulation agents.
-
-    Requires community-servers:read scope or admin privileges.
+) -> Response[Any | HTTPValidationError]:
+    """Revoke Admin Api Key
 
     Args:
-        community_server_id (UUID):
+        key_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -163,11 +140,11 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError | ScoringAnalysisResponse]
+        Response[Any | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
-        community_server_id=community_server_id,
+        key_id=key_id,
         x_api_key=x_api_key,
     )
 
@@ -177,22 +154,15 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    community_server_id: UUID,
+    key_id: UUID,
     *,
     client: AuthenticatedClient,
     x_api_key: None | str | Unset = UNSET,
-) -> Any | HTTPValidationError | ScoringAnalysisResponse | None:
-    """Get Scoring Analysis
-
-     Get scoring factor analysis for a community server.
-
-    Returns the latest scoring snapshot with rater and note factor matrices,
-    enriched with agent identity information for simulation agents.
-
-    Requires community-servers:read scope or admin privileges.
+) -> Any | HTTPValidationError | None:
+    """Revoke Admin Api Key
 
     Args:
-        community_server_id (UUID):
+        key_id (UUID):
         x_api_key (None | str | Unset):
 
     Raises:
@@ -200,12 +170,12 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError | ScoringAnalysisResponse
+        Any | HTTPValidationError
     """
 
     return (
         await asyncio_detailed(
-            community_server_id=community_server_id,
+            key_id=key_id,
             client=client,
             x_api_key=x_api_key,
         )

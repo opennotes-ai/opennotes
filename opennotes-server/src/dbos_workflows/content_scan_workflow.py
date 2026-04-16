@@ -1407,6 +1407,7 @@ def content_reviewer_step(
         ModerationPolicyEvaluator,
     )
     from src.bulk_content_scan.schemas import (
+        BulkScanMessage,
         FlaggedMessage,
         ScanCandidate,
         bulk_scan_message_to_content_item,
@@ -1490,9 +1491,41 @@ def content_reviewer_step(
                     pre_computed = [c.match_data for c in candidates]
                     content_item = bulk_scan_message_to_content_item(candidates[0].message)
 
-                    context_items_for_msg = [
-                        bulk_scan_message_to_content_item(c.message) for c in candidates
-                    ]
+                    channel_id = candidates[0].message.channel_id
+                    flashpoint_ctx_data_key = (
+                        f"{settings.ENVIRONMENT}:flashpoint_ctx"
+                        f":{community_server_id}:{channel_id}:data"
+                    )
+                    try:
+                        cached_channel_data = await redis_conn.hgetall(flashpoint_ctx_data_key)
+                        context_items_for_msg = [
+                            bulk_scan_message_to_content_item(
+                                BulkScanMessage.model_validate_json(raw_json)
+                            )
+                            for cached_msg_id, raw_json in cached_channel_data.items()
+                            if cached_msg_id != msg_id
+                        ]
+                        if not context_items_for_msg:
+                            logger.warning(
+                                "No flashpoint channel context available in cache for message",
+                                extra={
+                                    "scan_id": scan_id,
+                                    "msg_id": msg_id,
+                                    "channel_id": channel_id,
+                                    "community_server_id": community_server_id,
+                                },
+                            )
+                    except Exception:
+                        logger.warning(
+                            "Failed to load flashpoint channel context from Redis cache",
+                            extra={
+                                "scan_id": scan_id,
+                                "msg_id": msg_id,
+                                "channel_id": channel_id,
+                                "community_server_id": community_server_id,
+                            },
+                        )
+                        context_items_for_msg = []
                     classification = await reviewer_service.classify(
                         content_item=content_item,
                         pre_computed_evidence=pre_computed,  # type: ignore[arg-type]

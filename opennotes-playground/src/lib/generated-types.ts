@@ -521,6 +521,41 @@ export interface paths {
         patch: operations["set_opennotes_admin_status_api_v1_admin_profiles__profile_id__opennotes_admin_patch"];
         trace?: never;
     };
+    "/api/v2/admin/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Admin Api Keys */
+        get: operations["list_admin_api_keys_api_v2_admin_api_keys_get"];
+        put?: never;
+        /** Create Admin Api Key */
+        post: operations["create_admin_api_key_api_v2_admin_api_keys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/admin/api-keys/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Admin Api Key */
+        delete: operations["revoke_admin_api_key_api_v2_admin_api_keys__key_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/fusion-weights": {
         parameters: {
             query?: never;
@@ -1500,7 +1535,7 @@ export interface paths {
          *     Returns the latest scoring snapshot with rater and note factor matrices,
          *     enriched with agent identity information for simulation agents.
          *
-         *     Requires simulations:read scope or admin privileges.
+         *     Requires community-servers:read scope or admin privileges.
          */
         get: operations["get_scoring_analysis_api_v2_community_servers__community_server_id__scoring_analysis_get"];
         put?: never;
@@ -1523,7 +1558,7 @@ export interface paths {
          * @description List available historical scoring snapshots from GCS.
          *
          *     Returns a list of available snapshots with timestamps and sizes.
-         *     Requires simulations:read scope or admin privileges.
+         *     Requires community-servers:read scope or admin privileges.
          */
         get: operations["get_scoring_history_api_v2_community_servers__community_server_id__scoring_history_get"];
         put?: never;
@@ -1546,7 +1581,7 @@ export interface paths {
          * @description Fetch a specific historical scoring snapshot from GCS.
          *
          *     Returns the full scoring snapshot data for a given timestamp.
-         *     Requires simulations:read scope or admin privileges.
+         *     Requires community-servers:read scope or admin privileges.
          */
         get: operations["get_scoring_history_snapshot_api_v2_community_servers__community_server_id__scoring_history__timestamp__get"];
         put?: never;
@@ -3966,6 +4001,72 @@ export interface components {
              * @description Avatar URL (for auto-creating profile if user doesn't exist)
              */
             avatar_url?: string | null;
+        };
+        /** AdminAPIKeyCreate */
+        AdminAPIKeyCreate: {
+            /**
+             * User Email
+             * Format: email
+             */
+            user_email: string;
+            /** User Display Name */
+            user_display_name: string;
+            /** Key Name */
+            key_name: string;
+            /** Scopes */
+            scopes: string[];
+        };
+        /** AdminAPIKeyListItem */
+        AdminAPIKeyListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Key Prefix */
+            key_prefix?: string | null;
+            /** Scopes */
+            scopes?: string[] | null;
+            /** User Email */
+            user_email: string;
+            /** User Display Name */
+            user_display_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Is Active */
+            is_active: boolean;
+        };
+        /** AdminAPIKeyResponse */
+        AdminAPIKeyResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Key */
+            key: string;
+            /** Scopes */
+            scopes?: string[] | null;
+            /** User Email */
+            user_email: string;
+            /** User Display Name */
+            user_display_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at?: string | null;
         };
         /**
          * AdminSource
@@ -11420,6 +11521,124 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UserProfileResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_api_keys_api_v2_admin_api_keys_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAPIKeyListItem"][];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_admin_api_key_api_v2_admin_api_keys_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminAPIKeyCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAPIKeyResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_admin_api_key_api_v2_admin_api_keys__key_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Not authenticated */
             401: {
