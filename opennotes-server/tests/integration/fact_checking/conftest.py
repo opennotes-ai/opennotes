@@ -74,7 +74,17 @@ async def api_key_headers(registered_user, db):
     _, raw_key = await create_api_key(
         db=db,
         user_id=registered_user["id"],
-        api_key_create=APIKeyCreate(name="Test Import API Key", expires_in_days=30),
+        api_key_create=APIKeyCreate(
+            name="Test Import API Key",
+            expires_in_days=30,
+            scopes=[
+                "notes:read",
+                "notes:write",
+                "ratings:write",
+                "requests:read",
+                "requests:write",
+            ],
+        ),
     )
     await db.commit()
     return {"X-API-Key": raw_key}

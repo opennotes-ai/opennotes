@@ -40,7 +40,7 @@ async def test_new_api_key_format_uses_prefix(test_user, db_session):
     api_key, raw_key = await create_api_key(
         db=db_session,
         user_id=test_user.id,
-        api_key_create=APIKeyCreate(name="Test API Key", expires_in_days=30),
+        api_key_create=APIKeyCreate(name="Test API Key", expires_in_days=30, scopes=["notes:read"]),
     )
 
     # Verify key format
@@ -63,7 +63,7 @@ async def test_o1_lookup_uses_key_prefix(test_user, db_session):
     api_key, raw_key = await create_api_key(
         db=db_session,
         user_id=test_user.id,
-        api_key_create=APIKeyCreate(name="Test Key", expires_in_days=30),
+        api_key_create=APIKeyCreate(name="Test Key", expires_in_days=30, scopes=["notes:read"]),
     )
 
     # Mock the database query to track what's being queried
@@ -137,14 +137,18 @@ async def test_performance_independent_of_total_keys(test_user, db_session):
             await create_api_key(
                 db=db_session,
                 user_id=user.id,
-                api_key_create=APIKeyCreate(name=f"Key for user {user.id}", expires_in_days=30),
+                api_key_create=APIKeyCreate(
+                    name=f"Key for user {user.id}",
+                    expires_in_days=30,
+                    scopes=["notes:read"],
+                ),
             )
 
     # Now create a key for our test user
     api_key, raw_key = await create_api_key(
         db=db_session,
         user_id=test_user.id,
-        api_key_create=APIKeyCreate(name="Test Key", expires_in_days=30),
+        api_key_create=APIKeyCreate(name="Test Key", expires_in_days=30, scopes=["notes:read"]),
     )
 
     # Verify: should still use O(1) lookup regardless of total key count
@@ -179,6 +183,7 @@ async def test_backward_compatibility_with_legacy_keys(test_user, db_session):
         key_hash=hashed_key,
         key_prefix=None,  # No prefix for legacy keys
         is_active=True,
+        scopes=["notes:read"],
     )
     db_session.add(legacy_api_key)
     await db_session.commit()
