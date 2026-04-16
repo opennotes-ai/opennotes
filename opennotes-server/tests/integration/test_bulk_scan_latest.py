@@ -274,10 +274,8 @@ class TestLatestScanFixtures:
             username="latest-scan-service",
             email="latest-scan-service@opennotes.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
+            principal_type="agent",
             is_active=True,
-            is_superuser=False,
-            is_service_account=True,
             discord_id="discord_latest_scan_service",
         )
         db.add(user)
@@ -292,7 +290,6 @@ class TestLatestScanFixtures:
         token_data = {
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
         access_token = create_access_token(token_data)
         return {"Authorization": f"Bearer {access_token}"}

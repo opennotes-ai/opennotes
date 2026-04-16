@@ -202,11 +202,11 @@ async def admin_auth_client():
         stmt = sa_select(User).where(User.username == user_data["username"])
         result = await session.execute(stmt)
         user = result.scalar_one()
-        user.is_superuser = True
+        user.platform_roles = ["platform_admin"]
         await session.commit()
         await session.refresh(user)
 
-    token = create_access_token({"sub": str(user.id), "username": user.username, "role": user.role})
+    token = create_access_token({"sub": str(user.id), "username": user.username})
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

@@ -287,7 +287,6 @@ async def discord_auth_headers(discord_e2e_setup):
     token_data = {
         "sub": str(user.id),
         "username": user.username,
-        "role": user.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

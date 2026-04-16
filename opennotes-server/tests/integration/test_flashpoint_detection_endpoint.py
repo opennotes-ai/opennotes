@@ -82,7 +82,6 @@ async def fp_regular_user_headers(fp_regular_user: User):
     token_data = {
         "sub": str(fp_regular_user.id),
         "username": fp_regular_user.username,
-        "role": fp_regular_user.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

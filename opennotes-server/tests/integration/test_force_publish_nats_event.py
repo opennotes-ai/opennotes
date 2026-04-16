@@ -87,7 +87,6 @@ async def nats_event_registered_user(nats_event_community_server):
             return {
                 "id": user.id,
                 "username": user.username,
-                "role": user.role,
                 "profile_id": profile.id,
             }
 

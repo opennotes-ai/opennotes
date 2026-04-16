@@ -95,10 +95,8 @@ class TestAdminRouterFixtures:
             username="admin-bot-service",
             email="admin-bot@opennotes.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
+            principal_type="agent",
             is_active=True,
-            is_superuser=False,
-            is_service_account=True,
             discord_id="discord_admin_bot_service",
         )
         db.add(user)
@@ -119,10 +117,7 @@ class TestAdminRouterFixtures:
             username="regular_human_user",
             email="human@example.com",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
-            is_service_account=False,
             discord_id="discord_human_user",
         )
         db.add(user)
@@ -137,7 +132,6 @@ class TestAdminRouterFixtures:
         token_data = {
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
         access_token = create_access_token(token_data)
         return {"Authorization": f"Bearer {access_token}"}

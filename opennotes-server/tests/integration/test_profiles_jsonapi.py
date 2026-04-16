@@ -105,9 +105,7 @@ async def profiles_jsonapi_registered_user(
                 "username": user.username,
                 "email": user.email,
                 "full_name": user.full_name,
-                "role": user.role,
                 "is_active": user.is_active,
-                "is_superuser": user.is_superuser,
                 "discord_id": user.discord_id,
                 "profile_id": profile.id,
             }
@@ -854,10 +852,8 @@ class TestAdminStatusJSONAPIFixtures:
                 username=f"admin-bot-jsonapi-{unique_suffix}-service",
                 email=f"admin-bot-jsonapi-{unique_suffix}@opennotes.local",
                 hashed_password="hashed_password_placeholder",
-                role="user",
+                principal_type="agent",
                 is_active=True,
-                is_superuser=False,
-                is_service_account=True,
                 discord_id=f"discord_service_{unique_suffix}",
             )
             db.add(user)
@@ -875,7 +871,6 @@ class TestAdminStatusJSONAPIFixtures:
         token_data = {
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
         access_token = create_access_token(token_data)
         return {"Authorization": f"Bearer {access_token}"}
@@ -1077,10 +1072,7 @@ class TestAdminStatusJSONAPI(TestAdminStatusJSONAPIFixtures):
                 username=f"regular-user-jsonapi-{unique_suffix}",
                 email=f"regular-user-jsonapi-{unique_suffix}@example.com",
                 hashed_password="hashed_password_placeholder",
-                role="user",
                 is_active=True,
-                is_superuser=False,
-                is_service_account=False,
                 discord_id=f"discord_regular_{unique_suffix}",
             )
             db.add(user)
@@ -1098,7 +1090,6 @@ class TestAdminStatusJSONAPI(TestAdminStatusJSONAPIFixtures):
         token_data = {
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
         access_token = create_access_token(token_data)
         return {"Authorization": f"Bearer {access_token}"}

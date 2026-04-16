@@ -110,7 +110,6 @@ async def modaction_registered_user(modaction_community_server):
         return {
             "id": user.id,
             "username": user.username,
-            "role": user.role,
             "profile_id": profile.id,
         }
 

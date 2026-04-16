@@ -49,7 +49,6 @@ async def clear_test_admin_user(clear_test_community_server):
             discord_id=discord_id,
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
         )
         db.add(user)
         await db.commit()
@@ -95,7 +94,6 @@ async def clear_test_regular_user(clear_test_community_server):
             discord_id=discord_id,
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
         )
         db.add(user)
         await db.commit()
@@ -138,7 +136,6 @@ def admin_auth_headers(clear_test_admin_user):
     token_data = {
         "sub": str(clear_test_admin_user["user"].id),
         "username": clear_test_admin_user["user"].username,
-        "role": clear_test_admin_user["user"].role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
@@ -152,7 +149,6 @@ def regular_auth_headers(clear_test_regular_user):
     token_data = {
         "sub": str(clear_test_regular_user["user"].id),
         "username": clear_test_regular_user["user"].username,
-        "role": clear_test_regular_user["user"].role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

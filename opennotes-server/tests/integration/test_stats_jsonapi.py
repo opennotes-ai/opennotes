@@ -114,9 +114,7 @@ async def stats_jsonapi_registered_user(stats_jsonapi_test_user, stats_jsonapi_c
                 "username": user.username,
                 "email": user.email,
                 "full_name": user.full_name,
-                "role": user.role,
                 "is_active": user.is_active,
-                "is_superuser": user.is_superuser,
                 "discord_id": user.discord_id,
                 "profile_id": profile.id,
             }

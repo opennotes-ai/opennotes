@@ -66,7 +66,7 @@ class TestRestrictedScopeEnforcement:
                 select(User).where(User.username == test_user_data["username"])
             )
             user = result.scalar_one()
-            user.is_service_account = True
+            user.principal_type = "agent"
             await session.commit()
             user_id = str(user.id)
 
@@ -74,7 +74,6 @@ class TestRestrictedScopeEnforcement:
             {
                 "sub": user_id,
                 "username": test_user_data["username"],
-                "role": registered_user["role"],
             }
         )
 

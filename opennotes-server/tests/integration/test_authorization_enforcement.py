@@ -315,7 +315,6 @@ class TestAuthorizationFixtures:
         token_data: dict[str, str | int] = {
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
         access_token = create_access_token(token_data)
         return {"Authorization": f"Bearer {access_token}"}
@@ -575,9 +574,7 @@ class TestCrossCommunityAccessPrevention(TestAuthorizationFixtures):
             username="orphan_user_auth_test",
             email="orphan_auth@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_orphan_auth",
         )
         db.add(user)
@@ -586,7 +583,6 @@ class TestCrossCommunityAccessPrevention(TestAuthorizationFixtures):
         token_data: dict[str, str | int] = {
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
         access_token = create_access_token(token_data)
         headers = {"Authorization": f"Bearer {access_token}"}

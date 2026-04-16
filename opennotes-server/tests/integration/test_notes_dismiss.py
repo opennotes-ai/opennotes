@@ -52,9 +52,8 @@ async def _create_admin_user_and_headers(community_server_id: UUID) -> tuple[Use
             email=f"dismiss_admin_{ts:.0f}_{uuid4().hex[:4]}@example.com",
             hashed_password=get_password_hash("TestPassword123!"),
             full_name="Dismiss Admin User",
-            role="user",
+            principal_type="agent",
             is_active=True,
-            is_service_account=True,
         )
         session.add(user)
         await session.flush()
@@ -82,7 +81,6 @@ async def _create_admin_user_and_headers(community_server_id: UUID) -> tuple[Use
     token_data = {
         "sub": str(user.id),
         "username": user.username,
-        "role": user.role,
     }
     token = create_access_token(token_data)
     headers = {"Authorization": f"Bearer {token}"}
@@ -101,9 +99,7 @@ async def _create_non_admin_user_headers() -> dict[str, str]:
             email=f"dismiss_nonadmin_{ts:.0f}_{uuid4().hex[:4]}@example.com",
             hashed_password=get_password_hash("TestPassword123!"),
             full_name="Non-Admin User",
-            role="user",
             is_active=True,
-            is_service_account=False,
         )
         session.add(user)
         await session.commit()
@@ -112,7 +108,6 @@ async def _create_non_admin_user_headers() -> dict[str, str]:
     token_data = {
         "sub": str(user.id),
         "username": user.username,
-        "role": user.role,
     }
     token = create_access_token(token_data)
     return {"Authorization": f"Bearer {token}"}

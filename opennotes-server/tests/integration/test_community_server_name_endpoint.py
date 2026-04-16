@@ -78,7 +78,6 @@ async def name_regular_user_headers(name_regular_user: User):
     token_data = {
         "sub": str(name_regular_user.id),
         "username": name_regular_user.username,
-        "role": name_regular_user.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

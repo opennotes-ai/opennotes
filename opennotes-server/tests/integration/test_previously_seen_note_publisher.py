@@ -163,7 +163,6 @@ async def test_setup():
         token_data = {
             "sub": str(user.id),
             "username": user.username,
-            "role": user.role,
         }
         access_token = create_access_token(data=token_data)
         auth_headers = {"Authorization": f"Bearer {access_token}"}

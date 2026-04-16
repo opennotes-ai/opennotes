@@ -111,9 +111,7 @@ async def scoring_jsonapi_registered_user(
                 "username": user.username,
                 "email": user.email,
                 "full_name": user.full_name,
-                "role": user.role,
                 "is_active": user.is_active,
-                "is_superuser": user.is_superuser,
                 "discord_id": user.discord_id,
                 "profile_id": profile.id,
             }
@@ -127,7 +125,6 @@ async def scoring_jsonapi_auth_headers(scoring_jsonapi_registered_user):
     token_data = {
         "sub": str(scoring_jsonapi_registered_user["id"]),
         "username": scoring_jsonapi_registered_user["username"],
-        "role": scoring_jsonapi_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

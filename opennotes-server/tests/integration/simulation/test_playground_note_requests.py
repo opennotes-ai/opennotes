@@ -24,10 +24,7 @@ async def non_admin_user(db):
         username="sim_regular_user",
         email="sim_regular@opennotes.local",
         hashed_password="hashed_password_placeholder",
-        role="user",
         is_active=True,
-        is_superuser=False,
-        is_service_account=False,
         discord_id=f"discord_sim_regular_{uuid4().hex[:8]}",
     )
     db.add(user)
@@ -41,7 +38,6 @@ async def non_admin_auth_headers(non_admin_user):
     token_data = {
         "sub": str(non_admin_user.id),
         "username": non_admin_user.username,
-        "role": non_admin_user.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
