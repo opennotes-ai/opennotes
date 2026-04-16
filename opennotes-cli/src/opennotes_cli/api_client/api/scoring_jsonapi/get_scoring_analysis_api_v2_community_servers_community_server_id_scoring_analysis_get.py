@@ -79,7 +79,7 @@ def sync_detailed(
     Returns the latest scoring snapshot with rater and note factor matrices,
     enriched with agent identity information for simulation agents.
 
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):
@@ -118,7 +118,7 @@ def sync(
     Returns the latest scoring snapshot with rater and note factor matrices,
     enriched with agent identity information for simulation agents.
 
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):
@@ -152,7 +152,7 @@ async def asyncio_detailed(
     Returns the latest scoring snapshot with rater and note factor matrices,
     enriched with agent identity information for simulation agents.
 
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):
@@ -189,7 +189,7 @@ async def asyncio(
     Returns the latest scoring snapshot with rater and note factor matrices,
     enriched with agent identity information for simulation agents.
 
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):

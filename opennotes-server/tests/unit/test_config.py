@@ -949,6 +949,45 @@ class TestLLMModelNameValidation:
                 for error in errors
             ), f"Expected ModelId validation error, got: {errors}"
 
+    def test_content_reviewer_model_rejects_empty_string(self):
+        """CONTENT_REVIEWER_MODEL cannot be empty string."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "CONTENT_REVIEWER_MODEL": "",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(
+                error["loc"] == ("CONTENT_REVIEWER_MODEL",)
+                and "value_error" in str(error["type"]).lower()
+                for error in errors
+            ), f"Expected ModelId validation error, got: {errors}"
+
+    def test_content_reviewer_model_has_valid_default(self):
+        """CONTENT_REVIEWER_MODEL should have a valid non-empty ModelId default."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert isinstance(settings.CONTENT_REVIEWER_MODEL, ModelId)
+            assert ModelId.from_pydantic_ai("openai:gpt-5-mini") == settings.CONTENT_REVIEWER_MODEL
+
     def test_model_names_have_valid_defaults(self):
         """All model name fields should have valid non-empty ModelId defaults."""
         valid_key = "a" * 32
@@ -971,6 +1010,7 @@ class TestLLMModelNameValidation:
             )
             assert ModelId.from_pydantic_ai("openai:gpt-5.1") == settings.VISION_MODEL
             assert ModelId.from_pydantic_ai("openai:gpt-5.1") == settings.AI_NOTE_WRITER_MODEL
+            assert ModelId.from_pydantic_ai("openai:gpt-5-mini") == settings.CONTENT_REVIEWER_MODEL
 
     def test_model_fields_reject_bare_names(self):
         """Model fields without provider prefix (no slash or colon) must be rejected."""
@@ -1012,6 +1052,7 @@ class TestLLMModelNameValidation:
             assert isinstance(settings.VISION_MODEL, ModelId)
             assert isinstance(settings.RELEVANCE_CHECK_MODEL, ModelId)
             assert isinstance(settings.AI_NOTE_WRITER_MODEL, ModelId)
+            assert isinstance(settings.CONTENT_REVIEWER_MODEL, ModelId)
 
     def test_model_id_provider_and_model_accessible(self):
         """ModelId fields expose .provider and .model attributes."""
@@ -1348,4 +1389,4 @@ class TestVertexAIDefaults:
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.VERTEXAI_LOCATION == "us-central1"
+            assert settings.VERTEXAI_LOCATION == "global"

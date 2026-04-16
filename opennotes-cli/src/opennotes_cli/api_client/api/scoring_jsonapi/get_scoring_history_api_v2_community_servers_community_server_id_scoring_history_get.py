@@ -77,7 +77,7 @@ def sync_detailed(
      List available historical scoring snapshots from GCS.
 
     Returns a list of available snapshots with timestamps and sizes.
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):
@@ -114,7 +114,7 @@ def sync(
      List available historical scoring snapshots from GCS.
 
     Returns a list of available snapshots with timestamps and sizes.
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):
@@ -146,7 +146,7 @@ async def asyncio_detailed(
      List available historical scoring snapshots from GCS.
 
     Returns a list of available snapshots with timestamps and sizes.
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):
@@ -181,7 +181,7 @@ async def asyncio(
      List available historical scoring snapshots from GCS.
 
     Returns a list of available snapshots with timestamps and sizes.
-    Requires simulations:read scope or admin privileges.
+    Requires community-servers:read scope or admin privileges.
 
     Args:
         community_server_id (UUID):

@@ -159,6 +159,9 @@ class TestDualWorkflowIsolation:
             patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch(
+                "src.dbos_workflows.content_scan_workflow.content_reviewer_step"
+            ) as mock_reviewer,
+            patch(
                 "src.dbos_workflows.content_scan_workflow.get_scan_terminal_state_step",
                 return_value=False,
             ),
@@ -167,6 +170,7 @@ class TestDualWorkflowIsolation:
             mock_preprocess.return_value = preprocess_result_a
             mock_similarity.return_value = similarity_result
             mock_filter.return_value = filter_result_a
+            mock_reviewer.return_value = filter_result_a
             process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id=orch_id_a,
                 scan_id=str(uuid4()),
@@ -183,6 +187,7 @@ class TestDualWorkflowIsolation:
 
             mock_preprocess.return_value = preprocess_result_b
             mock_filter.return_value = filter_result_b
+            mock_reviewer.return_value = filter_result_b
             process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id=orch_id_b,
                 scan_id=str(uuid4()),

@@ -65,6 +65,7 @@ def _is_research_available(deps: SimAgentDeps) -> bool:
 
 
 sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
+    name="sim-agent",
     deps_type=SimAgentDeps,
     output_type=SimAgentAction,
     retries=3,
@@ -73,6 +74,7 @@ sim_agent: Agent[SimAgentDeps, SimAgentAction] = Agent(
 
 
 action_selector: Agent[SimAgentDeps, ActionSelectionResult] = Agent(
+    name="sim-agent-action-selector",
     deps_type=SimAgentDeps,
     output_type=ActionSelectionResult,
     retries=3,

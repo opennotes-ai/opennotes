@@ -370,3 +370,105 @@ async def test_events_filter_allows_matching_event(
     assert "https://example.com/specific" in called_urls, (
         "Webhook filtered to 'moderation_action.proposed' should receive that event type"
     )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_event_does_not_create_second_delivery_row(
+    session_factory,
+    caplog,
+) -> None:
+    """TASK-1401.17: duplicate (webhook_id, event_id) is rejected by the unique
+    constraint; only one WebhookDelivery row exists per (webhook, event) pair.
+
+    This is the correctness property that lets `publish_moderation_action_applied`
+    safely use a deterministic event_id — DBOS step retries re-emit the same
+    event_id, and the webhook layer dedupes at flush time instead of producing
+    duplicate outbound HTTP POSTs.
+
+    We call `_deliver_to_webhook` directly (not `deliver_event`) because
+    `deliver_event` uses `asyncio.gather(return_exceptions=True)` which would
+    silently swallow any unhandled exception from the second call and let the
+    test pass even if the dedup branch never ran. The log-line assertion plus
+    the direct call prove the IntegrityError branch actually fired.
+    """
+    import logging
+
+    community_server_id = await _create_community_server(session_factory)
+    webhook = await _create_webhook(session_factory, community_server_id)
+
+    event_id = str(uuid4())
+    event_type = "moderation_action.applied"
+    payload = {"action_id": str(uuid4()), "attempt": 1}
+
+    call_count = 0
+
+    async def mock_attempt(self_obj, wh, pl):
+        nonlocal call_count
+        call_count += 1
+        return True, 200, ""
+
+    service = OutboundWebhookDeliveryService(session_factory)
+    with patch.object(OutboundWebhookDeliveryService, "_attempt_delivery", new=mock_attempt):
+        await service._deliver_to_webhook(webhook, event_type, event_id, payload)
+        # Simulate a DBOS retry: same event_id, different payload attempt counter.
+        payload_retry = {**payload, "attempt": 2}
+        with caplog.at_level(logging.INFO, logger="src.webhooks.delivery"):
+            await service._deliver_to_webhook(webhook, event_type, event_id, payload_retry)
+
+    assert call_count == 1, (
+        "Second _deliver_to_webhook call must be blocked by the unique constraint — "
+        "the duplicate HTTP POST is exactly what TASK-1401.17 prevents."
+    )
+
+    # Prove the IntegrityError swallow branch ran, not some earlier short-circuit.
+    assert any(
+        "already exists" in rec.message and str(webhook.id) in rec.message for rec in caplog.records
+    ), (
+        "Expected 'Webhook delivery already exists' INFO log on the retry call — "
+        "if missing, the test passed for the wrong reason."
+    )
+
+    async with session_factory() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(WebhookDelivery).where(
+                WebhookDelivery.event_id == event_id,
+                WebhookDelivery.webhook_id == webhook.id,
+            )
+        )
+        rows = list(result.scalars().all())
+
+    assert len(rows) == 1, f"Expected exactly one delivery row, got {len(rows)}"
+    # The row preserves the first payload — the second attempt was fully rejected.
+    assert rows[0].payload == payload
+
+
+@pytest.mark.asyncio
+async def test_non_unique_integrity_error_is_not_swallowed(session_factory) -> None:
+    """Review follow-up (Codex High #1): `_deliver_to_webhook` must only swallow
+    SQLSTATE 23505 (unique_violation). Other IntegrityError causes (FK violation
+    from a concurrently-deleted webhook, check-constraint failures, etc.) must
+    propagate so the NATS handler can NAK and retry — otherwise the event is
+    silently dropped and the NATS message is ACKed."""
+    community_server_id = await _create_community_server(session_factory)
+    # Fabricate a webhook row that does NOT exist in the DB. The INSERT will
+    # raise IntegrityError with pgcode 23503 (foreign_key_violation), which must
+    # propagate to the caller.
+    phantom_webhook = types.SimpleNamespace(
+        id=uuid4(),
+        url="https://example.com/phantom",
+        secret="s",
+        community_server_id=community_server_id,
+        channel_id=None,
+        active=True,
+        events=None,
+    )
+
+    from sqlalchemy.exc import IntegrityError
+
+    service = OutboundWebhookDeliveryService(session_factory)
+    with pytest.raises(IntegrityError, match=r"foreign key|violates"):
+        await service._deliver_to_webhook(
+            phantom_webhook, "moderation_action.applied", str(uuid4()), {"x": 1}
+        )

@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+import sqlalchemy as sa
 from sqlalchemy import DateTime, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -100,4 +101,5 @@ class ModerationAction(Base, TimestampMixin):
         Index("ix_moderation_actions_request_id", "request_id"),
         Index("ix_moderation_actions_note_id", "note_id"),
         Index("ix_moderation_actions_community_state", "community_server_id", "action_state"),
+        sa.UniqueConstraint("request_id", "action_tier", name="uq_moderation_action_request_tier"),
     )

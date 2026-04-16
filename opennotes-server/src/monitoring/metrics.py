@@ -465,3 +465,9 @@ dbos_pickle_fallback_total = meter.create_counter(
     description="Number of times DBOS deserialization fell back to pickle from JSON",
     unit="1",
 )
+
+content_reviewer_error_classifications_total = meter.create_counter(
+    "content_reviewer.error_classifications",
+    description="Total content reviewer classifications that failed with a hard error (by error_type)",
+    unit="1",
+)
