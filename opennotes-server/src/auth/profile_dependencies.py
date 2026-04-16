@@ -75,7 +75,11 @@ async def get_current_profile(
 async def get_current_active_profile(
     current_profile: Annotated[UserProfile, Depends(get_current_profile)],
 ) -> UserProfile:
-    if not current_profile.is_active:
+    if (
+        not current_profile.is_active
+        or current_profile.is_banned
+        or current_profile.banned_at is not None
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",

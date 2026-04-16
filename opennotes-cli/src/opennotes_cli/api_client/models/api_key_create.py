@@ -16,7 +16,7 @@ class APIKeyCreate:
     Attributes:
         name (str):
         expires_in_days (int | None | Unset):
-        scopes (list[str] | None | Unset): List of permission scopes. None means unrestricted access.
+        scopes (list[str] | None | Unset): List of permission scopes. None is treated as empty (no access).
     """
 
     name: str
