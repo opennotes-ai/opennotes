@@ -199,6 +199,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
     "benchmark: marks tests as benchmarks (deselect with '-m \"not benchmark\"')",
+    "eval: marks tests as offline regression evals (opt-in via '-m eval')",
 ]
 
 [tool.coverage.run]
