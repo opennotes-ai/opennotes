@@ -4,8 +4,16 @@ Reconcile schema drift between model and DB state.
 Handles cases where earlier migrations may not have fully applied
 (CONCURRENTLY indexes, JSONB vs JSON type, nullable promotion).
 
+NOTE (TASK-1451.17): Originally chained off f7ee12c696d5 (phase_16
+drop_replaced_columns). That migration has been deferred until SDK
+coordination completes (R4 in the 4-release sequence — see task notes),
+so this migration now chains directly off 9214033f36bf (phase_15c).
+The legacy users.role / is_superuser / is_service_account columns will
+remain in the DB until migration 007 is re-introduced; alembic check
+will report drift on those three columns until then (expected).
+
 Revision ID: 8939f7cda382
-Revises: f7ee12c696d5
+Revises: 9214033f36bf
 Create Date: 2026-04-16
 """
 
@@ -14,7 +22,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "8939f7cda382"
-down_revision: str | Sequence[str] | None = "f7ee12c696d5"
+down_revision: str | Sequence[str] | None = "9214033f36bf"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
