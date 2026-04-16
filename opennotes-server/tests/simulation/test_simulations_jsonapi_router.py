@@ -1705,9 +1705,7 @@ class TestPublishUnpublishAuth:
             result = await session.execute(stmt)
             user = result.scalar_one()
 
-        token = create_access_token(
-            {"sub": str(user.id), "username": user.username}
-        )
+        token = create_access_token({"sub": str(user.id), "username": user.username})
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -1738,9 +1736,7 @@ class TestPublishUnpublishAuth:
             result = await session.execute(stmt)
             user = result.scalar_one()
 
-        token = create_access_token(
-            {"sub": str(user.id), "username": user.username}
-        )
+        token = create_access_token({"sub": str(user.id), "username": user.username})
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
