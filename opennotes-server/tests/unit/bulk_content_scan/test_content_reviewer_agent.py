@@ -1168,6 +1168,156 @@ class TestContentReviewerModelFromConfig:
             assert call_kwargs.get("model") is explicit_model
 
 
+class TestConditionalFlashpointToolExposure:
+    """AC1-3: detect_flashpoint_tool conditionally exposed via prepare parameter."""
+
+    @pytest.mark.asyncio
+    async def test_flashpoint_tool_excluded_from_function_tools_when_service_is_none(self):
+        """detect_flashpoint_tool must not appear in agent_info.function_tools when flashpoint_service=None."""
+        from pydantic_ai.messages import ModelResponse
+        from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+        from src.bulk_content_scan.content_reviewer_agent import (
+            ContentReviewerDeps,
+            content_reviewer_agent,
+        )
+
+        captured: dict = {}
+
+        def capture_model(messages: list, agent_info: AgentInfo) -> ModelResponse:
+            captured["tool_names"] = [t.name for t in agent_info.function_tools]
+            import json
+
+            from pydantic_ai.messages import ModelResponse, ToolCallPart
+
+            good_output = {
+                "scan_type": "content_moderation_classification",
+                "confidence": 0.8,
+                "category_labels": {"test": True},
+                "category_scores": None,
+                "recommended_action": None,
+                "action_tier": None,
+                "explanation": "test",
+            }
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name=agent_info.output_tools[0].name,
+                        args=json.dumps(good_output),
+                        tool_call_id="call-1",
+                    )
+                ]
+            )
+
+        deps = ContentReviewerDeps(flashpoint_service=None, context_items=[])
+        await content_reviewer_agent.run(
+            "Classify this content.",
+            deps=deps,
+            model=FunctionModel(capture_model),
+        )
+
+        assert "detect_flashpoint_tool" not in captured["tool_names"]
+
+    @pytest.mark.asyncio
+    async def test_flashpoint_tool_included_in_function_tools_when_service_provided(self):
+        """detect_flashpoint_tool must appear in agent_info.function_tools when flashpoint_service is set."""
+        import json
+        from unittest.mock import AsyncMock
+
+        from pydantic_ai.messages import ModelResponse, ToolCallPart
+        from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+        from src.bulk_content_scan.content_reviewer_agent import (
+            ContentReviewerDeps,
+            content_reviewer_agent,
+        )
+
+        captured: dict = {}
+        mock_service = AsyncMock()
+
+        def capture_model(messages: list, agent_info: AgentInfo) -> ModelResponse:
+            captured["tool_names"] = [t.name for t in agent_info.function_tools]
+            good_output = {
+                "scan_type": "content_moderation_classification",
+                "confidence": 0.8,
+                "category_labels": {"test": True},
+                "category_scores": None,
+                "recommended_action": None,
+                "action_tier": None,
+                "explanation": "test",
+            }
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name=agent_info.output_tools[0].name,
+                        args=json.dumps(good_output),
+                        tool_call_id="call-1",
+                    )
+                ]
+            )
+
+        deps = ContentReviewerDeps(flashpoint_service=mock_service, context_items=[])
+        await content_reviewer_agent.run(
+            "Classify this content.",
+            deps=deps,
+            model=FunctionModel(capture_model),
+        )
+
+        assert "detect_flashpoint_tool" in captured["tool_names"]
+
+    @pytest.mark.asyncio
+    async def test_system_prompt_does_not_mention_flashpoint_when_service_is_none(self):
+        """When flashpoint_service=None, the tool description must not appear in system messages."""
+        import json
+
+        from pydantic_ai.messages import ModelResponse, SystemPromptPart, ToolCallPart
+        from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+        from src.bulk_content_scan.content_reviewer_agent import (
+            ContentReviewerDeps,
+            content_reviewer_agent,
+        )
+
+        captured: dict = {}
+
+        def capture_model(messages: list, agent_info: AgentInfo) -> ModelResponse:
+            system_content = []
+            for msg in messages:
+                for part in msg.parts:
+                    if isinstance(part, SystemPromptPart):
+                        system_content.append(part.content)
+            captured["system_content"] = "\n".join(system_content)
+            captured["tool_names"] = [t.name for t in agent_info.function_tools]
+            good_output = {
+                "scan_type": "content_moderation_classification",
+                "confidence": 0.8,
+                "category_labels": {"test": True},
+                "category_scores": None,
+                "recommended_action": None,
+                "action_tier": None,
+                "explanation": "test",
+            }
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name=agent_info.output_tools[0].name,
+                        args=json.dumps(good_output),
+                        tool_call_id="call-1",
+                    )
+                ]
+            )
+
+        deps = ContentReviewerDeps(flashpoint_service=None, context_items=[])
+        await content_reviewer_agent.run(
+            "Classify this content.",
+            deps=deps,
+            model=FunctionModel(capture_model),
+        )
+
+        assert "detect_flashpoint_tool" not in captured["tool_names"]
+        assert "detect_flashpoint_tool" not in captured.get("system_content", "")
+
+
 class TestErrorTypeDiscrimination:
     """AC1-5: error_type field distinguishes hard failures from low-confidence."""
 

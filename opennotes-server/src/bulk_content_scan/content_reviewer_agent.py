@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.settings import ModelSettings
-from pydantic_ai.tools import RunContext
+from pydantic_ai.tools import RunContext, ToolDefinition
 from pydantic_ai.usage import UsageLimits
 
 from src.bulk_content_scan.capabilities.flashpoint import detect_flashpoint
@@ -110,7 +110,16 @@ def _validate_output(
     return output
 
 
-@content_reviewer_agent.tool
+async def _prepare_flashpoint_tool(
+    ctx: RunContext[ContentReviewerDeps],
+    tool_def: ToolDefinition,
+) -> ToolDefinition | None:
+    if ctx.deps.flashpoint_service is None:
+        return None
+    return tool_def
+
+
+@content_reviewer_agent.tool(prepare=_prepare_flashpoint_tool)
 async def detect_flashpoint_tool(
     ctx: RunContext[ContentReviewerDeps],
     content_item: ContentItem,
