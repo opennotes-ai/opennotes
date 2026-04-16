@@ -14,9 +14,13 @@ introduces the principal_type column:
   users row so the profile is no longer orphaned. The synthesized user has
   is_active=FALSE and hashed_password='DEACTIVATED' to prevent login.
 
-  The username is derived from the first 8 chars of the provider_user_id to
-  stay under the implicit length constraints while remaining human-readable.
-  Discord IDs are all-numeric, so collisions are impossible for different IDs.
+  The synthetic username concatenates the full provider_user_id (Discord
+  snowflake or email — both unique provider keys), guaranteeing the
+  users.username UNIQUE constraint is satisfied. An earlier draft used
+  substring(provider_user_id, 1, 8) for readability, but Discord snowflakes
+  share leading digits over short windows and would collide mid-migration.
+  The 32-char username length cap was removed in
+  task1422_02_remove_username_length_limit, so the full ID is safe.
 
 Idempotency:
   Pass 1 INSERT uses a LEFT JOIN / WHERE u.id IS NULL guard — running twice
@@ -64,8 +68,8 @@ def upgrade() -> None:
             is_active, discord_id, created_at, updated_at
         )
         SELECT
-            gen_random_uuid(),
-            'orphan-' || substring(ui.provider_user_id, 1, 8),
+            uuidv7(),
+            'orphan-' || ui.provider_user_id,
             'orphan-' || ui.provider_user_id || '@opennotes.local',
             'DEACTIVATED',
             FALSE,
