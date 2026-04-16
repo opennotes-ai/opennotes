@@ -12,8 +12,12 @@ enabled_site_setting :opennotes_enabled
 register_asset "stylesheets/opennotes.scss"
 
 after_initialize do
-  %w[client user_mapper post_mapper action_executor status_mapper].each do |f|
+  %w[client user_mapper post_mapper action_executor status_mapper slug_generator].each do |f|
     load File.expand_path("../lib/opennotes/#{f}.rb", __FILE__)
+  end
+
+  if SiteSetting.opennotes_platform_community_server_id.blank?
+    SiteSetting.opennotes_platform_community_server_id = OpenNotes::SlugGenerator.generate_for_site
   end
 
   %w[
