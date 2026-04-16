@@ -1409,7 +1409,6 @@ async def auth_headers(registered_user):
     token_data = {
         "sub": str(registered_user["id"]),  # user id as string (must be a valid UUID)
         "username": registered_user["username"],
-        "role": registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
@@ -1424,7 +1423,6 @@ async def async_auth_headers(registered_user):
     token_data = {
         "sub": str(registered_user["id"]),  # user id as string
         "username": registered_user["username"],
-        "role": registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
@@ -1439,7 +1437,6 @@ async def auth_headers_for_user(registered_user):
     token_data = {
         "sub": str(registered_user["id"]),  # user id as string
         "username": registered_user["username"],
-        "role": registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {

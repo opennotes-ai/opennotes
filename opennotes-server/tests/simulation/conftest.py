@@ -94,7 +94,6 @@ async def admin_auth_headers(admin_registered_user):
     token_data = {
         "sub": str(admin_registered_user["id"]),
         "username": admin_registered_user["username"],
-        "role": admin_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

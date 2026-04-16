@@ -377,7 +377,6 @@ class TestIATValidation:
             payload = {
                 "sub": str(registered_user["id"]),
                 "username": registered_user["username"],
-                "role": registered_user["role"],
                 "exp": int((datetime.now(UTC) + timedelta(hours=2)).timestamp()),
                 "iat": int(future_time.timestamp()),  # Future iat
                 "jti": "test_jti",
@@ -565,7 +564,6 @@ class TestTokenRevocation:
             payload = {
                 "sub": str(registered_user["id"]),
                 "username": registered_user["username"],
-                "role": registered_user["role"],
                 "exp": int((datetime.now(UTC) - timedelta(hours=1)).timestamp()),
                 "iat": int(past_time.timestamp()),
                 "jti": "expired_token_jti",

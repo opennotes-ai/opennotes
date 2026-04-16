@@ -88,7 +88,6 @@ async def auth_client(registered_user):
     token_data = {
         "sub": str(registered_user["id"]),
         "username": registered_user["username"],
-        "role": registered_user["role"],
     }
     access_token = create_access_token(token_data)
     headers = {"Authorization": f"Bearer {access_token}"}

@@ -98,7 +98,6 @@ async def nats_event_admin_client(nats_event_registered_user):
     token_data = {
         "sub": str(nats_event_registered_user["id"]),
         "username": nats_event_registered_user["username"],
-        "role": nats_event_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     headers = {"Authorization": f"Bearer {access_token}"}

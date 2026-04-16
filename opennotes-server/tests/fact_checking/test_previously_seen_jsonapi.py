@@ -149,7 +149,6 @@ async def previously_seen_jsonapi_auth_headers(previously_seen_jsonapi_registere
     token_data = {
         "sub": str(previously_seen_jsonapi_registered_user["id"]),
         "username": previously_seen_jsonapi_registered_user["username"],
-        "role": previously_seen_jsonapi_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

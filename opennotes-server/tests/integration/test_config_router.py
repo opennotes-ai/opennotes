@@ -54,7 +54,6 @@ async def config_auth_headers(config_registered_user):
     token_data = {
         "sub": str(config_registered_user["id"]),
         "username": config_registered_user["username"],
-        "role": config_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

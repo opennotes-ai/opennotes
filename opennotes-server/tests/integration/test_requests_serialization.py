@@ -132,7 +132,6 @@ async def requests_auth_headers(requests_registered_user):
     token_data = {
         "sub": str(requests_registered_user["id"]),
         "username": requests_registered_user["username"],
-        "role": requests_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

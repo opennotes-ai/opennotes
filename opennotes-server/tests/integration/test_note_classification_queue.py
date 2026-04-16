@@ -93,7 +93,6 @@ async def classification_auth_headers(classification_registered_user):
     token_data = {
         "sub": str(classification_registered_user["id"]),
         "username": classification_registered_user["username"],
-        "role": classification_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

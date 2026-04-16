@@ -126,7 +126,6 @@ async def monitored_channels_jsonapi_auth_headers(monitored_channels_jsonapi_reg
     token_data = {
         "sub": str(monitored_channels_jsonapi_registered_user["id"]),
         "username": monitored_channels_jsonapi_registered_user["username"],
-        "role": monitored_channels_jsonapi_registered_user["role"],
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}
