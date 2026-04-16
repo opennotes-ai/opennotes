@@ -13,6 +13,7 @@ from uuid import UUID
 
 import pendulum
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bulk_content_scan.policy_evaluator import PolicyDecision
@@ -102,7 +103,18 @@ async def create_moderation_action_from_policy(
         classifier_evidence=classifier_evidence,
     )
 
-    action = await create_moderation_action(session, create_data, applied_at=applied_at)
+    try:
+        action = await create_moderation_action(session, create_data, applied_at=applied_at)
+    except IntegrityError:
+        await session.rollback()
+        action = await _fetch_existing_action(session, request_id, policy_decision.action_tier)
+        logger.info(
+            "IntegrityError on duplicate insert; fetched existing ModerationAction for request_id=%s tier=%s",
+            request_id,
+            policy_decision.action_tier,
+        )
+        return action
+
     logger.info(
         "Created ModerationAction id=%s state=%s tier=%s for request_id=%s",
         action.id,

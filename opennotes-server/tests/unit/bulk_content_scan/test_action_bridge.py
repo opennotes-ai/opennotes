@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 import pendulum
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from src.bulk_content_scan.policy_evaluator import PolicyDecision
 from src.bulk_content_scan.schemas import (
@@ -787,3 +788,164 @@ class TestEmitPlatformActionEvent:
         )
 
         mock_publisher.publish_moderation_action_proposed.assert_not_called()
+
+
+class TestIntegrityErrorHandling:
+    """Tests for IntegrityError handling in create_moderation_action_from_policy (AC-4)."""
+
+    @pytest.mark.asyncio
+    async def test_integrity_error_returns_existing_action(self):
+        """IntegrityError on duplicate insert falls back to fetching existing row."""
+        from src.bulk_content_scan.action_bridge import create_moderation_action_from_policy
+
+        mock_session = AsyncMock()
+        request_id = uuid4()
+        community_server_id = uuid4()
+        decision = _make_tier1_decision()
+        classification = _make_classification()
+        content_item = _make_content_item()
+
+        existing_action = _make_mock_action(
+            request_id=request_id,
+            action_state=ActionState.APPLIED,
+        )
+
+        with (
+            patch(
+                "src.bulk_content_scan.action_bridge.create_moderation_action",
+                new_callable=AsyncMock,
+                side_effect=IntegrityError("duplicate key", {}, None),
+            ),
+            patch(
+                "src.bulk_content_scan.action_bridge._fetch_existing_action",
+                new_callable=AsyncMock,
+                side_effect=[None, existing_action],
+            ),
+        ):
+            result = await create_moderation_action_from_policy(
+                session=mock_session,
+                policy_decision=decision,
+                classification=classification,
+                content_item=content_item,
+                request_id=request_id,
+                community_server_id=community_server_id,
+            )
+
+        assert result is existing_action
+        mock_session.rollback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_integrity_error_calls_rollback_before_refetch(self):
+        """After IntegrityError, session is rolled back before re-fetching."""
+        from src.bulk_content_scan.action_bridge import create_moderation_action_from_policy
+
+        mock_session = AsyncMock()
+        rollback_order = []
+
+        async def track_rollback():
+            rollback_order.append("rollback")
+
+        mock_session.rollback = AsyncMock(side_effect=track_rollback)
+
+        request_id = uuid4()
+        community_server_id = uuid4()
+        decision = _make_tier1_decision()
+        classification = _make_classification()
+        content_item = _make_content_item()
+
+        existing_action = _make_mock_action(request_id=request_id)
+
+        fetch_calls = []
+
+        async def track_fetch(session, rid, tier):
+            call_index = len(fetch_calls)
+            fetch_calls.append(("fetch", call_index))
+            return None if call_index == 0 else existing_action
+
+        with (
+            patch(
+                "src.bulk_content_scan.action_bridge.create_moderation_action",
+                new_callable=AsyncMock,
+                side_effect=IntegrityError("duplicate key", {}, None),
+            ),
+            patch(
+                "src.bulk_content_scan.action_bridge._fetch_existing_action",
+                side_effect=track_fetch,
+            ),
+        ):
+            result = await create_moderation_action_from_policy(
+                session=mock_session,
+                policy_decision=decision,
+                classification=classification,
+                content_item=content_item,
+                request_id=request_id,
+                community_server_id=community_server_id,
+            )
+
+        assert result is existing_action
+        assert rollback_order == ["rollback"]
+
+    @pytest.mark.asyncio
+    async def test_idempotency_second_call_same_request_id_and_tier(self):
+        """Calling action_bridge twice with same request_id + action_tier returns the same row."""
+        from src.bulk_content_scan.action_bridge import create_moderation_action_from_policy
+
+        mock_session = AsyncMock()
+        request_id = uuid4()
+        community_server_id = uuid4()
+        decision = _make_tier1_decision()
+        classification = _make_classification()
+        content_item = _make_content_item()
+
+        created_action = _make_mock_action(
+            request_id=request_id,
+            action_state=ActionState.APPLIED,
+        )
+
+        call_count = 0
+
+        async def stateful_create(db, data, **kwargs):
+            nonlocal call_count
+            if call_count == 0:
+                call_count += 1
+                return created_action
+            raise IntegrityError("duplicate key", {}, None)
+
+        fetch_results = [None, None, created_action]
+        fetch_index = 0
+
+        async def stateful_fetch(session, rid, tier):
+            nonlocal fetch_index
+            result = fetch_results[min(fetch_index, len(fetch_results) - 1)]
+            fetch_index += 1
+            return result
+
+        with (
+            patch(
+                "src.bulk_content_scan.action_bridge.create_moderation_action",
+                side_effect=stateful_create,
+            ),
+            patch(
+                "src.bulk_content_scan.action_bridge._fetch_existing_action",
+                side_effect=stateful_fetch,
+            ),
+        ):
+            first = await create_moderation_action_from_policy(
+                session=mock_session,
+                policy_decision=decision,
+                classification=classification,
+                content_item=content_item,
+                request_id=request_id,
+                community_server_id=community_server_id,
+            )
+            second = await create_moderation_action_from_policy(
+                session=mock_session,
+                policy_decision=decision,
+                classification=classification,
+                content_item=content_item,
+                request_id=request_id,
+                community_server_id=community_server_id,
+            )
+
+        assert first is created_action
+        assert second is created_action

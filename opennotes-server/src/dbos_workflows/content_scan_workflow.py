@@ -1555,6 +1555,40 @@ def content_reviewer_step(
                     policy_decision = evaluator.evaluate(classification, policy_config)
 
                     if policy_decision.action_tier is not None:
+                        from src.bulk_content_scan.action_bridge import (
+                            create_moderation_action_from_policy,
+                            emit_platform_action_event,
+                        )
+                        from src.moderation_actions.models import ActionTier
+
+                        request_id = uuid_module.uuid5(
+                            uuid_module.NAMESPACE_URL,
+                            f"bulk-scan:{scan_id}:{msg_id}",
+                        )
+                        community_server_uuid = UUID(community_server_id)
+                        moderation_action = await create_moderation_action_from_policy(
+                            session=session,
+                            policy_decision=policy_decision,
+                            classification=classification,
+                            content_item=content_item,
+                            request_id=request_id,
+                            community_server_id=community_server_uuid,
+                            pre_computed_evidence=pre_computed,  # type: ignore[arg-type]
+                        )
+
+                        if (
+                            moderation_action is not None
+                            and policy_decision.action_tier == ActionTier.TIER_1_IMMEDIATE
+                        ):
+                            from src.events.publisher import create_worker_event_publisher
+
+                            async with create_worker_event_publisher() as worker_publisher:
+                                await emit_platform_action_event(
+                                    publisher=worker_publisher,
+                                    moderation_action=moderation_action,
+                                    content_item=content_item,
+                                )
+
                         first_candidate = candidates[0]
                         matches = [c.match_data for c in candidates]
                         matches.append(classification)

@@ -19,7 +19,7 @@ Patch targets for local imports inside content_reviewer_step function body:
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 
 def _make_mock_session_stack():
@@ -66,6 +66,17 @@ def _make_scan_candidate_dict(
     }
 
 
+def _make_mock_action():
+    action = MagicMock()
+    action.id = uuid4()
+    action.request_id = uuid4()
+    action.community_server_id = uuid4()
+    action.action_type = "hide"
+    action.action_state = "applied"
+    action.action_tier = "tier_1_immediate"
+    return action
+
+
 def _base_patches(
     mock_redis: AsyncMock,
     mock_session_maker: MagicMock,
@@ -75,6 +86,10 @@ def _base_patches(
     skip_terminal: bool = False,
 ):
     """Return list of patch() context managers for the shared infrastructure mocks."""
+    mock_worker_publisher = AsyncMock()
+    mock_worker_publisher.__aenter__ = AsyncMock(return_value=mock_worker_publisher)
+    mock_worker_publisher.__aexit__ = AsyncMock(return_value=False)
+
     patches = [
         patch("src.config.get_settings", return_value=MagicMock(REDIS_URL="redis://test")),
         patch(
@@ -99,6 +114,19 @@ def _base_patches(
         patch(
             "src.bulk_content_scan.flashpoint_service.get_flashpoint_service",
             return_value=MagicMock(),
+        ),
+        patch(
+            "src.bulk_content_scan.action_bridge.create_moderation_action_from_policy",
+            new_callable=AsyncMock,
+            return_value=_make_mock_action(),
+        ),
+        patch(
+            "src.bulk_content_scan.action_bridge.emit_platform_action_event",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "src.events.publisher.create_worker_event_publisher",
+            return_value=mock_worker_publisher,
         ),
     ]
     if load_side_effect is not None:
@@ -1222,3 +1250,477 @@ class TestRunBatchScanStepsDispatch:
 
         assert flagged_count == 0
         assert errors == 1
+
+
+class TestActionBridgeWiring:
+    """Tests for AC-1/2/5: action_bridge wired into content_reviewer_step."""
+
+    def test_action_bridge_called_for_tier1_decision(self) -> None:
+        """create_moderation_action_from_policy is called when action_tier is not None (AC-1)."""
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+        from src.moderation_actions.models import ActionTier, ActionType, ReviewGroup
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(message_id="msg-bridge")
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.95,
+            category_labels={"harassment": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Harassment detected",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = ActionTier.TIER_1_IMMEDIATE
+        mock_policy_decision.action_type = ActionType.HIDE
+        mock_policy_decision.review_group = ReviewGroup.STAFF
+        mock_policy_decision.reason = "Tier 1 triggered"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_action = MagicMock()
+        mock_action.id = uuid4()
+        mock_action.request_id = uuid4()
+        mock_action.community_server_id = uuid4()
+        mock_action.action_type = "hide"
+        mock_action.action_state = "applied"
+        mock_action.action_tier = "tier_1_immediate"
+
+        mock_create_action = AsyncMock(return_value=mock_action)
+        mock_emit_event = AsyncMock()
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.create_moderation_action_from_policy",
+                    mock_create_action,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.emit_platform_action_event",
+                    mock_emit_event,
+                )
+            )
+            result = content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        assert result["flagged_count"] == 1
+        mock_create_action.assert_awaited_once()
+
+    def test_action_bridge_not_called_for_pass_decision(self) -> None:
+        """create_moderation_action_from_policy is NOT called for pass decisions (action_tier=None)."""
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(message_id="msg-pass2")
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.1,
+            category_labels={},
+            category_scores=None,
+            recommended_action="pass",
+            action_tier=None,
+            explanation="No issues found",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = None
+        mock_policy_decision.action_type = None
+        mock_policy_decision.review_group = None
+        mock_policy_decision.reason = "pass"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_create_action = AsyncMock(return_value=None)
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.create_moderation_action_from_policy",
+                    mock_create_action,
+                )
+            )
+            content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        mock_create_action.assert_not_awaited()
+
+    def test_request_id_is_deterministic_from_scan_id_and_message_id(self) -> None:
+        """request_id is deterministic: same scan_id+msg_id produces same UUID on retry (AC-2)."""
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+        from src.moderation_actions.models import ActionTier, ActionType, ReviewGroup
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(message_id="msg-deterministic")
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.9,
+            category_labels={"harassment": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Deterministic test",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = ActionTier.TIER_1_IMMEDIATE
+        mock_policy_decision.action_type = ActionType.HIDE
+        mock_policy_decision.review_group = ReviewGroup.STAFF
+        mock_policy_decision.reason = "Tier 1"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_action = MagicMock()
+        mock_action.id = uuid4()
+        mock_action.request_id = uuid4()
+        mock_action.community_server_id = uuid4()
+        mock_action.action_type = "hide"
+        mock_action.action_state = "applied"
+        mock_action.action_tier = "tier_1_immediate"
+
+        captured_request_ids: list[UUID] = []
+
+        async def capture_request_id(
+            session,
+            policy_decision,
+            classification,
+            content_item,
+            request_id,
+            community_server_id,
+            **kwargs,
+        ):
+            captured_request_ids.append(request_id)
+            return mock_action
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.create_moderation_action_from_policy",
+                    side_effect=capture_request_id,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.emit_platform_action_event",
+                    new_callable=AsyncMock,
+                )
+            )
+
+            content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+            content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        assert len(captured_request_ids) == 2
+        assert captured_request_ids[0] == captured_request_ids[1], (
+            "Same scan_id + message_id must produce the same request_id on retry"
+        )
+
+    def test_tier1_action_emits_platform_event(self) -> None:
+        """Tier-1 APPLIED actions emit a platform action event (AC-5)."""
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+        from src.moderation_actions.models import ActionTier, ActionType, ReviewGroup
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(message_id="msg-event")
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.95,
+            category_labels={"harassment": True},
+            category_scores=None,
+            recommended_action="hide",
+            action_tier="tier_1_immediate",
+            explanation="Event test",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = ActionTier.TIER_1_IMMEDIATE
+        mock_policy_decision.action_type = ActionType.HIDE
+        mock_policy_decision.review_group = ReviewGroup.STAFF
+        mock_policy_decision.reason = "Tier 1"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_action = MagicMock()
+        mock_action.id = uuid4()
+        mock_action.request_id = uuid4()
+        mock_action.community_server_id = uuid4()
+        mock_action.action_type = "hide"
+        mock_action.action_state = "applied"
+        mock_action.action_tier = "tier_1_immediate"
+
+        mock_create_action = AsyncMock(return_value=mock_action)
+        mock_emit_event = AsyncMock()
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.create_moderation_action_from_policy",
+                    mock_create_action,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.emit_platform_action_event",
+                    mock_emit_event,
+                )
+            )
+            result = content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        assert result["flagged_count"] == 1
+        mock_emit_event.assert_awaited_once()
+
+    def test_tier2_action_does_not_emit_platform_event(self) -> None:
+        """Tier-2 PROPOSED actions do NOT emit a platform action event (AC-5)."""
+        from src.bulk_content_scan.schemas import ContentModerationClassificationResult
+        from src.dbos_workflows.content_scan_workflow import content_reviewer_step
+        from src.moderation_actions.models import ActionTier, ActionType, ReviewGroup
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        mock_redis, _, mock_session_maker = _make_mock_session_stack()
+
+        candidate_dict = _make_scan_candidate_dict(message_id="msg-tier2")
+
+        mock_classification = ContentModerationClassificationResult(
+            confidence=0.75,
+            category_labels={"harassment": True},
+            category_scores=None,
+            recommended_action="review",
+            action_tier="tier_2_consensus",
+            explanation="Tier 2 review needed",
+        )
+
+        mock_policy_decision = MagicMock()
+        mock_policy_decision.action_tier = ActionTier.TIER_2_CONSENSUS
+        mock_policy_decision.action_type = ActionType.HIDE
+        mock_policy_decision.review_group = ReviewGroup.TRUSTED
+        mock_policy_decision.reason = "Tier 2"
+
+        mock_reviewer_service = MagicMock()
+        mock_reviewer_service.classify = AsyncMock(return_value=mock_classification)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate = MagicMock(return_value=mock_policy_decision)
+
+        mock_service = MagicMock()
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_action = MagicMock()
+        mock_action.id = uuid4()
+        mock_action.request_id = uuid4()
+        mock_action.community_server_id = uuid4()
+        mock_action.action_type = "hide"
+        mock_action.action_state = "proposed"
+        mock_action.action_tier = "tier_2_consensus"
+
+        mock_create_action = AsyncMock(return_value=mock_action)
+        mock_emit_event = AsyncMock()
+
+        patches = _base_patches(mock_redis, mock_session_maker, load_return=[candidate_dict])
+
+        with __import__("contextlib").ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.content_reviewer_agent.ContentReviewerService",
+                    return_value=mock_reviewer_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.policy_evaluator.ModerationPolicyEvaluator",
+                    return_value=mock_evaluator,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.create_moderation_action_from_policy",
+                    mock_create_action,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "src.bulk_content_scan.action_bridge.emit_platform_action_event",
+                    mock_emit_event,
+                )
+            )
+            result = content_reviewer_step.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                similarity_candidates_key="sim-key",
+                flashpoint_candidates_key="",
+            )
+
+        assert result["flagged_count"] == 1
+        mock_create_action.assert_awaited_once()
+        mock_emit_event.assert_not_awaited()
