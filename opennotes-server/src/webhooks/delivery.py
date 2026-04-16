@@ -84,8 +84,16 @@ class OutboundWebhookDeliveryService:
                 session.add(delivery)
                 try:
                     await session.flush()
-                except IntegrityError:
+                except IntegrityError as exc:
                     await session.rollback()
+                    # Scope the swallow to the unique (webhook_id, event_id) guard.
+                    # PostgreSQL SQLSTATE 23505 = unique_violation. Any other
+                    # integrity failure (FK violation from a concurrently-deleted
+                    # webhook, check constraint, etc.) must propagate so the NATS
+                    # handler can NAK and retry instead of silently dropping the event.
+                    pgcode = getattr(getattr(exc, "orig", None), "pgcode", None)
+                    if pgcode != "23505":
+                        raise
                     logger.info(
                         "Webhook delivery already exists for (webhook_id=%s, event_id=%s); "
                         "skipping duplicate emit.",
