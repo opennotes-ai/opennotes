@@ -19,9 +19,9 @@ class TestUserRegistration:
             assert data["username"] == test_user_data["username"]
             assert data["email"] == test_user_data["email"]
             assert data["full_name"] == test_user_data["full_name"]
-            assert data["role"] == "user"
             assert data["is_active"] is True
-            assert data["is_superuser"] is False
+            assert data["principal_type"] == "human"
+            assert data["platform_roles"] == []
             assert "id" in data
             assert "created_at" in data
 

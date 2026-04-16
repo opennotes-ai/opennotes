@@ -20,14 +20,14 @@ def _make_user(**kwargs) -> User:
         "email": "test@test.example",
         "hashed_password": "fakehash",
         "is_active": True,
-        "is_service_account": False,
-        "is_superuser": False,
-        "role": "user",
         "principal_type": "human",
         "platform_roles": [],
         "banned_at": None,
     }
     defaults.update(kwargs)
+    # Strip any dropped User columns that tests may pass defensively
+    for dropped in ("is_service_account", "is_superuser", "role"):
+        defaults.pop(dropped, None)
     return User(**defaults)
 
 
@@ -45,7 +45,6 @@ class TestIsServiceAccountHeuristicReplacement:
         user = _make_user(
             username="my-agent",
             email="agent@opennotes.local",
-            is_service_account=True,
             principal_type="agent",
         )
         assert is_service_account(user) is True
@@ -54,8 +53,6 @@ class TestIsServiceAccountHeuristicReplacement:
         user = _make_user(
             username="platform-service",
             email="platform-service@opennotes.local",
-            is_service_account=True,
-            is_superuser=True,
             principal_type="system",
             platform_roles=["platform_admin"],
         )
