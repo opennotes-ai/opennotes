@@ -31,6 +31,7 @@ module OpenNotes
       name = SiteSetting.title.to_s
       client.patch(
         "/api/v1/community-servers/#{slug}/name",
+        params: { platform: "discourse" },
         body: {
           name: name,
           server_stats: { platform: "discourse", hostname: Discourse.current_hostname },

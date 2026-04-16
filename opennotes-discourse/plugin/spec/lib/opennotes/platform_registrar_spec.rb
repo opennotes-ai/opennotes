@@ -18,9 +18,10 @@ RSpec.describe OpenNotes::PlatformRegistrar do
   end
 
   describe ".register" do
-    it "PATCHes /name with SiteSetting.title and server_stats after resolving UUID" do
+    it "PATCHes /name with platform param, SiteSetting.title and server_stats after resolving UUID" do
       expect(client).to receive(:patch).with(
         "/api/v1/community-servers/#{slug}/name",
+        params: { platform: "discourse" },
         body: {
           name: "My Forum",
           server_stats: { platform: "discourse", hostname: "forum.example.com" },

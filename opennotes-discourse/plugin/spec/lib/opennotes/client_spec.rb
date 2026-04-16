@@ -111,6 +111,16 @@ RSpec.describe OpenNotes::Client do
       result = client.patch("/api/v2/requests/123", body: body)
       expect(result).to eq("data" => { "id" => "123" })
     end
+
+    it "passes query parameters on PATCH requests" do
+      stubs.patch("/api/v2/requests/123") do |env|
+        expect(env.url.query).to include("platform")
+        expect(env.url.query).to include("discourse")
+        [200, { "Content-Type" => "application/json" }, '{"data": {"id": "123"}}']
+      end
+
+      client.patch("/api/v2/requests/123", params: { platform: "discourse" }, body: {})
+    end
   end
 
   describe "#delete" do

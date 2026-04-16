@@ -36,8 +36,8 @@ module OpenNotes
       request_with_retries(:post, path, body: body, user: user)
     end
 
-    def patch(path, body: {}, user: nil)
-      request_with_retries(:patch, path, body: body, user: user)
+    def patch(path, params: {}, body: {}, user: nil)
+      request_with_retries(:patch, path, params: params, body: body, user: user)
     end
 
     def delete(path, user: nil)
