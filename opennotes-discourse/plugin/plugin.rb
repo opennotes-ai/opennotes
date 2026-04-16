@@ -12,7 +12,7 @@ enabled_site_setting :opennotes_enabled
 register_asset "stylesheets/opennotes.scss"
 
 after_initialize do
-  %w[client user_mapper post_mapper action_executor status_mapper slug_generator community_server_resolver].each do |f|
+  %w[client user_mapper post_mapper action_executor status_mapper slug_generator community_server_resolver platform_registrar].each do |f|
     load File.expand_path("../lib/opennotes/#{f}.rb", __FILE__)
   end
 
@@ -46,6 +46,10 @@ after_initialize do
     next unless opennotes_monitored_category?(post.topic&.category)
 
     Jobs.enqueue(:sync_post_to_opennotes, post_id: post.id, edited: true)
+  end
+
+  DiscourseEvent.on(:site_setting_changed) do |name, _old_val, _new_val|
+    OpenNotes::PlatformRegistrar.on_setting_saved(name)
   end
 
   DiscourseEvent.on(:flag_created) do |flag|
