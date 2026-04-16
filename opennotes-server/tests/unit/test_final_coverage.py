@@ -120,6 +120,7 @@ async def test_users_crud_verify_api_key():
         name="Test Key",
         key_hash=get_password_hash(raw_key),
         is_active=True,
+        scopes=["notes:read"],
         expires_at=datetime.now(UTC) + timedelta(days=30),
     )
 
