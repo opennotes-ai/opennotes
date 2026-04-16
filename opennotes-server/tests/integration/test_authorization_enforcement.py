@@ -85,9 +85,7 @@ class TestAuthorizationFixtures:
             username="user_a_auth_test",
             email="user_a_auth@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_user_a_auth",
         )
         db.add(user)
@@ -158,9 +156,7 @@ class TestAuthorizationFixtures:
             username="user_b_auth_test",
             email="user_b_auth@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_user_b_auth",
         )
         db.add(user)
@@ -231,9 +227,7 @@ class TestAuthorizationFixtures:
             username="admin_a_auth_test",
             email="admin_a_auth@test.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
             is_active=True,
-            is_superuser=False,
             discord_id="discord_admin_a_auth",
         )
         db.add(user)
@@ -297,10 +291,8 @@ class TestAuthorizationFixtures:
             username="bot-service",
             email="bot@opennotes.local",
             hashed_password="hashed_password_placeholder",
-            role="user",
+            principal_type="agent",
             is_active=True,
-            is_superuser=False,
-            is_service_account=True,
             discord_id="discord_bot_service",
         )
         db.add(user)

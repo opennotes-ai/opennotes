@@ -43,7 +43,6 @@ async def admin_user() -> User:
             email="admin@example.com",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
         )
         db.add(user)
         await db.commit()
@@ -63,7 +62,6 @@ async def regular_user() -> User:
             email="user@example.com",
             hashed_password="hashed_password",
             is_active=True,
-            role="user",
         )
         db.add(user)
         await db.commit()
