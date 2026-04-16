@@ -42,25 +42,7 @@ async def set_platform_admin(db: AsyncSession, user: User, is_admin: bool) -> No
 
 
 def is_service_account(user: User) -> bool:
-    """
-    Check if a User is a service account.
-
-    Service accounts are identified by:
-    - is_service_account flag on User model
-    - Email ending with @opennotes.local
-    - Username ending with -service
-
-    Args:
-        user: User instance to check
-
-    Returns:
-        True if user is a service account, False otherwise
-    """
-    return bool(
-        user.is_service_account
-        or (user.email and user.email.endswith("@opennotes.local"))
-        or (user.username and user.username.endswith("-service"))
-    )
+    return user.principal_type in ("agent", "system")
 
 
 def is_opennotes_admin(profile: UserProfile) -> bool:
