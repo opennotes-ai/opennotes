@@ -42,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.auth import create_access_token, create_refresh_token, verify_refresh_token
 from src.auth.dependencies import get_current_active_user
 from src.auth.models import (
+    PRIVILEGED_SCOPE_REQUIREMENTS,
     RESTRICTED_SCOPES,
     APIKeyCreate,
     APIKeyResponse,
@@ -52,7 +53,7 @@ from src.auth.models import (
     UserResponse,
     UserUpdate,
 )
-from src.auth.permissions import is_account_active, is_service_account
+from src.auth.permissions import has_platform_role, is_account_active, is_service_account
 from src.auth.revocation import revoke_all_user_tokens, revoke_token
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
@@ -606,8 +607,16 @@ async def create_user_api_key(
             detail="Non-service accounts must specify explicit scopes",
         )
 
-    if api_key_create.scopes:
-        requested_restricted = RESTRICTED_SCOPES.intersection(api_key_create.scopes)
+    requested_scopes = api_key_create.scopes or []
+
+    if not requested_scopes and api_key_create.scopes is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API keys require explicit scopes",
+        )
+
+    if requested_scopes:
+        requested_restricted = RESTRICTED_SCOPES.intersection(requested_scopes)
         if requested_restricted and not is_service_account(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -616,6 +625,14 @@ async def create_user_api_key(
                     "Only service accounts may request these scopes."
                 ),
             )
+
+        for scope in requested_scopes:
+            required_role = PRIVILEGED_SCOPE_REQUIREMENTS.get(scope)
+            if required_role and not has_platform_role(current_user, required_role):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Scope '{scope}' requires platform_admin role",
+                )
 
     try:
         ip_address, user_agent = extract_request_context(request)

@@ -26,6 +26,23 @@ ALLOWED_API_KEY_SCOPES = frozenset(
 
 RESTRICTED_SCOPES = frozenset({"api-keys:create"})
 
+USER_GRANTABLE_SCOPES = frozenset(
+    {
+        "profiles:read",
+        "notes:read",
+        "ratings:write",
+        "requests:read",
+        "requests:write",
+        "simulations:read",
+    }
+)
+
+ADMIN_GRANTABLE_SCOPES = ALLOWED_API_KEY_SCOPES - USER_GRANTABLE_SCOPES
+
+PRIVILEGED_SCOPE_REQUIREMENTS: dict[str, str] = {
+    "platform:adapter": "platform_admin",
+}
+
 
 class Token(BaseModel):
     access_token: str
