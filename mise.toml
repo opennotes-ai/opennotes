@@ -88,60 +88,91 @@ if [ -n "${DATABASE_URL:-}" ]; then
     exit 0
 fi
 
-CONTAINER_NAME="opennotes-postgres"
+# Resolve a running postgres container (compose-aware via shared helper)
+CONTAINER_NAME=$(mise run _db:get-container opennotes-postgres)
 
-# Check if container exists
-if ! docker ps -a -q -f name="$CONTAINER_NAME" | grep -q .; then
-    echo "Error: Container '$CONTAINER_NAME' does not exist." >&2
-    echo "" >&2
-    echo "The database container is managed by OpenTofu. Please run:" >&2
-    echo "    mise run apply:infra:local" >&2
-    echo "" >&2
-    exit 1
-fi
-
-# Check if container is running
-if docker ps -q -f name="$CONTAINER_NAME" | grep -q .; then
+if [ -n "$CONTAINER_NAME" ]; then
+    # Already running — assume ready (matches prior fast-path behavior)
     exit 0
 fi
 
-# Container exists but is not running - prompt user
-echo "Container '$CONTAINER_NAME' exists but is not running."
-read -p "Start it? [y/N] " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Aborted." >&2
+# No running container. Check for a stopped legacy literal container (OpenTofu-managed setup).
+if docker ps -a -q --filter "name=^opennotes-postgres$" | grep -q .; then
+    CONTAINER_NAME="opennotes-postgres"
+    echo "Container '$CONTAINER_NAME' exists but is not running."
+    read -p "Start it? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted." >&2
+        exit 1
+    fi
+    echo "Starting $CONTAINER_NAME..."
+    docker start "$CONTAINER_NAME"
+
+    echo "Waiting for PostgreSQL to be ready..."
+    for i in {1..30}; do
+        if docker exec "$CONTAINER_NAME" pg_isready -U opennotes >/dev/null 2>&1; then
+            echo "PostgreSQL is ready."
+            exit 0
+        fi
+        sleep 1
+    done
+
+    echo "Error: PostgreSQL did not become ready within 30 seconds." >&2
     exit 1
 fi
 
-echo "Starting $CONTAINER_NAME..."
-docker start "$CONTAINER_NAME"
+echo "Error: No PostgreSQL container running and DATABASE_URL not set." >&2
+echo "" >&2
+echo "Either:" >&2
+echo "    1. Start containers via Compose: mise run dev:up" >&2
+echo "    2. Provision via OpenTofu: mise run apply:infra:local" >&2
+echo "    3. Set DATABASE_URL to point at an external PostgreSQL" >&2
+echo "" >&2
+exit 1
+'''
 
-# Wait for postgres to be ready
-echo "Waiting for PostgreSQL to be ready..."
-for i in {1..30}; do
-    if docker exec "$CONTAINER_NAME" pg_isready -U opennotes >/dev/null 2>&1; then
-        echo "PostgreSQL is ready."
+[tasks."_db:get-container"]
+description = "Internal: Resolve running container name for a service (compose-aware, with anchored fallback)"
+dir = "{{config_root}}"
+quiet = true
+run = '''
+SERVICE="{{arg(name="service")}}"
+
+# 1. Compose-aware lookup: respects COMPOSE_PROJECT_NAME and container_name overrides
+ID=$(docker compose ps -q "$SERVICE" 2>/dev/null | head -n1)
+if [ -n "$ID" ]; then
+    NAME=$(docker inspect "$ID" 2>/dev/null | jq -r '.[0].Name // empty' | sed 's|^/||')
+    if [ -n "$NAME" ]; then
+        echo "$NAME"
         exit 0
     fi
-    sleep 1
-done
+fi
 
-echo "Error: PostgreSQL did not become ready within 30 seconds." >&2
-exit 1
+# 2. Anchored fallback for ad-hoc `docker run --name <service>` (possibly vestigial; kept defensively)
+ID=$(docker ps -q --filter "name=^${SERVICE}$" | head -n1)
+if [ -n "$ID" ]; then
+    echo "$SERVICE"
+    exit 0
+fi
+
+# 3. Nothing running — emit empty stdout, exit 0 (caller decides)
+'''
+usage = '''
+arg "service" help="Compose service name (e.g. opennotes-server)"
 '''
 
 [tasks."_db:get-prefix"]
 description = "Internal: Detect environment and output command prefix for database operations"
 dir = "{{vars.server_dir}}"
+quiet = true
 run = '''
-# Check if opennotes-server container is running
-if docker ps -q -f name=opennotes-server | grep -q .; then
-    echo "Running inside opennotes-server container..." >&2
-    echo "docker exec opennotes-server "
+NAME=$(mise run _db:get-container opennotes-server)
+if [ -n "$NAME" ]; then
+    echo "Running inside $NAME container..." >&2
+    echo "docker exec $NAME "
 else
     echo "Running on host..." >&2
-    # Check if database is accessible before proceeding
     if [ -z "${DATABASE_URL:-}" ]; then
         echo "DATABASE_URL not set. Cannot run database operations on host." >&2
         echo "   Either:" >&2
@@ -360,7 +391,14 @@ arg "revision" description="Target revision (use 'head' for latest)" default="he
 [tasks."db:shell"]
 description = "Open database shell"
 depends = ["_db:ensure-postgres"]
-run = "docker exec -it opennotes-postgres psql -U opennotes -d opennotes"
+run = '''
+NAME=$(mise run _db:get-container opennotes-postgres)
+if [ -z "$NAME" ]; then
+    echo "Error: No postgres container running." >&2
+    exit 1
+fi
+docker exec -it "$NAME" psql -U opennotes -d opennotes
+'''
 
 [tasks."db:check"]
 description = "Check for schema drift between models and database (container-aware)"
