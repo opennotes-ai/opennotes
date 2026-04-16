@@ -58,7 +58,6 @@ async def service_account_headers(service_account: User):
     token_data = {
         "sub": str(service_account.id),
         "username": service_account.username,
-        "role": service_account.role,
     }
     access_token = create_access_token(token_data)
     return {"Authorization": f"Bearer {access_token}"}

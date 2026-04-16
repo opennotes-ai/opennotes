@@ -108,7 +108,6 @@ async def hybrid_search_jsonapi_registered_user(
                 "username": user.username,
                 "email": user.email,
                 "full_name": user.full_name,
-                "role": user.role,
                 "is_active": user.is_active,
                 "is_superuser": user.is_superuser,
                 "discord_id": user.discord_id,

@@ -1706,7 +1706,7 @@ class TestPublishUnpublishAuth:
             user = result.scalar_one()
 
         token = create_access_token(
-            {"sub": str(user.id), "username": user.username, "role": user.role}
+            {"sub": str(user.id), "username": user.username}
         )
 
         transport = ASGITransport(app=app)
@@ -1739,7 +1739,7 @@ class TestPublishUnpublishAuth:
             user = result.scalar_one()
 
         token = create_access_token(
-            {"sub": str(user.id), "username": user.username, "role": user.role}
+            {"sub": str(user.id), "username": user.username}
         )
 
         transport = ASGITransport(app=app)
