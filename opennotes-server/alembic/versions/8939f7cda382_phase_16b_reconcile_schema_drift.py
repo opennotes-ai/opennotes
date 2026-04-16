@@ -11,9 +11,6 @@ Create Date: 2026-04-16
 
 from collections.abc import Sequence
 
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB
-
 from alembic import op
 
 revision: str = "8939f7cda382"
@@ -23,42 +20,36 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Ensure principal_type is NOT NULL (migration 004 should have done this)
-    op.alter_column("users", "principal_type", nullable=False, existing_type=sa.String())
+    # Raw SQL to forcibly reconcile schema with model.
+    # Idempotent: each operation checks for current state before acting.
 
-    # Ensure platform_roles is JSONB not JSON
-    op.alter_column(
-        "users",
-        "platform_roles",
-        type_=JSONB(),
-        existing_type=sa.JSON(),
-        existing_nullable=False,
-        existing_server_default=sa.text("'[]'::jsonb"),
-    )
+    # 1. Ensure principal_type is NOT NULL
+    op.execute("""
+        ALTER TABLE users ALTER COLUMN principal_type SET NOT NULL
+    """)
 
-    # Ensure indexes exist (idempotent — check before creating)
-    conn = op.get_bind()
-    inspector = sa.inspect(conn)
-    existing_indexes = {idx["name"] for idx in inspector.get_indexes("users")}
+    # 2. Ensure platform_roles is JSONB (not JSON)
+    # PostgreSQL needs explicit USING clause when converting JSON -> JSONB
+    op.execute("""
+        ALTER TABLE users
+        ALTER COLUMN platform_roles TYPE JSONB
+        USING platform_roles::jsonb
+    """)
 
-    if "idx_users_principal_type" not in existing_indexes:
-        op.create_index("idx_users_principal_type", "users", ["principal_type"])
-
-    if "idx_users_banned_at" not in existing_indexes:
-        op.create_index(
-            "idx_users_banned_at",
-            "users",
-            ["banned_at"],
-            postgresql_where=sa.text("banned_at IS NOT NULL"),
-        )
-
-    if "idx_users_platform_roles_gin" not in existing_indexes:
-        op.create_index(
-            "idx_users_platform_roles_gin",
-            "users",
-            ["platform_roles"],
-            postgresql_using="gin",
-        )
+    # 3. Ensure indexes exist (idempotent via IF NOT EXISTS)
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS idx_users_principal_type
+        ON users(principal_type)
+    """)
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS idx_users_banned_at
+        ON users(banned_at)
+        WHERE banned_at IS NOT NULL
+    """)
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS idx_users_platform_roles_gin
+        ON users USING gin (platform_roles)
+    """)
 
 
 def downgrade() -> None:
