@@ -28,11 +28,13 @@ class User(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
 
-    principal_type: Mapped[str | None] = mapped_column(
+    principal_type: Mapped[str] = mapped_column(
         sa.String,
-        nullable=True,
+        nullable=False,
+        default="human",
+        server_default="human",
     )
-    platform_roles: Mapped[list] = mapped_column(sa.JSON, server_default="[]", default=list)
+    platform_roles: Mapped[list] = mapped_column(JSONB, server_default="[]", default=list)
     banned_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     ban_reason: Mapped[str | None] = mapped_column(sa.String, nullable=True)
 
@@ -49,6 +51,16 @@ class User(Base):
         DateTime(timezone=True),
         default=lambda: pendulum.now("UTC"),
         onupdate=lambda: pendulum.now("UTC"),
+    )
+
+    __table_args__ = (
+        Index("idx_users_principal_type", "principal_type"),
+        Index(
+            "idx_users_banned_at",
+            "banned_at",
+            postgresql_where=sa.text("banned_at IS NOT NULL"),
+        ),
+        Index("idx_users_platform_roles_gin", "platform_roles", postgresql_using="gin"),
     )
 
     def __repr__(self) -> str:

@@ -8,6 +8,8 @@ Create Date: 2026-04-15 20:46:03.526578
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -18,8 +20,23 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.alter_column("users", "principal_type", nullable=False)
+    # Promote to NOT NULL and add server default for new rows.
+    # Test fixtures and legacy callers may not set principal_type explicitly;
+    # the default "human" matches registration hardening (Phase 1.3).
+    op.alter_column(
+        "users",
+        "principal_type",
+        nullable=False,
+        server_default=sa.text("'human'"),
+        existing_type=sa.String(),
+    )
 
 
 def downgrade() -> None:
-    op.alter_column("users", "principal_type", nullable=True)
+    op.alter_column(
+        "users",
+        "principal_type",
+        nullable=True,
+        server_default=None,
+        existing_type=sa.String(),
+    )
