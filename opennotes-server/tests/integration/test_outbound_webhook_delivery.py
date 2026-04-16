@@ -465,16 +465,10 @@ async def test_non_unique_integrity_error_is_not_swallowed(session_factory) -> N
         events=None,
     )
 
+    from sqlalchemy.exc import IntegrityError
+
     service = OutboundWebhookDeliveryService(session_factory)
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises(IntegrityError, match=r"foreign key|violates"):
         await service._deliver_to_webhook(
             phantom_webhook, "moderation_action.applied", str(uuid4()), {"x": 1}
         )
-
-    # The raised error should be an IntegrityError (FK violation), not silently
-    # returning None. Accept either a bare IntegrityError or something wrapping it.
-    from sqlalchemy.exc import IntegrityError as _IE
-
-    assert isinstance(exc_info.value, _IE) or isinstance(
-        getattr(exc_info.value, "__cause__", None), _IE
-    )
