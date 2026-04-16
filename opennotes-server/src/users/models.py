@@ -117,7 +117,9 @@ class APIKey(Base):
     key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
-    scopes: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True, default=None)
+    scopes: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"), default=list
+    )
     created_by_user_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -131,8 +133,8 @@ class APIKey(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def has_scope(self, scope: str) -> bool:
-        if self.scopes is None:
-            return True
+        if self.scopes is None or len(self.scopes) == 0:
+            return False
         return scope in self.scopes
 
     def is_scoped(self) -> bool:

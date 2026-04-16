@@ -35,8 +35,8 @@ def _make_api_key(scopes: list[str] | None = None) -> APIKey:
     key.scopes = scopes
 
     def has_scope(scope: str) -> bool:
-        if scopes is None:
-            return True
+        if scopes is None or len(scopes) == 0:
+            return False
         return scope in scopes
 
     def is_scoped() -> bool:
@@ -83,12 +83,13 @@ class TestRequireScopeOrAdmin:
             require_scope_or_admin(user, request, "simulations:read")
         assert exc_info.value.status_code == 403
 
-    def test_regular_user_with_unscoped_key_gets_restricted_not_admin(self):
+    def test_regular_user_with_unscoped_key_gets_403(self):
         user = _make_user()
         api_key = _make_api_key(scopes=None)
         request = _make_request(api_key=api_key)
-        result = require_scope_or_admin(user, request, "simulations:read")
-        assert result is True
+        with pytest.raises(HTTPException) as exc_info:
+            require_scope_or_admin(user, request, "simulations:read")
+        assert exc_info.value.status_code == 403
 
     def test_service_account_with_scoped_key_gets_restricted(self):
         user = _make_user(is_service_account=True)
@@ -105,19 +106,21 @@ class TestRequireScopeOrAdmin:
             require_scope_or_admin(user, request, "simulations:read")
         assert exc_info.value.status_code == 403
 
-    def test_superuser_with_unscoped_key_gets_unrestricted(self):
+    def test_superuser_with_unscoped_key_gets_403(self):
         user = _make_user(is_superuser=True)
         api_key = _make_api_key(scopes=None)
         request = _make_request(api_key=api_key)
-        result = require_scope_or_admin(user, request, "simulations:read")
-        assert result is False
+        with pytest.raises(HTTPException) as exc_info:
+            require_scope_or_admin(user, request, "simulations:read")
+        assert exc_info.value.status_code == 403
 
-    def test_service_account_with_unscoped_key_gets_unrestricted(self):
+    def test_service_account_with_unscoped_key_gets_403(self):
         user = _make_user(is_service_account=True)
         api_key = _make_api_key(scopes=None)
         request = _make_request(api_key=api_key)
-        result = require_scope_or_admin(user, request, "simulations:read")
-        assert result is False
+        with pytest.raises(HTTPException) as exc_info:
+            require_scope_or_admin(user, request, "simulations:read")
+        assert exc_info.value.status_code == 403
 
 
 @pytest.mark.unit

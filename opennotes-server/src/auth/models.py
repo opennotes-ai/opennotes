@@ -162,7 +162,7 @@ class APIKeyCreate(StrictInputSchema):
     expires_in_days: int | None = Field(None, gt=0, le=365)
     scopes: list[str] | None = Field(
         None,
-        description="List of permission scopes. None means unrestricted access.",
+        description="List of permission scopes. None is treated as empty (no access).",
     )
 
     @field_validator("scopes")

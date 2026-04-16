@@ -12927,7 +12927,7 @@
               }
             ],
             "title": "Scopes",
-            "description": "List of permission scopes. None means unrestricted access."
+            "description": "List of permission scopes. None is treated as empty (no access)."
           }
         },
         "additionalProperties": false,
