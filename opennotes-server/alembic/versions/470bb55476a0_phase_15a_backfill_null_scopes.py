@@ -8,8 +8,10 @@ Phase 1.5 — fixes TASK-1433.09 (NULL scopes = unrestricted access bug).
 
 Active API keys with NULL scopes get a conservative non-privileged scope set:
 ALLOWED_API_KEY_SCOPES minus the keys of PRIVILEGED_SCOPE_REQUIREMENTS
-(i.e., minus "platform:adapter"). This preserves existing access for
-legitimate integrations while removing the implicit super-power.
+(i.e., minus "platform:adapter") and minus RESTRICTED_SCOPES
+(i.e., minus "api-keys:create"). This preserves existing access for
+legitimate integrations while removing the implicit super-power and
+without letting legacy keys mint new scoped keys.
 
 Inactive keys are left alone — they will stay NULL and be deactivated when
 they are never upgraded.
@@ -45,7 +47,6 @@ _CONSERVATIVE_SCOPES = sorted(
         "profiles:read",
         "community-servers:read",
         "moderation-actions:read",
-        "api-keys:create",
     ]
 )
 
