@@ -321,40 +321,76 @@ async def seed_dev_api_key(db: AsyncSession) -> None:
     await seed_api_key(db, key_hash, DEV_API_KEY_NAME, scopes=DISCORD_BOT_SCOPES)
 
 
-async def _seed_and_save_prod_key(db: AsyncSession) -> None:
-    provided_key = os.environ.get("OPENNOTES_API_KEY", "")
+def _resolve_provided_key(env_var: str) -> tuple[str, str | None] | None:
+    provided_key = os.environ.get(env_var, "")
+    if not provided_key or provided_key.startswith("CHANGE_THIS"):
+        return None
+    key_prefix: str | None = None
+    if provided_key.startswith("opk_"):
+        parts = provided_key.split("_", 2)
+        if len(parts) == 3:
+            key_prefix = parts[1]
+    return provided_key, key_prefix
 
-    if provided_key and not provided_key.startswith("CHANGE_THIS"):
-        api_key = provided_key
-        key_prefix = None
-        if api_key.startswith("opk_"):
-            parts = api_key.split("_", 2)
-            if len(parts) == 3:
-                key_prefix = parts[1]
+
+def _push_plaintext_to_gsm(secret_id: str, plaintext: str) -> None:
+    """Push a minted plaintext API key to Google Secret Manager.
+
+    Writes a new version on the pre-existing secret shell `secret_id` in the
+    configured GCP project. Operators must have created the shell via infra
+    apply; this function does not create secrets from scratch on purpose so the
+    seed job stays narrowly scoped to roles/secretmanager.secretVersionAdder.
+
+    The plaintext is never logged and never returned.
+    """
+    from google.api_core import exceptions as gax_exceptions
+    from google.cloud import secretmanager
+
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID")
+    if not project_id:
+        raise RuntimeError(
+            "GOOGLE_CLOUD_PROJECT (or GCP_PROJECT_ID) must be set to push seeded API keys "
+            "to Google Secret Manager."
+        )
+
+    client = secretmanager.SecretManagerServiceClient()
+    parent = f"projects/{project_id}/secrets/{secret_id}"
+
+    try:
+        client.add_secret_version(
+            parent=parent,
+            payload={"data": plaintext.encode("utf-8")},
+        )
+    except gax_exceptions.NotFound as exc:
+        raise RuntimeError(
+            f"Secret shell '{secret_id}' does not exist in project '{project_id}'. "
+            "Run the infrastructure apply first to create the secret shell "
+            "(tofu apply on the opennotes-server secrets module), then re-run seeding."
+        ) from exc
+
+    print(f"✓ Pushed new version of secret '{secret_id}' to Google Secret Manager")
+
+
+async def _seed_and_save_prod_key(db: AsyncSession) -> None:
+    override = _resolve_provided_key("OPENNOTES_API_KEY")
+    pushed_from_override = override is not None
+    if override is not None:
+        api_key, key_prefix = override
     else:
         api_key, key_prefix = generate_api_key()
 
     key_hash = get_password_hash(api_key)
     await seed_api_key(db, key_hash, PROD_API_KEY_NAME, key_prefix, scopes=DISCORD_BOT_SCOPES)
 
-    key_path = "/tmp/opennotes-api-key.txt"
-    fd = os.open(key_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, api_key.encode())
-    finally:
-        os.close(fd)
+    if not pushed_from_override:
+        _push_plaintext_to_gsm("opennotes-api-key", api_key)
 
 
 async def _seed_and_save_prod_playground_key(db: AsyncSession) -> None:
-    provided_key = os.environ.get("PLAYGROUND_API_KEY", "")
-
-    if provided_key and not provided_key.startswith("CHANGE_THIS"):
-        api_key = provided_key
-        key_prefix = None
-        if api_key.startswith("opk_"):
-            parts = api_key.split("_", 2)
-            if len(parts) == 3:
-                key_prefix = parts[1]
+    override = _resolve_provided_key("PLAYGROUND_API_KEY")
+    pushed_from_override = override is not None
+    if override is not None:
+        api_key, key_prefix = override
     else:
         api_key, key_prefix = generate_api_key()
 
@@ -369,24 +405,15 @@ async def _seed_and_save_prod_playground_key(db: AsyncSession) -> None:
         scopes=PLAYGROUND_SCOPES,
     )
 
-    key_path = "/tmp/playground-api-key.txt"
-    fd = os.open(key_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, api_key.encode())
-    finally:
-        os.close(fd)
+    if not pushed_from_override:
+        _push_plaintext_to_gsm("playground-api-key", api_key)
 
 
 async def _seed_and_save_prod_platform_key(db: AsyncSession) -> None:
-    provided_key = os.environ.get("PLATFORM_API_KEY", "")
-
-    if provided_key and not provided_key.startswith("CHANGE_THIS"):
-        api_key = provided_key
-        key_prefix = None
-        if api_key.startswith("opk_"):
-            parts = api_key.split("_", 2)
-            if len(parts) == 3:
-                key_prefix = parts[1]
+    override = _resolve_provided_key("PLATFORM_API_KEY")
+    pushed_from_override = override is not None
+    if override is not None:
+        api_key, key_prefix = override
     else:
         api_key, key_prefix = generate_api_key()
 
@@ -401,12 +428,8 @@ async def _seed_and_save_prod_platform_key(db: AsyncSession) -> None:
         scopes=PLATFORM_SCOPES,
     )
 
-    key_path = "/tmp/platform-api-key.txt"
-    fd = os.open(key_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, api_key.encode())
-    finally:
-        os.close(fd)
+    if not pushed_from_override:
+        _push_plaintext_to_gsm("platform-api-key", api_key)
 
 
 async def main() -> None:
@@ -438,22 +461,14 @@ async def main() -> None:
                 await session.commit()
                 print()
                 print("=" * 60)
-                print("API keys written (mode 0600):")
-                print("  - Discord bot:  /tmp/opennotes-api-key.txt")
-                print("  - Playground:   /tmp/playground-api-key.txt")
-                print("  - Platform:     /tmp/platform-api-key.txt")
+                print("API keys seeded and pushed to Google Secret Manager:")
+                print("  - Discord bot:  secret/opennotes-api-key")
+                print("  - Playground:   secret/playground-api-key")
+                print("  - Platform:     secret/platform-api-key")
                 print("=" * 60)
                 print()
-                print("  1. Read the keys:")
-                print("       cat /tmp/opennotes-api-key.txt")
-                print("       cat /tmp/playground-api-key.txt")
-                print("       cat /tmp/platform-api-key.txt")
-                print("  2. Add to secrets.yaml and re-encrypt with SOPS")
-                print("  3. Delete the files:")
-                print(
-                    "       rm /tmp/opennotes-api-key.txt /tmp/playground-api-key.txt /tmp/platform-api-key.txt"
-                )
-                print("  4. Redeploy for the changes to take effect")
+                print("  Redeploy dependent services to pick up the new secret versions.")
+                print("  Plaintext keys were never written to disk or stdout.")
                 print("=" * 60)
             elif environment in ["development", "local"]:
                 await seed_dev_api_key(session)
