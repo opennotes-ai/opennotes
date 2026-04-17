@@ -231,6 +231,126 @@ async def test_prod_opennotes_key_pushes_to_gsm(seed_module, monkeypatch, capsys
 
 
 @pytest.mark.asyncio
+async def test_prod_main_sets_tracebacklimit_to_zero(seed_module, monkeypatch):
+    """TASK-1422.13.05.01: prod main flow must set sys.tracebacklimit to 0
+    before any key is minted, so a secondary uncaught exception cannot print
+    a traceback with local reprs to stderr.
+    """
+    import sys as real_sys
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
+    monkeypatch.delenv("OPENNOTES_API_KEY", raising=False)
+    monkeypatch.delenv("PLAYGROUND_API_KEY", raising=False)
+    monkeypatch.delenv("PLATFORM_API_KEY", raising=False)
+
+    observed: dict[str, object] = {}
+
+    async def record_tracebacklimit(db):
+        observed["tracebacklimit"] = getattr(real_sys, "tracebacklimit", "<unset>")
+
+    monkeypatch.setattr(seed_module, "_seed_and_save_prod_key", record_tracebacklimit)
+    monkeypatch.setattr(seed_module, "_seed_and_save_prod_playground_key", record_tracebacklimit)
+    monkeypatch.setattr(seed_module, "_seed_and_save_prod_platform_key", record_tracebacklimit)
+
+    class DummyResult:
+        def scalar_one(self):
+            return 0
+
+    class DummySession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def execute(self, *args, **kwargs):
+            return DummyResult()
+
+        async def commit(self):
+            return None
+
+        async def rollback(self):
+            return None
+
+    class DummySessionFactory:
+        def __call__(self, *args, **kwargs):
+            return DummySession()
+
+    monkeypatch.setattr(seed_module, "AsyncSession", DummySessionFactory())
+    monkeypatch.setattr(seed_module, "get_engine", lambda: None)
+
+    prior_limit = getattr(real_sys, "tracebacklimit", None)
+    try:
+        await seed_module.main()
+    finally:
+        if prior_limit is None and hasattr(real_sys, "tracebacklimit"):
+            del real_sys.tracebacklimit
+        elif prior_limit is not None:
+            real_sys.tracebacklimit = prior_limit
+
+    assert observed["tracebacklimit"] == 0, (
+        f"sys.tracebacklimit should be 0 during prod seeding; observed {observed['tracebacklimit']!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_exception_handler_does_not_leak_plaintext_via_primary_exception(
+    seed_module, monkeypatch, capsys
+):
+    """TASK-1422.13.05.01: when a primary exception carries the plaintext in
+    its message, the outer handler's `str(e)` must not echo the plaintext to
+    stdout or stderr.
+    """
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
+    monkeypatch.delenv("OPENNOTES_API_KEY", raising=False)
+    monkeypatch.delenv("PLAYGROUND_API_KEY", raising=False)
+    monkeypatch.delenv("PLATFORM_API_KEY", raising=False)
+
+    sentinel_plaintext = "opk_LEAKPRIM_sentinel_primary_exception_value"
+
+    async def raise_primary_with_plaintext(db):
+        raise RuntimeError(f"synthetic failure containing {sentinel_plaintext}")
+
+    monkeypatch.setattr(seed_module, "_seed_and_save_prod_key", raise_primary_with_plaintext)
+
+    class DummyResult:
+        def scalar_one(self):
+            return 0
+
+    class RollbackSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def execute(self, *args, **kwargs):
+            return DummyResult()
+
+        async def commit(self):
+            return None
+
+        async def rollback(self):
+            return None
+
+    class RollbackFactory:
+        def __call__(self, *args, **kwargs):
+            return RollbackSession()
+
+    monkeypatch.setattr(seed_module, "AsyncSession", RollbackFactory())
+    monkeypatch.setattr(seed_module, "get_engine", lambda: None)
+
+    with pytest.raises(SystemExit):
+        await seed_module.main()
+
+    captured = capsys.readouterr()
+    assert sentinel_plaintext not in captured.out, f"plaintext leaked to stdout: {captured.out!r}"
+    assert sentinel_plaintext not in captured.err, f"plaintext leaked to stderr: {captured.err!r}"
+
+
+@pytest.mark.asyncio
 async def test_commit_happens_before_gsm_push(seed_module, monkeypatch):
     """TASK-1422.13.05.02: DB commit must precede the GSM push so a DB rollback
     cannot orphan a fresh GSM version.

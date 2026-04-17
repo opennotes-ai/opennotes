@@ -39,6 +39,7 @@ from uuid import UUID
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.password import get_password_hash
@@ -394,8 +395,11 @@ async def _seed_and_save_prod_key(db: AsyncSession) -> None:
     await seed_api_key(db, key_hash, PROD_API_KEY_NAME, key_prefix, scopes=DISCORD_BOT_SCOPES)
     await db.commit()
 
-    if not pushed_from_override:
-        _push_plaintext_to_gsm("opennotes-api-key", api_key)
+    try:
+        if not pushed_from_override:
+            _push_plaintext_to_gsm("opennotes-api-key", api_key)
+    finally:
+        del api_key
 
 
 async def _seed_and_save_prod_playground_key(db: AsyncSession) -> None:
@@ -418,8 +422,11 @@ async def _seed_and_save_prod_playground_key(db: AsyncSession) -> None:
     )
     await db.commit()
 
-    if not pushed_from_override:
-        _push_plaintext_to_gsm("playground-api-key", api_key)
+    try:
+        if not pushed_from_override:
+            _push_plaintext_to_gsm("playground-api-key", api_key)
+    finally:
+        del api_key
 
 
 async def _seed_and_save_prod_platform_key(db: AsyncSession) -> None:
@@ -442,8 +449,11 @@ async def _seed_and_save_prod_platform_key(db: AsyncSession) -> None:
     )
     await db.commit()
 
-    if not pushed_from_override:
-        _push_plaintext_to_gsm("platform-api-key", api_key)
+    try:
+        if not pushed_from_override:
+            _push_plaintext_to_gsm("platform-api-key", api_key)
+    finally:
+        del api_key
 
 
 async def main() -> None:
@@ -455,6 +465,9 @@ async def main() -> None:
     print("================================================")
     print(f"Environment: {environment}")
     print()
+
+    if is_production:
+        sys.tracebacklimit = 0
 
     async with AsyncSession(get_engine()) as session:
         try:
@@ -496,9 +509,16 @@ async def main() -> None:
                 sys.exit(0)
 
             print()
-        except Exception as e:
-            await session.rollback()
-            print(f"✗ Error seeding API keys: {e}")
+        except (RuntimeError, SQLAlchemyError, OSError) as e:
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+            error_type = type(e).__name__
+            if is_production:
+                print(f"✗ Error seeding API keys: <{error_type} suppressed in production>")
+            else:
+                print(f"✗ Error seeding API keys: {e}")
             print()
             print("Note: This is not critical. API keys can be manually created via the API.")
             sys.exit(1)
