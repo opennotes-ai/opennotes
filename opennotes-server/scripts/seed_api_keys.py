@@ -333,13 +333,15 @@ def _resolve_provided_key(env_var: str) -> tuple[str, str | None] | None:
     return provided_key, key_prefix
 
 
-def _push_plaintext_to_gsm(secret_id: str, plaintext: str) -> None:
+def _push_plaintext_to_gsm(secret_resource_id: str, plaintext: str) -> None:
     """Push a minted plaintext API key to Google Secret Manager.
 
-    Writes a new version on the pre-existing secret shell `secret_id` in the
-    configured GCP project. Operators must have created the shell via infra
-    apply; this function does not create secrets from scratch on purpose so the
-    seed job stays narrowly scoped to roles/secretmanager.secretVersionAdder.
+    Writes a new version on the pre-existing secret shell `secret_resource_id`
+    (the GSM resource identifier, e.g. "platform-api-key" — NOT a secret value)
+    in the configured GCP project. Operators must have created the shell via
+    infra apply; this function does not create secrets from scratch on purpose
+    so the seed job stays narrowly scoped to
+    roles/secretmanager.secretVersionAdder.
 
     The plaintext is never logged and never returned.
     """
@@ -354,7 +356,7 @@ def _push_plaintext_to_gsm(secret_id: str, plaintext: str) -> None:
         )
 
     client = secretmanager.SecretManagerServiceClient()
-    parent = f"projects/{project_id}/secrets/{secret_id}"
+    parent = f"projects/{project_id}/secrets/{secret_resource_id}"
 
     try:
         client.add_secret_version(
@@ -363,12 +365,12 @@ def _push_plaintext_to_gsm(secret_id: str, plaintext: str) -> None:
         )
     except gax_exceptions.NotFound as exc:
         raise RuntimeError(
-            f"Secret shell '{secret_id}' does not exist in project '{project_id}'. "
+            f"Secret shell '{secret_resource_id}' does not exist in project '{project_id}'. "
             "Run the infrastructure apply first to create the secret shell "
             "(tofu apply on the opennotes-server secrets module), then re-run seeding."
         ) from exc
 
-    print(f"✓ Pushed new version of secret '{secret_id}' to Google Secret Manager")
+    print(f"✓ Pushed new version of secret '{secret_resource_id}' to Google Secret Manager")
 
 
 async def _seed_and_save_prod_key(db: AsyncSession) -> None:
