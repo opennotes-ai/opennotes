@@ -66,6 +66,10 @@ PLATFORM_SERVICE_USER_USERNAME = "platform-service"
 PLATFORM_SERVICE_USER_EMAIL = "platform@opennotes.local"
 PLATFORM_SCOPES = ["api-keys:create"]
 
+GSM_SECRET_OPENNOTES = "opennotes-api-key"
+GSM_SECRET_PLAYGROUND = "playground-api-key"
+GSM_SECRET_PLATFORM = "platform-api-key"
+
 
 def generate_api_key() -> tuple[str, str]:
     """Generate a new API key in the format: opk_<prefix>_<secret>"""
@@ -397,7 +401,7 @@ async def _seed_and_save_prod_key(db: AsyncSession) -> None:
 
     try:
         if not pushed_from_override:
-            _push_plaintext_to_gsm("opennotes-api-key", api_key)
+            _push_plaintext_to_gsm(GSM_SECRET_OPENNOTES, api_key)
     finally:
         del api_key
 
@@ -424,7 +428,7 @@ async def _seed_and_save_prod_playground_key(db: AsyncSession) -> None:
 
     try:
         if not pushed_from_override:
-            _push_plaintext_to_gsm("playground-api-key", api_key)
+            _push_plaintext_to_gsm(GSM_SECRET_PLAYGROUND, api_key)
     finally:
         del api_key
 
@@ -451,7 +455,7 @@ async def _seed_and_save_prod_platform_key(db: AsyncSession) -> None:
 
     try:
         if not pushed_from_override:
-            _push_plaintext_to_gsm("platform-api-key", api_key)
+            _push_plaintext_to_gsm(GSM_SECRET_PLATFORM, api_key)
     finally:
         del api_key
 
@@ -488,9 +492,9 @@ async def main() -> None:
                 print()
                 print("=" * 60)
                 print("API keys seeded and pushed to Google Secret Manager:")
-                print("  - Discord bot:  secret/opennotes-api-key")
-                print("  - Playground:   secret/playground-api-key")
-                print("  - Platform:     secret/platform-api-key")
+                print(f"  - Discord bot:  secret/{GSM_SECRET_OPENNOTES}")
+                print(f"  - Playground:   secret/{GSM_SECRET_PLAYGROUND}")
+                print(f"  - Platform:     secret/{GSM_SECRET_PLATFORM}")
                 print("=" * 60)
                 print()
                 print("  Redeploy dependent services to pick up the new secret versions.")
