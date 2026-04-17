@@ -40,6 +40,7 @@ DEV_API_KEY_NAME = "Discord Bot (Development)"
 PROD_API_KEY_NAME = "Discord Bot (Production)"
 SERVICE_USER_USERNAME = "discord-bot-service"
 SERVICE_USER_EMAIL = "discord-bot@opennotes.local"
+DISCORD_BOT_SCOPES = ["platform:adapter"]
 
 PLAYGROUND_DEV_API_KEY = "opk_playground_dev_readonly_access_key_2024"
 PLAYGROUND_API_KEY_NAME = "Playground (Development)"
@@ -66,7 +67,9 @@ def generate_api_key() -> tuple[str, str]:
 
 async def get_or_create_service_user(db: AsyncSession):
     result = await db.execute(
-        text("SELECT id, username, principal_type FROM users WHERE username = :username"),
+        text(
+            "SELECT id, username, principal_type, platform_roles FROM users WHERE username = :username"
+        ),
         {"username": SERVICE_USER_USERNAME},
     )
     row = result.first()
@@ -74,17 +77,26 @@ async def get_or_create_service_user(db: AsyncSession):
     if row:
         user_id = row[0]
         principal_type = row[2]
+        platform_roles = row[3] or []
 
+        updates = []
         if principal_type != "system":
+            updates.append("principal_type='system'")
             await db.execute(
                 text("UPDATE users SET principal_type = 'system' WHERE id = :user_id"),
                 {"user_id": user_id},
             )
-            print(
-                f"✓ Service user '{SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - updated principal_type to system"
+        if "platform_admin" not in platform_roles:
+            updates.append("platform_roles+=platform_admin")
+            await db.execute(
+                text(
+                    "UPDATE users SET platform_roles = '[\"platform_admin\"]'::json WHERE id = :user_id"
+                ),
+                {"user_id": user_id},
             )
-        else:
-            print(f"✓ Service user '{SERVICE_USER_USERNAME}' already exists (ID: {user_id})")
+
+        suffix = f" - patched {', '.join(updates)}" if updates else ""
+        print(f"✓ Service user '{SERVICE_USER_USERNAME}' already exists (ID: {user_id}){suffix}")
         return user_id
 
     hashed_password = get_password_hash(secrets.token_urlsafe(64))
@@ -92,7 +104,7 @@ async def get_or_create_service_user(db: AsyncSession):
     result = await db.execute(
         text("""
             INSERT INTO users (username, email, hashed_password, full_name, is_active, principal_type, platform_roles, created_at, updated_at)
-            VALUES (:username, :email, :hashed_password, :full_name, :is_active, :principal_type, '[]'::json, NOW(), NOW())
+            VALUES (:username, :email, :hashed_password, :full_name, :is_active, :principal_type, '["platform_admin"]'::json, NOW(), NOW())
             RETURNING id
         """),
         {
@@ -306,7 +318,7 @@ async def seed_platform_api_key(db: AsyncSession) -> None:
 
 async def seed_dev_api_key(db: AsyncSession) -> None:
     key_hash = get_password_hash(DEV_API_KEY)
-    await seed_api_key(db, key_hash, DEV_API_KEY_NAME)
+    await seed_api_key(db, key_hash, DEV_API_KEY_NAME, scopes=DISCORD_BOT_SCOPES)
 
 
 async def _seed_and_save_prod_key(db: AsyncSession) -> None:
@@ -323,7 +335,7 @@ async def _seed_and_save_prod_key(db: AsyncSession) -> None:
         api_key, key_prefix = generate_api_key()
 
     key_hash = get_password_hash(api_key)
-    await seed_api_key(db, key_hash, PROD_API_KEY_NAME, key_prefix)
+    await seed_api_key(db, key_hash, PROD_API_KEY_NAME, key_prefix, scopes=DISCORD_BOT_SCOPES)
 
     key_path = "/tmp/opennotes-api-key.txt"
     fd = os.open(key_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
