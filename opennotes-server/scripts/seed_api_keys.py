@@ -66,9 +66,9 @@ PLATFORM_SERVICE_USER_USERNAME = "platform-service"
 PLATFORM_SERVICE_USER_EMAIL = "platform@opennotes.local"
 PLATFORM_SCOPES = ["api-keys:create"]
 
-GSM_SECRET_OPENNOTES = "opennotes-api-key"
-GSM_SECRET_PLAYGROUND = "playground-api-key"
-GSM_SECRET_PLATFORM = "platform-api-key"
+GSM_RESOURCE_ID_OPENNOTES = "opennotes-api-key"
+GSM_RESOURCE_ID_PLAYGROUND = "playground-api-key"
+GSM_RESOURCE_ID_PLATFORM = "platform-api-key"
 
 
 def generate_api_key() -> tuple[str, str]:
@@ -401,7 +401,7 @@ async def _seed_and_save_prod_key(db: AsyncSession) -> None:
 
     try:
         if not pushed_from_override:
-            _push_plaintext_to_gsm(GSM_SECRET_OPENNOTES, api_key)
+            _push_plaintext_to_gsm(GSM_RESOURCE_ID_OPENNOTES, api_key)
     finally:
         del api_key
 
@@ -428,7 +428,7 @@ async def _seed_and_save_prod_playground_key(db: AsyncSession) -> None:
 
     try:
         if not pushed_from_override:
-            _push_plaintext_to_gsm(GSM_SECRET_PLAYGROUND, api_key)
+            _push_plaintext_to_gsm(GSM_RESOURCE_ID_PLAYGROUND, api_key)
     finally:
         del api_key
 
@@ -455,7 +455,7 @@ async def _seed_and_save_prod_platform_key(db: AsyncSession) -> None:
 
     try:
         if not pushed_from_override:
-            _push_plaintext_to_gsm(GSM_SECRET_PLATFORM, api_key)
+            _push_plaintext_to_gsm(GSM_RESOURCE_ID_PLATFORM, api_key)
     finally:
         del api_key
 
@@ -492,9 +492,9 @@ async def main() -> None:
                 print()
                 print("=" * 60)
                 print("API keys seeded and pushed to Google Secret Manager:")
-                print(f"  - Discord bot:  secret/{GSM_SECRET_OPENNOTES}")
-                print(f"  - Playground:   secret/{GSM_SECRET_PLAYGROUND}")
-                print(f"  - Platform:     secret/{GSM_SECRET_PLATFORM}")
+                print(f"  - Discord bot:  secret/{GSM_RESOURCE_ID_OPENNOTES}")
+                print(f"  - Playground:   secret/{GSM_RESOURCE_ID_PLAYGROUND}")
+                print(f"  - Platform:     secret/{GSM_RESOURCE_ID_PLATFORM}")
                 print("=" * 60)
                 print()
                 print("  Redeploy dependent services to pick up the new secret versions.")
