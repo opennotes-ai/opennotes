@@ -5,6 +5,15 @@ Seed API keys into the database for Discord bot and playground authentication.
 This script ensures that the API keys used by the Discord bot and playground
 service exist in the database. It's idempotent and safe to run multiple times.
 
+Production ordering invariant (TASK-1422.13.05.02):
+    For each production key, the DB hash is committed BEFORE the plaintext is
+    pushed to Google Secret Manager. If a later key's commit or GSM push fails,
+    earlier keys remain consistent (DB hash durable, GSM version present) and
+    no GSM version is orphaned without a matching DB hash. A GSM push failing
+    after commit is recoverable by re-running seeding (idempotent via env
+    override) or pushing manually — we never mint a fresh plaintext whose hash
+    was never persisted.
+
 Usage:
     # Development/Local (uses hardcoded dev keys):
     python scripts/seed_api_keys.py
@@ -383,6 +392,7 @@ async def _seed_and_save_prod_key(db: AsyncSession) -> None:
 
     key_hash = get_password_hash(api_key)
     await seed_api_key(db, key_hash, PROD_API_KEY_NAME, key_prefix, scopes=DISCORD_BOT_SCOPES)
+    await db.commit()
 
     if not pushed_from_override:
         _push_plaintext_to_gsm("opennotes-api-key", api_key)
@@ -406,6 +416,7 @@ async def _seed_and_save_prod_playground_key(db: AsyncSession) -> None:
         user_id=user_id,
         scopes=PLAYGROUND_SCOPES,
     )
+    await db.commit()
 
     if not pushed_from_override:
         _push_plaintext_to_gsm("playground-api-key", api_key)
@@ -429,6 +440,7 @@ async def _seed_and_save_prod_platform_key(db: AsyncSession) -> None:
         user_id=user_id,
         scopes=PLATFORM_SCOPES,
     )
+    await db.commit()
 
     if not pushed_from_override:
         _push_plaintext_to_gsm("platform-api-key", api_key)
@@ -460,7 +472,6 @@ async def main() -> None:
                 await _seed_and_save_prod_key(session)
                 await _seed_and_save_prod_playground_key(session)
                 await _seed_and_save_prod_platform_key(session)
-                await session.commit()
                 print()
                 print("=" * 60)
                 print("API keys seeded and pushed to Google Secret Manager:")

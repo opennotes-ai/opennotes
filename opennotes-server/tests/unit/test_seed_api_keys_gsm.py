@@ -21,6 +21,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+class _AsyncCommitSession:
+    """Minimal async-session stand-in: supports `await db.commit()`/`rollback()`."""
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+
 @pytest.fixture
 def seed_module():
     scripts_dir = str(Path(__file__).parent.parent.parent / "scripts")
@@ -103,7 +113,7 @@ async def test_prod_platform_key_pushes_to_gsm_and_no_plaintext_on_stdout(
         "google.cloud.secretmanager.SecretManagerServiceClient",
         return_value=fake_client,
     ):
-        await seed_module._seed_and_save_prod_platform_key(db=MagicMock())
+        await seed_module._seed_and_save_prod_platform_key(db=_AsyncCommitSession())
 
     fake_client.add_secret_version.assert_called_once()
     _, kwargs = fake_client.add_secret_version.call_args
@@ -141,7 +151,7 @@ async def test_prod_platform_key_env_override_skips_gsm_push(seed_module, monkey
         "google.cloud.secretmanager.SecretManagerServiceClient",
         return_value=fake_client,
     ):
-        await seed_module._seed_and_save_prod_platform_key(db=MagicMock())
+        await seed_module._seed_and_save_prod_platform_key(db=_AsyncCommitSession())
 
     fake_client.add_secret_version.assert_not_called()
 
@@ -173,7 +183,7 @@ async def test_prod_playground_key_pushes_to_gsm(seed_module, monkeypatch, capsy
         "google.cloud.secretmanager.SecretManagerServiceClient",
         return_value=fake_client,
     ):
-        await seed_module._seed_and_save_prod_playground_key(db=MagicMock())
+        await seed_module._seed_and_save_prod_playground_key(db=_AsyncCommitSession())
 
     fake_client.add_secret_version.assert_called_once()
     _, kwargs = fake_client.add_secret_version.call_args
@@ -208,7 +218,7 @@ async def test_prod_opennotes_key_pushes_to_gsm(seed_module, monkeypatch, capsys
         "google.cloud.secretmanager.SecretManagerServiceClient",
         return_value=fake_client,
     ):
-        await seed_module._seed_and_save_prod_key(db=MagicMock())
+        await seed_module._seed_and_save_prod_key(db=_AsyncCommitSession())
 
     fake_client.add_secret_version.assert_called_once()
     _, kwargs = fake_client.add_secret_version.call_args
@@ -218,3 +228,110 @@ async def test_prod_opennotes_key_pushes_to_gsm(seed_module, monkeypatch, capsys
     captured = capsys.readouterr()
     assert known_key not in captured.out
     assert known_key not in captured.err
+
+
+@pytest.mark.asyncio
+async def test_commit_happens_before_gsm_push(seed_module, monkeypatch):
+    """TASK-1422.13.05.02: DB commit must precede the GSM push so a DB rollback
+    cannot orphan a fresh GSM version.
+    """
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
+    monkeypatch.delenv("PLATFORM_API_KEY", raising=False)
+
+    async def fake_get_or_create(db):
+        return "user-uuid"
+
+    async def fake_seed(db, key_hash, name, key_prefix, **kwargs):
+        return None
+
+    monkeypatch.setattr(seed_module, "get_or_create_platform_user", fake_get_or_create)
+    monkeypatch.setattr(seed_module, "seed_api_key", fake_seed)
+    monkeypatch.setattr(
+        seed_module,
+        "generate_api_key",
+        lambda: ("opk_ORDER_sentinel_plaintext_value", "ORDER"),
+    )
+
+    call_order: list[str] = []
+
+    class OrderingSession:
+        async def commit(self):
+            call_order.append("commit")
+
+        async def rollback(self):
+            call_order.append("rollback")
+
+    fake_client = MagicMock()
+    fake_client.add_secret_version.side_effect = lambda *a, **k: call_order.append("gsm_push")
+
+    with patch(
+        "google.cloud.secretmanager.SecretManagerServiceClient",
+        return_value=fake_client,
+    ):
+        await seed_module._seed_and_save_prod_platform_key(db=OrderingSession())
+
+    assert call_order == ["commit", "gsm_push"], (
+        f"commit must precede GSM push, got order: {call_order}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_commit_failure_midway_skips_all_subsequent_gsm_pushes(seed_module, monkeypatch):
+    """TASK-1422.13.05.02: if the DB commit fails for key #2, no GSM version
+    is added for key #2 or key #3. Only key #1 should already be on GSM.
+    """
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
+    monkeypatch.delenv("OPENNOTES_API_KEY", raising=False)
+    monkeypatch.delenv("PLAYGROUND_API_KEY", raising=False)
+    monkeypatch.delenv("PLATFORM_API_KEY", raising=False)
+
+    async def fake_get_or_create(db):
+        return "user-uuid"
+
+    async def fake_seed(db, key_hash, name, key_prefix=None, **kwargs):
+        return None
+
+    monkeypatch.setattr(seed_module, "get_or_create_service_user", fake_get_or_create)
+    monkeypatch.setattr(seed_module, "get_or_create_playground_user", fake_get_or_create)
+    monkeypatch.setattr(seed_module, "get_or_create_platform_user", fake_get_or_create)
+    monkeypatch.setattr(seed_module, "seed_api_key", fake_seed)
+
+    mint_counter = {"n": 0}
+
+    def fake_generate():
+        mint_counter["n"] += 1
+        return (
+            f"opk_MINT{mint_counter['n']:03d}_sentinel_plaintext",
+            f"MINT{mint_counter['n']:03d}",
+        )
+
+    monkeypatch.setattr(seed_module, "generate_api_key", fake_generate)
+
+    class FailingSession:
+        def __init__(self):
+            self.commit_calls = 0
+
+        async def commit(self):
+            self.commit_calls += 1
+            if self.commit_calls == 2:
+                raise RuntimeError("simulated DB commit failure on second key")
+
+        async def rollback(self):
+            return None
+
+    session = FailingSession()
+    fake_client = MagicMock()
+
+    with patch(
+        "google.cloud.secretmanager.SecretManagerServiceClient",
+        return_value=fake_client,
+    ):
+        await seed_module._seed_and_save_prod_key(db=session)
+        with pytest.raises(RuntimeError, match="simulated DB commit failure"):
+            await seed_module._seed_and_save_prod_playground_key(db=session)
+
+    assert fake_client.add_secret_version.call_count == 1, (
+        "only the first key's GSM version should have been pushed"
+    )
+    _, kwargs = fake_client.add_secret_version.call_args
+    assert kwargs["parent"].endswith("opennotes-api-key")
