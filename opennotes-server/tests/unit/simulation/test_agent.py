@@ -1307,9 +1307,25 @@ class TestWebSearchToolGating:
     def test_websearch_supported_providers_is_frozenset(self):
         assert isinstance(WEBSEARCH_SUPPORTED_PROVIDERS, frozenset)
         assert "anthropic" in WEBSEARCH_SUPPORTED_PROVIDERS
-        assert "google" in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "google-vertex" in WEBSEARCH_SUPPORTED_PROVIDERS
         assert "groq" in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "google" not in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "google-gla" not in WEBSEARCH_SUPPORTED_PROVIDERS
         assert "openai" not in WEBSEARCH_SUPPORTED_PROVIDERS
+
+    def test_is_research_available_for_google_vertex(self, mock_db):
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=ModelId.from_pydantic_ai("google-vertex:gemini-3-flash"),
+            tool_config={"research_enabled": True},
+        )
+        assert _is_research_available(deps) is True
 
     @pytest.mark.asyncio
     async def test_run_turn_passes_websearch_when_enabled_and_supported(self, mock_db):
