@@ -23,7 +23,7 @@ RSpec.describe Opennotes::AdminController, type: :request do
         mock_client = instance_double(OpenNotes::Client)
         allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
         allow(mock_client).to receive(:get)
-          .with("#{OpenNotes::PUBLIC_API_PREFIX}/community-servers/#{server_uuid}/scoring-analysis")
+          .with("/api/v2/community-servers/#{server_uuid}/scoring-analysis")
           .and_return({
             "activity" => { "total_posts" => 100 },
             "classification" => { "spam" => 10 },
@@ -55,7 +55,7 @@ RSpec.describe Opennotes::AdminController, type: :request do
         allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
         expect(mock_client).not_to receive(:get).with("#{OpenNotes::PUBLIC_API_PREFIX}/community-servers/lookup", any_args)
         allow(mock_client).to receive(:get)
-          .with("#{OpenNotes::PUBLIC_API_PREFIX}/community-servers/#{server_uuid}/scoring-analysis")
+          .with("/api/v2/community-servers/#{server_uuid}/scoring-analysis")
           .and_return({})
 
         get "/admin/plugins/discourse-opennotes/dashboard.json"
