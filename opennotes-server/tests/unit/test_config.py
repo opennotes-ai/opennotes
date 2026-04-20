@@ -1377,7 +1377,7 @@ class TestVertexAIDefaults:
             settings = create_settings_no_env_file()
             assert settings.VERTEXAI_PROJECT is None
 
-    def test_vertexai_location_defaults_to_us_central1(self):
+    def test_vertexai_location_defaults_to_global(self):
         valid_key = "a" * 32
         with patch.dict(
             os.environ,
@@ -1390,3 +1390,18 @@ class TestVertexAIDefaults:
         ):
             settings = create_settings_no_env_file()
             assert settings.VERTEXAI_LOCATION == "global"
+
+    def test_vertexai_location_reads_google_cloud_location_env(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "GOOGLE_CLOUD_LOCATION": "asia-east1",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.VERTEXAI_LOCATION == "asia-east1"

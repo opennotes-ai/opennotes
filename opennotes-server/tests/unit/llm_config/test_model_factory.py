@@ -14,11 +14,56 @@ def _stub_provider_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
 
+@pytest.fixture(autouse=True)
+def _disable_httpx_env_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    # pydantic-ai's provider __init__ methods build an httpx.AsyncClient via
+    # create_async_http_client(), which honors ALL_PROXY / HTTPS_PROXY env
+    # vars. Dev shells that forward a SOCKS proxy make httpx raise ImportError
+    # at construction time. For unit tests we only care about the kwargs passed
+    # to GoogleProvider, so clear all proxy-related env vars.
+    for var in (
+        "ALL_PROXY",
+        "all_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "NO_PROXY",
+        "no_proxy",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
 class TestInferModelWithOverrides:
     def test_returns_opennotes_google_model_for_google_vertex(self):
         model = infer_model_with_overrides("google-vertex:gemini-3.1-pro-preview")
         assert isinstance(model, OpenNotesGoogleModel)
         assert model.model_name == "gemini-3.1-pro-preview"
+
+    def test_infer_model_with_overrides_passes_global_location(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        from pydantic_ai.providers.google import GoogleProvider
+
+        original_init = GoogleProvider.__init__
+
+        def _spy_init(self: GoogleProvider, *args: object, **kwargs: object) -> None:
+            captured.update(kwargs)
+            original_init(self, *args, **kwargs)
+
+        monkeypatch.setattr(GoogleProvider, "__init__", _spy_init)
+
+        from src.llm_config import model_factory as mf
+
+        monkeypatch.setattr(mf.settings, "VERTEXAI_LOCATION", "global")
+        monkeypatch.setattr(mf.settings, "VERTEXAI_PROJECT", "test-project")
+
+        model = infer_model_with_overrides("google-vertex:gemini-3-flash")
+        assert isinstance(model, OpenNotesGoogleModel)
+        assert captured.get("location") == "global"
+        assert captured.get("project") == "test-project"
 
     def test_returns_upstream_model_for_openai(self):
         model = infer_model_with_overrides("openai:gpt-4o-mini")

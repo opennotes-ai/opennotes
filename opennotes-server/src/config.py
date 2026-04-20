@@ -714,7 +714,8 @@ class Settings(BaseSettings):
     )
     VERTEXAI_LOCATION: str = Field(
         default="global",
-        description="GCP region for Vertex AI API calls",
+        description="GCP region for Vertex AI API calls. 'global' required for Gemini 3 preview SKUs.",
+        validation_alias=AliasChoices("VERTEXAI_LOCATION", "GOOGLE_CLOUD_LOCATION"),
     )
 
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
