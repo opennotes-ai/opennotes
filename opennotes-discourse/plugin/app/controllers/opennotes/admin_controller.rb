@@ -5,24 +5,13 @@ module Opennotes
     requires_plugin "discourse-opennotes"
 
     def dashboard
-      platform_server_id = PluginStore.get("discourse-opennotes", "community_server_id")
-      unless platform_server_id
+      server_uuid = OpenNotes::CommunityServerResolver.community_server_id
+      unless server_uuid
         render json: { error: "Community server not registered" }, status: :not_found
         return
       end
 
-      client = build_client
-      lookup = client.get(
-        "/api/v2/community-servers/lookup",
-        params: { platform: "discourse", platform_community_server_id: platform_server_id },
-      )
-      server_uuid = lookup.dig("data", "id")
-      unless server_uuid
-        render json: { error: "Community server not found on OpenNotes" }, status: :not_found
-        return
-      end
-
-      data = client.get("/api/v2/community-servers/#{server_uuid}/scoring-analysis")
+      data = build_client.get("/api/v2/community-servers/#{server_uuid}/scoring-analysis")
       render json: data
     rescue OpenNotes::ApiError => e
       if e.status == 404
@@ -32,6 +21,35 @@ module Opennotes
       end
     rescue Faraday::Error
       render json: { error: I18n.t("opennotes.errors.server_unavailable") }, status: :service_unavailable
+    end
+
+    def register
+      OpenNotes::CommunityServerResolver.invalidate!
+      result = OpenNotes::PlatformRegistrar.register
+
+      if result[:ok]
+        render json: {
+          success: true,
+          community_server_uuid: result[:uuid],
+          platform_community_server_id: result[:slug],
+          name: result[:name],
+        }
+      else
+        status =
+          case result[:reason]
+          when :missing_settings then :unprocessable_entity
+          when :connection_error then :bad_gateway
+          when :api_error then map_api_error_status(result[:status])
+          else :bad_gateway
+          end
+        render json: {
+          success: false,
+          error: result[:message],
+          reason: result[:reason],
+          upstream_status: result[:status],
+          community_server_uuid: result[:uuid],
+        }.compact, status: status
+      end
     end
 
     def category_settings
@@ -55,6 +73,15 @@ module Opennotes
     end
 
     private
+
+    def map_api_error_status(upstream_status)
+      case upstream_status
+      when 401, 403 then :unauthorized
+      when 404 then :not_found
+      when 400..499 then :bad_request
+      else :bad_gateway
+      end
+    end
 
     def build_client
       OpenNotes::Client.new(

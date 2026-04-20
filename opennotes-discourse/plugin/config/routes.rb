@@ -9,5 +9,6 @@ Discourse::Application.routes.append do
     get "/dashboard" => "opennotes/admin#dashboard"
     get "/categories/:category_id/settings" => "opennotes/admin#category_settings"
     put "/categories/:category_id/settings" => "opennotes/admin#category_settings"
+    post "/register" => "opennotes/admin#register"
   end
 end

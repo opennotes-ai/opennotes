@@ -12,15 +12,8 @@ RSpec.describe Opennotes::CommunityReviewsController, type: :request do
 
   let(:server_url) { "https://opennotes.test" }
   let(:api_key) { "test-api-key" }
+  let(:server_uuid) { "server-123" }
   let(:mock_client) { double("OpenNotes::Client") }
-
-  let(:community_server_response) do
-    { "data" => { "id" => "server-123", "type" => "community-servers" } }
-  end
-
-  let(:empty_server_response) do
-    { "data" => {} }
-  end
 
   let(:community_item) do
     {
@@ -62,11 +55,10 @@ RSpec.describe Opennotes::CommunityReviewsController, type: :request do
     { "data" => [community_item, trusted_item, staff_item] }
   end
 
-  def stub_client_index(server_response: community_server_response, actions: actions_response)
+  def stub_client_index(resolver_uuid: server_uuid, actions: actions_response)
+    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(resolver_uuid)
     allow(mock_client).to receive(:get) do |path, **_kwargs|
       case path
-      when "/api/v2/community-servers/lookup"
-        server_response
       when "/api/v2/moderation-actions"
         actions
       else
@@ -151,8 +143,8 @@ RSpec.describe Opennotes::CommunityReviewsController, type: :request do
         expect(item["attributes"]).not_to have_key("current_rating")
       end
 
-      it "returns empty data when no community server is found" do
-        stub_client_index(server_response: empty_server_response)
+      it "returns empty data when resolver returns no UUID" do
+        stub_client_index(resolver_uuid: nil)
 
         get "/opennotes/reviews.json"
         expect(response.status).to eq(200)

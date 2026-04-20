@@ -11,9 +11,10 @@ module Jobs
       return unless opennotes_monitored_category?(post.topic&.category)
       return if OpenNotes::ActionExecutor.scan_exempt?(post)
 
-      client = self.class.opennotes_client
-      community_server_id = PluginStore.get("discourse-opennotes", "community_server_id")
+      community_server_id = OpenNotes::CommunityServerResolver.community_server_id
       return unless community_server_id
+
+      client = self.class.opennotes_client
 
       payload = OpenNotes::PostMapper.to_request(post, community_server_id: community_server_id)
       response = client.post("/api/v2/requests", body: payload)

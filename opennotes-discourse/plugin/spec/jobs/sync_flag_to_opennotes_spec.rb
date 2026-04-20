@@ -18,8 +18,7 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
     SiteSetting.opennotes_monitored_categories = category.slug
     SiteSetting.opennotes_route_flags_to_community = true
 
-    PluginStore.set("discourse-opennotes", "community_server_id", community_server_id)
-
+    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(community_server_id)
     allow(OpenNotes::Client).to receive(:new).and_return(client)
   end
 
@@ -150,8 +149,8 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
       end
     end
 
-    it "skips when community_server_id is not set" do
-      PluginStore.remove("discourse-opennotes", "community_server_id")
+    it "skips when resolver returns no community_server_id" do
+      allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(nil)
       allow(client).to receive(:post)
 
       described_class.new.execute(args)

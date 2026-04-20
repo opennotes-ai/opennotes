@@ -36,8 +36,8 @@ module OpenNotes
       request_with_retries(:post, path, body: body, user: user)
     end
 
-    def patch(path, body: {}, user: nil)
-      request_with_retries(:patch, path, body: body, user: user)
+    def patch(path, params: {}, body: {}, user: nil)
+      request_with_retries(:patch, path, params: params, body: body, user: user)
     end
 
     def delete(path, user: nil)
@@ -74,7 +74,7 @@ module OpenNotes
           req.headers["X-Adapter-Trust-Level"] = user.trust_level.to_s
           req.headers["X-Adapter-Admin"] = user.admin?.to_s
           req.headers["X-Adapter-Moderator"] = user.moderator?.to_s
-          req.headers["X-Adapter-Scope"] = Discourse.current_hostname
+          req.headers["X-Adapter-Scope"] = SiteSetting.opennotes_platform_community_server_id
         end
 
         req.params = params if params&.any?

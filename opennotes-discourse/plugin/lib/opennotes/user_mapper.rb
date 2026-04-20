@@ -33,7 +33,7 @@ module OpenNotes
         params: {
           platform: "discourse",
           platform_user_id: discourse_user.id.to_s,
-          provider_scope: Discourse.current_hostname,
+          provider_scope: SiteSetting.opennotes_platform_community_server_id,
         },
         user: discourse_user,
       )

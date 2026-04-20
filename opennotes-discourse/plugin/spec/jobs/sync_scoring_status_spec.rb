@@ -16,8 +16,7 @@ RSpec.describe Jobs::SyncScoringStatus do
     SiteSetting.opennotes_server_url = "https://opennotes.example.com"
     SiteSetting.opennotes_api_key = "test-api-key"
 
-    PluginStore.set("discourse-opennotes", "community_server_id", community_server_id)
-
+    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(community_server_id)
     allow(described_class).to receive(:opennotes_client).and_return(client)
   end
 

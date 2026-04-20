@@ -10,7 +10,7 @@ module Jobs
     def execute(_args)
       return unless SiteSetting.opennotes_enabled
 
-      community_server_id = PluginStore.get("discourse-opennotes", "community_server_id")
+      community_server_id = OpenNotes::CommunityServerResolver.community_server_id
       return unless community_server_id
 
       last_poll = PluginStore.get("discourse-opennotes", "last_scoring_poll_at")
