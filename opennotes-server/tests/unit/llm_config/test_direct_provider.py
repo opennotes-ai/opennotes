@@ -531,17 +531,6 @@ class TestDirectProviderVertexAI:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_validate_api_key_returns_true_for_gemini(self) -> None:
-        gemini_provider = DirectProvider(
-            api_key=ADC_SENTINEL,
-            default_model="google-gla:gemini-2.5-pro",
-            settings=DirectProviderSettings(),
-            provider_name="gemini",
-        )
-        result = await gemini_provider.validate_api_key()
-        assert result is True
-
-    @pytest.mark.asyncio
     async def test_vertex_ai_complete_returns_correct_provider(
         self, vertex_provider: DirectProvider
     ) -> None:

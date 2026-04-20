@@ -19,7 +19,7 @@ def validate_model_name_value(v: str) -> str:
     except ValueError as exc:
         raise ValueError(
             f"Invalid model name '{v}'. Use 'provider:model' format "
-            f"(e.g. 'openai:gpt-4o-mini', 'google-gla:gemini-2.0-flash')."
+            f"(e.g. 'openai:gpt-4o-mini', 'google-vertex:gemini-2.5-flash')."
         ) from exc
     if REASONING_MODEL_PATTERN.match(model_id.model):
         raise ValueError(

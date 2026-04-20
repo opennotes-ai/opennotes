@@ -189,7 +189,7 @@ class LLMClientManager:
 
         Returns:
             Global API key if configured, None otherwise.
-            Returns ADC_SENTINEL for vertex_ai/gemini (Application Default Credentials).
+            Returns ADC_SENTINEL for vertex_ai (Application Default Credentials).
         """
         if provider == "openai":
             key: str | None = settings.OPENAI_API_KEY
@@ -197,7 +197,7 @@ class LLMClientManager:
         if provider == "anthropic":
             anthropic_key: str | None = getattr(settings, "ANTHROPIC_API_KEY", None)
             return anthropic_key
-        if provider in ("vertex_ai", "gemini"):
+        if provider == "vertex_ai":
             if settings.VERTEXAI_PROJECT:
                 return ADC_SENTINEL
             return None

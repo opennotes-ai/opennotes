@@ -111,7 +111,7 @@ class TestSimAgentReasoningModelValidation:
         [
             "openai:gpt-4o",
             "openai:gpt-4o-mini",
-            "google-gla:gemini-2.0-flash",
+            "google-vertex:gemini-2.5-flash",
         ],
     )
     def test_accepts_non_reasoning_models(self, model_name: str) -> None:

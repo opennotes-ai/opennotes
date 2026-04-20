@@ -12,7 +12,6 @@ class LLMProviderFactory:
         "openai": DirectProvider,
         "anthropic": DirectProvider,
         "vertex_ai": DirectProvider,
-        "gemini": DirectProvider,
     }
 
     @classmethod

@@ -30,6 +30,10 @@ class TestInferModelWithOverrides:
         assert isinstance(model, Model)
         assert not isinstance(model, OpenNotesGoogleModel)
 
+    def test_infer_model_with_overrides_rejects_google_gla(self):
+        with pytest.raises(ValueError, match="google-gla provider was removed"):
+            infer_model_with_overrides("google-gla:gemini-2.0-flash")
+
 
 class TestToPydanticAiModelRoundTrip:
     def test_to_pydantic_ai_model_round_trips_via_helper(self):

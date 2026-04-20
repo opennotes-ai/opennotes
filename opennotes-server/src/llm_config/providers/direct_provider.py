@@ -192,7 +192,7 @@ class DirectProvider(LLMProvider[DirectProviderSettings, DirectCompletionParams]
         return result
 
     async def validate_api_key(self) -> bool:
-        if self._provider_name in ("vertex_ai", "gemini"):
+        if self._provider_name == "vertex_ai":
             return True
         try:
             await model_request(

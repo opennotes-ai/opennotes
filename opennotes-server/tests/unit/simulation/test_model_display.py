@@ -57,9 +57,6 @@ class TestHumanizeModelName:
     def test_pydantic_ai_anthropic(self):
         assert humanize_model_name("anthropic:claude-3-5-sonnet") == "Anthropic Claude 3.5 Sonnet"
 
-    def test_pydantic_ai_google_gla(self):
-        assert humanize_model_name("google-gla:gemini-2.0-flash") == "Google Gemini 2.0 Flash"
-
     def test_pydantic_ai_google_vertex(self):
         assert humanize_model_name("google-vertex:gemini-2.5-flash") == "Google Gemini 2.5 Flash"
 
