@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Open Notes Scoring API",
+    "title": "Open Notes Server",
     "version": "0.0.1"
   },
   "paths": {
@@ -7634,6 +7634,2463 @@
         "summary": "Patch Moderation Action Endpoint",
         "description": "Transition a moderation action to a new state.\n\nValidates the state transition against VALID_TRANSITIONS and returns 422\non invalid transitions.  Publishes a NATS event for all target states\nexcept scan_exempt (plugin-initiated acknowledgement, no event needed).",
         "operationId": "patch_moderation_action_endpoint_api_v2_moderation_actions__action_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Action Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModerationActionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/notes": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "List Notes Jsonapi",
+        "description": "List notes with JSON:API format.\n\nSupports filtering and pagination per JSON:API specification.\n\nQuery Parameters:\n- page[number]: Page number (default: 1)\n- page[size]: Page size (default: 20, max: 100)\n\nFilter Parameters (equality):\n- filter[status]: Filter by note status (exact match)\n- filter[classification]: Filter by classification\n- filter[community_server_id]: Filter by community server UUID\n- filter[author_id]: Filter by author (user profile UUID)\n- filter[request_id]: Filter by request ID\n- filter[platform_message_id]: Filter by platform message ID (Discord snowflake)\n\nFilter Parameters (operators):\n- filter[status__neq]: Exclude notes with this status\n- filter[created_at__gte]: Notes created on or after this datetime\n- filter[created_at__lte]: Notes created on or before this datetime\n- filter[rater_id__not_in]: Exclude notes rated by these users\n  (comma-separated list of user profile UUIDs)\n- filter[rater_id]: Include only notes rated by this user (user profile UUID)\n\nReturns JSON:API formatted response with data, jsonapi, links, and meta.",
+        "operationId": "list_notes_jsonapi_api_public_v1_notes_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page[number]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page[Number]"
+            }
+          },
+          {
+            "name": "page[size]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page[Size]"
+            }
+          },
+          {
+            "name": "filter[status]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/NoteStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Status]"
+            }
+          },
+          {
+            "name": "filter[status__neq]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/NoteStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Status  Neq]"
+            }
+          },
+          {
+            "name": "filter[classification]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/NoteClassification"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Classification]"
+            }
+          },
+          {
+            "name": "filter[community_server_id]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Community Server Id]"
+            }
+          },
+          {
+            "name": "filter[author_id]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Author Id]"
+            }
+          },
+          {
+            "name": "filter[request_id]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Request Id]"
+            }
+          },
+          {
+            "name": "filter[created_at__gte]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Created At  Gte]"
+            }
+          },
+          {
+            "name": "filter[created_at__lte]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Created At  Lte]"
+            }
+          },
+          {
+            "name": "filter[rater_id__not_in]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Rater Id  Not In]"
+            }
+          },
+          {
+            "name": "filter[rater_id]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Rater Id]"
+            }
+          },
+          {
+            "name": "filter[platform_message_id]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Platform Message Id]"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Create Note Jsonapi",
+        "description": "Create a new note with JSON:API format.\n\nJSON:API 1.0 requires:\n- Request body with 'data' object containing 'type' and 'attributes'\n- Response with 201 Created status\n- Response body with 'data' object containing created resource\n\nReturns JSON:API formatted response with data and jsonapi keys.",
+        "operationId": "create_note_jsonapi_api_public_v1_notes_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/notes/{note_id}": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Get Note Jsonapi",
+        "description": "Get a single note by ID with JSON:API format.\n\nReturns JSON:API formatted response with data and jsonapi keys.\nReturns JSON:API error format for 404 and other errors.",
+        "operationId": "get_note_jsonapi_api_public_v1_notes__note_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Update Note Jsonapi",
+        "description": "Update a note with JSON:API format.\n\nJSON:API 1.0 requires:\n- Request body with 'data' object containing 'type', 'id', and 'attributes'\n- The 'id' in the body must match the URL parameter\n- Response with 200 OK status\n- Response body with 'data' object containing updated resource\n\nReturns JSON:API formatted response with data and jsonapi keys.",
+        "operationId": "update_note_jsonapi_api_public_v1_notes__note_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Delete Note Jsonapi",
+        "description": "Delete a note with JSON:API format.\n\nJSON:API 1.0 requires:\n- Response with 204 No Content status on success\n- Response with JSON:API error format on failure\n\nReturns None (204 No Content) on success.",
+        "operationId": "delete_note_jsonapi_api_public_v1_notes__note_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/notes/{note_id}/force-publish": {
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Force Publish Note Jsonapi",
+        "description": "Force-publish a note with JSON:API format (admin only).\n\nThis endpoint allows administrators to manually publish notes that haven't met\nautomatic publication thresholds. The note is marked with force_published flags\nfor transparency, and the action is logged with admin user ID and timestamp.\n\nRequires admin authentication (service accounts, Open Notes admins, or community admins).\n\nReturns JSON:API formatted response with updated note resource.",
+        "operationId": "force_publish_note_jsonapi_api_public_v1_notes__note_id__force_publish_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/notes/{note_id}/dismiss": {
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Dismiss Note Jsonapi",
+        "description": "Dismiss a note with JSON:API format (admin only).\n\nThis endpoint allows administrators to manually dismiss notes by setting their\nstatus to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:\nthe note is marked with force_published flags for transparency, and any associated\nrequest is set to COMPLETED.\n\nRequires admin authentication (service accounts, Open Notes admins, or community admins).\n\nReturns JSON:API formatted response with updated note resource.",
+        "operationId": "dismiss_note_jsonapi_api_public_v1_notes__note_id__dismiss_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/ratings": {
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Create Rating Jsonapi",
+        "description": "Create or upsert a rating with JSON:API format.\n\nJSON:API 1.0 requires:\n- Request body with 'data' object containing 'type' and 'attributes'\n- Response with 201 Created status for new rating\n- Response body with 'data' object containing created/updated resource\n\nIf a rating already exists for the same note + rater, it will be updated (upsert).",
+        "operationId": "create_rating_jsonapi_api_public_v1_ratings_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/notes/{note_id}/ratings": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "List Note Ratings Jsonapi",
+        "description": "List all ratings for a note with JSON:API format.\n\nJSON:API 1.0 requires:\n- Response with 200 OK status\n- 'data' array containing rating resource objects\n- Each resource has 'type', 'id', and 'attributes'\n\nReturns JSON:API formatted response with data and jsonapi keys.",
+        "operationId": "list_note_ratings_jsonapi_api_public_v1_notes__note_id__ratings_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/ratings/{rating_id}": {
+      "put": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Update Rating Jsonapi",
+        "description": "Update an existing rating with JSON:API format.\n\nJSON:API 1.0 requires:\n- Request body with 'data' object containing 'type', 'id', and 'attributes'\n- Response with 200 OK status for updated resource\n- Response body with 'data' object containing updated resource\n\nUsers can only update ratings they submitted or if they are a community admin.\nService accounts can update any rating.",
+        "operationId": "update_rating_jsonapi_api_public_v1_ratings__rating_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rating_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Rating Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/notes/{note_id}/ratings/stats": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Get Rating Stats Jsonapi",
+        "description": "Get rating statistics for a note with JSON:API format.\n\nJSON:API 1.0 requires:\n- Response with 200 OK status\n- 'data' object containing singleton/aggregate resource\n- Resource has 'type', 'id', and 'attributes'\n\nUsers can only view rating stats for notes in communities they are members of.\nService accounts can view all rating stats.",
+        "operationId": "get_rating_stats_jsonapi_api_public_v1_notes__note_id__ratings_stats_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingStatsSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/profiles/me": {
+      "get": {
+        "tags": [
+          "public",
+          "profiles-jsonapi"
+        ],
+        "summary": "Get Current Profile Jsonapi",
+        "description": "Get the authenticated user's profile with JSON:API format.\n\nReturns JSON:API formatted response with data and jsonapi keys.",
+        "operationId": "get_current_profile_jsonapi_api_public_v1_profiles_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "public",
+          "profiles-jsonapi"
+        ],
+        "summary": "Update Profile Jsonapi",
+        "description": "Update the authenticated user's profile with JSON:API format.\n\nAccepts JSON:API formatted request body with data object containing\ntype, id, and attributes.\n\nReturns JSON:API formatted response with updated profile.",
+        "operationId": "update_profile_jsonapi_api_public_v1_profiles_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/public/v1/profiles/me/identities": {
+      "get": {
+        "tags": [
+          "public",
+          "profiles-jsonapi"
+        ],
+        "summary": "List User Identities Jsonapi",
+        "description": "List all identities linked to the current user's profile with JSON:API format.\n\nReturns JSON:API formatted response with data array and jsonapi keys.\n\nQuery Parameters:\n    limit: Maximum number of identities to return (1-100, default 50)\n    offset: Number of identities to skip (>=0, default 0)",
+        "operationId": "list_user_identities_jsonapi_api_public_v1_profiles_me_identities_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "public",
+          "profiles-jsonapi"
+        ],
+        "summary": "Link Identity Jsonapi",
+        "description": "Link a new authentication identity to the current user's profile.\n\nJSON:API POST request should use standard JSON:API request body format\nwith data object containing type and attributes.\n\nSecurity: Requires oauth_verified in credentials to prevent linking\naccounts the user doesn't own.",
+        "operationId": "link_identity_jsonapi_api_public_v1_profiles_me_identities_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/profiles/me/identities/{identity_id}": {
+      "delete": {
+        "tags": [
+          "public",
+          "profiles-jsonapi"
+        ],
+        "summary": "Unlink Identity Jsonapi",
+        "description": "Unlink an authentication identity from the current user's profile.\n\nNote: Cannot unlink the last remaining identity. Users must have at least\none authentication method linked to their profile.\n\nReturns 204 No Content on success.",
+        "operationId": "unlink_identity_jsonapi_api_public_v1_profiles_me_identities__identity_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/profiles/me/communities": {
+      "get": {
+        "tags": [
+          "public",
+          "profiles-jsonapi"
+        ],
+        "summary": "List User Communities Jsonapi",
+        "description": "List all communities the current user is a member of with JSON:API format.\n\nReturns JSON:API formatted response with data array and jsonapi keys.\n\nQuery Parameters:\n    limit: Maximum number of communities to return (1-100, default 50)\n    offset: Number of communities to skip (>=0, default 0)",
+        "operationId": "list_user_communities_jsonapi_api_public_v1_profiles_me_communities_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityMembershipListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/profiles/{profile_id}": {
+      "get": {
+        "tags": [
+          "public",
+          "profiles-jsonapi"
+        ],
+        "summary": "Get Public Profile Jsonapi",
+        "description": "Get a public profile by ID with JSON:API format.\n\nReturns JSON:API formatted response with data and jsonapi keys.\nReturns JSON:API error format for 404 and other errors.",
+        "operationId": "get_public_profile_jsonapi_api_public_v1_profiles__profile_id__get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/profiles/{profile_id}/opennotes-admin": {
+      "get": {
+        "tags": [
+          "public",
+          "profiles-jsonapi"
+        ],
+        "summary": "Get Admin Status Jsonapi",
+        "description": "Get the Open Notes admin status for a user profile.\n\nReturns JSON:API formatted response with admin status data.\n\nSecurity: This endpoint is restricted to service accounts only.",
+        "operationId": "get_admin_status_jsonapi_api_public_v1_profiles__profile_id__opennotes_admin_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStatusSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "public",
+          "profiles-jsonapi"
+        ],
+        "summary": "Update Admin Status Jsonapi",
+        "description": "Grant or revoke Open Notes admin status for a user profile.\n\nJSON:API PATCH request should use standard JSON:API request body format\nwith data object containing type, id, and attributes.\n\nSecurity: This endpoint is restricted to service accounts only.",
+        "operationId": "update_admin_status_jsonapi_api_public_v1_profiles__profile_id__opennotes_admin_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminStatusUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStatusSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/user-profiles/lookup": {
+      "get": {
+        "tags": [
+          "public",
+          "profiles-jsonapi"
+        ],
+        "summary": "Lookup User Profile Jsonapi",
+        "description": "Look up a user profile by platform and platform user ID with JSON:API format.\n\nReturns the internal UUID for a user profile based on its platform-specific identifier.\nAuto-creates the profile if it doesn't exist (for service accounts/bots).\n\nArgs:\n    platform: Platform type (discord, discourse, github, email)\n    platform_user_id: Platform-specific user ID\n    provider_scope: Provider scope (e.g., Discourse domain). Defaults to '*'.\n        For Discourse, this must be the instance domain (not '*').\n\nReturns:\n    JSON:API formatted response with user profile details\n\nRaises:\n    404: If user profile not found and user is not a service account\n    400: If platform is not a valid AuthProvider or if Discourse lookup missing provider_scope",
+        "operationId": "lookup_user_profile_jsonapi_api_public_v1_user_profiles_lookup_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Platform type (discord, discourse, github, email)",
+              "default": "discord",
+              "title": "Platform"
+            },
+            "description": "Platform type (discord, discourse, github, email)"
+          },
+          {
+            "name": "platform_user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Platform-specific user ID (e.g., Discord user ID, Discourse user ID)",
+              "title": "Platform User Id"
+            },
+            "description": "Platform-specific user ID (e.g., Discord user ID, Discourse user ID)"
+          },
+          {
+            "name": "provider_scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Provider scope (e.g., Discourse domain). '*' for global.",
+              "default": "*",
+              "title": "Provider Scope"
+            },
+            "description": "Provider scope (e.g., Discourse domain). '*' for global."
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileLookupResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/community-servers/lookup": {
+      "get": {
+        "tags": [
+          "public",
+          "community-servers-jsonapi"
+        ],
+        "summary": "Lookup Community Server Jsonapi",
+        "description": "Look up a community server by platform and platform ID with JSON:API format.\n\nReturns the internal UUID for a community server based on its platform-specific identifier.\nAuto-creates the community server if it doesn't exist (for service accounts/bots).\n\nArgs:\n    platform: Platform type (default: \"discord\")\n    platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)\n\nReturns:\n    JSON:API formatted response with community server details\n\nRaises:\n    404: If community server not found and user is not a service account",
+        "operationId": "lookup_community_server_jsonapi_api_public_v1_community_servers_lookup_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Platform type",
+              "default": "discord",
+              "title": "Platform"
+            },
+            "description": "Platform type"
+          },
+          {
+            "name": "platform_community_server_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Platform-specific ID (e.g., Discord guild ID)",
+              "title": "Platform Community Server Id"
+            },
+            "description": "Platform-specific ID (e.g., Discord guild ID)"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityServerSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/community-servers/{server_id}": {
+      "get": {
+        "tags": [
+          "public",
+          "community-servers-jsonapi"
+        ],
+        "summary": "Get Community Server Jsonapi",
+        "description": "Get a community server by ID with JSON:API format.\n\nReturns JSON:API formatted response with data and jsonapi keys.\nReturns JSON:API error format for 404 and other errors.",
+        "operationId": "get_community_server_jsonapi_api_public_v1_community_servers__server_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityServerSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/requests": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "List Requests Jsonapi",
+        "description": "List requests with JSON:API format.\n\nSupports filtering and pagination per JSON:API specification.\n\nQuery Parameters:\n- page[number]: Page number (default: 1)\n- page[size]: Page size (default: 20, max: 100)\n\nFilter Parameters:\n- filter[status]: Filter by request status (PENDING, IN_PROGRESS, COMPLETED, FAILED)\n- filter[community_server_id]: Filter by community server UUID\n- filter[requested_by]: Filter by requester participant ID\n- filter[requested_at__gte]: Requests created on or after this datetime\n- filter[requested_at__lte]: Requests created on or before this datetime\n\nReturns JSON:API formatted response with data, jsonapi, links, and meta.",
+        "operationId": "list_requests_jsonapi_api_public_v1_requests_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page[number]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page[Number]"
+            }
+          },
+          {
+            "name": "page[size]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page[Size]"
+            }
+          },
+          {
+            "name": "filter[status]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RequestStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Status]"
+            }
+          },
+          {
+            "name": "filter[community_server_id]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Community Server Id]"
+            }
+          },
+          {
+            "name": "filter[requested_by]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Requested By]"
+            }
+          },
+          {
+            "name": "filter[requested_at__gte]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Requested At  Gte]"
+            }
+          },
+          {
+            "name": "filter[requested_at__lte]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Requested At  Lte]"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestListJSONAPIResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Create Request Jsonapi",
+        "description": "Create a new request with JSON:API format.\n\nJSON:API 1.1 requires:\n- Request body with 'data' object containing 'type' and 'attributes'\n- Response with 201 Created status\n- Response body with 'data' object containing created resource\n\nReturns JSON:API formatted response with data and jsonapi keys.",
+        "operationId": "create_request_jsonapi_api_public_v1_requests_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/requests/{request_id}": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Get Request Jsonapi",
+        "description": "Get a single request by ID with JSON:API format.\n\nReturns JSON:API formatted response with data and jsonapi keys.\nReturns JSON:API error format for 404 and other errors.",
+        "operationId": "get_request_jsonapi_api_public_v1_requests__request_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Update Request Jsonapi",
+        "description": "Update a request with JSON:API format.\n\nJSON:API 1.1 requires:\n- Request body with 'data' object containing 'type', 'id', and 'attributes'\n- The 'id' in the body must match the URL parameter\n- Response with 200 OK status\n- Response body with 'data' object containing updated resource\n\nReturns JSON:API formatted response with data and jsonapi keys.",
+        "operationId": "update_request_jsonapi_api_public_v1_requests__request_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/requests/{request_id}/ai-notes": {
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Generate Ai Note Jsonapi",
+        "description": "Generate an AI-powered note for a specific request in JSON:API format.\n\nThis endpoint triggers on-demand AI note generation for requests that have\nassociated fact-check data. The AI will analyze the original message and\nthe matched fact-check information to generate a helpful community note.\n\nRequirements:\n- Request must exist and have fact-check metadata (dataset_item_id, similarity_score, dataset_name)\n- AI note writing must be enabled for the community server\n- Rate limits: 5 per minute, 20 per hour\n\nReturns JSON:API formatted response with the generated note resource.",
+        "operationId": "generate_ai_note_jsonapi_api_public_v1_requests__request_id__ai_notes_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/moderation-actions": {
+      "post": {
+        "tags": [
+          "public",
+          "moderation-actions"
+        ],
+        "summary": "Create Moderation Action Endpoint",
+        "description": "Create a moderation action in PROPOSED state.\n\nPublishes a moderation_action.proposed NATS event after successful creation.",
+        "operationId": "create_moderation_action_endpoint_api_public_v1_moderation_actions_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModerationActionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "public",
+          "moderation-actions"
+        ],
+        "summary": "List Moderation Actions Endpoint",
+        "description": "List moderation actions with optional filters.\n\nQuery params:\n- community_server_id: filter by community\n- action_state: filter by state (e.g. proposed, applied)\n- action_tier: filter by tier\n- limit: max results (default 50)\n- offset: pagination offset (default 0)",
+        "operationId": "list_moderation_actions_endpoint_api_public_v1_moderation_actions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "action_state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action State"
+            }
+          },
+          {
+            "name": "action_tier",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionTier"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action Tier"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/moderation-actions/{action_id}": {
+      "get": {
+        "tags": [
+          "public",
+          "moderation-actions"
+        ],
+        "summary": "Get Moderation Action Endpoint",
+        "description": "Fetch a single moderation action by UUID.",
+        "operationId": "get_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Action Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "public",
+          "moderation-actions"
+        ],
+        "summary": "Patch Moderation Action Endpoint",
+        "description": "Transition a moderation action to a new state.\n\nValidates the state transition against VALID_TRANSITIONS and returns 422\non invalid transitions.  Publishes a NATS event for all target states\nexcept scan_exempt (plugin-initiated acknowledgement, no event needed).",
+        "operationId": "patch_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__patch",
         "security": [
           {
             "HTTPBearer": []

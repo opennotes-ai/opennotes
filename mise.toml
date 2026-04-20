@@ -214,6 +214,7 @@ run = '''
 # Generate OpenAPI spec and TypeScript types
 echo "Generating OpenAPI spec and TypeScript types..."
 cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --output openapi.json
+uv run python scripts/generate_openapi.py --public-only --output openapi-public.json
 cd ../{{vars.discord_dir}} && pnpm types:generate
 cd ../{{vars.playground_dir}} && pnpm types:generate
 
@@ -828,8 +829,9 @@ fi
 [tasks."build:types:openapi"]
 description = "Generate OpenAPI spec, TypeScript types, and CLI API client"
 run = '''
-echo "Generating OpenAPI specification..."
+echo "Generating OpenAPI specifications (full + public-only)..."
 (cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --output openapi.json)
+(cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --public-only --output openapi-public.json)
 
 echo "Regenerating TypeScript types for Discord bot..."
 (cd {{vars.discord_dir}} && pnpm types:generate)

@@ -23,6 +23,20 @@ except ImportError:
     sys.exit(1)
 
 
+def filter_public_paths(schema: dict, prefix: str) -> dict:
+    """Return a shallow-copy of ``schema`` with ``paths`` trimmed to entries
+    whose key starts with ``prefix``.
+
+    Components are intentionally left untouched — consumers (Mintlify) tolerate
+    unreferenced schemas and trimming them would require a graph walk.
+    """
+    filtered = {**schema}
+    filtered["paths"] = {
+        path: op for path, op in schema.get("paths", {}).items() if path.startswith(prefix)
+    }
+    return filtered
+
+
 @click.command()
 @click.option(
     "--output",
@@ -31,9 +45,16 @@ except ImportError:
     default="openapi.json",
     help="Output path for the OpenAPI specification file",
 )
-def generate_openapi(output: str) -> None:
+@click.option(
+    "--public-only",
+    is_flag=True,
+    default=False,
+    help="Filter paths to /api/public/v1/* only (produces the public API artifact for Mintlify).",
+)
+def generate_openapi(output: str, public_only: bool) -> None:
     """Generate OpenAPI specification from the FastAPI application."""
     try:
+        from src.config import settings
         from src.main import app
     except ImportError as e:
         click.echo(f"Error: Failed to import FastAPI app: {e}", err=True)
@@ -41,6 +62,8 @@ def generate_openapi(output: str) -> None:
         sys.exit(1)
 
     openapi_schema = app.openapi()
+    if public_only:
+        openapi_schema = filter_public_paths(openapi_schema, settings.API_PUBLIC_V1_PREFIX)
 
     output_path = Path(output)
 
@@ -54,6 +77,8 @@ def generate_openapi(output: str) -> None:
     click.echo(f"  Title: {openapi_schema.get('info', {}).get('title', 'N/A')}")
     click.echo(f"  Version: {openapi_schema.get('info', {}).get('version', 'N/A')}")
     click.echo(f"  Endpoints: {len(openapi_schema.get('paths', {}))}")
+    if public_only:
+        click.echo(f"  Public-only filter: paths starting with {settings.API_PUBLIC_V1_PREFIX}")
 
 
 if __name__ == "__main__":
