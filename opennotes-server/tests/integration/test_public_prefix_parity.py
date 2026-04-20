@@ -150,7 +150,16 @@ async def seeded_discord_profile() -> dict[str, Any]:
 # Both prefixes get the same request; responses must match after normalization.
 READ_PARITY_CASES = [
     pytest.param("/notes", {}, id="notes-router:list-notes"),
-    pytest.param("/ratings", {}, id="ratings-router:list-requires-note"),
+    # ratings_jsonapi_router has no bare GET /ratings; its reads are nested
+    # under /notes/{note_id}/ratings. Use the stats variant with a random
+    # non-matching UUID — the handler still runs (returns 404 via handler
+    # code), so this exercises the ratings router on both prefixes rather
+    # than letting FastAPI short-circuit.
+    pytest.param(
+        f"/notes/{uuid4()}/ratings/stats",
+        {},
+        id="ratings-router:ratings-stats-for-note",
+    ),
     pytest.param("/requests", {}, id="requests-router:list-requests"),
     pytest.param(
         "/moderation-actions",
