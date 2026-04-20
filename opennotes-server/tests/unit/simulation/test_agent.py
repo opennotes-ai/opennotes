@@ -1365,6 +1365,47 @@ class TestWebSearchToolGating:
         assert any(isinstance(t, WebSearchTool) for t in captured_kwargs["builtin_tools"])
 
     @pytest.mark.asyncio
+    async def test_run_turn_passes_websearch_for_google_vertex_gemini3(self, mock_db):
+        from unittest.mock import patch
+
+        from src.llm_config.local_models import OpenNotesGoogleModel
+        from tests._model_fixtures import GOOGLE_VERTEX_PRO_TEST_MODEL
+
+        google_model = ModelId.from_pydantic_ai(GOOGLE_VERTEX_PRO_TEST_MODEL)
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[
+                {"id": str(uuid4()), "request_id": "prov-0", "content": "test", "status": "PENDING"}
+            ],
+            available_notes=[],
+            agent_personality="test",
+            model_name=google_model,
+            tool_config={"research_enabled": True},
+        )
+
+        mock_action = SimAgentAction(action_type=SimActionType.PASS_TURN, reasoning="test")
+        mock_result = MagicMock()
+        mock_result.output = mock_action
+        mock_result.all_messages.return_value = []
+
+        captured_kwargs: dict = {}
+
+        async def capture_run(prompt, **kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_result
+
+        agent = OpenNotesSimAgent(model=google_model)
+        with patch.object(agent._agent, "run", side_effect=capture_run):
+            await agent.run_turn(deps)
+
+        assert "builtin_tools" in captured_kwargs
+        assert any(isinstance(t, WebSearchTool) for t in captured_kwargs["builtin_tools"])
+        assert isinstance(captured_kwargs["model"], OpenNotesGoogleModel)
+
+    @pytest.mark.asyncio
     async def test_run_turn_skips_websearch_when_disabled(self, mock_db):
         from unittest.mock import patch
 
