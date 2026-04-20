@@ -846,6 +846,19 @@ app.include_router(
     tags=["moderation-actions-jsonapi"],
 )
 
+# Public versioned adapter-contract surface — double-register the allowlist
+# under /api/public/v1 so third-party adapters have a stable, documented prefix.
+# Handlers are shared with the legacy /api/v2 registrations; behavior is identical.
+# See src/public_api.py and docs/public-api-prefix.md.
+from src.public_api import API_PUBLIC_V1_PREFIX, PUBLIC_ADAPTER_ROUTERS
+
+for _public_router in PUBLIC_ADAPTER_ROUTERS:
+    app.include_router(
+        _public_router,
+        prefix=API_PUBLIC_V1_PREFIX,
+        tags=["public"],
+    )
+
 # API v1 routes
 app.include_router(webhook_router, prefix=settings.API_V1_PREFIX)
 app.include_router(config_router, prefix=settings.API_V1_PREFIX)
