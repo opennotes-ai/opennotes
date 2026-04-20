@@ -25,14 +25,21 @@ except ImportError:
 
 def filter_public_paths(schema: dict, prefix: str) -> dict:
     """Return a shallow-copy of ``schema`` with ``paths`` trimmed to entries
-    whose key starts with ``prefix``.
+    under ``prefix``.
+
+    A path matches when it equals ``prefix`` or begins with ``prefix + "/"`` —
+    a plain ``startswith(prefix)`` would also match a future ``/api/public/v10``
+    and silently fold it into the v1 artifact.
 
     Components are intentionally left untouched — consumers (Mintlify) tolerate
-    unreferenced schemas and trimming them would require a graph walk.
+    unreferenced schemas and trimming them would require a $ref graph walk.
     """
+    prefix_slash = prefix + "/"
     filtered = {**schema}
     filtered["paths"] = {
-        path: op for path, op in schema.get("paths", {}).items() if path.startswith(prefix)
+        path: op
+        for path, op in schema.get("paths", {}).items()
+        if path == prefix or path.startswith(prefix_slash)
     }
     return filtered
 

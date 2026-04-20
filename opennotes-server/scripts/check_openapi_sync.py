@@ -36,10 +36,17 @@ def normalize_schema(schema: dict) -> dict:
 
 
 def filter_public(schema: dict, prefix: str) -> dict:
-    """Return a copy of ``schema`` with paths trimmed to entries starting with ``prefix``."""
+    """Return a copy of ``schema`` with paths trimmed to entries under ``prefix``.
+
+    Matches ``path == prefix`` or ``path.startswith(prefix + "/")`` so that
+    a future ``/api/public/v10`` is not folded into the v1 artifact.
+    """
+    prefix_slash = prefix + "/"
     filtered = {**schema}
     filtered["paths"] = {
-        path: op for path, op in schema.get("paths", {}).items() if path.startswith(prefix)
+        path: op
+        for path, op in schema.get("paths", {}).items()
+        if path == prefix or path.startswith(prefix_slash)
     }
     return filtered
 
