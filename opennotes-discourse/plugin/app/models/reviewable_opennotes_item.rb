@@ -134,7 +134,7 @@ class ReviewableOpennotesItem < Reviewable
 
     if opennotes_note_id
       client.post(
-        "/api/v2/notes/#{opennotes_note_id}/force-publish",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/notes/#{opennotes_note_id}/force-publish",
         body: {},
         user: performed_by,
       )
@@ -154,7 +154,7 @@ class ReviewableOpennotesItem < Reviewable
 
     if opennotes_note_id
       client.post(
-        "/api/v2/notes/#{opennotes_note_id}/dismiss",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/notes/#{opennotes_note_id}/dismiss",
         body: {},
         user: performed_by,
       )
@@ -174,7 +174,7 @@ class ReviewableOpennotesItem < Reviewable
 
     if opennotes_request_id
       client.delete(
-        "/api/v2/requests/#{opennotes_request_id}",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/requests/#{opennotes_request_id}",
         user: performed_by,
       )
     end
@@ -191,7 +191,7 @@ class ReviewableOpennotesItem < Reviewable
 
     if opennotes_request_id
       client.patch(
-        "/api/v2/requests/#{opennotes_request_id}",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/requests/#{opennotes_request_id}",
         body: { data: { attributes: { escalated: true } } },
         user: performed_by,
       )

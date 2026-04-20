@@ -11,7 +11,7 @@ module Opennotes
         return
       end
 
-      data = build_client.get("/api/v2/community-servers/#{server_uuid}/scoring-analysis")
+      data = build_client.get("#{OpenNotes::PUBLIC_API_PREFIX}/community-servers/#{server_uuid}/scoring-analysis")
       render json: data
     rescue OpenNotes::ApiError => e
       if e.status == 404

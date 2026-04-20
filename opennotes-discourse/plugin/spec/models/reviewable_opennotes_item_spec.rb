@@ -183,7 +183,7 @@ RSpec.describe ReviewableOpennotesItem do
 
       expect(result.success?).to eq(true)
       expect(client).to have_received(:post).with(
-        "/api/v2/notes/note-agree/force-publish",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/notes/note-agree/force-publish",
         body: {},
         user: moderator,
       )
@@ -214,7 +214,7 @@ RSpec.describe ReviewableOpennotesItem do
 
       expect(result.success?).to eq(true)
       expect(client).to have_received(:post).with(
-        "/api/v2/notes/note-disagree/dismiss",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/notes/note-disagree/dismiss",
         body: {},
         user: moderator,
       )
@@ -240,7 +240,7 @@ RSpec.describe ReviewableOpennotesItem do
 
       expect(result.success?).to eq(true)
       expect(client).to have_received(:delete).with(
-        "/api/v2/requests/req-ignore",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/requests/req-ignore",
         user: moderator,
       )
       expect(reviewable.opennotes_state).to eq("dismissed")
@@ -263,7 +263,7 @@ RSpec.describe ReviewableOpennotesItem do
 
       expect(result.success?).to eq(true)
       expect(client).to have_received(:patch).with(
-        "/api/v2/requests/req-escalate",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/requests/req-escalate",
         body: { data: { attributes: { escalated: true } } },
         user: moderator,
       )

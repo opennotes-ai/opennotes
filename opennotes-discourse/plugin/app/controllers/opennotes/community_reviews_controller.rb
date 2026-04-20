@@ -13,7 +13,7 @@ module Opennotes
       return render json: { data: [] } unless server_id
 
       client = self.class.opennotes_client
-      actions = client.get("/api/v2/moderation-actions", params: {
+      actions = client.get("#{OpenNotes::PUBLIC_API_PREFIX}/moderation-actions", params: {
         "filter[community_server_id]" => server_id,
         "filter[action_state]" => "under_review",
       }, user: current_user)
@@ -29,8 +29,8 @@ module Opennotes
 
     def show
       client = self.class.opennotes_client
-      request_data = client.get("/api/v2/requests/#{params[:id]}", user: current_user)
-      notes = client.get("/api/v2/notes", params: {
+      request_data = client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests/#{params[:id]}", user: current_user)
+      notes = client.get("#{OpenNotes::PUBLIC_API_PREFIX}/notes", params: {
         "filter[request_id]" => params[:id],
       }, user: current_user)
 
@@ -52,7 +52,7 @@ module Opennotes
 
     def rate
       client = self.class.opennotes_client
-      result = client.post("/api/v2/ratings", body: {
+      result = client.post("#{OpenNotes::PUBLIC_API_PREFIX}/ratings", body: {
         data: {
           type: "ratings",
           attributes: {

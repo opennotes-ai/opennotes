@@ -23,7 +23,7 @@ module Jobs
       client = self.class.opennotes_client
 
       payload = build_flag_payload(post, community_server_id, flag_type, flagged_by)
-      response = client.post("/api/v2/requests", body: payload, user: flagged_by)
+      response = client.post("#{OpenNotes::PUBLIC_API_PREFIX}/requests", body: payload, user: flagged_by)
 
       handle_response(post, response)
     end

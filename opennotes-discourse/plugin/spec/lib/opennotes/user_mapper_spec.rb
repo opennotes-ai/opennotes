@@ -36,7 +36,7 @@ RSpec.describe OpenNotes::UserMapper do
   describe "#lookup_or_create" do
     it "calls the server lookup endpoint with slug as provider_scope" do
       expect(client).to receive(:get).with(
-        "/api/v2/user-profiles/lookup",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/user-profiles/lookup",
         params: {
           platform: "discourse",
           platform_user_id: "42",

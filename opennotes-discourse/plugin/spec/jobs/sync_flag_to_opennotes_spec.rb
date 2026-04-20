@@ -43,7 +43,7 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
       expect(captured_args).not_to be_nil
       path, = captured_args[0]
       kwargs = captured_args[1]
-      expect(path).to eq("/api/v2/requests")
+      expect(path).to eq("#{OpenNotes::PUBLIC_API_PREFIX}/requests")
       expect(kwargs[:user]).to eq(flagger)
       expect(kwargs[:body]).to include(
         data: include(

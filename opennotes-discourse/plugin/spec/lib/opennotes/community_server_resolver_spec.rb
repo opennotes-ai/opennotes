@@ -40,9 +40,9 @@ RSpec.describe OpenNotes::CommunityServerResolver do
         allow(OpenNotes::Client).to receive(:new).and_return(client)
       end
 
-      it "calls the v2 lookup API, stores UUID in PluginStore and Discourse.cache" do
+      it "calls the public lookup API, stores UUID in PluginStore and Discourse.cache" do
         expect(client).to receive(:get).with(
-          "/api/v2/community-servers/lookup",
+          "#{OpenNotes::PUBLIC_API_PREFIX}/community-servers/lookup",
           params: { platform: "discourse", platform_community_server_id: slug },
         ).and_return({ "data" => { "id" => uuid } })
 

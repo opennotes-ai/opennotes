@@ -29,7 +29,7 @@ module OpenNotes
 
     def fetch_profile(discourse_user)
       @client.get(
-        "/api/v2/user-profiles/lookup",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/user-profiles/lookup",
         params: {
           platform: "discourse",
           platform_user_id: discourse_user.id.to_s,
