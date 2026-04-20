@@ -66,9 +66,18 @@ PLATFORM_SERVICE_USER_USERNAME = "platform-service"
 PLATFORM_SERVICE_USER_EMAIL = "platform@opennotes.local"
 PLATFORM_SCOPES = ["api-keys:create"]
 
+DISCOURSE_DEV_API_KEY = "opk_discourse_dev_platform_adapter_2026"
+DISCOURSE_API_KEY_NAME = "Discourse Adapter (Development)"
+PROD_DISCOURSE_API_KEY_NAME = "Discourse Adapter (Production) - platform:adapter"
+DISCOURSE_SERVICE_USER_USERNAME = "discourse-adapter-community-opennotes-ai"
+DISCOURSE_SERVICE_USER_EMAIL = "discourse-adapter-community-opennotes-ai@opennotes.local"
+DISCOURSE_SERVICE_USER_DISPLAY_NAME = "Discourse Adapter (community.opennotes.ai)"
+DISCOURSE_SCOPES = ["platform:adapter"]
+
 GSM_RESOURCE_ID_OPENNOTES = "opennotes-api-key"
 GSM_RESOURCE_ID_PLAYGROUND = "playground-api-key"
 GSM_RESOURCE_ID_PLATFORM = "platform-api-key"
+GSM_RESOURCE_ID_DISCOURSE = "discourse-opennotes-api-key"
 
 
 def generate_api_key() -> tuple[str, str]:
@@ -304,6 +313,62 @@ async def get_or_create_platform_user(db: AsyncSession):
     return user_id
 
 
+async def get_or_create_discourse_user(db: AsyncSession):
+    """Per-instance agent for the Discourse plugin at community.opennotes.ai.
+
+    Follows the hardened self-service pattern for platform:adapter keys
+    (TASK-1455.01): principal_type='agent', platform_roles=[]. The caller that
+    mints the platform:adapter key must have 'platform_admin' — the target
+    (this user) must not.
+    """
+    result = await db.execute(
+        text(
+            "SELECT id, username, principal_type, platform_roles FROM users WHERE username = :username"
+        ),
+        {"username": DISCOURSE_SERVICE_USER_USERNAME},
+    )
+    row = result.first()
+
+    if row:
+        user_id = row[0]
+        principal_type = row[2]
+
+        if principal_type != "agent":
+            await db.execute(
+                text("UPDATE users SET principal_type = 'agent' WHERE id = :user_id"),
+                {"user_id": user_id},
+            )
+            print(
+                f"✓ Discourse user '{DISCOURSE_SERVICE_USER_USERNAME}' already exists (ID: {user_id}) - updated principal_type to agent"
+            )
+        else:
+            print(
+                f"✓ Discourse user '{DISCOURSE_SERVICE_USER_USERNAME}' already exists (ID: {user_id})"
+            )
+        return user_id
+
+    hashed_password = get_password_hash(secrets.token_urlsafe(64))
+
+    result = await db.execute(
+        text("""
+            INSERT INTO users (username, email, hashed_password, full_name, is_active, principal_type, platform_roles, created_at, updated_at)
+            VALUES (:username, :email, :hashed_password, :full_name, :is_active, :principal_type, '[]'::jsonb, NOW(), NOW())
+            RETURNING id
+        """),
+        {
+            "username": DISCOURSE_SERVICE_USER_USERNAME,
+            "email": DISCOURSE_SERVICE_USER_EMAIL,
+            "hashed_password": hashed_password,
+            "full_name": DISCOURSE_SERVICE_USER_DISPLAY_NAME,
+            "is_active": True,
+            "principal_type": "agent",
+        },
+    )
+    user_id = result.scalar_one()
+    print(f"✓ Created Discourse user '{DISCOURSE_SERVICE_USER_USERNAME}' (ID: {user_id})")
+    return user_id
+
+
 async def seed_playground_api_key(db: AsyncSession) -> None:
     user_id = await get_or_create_playground_user(db)
     key_hash = get_password_hash(PLAYGROUND_DEV_API_KEY)
@@ -327,6 +392,19 @@ async def seed_platform_api_key(db: AsyncSession) -> None:
         key_prefix="platform",
         user_id=user_id,
         scopes=PLATFORM_SCOPES,
+    )
+
+
+async def seed_discourse_api_key(db: AsyncSession) -> None:
+    user_id = await get_or_create_discourse_user(db)
+    key_hash = get_password_hash(DISCOURSE_DEV_API_KEY)
+    await seed_api_key(
+        db,
+        key_hash,
+        DISCOURSE_API_KEY_NAME,
+        key_prefix="discourse",
+        user_id=user_id,
+        scopes=DISCOURSE_SCOPES,
     )
 
 
@@ -460,6 +538,33 @@ async def _seed_and_save_prod_platform_key(db: AsyncSession) -> None:
         del api_key
 
 
+async def _seed_and_save_prod_discourse_key(db: AsyncSession) -> None:
+    override = _resolve_provided_key("DISCOURSE_OPENNOTES_API_KEY")
+    pushed_from_override = override is not None
+    if override is not None:
+        api_key, key_prefix = override
+    else:
+        api_key, key_prefix = generate_api_key()
+
+    user_id = await get_or_create_discourse_user(db)
+    key_hash = get_password_hash(api_key)
+    await seed_api_key(
+        db,
+        key_hash,
+        PROD_DISCOURSE_API_KEY_NAME,
+        key_prefix,
+        user_id=user_id,
+        scopes=DISCOURSE_SCOPES,
+    )
+    await db.commit()
+
+    try:
+        if not pushed_from_override:
+            _push_plaintext_to_gsm(GSM_RESOURCE_ID_DISCOURSE, api_key)
+    finally:
+        del api_key
+
+
 async def main() -> None:
     environment = os.environ.get("ENVIRONMENT", "unknown")
     is_production = environment == "production"
@@ -489,12 +594,14 @@ async def main() -> None:
                 await _seed_and_save_prod_key(session)
                 await _seed_and_save_prod_playground_key(session)
                 await _seed_and_save_prod_platform_key(session)
+                await _seed_and_save_prod_discourse_key(session)
                 print()
                 print("=" * 60)
                 print("API keys seeded and pushed to Google Secret Manager:")
                 print(f"  - Discord bot:  secret/{GSM_RESOURCE_ID_OPENNOTES}")
                 print(f"  - Playground:   secret/{GSM_RESOURCE_ID_PLAYGROUND}")
                 print(f"  - Platform:     secret/{GSM_RESOURCE_ID_PLATFORM}")
+                print(f"  - Discourse:    secret/{GSM_RESOURCE_ID_DISCOURSE}")
                 print("=" * 60)
                 print()
                 print("  Redeploy dependent services to pick up the new secret versions.")
@@ -504,6 +611,7 @@ async def main() -> None:
                 await seed_dev_api_key(session)
                 await seed_playground_api_key(session)
                 await seed_platform_api_key(session)
+                await seed_discourse_api_key(session)
                 await session.commit()
                 print()
                 print("✓ API key seeding completed successfully")
