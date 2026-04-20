@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, status
+from fastapi import APIRouter, FastAPI, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -849,15 +849,30 @@ app.include_router(
 # Public versioned adapter-contract surface — double-register the allowlist
 # under /api/public/v1 so third-party adapters have a stable, documented prefix.
 # Handlers are shared with the legacy /api/v2 registrations; behavior is identical.
-# See src/public_api.py and docs/public-api-prefix.md.
+# Routers with a `path_allowlist` only expose the listed paths publicly — this
+# keeps mixed routers (e.g. profiles) from leaking admin/self-service endpoints
+# onto the public surface. See src/public_api.py and docs/public-api-prefix.md.
+from fastapi.routing import APIRoute as _PublicAPIRoute
+
 from src.public_api import API_PUBLIC_V1_PREFIX, PUBLIC_ADAPTER_ROUTERS
 
-for _public_router in PUBLIC_ADAPTER_ROUTERS:
-    app.include_router(
-        _public_router,
-        prefix=API_PUBLIC_V1_PREFIX,
-        tags=["public"],
-    )
+for _public_spec in PUBLIC_ADAPTER_ROUTERS:
+    if _public_spec.path_allowlist is None:
+        app.include_router(
+            _public_spec.router,
+            prefix=API_PUBLIC_V1_PREFIX,
+            tags=["public"],
+        )
+    else:
+        _filtered_router = APIRouter()
+        for _route in _public_spec.router.routes:
+            if isinstance(_route, _PublicAPIRoute) and _route.path in _public_spec.path_allowlist:
+                _filtered_router.routes.append(_route)
+        app.include_router(
+            _filtered_router,
+            prefix=API_PUBLIC_V1_PREFIX,
+            tags=["public"],
+        )
 
 # API v1 routes
 app.include_router(webhook_router, prefix=settings.API_V1_PREFIX)
