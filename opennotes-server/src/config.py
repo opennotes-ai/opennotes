@@ -101,6 +101,7 @@ class Settings(BaseSettings):
 
     API_V1_PREFIX: str = "/api/v1"
     API_V2_PREFIX: str = "/api/v2"
+    API_PUBLIC_V1_PREFIX: str = "/api/public/v1"
 
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8000
