@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel
 
 from src.llm_config.adapter import ModelFlavor, adapt_provider
+
+if TYPE_CHECKING:
+    from pydantic_ai.models import Model
 
 
 class ModelId(BaseModel, frozen=True):
@@ -42,6 +47,11 @@ class ModelId(BaseModel, frozen=True):
     def to_pydantic_ai(self) -> str:
         provider = adapt_provider(self.provider, self.flavor, ModelFlavor.PYDANTIC_AI)
         return f"{provider}:{self.model}"
+
+    def to_pydantic_ai_model(self) -> Model:
+        from src.llm_config.model_factory import infer_model_with_overrides  # noqa: PLC0415
+
+        return infer_model_with_overrides(self.to_pydantic_ai())
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ModelId):

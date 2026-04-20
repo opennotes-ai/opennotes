@@ -269,6 +269,18 @@ class TestEquality:
         assert m != 42
 
 
+class TestToPydanticAiModel:
+    def test_to_pydantic_ai_model_returns_pydantic_ai_model_instance(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        from pydantic_ai.models import Model
+
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        m = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
+        result = m.to_pydantic_ai_model()
+        assert isinstance(result, Model)
+
+
 class TestGetDefaultModelForProvider:
     def test_openai_returns_pydantic_ai_format(self):
         result = get_default_model_for_provider("openai")

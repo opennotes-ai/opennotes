@@ -89,6 +89,7 @@ class DirectProvider(LLMProvider[DirectProviderSettings, DirectCompletionParams]
                 "DEFAULT_FULL_MODEL, or other model configuration is set correctly."
             )
 
+        model_for_request = params.model.to_pydantic_ai_model() if params.model else model_str
         pydantic_messages = self._convert_messages(messages)
         model_settings = self._build_model_settings(params)
 
@@ -102,7 +103,7 @@ class DirectProvider(LLMProvider[DirectProviderSettings, DirectCompletionParams]
         )
 
         response = await model_request(
-            model=model_str,
+            model=model_for_request,
             messages=pydantic_messages,
             model_settings=model_settings,
         )
@@ -146,11 +147,12 @@ class DirectProvider(LLMProvider[DirectProviderSettings, DirectCompletionParams]
                 "Model name cannot be empty. Check that model configuration is set correctly."
             )
 
+        model_for_request = params.model.to_pydantic_ai_model() if params.model else model_str
         pydantic_messages = self._convert_messages(messages)
         model_settings = self._build_model_settings(params)
 
         async with model_request_stream(
-            model=model_str,
+            model=model_for_request,
             messages=pydantic_messages,
             model_settings=model_settings,
         ) as stream:
