@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.simulation.model_display import humanize_model_name
+from tests._model_fixtures import GOOGLE_VERTEX_FLASH_TEST_MODEL
 
 pytestmark = pytest.mark.unit
 
@@ -58,7 +59,7 @@ class TestHumanizeModelName:
         assert humanize_model_name("anthropic:claude-3-5-sonnet") == "Anthropic Claude 3.5 Sonnet"
 
     def test_pydantic_ai_google_vertex(self):
-        assert humanize_model_name("google-vertex:gemini-2.5-flash") == "Google Gemini 2.5 Flash"
+        assert humanize_model_name(GOOGLE_VERTEX_FLASH_TEST_MODEL) == "Google Gemini 3 Flash"
 
     def test_pydantic_ai_mistral(self):
         assert humanize_model_name("mistral:mistral-large-latest") == "Mistral Large Latest"

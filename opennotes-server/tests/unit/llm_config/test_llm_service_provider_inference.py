@@ -9,6 +9,7 @@ from src.llm_config.manager import LLMClientManager
 from src.llm_config.model_id import ModelId
 from src.llm_config.providers.base import LLMMessage, LLMResponse
 from src.llm_config.service import LLMService
+from tests._model_fixtures import GOOGLE_VERTEX_FLASH_TEST_MODEL
 
 
 @pytest.fixture
@@ -373,30 +374,10 @@ class TestPydanticAIFlavorProviderNormalization:
 
         await llm_service.complete(
             messages=messages,
-            model=ModelId.from_pydantic_ai("google-vertex:gemini-2.5-flash"),
+            model=ModelId.from_pydantic_ai(GOOGLE_VERTEX_FLASH_TEST_MODEL),
         )
 
         mock_client_manager.get_client.assert_called_once_with("vertex_ai")
-
-    @pytest.mark.asyncio
-    async def test_complete_normalizes_google_gla_to_gemini(
-        self,
-        llm_service: LLMService,
-        mock_client_manager: MagicMock,
-        mock_llm_response: LLMResponse,
-    ) -> None:
-        mock_provider = MagicMock()
-        mock_provider.complete = AsyncMock(return_value=mock_llm_response)
-        mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
-
-        messages = [LLMMessage(role="user", content="Hi")]
-
-        await llm_service.complete(
-            messages=messages,
-            model=ModelId.from_pydantic_ai("google-gla:gemini-2.5-flash"),
-        )
-
-        mock_client_manager.get_client.assert_called_once_with("gemini")
 
     @pytest.mark.asyncio
     async def test_stream_complete_normalizes_pydantic_ai_provider(
@@ -417,7 +398,7 @@ class TestPydanticAIFlavorProviderNormalization:
         chunks = []
         async for chunk in llm_service.stream_complete(
             messages=messages,
-            model=ModelId.from_pydantic_ai("google-vertex:gemini-2.5-flash"),
+            model=ModelId.from_pydantic_ai(GOOGLE_VERTEX_FLASH_TEST_MODEL),
         ):
             chunks.append(chunk)
 
@@ -443,7 +424,7 @@ class TestPydanticAIFlavorProviderNormalization:
 
         await llm_service.describe_image(
             image_url="https://example.com/mountain.jpg",
-            model=ModelId.from_pydantic_ai("google-vertex:gemini-2.5-flash"),
+            model=ModelId.from_pydantic_ai(GOOGLE_VERTEX_FLASH_TEST_MODEL),
         )
 
         mock_client_manager.get_client.assert_called_once_with("vertex_ai")
@@ -466,7 +447,7 @@ class TestPydanticAIFlavorProviderNormalization:
             await llm_service.complete(
                 messages=messages,
                 provider="google-vertex",
-                model=ModelId.from_pydantic_ai("google-vertex:gemini-2.5-flash"),
+                model=ModelId.from_pydantic_ai(GOOGLE_VERTEX_FLASH_TEST_MODEL),
             )
 
         assert not any(
@@ -492,7 +473,7 @@ class TestPydanticAIFlavorProviderNormalization:
             await llm_service.complete(
                 messages=messages,
                 provider="vertex_ai",
-                model=ModelId.from_pydantic_ai("google-vertex:gemini-2.5-flash"),
+                model=ModelId.from_pydantic_ai(GOOGLE_VERTEX_FLASH_TEST_MODEL),
             )
 
         assert not any(

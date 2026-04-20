@@ -12,6 +12,7 @@ from src.llm_config.providers.direct_provider import (
     DirectProvider,
     DirectProviderSettings,
 )
+from tests._model_fixtures import GOOGLE_VERTEX_FLASH_TEST_MODEL
 
 
 def _make_mock_response(
@@ -146,11 +147,18 @@ class TestDirectProvider:
     @pytest.mark.asyncio
     async def test_complete_uses_param_model_when_specified(self, provider: DirectProvider) -> None:
         mock_resp = _make_mock_response()
-        with patch(
-            "src.llm_config.providers.direct_provider.model_request",
-            new_callable=AsyncMock,
-            return_value=mock_resp,
-        ) as mock_mr:
+        sentinel_model = MagicMock()
+        with (
+            patch(
+                "src.llm_config.providers.direct_provider.model_request",
+                new_callable=AsyncMock,
+                return_value=mock_resp,
+            ) as mock_mr,
+            patch(
+                "src.llm_config.model_factory.infer_model_with_overrides",
+                return_value=sentinel_model,
+            ),
+        ):
             messages = [LLMMessage(role="user", content="Hi")]
             params = DirectCompletionParams(
                 model=ModelId.from_pydantic_ai("anthropic:claude-3-opus")
@@ -158,7 +166,7 @@ class TestDirectProvider:
             await provider.complete(messages, params)
 
             call_kwargs = mock_mr.call_args.kwargs
-            assert call_kwargs["model"] == "anthropic:claude-3-opus"
+            assert call_kwargs["model"] is sentinel_model
 
     @pytest.mark.asyncio
     async def test_complete_handles_missing_usage(self, provider: DirectProvider) -> None:
@@ -509,7 +517,7 @@ class TestDirectProviderVertexAI:
     def vertex_provider(self) -> DirectProvider:
         return DirectProvider(
             api_key=ADC_SENTINEL,
-            default_model="google-vertex:gemini-2.5-flash",
+            default_model=GOOGLE_VERTEX_FLASH_TEST_MODEL,
             settings=DirectProviderSettings(),
             provider_name="vertex_ai",
         )

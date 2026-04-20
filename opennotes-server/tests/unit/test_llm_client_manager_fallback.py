@@ -89,28 +89,16 @@ class TestVertexAIFallback:
             key = client_manager._get_global_api_key("vertex_ai")
             assert key is None
 
-    def test_get_global_api_key_returns_adc_for_gemini_when_project_set(self, client_manager):
-        with patch("src.llm_config.manager.settings") as mock_settings:
-            mock_settings.VERTEXAI_PROJECT = "my-gcp-project"
-            key = client_manager._get_global_api_key("gemini")
-            assert key == ADC_SENTINEL
-
-    def test_get_global_api_key_returns_none_for_gemini_when_project_missing(self, client_manager):
-        with patch("src.llm_config.manager.settings") as mock_settings:
-            mock_settings.VERTEXAI_PROJECT = None
-            key = client_manager._get_global_api_key("gemini")
-            assert key is None
-
-    def test_get_default_model_returns_pydantic_ai_format_for_vertex_ai(self, client_manager):
+    def test_get_default_model_returns_pydantic_ai_format_for_vertex_ai(
+        self, client_manager, prod_default_google_model: str
+    ):
         model = client_manager._get_default_model("vertex_ai")
-        assert model == "google-vertex:gemini-2.5-pro"
-
-    def test_get_default_model_returns_pydantic_ai_format_for_gemini_provider(self, client_manager):
-        model = client_manager._get_default_model("gemini")
-        assert model == "google-gla:gemini-2.5-pro"
+        assert model == prod_default_google_model
 
     @pytest.mark.asyncio
-    async def test_vertex_ai_client_created_via_global_adc(self, client_manager):
+    async def test_vertex_ai_client_created_via_global_adc(
+        self, client_manager, prod_default_google_model: str
+    ):
         """vertex_ai client should be created via global ADC."""
         with patch("src.llm_config.manager.settings") as mock_settings:
             mock_settings.VERTEXAI_PROJECT = "my-gcp-project"
@@ -120,7 +108,7 @@ class TestVertexAIFallback:
         assert client is not None
         assert isinstance(client, DirectProvider)
         assert client.api_key == ADC_SENTINEL
-        assert client.default_model == "google-vertex:gemini-2.5-pro"
+        assert client.default_model == prod_default_google_model
         assert client._provider_name == "vertex_ai"
 
     @pytest.mark.asyncio

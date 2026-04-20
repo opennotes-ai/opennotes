@@ -132,14 +132,6 @@ class TestCrossFlavorTranslation:
         )
         assert m.to_slash_format() == "vertex_ai/gemini-2.5-pro"
 
-    def test_gemini_to_pydantic_ai(self):
-        m = ModelId(provider="gemini", model="gemini-2.5-flash", flavor=ModelFlavor.LEGACY_SLASH)
-        assert m.to_pydantic_ai() == "google-gla:gemini-2.5-flash"
-
-    def test_google_gla_to_slash_format(self):
-        m = ModelId(provider="google-gla", model="gemini-2.5-flash", flavor=ModelFlavor.PYDANTIC_AI)
-        assert m.to_slash_format() == "gemini/gemini-2.5-flash"
-
     def test_no_mapping_passthrough(self):
         m = ModelId(provider="openai", model="gpt-5.1", flavor=ModelFlavor.LEGACY_SLASH)
         assert m.to_pydantic_ai() == "openai:gpt-5.1"
@@ -172,14 +164,6 @@ class TestRoundTrip:
         m = ModelId.from_slash_format(slash_str)
         pydantic_ai_str = m.to_pydantic_ai()
         assert pydantic_ai_str == "google-vertex:global/gemini-2.5-pro"
-        m2 = ModelId.from_pydantic_ai(pydantic_ai_str)
-        assert m2.to_slash_format() == slash_str
-
-    def test_gemini_google_gla_cross_flavor_round_trip(self):
-        slash_str = "gemini/gemini-2.5-flash"
-        m = ModelId.from_slash_format(slash_str)
-        pydantic_ai_str = m.to_pydantic_ai()
-        assert pydantic_ai_str == "google-gla:gemini-2.5-flash"
         m2 = ModelId.from_pydantic_ai(pydantic_ai_str)
         assert m2.to_slash_format() == slash_str
 
@@ -273,12 +257,19 @@ class TestToPydanticAiModel:
     def test_to_pydantic_ai_model_returns_pydantic_ai_model_instance(
         self, monkeypatch: pytest.MonkeyPatch
     ):
+        from unittest.mock import MagicMock, patch
+
         from pydantic_ai.models import Model
 
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-        m = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
-        result = m.to_pydantic_ai_model()
-        assert isinstance(result, Model)
+        sentinel = MagicMock(spec=Model)
+        with patch(
+            "src.llm_config.model_factory.infer_model_with_overrides",
+            return_value=sentinel,
+        ):
+            m = ModelId.from_pydantic_ai("openai:gpt-4o-mini")
+            result = m.to_pydantic_ai_model()
+        assert result is sentinel
 
 
 class TestGetDefaultModelForProvider:

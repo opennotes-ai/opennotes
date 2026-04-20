@@ -24,6 +24,7 @@ from src.bulk_content_scan.service import BulkContentScanService
 from src.claim_relevance_check.schemas import RelevanceCheckResult
 from src.claim_relevance_check.service import relevance_agent
 from src.fact_checking.embedding_schemas import FactCheckMatch, SimilaritySearchResponse
+from tests._model_fixtures import GOOGLE_VERTEX_FLASH_TEST_MODEL
 
 
 @pytest.fixture
@@ -798,7 +799,7 @@ class TestRelevanceCheckEdgeCases:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_MODEL = MagicMock()
             mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = (
-                "google-vertex:gemini-2.5-flash"
+                GOOGLE_VERTEX_FLASH_TEST_MODEL
             )
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0

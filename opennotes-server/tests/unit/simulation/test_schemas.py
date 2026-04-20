@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.simulation.schemas import ActionSelectionResult, ModelNameResponse, SimActionType
+from tests._model_fixtures import GOOGLE_VERTEX_FLASH_TEST_MODEL
 
 
 class TestActionSelectionRateNotesAlias:
@@ -111,7 +112,7 @@ class TestSimAgentReasoningModelValidation:
         [
             "openai:gpt-4o",
             "openai:gpt-4o-mini",
-            "google-vertex:gemini-2.5-flash",
+            GOOGLE_VERTEX_FLASH_TEST_MODEL,
         ],
     )
     def test_accepts_non_reasoning_models(self, model_name: str) -> None:
