@@ -1,0 +1,19 @@
+[tasks.dev]
+description = "Run vibecheck-server in dev mode on port 8000 with auto-reload"
+run = "uv run uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
+
+[tasks.test]
+description = "Run pytest"
+run = "uv run pytest"
+
+[tasks.lint]
+description = "Run ruff check"
+run = "uv run ruff check ."
+
+[tasks.type-check]
+description = "Run basedpyright type checker"
+run = "uv run basedpyright"
+
+[tasks.build]
+description = "Build the vibecheck-server Docker image"
+run = "docker build -t opennotes-vibecheck-server ."
