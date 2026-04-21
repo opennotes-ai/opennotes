@@ -13,6 +13,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Minimal GITHUB_TOKEN scope — this job only reads the checked-out repo
+# and installs from public npm/actions registries.
+permissions:
+  contents: read
+
 jobs:
   broken-links-and-build:
     name: Mintlify build + broken-links
