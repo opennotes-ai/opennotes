@@ -3,8 +3,63 @@ title: Adapter choreography
 description: How an adapter takes a post from "just flagged" to "community consensus applied" via /api/public/v1.
 ---
 
-<Note>
-  Placeholder — this page is filled in by **TASK-1460.03**. The final content
-  maps the universal adapter lifecycle onto the concrete `/api/public/v1`
-  endpoints, with sequence diagrams for the request → review → action loop.
-</Note>
+This walkthrough traces a single post through the complete OpenNotes lifecycle. Each step maps to a concrete `/api/public/v1` call that your adapter makes — in exactly this order.
+
+## The five-step sequence
+
+```
+ Platform event
+      │
+      ▼
+ ┌─────────────────────────────────┐
+ │ Step 1 — Identify the user      │  GET /user-profiles/lookup
+ │ Map platform user → profile ID  │
+ └────────────────┬────────────────┘
+                  │ user_profile_id
+                  ▼
+ ┌─────────────────────────────────┐
+ │ Step 2 — Identify the community │  GET /community-servers/lookup
+ │ Resolve community-server UUID   │
+ └────────────────┬────────────────┘
+                  │ community_server_id
+                  ▼
+ ┌─────────────────────────────────┐
+ │ Step 3 — Submit the request     │  POST /requests
+ │ Create a classification request │
+ └────────────────┬────────────────┘
+                  │ request_id  (async scoring begins)
+                  ▼
+ ┌─────────────────────────────────┐
+ │ Step 4 — Handle the action      │  webhook push OR poll /moderation-actions
+ │ Receive and apply consensus     │
+ └────────────────┬────────────────┘
+                  │
+                  ▼
+ ┌─────────────────────────────────┐
+ │ Step 5 — Retries and ordering   │  retry, idempotency, ordering
+ │ Make delivery reliable          │
+ └─────────────────────────────────┘
+```
+
+## What each step produces
+
+| Step | API call | Output passed forward |
+|------|----------|-----------------------|
+| [1 — Identify the user](/integration-guide/walkthrough/01-identify-user) | `GET /user-profiles/lookup` | `user_profile_id` |
+| [2 — Identify the community](/integration-guide/walkthrough/02-identify-community) | `GET /community-servers/lookup` | `community_server_id` |
+| [3 — Submit the request](/integration-guide/walkthrough/03-submit-request) | `POST /requests` | `request_id` |
+| [4 — Handle the action](/integration-guide/walkthrough/04-handle-action) | webhook or `GET /moderation-actions` | applied platform action |
+| [5 — Webhooks and retries](/integration-guide/walkthrough/05-webhooks-and-retries) | — | reliable delivery |
+
+## Before you start
+
+Every call in this walkthrough requires:
+
+- An `Authorization: Bearer <api_key>` header (see [Authentication](/integration-guide/concepts/headers-and-auth) for how to obtain a key)
+- A full set of `X-Adapter-*` headers that identify your adapter, community, and the acting user (see [Headers and auth](/integration-guide/concepts/headers-and-auth))
+
+Consult the [Adapter contract](/integration-guide/concepts/adapter-contract) for the full list of obligations before shipping to production.
+
+## Reference implementation
+
+The [Discourse plugin](https://github.com/opennotes-ai/opennotes/blob/main/opennotes-discourse/plugin/lib/opennotes/client.rb) is the canonical adapter. Every code excerpt in this walkthrough points at the corresponding method in that file.

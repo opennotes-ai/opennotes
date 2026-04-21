@@ -1,10 +1,131 @@
 ---
-title: Content lifecycle
-description: From a new post on your platform to a classification request on OpenNotes.
+title: "Step 3 — Submit the request"
+description: POST /api/public/v1/requests to create a classification request for a piece of platform content.
 ---
 
-<Note>
-  Placeholder — this page is filled in by **TASK-1460.03**. The final content
-  documents `POST /api/public/v1/requests`, what belongs in each field, and
-  how the server routes the request to classification and review.
-</Note>
+With a user profile ID (from [Step 1](/integration-guide/walkthrough/01-identify-user)) and a community-server ID (from [Step 2](/integration-guide/walkthrough/02-identify-community)) in hand, you submit a classification request for the flagged post. The server queues the content for scoring and — eventually — community review.
+
+This is the core adapter operation. Every piece of content that enters the OpenNotes pipeline starts here.
+
+## Request
+
+```bash
+curl -X POST "https://api.opennotes.ai/api/public/v1/requests" \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-User-Id: 42" \
+  -H "X-Adapter-Username: alice" \
+  -H "X-Adapter-Trust-Level: 2" \
+  -H "X-Adapter-Admin: false" \
+  -H "X-Adapter-Moderator: false" \
+  -H "X-Adapter-Scope: my-community" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "type": "requests",
+      "attributes": {
+        "request_id": "discourse-post-98765",
+        "requested_by": "01906b2a-3c1e-7f4d-9a88-d4e1f5c2b7a3",
+        "community_server_id": "01906b2a-4d2f-7e5a-8b99-e5f2a6d3c8b4",
+        "original_message_content": "The earth is flat and NASA is lying to you.",
+        "platform_message_id": "98765",
+        "platform_channel_id": "general",
+        "platform_author_id": "42",
+        "platform_timestamp": "2024-06-01T12:34:56Z",
+        "metadata": {
+          "topic_id": 1234,
+          "post_number": 3
+        }
+      }
+    }
+  }'
+```
+
+### Request body fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `data.type` | yes | Must be the string `"requests"` |
+| `data.attributes.request_id` | yes | Your stable, idempotency key for this content item. Use a platform-scoped identifier such as `"discourse-post-98765"`. Submitting the same `request_id` twice is idempotent. |
+| `data.attributes.requested_by` | yes | The OpenNotes profile ID (UUID) of the user who triggered this review. |
+| `data.attributes.community_server_id` | yes | The community-server UUID from Step 2. |
+| `data.attributes.original_message_content` | recommended | Full text of the post. Omit only when content must not be stored. |
+| `data.attributes.platform_message_id` | recommended | Platform's native message ID. Used for deduplication and deep links. |
+| `data.attributes.platform_channel_id` | recommended | Channel or topic ID on your platform. |
+| `data.attributes.platform_author_id` | recommended | The author's platform-native user ID (distinct from `requested_by`, which is the reporter). |
+| `data.attributes.platform_timestamp` | recommended | ISO 8601 timestamp of when the post was created on the platform. |
+| `data.attributes.metadata` | optional | Freeform JSON object for any extra context your adapter needs to round-trip back when the action arrives. |
+| `data.attributes.similarity_score` | optional | If your adapter pre-computes a similarity score against known content, include it here (0.0–1.0). |
+| `data.attributes.dataset_name` | optional | Source dataset name if the request originates from a dataset-matching pipeline. |
+| `data.attributes.dataset_item_id` | optional | Fact-check item ID from the matched dataset. |
+
+## Response
+
+HTTP 201 — request accepted:
+
+```json
+{
+  "jsonapi": { "version": "1.1" },
+  "data": {
+    "type": "requests",
+    "id": "01906b2a-5e3a-7c6b-9d77-f6a3b7e4d9c5",
+    "attributes": {
+      "request_id": "discourse-post-98765",
+      "requested_by": "01906b2a-3c1e-7f4d-9a88-d4e1f5c2b7a3",
+      "status": "PENDING",
+      "note_id": null,
+      "community_server_id": "01906b2a-4d2f-7e5a-8b99-e5f2a6d3c8b4",
+      "requested_at": "2024-06-01T12:35:01Z",
+      "created_at": "2024-06-01T12:35:01Z",
+      "updated_at": "2024-06-01T12:35:01Z",
+      "content": "The earth is flat and NASA is lying to you.",
+      "platform_message_id": "98765",
+      "platform_channel_id": "general",
+      "metadata": { "topic_id": 1234, "post_number": 3 },
+      "similarity_score": null,
+      "dataset_name": null,
+      "dataset_item_id": null
+    }
+  }
+}
+```
+
+Capture `data.id` — this is the OpenNotes `request_id` UUID. You will need it to correlate incoming moderation actions in [Step 4](/integration-guide/walkthrough/04-handle-action).
+
+### Status field
+
+The request starts at `PENDING`. The server will score the content asynchronously and move the status forward. Your adapter does not poll on status — it waits for a moderation action to arrive (either via webhook push or poll).
+
+### Idempotency
+
+If your adapter submits the same `request_id` string twice (e.g. after a network timeout), the server returns the existing request rather than creating a duplicate. Always use a stable, platform-scoped identifier for `request_id`.
+
+## Reference implementation
+
+The Discourse plugin submits requests via [`OpenNotes::Client#post`](https://github.com/opennotes-ai/opennotes/blob/main/opennotes-discourse/plugin/lib/opennotes/client.rb):
+
+```ruby
+def post(path, body: {}, user: nil)
+  request_with_retries(:post, path, body: body, user: user)
+end
+```
+
+The client automatically injects `X-Adapter-*` headers from the `user` argument:
+
+```ruby
+req.headers["X-Adapter-Platform"] = "discourse"
+req.headers["X-Adapter-User-Id"] = user.id.to_s
+req.headers["X-Adapter-Username"] = user.username
+req.headers["X-Adapter-Trust-Level"] = user.trust_level.to_s
+req.headers["X-Adapter-Admin"] = user.admin?.to_s
+req.headers["X-Adapter-Moderator"] = user.moderator?.to_s
+req.headers["X-Adapter-Scope"] = SiteSetting.opennotes_platform_community_server_id
+```
+
+## API reference
+
+See [`POST /api/public/v1/requests`](/api-reference/endpoints/create-request-jsonapi-api-public-v1-requests-post) for the full request and response schema.
+
+---
+
+Next: [Step 4 — Handle the action](/integration-guide/walkthrough/04-handle-action)
