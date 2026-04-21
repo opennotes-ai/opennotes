@@ -16,6 +16,7 @@ from httpx import ASGITransport, AsyncClient
 from src.database import get_session_maker
 from src.llm_config.models import CommunityServer
 from src.main import app
+from src.notes.models import Request
 from src.users.models import User
 from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
 
@@ -526,3 +527,73 @@ class TestMonitoredChannelsPlatformAgnostic:
                 },
             )
         assert response.status_code == 201, response.text
+
+
+# ---------------------------------------------------------------------------
+# Tests: requests endpoint platform-agnostic
+# ---------------------------------------------------------------------------
+
+
+class TestRequestsPlatformAgnostic:
+    """POST /requests resolves platform-native IDs under the request platform."""
+
+    @pytest.mark.asyncio
+    async def test_create_request_with_discourse_platform_claim_uses_discourse_server(
+        self,
+        discourse_community_server: CommunityServer,
+        service_account_headers: dict,
+    ):
+        """Signed Discourse platform context resolves the existing Discourse slug."""
+        from sqlalchemy import select
+
+        from src.auth.platform_claims import create_platform_claims_token
+
+        platform_claims = create_platform_claims_token(
+            platform="discourse",
+            scope=discourse_community_server.platform_community_server_id,
+            sub="discourse-adapter-user-42",
+            community_id=discourse_community_server.platform_community_server_id,
+        )
+        request_id = f"discourse-platform-request-{uuid4().hex[:12]}"
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/public/v1/requests",
+                headers={**service_account_headers, "X-Platform-Claims": platform_claims},
+                json={
+                    "data": {
+                        "type": "requests",
+                        "attributes": {
+                            "request_id": request_id,
+                            "requested_by": "discourse-user-42",
+                            "community_server_id": (
+                                discourse_community_server.platform_community_server_id
+                            ),
+                            "original_message_content": "Discourse post content",
+                            "platform_message_id": f"post-{uuid4().hex[:8]}",
+                            "platform_channel_id": "category-1",
+                            "platform_author_id": "author-42",
+                        },
+                    }
+                },
+            )
+
+        assert response.status_code == 201, response.text
+
+        async with get_session_maker()() as db:
+            created_request = (
+                await db.execute(select(Request).where(Request.request_id == request_id))
+            ).scalar_one()
+            phantom_discord_server = (
+                await db.execute(
+                    select(CommunityServer).where(
+                        CommunityServer.platform == "discord",
+                        CommunityServer.platform_community_server_id
+                        == discourse_community_server.platform_community_server_id,
+                    )
+                )
+            ).scalar_one_or_none()
+
+        assert created_request.community_server_id == discourse_community_server.id
+        assert phantom_discord_server is None

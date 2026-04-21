@@ -1,4 +1,4 @@
-"""A client library for accessing Open Notes Server"""
+"""A client library for accessing Open Notes Scoring API"""
 
 from .client import AuthenticatedClient, Client
 

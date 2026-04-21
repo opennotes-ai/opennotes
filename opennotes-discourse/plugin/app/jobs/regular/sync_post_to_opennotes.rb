@@ -18,7 +18,7 @@ module Jobs
 
       payload =
         OpenNotes::PostMapper.to_request(post, community_server_id: platform_community_server_id)
-      response = client.post("#{OpenNotes::PUBLIC_API_PREFIX}/requests", body: payload)
+      response = client.post("#{OpenNotes::PUBLIC_API_PREFIX}/requests", body: payload, user: post.user)
 
       handle_response(post, response, client)
     end
