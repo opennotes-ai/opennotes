@@ -1,10 +1,157 @@
 ---
 title: Webhooks
-description: How OpenNotes delivers consensus decisions back to your adapter.
+description: How OpenNotes delivers moderation decisions back to your adapter — delivery semantics, HMAC signing, ordering, and the polling fallback.
 ---
 
-<Note>
-  Placeholder — this page is filled in by **TASK-1460.02**. The final content
-  covers webhook payload shapes, signing, ordering, and the polling fallback
-  when delivery fails.
-</Note>
+After OpenNotes scores content and reaches a consensus, it delivers the decision to your adapter via a **webhook**. Your adapter registers an HTTPS endpoint; the server posts a signed JSON payload to that URL when a decision is ready.
+
+## Registering a webhook
+
+Register your endpoint via the `/webhooks/register` API:
+
+```bash
+curl -X POST https://api.opennotes.ai/webhooks/register \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-Scope: <community_server_id>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-forum.example.com/opennotes/webhook",
+    "secret": "<random-secret-you-generate>",
+    "platform_community_server_id": "<community_server_id>",
+    "events": ["moderation.decision"]
+  }'
+```
+
+`events` is optional. Omit it (or set to `null`) to receive all event types.
+
+The response includes the `id` of the webhook config. Store the `secret` — you need it to verify incoming signatures.
+
+## Payload shape
+
+```json
+{
+  "event_type": "moderation.decision",
+  "event_id": "01940000-0000-7000-0000-000000000042",
+  "request_id": "post-123",
+  "community_server_id": "my-forum-slug",
+  "decision": "hide",
+  "confidence": 0.97,
+  "tier": 1,
+  "_webhook_timestamp": 1714000000,
+  "_webhook_signature": "a1b2c3d4...64hexchars"
+}
+```
+
+The `_webhook_timestamp` and `_webhook_signature` fields are added by the server before delivery.
+
+## Verifying signatures
+
+Every webhook delivery is signed with HMAC-SHA256 using the `secret` you provided at registration. Verify every incoming request before processing it:
+
+```
+message = "<timestamp>:<canonical_json_payload_without_signature_fields>"
+expected = HMAC-SHA256(secret, message).hexdigest()
+```
+
+The canonical JSON sorts keys alphabetically (`orjson.OPT_SORT_KEYS`). The signature fields (`_webhook_timestamp`, `_webhook_signature`) are excluded from the message.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import hashlib
+    import hmac
+    import json
+    import time
+
+    MAX_AGE_SECONDS = 300
+
+    def verify_webhook(payload: dict, secret: str) -> bool:
+        timestamp = payload.get("_webhook_timestamp")
+        signature = payload.get("_webhook_signature")
+        if not timestamp or not signature:
+            return False
+
+        age = abs(int(time.time()) - int(timestamp))
+        if age > MAX_AGE_SECONDS:
+            return False
+
+        body = {k: v for k, v in payload.items()
+                if k not in ("_webhook_timestamp", "_webhook_signature")}
+        message = f"{timestamp}:{json.dumps(body, sort_keys=True, separators=(',', ':'))}"
+        expected = hmac.new(
+            secret.encode(), message.encode(), hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(expected, signature)
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    ```ruby
+    require "openssl"
+    require "json"
+
+    MAX_AGE_SECONDS = 300
+
+    def verify_webhook(payload, secret)
+      timestamp = payload["_webhook_timestamp"]
+      signature = payload["_webhook_signature"]
+      return false unless timestamp && signature
+
+      age = (Time.now.to_i - timestamp.to_i).abs
+      return false if age > MAX_AGE_SECONDS
+
+      body = payload.reject { |k, _| ["_webhook_timestamp", "_webhook_signature"].include?(k) }
+      message = "#{timestamp}:#{body.sort.to_h.to_json}"
+      expected = OpenSSL::HMAC.hexdigest("SHA256", secret, message)
+      ActiveSupport::SecurityUtils.secure_compare(expected, signature)
+    end
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Reject any webhook where the timestamp is more than 5 minutes old (300 seconds). This prevents replay attacks.
+</Warning>
+
+## Delivery semantics
+
+- **At-least-once**: the server retries failed deliveries. Your endpoint must be idempotent on `event_id`.
+- **Retry schedule**: up to 3 attempts with delays of 10 s, 30 s, and 90 s.
+- **Retry trigger**: any non-2xx response, a connection error, or a timeout (5 s). HTTP 4xx responses (except 429) are considered permanent failures and are not retried.
+- **Deduplication key**: `event_id` is a UUID v7. Store processed event IDs and skip duplicates.
+
+## Event ordering
+
+OpenNotes does not guarantee strict ordering across different `request_id` values. For a single `request_id` you will receive at most one `moderation.decision` event. If your adapter needs total ordering, buffer events and sort by `_webhook_timestamp`.
+
+## Polling fallback
+
+If your adapter is temporarily unable to receive webhooks (downtime, firewall changes), use polling to catch up:
+
+```bash
+curl "https://api.opennotes.ai/api/public/v1/requests?status=decided&since=<iso8601_timestamp>" \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-Scope: <community_server_id>"
+```
+
+Filter by `status=decided` and paginate forward from your last-processed timestamp. Re-register your webhook once delivery is restored.
+
+## Responding to a webhook
+
+Your endpoint should return HTTP 200 (or any 2xx) quickly — ideally within 5 seconds. If processing takes longer, acknowledge immediately and process asynchronously:
+
+1. Return 200 to the server.
+2. Enqueue the payload in your job queue.
+3. Process (apply hide/delete/flag) from the queue.
+4. Call `POST /api/public/v1/moderation-actions` to record the completed action.
+
+## Discourse reference
+
+The Discourse plugin registers its webhook during the seed job. Incoming `moderation.decision` events are handled by a dedicated controller that calls the Discourse Silence and Hide Post APIs, then calls `POST /api/public/v1/moderation-actions`. See the [Discourse plugin overview](/existing-integrations/discourse/overview) for details.
+
+## See also
+
+- [Configure tiers](/integration-guide/onboarding/configure-tiers) — how tier configuration determines when decisions are delivered
+- [Error shapes](/integration-guide/concepts/errors) — delivery failure codes
+- [Adapter contract](/integration-guide/concepts/adapter-contract) — full adapter responsibilities

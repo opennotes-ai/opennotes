@@ -1,11 +1,139 @@
 ---
-title: Authentication
-description: Every request to /api/public/v1 carries a platform:adapter-scoped API key via the Authorization header.
+title: Authentication and headers
+description: Authorization bearer token + X-Adapter-* headers end-to-end — how every adapter request is authenticated and how user identity flows through the system.
 ---
 
+Every call your adapter makes to `/api/public/v1` must carry an `Authorization` header and a set of `X-Adapter-*` headers. This page explains what each header does, what happens when one is missing or wrong, and how the server distinguishes external adapters from internal services.
+
+## The two-layer auth model
+
+```
+Adapter ──────────────────────────────────────────► OpenNotes API
+         Authorization: Bearer <api_key>             Layer 1: key valid?
+         X-Adapter-Platform: discourse               Layer 2: platform:adapter scope?
+         X-Adapter-User-Id: 42                       Passed through to route handlers
+         X-Adapter-Username: alice
+         X-Adapter-Trust-Level: 2
+         X-Adapter-Admin: false
+         X-Adapter-Moderator: false
+         X-Adapter-Scope: <community_server_id>
+```
+
+**Layer 1 — API key validation.** The server verifies the key exists, is not revoked, and is not expired.
+
+**Layer 2 — Scope check.** The key must include the `platform:adapter` scope. Without it the request is rejected with HTTP 403 even if the key is otherwise valid.
+
+Once both layers pass, the `X-Adapter-*` headers are read by `resolve_platform_identity()` to build a `PlatformIdentity` object used throughout the request lifecycle.
+
+## Authorization header
+
+```
+Authorization: Bearer <api_key>
+```
+
+The API key is a long random string minted on [platform.opennotes.ai](https://platform.opennotes.ai). Pass it verbatim. The server looks it up by a SHA-256 hash — the raw value is never stored.
+
+### Error responses
+
+| Condition | HTTP status | Detail |
+|---|---|---|
+| Header missing | 401 | `"Missing authentication credentials"` |
+| Key not found or revoked | 401 | `"Invalid authentication credentials"` |
+| Key expired | 401 | `"Invalid authentication credentials"` |
+| Key lacks `platform:adapter` scope | 403 | `"API key lacks required scope"` |
+
+## X-Adapter-* headers
+
+These headers carry the acting user's platform identity. They are validated only if the API key has the `platform:adapter` scope — the scope gate prevents unauthorized header injection.
+
+| Header | Required | Description |
+|---|---|---|
+| `X-Adapter-Platform` | Yes | Platform type: `discourse`, `discord`, or your custom identifier |
+| `X-Adapter-User-Id` | Yes | Platform-native user ID (opaque string) |
+| `X-Adapter-Username` | No | Human-readable username for audit trails |
+| `X-Adapter-Trust-Level` | No | Platform trust level (0–4 for Discourse; omit or `0` for others) |
+| `X-Adapter-Admin` | No | `true` if the user is a community admin, else `false` |
+| `X-Adapter-Moderator` | No | `true` if the user is a moderator, else `false` |
+| `X-Adapter-Scope` | Yes | The community server ID the request is scoped to |
+
+<Warning>
+  If `X-Adapter-Platform`, `X-Adapter-User-Id`, or `X-Adapter-Scope` are missing, `resolve_platform_identity()` returns `None`. Routes that require a platform identity will return HTTP 422 or 403. Always send all three required headers.
+</Warning>
+
+### Discourse plugin example
+
+The Discourse plugin's `execute_request` method shows the canonical usage:
+
+```ruby
+req.headers["X-API-Key"] = @api_key
+req.headers["X-Adapter-Platform"] = "discourse"
+req.headers["X-Adapter-User-Id"] = user.id.to_s
+req.headers["X-Adapter-Username"] = user.username
+req.headers["X-Adapter-Trust-Level"] = user.trust_level.to_s
+req.headers["X-Adapter-Admin"] = user.admin?.to_s
+req.headers["X-Adapter-Moderator"] = user.moderator?.to_s
+req.headers["X-Adapter-Scope"] = SiteSetting.opennotes_platform_community_server_id
+```
+
+The plugin uses `X-API-Key` for the key (a legacy header the server also accepts). New adapters should prefer `Authorization: Bearer`.
+
+## X-Platform-* headers — internal only
+
+`X-Platform-*` headers carry signed internal service identity. They are **stripped from all external requests** by `InternalHeaderValidationMiddleware` before any route handler runs. External adapters cannot send these headers to impersonate platform-level identity.
+
 <Note>
-  Placeholder — this page is filled in by **TASK-1460.02**. The final content
-  documents the `Authorization: Bearer <api_key>` header, failure modes for
-  invalid/expired/wrong-scope keys, and how the server distinguishes adapters
-  from platform callers.
+  You will never need to set `X-Platform-*` headers in an external adapter. They are only used by internal OpenNotes services that share the `INTERNAL_SERVICE_SECRET`.
 </Note>
+
+## Full request example
+
+```bash
+curl -X POST https://api.opennotes.ai/api/public/v1/requests \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-User-Id: 42" \
+  -H "X-Adapter-Username: alice" \
+  -H "X-Adapter-Trust-Level: 2" \
+  -H "X-Adapter-Admin: false" \
+  -H "X-Adapter-Moderator: false" \
+  -H "X-Adapter-Scope: my-discourse-forum" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "type": "requests",
+      "attributes": {
+        "request_id": "post-456",
+        "requested_by": "42",
+        "community_server_id": "my-discourse-forum",
+        "original_message_content": "This is the post content."
+      }
+    }
+  }'
+```
+
+## Auth flow diagram
+
+```
+1. Request arrives at API gateway
+2. InternalHeaderValidationMiddleware runs:
+      → strips X-Platform-* if X-Internal-Auth is missing or invalid
+3. get_current_user_or_api_key() runs:
+      → checks X-API-Key header
+      → falls back to Authorization: Bearer
+      → verifies key in database
+      → attaches APIKey object to request.state
+4. require_scope_or_admin() runs (per endpoint):
+      → checks request.state.api_key.has_scope("platform:adapter")
+      → raises HTTP 403 if scope missing
+5. resolve_platform_identity() runs:
+      → reads X-Adapter-* headers
+      → builds PlatformIdentity(platform, scope, sub, community_id, ...)
+6. Route handler executes with full identity context
+```
+
+## See also
+
+- [Scopes](/integration-guide/concepts/scopes) — which scopes unlock which endpoints
+- [Error shapes](/integration-guide/concepts/errors) — canonical error envelope
+- [Adapter contract](/integration-guide/concepts/adapter-contract) — full adapter responsibilities
+- [Discourse plugin](/existing-integrations/discourse/overview) — reference implementation
