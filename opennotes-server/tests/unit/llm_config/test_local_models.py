@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
+from unittest.mock import MagicMock
 
 import pytest
-from pydantic_ai.builtin_tools import WebSearchTool
+from pydantic_ai.builtin_tools import (
+    CodeExecutionTool,
+    FileSearchTool,
+    ImageGenerationTool,
+    WebFetchTool,
+    WebSearchTool,
+)
+from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.tools import ToolDefinition
 
@@ -79,3 +87,57 @@ def test_get_tools_builtin_tools_only() -> None:
     assert tools is not None
     assert any("google_search" in tool for tool in tools)
     assert all(not tool.get("function_declarations") for tool in tools)
+
+
+def test_get_tools_maps_web_fetch_tool_to_url_context() -> None:
+    params = ModelRequestParameters(function_tools=[], builtin_tools=[WebFetchTool()])
+
+    tools, _ = _call_get_tools(params)
+
+    assert tools is not None
+    assert any("url_context" in tool for tool in tools)
+
+
+def test_get_tools_maps_code_execution_tool() -> None:
+    params = ModelRequestParameters(function_tools=[], builtin_tools=[CodeExecutionTool()])
+
+    tools, _ = _call_get_tools(params)
+
+    assert tools is not None
+    assert any("code_execution" in tool for tool in tools)
+
+
+def test_get_tools_maps_file_search_tool_with_store_ids() -> None:
+    params = ModelRequestParameters(
+        function_tools=[],
+        builtin_tools=[FileSearchTool(file_store_ids=["store-1", "store-2"])],
+    )
+
+    tools, _ = _call_get_tools(params)
+
+    assert tools is not None
+    file_search_tools = [tool for tool in tools if "file_search" in tool]
+    assert len(file_search_tools) == 1
+    assert file_search_tools[0]["file_search"]["file_search_store_names"] == ["store-1", "store-2"]
+
+
+def test_get_tools_raises_for_image_generation_tool_on_non_image_model() -> None:
+    from src.llm_config.local_models import OpenNotesGoogleModel
+
+    fake_self = cast("OpenNotesGoogleModel", MagicMock())
+    fake_self.profile.supports_image_output = False
+
+    params = ModelRequestParameters(function_tools=[], builtin_tools=[ImageGenerationTool()])
+
+    with pytest.raises(UserError, match="ImageGenerationTool"):
+        OpenNotesGoogleModel._get_tools(fake_self, params)
+
+
+def test_get_tools_raises_for_unknown_builtin_tool_kind() -> None:
+    class UnknownTool:
+        pass
+
+    params = ModelRequestParameters(function_tools=[], builtin_tools=[UnknownTool()])  # type: ignore[list-item]
+
+    with pytest.raises(UserError, match="is not supported by `GoogleModel`"):
+        _call_get_tools(params)
