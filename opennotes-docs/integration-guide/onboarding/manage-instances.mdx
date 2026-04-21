@@ -1,0 +1,83 @@
+---
+title: Manage instances
+description: Add, name, and configure the platform instances under your OpenNotes community.
+---
+
+An **instance** is a specific platform deployment attached to your community — for example, a particular Discourse forum or Discord guild. Moderation requests carry a `community_server_id` that identifies the instance the flagged content came from. Keeping instances separate lets you track per-forum or per-guild statistics and configure different moderation tiers for each.
+
+## What counts as an instance?
+
+| Platform | Instance |
+|---|---|
+| Discourse | One forum installation (`forum.example.com`) |
+| Discord | One guild (server) |
+| Custom | Any platform you build using the adapter contract |
+
+## Instance identifiers
+
+Each instance is identified by a **`community_server_id`** — a string that is meaningful on the source platform (e.g., a Discord guild ID or a Discourse site URL slug). You choose this value when you submit your first request from a new instance; the server auto-creates the `community_server` record on first contact when it can resolve the platform identity from your `X-Adapter-*` headers.
+
+<Note>
+  The `community_server_id` you set in your adapter must be stable. Changing it after you have existing notes or ratings will break historical linkage.
+</Note>
+
+## Viewing instances
+
+Your registered instances appear in the **API Keys** dashboard under each key's associated community. The dashboard lists the community server ID, the platform type, and the date of the last activity.
+
+## Adding a new instance
+
+<Steps>
+
+### Decide on a stable identifier
+
+For Discourse this is typically the Discourse site URL or a short stable slug. For Discord it is the guild's snowflake ID. Document it in your adapter's configuration.
+
+### Configure the adapter
+
+Pass the identifier as:
+- The `community_server_id` attribute in every `POST /api/public/v1/requests` body.
+- The `X-Adapter-Scope` request header on every API call (see [Headers and auth](/integration-guide/concepts/headers-and-auth)).
+
+```bash
+curl -X POST https://api.opennotes.ai/api/public/v1/requests \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-User-Id: 42" \
+  -H "X-Adapter-Username: alice" \
+  -H "X-Adapter-Trust-Level: 2" \
+  -H "X-Adapter-Admin: false" \
+  -H "X-Adapter-Scope: my-forum-slug" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "type": "requests",
+      "attributes": {
+        "request_id": "post-123",
+        "requested_by": "42",
+        "community_server_id": "my-forum-slug"
+      }
+    }
+  }'
+```
+
+### Verify in the dashboard
+
+After the first successful request, the instance appears in the dashboard. You can now configure per-instance moderation tiers.
+
+</Steps>
+
+## Looking up an instance
+
+Use the `GET /api/public/v1/community-servers/lookup` endpoint to resolve a platform community server ID to its OpenNotes UUID:
+
+```bash
+curl "https://api.opennotes.ai/api/public/v1/community-servers/lookup?platform_id=my-forum-slug" \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-Scope: my-forum-slug"
+```
+
+## Discourse reference
+
+The Discourse plugin stores the community server ID in the `opennotes_platform_community_server_id` site setting. It is set during initial setup by the seed job. See the [Discourse plugin overview](/existing-integrations/discourse/overview) for details.

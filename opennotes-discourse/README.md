@@ -1,12 +1,19 @@
 # OpenNotes for Discourse
 
+**Full documentation:** [docs.opennotes.ai/existing-integrations/discourse/overview](https://docs.opennotes.ai/existing-integrations/discourse/overview)
+
 A Discourse plugin that adds AI-powered content moderation with community oversight to your forum.
 
 When enabled, the plugin monitors categories you choose and classifies new posts automatically. Content the AI is confident is harmful gets acted on immediately. Everything else goes to a community review queue where members vote using a bridging-based consensus algorithm — the same approach used by Twitter/X Community Notes, where agreement across people who usually disagree carries more weight. Every automated decision can be reviewed and reversed.
 
-**For forum administrators:** The plugin installs with a single line in your `app.yml`, connects to an OpenNotes server, and gives you per-category control over monitoring thresholds, review groups, and automation behavior. See the [Admin Guide](docs/ADMIN-GUIDE.md).
+**For forum administrators:** See the [Install](https://docs.opennotes.ai/existing-integrations/discourse/install) and [Configure](https://docs.opennotes.ai/existing-integrations/discourse/configure) guides on docs.opennotes.ai. Offline reference: [docs/ADMIN-GUIDE.md](docs/ADMIN-GUIDE.md).
 
-**For community members:** You'll see review banners on flagged posts and can participate in moderation decisions through a dedicated review page. No special setup needed — just meet the trust level your admin has configured. See the [User Guide](docs/USER-GUIDE.md).
+**For community members:** See the [User Guide](https://docs.opennotes.ai/existing-integrations/discourse/user-guide) on docs.opennotes.ai. Offline reference: [docs/USER-GUIDE.md](docs/USER-GUIDE.md).
+
+> **Note on docs/ADMIN-GUIDE.md and docs/USER-GUIDE.md:** These files are retained as offline
+> fallbacks for air-gapped or restricted deployments where docs.opennotes.ai may not be
+> reachable. The hosted Mintlify docs are the canonical, up-to-date source; the local MD files
+> contain redirect stubs pointing there.
 
 ## Development Quick Start
 

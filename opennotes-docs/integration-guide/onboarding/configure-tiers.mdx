@@ -1,0 +1,89 @@
+---
+title: Configure tiers
+description: Pick per-category moderation tiers and thresholds for your community.
+---
+
+OpenNotes uses a two-tier moderation model. **Tier 1** is fully automated — the platform takes action without human review. **Tier 2** sends the content to community raters and only acts once consensus is reached. Tiers are configurable per content category so you can apply stricter automation to egregious content while leaving nuanced cases to the community.
+
+## The two tiers at a glance
+
+<CardGroup cols={2}>
+  <Card title="Tier 1 — Auto action" icon="bolt">
+    The server applies the moderation action immediately when its score crosses the configured threshold. No rater involvement is required.
+
+    Best for: spam, illegal content, slurs — categories where false-negative cost is low and false-positive cost is acceptable.
+  </Card>
+  <Card title="Tier 2 — Community review" icon="users">
+    Content is queued for community raters. The platform waits until a statistically significant consensus is reached before acting.
+
+    Best for: nuanced policy violations, context-dependent content, high-profile users.
+  </Card>
+</CardGroup>
+
+## How scoring works
+
+When your adapter calls `POST /api/public/v1/requests`, the server:
+
+1. Scores the content with its AI model.
+2. Compares the score to the **Tier 1 threshold** for each matched category.
+3. If the score exceeds the Tier 1 threshold → auto-action (Tier 1).
+4. If the score exceeds the **Tier 2 threshold** but not Tier 1 → queue for community review.
+5. Once raters reach consensus, the server delivers the decision via webhook.
+
+## Configuring tiers
+
+<Note>
+  Tier configuration is currently managed through the OpenNotes team for new communities. Self-serve tier configuration will be available in a future platform release. Contact the team via the [Discourse community](https://community.opennotes.ai) to update your thresholds.
+</Note>
+
+When requesting configuration, specify:
+
+- **Category names** — e.g., `spam`, `harassment`, `misinformation`
+- **Tier 1 threshold** (0.0–1.0) — the auto-action confidence floor
+- **Tier 2 threshold** (0.0–1.0) — the community-review confidence floor (must be ≤ Tier 1 threshold)
+- **Action type** — `hide`, `delete`, `flag`, or `notify` (adapter-defined)
+
+### Example configuration
+
+| Category | Tier 2 threshold | Tier 1 threshold | Tier 1 action |
+|---|---|---|---|
+| spam | 0.70 | 0.95 | delete |
+| harassment | 0.65 | 0.90 | hide |
+| misinformation | 0.60 | — | (Tier 2 only) |
+
+In the example above, `misinformation` never auto-acts — all flagged content goes to community review.
+
+## Adapter responsibilities
+
+Your adapter must handle both outcomes:
+
+**Tier 1 auto-action** — the server calls your registered webhook with a `moderation.decision` event immediately. Your adapter should apply the action without waiting for community consensus.
+
+**Tier 2 community review** — the server queues the content. Your adapter can optionally mark the content as "under review" in the UI. When consensus is reached the server sends the same `moderation.decision` webhook event.
+
+```bash
+POST https://api.opennotes.ai/api/public/v1/moderation-actions \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-User-Id: 1" \
+  -H "X-Adapter-Username: system" \
+  -H "X-Adapter-Trust-Level: 4" \
+  -H "X-Adapter-Admin: true" \
+  -H "X-Adapter-Scope: <community_server_id>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action_type": "hide",
+    "request_id": "<request_id>",
+    "community_server_id": "<community_server_id>",
+    "reason": "Tier 1 auto-action: spam score 0.97"
+  }'
+```
+
+## Discourse reference
+
+The Discourse plugin reads the moderation decision from the webhook payload and calls the Discourse Silence/Delete API accordingly. See the [Discourse plugin architecture](/existing-integrations/discourse/architecture) for how the plugin maps OpenNotes decisions to Discourse actions.
+
+## See also
+
+- [Webhooks](/integration-guide/concepts/webhooks) — how decisions are delivered back to your adapter
+- [Adapter contract](/integration-guide/concepts/adapter-contract) — full list of adapter responsibilities

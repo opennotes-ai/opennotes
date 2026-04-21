@@ -1,0 +1,156 @@
+---
+title: Error shapes
+description: The canonical error envelope returned by /api/public/v1 and how adapters should classify and react to each failure.
+---
+
+All errors from `/api/public/v1` follow predictable shapes. Understanding them lets your adapter distinguish transient failures (worth retrying) from permanent failures (worth alerting on).
+
+## HTTP status code semantics
+
+| Status | Meaning | Adapter action |
+|---|---|---|
+| `400 Bad Request` | Malformed request body or invalid field values | Fix the request — do not retry |
+| `401 Unauthorized` | Missing, expired, or invalid API key | Check key configuration — do not retry until fixed |
+| `403 Forbidden` | Valid key but missing scope, or operation not permitted | Check scope list — do not retry until fixed |
+| `404 Not Found` | Resource does not exist | Do not retry; the resource is genuinely absent |
+| `409 Conflict` | Duplicate submission (same `request_id` already exists) | Treat as success — idempotent; read the existing record |
+| `422 Unprocessable Entity` | Request body passes JSON parsing but fails validation | Fix the request — do not retry |
+| `429 Too Many Requests` | Rate limit exceeded | Retry after the `Retry-After` header delay |
+| `500 Internal Server Error` | Unexpected server error | Retry with exponential backoff |
+| `502 Bad Gateway` | Upstream dependency failure | Retry with exponential backoff |
+| `503 Service Unavailable` | Server overloaded or in maintenance | Retry after `Retry-After` if present |
+| `504 Gateway Timeout` | Upstream timeout | Retry with exponential backoff |
+
+## Error envelope shapes
+
+### Authentication and authorization errors
+
+FastAPI returns a plain JSON object for auth failures:
+
+```json
+{
+  "detail": "Missing authentication credentials"
+}
+```
+
+Other `detail` strings you may see:
+- `"Invalid authentication credentials"` — bad or expired key
+- `"API key lacks required scope"` — key exists but scope is wrong
+- `"Admin privileges required"` — endpoint requires admin role
+
+### Validation errors (HTTP 422)
+
+When request body validation fails, the server returns FastAPI's standard validation error shape:
+
+```json
+{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["body", "data", "attributes", "request_id"],
+      "msg": "Field required",
+      "input": {}
+    }
+  ]
+}
+```
+
+`loc` is a list that traces the path to the failing field. `type` is a Pydantic error code. `msg` is a human-readable description.
+
+### Rate limit errors (HTTP 429)
+
+```json
+{
+  "detail": "Rate limit exceeded"
+}
+```
+
+Check the `Retry-After` response header for the number of seconds to wait before retrying.
+
+### Server errors (HTTP 5xx)
+
+```json
+{
+  "detail": "Internal server error"
+}
+```
+
+5xx errors are always safe to retry with backoff. The server is idempotent for `POST /api/public/v1/requests` — submitting the same `request_id` twice returns the existing record rather than a duplicate.
+
+## Retry classification
+
+The Discourse plugin uses this classification (mirrors the server's own webhook retry logic):
+
+```
+Retryable:    429, 500, 502, 503, 504
+Non-retryable: 400, 401, 403, 404, 409, 422
+```
+
+Recommended backoff for retryable errors: `0.5 s × 2^(attempt - 1)` with a cap at 60 s and a maximum of 3 attempts. This matches the Discourse plugin's `INITIAL_BACKOFF = 0.5` / `MAX_RETRIES = 3` constants.
+
+## Example: handling errors in an adapter
+
+<Tabs>
+  <Tab title="Ruby (Discourse plugin pattern)">
+    ```ruby
+    MAX_RETRIES = 3
+    INITIAL_BACKOFF = 0.5
+    RETRYABLE_STATUSES = [429, 500, 502, 503, 504].freeze
+
+    def request_with_retries(method, path, body: {})
+      retries = 0
+      loop do
+        response = execute_request(method, path, body: body)
+        if response.success?
+          return response.body
+        elsif RETRYABLE_STATUSES.include?(response.status) && retries < MAX_RETRIES
+          retries += 1
+          sleep(INITIAL_BACKOFF * (2 ** (retries - 1)))
+        else
+          raise ApiError.new(response.status, response.body)
+        end
+      end
+    end
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import time
+    import httpx
+
+    RETRYABLE = {429, 500, 502, 503, 504}
+    MAX_RETRIES = 3
+    INITIAL_BACKOFF = 0.5
+
+    def post_request(api_key: str, payload: dict) -> dict:
+        for attempt in range(MAX_RETRIES + 1):
+            r = httpx.post(
+                "https://api.opennotes.ai/api/public/v1/requests",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "X-Adapter-Platform": "custom",
+                    "X-Adapter-User-Id": payload["requested_by"],
+                    "X-Adapter-Scope": payload["community_server_id"],
+                },
+                json={"data": {"type": "requests", "attributes": payload}},
+            )
+            if r.is_success:
+                return r.json()
+            if r.status_code in RETRYABLE and attempt < MAX_RETRIES:
+                time.sleep(INITIAL_BACKOFF * (2 ** attempt))
+                continue
+            r.raise_for_status()
+        raise RuntimeError("Unreachable")
+    ```
+  </Tab>
+</Tabs>
+
+## Idempotency note
+
+`POST /api/public/v1/requests` is idempotent on `request_id`. If you retry a request that already succeeded, the server returns HTTP 200 with the existing record rather than HTTP 201. Your adapter should treat both 200 and 201 as success.
+
+## See also
+
+- [Headers and auth](/integration-guide/concepts/headers-and-auth) — auth failure modes
+- [Webhooks](/integration-guide/concepts/webhooks) — delivery failure semantics
+- [API Reference — Requests](/api-reference/overview) — full endpoint spec

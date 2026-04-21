@@ -1,0 +1,125 @@
+---
+title: "Step 5 — Webhooks and retries"
+description: Make moderation-action delivery reliable — retry schedules, idempotency, ordering guarantees, and the polling fallback.
+---
+
+The four steps before this one describe the happy path. This page covers everything that happens when delivery fails or a message arrives twice.
+
+## Webhook payload shape and signing
+
+See [Webhooks](/integration-guide/concepts/webhooks) for the full conceptual overview. In brief:
+
+- OpenNotes sends an HTTP POST to your registered endpoint with a JSON body.
+- The `X-OpenNotes-Signature` header contains an HMAC-SHA256 of the raw request body, keyed with the `secret` you supplied when registering the webhook.
+- Verify the signature before processing the payload.
+
+```python
+import hashlib, hmac
+
+def verify_signature(secret: str, body: bytes, header: str) -> bool:
+    expected = hmac.new(
+        secret.encode(),
+        body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(f"sha256={expected}", header)
+```
+
+Register a webhook via `POST /api/public/v1/webhooks` (not shown in this walkthrough — see the [API Reference](/api-reference/overview)).
+
+## Retry schedule
+
+OpenNotes retries failed webhook deliveries (any non-2xx response or connection timeout) using exponential backoff:
+
+| Attempt | Delay before retry |
+|---------|--------------------|
+| 1st | immediate |
+| 2nd | ~30 s |
+| 3rd | ~5 min |
+| 4th | ~30 min |
+| 5th | ~2 h |
+
+After five failures the delivery is abandoned. Use the polling fallback (below) to catch actions that were never successfully delivered.
+
+The Discourse plugin client applies the same pattern for outbound API calls:
+
+```ruby
+MAX_RETRIES = 3
+INITIAL_BACKOFF = 0.5  # seconds
+
+loop do
+  response = execute_request(method, path, ...)
+  if response.success?
+    return response.body
+  elsif RETRYABLE_STATUSES.include?(response.status) && retries < MAX_RETRIES
+    retries += 1
+    sleep(INITIAL_BACKOFF * (2**(retries - 1)))
+  else
+    raise ApiError.new(response.status, response.body)
+  end
+end
+```
+
+`RETRYABLE_STATUSES = [429, 500, 502, 503, 504]`
+
+Source: [`OpenNotes::Client#request_with_retries`](https://github.com/opennotes-ai/opennotes/blob/main/opennotes-discourse/plugin/lib/opennotes/client.rb)
+
+## Polling fallback
+
+The Discourse plugin does not use webhooks today — it polls `GET /api/public/v1/moderation-actions?action_state=proposed` on a background schedule. This is a valid production strategy and guarantees eventual delivery even if your webhook endpoint is temporarily unreachable.
+
+Combine both approaches for the most resilient adapter: process webhook deliveries as they arrive, then run a periodic poll to catch anything missed.
+
+## Idempotency — preventing double-apply
+
+OpenNotes delivers each action **at least once**. Your endpoint may receive the same action ID more than once (re-delivery after a timeout, a duplicate webhook fire, or a poll that races with a push).
+
+Guard every action application with a check against the action state you last recorded:
+
+1. On receipt of an action, look up the action ID in your local store.
+2. If the state is already `applied` (or later), discard the duplicate silently and return HTTP 200.
+3. Otherwise, apply the action and update local state atomically before returning 200.
+
+The Discourse `ActionExecutor` demonstrates this pattern at the platform level:
+
+```ruby
+def self.hide_post(post, reason: :spam)
+  return if post.hidden?   # idempotency guard
+  post.hide!(action_type_id)
+end
+
+def self.unhide_post(post)
+  return unless post.hidden?   # idempotency guard
+  post.unhide!
+end
+```
+
+The same guard must exist at the OpenNotes layer: after you call `PATCH /moderation-actions/{id}` with `action_state=applied`, any subsequent delivery of that action ID is safe to discard.
+
+## Ordering guarantees
+
+OpenNotes does **not** guarantee that moderation actions arrive in the order they were created. If a post receives two sequential actions (`hide` then `unhide`), the second action may arrive before the first under high load or after a re-delivery.
+
+To handle out-of-order delivery:
+
+- Compare `action_state` timestamps when processing actions for the same `request_id`.
+- Prefer the action with the later `updated_at` timestamp.
+- If timestamps are equal, treat the action with the later `id` (UUID v7, lexicographically sortable) as the more recent one.
+
+## TASK-1453 — evolving toward exactly-once delivery
+
+Today's guarantee is **at-least-once**. TASK-1453 tracks the work to add exactly-once delivery semantics. Until that ships, adapters must assume that any action may be re-delivered and apply the idempotency guards described above.
+
+When TASK-1453 lands, the webhook payload will include a `delivery_id` field. Adapters can use that ID as a deduplication key in addition to the `action_id`.
+
+## Summary checklist
+
+- [ ] Verify the `X-OpenNotes-Signature` header before processing any webhook payload.
+- [ ] Return HTTP 200 immediately on receipt; apply the action asynchronously if needed.
+- [ ] Store the `action_id` of every processed action and discard duplicates.
+- [ ] Run a periodic poll as a fallback to catch missed webhook deliveries.
+- [ ] Use `updated_at` (or UUID v7 ordering) to resolve out-of-order delivery for the same request.
+
+---
+
+You have now walked through the complete adapter lifecycle. Return to the [walkthrough overview](/integration-guide/walkthrough) or consult the [Adapter contract](/integration-guide/concepts/adapter-contract) for the full list of obligations before shipping to production.

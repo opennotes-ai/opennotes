@@ -1,0 +1,90 @@
+---
+title: "Step 2 — Identify the community"
+description: Resolve the community-server UUID via GET /api/public/v1/community-servers/lookup.
+---
+
+Every request and moderation action is scoped to a community-server UUID — a stable internal identifier that OpenNotes assigns when your community is registered. `GET /api/public/v1/community-servers/lookup` converts your platform-specific identifier (e.g. a Discourse site slug or a Discord guild ID) into that UUID.
+
+You should cache the UUID aggressively. It never changes for a given community. Re-fetching it on every request adds unnecessary latency.
+
+## Request
+
+```bash
+curl -X GET "https://api.opennotes.ai/api/public/v1/community-servers/lookup" \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-User-Id: 42" \
+  -H "X-Adapter-Username: alice" \
+  -H "X-Adapter-Trust-Level: 2" \
+  -H "X-Adapter-Admin: false" \
+  -H "X-Adapter-Moderator: false" \
+  -H "X-Adapter-Scope: my-community" \
+  -G \
+  --data-urlencode "platform=discourse" \
+  --data-urlencode "platform_community_server_id=my-community"
+```
+
+### Query parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `platform` | yes | Adapter platform identifier, e.g. `discourse` |
+| `platform_community_server_id` | yes | Your platform-specific community identifier (slug, guild ID, subreddit, etc.) |
+
+## Response
+
+HTTP 200:
+
+```json
+{
+  "jsonapi": { "version": "1.1" },
+  "data": {
+    "type": "community-servers",
+    "id": "01906b2a-4d2f-7e5a-8b99-e5f2a6d3c8b4",
+    "attributes": {
+      "platform": "discourse",
+      "platform_community_server_id": "my-community",
+      "name": "My Community",
+      "description": "A community powered by OpenNotes moderation.",
+      "is_active": true,
+      "is_public": true,
+      "flashpoint_detection_enabled": false,
+      "created_at": "2024-01-15T10:00:00Z",
+      "updated_at": "2024-03-01T14:22:00Z"
+    }
+  }
+}
+```
+
+A 404 means your community has not been registered. Contact the OpenNotes team or follow the [onboarding guide](/integration-guide/onboarding) to provision a community server.
+
+## What to pass to the next step
+
+Capture `data.id` — this is your `community_server_id`. Every subsequent call in the adapter lifecycle requires this UUID.
+
+## Reference implementation
+
+The Discourse plugin resolves the community-server UUID in [`OpenNotes::CommunityServerResolver#lookup_from_api`](https://github.com/opennotes-ai/opennotes/blob/main/opennotes-discourse/plugin/lib/opennotes/community_server_resolver.rb):
+
+```ruby
+def lookup_from_api
+  client = OpenNotes::Client.new(server_url: server_url, api_key: api_key)
+  response = client.get(
+    "#{OpenNotes::PUBLIC_API_PREFIX}/community-servers/lookup",
+    params: { platform: "discourse", platform_community_server_id: slug },
+  )
+  extract_id(response)
+end
+```
+
+The result is stored in `PluginStore` (persistent across restarts) and in Discourse's in-memory cache with a 5-minute TTL (`CACHE_TTL = 5.minutes`). On a cache miss, the store is checked before hitting the API.
+
+Never hard-code the UUID. Use this lookup on startup and cache the result — the UUID is stable but the lookup ensures your adapter stays correct if a community is migrated or re-provisioned.
+
+## API reference
+
+Full parameter and response schema: **`GET /api/public/v1/community-servers/lookup`** under [API Reference → Community Servers](/api-reference/overview).
+
+---
+
+Next: [Step 3 — Submit the request](/integration-guide/walkthrough/03-submit-request)

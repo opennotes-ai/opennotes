@@ -1,0 +1,65 @@
+name: docs-check
+
+on:
+  pull_request:
+    paths:
+      - 'opennotes-docs/**'
+      - 'packages/tokens/src/**'
+      - 'opennotes-server/openapi-public.json'
+      - '.github/workflows/docs-check.yml'
+
+# Cancel in-progress runs on the same PR when new commits land
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Minimal GITHUB_TOKEN scope — this job only reads the checked-out repo
+# and installs from public npm/actions registries.
+permissions:
+  contents: read
+
+jobs:
+  broken-links-and-build:
+    name: Mintlify build + broken-links
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Mintlify only reads files under the docs project root, so two artifacts
+      # that live elsewhere in the opennotes monorepo must be vendored in
+      # before `mint validate`:
+      #   - @opennotes/tokens CSS -> styles/tokens/ (see mintlify-tokens.md §6.4)
+      #   - openapi-public.json   -> opennotes-docs/ (referenced from docs.json)
+      - name: Vendor external artifacts (@opennotes/tokens CSS + openapi-public.json)
+        working-directory: opennotes-docs
+        run: |
+          mkdir -p styles/tokens
+          cp ../packages/tokens/src/*.css styles/tokens/
+          cp ../opennotes-server/openapi-public.json ./openapi-public.json
+          ls -la styles/tokens/ openapi-public.json
+
+      - name: Install Mintlify CLI
+        run: npm install -g mint@latest
+
+      - name: Validate docs.json
+        working-directory: opennotes-docs
+        run: |
+          # Schema check: docs.json must parse as valid JSON and contain the
+          # expected top-level keys. Mintlify's own schema validation runs as
+          # part of `mint build` below, but catching JSON errors early produces
+          # a clearer failure message.
+          node -e "const j = require('./docs.json'); if (!j.navigation || !j.name) { console.error('docs.json missing required keys'); process.exit(1); } console.log('docs.json ok — name=' + j.name);"
+
+      - name: Check broken links
+        working-directory: opennotes-docs
+        run: mint broken-links
+
+      - name: Validate site (strict build)
+        working-directory: opennotes-docs
+        run: mint validate

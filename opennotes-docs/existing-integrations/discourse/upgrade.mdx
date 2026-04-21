@@ -1,0 +1,83 @@
+---
+title: Upgrade the plugin
+description: Pull the latest plugin version and rebuild your Discourse container.
+---
+
+The OpenNotes plugin is installed as a Git clone inside the Discourse container. Upgrading means
+pulling the latest commit and rebuilding — the same flow as installing for the first time.
+
+## Standard upgrade
+
+<Steps>
+  <Step title="SSH into your Discourse server">
+    ```bash
+    ssh user@your-discourse-host
+    cd /var/discourse
+    ```
+  </Step>
+
+  <Step title="Review the changelog">
+    Check the [plugin releases](https://github.com/opennotes-ai/opennotes/releases) for any
+    migration notes or setting changes before rebuilding.
+  </Step>
+
+  <Step title="Rebuild the container">
+    ```bash
+    ./launcher rebuild app
+    ```
+
+    The rebuild clones the latest plugin source and bakes it into the container image. Discourse
+    will be unavailable for 5–10 minutes during the rebuild.
+  </Step>
+
+  <Step title="Verify the upgrade">
+    After the container restarts, check **Admin > Plugins** and confirm the version number has
+    updated. Then smoke-test your monitored categories by creating a test post and watching for
+    the expected review behavior.
+  </Step>
+</Steps>
+
+## Pinning a specific version
+
+If you need to pin the plugin to a specific commit or tag, edit the clone command in `app.yml`:
+
+```yaml
+hooks:
+  after_code:
+    - exec:
+        cd: $home/plugins
+        cmd:
+          - git clone --branch v1.2.3 https://github.com/opennotes-ai/opennotes.git opennotes-discourse
+```
+
+Replace `v1.2.3` with the desired tag. Remove the `--branch` flag to track `main` again.
+
+## Migration notes
+
+### Plugin settings
+
+New settings added in an upgrade are not enabled automatically. After a rebuild, visit **Admin >
+Settings > Plugins > OpenNotes** and review any settings that now appear with their defaults.
+
+### Database migrations
+
+The plugin does not run Alembic migrations — it stores state inside Discourse's `reviewables`
+and `post_custom_fields` tables using the existing schema. No manual migration steps are needed
+between plugin versions.
+
+<Warning>
+  If you downgrade to an older plugin version after a newer version has written new fields to
+  `reviewable_payload`, the older code will ignore those fields gracefully — but any state
+  recorded under the new schema will be lost on downgrade.
+</Warning>
+
+## Rolling back
+
+To revert to a previous version, pin the `--branch` flag to the previous tag and rebuild:
+
+```bash
+./launcher rebuild app
+```
+
+Discourse has no built-in container rollback. If a rebuild fails mid-way, `./launcher start app`
+will start the last successfully built image.

@@ -1,0 +1,32 @@
+---
+title: Existing integrations
+description: Shipped OpenNotes adapters — Discourse today, Discord on the roadmap.
+---
+
+Adapters translate between a host platform's content model and the universal
+[OpenNotes adapter contract](/integration-guide/overview). This section
+documents the ones shipped today.
+
+## Shipped adapters
+
+<CardGroup cols={2}>
+  <Card title="Discourse plugin" icon="discourse" href="/existing-integrations/discourse/overview">
+    A Ruby plugin that installs inside Discourse. Monitors selected
+    categories, routes flagged posts into OpenNotes, and executes consensus
+    decisions via the Discourse moderation queue. **Reference implementation
+    of the adapter contract.**
+  </Card>
+</CardGroup>
+
+## On the roadmap
+
+- **Discord bot** — currently uses a different integration pattern (NATS,
+  service account). Will be migrated onto the `platform:adapter` contract
+  and move into this section.
+- **Mattermost, Lemmy, Ghost** — candidates that the universal contract is
+  designed to absorb without special-casing.
+
+If you're building a new adapter, the
+[Integration Guide](/integration-guide/overview) is your starting point, and
+the [Discourse plugin source](https://github.com/opennotes-ai/opennotes/tree/main/opennotes-discourse)
+is the tie-breaker for ambiguity.

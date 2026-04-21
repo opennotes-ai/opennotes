@@ -1,0 +1,17 @@
+{
+  "name": "@opennotes/docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OpenNotes documentation site (Mintlify)",
+  "scripts": {
+    "vendor:tokens": "mkdir -p styles/tokens && cp ../packages/tokens/src/*.css styles/tokens/",
+    "vendor:openapi": "cp ../opennotes-server/openapi-public.json ./openapi-public.json",
+    "vendor:all": "pnpm run vendor:tokens && pnpm run vendor:openapi",
+    "prevalidate": "pnpm run vendor:all",
+    "predev": "pnpm run vendor:all",
+    "prebroken-links": "pnpm run vendor:all",
+    "dev": "mint dev",
+    "validate": "mint validate",
+    "broken-links": "mint broken-links"
+  }
+}

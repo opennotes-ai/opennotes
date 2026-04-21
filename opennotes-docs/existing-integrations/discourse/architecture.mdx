@@ -1,0 +1,128 @@
+---
+title: Plugin architecture
+description: How the Discourse plugin maps the universal adapter contract onto Ember, Sidekiq, and ReviewableOpenNotesItem.
+---
+
+This page is an orientation to the plugin's moving parts for contributors and adapter authors. The
+plugin is the **reference implementation** of the [adapter contract](/integration-guide/concepts/adapter-contract)
+— everything here traces back to that universal spec.
+
+See the [API reference](/api-reference/overview) for the full OpenNotes server API that the plugin
+calls.
+
+## High-level structure
+
+```
+plugin/
+  plugin.rb                        # Entry point: event hooks, serializer extensions
+  lib/opennotes/
+    client.rb                      # HTTP client — auth, retries, identity headers
+    post_mapper.rb                 # Discourse Post → OpenNotes request payload
+    user_mapper.rb                 # Discourse User → adapter identity headers
+    action_executor.rb             # Hide/unhide/annotate post side-effects
+    status_mapper.rb               # OpenNotes state → Discourse display status
+    community_server_resolver.rb   # Resolves community server UUID from server
+    platform_registrar.rb          # Registers/updates platform on setting changes
+    gcp_auth.rb                    # GCP identity token for Cloud Run IAM
+  app/jobs/
+    regular/sync_post_to_opennotes.rb    # Sidekiq: classify new/edited posts
+    regular/sync_flag_to_opennotes.rb    # Sidekiq: forward user flags
+    scheduled/sync_scoring_status.rb     # Sidekiq: poll for consensus results (5 min)
+  app/models/reviewable_opennotes_item.rb  # Discourse Reviewable subclass
+  assets/javascripts/discourse/
+    components/                    # Glimmer components (community-review-panel, vote-widget, etc.)
+    connectors/                    # Outlet connectors (post-menu badge, topic review banner)
+    routes/                        # Ember routes (community-reviews, admin-opennotes)
+```
+
+## OpenNotes::Client
+
+`OpenNotes::Client` wraps Faraday and implements the [headers and auth](/integration-guide/concepts/headers-and-auth)
+contract:
+
+- `X-API-Key` — service account key, sent on every request.
+- `Authorization: Bearer <token>` — GCP identity token, added automatically when running on Cloud
+  Run (via `OpenNotes::GcpAuth`).
+- `X-Adapter-Platform`, `X-Adapter-User-Id`, `X-Adapter-Username`, `X-Adapter-Trust-Level`,
+  `X-Adapter-Admin`, `X-Adapter-Moderator`, `X-Adapter-Scope` — per-request user identity headers
+  added when a `user:` argument is passed. These map to the [scopes](/integration-guide/concepts/scopes)
+  concept in the adapter contract.
+
+All paths are constructed relative to `PUBLIC_API_PREFIX = "/api/public/v1"`, defined in
+`lib/opennotes.rb`. The client retries on `429`, `500`, `502`, `503`, and `504` with exponential
+backoff (up to 3 retries).
+
+## Sidekiq jobs
+
+<Tabs>
+  <Tab title="SyncPostToOpennotes (regular)">
+    Triggered by `DiscourseEvent.on(:post_created)` and `(:post_edited)` in `plugin.rb`.
+
+    Flow:
+    1. Maps the Discourse `Post` to an OpenNotes request payload via `OpenNotes::PostMapper`.
+    2. POSTs to `/api/public/v1/requests`.
+    3. Reads `moderation_action` from the response and branches:
+       - `auto_hide` / `immediate_action` → hides the post, creates a `ReviewableOpennotesItem`
+         in `retro_review` state (Tier 1).
+       - `community_review` → creates a `ReviewableOpennotesItem` in `under_review` state (Tier 2).
+    4. Stores the `opennotes_request_id` in `post.custom_fields` for later correlation.
+  </Tab>
+  <Tab title="SyncFlagToOpennotes (regular)">
+    Triggered by `DiscourseEvent.on(:flag_created)` when `opennotes_route_flags_to_community` is
+    enabled. Forwards the user's flag to the OpenNotes server so it can be surfaced as a community
+    review item, not only as a staff flag.
+  </Tab>
+  <Tab title="SyncScoringStatus (scheduled, every 5 min)">
+    Polls `/api/public/v1/requests?filter[status]=COMPLETED&...` to catch any webhook deliveries
+    that were missed. For each completed request, it transitions the matching
+    `ReviewableOpennotesItem` to the appropriate terminal state and applies post-side-effects
+    (hide, unhide, staff annotation) as needed.
+
+    This job is the fallback; the primary notification path is the webhook endpoint.
+  </Tab>
+</Tabs>
+
+## ReviewableOpenNotesItem
+
+`ReviewableOpennotesItem` subclasses Discourse's `Reviewable` and adds an OpenNotes-specific state
+machine stored in `reviewable.payload`.
+
+States:
+
+| State | Meaning |
+|-------|---------|
+| `pending` | Created, not yet picked up |
+| `under_review` | Tier 2: awaiting community votes |
+| `auto_actioned` | Intermediate before `retro_review` (rarely used) |
+| `retro_review` | Tier 1: post was auto-hidden; community can overturn |
+| `consensus_helpful` | Community agreed — staff confirmation pending |
+| `consensus_not_helpful` | Community disagreed — cleared |
+| `action_confirmed` | Staff confirmed the consensus action |
+| `action_overturned` | Community voted to reverse the auto-hide |
+| `staff_overridden` | Staff acted directly, bypassing consensus |
+| `resolved` | Terminal: action complete |
+| `restored` | Terminal: post was hidden and then restored |
+| `dismissed` | Terminal: item ignored |
+
+The `build_actions` method exposes **Agree**, **Disagree**, **Ignore**, and **Escalate** actions to
+staff in the Discourse review queue, each calling the corresponding `/api/public/v1/...` endpoint
+via `OpenNotes::Client`.
+
+## Ember frontend
+
+The plugin injects UI into Discourse via outlet connectors and Glimmer components:
+
+- `connectors/topic-above-post-stream/opennotes-review-banner.gjs` — renders the "Under Review"
+  or "Auto-Hidden" banner above the post stream, driven by `opennotes_status` serialized onto the
+  topic view.
+- `connectors/post-menu/opennotes-post-badge.gjs` — renders the consensus result badge
+  ("Community Reviewed", "Reviewed — No Action") in the post action menu.
+- `components/community-review-panel.gjs` — the full review panel shown at `/community-reviews`,
+  including the vote widget.
+- `components/vote-widget.gjs` — Helpful / Not Helpful voting UI, calls `POST /vote` on the
+  community reviews controller.
+- `components/opennotes-admin-dashboard.gjs` — activity metrics panel in the admin area.
+
+The `opennotes_status` field is injected into the topic-view and post serializers in `plugin.rb`
+via `add_to_serializer`, so the Ember layer never needs to make a separate API call to learn a
+post's review state.

@@ -1,0 +1,40 @@
+---
+title: Integration Guide overview
+description: Build an OpenNotes adapter for any platform using the universal adapter contract.
+---
+
+The Integration Guide is for anyone wiring OpenNotes into a new platform.
+Every adapter — Discourse today, Mattermost or Ghost tomorrow — speaks the
+same contract:
+
+- Authenticate with a `platform:adapter`-scoped API key minted on
+  [platform.opennotes.ai](https://platform.opennotes.ai).
+- Identify end users with `X-Adapter-*` headers on every request.
+- Drive the same set of endpoints under `/api/public/v1`.
+- React to community consensus via webhooks (or polling as a fallback).
+
+## How to read this guide
+
+<Steps>
+  <Step title="Onboarding">
+    Start on [platform.opennotes.ai](https://platform.opennotes.ai) —
+    register your community, add your instance, mint an API key, and pick a
+    moderation tier. This unlocks everything else.
+  </Step>
+  <Step title="Concepts">
+    Learn the three things every request carries: an API key (scope), adapter
+    headers (user identity), and the endpoints those keys can reach.
+  </Step>
+  <Step title="Adapter choreography">
+    Walk through the lifecycle of a single piece of content: classification
+    request → community review → webhook-driven action. This is the core loop
+    every adapter implements.
+  </Step>
+</Steps>
+
+## When in doubt
+
+If this guide is ambiguous, treat the
+[Discourse plugin](/existing-integrations/discourse/overview) as the source
+of truth. It implements the contract end-to-end in production and exercises
+every endpoint you'll need.

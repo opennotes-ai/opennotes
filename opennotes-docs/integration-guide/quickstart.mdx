@@ -1,0 +1,88 @@
+---
+title: Quickstart
+description: Register a community, mint a platform:adapter key, and make your first /api/public/v1 call in under five minutes.
+---
+
+This guide walks you from zero to a live moderation request in under five minutes. By the end you will have a working API key and a 201 response from `POST /api/public/v1/requests`.
+
+<Steps>
+
+### Create your account
+
+Go to [platform.opennotes.ai](https://platform.opennotes.ai) and click **Sign Up**. Enter your email and a password, then confirm your email.
+
+### Mint an API key
+
+After confirming your email, sign in and open the **API Keys** dashboard. Click **Create Key**, give it a descriptive name (e.g. `Production Discourse`), and select the **Discourse Plugin** scope template. Copy the key immediately — it is shown only once.
+
+<Warning>
+  Store the key in a secret manager (1Password, AWS Secrets Manager, GCP Secret Manager). If you lose it you must revoke and re-mint.
+</Warning>
+
+### Make your first moderation request
+
+Replace `<api_key>`, `<community_server_id>`, and `<post_id>` with real values:
+
+```bash
+curl -X POST https://api.opennotes.ai/api/public/v1/requests \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-User-Id: 42" \
+  -H "X-Adapter-Username: alice" \
+  -H "X-Adapter-Trust-Level: 2" \
+  -H "X-Adapter-Admin: false" \
+  -H "X-Adapter-Scope: <community_server_id>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "type": "requests",
+      "attributes": {
+        "request_id": "<post_id>",
+        "requested_by": "42",
+        "community_server_id": "<community_server_id>",
+        "original_message_content": "Hello world — my first moderation request",
+        "platform_message_id": "<post_id>"
+      }
+    }
+  }'
+```
+
+A successful call returns **HTTP 201** with a JSON:API resource body:
+
+```json
+{
+  "data": {
+    "type": "requests",
+    "id": "01940000-0000-7000-0000-000000000001",
+    "attributes": {
+      "request_id": "<post_id>",
+      "status": "pending",
+      "community_server_id": "<community_server_id>"
+    }
+  },
+  "jsonapi": { "version": "1.1" }
+}
+```
+
+### Poll or receive a webhook
+
+OpenNotes scores the content asynchronously. You can either poll `GET /api/public/v1/requests/{request_id}` or register a webhook to receive the consensus decision automatically. See [Webhooks](/integration-guide/concepts/webhooks) for delivery semantics.
+
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Register a community" icon="building" href="/integration-guide/onboarding/register-community">
+    Full walkthrough of the platform.opennotes.ai registration flow.
+  </Card>
+  <Card title="Manage instances" icon="server" href="/integration-guide/onboarding/manage-instances">
+    Add Discourse forums, Discord guilds, or other platform instances.
+  </Card>
+  <Card title="Adapter contract" icon="handshake" href="/integration-guide/concepts/adapter-contract">
+    What every adapter must do and what the server guarantees in return.
+  </Card>
+  <Card title="Headers and auth" icon="lock" href="/integration-guide/concepts/headers-and-auth">
+    Authorization bearer + X-Adapter-* header flow end-to-end.
+  </Card>
+</CardGroup>

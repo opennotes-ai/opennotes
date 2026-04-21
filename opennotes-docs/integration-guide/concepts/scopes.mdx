@@ -1,0 +1,94 @@
+---
+title: Scopes
+description: platform:adapter is the public-API scope — the boundary between external integrations and internal platform tools.
+---
+
+API keys carry a list of **scopes** that control which endpoints they can reach. Scopes are the primary access-control layer on top of API key authentication. A valid key without the right scope gets HTTP 403.
+
+## How scopes work
+
+When the server receives a request authenticated with an API key it:
+
+1. Checks that the key exists and is not revoked or expired (HTTP 401 if not).
+2. Checks that the key's scope list contains the scope required by the endpoint (HTTP 403 if not).
+
+Every endpoint that requires a specific scope calls `require_scope_or_admin(user, request, "<scope>")` internally. Platform admins bypass the scope check; API-key callers must have the exact scope listed.
+
+## The platform:adapter scope
+
+`platform:adapter` is the scope every external adapter needs. It signals that the caller is a trusted adapter speaking on behalf of a community. Without it, the server will not read `X-Adapter-*` headers for user identity — they are simply ignored.
+
+`platform:adapter` keys can only be minted by users with `platform_admin` role (convention: the community owner). The platform.opennotes.ai dashboard enforces this — you cannot select `platform:adapter` through the user-facing scope picker unless you are the community owner.
+
+## All available scopes
+
+<Tabs>
+  <Tab title="Adapter scopes">
+    These are the scopes an external adapter typically uses:
+
+    | Scope | What it unlocks |
+    |---|---|
+    | `platform:adapter` | Enables `X-Adapter-*` header identity; required for all adapter operations |
+    | `requests:read` | `GET /api/public/v1/requests`, `GET /api/public/v1/requests/{id}` |
+    | `requests:write` | `POST /api/public/v1/requests`, `PATCH /api/public/v1/requests/{id}` |
+    | `notes:read` | `GET /api/public/v1/notes`, `GET /api/public/v1/notes/{id}` |
+    | `notes:write` | `POST /api/public/v1/notes/{id}/ai-notes` |
+    | `notes:delete` | `DELETE /api/public/v1/notes/{id}` |
+    | `ratings:write` | `POST /api/public/v1/ratings`, `PUT /api/public/v1/ratings/{id}` |
+    | `profiles:read` | `GET /api/public/v1/user-profiles/lookup` |
+    | `community-servers:read` | `GET /api/public/v1/community-servers/lookup`, `GET /api/public/v1/community-servers/{id}` |
+    | `moderation-actions:read` | `GET /api/public/v1/moderation-actions` |
+  </Tab>
+  <Tab title="Admin scopes">
+    These scopes are admin-only and cannot be granted to regular users:
+
+    | Scope | What it unlocks |
+    |---|---|
+    | `platform:adapter` | As above — restricted to `platform_admin` principals |
+    | `api-keys:create` | Create API keys on behalf of other users |
+  </Tab>
+</Tabs>
+
+## Scope templates in the dashboard
+
+The platform.opennotes.ai dashboard offers three scope templates:
+
+| Template | Scopes |
+|---|---|
+| **Discourse Plugin** | `requests:read`, `requests:write`, `notes:read`, `notes:write`, `ratings:write`, `profiles:read`, `community-servers:read`, `moderation-actions:read` |
+| **Full Access** | All of the above plus `notes:delete` |
+| **Read Only** | `requests:read`, `notes:read`, `profiles:read`, `community-servers:read`, `moderation-actions:read` |
+
+<Note>
+  The `platform:adapter` scope is granted separately by the platform and does not appear in the user-visible template list. It is added automatically for community-owner accounts when they create a key through the standard flow.
+</Note>
+
+## How new public scopes get introduced
+
+New scopes follow this process:
+
+1. An endpoint is added to the OpenAPI spec with a required scope.
+2. The scope is added to `ALLOWED_API_KEY_SCOPES` in `auth/models.py`.
+3. If the scope should be user-grantable, it is added to `USER_GRANTABLE_SCOPES`.
+4. The dashboard is updated to show the new scope in the relevant templates.
+5. The public changelog is updated.
+
+Existing keys are unaffected — they do not gain new scopes automatically. Callers that need the new scope must revoke their current key and mint a new one with the updated scope set, or have an admin patch the key's scope list.
+
+## Checking your key's scopes
+
+You can inspect a key's scope list via the dashboard. From the API side, a request to a scoped endpoint with the wrong key returns:
+
+```json
+{
+  "detail": "API key lacks required scope"
+}
+```
+
+HTTP status: `403 Forbidden`.
+
+## See also
+
+- [Mint API keys](/integration-guide/onboarding/api-keys) — how to create a key with the right scopes
+- [Headers and auth](/integration-guide/concepts/headers-and-auth) — how scopes interact with `X-Adapter-*` headers
+- [Error shapes](/integration-guide/concepts/errors) — error envelope for scope failures

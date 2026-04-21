@@ -1,0 +1,137 @@
+---
+title: "Step 4 — Handle the action"
+description: Receive and apply a moderation-action consensus decision, either via webhook push or by polling /api/public/v1/moderation-actions.
+---
+
+After the request from [Step 3](/integration-guide/walkthrough/03-submit-request) is scored and reaches community consensus, OpenNotes produces a **moderation action** — a structured decision telling your adapter what to do with the post. Your adapter receives this decision in one of two ways:
+
+1. **Webhook push** — OpenNotes calls your registered endpoint. Recommended for production.
+2. **Poll** — Your adapter calls `GET /api/public/v1/moderation-actions` on a schedule. Used by the Discourse plugin today.
+
+See [Step 5](/integration-guide/walkthrough/05-webhooks-and-retries) for retry and idempotency details.
+
+## Option A — Webhook delivery
+
+If you have registered a webhook endpoint (see [Webhooks](/integration-guide/concepts/webhooks)), OpenNotes will POST a payload to your URL when a consensus decision is reached. The payload looks like this:
+
+```json
+{
+  "event": "moderation_action.created",
+  "community_server_id": "01906b2a-4d2f-7e5a-8b99-e5f2a6d3c8b4",
+  "data": {
+    "id": "01906b2a-6f4b-7d7c-ae88-g7b4c8f5e0d6",
+    "request_id": "01906b2a-5e3a-7c6b-9d77-f6a3b7e4d9c5",
+    "community_server_id": "01906b2a-4d2f-7e5a-8b99-e5f2a6d3c8b4",
+    "action_type": "hide",
+    "action_tier": "tier_2_consensus",
+    "action_state": "proposed",
+    "review_group": "community",
+    "classifier_evidence": {
+      "score": 0.91,
+      "category": "misinformation"
+    },
+    "note_id": null
+  }
+}
+```
+
+Your endpoint must respond with HTTP 2xx within 10 seconds. Non-2xx responses trigger a retry (see [Step 5](/integration-guide/walkthrough/05-webhooks-and-retries)).
+
+## Option B — Polling
+
+Poll `GET /api/public/v1/moderation-actions` for actions with `action_state=proposed` scoped to your community:
+
+```bash
+curl -X GET "https://api.opennotes.ai/api/public/v1/moderation-actions" \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-User-Id: 42" \
+  -H "X-Adapter-Username: alice" \
+  -H "X-Adapter-Trust-Level: 2" \
+  -H "X-Adapter-Admin: false" \
+  -H "X-Adapter-Moderator: false" \
+  -H "X-Adapter-Scope: my-community" \
+  -G \
+  --data-urlencode "community_server_id=01906b2a-4d2f-7e5a-8b99-e5f2a6d3c8b4" \
+  --data-urlencode "action_state=proposed" \
+  --data-urlencode "limit=50"
+```
+
+### Query parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `community_server_id` | yes | Your community-server UUID from Step 2. |
+| `action_state` | recommended | Filter to `proposed` to find unprocessed actions. |
+| `action_tier` | optional | `tier_1_immediate` or `tier_2_consensus`. |
+| `limit` | optional | Page size (default 20, max 100). |
+| `offset` | optional | Pagination offset. |
+
+## Action types and what they mean
+
+| `action_type` | What your adapter should do |
+|---------------|-----------------------------|
+| `hide` | Hide the post from public view. |
+| `unhide` | Restore a previously hidden post. |
+| `warn` | Issue a warning to the author; do not hide. |
+| `silence` | Silence the author on your platform. |
+| `delete` | Permanently delete the post. |
+
+## Applying the action
+
+Once you have determined which action to apply, execute it on your platform, then acknowledge by updating the action state via `PATCH /api/public/v1/moderation-actions/{action_id}`:
+
+```bash
+curl -X PATCH "https://api.opennotes.ai/api/public/v1/moderation-actions/01906b2a-6f4b-7d7c-ae88-g7b4c8f5e0d6" \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-User-Id: 42" \
+  -H "X-Adapter-Username: alice" \
+  -H "X-Adapter-Trust-Level: 2" \
+  -H "X-Adapter-Admin: false" \
+  -H "X-Adapter-Moderator: false" \
+  -H "X-Adapter-Scope: my-community" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action_state": "applied",
+    "platform_action_id": "discourse-hide-98765"
+  }'
+```
+
+Set `action_state` to `applied` after you execute the action on your platform. This signals to OpenNotes that delivery was successful and closes the loop.
+
+## Reference implementation
+
+The Discourse plugin applies consensus actions in [`OpenNotes::ActionExecutor.execute_action`](https://github.com/opennotes-ai/opennotes/blob/main/opennotes-discourse/plugin/lib/opennotes/action_executor.rb):
+
+```ruby
+def self.execute_action(action_type:, post:, metadata: {})
+  case action_type.to_s
+  when "hide_post"
+    hide_post(post, reason: metadata[:reason] || :spam)
+  when "unhide_post"
+    unhide_post(post)
+  when "add_staff_annotation"
+    add_staff_annotation(post, text: metadata[:text])
+  when "set_scan_exempt"
+    set_scan_exempt(post, content_hash: metadata[:content_hash])
+  when "clear_scan_exempt"
+    clear_scan_exempt(post)
+  else
+    Rails.logger.warn("[opennotes] Unknown action type: #{action_type}")
+  end
+end
+```
+
+The executor is idempotent — `hide_post` checks `post.hidden?` before calling `post.hide!`, and `unhide_post` checks `post.hidden?` before calling `post.unhide!`. Apply the same guard in your adapter.
+
+## API reference
+
+- `GET /api/public/v1/moderation-actions` — list actions
+- `PATCH /api/public/v1/moderation-actions/{action_id}` — acknowledge
+
+Both are documented under [API Reference → Moderation Actions](/api-reference/overview).
+
+---
+
+Next: [Step 5 — Webhooks and retries](/integration-guide/walkthrough/05-webhooks-and-retries)

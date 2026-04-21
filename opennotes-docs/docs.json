@@ -1,0 +1,162 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "OpenNotes Docs",
+  "colors": {
+    "primary": "#3EB489",
+    "light": "#3EB489",
+    "dark": "#3EB489"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Integration Guide",
+        "groups": [
+          {
+            "group": "Start here",
+            "pages": [
+              "introduction",
+              "integration-guide/overview",
+              "integration-guide/quickstart"
+            ]
+          },
+          {
+            "group": "Onboarding",
+            "pages": [
+              "integration-guide/onboarding/register-community",
+              "integration-guide/onboarding/manage-instances",
+              "integration-guide/onboarding/api-keys",
+              "integration-guide/onboarding/configure-tiers"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "integration-guide/concepts/adapter-contract",
+              "integration-guide/concepts/headers-and-auth",
+              "integration-guide/concepts/scopes",
+              "integration-guide/concepts/errors",
+              "integration-guide/concepts/webhooks"
+            ]
+          },
+          {
+            "group": "Walkthrough",
+            "pages": [
+              "integration-guide/walkthrough/index",
+              "integration-guide/walkthrough/01-identify-user",
+              "integration-guide/walkthrough/02-identify-community",
+              "integration-guide/walkthrough/03-submit-request",
+              "integration-guide/walkthrough/04-handle-action",
+              "integration-guide/walkthrough/05-webhooks-and-retries"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Existing Integrations",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["existing-integrations/overview"]
+          },
+          {
+            "group": "Discourse plugin",
+            "pages": [
+              "existing-integrations/discourse/overview",
+              "existing-integrations/discourse/install",
+              "existing-integrations/discourse/configure",
+              "existing-integrations/discourse/upgrade",
+              "existing-integrations/discourse/troubleshoot",
+              "existing-integrations/discourse/user-guide",
+              "existing-integrations/discourse/architecture"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "openapi": "openapi-public.json",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/authentication",
+              "api-reference/conventions"
+            ]
+          },
+          {
+            "group": "Requests",
+            "pages": [
+              "GET /api/public/v1/requests",
+              "POST /api/public/v1/requests",
+              "GET /api/public/v1/requests/{request_id}",
+              "PATCH /api/public/v1/requests/{request_id}",
+              "POST /api/public/v1/requests/{request_id}/ai-notes"
+            ]
+          },
+          {
+            "group": "Notes",
+            "pages": [
+              "GET /api/public/v1/notes",
+              "POST /api/public/v1/notes",
+              "GET /api/public/v1/notes/{note_id}",
+              "PATCH /api/public/v1/notes/{note_id}",
+              "DELETE /api/public/v1/notes/{note_id}",
+              "POST /api/public/v1/notes/{note_id}/force-publish",
+              "POST /api/public/v1/notes/{note_id}/dismiss"
+            ]
+          },
+          {
+            "group": "Ratings",
+            "pages": [
+              "POST /api/public/v1/ratings",
+              "GET /api/public/v1/notes/{note_id}/ratings",
+              "PUT /api/public/v1/ratings/{rating_id}",
+              "GET /api/public/v1/notes/{note_id}/ratings/stats"
+            ]
+          },
+          {
+            "group": "Moderation Actions",
+            "pages": [
+              "POST /api/public/v1/moderation-actions",
+              "GET /api/public/v1/moderation-actions",
+              "GET /api/public/v1/moderation-actions/{action_id}",
+              "PATCH /api/public/v1/moderation-actions/{action_id}"
+            ]
+          },
+          {
+            "group": "Community Servers",
+            "pages": [
+              "GET /api/public/v1/community-servers/lookup",
+              "GET /api/public/v1/community-servers/{server_id}"
+            ]
+          },
+          {
+            "group": "User Profiles",
+            "pages": [
+              "GET /api/public/v1/user-profiles/lookup"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Platform",
+        "href": "https://platform.opennotes.ai"
+      },
+      {
+        "label": "GitHub",
+        "href": "https://github.com/opennotes-ai/opennotes"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/opennotes-ai/opennotes"
+    }
+  }
+}

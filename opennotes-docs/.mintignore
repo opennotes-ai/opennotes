@@ -1,0 +1,7 @@
+# Contributor-facing docs that live inside the Mintlify project root but are
+# not part of the published site. They contain filesystem-relative paths that
+# point outside the project (e.g., ../packages/tokens/) which Mintlify's
+# broken-links checker correctly flags — but those paths are intentional for
+# GitHub browsing.
+INTEGRATION.md
+README.md

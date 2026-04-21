@@ -1,0 +1,55 @@
+---
+title: OpenNotes
+description: Community-powered moderation for online platforms.
+---
+
+OpenNotes is a moderation platform that combines AI classification with
+community review. Adapters wire OpenNotes into your platform so that flagged
+content enters a bridging-based review loop, and consensus decisions flow back
+as moderation actions.
+
+## Who this is for
+
+<CardGroup cols={3}>
+  <Card title="Building an adapter" icon="plug" href="/integration-guide/overview">
+    You're wiring OpenNotes into a new platform. Start with the Integration
+    Guide — universal concepts, onboarding, and the adapter choreography.
+  </Card>
+  <Card title="Running the Discourse plugin" icon="discourse" href="/existing-integrations/discourse/overview">
+    You're installing, configuring, or troubleshooting the OpenNotes plugin on
+    your Discourse forum. Jump to Existing Integrations → Discourse.
+  </Card>
+  <Card title="Calling the API directly" icon="code" href="/api-reference/overview">
+    You already have a `platform:adapter` API key and need endpoint reference.
+    Head to the API Reference.
+  </Card>
+</CardGroup>
+
+## How the pieces fit
+
+- **opennotes-server** is the hosted REST API and scoring engine. It runs at
+  `https://api.opennotes.ai` today.
+- **`platform:adapter`-scoped API keys** are the public API boundary. You mint
+  them on [platform.opennotes.ai](https://platform.opennotes.ai) after
+  registering your community.
+- **Adapters** (like the Discourse plugin) translate between your platform's
+  content model and the OpenNotes REST API. They use `X-Adapter-*` headers to
+  carry end-user identity.
+- The **Integration Guide** documents the universal adapter contract. The
+  **Discourse plugin** is the reference implementation of that contract — if
+  something is unclear in the guide, its source code is the tie-breaker.
+
+## What's where
+
+| Section | Covers |
+|---|---|
+| Integration Guide | Onboarding via platform.opennotes.ai, auth, scopes, `X-Adapter-*` headers, endpoint choreography, webhooks, errors |
+| Existing Integrations | Per-adapter docs (install, configure, upgrade, troubleshoot). Discourse today. |
+| API Reference | Exhaustive endpoint reference generated from the `/api/public/v1` OpenAPI schema |
+
+## Something missing?
+
+The docs source lives at `opennotes-docs/` in the
+[opennotes monorepo](https://github.com/opennotes-ai/opennotes). Open a PR or
+file an issue — these pages are intentionally co-located with the code they
+document.

@@ -1,0 +1,110 @@
+---
+title: Community member guide
+description: What forum members see and how community review voting works.
+---
+
+OpenNotes helps your community moderate content in two ways:
+
+1. **AI moderation** catches clearly harmful content right away.
+2. **Community review** lets members weigh in on moderation decisions — especially when the AI
+   isn't sure, or when you think it got something wrong.
+
+No moderation decision is permanent. Every automated action can be reviewed and reversed by the
+community.
+
+## What you'll see on posts
+
+<Tabs>
+  <Tab title="Under Review banner">
+    When the AI flags a post but isn't confident enough to act automatically, the post stays visible
+    with an **"Under Review"** banner. The community decides what to do from there.
+  </Tab>
+  <Tab title="Auto-Hidden notice">
+    When the AI is highly confident content is harmful, it may hide the post immediately. A notice
+    explains that the post was auto-hidden and is open for community review.
+  </Tab>
+  <Tab title="Community Reviewed badge">
+    After the community reaches a decision, the post shows one of two badges:
+    - **"Community Reviewed"** — the community agreed the post needed action.
+    - **"Reviewed — No Action"** — the community decided the post was fine.
+  </Tab>
+  <Tab title="Restored post">
+    If a post was auto-hidden but the community voted to reverse that decision, you'll see a staff
+    annotation explaining the post was hidden and then restored.
+  </Tab>
+</Tabs>
+
+## Participating in community reviews
+
+### Who can vote
+
+Your forum administrator sets the minimum trust level required to participate. Typically you need
+to be at least a **Member** (trust level 2). You earn trust levels through normal participation —
+reading posts, receiving likes, and contributing to discussions.
+
+If you can't see the voting interface on an item, ask your forum admin what trust level is required.
+
+### The review page
+
+Visit `/community-reviews` to see items waiting for community input. Each item shows:
+
+- The flagged post and its surrounding context.
+- The category the post belongs to.
+- The reason it was flagged.
+
+### How to vote
+
+For each review item you can cast one vote:
+
+- **Helpful** — the moderation action (or proposed action) is appropriate.
+- **Not Helpful** — the content is fine and shouldn't be acted on.
+
+You can vote only once per item, and votes cannot be changed after submission.
+
+### How consensus works
+
+OpenNotes uses a **bridging-based algorithm** adapted from Twitter/X Community Notes:
+
+- Votes from people who usually disagree with each other carry more weight than votes from people
+  who always agree.
+- This makes it harder for any single group to dominate moderation decisions.
+- Consensus reflects genuine cross-perspective agreement, not majority rule.
+
+Once enough votes are in and a clear consensus emerges, the agreed-upon action is applied (or the
+post is cleared).
+
+<Note>
+  While voting is in progress, vote counts and scores are hidden. This is intentional — it
+  prevents bandwagon effects and encourages independent judgment. Results become visible after
+  consensus is reached.
+</Note>
+
+## Frequently asked questions
+
+<AccordionGroup>
+  <Accordion title="Can the AI make mistakes?">
+    Yes. That's why every automated decision goes through community review. If the community decides
+    the AI was wrong, the action is reversed and the post is restored.
+  </Accordion>
+
+  <Accordion title="What happens if I flag a post?">
+    Depending on your forum's configuration, flags may be sent to OpenNotes for community review in
+    addition to the normal staff flag queue. Your flag could be reviewed by the community, not just
+    staff.
+  </Accordion>
+
+  <Accordion title="Can a restored post be flagged again?">
+    Posts that are restored after an overturn are marked as scan-exempt. Minor edits won't trigger
+    re-classification. If the post is substantially rewritten, it may be classified again.
+  </Accordion>
+
+  <Accordion title="Who can see my votes?">
+    Staff can see individual votes and tallies. Other community members see only the final consensus
+    result, not individual votes.
+  </Accordion>
+
+  <Accordion title="What if there aren't enough voters?">
+    Items stay in the review queue until enough votes are cast. Staff can also take action directly
+    on any item without waiting for community consensus.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,116 @@
+---
+title: Mint API keys
+description: Create a platform:adapter-scoped API key that your adapter uses to call /api/public/v1.
+---
+
+Every call to `/api/public/v1` must be authenticated with an API key in the `Authorization: Bearer` header. This page explains how to mint a key, which scopes to request, how to store the secret, and how to rotate when needed.
+
+## How keys work
+
+- A key is a long random string (opaque to callers).
+- It is associated with a **scope list** that controls which endpoints it can reach.
+- The server checks the scope on every request. A key without the right scope gets HTTP 403.
+- Keys can optionally have an **expiry** (1–365 days). Keys without an expiry never expire until revoked.
+
+## The platform:adapter scope
+
+<Note>
+  Adapter keys use the scope `platform:adapter`. This scope is distinct from user-grantable scopes. Only community owners with `platform_admin` status can mint `platform:adapter` keys. The platform.opennotes.ai dashboard handles this automatically for registered communities.
+</Note>
+
+`platform:adapter` unlocks:
+- `POST /api/public/v1/requests` — submit content for review
+- `GET /api/public/v1/requests` / `GET /api/public/v1/requests/{id}` — retrieve request status
+- `PATCH /api/public/v1/requests/{id}` — update request metadata
+- `POST /api/public/v1/moderation-actions` — record adapter-side moderation actions
+- `GET /api/public/v1/notes` and note sub-resources — read community notes
+- `POST /api/public/v1/ratings` — submit ratings
+- `GET /api/public/v1/community-servers/lookup` — resolve instance IDs
+- `GET /api/public/v1/user-profiles/lookup` — look up profiles
+
+In addition to `platform:adapter`, the dashboard's **Discourse Plugin** scope template automatically selects: `requests:read`, `requests:write`, `notes:read`, `notes:write`, `ratings:write`, `profiles:read`, `community-servers:read`, `moderation-actions:read`.
+
+## Minting a key
+
+<Steps>
+
+### Open the dashboard
+
+Go to [platform.opennotes.ai](https://platform.opennotes.ai) and sign in. The **API Keys** dashboard opens automatically.
+
+### Click "Create Key"
+
+A form appears. Give the key a descriptive name, e.g. `Production Discourse` or `Staging Discord`. Good names make it easier to audit and rotate later.
+
+### Pick a scope template or select scopes manually
+
+Click **Discourse Plugin** to pre-select the recommended scope set for a Discourse integration. You can also click individual scopes to customize.
+
+### Set an expiry (optional)
+
+Leave blank for a non-expiring key, or enter a number of days (max 365). For service accounts we recommend 365-day expiry with a rotation reminder.
+
+### Copy the key immediately
+
+After clicking **Create**, the dashboard shows the full key value **once**. Copy it now into your secret manager.
+
+<Warning>
+  The key is not stored in recoverable form. If you navigate away without copying it you must revoke and mint a new one.
+</Warning>
+
+</Steps>
+
+## Storing the secret
+
+Store your key in a secrets manager, not in source control or config files:
+
+| Environment | Recommended storage |
+|---|---|
+| GCP Cloud Run | GCP Secret Manager |
+| Docker Compose / local | `.env` file outside the repo (git-ignored) |
+| Discourse | Site settings (stored in encrypted PostgreSQL column) |
+| GitHub Actions CI | Repository or organization secret |
+
+## Using the key in requests
+
+Pass the key in the `Authorization` header:
+
+```bash
+curl https://api.opennotes.ai/api/public/v1/requests \
+  -H "Authorization: Bearer <api_key>" \
+  -H "X-Adapter-Platform: discourse" \
+  -H "X-Adapter-Scope: my-community-id"
+```
+
+See [Headers and auth](/integration-guide/concepts/headers-and-auth) for the full header set your adapter must send.
+
+## Rotation procedure
+
+<Steps>
+
+### Mint a replacement key
+
+Create a new key with the same name + ` (rotated YYYY-MM-DD)` suffix and the same scope set.
+
+### Deploy the new key to all services
+
+Update the secret in every environment that uses the old key. For Discourse, update the `opennotes_api_key` site setting. Restart any services that load the key at startup.
+
+### Verify the new key is working
+
+Send a test request and confirm HTTP 200/201.
+
+### Revoke the old key
+
+Back in the dashboard, click **Revoke** next to the old key. This immediately invalidates it — any in-flight requests using it will fail with HTTP 401.
+
+</Steps>
+
+## Error responses
+
+| HTTP status | Cause |
+|---|---|
+| 401 | Missing `Authorization` header or invalid key |
+| 403 | Key exists but lacks the required scope |
+
+See [Error shapes](/integration-guide/concepts/errors) for the full error envelope format.
