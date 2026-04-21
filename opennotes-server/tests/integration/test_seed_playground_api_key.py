@@ -102,3 +102,58 @@ async def test_seed_playground_api_key_passes_key_prefix(db_session):
             found_key_prefix_arg = True
 
     assert found_key_prefix_arg, "seed_playground_api_key must pass key_prefix to seed_api_key"
+
+
+@pytest.mark.asyncio
+async def test_playground_seed_rotates_stale_prefix_on_active_row(db_session):
+    """TASK-1462.01: stale key_prefix + stale key_hash on an active row must
+    be rotated atomically so the dev plaintext auths via the prefix lookup."""
+    import importlib
+    import sys
+    from pathlib import Path
+
+    scripts_dir = str(Path(__file__).parent.parent.parent / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+
+    seed_mod = importlib.import_module("seed_api_keys")
+
+    user = User(
+        username="playground-service",
+        email="playground@opennotes.local",
+        hashed_password=get_password_hash("unused"),
+        is_active=True,
+        principal_type="agent",
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    stale = APIKey(
+        user_id=user.id,
+        name="Playground (Development)",
+        key_hash=get_password_hash("opk_stale_wrong_plaintext_for_rotation_test"),
+        key_prefix="stale",
+        is_active=True,
+        scopes=PLAYGROUND_SCOPES,
+    )
+    db_session.add(stale)
+    await db_session.commit()
+
+    await seed_mod.seed_playground_api_key(db_session)
+    await db_session.commit()
+
+    # Expire the session identity map so verify_api_key's ORM SELECT doesn't
+    # return the pre-UPDATE cached APIKey row (the raw-SQL UPDATE in
+    # seed_api_key bypasses the ORM and the cached instance still holds the
+    # stale hash otherwise). In real seeding, Cloud Run containers don't share
+    # sessions, so this is test-plumbing, not a product concern.
+    db_session.expire_all()
+
+    result = await verify_api_key(db_session, PLAYGROUND_DEV_API_KEY)
+    assert result is not None, (
+        "playground seed must rotate stale hash + prefix to re-enable dev auth"
+    )
+    api_key_obj, _ = result
+    assert api_key_obj.key_prefix == "playground", (
+        f"key_prefix must be rotated from 'stale' to 'playground'; got {api_key_obj.key_prefix!r}"
+    )

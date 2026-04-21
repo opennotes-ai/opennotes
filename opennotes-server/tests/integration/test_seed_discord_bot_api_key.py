@@ -115,3 +115,62 @@ async def test_discord_bot_seed_patches_missing_platform_admin(db_session):
     assert "platform_admin" in platform_roles, (
         "seed must patch platform_roles to include platform_admin"
     )
+
+
+@pytest.mark.asyncio
+async def test_discord_bot_dev_seed_rotates_stale_hash_on_active_row(db_session):
+    """TASK-1462.01 regression guard (Discord 401 since 2026-04-16).
+
+    If an active row exists with a stale key_hash (simulating prod where
+    GSM drifted ahead of the DB), re-running the dev seed must rewrite the
+    hash so the real DEV_API_KEY authenticates. Pre-1462 behavior:
+    is_active=True + scopes-match was a no-op, the stale hash stuck, and
+    nothing could auth against the seeded plaintext.
+    """
+    seed_mod = _load_seed_module()
+
+    from src.auth.password import get_password_hash
+
+    await db_session.execute(
+        text("""
+            INSERT INTO users (username, email, hashed_password, full_name,
+                               is_active, principal_type, platform_roles,
+                               created_at, updated_at)
+            VALUES ('discord-bot-service', 'discord-bot@opennotes.local',
+                    :pw, 'Discord Bot Service Account',
+                    TRUE, 'system', '["platform_admin"]'::json,
+                    NOW(), NOW())
+        """),
+        {"pw": get_password_hash("throwaway")},
+    )
+
+    user_row = await db_session.execute(
+        text("SELECT id FROM users WHERE username = :u"),
+        {"u": "discord-bot-service"},
+    )
+    user_id = user_row.scalar_one()
+
+    stale_hash = get_password_hash("some_other_wrong_plaintext_value_for_testing")
+    await db_session.execute(
+        text("""
+            INSERT INTO api_keys (user_id, name, key_hash, key_prefix, is_active, scopes, created_at)
+            VALUES (:user_id, :name, :key_hash, NULL, TRUE,
+                    CAST(:scopes AS jsonb), NOW())
+        """),
+        {
+            "user_id": user_id,
+            "name": "Discord Bot (Development)",
+            "key_hash": stale_hash,
+            "scopes": '["platform:adapter"]',
+        },
+    )
+    await db_session.commit()
+
+    await seed_mod.seed_dev_api_key(db_session)
+    await db_session.commit()
+
+    result = await verify_api_key(db_session, DEV_API_KEY)
+    assert result is not None, (
+        "dev seed must rotate the stale hash on the active row so the real "
+        "dev plaintext authenticates — this is the TASK-1462.01 fix"
+    )
