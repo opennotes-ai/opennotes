@@ -11,5 +11,15 @@
     "dev:playground": "pnpm --filter opennotes-playground run dev",
     "dev:platform": "pnpm --filter opennotes-platform run dev",
     "dev:discord": "pnpm --filter opennotes-discord run dev"
+  },
+  "pnpm": {
+    "overrides": {
+      "tmp": ">=0.2.4",
+      "js-yaml": ">=4.1.1"
+    },
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild"
+    ]
   }
 }

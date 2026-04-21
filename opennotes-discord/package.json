@@ -73,11 +73,5 @@
     "minimal"
   ],
   "author": "",
-  "license": "MIT",
-  "pnpm": {
-    "overrides": {
-      "tmp": ">=0.2.4",
-      "js-yaml": ">=4.1.1"
-    }
-  }
+  "license": "MIT"
 }

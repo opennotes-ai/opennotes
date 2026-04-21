@@ -20,7 +20,7 @@ export default {
           lib: ['ES2022'],
           moduleResolution: 'node',
           baseUrl: '.',
-          rootDir: '.',
+          rootDir: '..',
           paths: {
             '@opennotes/shared-types': ['../packages/shared-types/src/index.ts'],
             '@opennotes/shared-types/*': ['../packages/shared-types/src/*.ts'],
