@@ -18,11 +18,9 @@ app.include_router(analyze.router)
 
 
 @app.get("/")
-async def root() -> dict[str, str]:
-    # Cloud Run's startup HTTP probe hits '/', not '/health' — answer both.
-    return {"status": "ok"}
-
-
 @app.get("/health")
+@app.get("/_healthz")
 async def health() -> dict[str, str]:
+    # Cloud Run's startup HTTP probe hits '/_healthz' per modules/gcp/cloud-run
+    # — also answer '/' and '/health' for convenience.
     return {"status": "ok"}
