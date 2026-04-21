@@ -1408,3 +1408,18 @@ class TestVertexAIDefaults:
         ):
             settings = create_settings_no_env_file()
             assert settings.VERTEXAI_LOCATION == "asia-east1"
+
+    def test_vertexai_project_reads_google_cloud_project_env(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "GOOGLE_CLOUD_PROJECT": "foo",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.VERTEXAI_PROJECT == "foo"

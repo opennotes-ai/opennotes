@@ -709,8 +709,8 @@ class Settings(BaseSettings):
     )
     VERTEXAI_PROJECT: str | None = Field(
         default=None,
-        description="GCP project ID for Vertex AI. Required when using vertex_ai/ model prefix. "
-        "Set automatically on Cloud Run via env var.",
+        description="GCP project ID for Vertex AI. Auto-populated from GOOGLE_CLOUD_PROJECT env var on Cloud Run.",
+        validation_alias=AliasChoices("VERTEXAI_PROJECT", "GOOGLE_CLOUD_PROJECT"),
     )
     VERTEXAI_LOCATION: str = Field(
         default="global",
