@@ -1,0 +1,34 @@
+{
+  "name": "@opennotes/tokens",
+  "version": "0.0.1",
+  "description": "Framework-agnostic CSS design tokens (theme variables, fonts, animations) for Open Notes surfaces",
+  "type": "module",
+  "private": true,
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": "./src/index.css",
+    "./theme.css": "./src/theme.css",
+    "./fonts.css": "./src/fonts-cdn.css",
+    "./fonts-cdn.css": "./src/fonts-cdn.css",
+    "./fonts-self-hosted.css": "./src/fonts-self-hosted.css",
+    "./animations.css": "./src/animations.css",
+    "./index.css": "./src/index.css"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "@fontsource/ibm-plex-sans": "^5.2.0",
+    "@fontsource/ibm-plex-serif": "^5.2.0"
+  },
+  "keywords": [
+    "opennotes",
+    "design-system",
+    "tokens",
+    "css",
+    "tailwind"
+  ],
+  "license": "MIT"
+}

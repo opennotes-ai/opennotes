@@ -9,7 +9,8 @@
     "start": "vinxi start",
     "test": "vitest run --exclude 'tests/**'",
     "test:e2e": "playwright test",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "lint": "pnpm run type-check"
   },
   "dependencies": {
     "@kobalte/core": "^0.13.11",

@@ -255,5 +255,8 @@ node_modules/
 .pnpm-debug.log
 node_modules/.pnpm/
 
+# TypeScript incremental build info (per-package, machine-generated)
+**/*.tsbuildinfo
+
 .sqry-index/
 .sqry/

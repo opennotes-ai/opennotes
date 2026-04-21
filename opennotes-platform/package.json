@@ -6,8 +6,9 @@
     "dev": "vinxi dev",
     "build": "vinxi build",
     "start": "vinxi start",
-    "test": "vitest run",
-    "type-check": "tsc --noEmit"
+    "test": "vitest run --passWithNoTests",
+    "type-check": "tsc --noEmit",
+    "lint": "pnpm run type-check"
   },
   "dependencies": {
     "@solidjs/meta": "^0.29.4",

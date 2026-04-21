@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
+    "type-check": "tsc --noEmit",
     "prepublishOnly": "pnpm run clean && pnpm run build"
   },
   "keywords": [

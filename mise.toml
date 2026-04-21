@@ -19,7 +19,7 @@
 python = "3.11"
 uv = "latest"
 node = "20"
-pnpm = "latest"
+pnpm = "10.33.0"
 yq = "latest"
 jq = "latest"
 
