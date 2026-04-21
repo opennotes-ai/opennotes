@@ -11,6 +11,7 @@ module OpenNotes
     module_function
 
     def register
+      uuid = nil
       server_url = SiteSetting.opennotes_server_url
       api_key = SiteSetting.opennotes_api_key
       slug = SiteSetting.opennotes_platform_community_server_id
@@ -81,7 +82,12 @@ module OpenNotes
       response = client.post("/api/v1/community-servers", body: body)
       uuid = extract_created_uuid(response)
       if uuid.blank?
-        return { status: :api_error, message: "Create response missing uuid", body: response }
+        return {
+          status: :api_error,
+          message: "Create response missing uuid",
+          status_code: nil,
+          body: response,
+        }
       end
       OpenNotes::CommunityServerResolver.persist(uuid)
       { status: :created, uuid: uuid }
@@ -109,9 +115,7 @@ module OpenNotes
     def on_setting_saved(setting_name)
       return unless REGISTRATION_SETTINGS.include?(setting_name.to_s)
 
-      if setting_name.to_s == "opennotes_platform_community_server_id"
-        OpenNotes::CommunityServerResolver.invalidate!
-      end
+      OpenNotes::CommunityServerResolver.invalidate!
 
       result = register
       if result[:ok]

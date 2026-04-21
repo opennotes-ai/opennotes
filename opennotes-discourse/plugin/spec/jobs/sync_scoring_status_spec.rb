@@ -8,15 +8,15 @@ RSpec.describe Jobs::SyncScoringStatus do
   fab!(:post) { Fabricate(:post, topic: topic) }
 
   let(:client) { instance_double(OpenNotes::Client) }
-  let(:platform_slug) { "forum.example.com-abcd1234" }
+  let(:community_server_uuid) { "11111111-2222-3333-4444-555555555555" }
   let(:request_id) { "req-1" }
 
   before do
     SiteSetting.opennotes_enabled = true
     SiteSetting.opennotes_server_url = "https://opennotes.example.com"
     SiteSetting.opennotes_api_key = "test-api-key"
-    SiteSetting.opennotes_platform_community_server_id = platform_slug
 
+    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(community_server_uuid)
     allow(described_class).to receive(:opennotes_client).and_return(client)
   end
 
@@ -45,7 +45,7 @@ RSpec.describe Jobs::SyncScoringStatus do
   end
 
   describe "community_server_id filter" do
-    it "sends the platform slug (not an internal UUID) as filter[community_server_id]" do
+    it "sends the internal UUID (not the platform slug) as filter[community_server_id]" do
       captured_params = nil
       allow(client).to receive(:get) do |*_args, **kwargs|
         captured_params = kwargs[:params]
@@ -54,18 +54,11 @@ RSpec.describe Jobs::SyncScoringStatus do
 
       described_class.new.execute({})
 
-      expect(captured_params["filter[community_server_id]"]).to eq(platform_slug)
+      expect(captured_params["filter[community_server_id]"]).to eq(community_server_uuid)
     end
 
-    it "does not call CommunityServerResolver.community_server_uuid" do
-      expect(OpenNotes::CommunityServerResolver).not_to receive(:community_server_uuid)
-      allow(client).to receive(:get).and_return({ "data" => [] })
-
-      described_class.new.execute({})
-    end
-
-    it "skips when opennotes_platform_community_server_id is blank" do
-      SiteSetting.opennotes_platform_community_server_id = ""
+    it "skips the poll when CommunityServerResolver cannot resolve a UUID" do
+      allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(nil)
       allow(client).to receive(:get)
 
       described_class.new.execute({})

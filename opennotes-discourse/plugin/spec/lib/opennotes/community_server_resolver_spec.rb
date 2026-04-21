@@ -66,14 +66,14 @@ RSpec.describe OpenNotes::CommunityServerResolver do
       it "returns nil without calling API when server_url is blank" do
         SiteSetting.opennotes_server_url = ""
         expect(OpenNotes::Client).not_to receive(:new)
-        expect(Rails.logger).to receive(:warn).with(/missing server_url/i)
+        expect(Rails.logger).to receive(:warn).with(/missing opennotes_server_url/i)
         expect(described_class.community_server_uuid).to be_nil
       end
 
       it "returns nil without calling API when api_key is blank" do
         SiteSetting.opennotes_api_key = ""
         expect(OpenNotes::Client).not_to receive(:new)
-        expect(Rails.logger).to receive(:warn)
+        expect(Rails.logger).to receive(:warn).with(/missing opennotes_api_key/i)
         expect(described_class.community_server_uuid).to be_nil
       end
 
@@ -81,16 +81,37 @@ RSpec.describe OpenNotes::CommunityServerResolver do
         SiteSetting.opennotes_platform_community_server_id = ""
         expect(OpenNotes::Client).not_to receive(:new)
         expect(Rails.logger).to receive(:warn)
+          .with(/missing opennotes_platform_community_server_id/i)
         expect(described_class.community_server_uuid).to be_nil
       end
 
-      it "handles response with symbol keys" do
+      it "handles the actual server response shape (top-level id, not data-wrapped)" do
+        allow(client).to receive(:get).and_return(
+          {
+            "id" => uuid,
+            "platform" => "discourse",
+            "platform_community_server_id" => slug,
+            "name" => "Forum",
+            "is_active" => true,
+            "flashpoint_detection_enabled" => false,
+          },
+        )
+        expect(described_class.community_server_uuid).to eq(uuid)
+        expect(::PluginStore.get(described_class::PLUGIN_NAMESPACE, described_class::PLUGIN_STORE_KEY)).to eq(uuid)
+      end
+
+      it "handles response with symbol keys (top-level id)" do
+        allow(client).to receive(:get).and_return({ id: uuid, platform: "discourse" })
+        expect(described_class.community_server_uuid).to eq(uuid)
+      end
+
+      it "falls back to data-wrapped id shape if present" do
         allow(client).to receive(:get).and_return({ data: { id: uuid } })
         expect(described_class.community_server_uuid).to eq(uuid)
       end
 
-      it "returns nil when response lacks a data.id field" do
-        allow(client).to receive(:get).and_return({ "data" => {} })
+      it "returns nil when response lacks an id at either level" do
+        allow(client).to receive(:get).and_return({ "platform" => "discourse" })
         expect(described_class.community_server_uuid).to be_nil
         expect(::PluginStore.get(described_class::PLUGIN_NAMESPACE, described_class::PLUGIN_STORE_KEY)).to be_nil
       end

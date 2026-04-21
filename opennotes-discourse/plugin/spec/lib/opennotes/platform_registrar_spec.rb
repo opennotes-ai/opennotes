@@ -157,16 +157,17 @@ RSpec.describe OpenNotes::PlatformRegistrar do
       described_class.on_setting_saved(:title)
     end
 
-    it "triggers registration when opennotes_server_url is saved" do
+    it "invalidates resolver cache AND re-registers when opennotes_server_url changes" do
       allow(client).to receive(:patch).and_return({})
-      expect(OpenNotes::CommunityServerResolver).not_to receive(:invalidate!)
-      expect(described_class).to receive(:register).and_call_original
+      expect(OpenNotes::CommunityServerResolver).to receive(:invalidate!).ordered
+      expect(described_class).to receive(:register).ordered.and_call_original
       described_class.on_setting_saved("opennotes_server_url")
     end
 
-    it "triggers registration when opennotes_api_key is saved" do
+    it "invalidates resolver cache AND re-registers when opennotes_api_key changes" do
       allow(client).to receive(:patch).and_return({})
-      expect(described_class).to receive(:register).and_call_original
+      expect(OpenNotes::CommunityServerResolver).to receive(:invalidate!).ordered
+      expect(described_class).to receive(:register).ordered.and_call_original
       described_class.on_setting_saved("opennotes_api_key")
     end
 

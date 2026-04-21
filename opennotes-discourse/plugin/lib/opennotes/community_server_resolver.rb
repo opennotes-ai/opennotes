@@ -41,9 +41,13 @@ module OpenNotes
       api_key = SiteSetting.opennotes_api_key
       slug = SiteSetting.opennotes_platform_community_server_id
 
-      if server_url.blank? || api_key.blank? || slug.blank?
+      missing = []
+      missing << "opennotes_server_url" if server_url.blank?
+      missing << "opennotes_api_key" if api_key.blank?
+      missing << "opennotes_platform_community_server_id" if slug.blank?
+      if missing.any?
         Rails.logger.warn(
-          "[OpenNotes] Cannot resolve community_server_uuid: missing server_url, api_key, or platform_community_server_id"
+          "[OpenNotes] Cannot resolve community_server_uuid: missing #{missing.join(", ")}"
         )
         return nil
       end
@@ -64,9 +68,8 @@ module OpenNotes
 
     def extract_id(response)
       return nil unless response.is_a?(Hash)
-      data = response["data"] || response[:data]
-      return nil unless data.is_a?(Hash)
-      data["id"] || data[:id]
+      response["id"] || response[:id] ||
+        response.dig("data", "id") || response.dig(:data, :id)
     end
   end
 end
