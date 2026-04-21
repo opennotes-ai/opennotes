@@ -341,6 +341,12 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      google-auth-library:
+        specifier: ^10.6.1
+        version: 10.6.2
+      openapi-fetch:
+        specifier: ^0.17.0
+        version: 0.17.0
       postcss:
         specifier: ^8.5.8
         version: 8.5.10
@@ -366,6 +372,9 @@ importers:
       jsdom:
         specifier: ^29.0.1
         version: 29.0.2
+      openapi-typescript:
+        specifier: ^7.13.0
+        version: 7.13.0(typescript@5.9.3)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
