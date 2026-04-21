@@ -5,7 +5,7 @@
   "type": "module",
   "private": true,
   "sideEffects": [
-    "*.css"
+    "**/*.css"
   ],
   "exports": {
     ".": "./src/index.css",

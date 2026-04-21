@@ -26,7 +26,7 @@ repos:
         name: ESLint (opennotes-discord)
         entry: pnpm --filter opennotes-discord run lint
         language: system
-        files: ^(opennotes-discord/src|packages/[^/]+/src)/.*\.ts$
+        files: ^opennotes-discord/src/.*\.ts$
         pass_filenames: false
 
   # =============================================================================
@@ -169,5 +169,13 @@ repos:
         entry: pnpm --filter opennotes-playground run type-check
         language: system
         files: ^(opennotes-playground/src|packages/[^/]+/src)/.*\.tsx?$
+        pass_filenames: false
+        require_serial: true
+
+      - id: typecheck-platform
+        name: TypeScript type check (opennotes-platform)
+        entry: pnpm --filter opennotes-platform run type-check
+        language: system
+        files: ^(opennotes-platform/src|packages/[^/]+/src)/.*\.tsx?$
         pass_filenames: false
         require_serial: true

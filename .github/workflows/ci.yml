@@ -35,22 +35,17 @@ jobs:
             discord:
               - 'opennotes-discord/**'
               - 'packages/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
             playground:
               - 'opennotes-playground/**'
               - 'packages/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
             platform:
               - 'opennotes-platform/**'
               - 'packages/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
             shared:
               - '.github/workflows/**'
               - 'docker-compose*.yml'
               - 'package.json'
+              - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
 
   pre-commit:
