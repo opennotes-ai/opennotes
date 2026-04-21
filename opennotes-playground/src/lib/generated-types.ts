@@ -2393,6 +2393,538 @@ export interface paths {
         patch: operations["patch_moderation_action_endpoint_api_v2_moderation_actions__action_id__patch"];
         trace?: never;
     };
+    "/api/public/v1/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notes Jsonapi
+         * @description List notes with JSON:API format.
+         *
+         *     Supports filtering and pagination per JSON:API specification.
+         *
+         *     Query Parameters:
+         *     - page[number]: Page number (default: 1)
+         *     - page[size]: Page size (default: 20, max: 100)
+         *
+         *     Filter Parameters (equality):
+         *     - filter[status]: Filter by note status (exact match)
+         *     - filter[classification]: Filter by classification
+         *     - filter[community_server_id]: Filter by community server UUID
+         *     - filter[author_id]: Filter by author (user profile UUID)
+         *     - filter[request_id]: Filter by request ID
+         *     - filter[platform_message_id]: Filter by platform message ID (Discord snowflake)
+         *
+         *     Filter Parameters (operators):
+         *     - filter[status__neq]: Exclude notes with this status
+         *     - filter[created_at__gte]: Notes created on or after this datetime
+         *     - filter[created_at__lte]: Notes created on or before this datetime
+         *     - filter[rater_id__not_in]: Exclude notes rated by these users
+         *       (comma-separated list of user profile UUIDs)
+         *     - filter[rater_id]: Include only notes rated by this user (user profile UUID)
+         *
+         *     Returns JSON:API formatted response with data, jsonapi, links, and meta.
+         */
+        get: operations["list_notes_jsonapi_api_public_v1_notes_get"];
+        put?: never;
+        /**
+         * Create Note Jsonapi
+         * @description Create a new note with JSON:API format.
+         *
+         *     JSON:API 1.0 requires:
+         *     - Request body with 'data' object containing 'type' and 'attributes'
+         *     - Response with 201 Created status
+         *     - Response body with 'data' object containing created resource
+         *
+         *     Returns JSON:API formatted response with data and jsonapi keys.
+         */
+        post: operations["create_note_jsonapi_api_public_v1_notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/notes/{note_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Note Jsonapi
+         * @description Get a single note by ID with JSON:API format.
+         *
+         *     Returns JSON:API formatted response with data and jsonapi keys.
+         *     Returns JSON:API error format for 404 and other errors.
+         */
+        get: operations["get_note_jsonapi_api_public_v1_notes__note_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Note Jsonapi
+         * @description Delete a note with JSON:API format.
+         *
+         *     JSON:API 1.0 requires:
+         *     - Response with 204 No Content status on success
+         *     - Response with JSON:API error format on failure
+         *
+         *     Returns None (204 No Content) on success.
+         */
+        delete: operations["delete_note_jsonapi_api_public_v1_notes__note_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Note Jsonapi
+         * @description Update a note with JSON:API format.
+         *
+         *     JSON:API 1.0 requires:
+         *     - Request body with 'data' object containing 'type', 'id', and 'attributes'
+         *     - The 'id' in the body must match the URL parameter
+         *     - Response with 200 OK status
+         *     - Response body with 'data' object containing updated resource
+         *
+         *     Returns JSON:API formatted response with data and jsonapi keys.
+         */
+        patch: operations["update_note_jsonapi_api_public_v1_notes__note_id__patch"];
+        trace?: never;
+    };
+    "/api/public/v1/notes/{note_id}/force-publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Force Publish Note Jsonapi
+         * @description Force-publish a note with JSON:API format (admin only).
+         *
+         *     This endpoint allows administrators to manually publish notes that haven't met
+         *     automatic publication thresholds. The note is marked with force_published flags
+         *     for transparency, and the action is logged with admin user ID and timestamp.
+         *
+         *     Requires admin authentication (service accounts, Open Notes admins, or community admins).
+         *
+         *     Returns JSON:API formatted response with updated note resource.
+         */
+        post: operations["force_publish_note_jsonapi_api_public_v1_notes__note_id__force_publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/notes/{note_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Note Jsonapi
+         * @description Dismiss a note with JSON:API format (admin only).
+         *
+         *     This endpoint allows administrators to manually dismiss notes by setting their
+         *     status to CURRENTLY_RATED_NOT_HELPFUL. It is the exact inverse of force-publish:
+         *     the note is marked with force_published flags for transparency, and any associated
+         *     request is set to COMPLETED.
+         *
+         *     Requires admin authentication (service accounts, Open Notes admins, or community admins).
+         *
+         *     Returns JSON:API formatted response with updated note resource.
+         */
+        post: operations["dismiss_note_jsonapi_api_public_v1_notes__note_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/ratings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Rating Jsonapi
+         * @description Create or upsert a rating with JSON:API format.
+         *
+         *     JSON:API 1.0 requires:
+         *     - Request body with 'data' object containing 'type' and 'attributes'
+         *     - Response with 201 Created status for new rating
+         *     - Response body with 'data' object containing created/updated resource
+         *
+         *     If a rating already exists for the same note + rater, it will be updated (upsert).
+         */
+        post: operations["create_rating_jsonapi_api_public_v1_ratings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/notes/{note_id}/ratings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Note Ratings Jsonapi
+         * @description List all ratings for a note with JSON:API format.
+         *
+         *     JSON:API 1.0 requires:
+         *     - Response with 200 OK status
+         *     - 'data' array containing rating resource objects
+         *     - Each resource has 'type', 'id', and 'attributes'
+         *
+         *     Returns JSON:API formatted response with data and jsonapi keys.
+         */
+        get: operations["list_note_ratings_jsonapi_api_public_v1_notes__note_id__ratings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/ratings/{rating_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Rating Jsonapi
+         * @description Update an existing rating with JSON:API format.
+         *
+         *     JSON:API 1.0 requires:
+         *     - Request body with 'data' object containing 'type', 'id', and 'attributes'
+         *     - Response with 200 OK status for updated resource
+         *     - Response body with 'data' object containing updated resource
+         *
+         *     Users can only update ratings they submitted or if they are a community admin.
+         *     Service accounts can update any rating.
+         */
+        put: operations["update_rating_jsonapi_api_public_v1_ratings__rating_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/notes/{note_id}/ratings/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Rating Stats Jsonapi
+         * @description Get rating statistics for a note with JSON:API format.
+         *
+         *     JSON:API 1.0 requires:
+         *     - Response with 200 OK status
+         *     - 'data' object containing singleton/aggregate resource
+         *     - Resource has 'type', 'id', and 'attributes'
+         *
+         *     Users can only view rating stats for notes in communities they are members of.
+         *     Service accounts can view all rating stats.
+         */
+        get: operations["get_rating_stats_jsonapi_api_public_v1_notes__note_id__ratings_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/user-profiles/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lookup User Profile Jsonapi
+         * @description Look up a user profile by platform and platform user ID with JSON:API format.
+         *
+         *     Returns the internal UUID for a user profile based on its platform-specific identifier.
+         *     Auto-creates the profile if it doesn't exist (for service accounts/bots).
+         *
+         *     Args:
+         *         platform: Platform type (discord, discourse, github, email)
+         *         platform_user_id: Platform-specific user ID
+         *         provider_scope: Provider scope (e.g., Discourse domain). Defaults to '*'.
+         *             For Discourse, this must be the instance domain (not '*').
+         *
+         *     Returns:
+         *         JSON:API formatted response with user profile details
+         *
+         *     Raises:
+         *         404: If user profile not found and user is not a service account
+         *         400: If platform is not a valid AuthProvider or if Discourse lookup missing provider_scope
+         */
+        get: operations["lookup_user_profile_jsonapi_api_public_v1_user_profiles_lookup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/community-servers/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lookup Community Server Jsonapi
+         * @description Look up a community server by platform and platform ID with JSON:API format.
+         *
+         *     Returns the internal UUID for a community server based on its platform-specific identifier.
+         *     Auto-creates the community server if it doesn't exist (for service accounts/bots).
+         *
+         *     Args:
+         *         platform: Platform type (default: "discord")
+         *         platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
+         *
+         *     Returns:
+         *         JSON:API formatted response with community server details
+         *
+         *     Raises:
+         *         404: If community server not found and user is not a service account
+         */
+        get: operations["lookup_community_server_jsonapi_api_public_v1_community_servers_lookup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/community-servers/{server_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Community Server Jsonapi
+         * @description Get a community server by ID with JSON:API format.
+         *
+         *     Returns JSON:API formatted response with data and jsonapi keys.
+         *     Returns JSON:API error format for 404 and other errors.
+         */
+        get: operations["get_community_server_jsonapi_api_public_v1_community_servers__server_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Requests Jsonapi
+         * @description List requests with JSON:API format.
+         *
+         *     Supports filtering and pagination per JSON:API specification.
+         *
+         *     Query Parameters:
+         *     - page[number]: Page number (default: 1)
+         *     - page[size]: Page size (default: 20, max: 100)
+         *
+         *     Filter Parameters:
+         *     - filter[status]: Filter by request status (PENDING, IN_PROGRESS, COMPLETED, FAILED)
+         *     - filter[community_server_id]: Filter by community server UUID
+         *     - filter[requested_by]: Filter by requester participant ID
+         *     - filter[requested_at__gte]: Requests created on or after this datetime
+         *     - filter[requested_at__lte]: Requests created on or before this datetime
+         *
+         *     Returns JSON:API formatted response with data, jsonapi, links, and meta.
+         */
+        get: operations["list_requests_jsonapi_api_public_v1_requests_get"];
+        put?: never;
+        /**
+         * Create Request Jsonapi
+         * @description Create a new request with JSON:API format.
+         *
+         *     JSON:API 1.1 requires:
+         *     - Request body with 'data' object containing 'type' and 'attributes'
+         *     - Response with 201 Created status
+         *     - Response body with 'data' object containing created resource
+         *
+         *     Returns JSON:API formatted response with data and jsonapi keys.
+         */
+        post: operations["create_request_jsonapi_api_public_v1_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Request Jsonapi
+         * @description Get a single request by ID with JSON:API format.
+         *
+         *     Returns JSON:API formatted response with data and jsonapi keys.
+         *     Returns JSON:API error format for 404 and other errors.
+         */
+        get: operations["get_request_jsonapi_api_public_v1_requests__request_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Request Jsonapi
+         * @description Update a request with JSON:API format.
+         *
+         *     JSON:API 1.1 requires:
+         *     - Request body with 'data' object containing 'type', 'id', and 'attributes'
+         *     - The 'id' in the body must match the URL parameter
+         *     - Response with 200 OK status
+         *     - Response body with 'data' object containing updated resource
+         *
+         *     Returns JSON:API formatted response with data and jsonapi keys.
+         */
+        patch: operations["update_request_jsonapi_api_public_v1_requests__request_id__patch"];
+        trace?: never;
+    };
+    "/api/public/v1/requests/{request_id}/ai-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Ai Note Jsonapi
+         * @description Generate an AI-powered note for a specific request in JSON:API format.
+         *
+         *     This endpoint triggers on-demand AI note generation for requests that have
+         *     associated fact-check data. The AI will analyze the original message and
+         *     the matched fact-check information to generate a helpful community note.
+         *
+         *     Requirements:
+         *     - Request must exist and have fact-check metadata (dataset_item_id, similarity_score, dataset_name)
+         *     - AI note writing must be enabled for the community server
+         *     - Rate limits: 5 per minute, 20 per hour
+         *
+         *     Returns JSON:API formatted response with the generated note resource.
+         */
+        post: operations["generate_ai_note_jsonapi_api_public_v1_requests__request_id__ai_notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/moderation-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Moderation Actions Endpoint
+         * @description List moderation actions with optional filters.
+         *
+         *     Query params:
+         *     - community_server_id: filter by community
+         *     - action_state: filter by state (e.g. proposed, applied)
+         *     - action_tier: filter by tier
+         *     - limit: max results (default 50)
+         *     - offset: pagination offset (default 0)
+         */
+        get: operations["list_moderation_actions_endpoint_api_public_v1_moderation_actions_get"];
+        put?: never;
+        /**
+         * Create Moderation Action Endpoint
+         * @description Create a moderation action in PROPOSED state.
+         *
+         *     Publishes a moderation_action.proposed NATS event after successful creation.
+         */
+        post: operations["create_moderation_action_endpoint_api_public_v1_moderation_actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/v1/moderation-actions/{action_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Moderation Action Endpoint
+         * @description Fetch a single moderation action by UUID.
+         */
+        get: operations["get_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Moderation Action Endpoint
+         * @description Transition a moderation action to a new state.
+         *
+         *     Validates the state transition against VALID_TRANSITIONS and returns 422
+         *     on invalid transitions.  Publishes a NATS event for all target states
+         *     except scan_exempt (plugin-initiated acknowledgement, no event needed).
+         */
+        patch: operations["patch_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__patch"];
+        trace?: never;
+    };
     "/api/v1/webhooks/register": {
         parameters: {
             query?: never;
@@ -15058,6 +15590,978 @@ export interface operations {
         };
     };
     patch_moderation_action_endpoint_api_v2_moderation_actions__action_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModerationActionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notes_jsonapi_api_public_v1_notes_get: {
+        parameters: {
+            query?: {
+                "page[number]"?: number;
+                "page[size]"?: number;
+                "filter[status]"?: components["schemas"]["NoteStatus"] | null;
+                "filter[status__neq]"?: components["schemas"]["NoteStatus"] | null;
+                "filter[classification]"?: components["schemas"]["NoteClassification"] | null;
+                "filter[community_server_id]"?: string | null;
+                "filter[author_id]"?: string | null;
+                "filter[request_id]"?: string | null;
+                "filter[created_at__gte]"?: string | null;
+                "filter[created_at__lte]"?: string | null;
+                "filter[rater_id__not_in]"?: string | null;
+                "filter[rater_id]"?: string | null;
+                "filter[platform_message_id]"?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteListResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_note_jsonapi_api_public_v1_notes_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_note_jsonapi_api_public_v1_notes__note_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_note_jsonapi_api_public_v1_notes__note_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_note_jsonapi_api_public_v1_notes__note_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    force_publish_note_jsonapi_api_public_v1_notes__note_id__force_publish_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_note_jsonapi_api_public_v1_notes__note_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_rating_jsonapi_api_public_v1_ratings_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RatingCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatingSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_note_ratings_jsonapi_api_public_v1_notes__note_id__ratings_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatingListResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_rating_jsonapi_api_public_v1_ratings__rating_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                rating_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RatingUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatingSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rating_stats_jsonapi_api_public_v1_notes__note_id__ratings_stats_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatingStatsSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_user_profile_jsonapi_api_public_v1_user_profiles_lookup_get: {
+        parameters: {
+            query: {
+                /** @description Platform type (discord, discourse, github, email) */
+                platform?: string;
+                /** @description Platform-specific user ID (e.g., Discord user ID, Discourse user ID) */
+                platform_user_id: string;
+                /** @description Provider scope (e.g., Discourse domain). '*' for global. */
+                provider_scope?: string;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileLookupResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_community_server_jsonapi_api_public_v1_community_servers_lookup_get: {
+        parameters: {
+            query: {
+                /** @description Platform type */
+                platform?: string;
+                /** @description Platform-specific ID (e.g., Discord guild ID) */
+                platform_community_server_id: string;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityServerSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_community_server_jsonapi_api_public_v1_community_servers__server_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityServerSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_requests_jsonapi_api_public_v1_requests_get: {
+        parameters: {
+            query?: {
+                "page[number]"?: number;
+                "page[size]"?: number;
+                "filter[status]"?: components["schemas"]["RequestStatus"] | null;
+                "filter[community_server_id]"?: string | null;
+                "filter[requested_by]"?: string | null;
+                "filter[requested_at__gte]"?: string | null;
+                "filter[requested_at__lte]"?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestListJSONAPIResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_request_jsonapi_api_public_v1_requests_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_request_jsonapi_api_public_v1_requests__request_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_request_jsonapi_api_public_v1_requests__request_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_ai_note_jsonapi_api_public_v1_requests__request_id__ai_notes_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSingleResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_moderation_actions_endpoint_api_public_v1_moderation_actions_get: {
+        parameters: {
+            query?: {
+                community_server_id?: string | null;
+                action_state?: components["schemas"]["ActionState"] | null;
+                action_tier?: components["schemas"]["ActionTier"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_moderation_action_endpoint_api_public_v1_moderation_actions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModerationActionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__patch: {
         parameters: {
             query?: never;
             header?: {

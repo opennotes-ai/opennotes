@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Open Notes Server",
+    "title": "Open Notes Scoring API",
     "version": "0.0.1"
   },
   "paths": {
@@ -6867,9 +6867,7 @@
             "enum": [
               "openai",
               "anthropic",
-              "google",
-              "cohere",
-              "custom"
+              "vertex_ai"
             ],
             "title": "Provider"
           },
@@ -7182,9 +7180,7 @@
             "enum": [
               "openai",
               "anthropic",
-              "google",
-              "cohere",
-              "custom"
+              "vertex_ai"
             ],
             "title": "Provider"
           },
