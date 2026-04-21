@@ -7,6 +7,9 @@
     "light": "#3EB489",
     "dark": "#3EB489"
   },
+  "fonts": {
+    "family": "IBM Plex Sans"
+  },
   "navigation": {
     "tabs": [
       {
