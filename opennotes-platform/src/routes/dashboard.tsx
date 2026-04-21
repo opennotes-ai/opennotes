@@ -3,6 +3,7 @@ import {
   createAsync,
   query,
   revalidate,
+  useAction,
   useSubmission,
 } from "@solidjs/router";
 import {
@@ -130,6 +131,8 @@ export default function DashboardPage() {
   const keysResult = createAsync(() => getKeys());
   const createSubmission = useSubmission(createKeyAction);
   const revokeSubmission = useSubmission(revokeKeyAction);
+  const createKey = useAction(createKeyAction);
+  const revokeKey = useAction(revokeKeyAction);
 
   const [showCreateForm, setShowCreateForm] = createSignal(false);
   const [selectedScopes, setSelectedScopes] = createSignal<Set<string>>(
@@ -187,7 +190,7 @@ export default function DashboardPage() {
     for (const scope of selectedScopes()) {
       formData.append("scopes", scope);
     }
-    const result = await createKeyAction(formData);
+    const result = await createKey(formData);
     if (result._error === "validation") {
       setCreateError("Please provide a key name and select at least one scope.");
     } else if (result._error === "server_error") {
@@ -204,7 +207,7 @@ export default function DashboardPage() {
     setRevokeError(null);
     const formData = new FormData();
     formData.set("keyId", target.id);
-    const result = await revokeKeyAction(formData);
+    const result = await revokeKey(formData);
     if (result._error) {
       setRevokeError("Failed to revoke key. Please try again.");
     } else {
