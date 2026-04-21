@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import { Card } from "@opennotes/ui/components/ui/card";
 import type { components } from "~/lib/generated-types";
 
 type ToneDynamics = components["schemas"]["ToneDynamicsSection"];
@@ -114,10 +115,11 @@ export default function ToneDynamicsSection(
   props: ToneDynamicsSectionProps,
 ) {
   return (
-    <section
+    <Card
+      role="region"
       aria-labelledby="sidebar-tone-heading"
       data-testid="sidebar-tone-dynamics"
-      class="space-y-3 rounded-lg border border-border bg-card p-4"
+      class="space-y-3 p-4"
     >
       <header>
         <h3
@@ -147,6 +149,6 @@ export default function ToneDynamicsSection(
         />
         <SCDEntry scd={props.toneDynamics.scd} />
       </div>
-    </section>
+    </Card>
   );
 }

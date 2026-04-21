@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import { Card } from "@opennotes/ui/components/ui/card";
 import type { components } from "~/lib/generated-types";
 
 type OpinionsPayload = components["schemas"]["OpinionsSection"];
@@ -123,10 +124,11 @@ function SubjectiveClaimsList(props: { claims: SubjectiveClaim[] }) {
 
 export default function OpinionsSection(props: OpinionsSectionProps) {
   return (
-    <section
+    <Card
+      role="region"
       aria-labelledby="sidebar-opinions-heading"
       data-testid="sidebar-opinions"
-      class="space-y-3 rounded-lg border border-border bg-card p-4"
+      class="space-y-3 p-4"
     >
       <header>
         <h3
@@ -156,6 +158,6 @@ export default function OpinionsSection(props: OpinionsSectionProps) {
           claims={props.opinions.opinions_report.subjective_claims}
         />
       </div>
-    </section>
+    </Card>
   );
 }

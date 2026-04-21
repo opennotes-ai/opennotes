@@ -1,6 +1,9 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 @import "@opennotes/tokens";
 @plugin "@tailwindcss/typography";
+
+@source "../../packages/ui/src";
 
 @layer base {
   * {

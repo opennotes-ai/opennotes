@@ -317,9 +317,15 @@ importers:
 
   opennotes-vibecheck-web:
     dependencies:
+      '@kobalte/core':
+        specifier: ^0.13.11
+        version: 0.13.11(solid-js@1.9.12)
       '@opennotes/tokens':
         specifier: workspace:*
         version: link:../packages/tokens
+      '@opennotes/ui':
+        specifier: workspace:*
+        version: link:../packages/ui
       '@solidjs/meta':
         specifier: ^0.29.4
         version: 0.29.4(solid-js@1.9.12)
@@ -359,6 +365,9 @@ importers:
       tailwindcss:
         specifier: ^4.2.1
         version: 4.2.3
+      tw-animate-css:
+        specifier: ^1.4.0
+        version: 1.4.0
       vinxi:
         specifier: ^0.5.3
         version: 0.5.11(@types/node@20.19.39)(db0@0.3.4)(ioredis@5.10.1)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)

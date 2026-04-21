@@ -1,4 +1,5 @@
 import { For, Show, createMemo } from "solid-js";
+import { Card } from "@opennotes/ui/components/ui/card";
 import type { components } from "~/lib/generated-types";
 
 type FactsClaims = components["schemas"]["FactsClaimsSection"];
@@ -127,10 +128,11 @@ function KnownMisinfoList(props: { items: FactCheckMatch[] }) {
 
 export default function FactsClaimsSection(props: FactsClaimsSectionProps) {
   return (
-    <section
+    <Card
+      role="region"
       aria-labelledby="sidebar-facts-heading"
       data-testid="sidebar-facts-claims"
-      class="space-y-3 rounded-lg border border-border bg-card p-4"
+      class="space-y-3 p-4"
     >
       <header>
         <h3
@@ -163,6 +165,6 @@ export default function FactsClaimsSection(props: FactsClaimsSectionProps) {
           items={props.factsClaims.known_misinformation ?? []}
         />
       </div>
-    </section>
+    </Card>
   );
 }

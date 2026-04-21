@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import { Card } from "@opennotes/ui/components/ui/card";
 import type { components } from "~/lib/generated-types";
 
 type SafetyPayload = components["schemas"]["SafetySection"];
@@ -21,10 +22,11 @@ export default function SafetySection(props: SafetySectionProps) {
     match.flagged_categories ?? [];
 
   return (
-    <section
+    <Card
+      role="region"
       aria-labelledby="sidebar-safety-heading"
       data-testid="sidebar-safety"
-      class="space-y-3 rounded-lg border border-border bg-card p-4"
+      class="space-y-3 p-4"
     >
       <header class="flex items-baseline justify-between gap-2">
         <h3
@@ -109,6 +111,6 @@ export default function SafetySection(props: SafetySectionProps) {
           </For>
         </ul>
       </Show>
-    </section>
+    </Card>
   );
 }

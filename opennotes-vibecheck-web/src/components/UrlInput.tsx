@@ -1,4 +1,6 @@
 import { createSignal, Show, type JSX } from "solid-js";
+import { Input } from "@opennotes/ui/components/ui/input";
+import { Button } from "@opennotes/ui/components/ui/button";
 
 export type UrlValidationResult =
   | { ok: true; normalized: string }
@@ -73,7 +75,7 @@ export default function UrlInput(props: UrlInputProps) {
         URL to analyze
       </label>
       <div class="flex flex-col gap-2 sm:flex-row">
-        <input
+        <Input
           id="vibecheck-url"
           name="url"
           type="url"
@@ -90,15 +92,16 @@ export default function UrlInput(props: UrlInputProps) {
           }}
           aria-invalid={error() ? "true" : "false"}
           aria-describedby={error() ? "vibecheck-url-error" : undefined}
-          class="flex-1 rounded-md border border-input bg-background px-4 py-3 text-base shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-destructive/40"
+          class="flex-1 px-4 py-3 text-base shadow-xs"
         />
-        <button
+        <Button
           type="submit"
+          size="lg"
           disabled={props.pending}
-          class="inline-flex items-center justify-center rounded-md bg-primary px-5 py-3 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60"
+          class="px-5 py-3"
         >
           {props.pending ? "Analyzing..." : "Analyze"}
-        </button>
+        </Button>
       </div>
       <Show when={error()}>
         {(message) => (

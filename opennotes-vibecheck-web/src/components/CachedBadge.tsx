@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import { Badge } from "@opennotes/ui/components/ui/badge";
 
 export interface CachedBadgeProps {
   cached: boolean;
@@ -23,9 +24,10 @@ function formatRelative(iso: string | null | undefined): string | null {
 export default function CachedBadge(props: CachedBadgeProps) {
   return (
     <Show when={props.cached}>
-      <span
+      <Badge
+        variant="muted"
         data-testid="cached-badge"
-        class="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground"
+        class="gap-1 rounded-full"
         title="Served from the vibecheck cache"
       >
         <svg
@@ -48,7 +50,7 @@ export default function CachedBadge(props: CachedBadgeProps) {
             <span class="text-muted-foreground/80">&middot; {rel()}</span>
           )}
         </Show>
-      </span>
+      </Badge>
     </Show>
   );
 }
