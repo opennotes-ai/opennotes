@@ -1307,8 +1307,9 @@ class TestWebSearchToolGating:
     def test_websearch_supported_providers_is_frozenset(self):
         assert isinstance(WEBSEARCH_SUPPORTED_PROVIDERS, frozenset)
         assert "anthropic" in WEBSEARCH_SUPPORTED_PROVIDERS
-        assert "google-vertex" in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "vertex_ai" in WEBSEARCH_SUPPORTED_PROVIDERS
         assert "groq" in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "google-vertex" not in WEBSEARCH_SUPPORTED_PROVIDERS
         assert "google" not in WEBSEARCH_SUPPORTED_PROVIDERS
         assert "google-gla" not in WEBSEARCH_SUPPORTED_PROVIDERS
         assert "openai" not in WEBSEARCH_SUPPORTED_PROVIDERS
@@ -1587,6 +1588,20 @@ class TestIsResearchAvailable:
         for provider in ("anthropic", "google-vertex", "groq"):
             deps = self._make_deps(provider, tool_config={"research_enabled": True})
             assert _is_research_available(deps) is True
+
+    def test_true_for_legacy_slash_vertex_ai_flavor(self):
+        deps = SimAgentDeps(
+            db=MagicMock(),
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="Test",
+            model_name=ModelId.from_slash_format("vertex_ai/gemini-3-flash"),
+            tool_config={"research_enabled": True},
+        )
+        assert _is_research_available(deps) is True
 
 
 class TestResearchPromptsUnsupportedProvider:

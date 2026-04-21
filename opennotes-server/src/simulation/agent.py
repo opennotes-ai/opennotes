@@ -52,7 +52,7 @@ class SimAgentDeps:
     agent_profile_id: UUID | None = None
 
 
-WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "google-vertex", "groq"})
+WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "vertex_ai", "groq"})
 
 
 def _is_research_available(deps: SimAgentDeps) -> bool:
@@ -60,7 +60,7 @@ def _is_research_available(deps: SimAgentDeps) -> bool:
     return bool(
         tc
         and tc.get("research_enabled")
-        and deps.model_name.provider in WEBSEARCH_SUPPORTED_PROVIDERS
+        and deps.model_name.canonical_provider in WEBSEARCH_SUPPORTED_PROVIDERS
     )
 
 
