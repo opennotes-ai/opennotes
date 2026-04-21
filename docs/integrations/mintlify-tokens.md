@@ -29,14 +29,17 @@ CSS.
 Mintlify is different. Its build pipeline runs **outside** the pnpm workspace:
 
 - Mintlify Cloud (hosted preview + production) clones the docs repo/path,
-  runs `mintlify build`, and deploys. It does not have visibility into
+  runs `mint build`, and deploys. It does not have visibility into
   `opennotes/packages/tokens/` as an `npm` module unless the package is
   published (or vendored).
-- `mintlify build` consumes `mint.json` plus MDX content. Custom styling is
-  injected via the `styles` field in `mint.json`, which points at CSS files
-  relative to the docs project root.
+- `mint build` consumes `docs.json` plus MDX content. Custom CSS is **not**
+  referenced from `docs.json` — the current CLI auto-discovers any `.css`
+  file placed at the docs project root (e.g. `style.css`) and injects it
+  into every page. See [Mintlify custom scripts docs][mintlify-css].
 - The docs project lives (per TASK-1460) at `opennotes/opennotes-docs/` — a
   sibling of `packages/tokens/` inside the `opennotes` submodule.
+
+[mintlify-css]: https://www.mintlify.com/docs/customize/custom-scripts
 
 **Implication:** shipping the same token CSS into Mintlify is either an npm
 publish, a build-time file copy, or a wait-until-published block. One of those
@@ -71,18 +74,18 @@ and let Mintlify CI `pnpm install` resolve it like any other dep.
 
 ### (b) Vendor a snapshot of the CSS into `opennotes-docs/` during docs CI
 
-Docs CI copies the four CSS files from `packages/tokens/src/` into a vendored
+Docs CI copies the CSS files from `packages/tokens/src/` into a vendored
 path inside the docs project (e.g., `opennotes-docs/styles/tokens/`) as a
-pre-build step, then `mintlify build` consumes them via `mint.json > styles`.
+pre-build step. A small root-level `style.css` in `opennotes-docs/` then
+`@import`s the vendored files; Mintlify auto-loads `style.css` at build.
 
 **Pros**
 
 - Zero new publishing infrastructure. Three-line `cp` step.
 - Always tracks the current `main` of `packages/tokens/` — the whole point
   while tokens are still iterating.
-- Mintlify never sees the pnpm workspace; it only sees a plain CSS file
-  committed-or-vendored into its own project root, which is what its build
-  expects.
+- Mintlify never sees the pnpm workspace; it only sees a plain CSS file at
+  the docs project root, which is what its build expects.
 - Safe to revert — delete the `styles/tokens/` directory and the CI step.
 - Matches the spirit of `"private": true` on the tokens package until an
   external consumer forces publication.
@@ -117,7 +120,8 @@ Ship `opennotes-docs/` with Mintlify defaults for now; revisit theming once
 ## 3. Chosen mechanism: (b) vendor CSS during docs CI
 
 **Decision:** docs CI copies `packages/tokens/src/*.css` into
-`opennotes-docs/styles/tokens/` before `mintlify build`.
+`opennotes-docs/styles/tokens/` before `mint build`, and a root `style.css`
+in `opennotes-docs/` `@import`s them.
 
 **Rationale**
 
@@ -167,27 +171,30 @@ under `.dark` (dark), gated by `@custom-variant dark (&:is(.dark *));`.
 
 No remapping layer is required — Mintlify's dark toggle and our `.dark`
 selector already agree on the class name. The vendored `theme.css` becomes
-the authoritative palette source; any `mint.json > colors.primary` entries
+the authoritative palette source; any `docs.json > colors.primary` entries
 should be computed to match `--primary` (OKLCH `oklch(0.65 0.15 165)` in
 light, `oklch(0.70 0.15 165)` in dark) or dropped in favor of the CSS
 variable directly.
 
 **Gotcha — OKLCH:** tokens are authored in OKLCH. Mintlify's default
-`mint.json` colors are hex. Do not try to mirror OKLCH into
-`mint.json > colors.*` by eye — set `mint.json` primary to the nearest hex
-equivalent (`#3EB489`-ish for light primary) for Mintlify-internal
+`docs.json` colors are hex. Do not try to mirror OKLCH into
+`docs.json > colors.*` by eye — set the `docs.json` primary to the nearest
+hex equivalent (`#3EB489`-ish for light primary) for Mintlify-internal
 constructs (search highlight, sidebar active), and let everything else flow
 from the CSS variables. The authoritative color is still the CSS var; hex
 is just a fallback Mintlify needs for widgets that don't read CSS vars.
 
 ## 5. Font strategy
 
-`@opennotes/tokens` ships two font entry points:
+`@opennotes/tokens` ships two font entry points, both opt-in:
 
 - `fonts-cdn.css` — imports IBM Plex Sans + Serif from Google Fonts CDN.
-  This is what `index.css` pulls in by default.
 - `fonts-self-hosted.css` — imports from `@fontsource/ibm-plex-sans` +
   `@fontsource/ibm-plex-serif` npm packages.
+
+The default `@opennotes/tokens` entry (`index.css`) does **not** import any
+fonts; consumers choose explicitly. See
+[`packages/tokens/README.md`](../../packages/tokens/README.md#font-strategy).
 
 **Choice for docs:** **CDN (`fonts-cdn.css`).**
 
@@ -204,24 +211,30 @@ Reasons:
 - `fonts-self-hosted.css` remains available as an opt-in if a
   privacy/bandwidth/CSP constraint emerges later.
 
-Implementation: the vendored `index.css` already `@import`s `fonts-cdn.css`,
-so no extra wiring is needed.
+Implementation: the root `style.css` explicitly `@import`s
+`./styles/tokens/fonts-cdn.css` after `theme.css` (see section 6.3).
 
 ## 6. Concrete next action (mechanism (b) implementation spec)
 
-TASK-1460.01 (Mintlify scaffold) must include the following three artifacts.
+TASK-1460.01 (Mintlify scaffold) must include the following artifacts.
 
 ### 6.1 Directory layout in `opennotes-docs/`
 
 ```
 opennotes-docs/
-  mint.json                 # Mintlify config, points styles at ./styles/tokens/index.css
+  docs.json                 # Mintlify config (theme, colors, navigation, etc.)
+  style.css                 # root-level, auto-discovered by Mintlify; @imports vendored tokens
   styles/
     tokens/                 # gitignored — populated by CI
       .gitkeep
   .gitignore                # ignores styles/tokens/*.css
   package.json              # scripts.prebuild = vendor step
 ```
+
+Mintlify's current CLI auto-loads any `.css` file placed at the docs project
+root (`style.css`). There is no `styles` field in `docs.json` — the
+pre-`docs.json` `mint.json > styles` pattern is deprecated. See
+[Mintlify custom scripts docs][mintlify-css].
 
 Rationale for **not** committing the vendored CSS: drift risk. A
 CI-regenerated directory is always in sync with whatever
@@ -236,16 +249,32 @@ Add to `opennotes-docs/package.json`:
   "scripts": {
     "vendor:tokens": "mkdir -p styles/tokens && cp ../packages/tokens/src/*.css styles/tokens/",
     "prebuild": "pnpm run vendor:tokens",
-    "dev": "pnpm run vendor:tokens && mintlify dev",
-    "build": "mintlify build"
+    "dev": "pnpm run vendor:tokens && mint dev",
+    "build": "mint build"
   }
 }
 ```
 
-This runs automatically before `mintlify build` (via `prebuild`) and
-explicitly before `mintlify dev` (no built-in `predev` in Mintlify).
+This runs automatically before `mint build` (via `prebuild`) and
+explicitly before `mint dev` (no built-in `predev` in Mintlify).
 
-### 6.3 Mintlify CI step (GitHub Actions, authoritative production build)
+### 6.3 Root `style.css`
+
+`opennotes-docs/style.css` (committed; imports the vendored files):
+
+```css
+/* Auto-loaded by Mintlify CLI on every page. Vendored tokens live in
+   styles/tokens/ (gitignored, populated by `pnpm run vendor:tokens`). */
+@import "./styles/tokens/theme.css";
+@import "./styles/tokens/animations.css";
+@import "./styles/tokens/fonts-cdn.css";
+```
+
+`./styles/tokens/index.css` is not referenced because it only re-exports
+`theme.css` + `animations.css` without fonts; docs want fonts, so it imports
+the split files directly.
+
+### 6.4 Mintlify CI step (GitHub Actions, authoritative production build)
 
 For the dedicated docs preview/deploy workflow (TASK-1460.07):
 
@@ -264,10 +293,10 @@ jobs:
           mkdir -p styles/tokens
           cp ../packages/tokens/src/*.css styles/tokens/
       - name: Install Mintlify CLI
-        run: npm i -g mintlify
+        run: npm i -g mint
       - name: Build
         working-directory: opennotes/opennotes-docs
-        run: mintlify build
+        run: mint build
 ```
 
 If `docs.opennotes.ai` is hosted on Mintlify Cloud (recommended per
@@ -275,26 +304,34 @@ TASK-1460.06), Mintlify Cloud honors `scripts.prebuild` in `package.json`, so
 the `.github/workflows/docs.yml` version above is only needed for the
 link-check CI (TASK-1460.07), not for production deploys.
 
-### 6.4 `mint.json` wiring
+### 6.5 `docs.json` wiring
+
+`docs.json` does **not** reference CSS files. The root `style.css` is picked
+up automatically. Keep `docs.json` focused on theme, colors, and navigation:
 
 ```json
 {
-  "name": "OpenNotes Docs",
+  "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "styles": ["/styles/tokens/index.css"]
+  "name": "OpenNotes Docs",
+  "colors": {
+    "primary": "#3EB489",
+    "light":   "#3EB489",
+    "dark":    "#3EB489"
+  }
 }
 ```
 
-`index.css` resolves to the vendored copy, which itself `@import`s
-`theme.css`, `fonts-cdn.css`, and `animations.css`. One entry point, full
-token surface.
+The authoritative palette still comes from the CSS variables in
+`styles/tokens/theme.css`; `colors.*` in `docs.json` is the hex fallback
+for Mintlify-internal widgets that don't read CSS vars (see section 4).
 
-### 6.5 Mintlify version target
+### 6.6 Mintlify version target
 
-At the time of writing, the integration targets **Mintlify CLI `^4.x`** (the
-current major). If the CLI major version bumps and the `styles` field or
-`prebuild` behavior changes, re-validate steps 6.1–6.4 before merging the
-upgrade.
+At the time of writing, the integration targets the current Mintlify CLI
+(`mint`). If the CLI drops root-level `style.css` auto-discovery or
+reintroduces a `styles` field, re-validate sections 6.1–6.5 before merging
+the upgrade.
 
 ## 7. Version update flow
 
@@ -319,7 +356,8 @@ upgrade.
 
 - `@opennotes/tokens` flips to `"private": false`, gets a semver release.
 - `opennotes-docs/package.json` declares `"@opennotes/tokens": "^0.1.0"` and
-  `import`s from the package instead of `styles/tokens/`.
+  `@import`s from the package (e.g.
+  `@import "@opennotes/tokens/theme.css";`) instead of `./styles/tokens/`.
 - Docs CI drops the `vendor:tokens` / `prebuild` scripts; adds `pnpm install`
   and lets Mintlify resolve the package normally.
 - Token version bumps become explicit: open a PR that bumps the range in
@@ -331,7 +369,8 @@ upgrade.
 
 - **None required** for mechanism (b). The CI vendor step is the entirety
   of the integration. Implementation happens inside TASK-1460.01 (Mintlify
-  scaffold) using the spec in section 6.
+  scaffold) using the spec in section 6 — coordinated via TASK-1468.12
+  (handoff task).
 - **If the trigger in section 3 fires** (first external SDK consumer, or the
   `"private": true` flag is removed), file a follow-up task
   `Publish @opennotes/tokens to npm for Mintlify consumption` with labels
@@ -347,5 +386,6 @@ upgrade.
 - Parent task: TASK-1460 — Set up Mintlify docs site
 - Gating subtask: TASK-1460.01 — Scaffold `opennotes-docs/`
 - Source task: TASK-1468.03 — Document Mintlify integration path
+- Handoff task: TASK-1468.12 — Mintlify docs CI vendors `@opennotes/tokens`
 - Design system landing: TASK-1468 — Extract playground design system into
   `@opennotes/tokens` + `@opennotes/ui`

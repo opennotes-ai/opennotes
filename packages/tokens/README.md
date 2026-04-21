@@ -11,16 +11,22 @@ marketing surfaces.
 
 | Import | What you get |
 |---|---|
-| `@opennotes/tokens` | Everything (theme + fonts via CDN + animations) |
+| `@opennotes/tokens` | Theme variables + animations (no fonts) |
 | `@opennotes/tokens/theme.css` | Tailwind v4 `@theme inline`, `:root`, `.dark` OKLCH variables |
-| `@opennotes/tokens/fonts.css` | IBM Plex Sans + Serif via Google Fonts CDN (default) |
-| `@opennotes/tokens/fonts-cdn.css` | Same as `fonts.css` — explicit CDN variant |
-| `@opennotes/tokens/fonts-self-hosted.css` | IBM Plex Sans + Serif via `@fontsource/*` |
 | `@opennotes/tokens/animations.css` | `content-show`, `content-hide`, `anchor-fade` keyframes + `.anchor-highlight` |
+| `@opennotes/tokens/fonts-cdn.css` | IBM Plex Sans + Serif via Google Fonts CDN (opt-in) |
+| `@opennotes/tokens/fonts-self-hosted.css` | IBM Plex Sans + Serif via `@fontsource/*` (opt-in; requires consumer install) |
+
+`@opennotes/tokens/fonts.css` is kept as an alias of `fonts-cdn.css` for
+backward compatibility; new consumers should prefer the explicit
+`fonts-cdn.css` / `fonts-self-hosted.css` names.
 
 ## Usage
 
 ### Tailwind v4 app (Solid playground / platform)
+
+Default (no fonts — use SSR `<link>` tags or add a font entry point
+explicitly):
 
 ```css
 /* src/app.css */
@@ -28,10 +34,17 @@ marketing surfaces.
 @import "@opennotes/tokens";
 ```
 
-### Opt into self-hosted fonts
+Opt in to CDN fonts via CSS (small apps without SSR `<link>` control):
 
-Skip the CDN (offline builds, CSP constraints, privacy): import the parts
-individually.
+```css
+/* src/app.css */
+@import "tailwindcss";
+@import "@opennotes/tokens";
+@import "@opennotes/tokens/fonts-cdn.css";
+```
+
+Opt in to self-hosted fonts (offline builds, CSP constraints, privacy) —
+requires `@fontsource/*` in your own `dependencies`:
 
 ```css
 @import "tailwindcss";
@@ -40,77 +53,75 @@ individually.
 @import "@opennotes/tokens/animations.css";
 ```
 
-Self-hosted consumers must also add `@fontsource/ibm-plex-sans` and
-`@fontsource/ibm-plex-serif` to their own `dependencies` — see
-[Self-hosted migration recipe](#self-hosted-migration-recipe) below.
+See [Self-hosted migration recipe](#self-hosted-migration-recipe) below.
 
 ## Font strategy
 
-**Decision: CDN by default, self-hosted is an explicit opt-in.**
+**Decision: fonts are opt-in.** The default `@opennotes/tokens` entry ships
+theme variables and animations only; consumers choose a font-loading strategy
+explicitly (SSR `<link>` tags, CDN `@import`, or self-hosted `@fontsource/*`).
 
-Three mechanisms were considered:
+Why opt-in rather than CDN-by-default:
 
-| Mechanism | Default in `index.css` | Chosen |
-|---|---|---|
-| **CDN-default** — `@import "./fonts-cdn.css"` pulls IBM Plex from `fonts.googleapis.com` | yes | **yes** |
-| Self-hosted-default — `@import "./fonts-self-hosted.css"` pulls `@fontsource/*` | no | no |
-| Opt-in-only — `index.css` imports no font stylesheet; every consumer picks explicitly | no | no |
+- **CSP / privacy postures differ across consumers.** Platform ships with a
+  tight CSP and had zero font requests pre-migration; silently adding
+  `fonts.googleapis.com` requests because of a token import would be a
+  behavior regression.
+- **Not every consumer needs fonts.** Platform pre-migration didn't load
+  IBM Plex at all; the Discourse plugin runs inside Discourse's own font
+  stack. Forcing a font import would be dead payload for those surfaces.
+- **Playground controls FOUC via SSR `<link>` preload.** Duplicating that
+  via `@import` produces double requests and complicates the eventual
+  removal of the `<link>` tags (see `entry-server.tsx` TODO →
+  TASK-1468.11).
 
-Rationale for CDN-default:
+Only the playground was loading Google Fonts via `<link>` tags pre-migration;
+the earlier "every existing consumer already pulled Google Fonts" framing was
+too broad.
 
-- Zero-migration parity with the pre-`@opennotes/tokens` baseline — every existing
-  consumer (playground, platform, Mintlify, marketing, Discourse plugin) already
-  pulled Google Fonts via `<link>` tags. Flipping to self-hosted would be a
-  behavior change for all of them at once.
-- Matches TASK-1468.02's conservative "keep `<link>` tags as canonical" stance.
-- Self-hosted remains a one-line opt-in via
-  `@opennotes/tokens/fonts-self-hosted.css`, so consumers with CSP, privacy,
-  or offline constraints can flip themselves without waiting on this package.
+**Re-evaluate the opt-in default** if more than 50% of consumers end up
+explicitly opting into `fonts-cdn.css`. At that point, flipping the default
+back to CDN becomes the lower-friction choice.
 
 ## CSP / privacy note
 
-The default entry point (`@opennotes/tokens` → `@opennotes/tokens/fonts-cdn.css`)
-issues requests to **`fonts.googleapis.com`** (stylesheet) and
-**`fonts.gstatic.com`** (WOFF2 files) on every page load.
+`@opennotes/tokens/fonts-cdn.css` issues requests to
+**`fonts.googleapis.com`** (stylesheet) and **`fonts.gstatic.com`** (WOFF2
+files) on every page load. Only consumers that explicitly `@import` that
+entry point (or ship their own Google Fonts `<link>` tags) are affected.
 
-If you lock down Content Security Policy, either:
+If you lock down Content Security Policy and want CDN fonts, allow the Google
+origins in both `style-src` and `font-src`:
 
-1. Allow the Google origins in both `style-src` and `font-src`:
+```text
+style-src  'self' https://fonts.googleapis.com;
+font-src   'self' https://fonts.gstatic.com;
+```
 
-   ```text
-   style-src  'self' https://fonts.googleapis.com;
-   font-src   'self' https://fonts.gstatic.com;
-   ```
-
-2. Or opt into self-hosted fonts (see
-   [Self-hosted migration recipe](#self-hosted-migration-recipe)) and tighten
-   CSP to `'self'` only.
-
-Privacy implications of CDN-default:
-
-- Google receives one request per user per session for the stylesheet and
-  per-weight WOFF2 files.
-- CDN outages degrade typography to system fallbacks — rare, but possible.
+If you want tighter CSP (`'self'` only), opt into self-hosted fonts (see
+[Self-hosted migration recipe](#self-hosted-migration-recipe)).
 
 ## Install weight
 
 `@fontsource/ibm-plex-sans` and `@fontsource/ibm-plex-serif` ship approximately
 **~5.4 MB combined on disk** (all weights + WOFF2 + WOFF + TTF + CSS partials).
 
-These are declared as **`optionalDependencies`** of `@opennotes/tokens` rather
-than hard dependencies:
+These are declared as **`peerDependencies`** of `@opennotes/tokens` with
+`peerDependenciesMeta.optional = true`, not as direct or optional
+dependencies:
 
-- CDN-default consumers (the majority) pay no install cost — if the optional
-  install is skipped for any reason, nothing breaks because `fonts-cdn.css`
-  never touches `@fontsource/*`.
-- Self-hosted consumers should declare `@fontsource/*` as their own direct
-  `dependencies` so their install cannot silently skip the fonts. Relying on
-  the optional install alone is brittle: pnpm, npm, and yarn all treat
-  `optionalDependencies` as best-effort.
+- CDN-default consumers (the majority) **do not install** `@fontsource/*` —
+  pnpm skips optional peers by default and nothing in `fonts-cdn.css` touches
+  them, so nothing breaks.
+- Self-hosted consumers **must** add `@fontsource/ibm-plex-sans` and
+  `@fontsource/ibm-plex-serif` to their own `dependencies`. This is
+  explicit and audit-visible; the previous `optionalDependencies` shape
+  quietly installed fontsource into every consumer (pnpm installs optional
+  deps by default), defeating the purpose.
 
 ## Self-hosted migration recipe
 
-To flip a single consumer from CDN to self-hosted:
+To flip a single consumer from CDN (or no-fonts) to self-hosted:
 
 1. Add `@fontsource/*` as direct dependencies of the consumer:
 
