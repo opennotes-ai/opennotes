@@ -10,7 +10,6 @@ class ModelFlavor(StrEnum):
 
 LEGACY_SLASH_TO_PYDANTIC_AI: dict[str, str] = {
     "vertex_ai": "google-vertex",
-    "gemini": "google-gla",
 }
 
 PYDANTIC_AI_TO_LEGACY_SLASH: dict[str, str] = {v: k for k, v in LEGACY_SLASH_TO_PYDANTIC_AI.items()}

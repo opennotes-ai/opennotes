@@ -52,7 +52,7 @@ class SimAgentDeps:
     agent_profile_id: UUID | None = None
 
 
-WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "google", "groq"})
+WEBSEARCH_SUPPORTED_PROVIDERS = frozenset({"anthropic", "vertex_ai", "groq"})
 
 
 def _is_research_available(deps: SimAgentDeps) -> bool:
@@ -60,7 +60,7 @@ def _is_research_available(deps: SimAgentDeps) -> bool:
     return bool(
         tc
         and tc.get("research_enabled")
-        and deps.model_name.provider in WEBSEARCH_SUPPORTED_PROVIDERS
+        and deps.model_name.canonical_provider in WEBSEARCH_SUPPORTED_PROVIDERS
     )
 
 
@@ -690,7 +690,7 @@ class OpenNotesSimAgent:
             prompt,
             deps=deps,
             message_history=history_copy,
-            model=self._model.to_pydantic_ai(),
+            model=self._model.to_pydantic_ai_model(),
         )
 
         has_work = len(requests) > 0 or len(notes) > 0
@@ -709,7 +709,7 @@ class OpenNotesSimAgent:
                 retry_prompt,
                 deps=deps,
                 message_history=list(message_history) if message_history else None,
-                model=self._model.to_pydantic_ai(),
+                model=self._model.to_pydantic_ai_model(),
             )
 
         has_notes = len(notes) > 0
@@ -734,7 +734,7 @@ class OpenNotesSimAgent:
                 nudge_prompt,
                 deps=deps,
                 message_history=list(message_history) if message_history else None,
-                model=self._model.to_pydantic_ai(),
+                model=self._model.to_pydantic_ai_model(),
             )
 
         return result.output, result.all_messages()
@@ -757,7 +757,7 @@ class OpenNotesSimAgent:
         run_kwargs: dict[str, Any] = {
             "deps": deps,
             "message_history": message_history,
-            "model": self._model.to_pydantic_ai(),
+            "model": self._model.to_pydantic_ai_model(),
             "usage_limits": usage_limits or UsageLimits(request_limit=3, total_tokens_limit=16000),
         }
 

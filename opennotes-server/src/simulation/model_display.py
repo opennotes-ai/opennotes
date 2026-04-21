@@ -22,7 +22,6 @@ FAMILY_RULES: list[tuple[re.Pattern[str], str]] = [
 PYDANTIC_AI_VENDOR: dict[str, str] = {
     "openai": "OpenAI",
     "anthropic": "Anthropic",
-    "google-gla": "Google",
     "google-vertex": "Google",
     "mistral": "Mistral",
     "groq": "Groq",

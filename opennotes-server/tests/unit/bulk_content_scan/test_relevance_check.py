@@ -68,7 +68,6 @@ def mock_bulk_settings():
     with patch("src.bulk_content_scan.service.settings") as s:
         s.RELEVANCE_CHECK_ENABLED = True
         s.RELEVANCE_CHECK_MODEL = MagicMock()
-        s.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = "openai:gpt-5-mini"
         s.RELEVANCE_CHECK_MAX_TOKENS = 150
         s.RELEVANCE_CHECK_TIMEOUT = 5.0
         s.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
@@ -346,7 +345,6 @@ class TestSimilarityScanRelevanceIntegration:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_MODEL = MagicMock()
-            mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = "openai:gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -400,7 +398,6 @@ class TestSimilarityScanRelevanceIntegration:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_MODEL = MagicMock()
-            mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = "openai:gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -454,7 +451,6 @@ class TestSimilarityScanRelevanceIntegration:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_MODEL = MagicMock()
-            mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = "openai:gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.INSTANCE_ID = "test"
@@ -499,7 +495,6 @@ class TestSimilarityScanRelevanceIntegration:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_MODEL = MagicMock()
-            mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = "openai:gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -713,7 +708,6 @@ class TestRelevanceCheckEdgeCases:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
             mock_settings.RELEVANCE_CHECK_MODEL = MagicMock()
-            mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = "openai:gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
 
             outcome, reasoning = await service._check_relevance_with_llm(
@@ -753,9 +747,6 @@ class TestRelevanceCheckEdgeCases:
         ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_MODEL = MagicMock()
-            mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = (
-                "anthropic:claude-3-haiku"
-            )
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
@@ -797,9 +788,6 @@ class TestRelevanceCheckEdgeCases:
         ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_MODEL = MagicMock()
-            mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = (
-                "google-vertex:gemini-2.5-flash"
-            )
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
@@ -1011,7 +999,6 @@ class TestTopicMentionFiltering:
         ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_MODEL = MagicMock()
-            mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = "openai:gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
             mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = True
@@ -1188,7 +1175,6 @@ class TestContentFilterDetection:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
             mock_settings.RELEVANCE_CHECK_MODEL = MagicMock()
-            mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = "openai:gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
 

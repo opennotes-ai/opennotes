@@ -4,8 +4,11 @@ ADC_SENTINEL = "ADC"
 
 DEFAULT_MODELS_BY_PROVIDER: dict[str, str] = {
     "anthropic": "anthropic:claude-3-opus-20240229",
-    "vertex_ai": "google-vertex:gemini-2.5-pro",
-    "gemini": "google-gla:gemini-2.5-pro",
+    "vertex_ai": "google-vertex:gemini-3.1-pro-preview",
+    # The 'gemini' (google-gla) entry was removed in TASK-1450. Gemini models
+    # are served exclusively through Vertex AI (google-vertex) now.
+    # Note: simulation agents do not use a global default model here; each
+    # agent profile inherits its own `sim_agents.model_name`.
 }
 
 

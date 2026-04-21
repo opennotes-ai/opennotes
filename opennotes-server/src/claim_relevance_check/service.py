@@ -124,7 +124,7 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
             agent_result = await asyncio.wait_for(
                 relevance_agent.run(
                     user_prompt,
-                    model=cfg.RELEVANCE_CHECK_MODEL.to_pydantic_ai(),
+                    model=cfg.RELEVANCE_CHECK_MODEL.to_pydantic_ai_model(),
                     instructions=system_prompt,
                     model_settings=ModelSettings(
                         max_tokens=cfg.RELEVANCE_CHECK_MAX_TOKENS,
@@ -257,7 +257,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         try:
             response = await asyncio.wait_for(
                 pydantic_model_request(
-                    model=cfg.RELEVANCE_CHECK_MODEL.to_pydantic_ai(),
+                    model=cfg.RELEVANCE_CHECK_MODEL.to_pydantic_ai_model(),
                     messages=[
                         ModelRequest.user_text_prompt(
                             original_message,

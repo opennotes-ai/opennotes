@@ -1713,3 +1713,10 @@ async def mock_external_services(request):
 
     # Clean up references
     redis_client.client = None
+
+
+@pytest.fixture
+def prod_default_google_model() -> str:
+    from src.llm_config.constants import DEFAULT_MODELS_BY_PROVIDER
+
+    return DEFAULT_MODELS_BY_PROVIDER["vertex_ai"]

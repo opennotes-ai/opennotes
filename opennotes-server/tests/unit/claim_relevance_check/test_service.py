@@ -18,7 +18,6 @@ def mock_settings():
     s = MagicMock()
     s.RELEVANCE_CHECK_ENABLED = True
     s.RELEVANCE_CHECK_MODEL = MagicMock()
-    s.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = "openai:gpt-5-mini"
     s.RELEVANCE_CHECK_MAX_TOKENS = 150
     s.RELEVANCE_CHECK_TIMEOUT = 5.0
     s.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
@@ -178,7 +177,6 @@ class TestCheckRelevance:
 
     @pytest.mark.asyncio
     async def test_agent_uses_configured_model(self, mock_settings) -> None:
-        mock_settings.RELEVANCE_CHECK_MODEL.to_pydantic_ai.return_value = "anthropic:claude-3-haiku"
         test_model = TestModel(
             custom_output_args=RelevanceCheckResult(
                 is_relevant=True,

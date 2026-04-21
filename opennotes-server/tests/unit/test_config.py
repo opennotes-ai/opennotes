@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from src.config import PydanticAIModelId, Settings, _parse_model_id, get_settings
 from src.llm_config.model_id import ModelId
+from tests._model_fixtures import GOOGLE_VERTEX_FLASH_TEST_MODEL, GOOGLE_VERTEX_PRO_TEST_MODEL
 
 TEST_CREDENTIALS_ENCRYPTION_KEY = "WSaz4Oan5Rx-0zD-6wC7yOfasrJmzZDVViu6WzwSi0Q="
 TEST_ENCRYPTION_MASTER_KEY = "F5UG5HjhMjOgapb3ADail98bpydyrnrFfgkH1YB_zuE="
@@ -756,9 +757,10 @@ class TestParseModelId:
             _parse_model_id(42)
 
     def test_google_vertex_colon_format(self):
-        m = _parse_model_id("google-vertex:gemini-2.5-pro")
+        m = _parse_model_id(GOOGLE_VERTEX_PRO_TEST_MODEL)
+        expected_model = GOOGLE_VERTEX_PRO_TEST_MODEL.split(":", 1)[1]
         assert m.provider == "google-vertex"
-        assert m.model == "gemini-2.5-pro"
+        assert m.model == expected_model
         assert m.flavor.value == "pydantic_ai"
 
     def test_vertex_ai_slash_format_backward_compat(self):
@@ -1299,7 +1301,7 @@ class TestVertexAIProjectValidation:
                     "JWT_SECRET_KEY": valid_key,
                     "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
                     "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-                    "DEFAULT_MINI_MODEL": "google-vertex:gemini-2.5-flash",
+                    "DEFAULT_MINI_MODEL": GOOGLE_VERTEX_FLASH_TEST_MODEL,
                 },
                 clear=True,
             ),
@@ -1309,19 +1311,20 @@ class TestVertexAIProjectValidation:
 
     def test_google_vertex_pydantic_ai_format_accepted_with_project(self):
         valid_key = "a" * 32
+        expected_model = GOOGLE_VERTEX_FLASH_TEST_MODEL.split(":", 1)[1]
         with patch.dict(
             os.environ,
             {
                 "JWT_SECRET_KEY": valid_key,
                 "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
                 "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-                "DEFAULT_MINI_MODEL": "google-vertex:gemini-2.5-flash",
+                "DEFAULT_MINI_MODEL": GOOGLE_VERTEX_FLASH_TEST_MODEL,
                 "VERTEXAI_PROJECT": "my-gcp-project",
             },
             clear=True,
         ):
             settings = create_settings_no_env_file()
-            assert settings.DEFAULT_MINI_MODEL.model == "gemini-2.5-flash"
+            assert settings.DEFAULT_MINI_MODEL.model == expected_model
             assert settings.VERTEXAI_PROJECT == "my-gcp-project"
 
     def test_openai_models_accepted_without_vertexai_project(self):
@@ -1377,7 +1380,7 @@ class TestVertexAIDefaults:
             settings = create_settings_no_env_file()
             assert settings.VERTEXAI_PROJECT is None
 
-    def test_vertexai_location_defaults_to_us_central1(self):
+    def test_vertexai_location_defaults_to_global(self):
         valid_key = "a" * 32
         with patch.dict(
             os.environ,
@@ -1390,3 +1393,33 @@ class TestVertexAIDefaults:
         ):
             settings = create_settings_no_env_file()
             assert settings.VERTEXAI_LOCATION == "global"
+
+    def test_vertexai_location_reads_google_cloud_location_env(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "GOOGLE_CLOUD_LOCATION": "asia-east1",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.VERTEXAI_LOCATION == "asia-east1"
+
+    def test_vertexai_project_reads_google_cloud_project_env(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "GOOGLE_CLOUD_PROJECT": "foo",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.VERTEXAI_PROJECT == "foo"

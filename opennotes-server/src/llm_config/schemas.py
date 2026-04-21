@@ -12,7 +12,7 @@ from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 class LLMConfigCreate(StrictInputSchema):
     """Schema for creating a new LLM configuration."""
 
-    provider: Literal["openai", "anthropic", "google", "cohere", "custom"]
+    provider: Literal["openai", "anthropic", "vertex_ai"]
     api_key: str = Field(..., min_length=1, description="API key for the LLM provider")
     enabled: bool = Field(default=True, description="Whether this configuration is enabled")
     settings: dict[str, Any] = Field(
@@ -96,7 +96,7 @@ class LLMConfigResponse(SQLAlchemySchema):
 class LLMConfigTestRequest(StrictInputSchema):
     """Schema for testing an LLM configuration."""
 
-    provider: Literal["openai", "anthropic", "google", "cohere", "custom"]
+    provider: Literal["openai", "anthropic", "vertex_ai"]
     api_key: str = Field(..., min_length=1)
     settings: dict[str, Any] = Field(default_factory=dict)
 

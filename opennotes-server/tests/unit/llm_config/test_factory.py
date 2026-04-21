@@ -4,6 +4,7 @@ import pytest
 
 from src.llm_config.providers.direct_provider import DirectProvider
 from src.llm_config.providers.factory import LLMProviderFactory
+from tests._model_fixtures import GOOGLE_VERTEX_PRO_TEST_MODEL
 
 
 class TestLLMProviderFactoryCreate:
@@ -29,27 +30,26 @@ class TestLLMProviderFactoryCreate:
         assert provider.default_model == "anthropic:claude-3-opus-20240229"
         assert provider._provider_name == "anthropic"
 
-    def test_create_vertex_ai_returns_direct_provider(self) -> None:
+    def test_create_vertex_ai_returns_direct_provider(self, prod_default_google_model: str) -> None:
         provider = LLMProviderFactory.create(
             provider_name="vertex_ai",
             api_key="test-key",
-            default_model="google-vertex:gemini-2.5-pro",
+            default_model=prod_default_google_model,
             settings={"timeout": 30.0},
         )
         assert isinstance(provider, DirectProvider)
-        assert provider.default_model == "google-vertex:gemini-2.5-pro"
+        assert provider.default_model == prod_default_google_model
         assert provider._provider_name == "vertex_ai"
 
-    def test_create_gemini_returns_direct_provider(self) -> None:
-        provider = LLMProviderFactory.create(
-            provider_name="gemini",
-            api_key="test-key",
-            default_model="google-gla:gemini-1.5-pro",
-            settings={"timeout": 30.0},
-        )
-        assert isinstance(provider, DirectProvider)
-        assert provider.default_model == "google-gla:gemini-1.5-pro"
-        assert provider._provider_name == "gemini"
+    def test_factory_no_longer_registers_gemini(self) -> None:
+        assert "gemini" not in LLMProviderFactory._providers
+        with pytest.raises(ValueError, match=r"Unknown provider.*gemini"):
+            LLMProviderFactory.create(
+                provider_name="gemini",
+                api_key="test-key",
+                default_model=GOOGLE_VERTEX_PRO_TEST_MODEL,
+                settings={"timeout": 30.0},
+            )
 
     def test_unknown_provider_raises_valueerror(self) -> None:
         with pytest.raises(ValueError, match=r"Unknown provider.*unknown_provider"):
@@ -87,7 +87,10 @@ class TestListProviders:
         assert "openai" in providers
         assert "anthropic" in providers
         assert "vertex_ai" in providers
-        assert "gemini" in providers
+
+    def test_gemini_not_in_providers(self) -> None:
+        providers = LLMProviderFactory.list_providers()
+        assert "gemini" not in providers
 
     def test_litellm_not_in_providers(self) -> None:
         providers = LLMProviderFactory.list_providers()

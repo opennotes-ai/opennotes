@@ -19752,9 +19752,7 @@
             "enum": [
               "openai",
               "anthropic",
-              "google",
-              "cohere",
-              "custom"
+              "vertex_ai"
             ],
             "title": "Provider"
           },
@@ -20067,9 +20065,7 @@
             "enum": [
               "openai",
               "anthropic",
-              "google",
-              "cohere",
-              "custom"
+              "vertex_ai"
             ],
             "title": "Provider"
           },

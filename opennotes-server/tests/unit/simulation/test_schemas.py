@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.simulation.schemas import ActionSelectionResult, ModelNameResponse, SimActionType
+from tests._model_fixtures import GOOGLE_VERTEX_FLASH_TEST_MODEL
 
 
 class TestActionSelectionRateNotesAlias:
@@ -111,7 +112,7 @@ class TestSimAgentReasoningModelValidation:
         [
             "openai:gpt-4o",
             "openai:gpt-4o-mini",
-            "google-gla:gemini-2.0-flash",
+            GOOGLE_VERTEX_FLASH_TEST_MODEL,
         ],
     )
     def test_accepts_non_reasoning_models(self, model_name: str) -> None:
@@ -129,6 +130,27 @@ class TestSimAgentReasoningModelValidation:
 
         with pytest.raises(ValidationError, match="Reasoning model"):
             SimAgentUpdateAttributes(model_name="openai:o4-mini")
+
+
+class TestSimAgentGoogleGlaRejection:
+    def test_rejects_google_gla_prefix_in_create(self) -> None:
+        from src.simulation.sim_agents_jsonapi_router import SimAgentCreateAttributes
+
+        with pytest.raises(ValidationError, match="TASK-1450") as exc_info:
+            SimAgentCreateAttributes(
+                name="TestAgent",
+                personality="A test agent",
+                model_name="google-gla:gemini-whatever",
+            )
+        error_str = str(exc_info.value)
+        assert "google-gla" in error_str
+        assert "google-vertex" in error_str
+
+    def test_rejects_google_gla_prefix_in_update(self) -> None:
+        from src.simulation.sim_agents_jsonapi_router import SimAgentUpdateAttributes
+
+        with pytest.raises(ValidationError, match="TASK-1450"):
+            SimAgentUpdateAttributes(model_name="google-gla:gemini-2.5-flash")
 
 
 class TestSimAgentUpdateModelNameValidation:

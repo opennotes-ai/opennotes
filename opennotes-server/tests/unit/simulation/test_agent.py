@@ -1307,9 +1307,26 @@ class TestWebSearchToolGating:
     def test_websearch_supported_providers_is_frozenset(self):
         assert isinstance(WEBSEARCH_SUPPORTED_PROVIDERS, frozenset)
         assert "anthropic" in WEBSEARCH_SUPPORTED_PROVIDERS
-        assert "google" in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "vertex_ai" in WEBSEARCH_SUPPORTED_PROVIDERS
         assert "groq" in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "google-vertex" not in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "google" not in WEBSEARCH_SUPPORTED_PROVIDERS
+        assert "google-gla" not in WEBSEARCH_SUPPORTED_PROVIDERS
         assert "openai" not in WEBSEARCH_SUPPORTED_PROVIDERS
+
+    def test_is_research_available_for_google_vertex(self, mock_db):
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="test",
+            model_name=ModelId.from_pydantic_ai("google-vertex:gemini-3-flash"),
+            tool_config={"research_enabled": True},
+        )
+        assert _is_research_available(deps) is True
 
     @pytest.mark.asyncio
     async def test_run_turn_passes_websearch_when_enabled_and_supported(self, mock_db):
@@ -1347,6 +1364,57 @@ class TestWebSearchToolGating:
 
         assert "builtin_tools" in captured_kwargs
         assert any(isinstance(t, WebSearchTool) for t in captured_kwargs["builtin_tools"])
+
+    @pytest.mark.asyncio
+    async def test_run_turn_passes_websearch_for_google_vertex_gemini3(self, mock_db, monkeypatch):
+        from unittest.mock import MagicMock as MockCls
+        from unittest.mock import patch
+
+        import google.auth
+
+        from src.llm_config.local_models import OpenNotesGoogleModel
+        from tests._model_fixtures import GOOGLE_VERTEX_PRO_TEST_MODEL
+
+        fake_creds = MockCls()
+        monkeypatch.setattr(google.auth, "default", lambda *_, **__: (fake_creds, "test-project"))
+        from src.llm_config import model_factory as mf
+
+        monkeypatch.setattr(mf.settings, "VERTEXAI_PROJECT", "test-project", raising=False)
+        monkeypatch.setattr(mf.settings, "VERTEXAI_LOCATION", "global", raising=False)
+
+        google_model = ModelId.from_pydantic_ai(GOOGLE_VERTEX_PRO_TEST_MODEL)
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[
+                {"id": str(uuid4()), "request_id": "prov-0", "content": "test", "status": "PENDING"}
+            ],
+            available_notes=[],
+            agent_personality="test",
+            model_name=google_model,
+            tool_config={"research_enabled": True},
+        )
+
+        mock_action = SimAgentAction(action_type=SimActionType.PASS_TURN, reasoning="test")
+        mock_result = MagicMock()
+        mock_result.output = mock_action
+        mock_result.all_messages.return_value = []
+
+        captured_kwargs: dict = {}
+
+        async def capture_run(prompt, **kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_result
+
+        agent = OpenNotesSimAgent(model=google_model)
+        with patch.object(agent._agent, "run", side_effect=capture_run):
+            await agent.run_turn(deps)
+
+        assert "builtin_tools" in captured_kwargs
+        assert any(isinstance(t, WebSearchTool) for t in captured_kwargs["builtin_tools"])
+        assert isinstance(captured_kwargs["model"], OpenNotesGoogleModel)
 
     @pytest.mark.asyncio
     async def test_run_turn_skips_websearch_when_disabled(self, mock_db):
@@ -1517,9 +1585,23 @@ class TestIsResearchAvailable:
         assert _is_research_available(deps) is False
 
     def test_all_supported_providers(self):
-        for provider in ("anthropic", "google", "groq"):
+        for provider in ("anthropic", "google-vertex", "groq"):
             deps = self._make_deps(provider, tool_config={"research_enabled": True})
             assert _is_research_available(deps) is True
+
+    def test_true_for_legacy_slash_vertex_ai_flavor(self):
+        deps = SimAgentDeps(
+            db=MagicMock(),
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[],
+            agent_personality="Test",
+            model_name=ModelId.from_slash_format("vertex_ai/gemini-3-flash"),
+            tool_config={"research_enabled": True},
+        )
+        assert _is_research_available(deps) is True
 
 
 class TestResearchPromptsUnsupportedProvider:

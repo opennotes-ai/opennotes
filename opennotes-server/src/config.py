@@ -709,12 +709,13 @@ class Settings(BaseSettings):
     )
     VERTEXAI_PROJECT: str | None = Field(
         default=None,
-        description="GCP project ID for Vertex AI. Required when using vertex_ai/ model prefix. "
-        "Set automatically on Cloud Run via env var.",
+        description="GCP project ID for Vertex AI. Auto-populated from GOOGLE_CLOUD_PROJECT env var on Cloud Run.",
+        validation_alias=AliasChoices("VERTEXAI_PROJECT", "GOOGLE_CLOUD_PROJECT"),
     )
     VERTEXAI_LOCATION: str = Field(
         default="global",
-        description="GCP region for Vertex AI API calls",
+        description="GCP region for Vertex AI API calls. 'global' required for Gemini 3 preview SKUs.",
+        validation_alias=AliasChoices("VERTEXAI_LOCATION", "GOOGLE_CLOUD_LOCATION"),
     )
 
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
