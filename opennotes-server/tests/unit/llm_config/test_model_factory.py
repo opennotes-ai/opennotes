@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from pydantic_ai.models import Model
 
 from src.llm_config.local_models import OpenNotesGoogleModel
 from src.llm_config.model_factory import infer_model_with_overrides
@@ -65,15 +64,13 @@ class TestInferModelWithOverrides:
         assert captured.get("location") == "global"
         assert captured.get("project") == "test-project"
 
-    def test_returns_upstream_model_for_openai(self):
-        model = infer_model_with_overrides("openai:gpt-4o-mini")
-        assert isinstance(model, Model)
-        assert not isinstance(model, OpenNotesGoogleModel)
+    def test_returns_string_for_openai(self):
+        result = infer_model_with_overrides("openai:gpt-4o-mini")
+        assert result == "openai:gpt-4o-mini"
 
-    def test_returns_upstream_model_for_anthropic(self):
-        model = infer_model_with_overrides("anthropic:claude-3-5-sonnet-latest")
-        assert isinstance(model, Model)
-        assert not isinstance(model, OpenNotesGoogleModel)
+    def test_returns_string_for_anthropic(self):
+        result = infer_model_with_overrides("anthropic:claude-3-5-sonnet-latest")
+        assert result == "anthropic:claude-3-5-sonnet-latest"
 
     def test_infer_model_with_overrides_rejects_google_gla(self):
         with pytest.raises(ValueError, match="google-gla provider was removed"):
@@ -91,8 +88,7 @@ class TestToPydanticAiModelRoundTrip:
         assert isinstance(result, OpenNotesGoogleModel)
         assert result.model_name == "gemini-3.1-pro-preview"
 
-    def test_to_pydantic_ai_model_for_openai_returns_non_opennotes(self):
+    def test_to_pydantic_ai_model_for_openai_returns_string(self):
         m = ModelId(provider="openai", model="gpt-4o-mini", flavor=ModelFlavor.PYDANTIC_AI)
         result = m.to_pydantic_ai_model()
-        assert isinstance(result, Model)
-        assert not isinstance(result, OpenNotesGoogleModel)
+        assert result == "openai:gpt-4o-mini"

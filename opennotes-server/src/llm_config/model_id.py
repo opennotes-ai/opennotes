@@ -48,7 +48,7 @@ class ModelId(BaseModel, frozen=True):
         provider = adapt_provider(self.provider, self.flavor, ModelFlavor.PYDANTIC_AI)
         return f"{provider}:{self.model}"
 
-    def to_pydantic_ai_model(self) -> Model:
+    def to_pydantic_ai_model(self) -> Model | str:
         from src.llm_config.model_factory import infer_model_with_overrides  # noqa: PLC0415
 
         return infer_model_with_overrides(self.to_pydantic_ai())

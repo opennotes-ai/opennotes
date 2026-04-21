@@ -1574,7 +1574,7 @@ class TestIsResearchAvailable:
         assert _is_research_available(deps) is False
 
     def test_all_supported_providers(self):
-        for provider in ("anthropic", "google", "groq"):
+        for provider in ("anthropic", "google-vertex", "groq"):
             deps = self._make_deps(provider, tool_config={"research_enabled": True})
             assert _is_research_available(deps) is True
 
