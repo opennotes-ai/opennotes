@@ -146,11 +146,19 @@ RSpec.describe OpenNotes::GcpAuth do
         [403, {}, "forbidden"]
       end
 
-      if defined?(Rails)
-        expect(Rails.logger).to receive(:warn).with(/403/)
-      end
+      expect(Rails.logger).to receive(:warn).with(/403/)
 
       expect(described_class.identity_token(audience)).to be_nil
+    end
+
+    it "throttles repeated failure warnings for the same audience to once per WARN_THROTTLE_SECONDS" do
+      stubs.get("#{described_class::METADATA_PATH}?audience=#{CGI.escape(audience)}") do |_env|
+        [403, {}, "forbidden"]
+      end
+
+      expect(Rails.logger).to receive(:warn).with(/403/).once
+
+      3.times { described_class.identity_token(audience) }
     end
 
     it "returns nil on network error" do
@@ -178,6 +186,7 @@ RSpec.describe OpenNotes::GcpAuth do
       call_count = 0
       fetch_entered = Queue.new
       release_fetch = Queue.new
+      thread_b_queued = Queue.new
 
       stubs.get("#{described_class::METADATA_PATH}?audience=#{CGI.escape(audience)}") do |_env|
         call_count += 1
@@ -186,13 +195,32 @@ RSpec.describe OpenNotes::GcpAuth do
         [200, {}, token]
       end
 
-      thread_a = Thread.new { described_class.identity_token(audience) }
-      fetch_entered.pop # thread_a is inside the metadata fetch under the mutex
-      thread_b = Thread.new { described_class.identity_token(audience) }
-      # thread_b must block on the mutex; give it a moment to reach the synchronize.
-      sleep 0.05
-      release_fetch << :go
+      # Instrument the mutex so we get a deterministic "thread_b reached the
+      # lock" signal — no wall-clock sleep.
+      original_mutex = described_class.send(:token_mutex)
+      instrumented = Module.new do
+        define_method(:synchronize) do |&block|
+          thread_b_queued << :queued if Thread.current[:gcp_auth_spec_role] == :b
+          original_mutex.synchronize(&block)
+        end
+      end
+      wrapper = Object.new
+      wrapper.extend(instrumented)
+      allow(described_class).to receive(:token_mutex).and_return(wrapper)
 
+      thread_a = Thread.new do
+        Thread.current[:gcp_auth_spec_role] = :a
+        described_class.identity_token(audience)
+      end
+      fetch_entered.pop # thread_a is inside the metadata fetch, holding the mutex
+
+      thread_b = Thread.new do
+        Thread.current[:gcp_auth_spec_role] = :b
+        described_class.identity_token(audience)
+      end
+      thread_b_queued.pop # thread_b has reached synchronize and is blocked on the mutex
+
+      release_fetch << :go
       [thread_a, thread_b].each(&:join)
       expect(call_count).to eq(1)
     end

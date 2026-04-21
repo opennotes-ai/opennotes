@@ -18,6 +18,9 @@ after_initialize do
     load File.expand_path("../lib/opennotes/#{f}.rb", __FILE__)
   end
 
+  # Discard detection + token cache on every plugin (re)load so dev-mode and
+  # site-setting-triggered reloads can't inherit a stale @on_gcp or stale
+  # tokens. Probe + fresh metadata fetch are cheap on Cloud Run workers.
   OpenNotes::GcpAuth.reset_cache! if defined?(OpenNotes::GcpAuth) && OpenNotes::GcpAuth.respond_to?(:reset_cache!)
 
   if SiteSetting.opennotes_platform_community_server_id.blank?

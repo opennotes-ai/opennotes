@@ -13,11 +13,14 @@ module OpenNotes
     PROBE_TIMEOUT_SECONDS = 2
     FETCH_TIMEOUT_SECONDS = 5
     DETECTION_TTL_SECONDS = 10 * 60
-
-    @token_mutex = Mutex.new
+    WARN_THROTTLE_SECONDS = 60
 
     class << self
       def on_gcp?
+        # K_SERVICE short-circuit: when the env var is set (all Cloud Run
+        # workers have it), detection is free and stable — don't probe or
+        # populate @on_gcp_probed_at. The TTL below only guards the metadata
+        # probe path used on hosts where K_SERVICE is unset (GCE, GKE, tests).
         return true if ENV["K_SERVICE"].to_s != ""
 
         if @on_gcp.nil? ||
@@ -35,7 +38,7 @@ module OpenNotes
           return cached[:token]
         end
 
-        @token_mutex.synchronize do
+        token_mutex.synchronize do
           cached = token_cache[audience]
           if cached && Time.now.to_i < cached[:expires_at] - REFRESH_BUFFER_SECONDS
             return cached[:token]
@@ -54,6 +57,21 @@ module OpenNotes
         @on_gcp = nil
         @on_gcp_probed_at = nil
         @token_cache = {}
+        @warn_at = {}
+      end
+
+      # Emit at most one Rails.logger.warn per (key, WARN_THROTTLE_SECONDS)
+      # window. Broken metadata or Cloud Run IAM rejection produces an error on
+      # every outbound request; unthrottled warnings would dominate Discourse
+      # logs during a persistent outage.
+      def throttle_warn(key, message)
+        return unless defined?(Rails)
+        @warn_at ||= {}
+        now = Time.now.to_i
+        last = @warn_at[key] || 0
+        return unless now - last > WARN_THROTTLE_SECONDS
+        Rails.logger.warn("[OpenNotes] #{message}")
+        @warn_at[key] = now
       end
 
       # Public test seam — specs stub this to inject a Faraday::Adapter::Test
@@ -69,6 +87,12 @@ module OpenNotes
 
       def token_cache
         @token_cache ||= {}
+      end
+
+      # Lazy so dev-mode plugin reloads that re-evaluate this file can't swap
+      # the mutex out from under a thread mid-synchronize.
+      def token_mutex
+        @token_mutex ||= Mutex.new
       end
 
       def probe_metadata_server
@@ -88,16 +112,15 @@ module OpenNotes
           req.options.open_timeout = PROBE_TIMEOUT_SECONDS
         end
         unless response.success?
-          if defined?(Rails)
-            Rails.logger.warn(
-              "[OpenNotes] GCP metadata identity token request returned HTTP #{response.status} for audience #{audience}"
-            )
-          end
+          throttle_warn(
+            audience,
+            "GCP metadata identity token request returned HTTP #{response.status} for audience #{audience}",
+          )
           return nil
         end
         response.body.to_s.strip
       rescue Faraday::Error, SocketError => e
-        Rails.logger.warn("[OpenNotes] Failed to fetch GCP identity token: #{e.class} #{e.message}") if defined?(Rails)
+        throttle_warn(audience, "Failed to fetch GCP identity token for audience #{audience}: #{e.class} #{e.message}")
         nil
       end
 
