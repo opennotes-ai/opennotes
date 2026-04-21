@@ -75,6 +75,7 @@
       },
       {
         "tab": "API Reference",
+        "openapi": "../opennotes-server/openapi-public.json",
         "groups": [
           {
             "group": "Overview",
@@ -83,12 +84,61 @@
               "api-reference/authentication",
               "api-reference/conventions"
             ]
+          },
+          {
+            "group": "Requests",
+            "pages": [
+              "GET /api/public/v1/requests",
+              "POST /api/public/v1/requests",
+              "GET /api/public/v1/requests/{request_id}",
+              "PATCH /api/public/v1/requests/{request_id}",
+              "POST /api/public/v1/requests/{request_id}/ai-notes"
+            ]
+          },
+          {
+            "group": "Notes",
+            "pages": [
+              "GET /api/public/v1/notes",
+              "POST /api/public/v1/notes",
+              "GET /api/public/v1/notes/{note_id}",
+              "PATCH /api/public/v1/notes/{note_id}",
+              "DELETE /api/public/v1/notes/{note_id}",
+              "POST /api/public/v1/notes/{note_id}/force-publish",
+              "POST /api/public/v1/notes/{note_id}/dismiss"
+            ]
+          },
+          {
+            "group": "Ratings",
+            "pages": [
+              "POST /api/public/v1/ratings",
+              "GET /api/public/v1/notes/{note_id}/ratings",
+              "PUT /api/public/v1/ratings/{rating_id}",
+              "GET /api/public/v1/notes/{note_id}/ratings/stats"
+            ]
+          },
+          {
+            "group": "Moderation Actions",
+            "pages": [
+              "POST /api/public/v1/moderation-actions",
+              "GET /api/public/v1/moderation-actions",
+              "GET /api/public/v1/moderation-actions/{action_id}",
+              "PATCH /api/public/v1/moderation-actions/{action_id}"
+            ]
+          },
+          {
+            "group": "Community Servers",
+            "pages": [
+              "GET /api/public/v1/community-servers/lookup",
+              "GET /api/public/v1/community-servers/{server_id}"
+            ]
+          },
+          {
+            "group": "User Profiles",
+            "pages": [
+              "GET /api/public/v1/user-profiles/lookup"
+            ]
           }
-        ],
-        "openapi": {
-          "source": "../opennotes-server/openapi-public.json",
-          "directory": "api-reference/endpoints"
-        }
+        ]
       }
     ]
   },

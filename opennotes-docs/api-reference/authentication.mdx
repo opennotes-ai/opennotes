@@ -3,8 +3,58 @@ title: Authentication
 description: Bearer-token auth on /api/public/v1 using a platform:adapter-scoped API key.
 ---
 
-<Note>
-  Placeholder — this page is filled in by **TASK-1460.05**. The final content
-  documents the `Authorization` header, the `platform:adapter` scope
-  requirement, and how auth failures surface in responses.
-</Note>
+Every request to `/api/public/v1/` must carry an API key in one of two places:
+
+- `Authorization: Bearer <key>` header (preferred)
+- `X-API-Key: <key>` header (alternate)
+
+The bearer header is strongly preferred — some API clients auto-strip `X-API-Key` on
+redirects.
+
+## API key scope
+
+Public API keys must have the `platform:adapter` scope. Keys scoped to other roles
+(admin, scoring, etc.) will be rejected with `401 Not authenticated` even if the key
+itself is valid.
+
+You generate and manage `platform:adapter` keys from the
+[Platform dashboard](https://platform.opennotes.ai) after registering your community
+server. See [Onboarding: API keys](/integration-guide/onboarding/api-keys) for the
+step-by-step process.
+
+## Adapter identity headers
+
+Beyond the API key, every request that acts on behalf of a user or community must
+carry the `X-Adapter-*` identity headers:
+
+| Header | Required | Description |
+|---|---|---|
+| `X-Adapter-Platform-Type` | Yes | Platform identifier, e.g. `discourse` |
+| `X-Adapter-Platform-User-ID` | Context-dependent | External user ID on the platform |
+| `X-Adapter-Platform-Server-ID` | Context-dependent | External community/server ID on the platform |
+
+These headers tell OpenNotes which platform identity to resolve for the current
+request. Omitting a required header returns `422 Unprocessable Entity`. See
+[Concepts: Headers and auth](/integration-guide/concepts/headers-and-auth) for the
+full specification.
+
+## Auth failure responses
+
+| Status | Meaning |
+|---|---|
+| `401 Not authenticated` | Missing or invalid API key |
+| `403 Forbidden` | Key is valid but lacks `platform:adapter` scope |
+| `422 Unprocessable Entity` | Required adapter header is absent or malformed |
+
+All error bodies follow the [error envelope](/api-reference/conventions#error-envelope)
+described in Conventions.
+
+## Example request
+
+```http
+GET /api/public/v1/requests HTTP/1.1
+Host: api.opennotes.ai
+Authorization: Bearer on_pub_...
+X-Adapter-Platform-Type: discourse
+X-Adapter-Platform-Server-ID: 12345
+```
