@@ -3,9 +3,68 @@ title: Discourse plugin overview
 description: What the OpenNotes Discourse plugin does, who it's for, and how the pieces fit.
 ---
 
-<Note>
-  Placeholder — this page is filled in by **TASK-1460.04** from
-  `opennotes-discourse/docs/ADMIN-GUIDE.md` and `USER-GUIDE.md`. The final
-  content introduces the plugin, its two-tier moderation model, and links
-  into install/configure/troubleshoot.
-</Note>
+The OpenNotes Discourse plugin adds AI-powered content moderation with community oversight to your
+forum. It is the **reference implementation** of the [adapter contract](/integration-guide/concepts/adapter-contract)
+— every decision made during its design is the tie-breaker for ambiguity in the universal spec.
+
+## What it does
+
+When a post is created or edited in a monitored category, the plugin sends it to the OpenNotes
+server for classification. The response determines which of two paths the post takes.
+
+### Two-tier moderation
+
+<Tabs>
+  <Tab title="Tier 1 — Automated action">
+    When the AI classifies content with **high confidence** as harmful, the post is hidden
+    immediately. A `ReviewableOpennotesItem` is created in the `retro_review` state so the
+    community can confirm or overturn the decision.
+
+    The community's verdict is final: if enough voters disagree, the post is restored, marked
+    scan-exempt, and a staff annotation is added explaining what happened.
+  </Tab>
+  <Tab title="Tier 2 — Community review">
+    When confidence is lower, the post stays visible and a `ReviewableOpennotesItem` is created in
+    the `under_review` state. Community members vote **Helpful** or **Not Helpful** using a
+    bridging-based algorithm — the same approach as Twitter/X Community Notes, where cross-perspective
+    agreement carries more weight than majority vote.
+
+    Once consensus is reached, the server notifies Discourse via webhook (with a periodic polling
+    fallback) and the agreed-upon action is applied or the item is cleared.
+  </Tab>
+</Tabs>
+
+### What staff see
+
+- **Review queue** (`/review`) — flagged items with classification labels, scores, and community
+  vote tallies.
+- **Admin dashboard** — activity metrics, classification breakdown, consensus health, and top
+  reviewers.
+- **Per-category configuration** — different auto-action thresholds and review group routing per
+  category.
+
+### Overturn flow
+
+If the community votes to overturn an automated action:
+
+1. The post is restored and made visible.
+2. The post is marked scan-exempt (minor edits will not re-trigger classification).
+3. A staff annotation is added explaining the post was hidden and then restored.
+4. Substantial rewrites clear the scan-exempt flag and allow re-classification.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Install" icon="download" href="/existing-integrations/discourse/install">
+    Add the plugin to `app.yml` and rebuild your container.
+  </Card>
+  <Card title="Configure" icon="sliders" href="/existing-integrations/discourse/configure">
+    Server URL, API key, monitored categories, and moderation behavior.
+  </Card>
+  <Card title="User guide" icon="users" href="/existing-integrations/discourse/user-guide">
+    What community members see and how review voting works.
+  </Card>
+  <Card title="Architecture" icon="code" href="/existing-integrations/discourse/architecture">
+    Ember components, Sidekiq jobs, and how the plugin maps the adapter contract.
+  </Card>
+</CardGroup>

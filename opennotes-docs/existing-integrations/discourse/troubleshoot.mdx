@@ -3,7 +3,109 @@ title: Troubleshoot
 description: Common failure modes and how to diagnose them.
 ---
 
-<Note>
-  Placeholder — this page is filled in by **TASK-1460.04** from the
-  "Troubleshooting" section of `opennotes-discourse/docs/ADMIN-GUIDE.md`.
-</Note>
+## Posts not being classified
+
+<AccordionGroup>
+  <Accordion title="Check the master switch and category list">
+    Verify that `opennotes_enabled` is `true` and that the post's category slug or ID appears in
+    `opennotes_monitored_categories`.
+
+    ```bash
+    # Inside the Discourse container
+    rails r "puts SiteSetting.opennotes_enabled; puts SiteSetting.opennotes_monitored_categories"
+    ```
+  </Accordion>
+
+  <Accordion title="Check the server URL and API key">
+    The plugin sends every request to `{opennotes_server_url}/api/public/v1/...`. An incorrect
+    base URL or an expired API key will cause all classification jobs to fail silently.
+
+    Test connectivity from the Discourse host:
+
+    ```bash
+    curl -H "X-API-Key: <your-key>" https://api.opennotes.ai/api/public/v1/requests
+    ```
+
+    A `401` response means the API key is wrong or expired. A connection timeout means the server
+    URL is unreachable.
+  </Accordion>
+
+  <Accordion title="Check the Sidekiq queue">
+    Classification runs asynchronously via `Jobs::SyncPostToOpennotes`. If the Sidekiq queue is
+    backed up or the job is failing, posts will not be classified promptly.
+
+    Visit **Admin > Sidekiq** in Discourse and check for failed jobs with the class
+    `SyncPostToOpennotes`. Retry failed jobs from there.
+  </Accordion>
+
+  <Accordion title="Post may be scan-exempt">
+    Posts that were previously auto-hidden and then restored by community overturn are marked
+    scan-exempt. Minor edits to these posts will not trigger re-classification. Only a substantial
+    rewrite (which clears the scan-exempt flag) will cause re-classification.
+  </Accordion>
+</AccordionGroup>
+
+## Community review page is empty
+
+<AccordionGroup>
+  <Accordion title="Check trust level requirements">
+    The logged-in user must meet the `opennotes_reviewer_min_trust_level` threshold. Visit
+    **Admin > Users** and confirm the user's trust level.
+  </Accordion>
+
+  <Accordion title="Verify there are pending review items">
+    The `/community-reviews` page only shows items in `under_review` or `retro_review` state.
+    If no posts have been sent for classification yet, the page will be empty. Create a test post
+    in a monitored category and wait for the Sidekiq job to run.
+  </Accordion>
+</AccordionGroup>
+
+## Automated actions are not being applied
+
+<AccordionGroup>
+  <Accordion title="Check opennotes_auto_hide_on_consensus">
+    If `opennotes_auto_hide_on_consensus` is `false`, community consensus creates a staff task
+    rather than hiding the post automatically. Enable it if you want the plugin to act without
+    manual staff confirmation.
+  </Accordion>
+
+  <Accordion title="Check opennotes_staff_approval_required">
+    When `opennotes_staff_approval_required` is `true`, automated actions from the Tier 1 path
+    (high-confidence AI classification) still appear in the staff review queue and require a staff
+    member to confirm before taking effect.
+  </Accordion>
+
+  <Accordion title="Check webhook delivery">
+    The server notifies Discourse of consensus via `POST /opennotes/webhook`. If the webhook is
+    not reaching your instance (firewall, DNS, or TLS mismatch), the action will be delayed until
+    the next polling cycle (every 5 minutes via `Jobs::SyncScoringStatus`).
+
+    Check the OpenNotes server logs for webhook delivery errors and verify that
+    `https://your-discourse.example.com/opennotes/webhook` is reachable from the server.
+  </Accordion>
+</AccordionGroup>
+
+## Plugin not appearing in admin
+
+<AccordionGroup>
+  <Accordion title="Verify the clone succeeded">
+    SSH into the Discourse host and check that the plugin directory exists inside the container:
+
+    ```bash
+    ./launcher enter app
+    ls /var/www/discourse/plugins/ | grep opennotes
+    ```
+
+    If the directory is missing, the `git clone` step in `app.yml` failed. Rebuild with
+    `./launcher rebuild app` and watch the output for clone errors.
+  </Accordion>
+
+  <Accordion title="Check for Ruby load errors">
+    ```bash
+    ./launcher logs app | grep -i "opennotes\|error\|Exception"
+    ```
+
+    A syntax error or missing gem in the plugin will prevent it from loading. The log will include
+    the file name and line number.
+  </Accordion>
+</AccordionGroup>
