@@ -25,6 +25,12 @@ from unittest.mock import MagicMock
 sys.modules["scoring"] = MagicMock()
 sys.modules["scoring.run_scoring"] = MagicMock()
 
+from generate_openapi import (  # noqa: E402
+    filter_public_paths,
+    normalize_openapi_metadata,
+    prune_unreferenced_components,
+)
+
 from src.config import settings  # noqa: E402
 from src.main import app  # noqa: E402 - Mock setup must precede app import
 
@@ -35,20 +41,49 @@ def normalize_schema(schema: dict) -> dict:
     return schema
 
 
-def filter_public(schema: dict, prefix: str) -> dict:
-    """Return a copy of ``schema`` with paths trimmed to entries under ``prefix``.
+def _pointer_join(pointer: str, segment: str) -> str:
+    escaped = segment.replace("~", "~0").replace("/", "~1")
+    return f"{pointer}/{escaped}" if pointer else f"/{escaped}"
 
-    Matches ``path == prefix`` or ``path.startswith(prefix + "/")`` so that
-    a future ``/api/public/v10`` is not folded into the v1 artifact.
-    """
-    prefix_slash = prefix + "/"
-    filtered = {**schema}
-    filtered["paths"] = {
-        path: op
-        for path, op in schema.get("paths", {}).items()
-        if path == prefix or path.startswith(prefix_slash)
-    }
-    return filtered
+
+def _diff_values(pointer: str, expected, actual, issues: list[str]) -> None:
+    if expected == actual:
+        return
+
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        for key in sorted(set(expected) | set(actual)):
+            child_pointer = _pointer_join(pointer, str(key))
+            if key not in actual:
+                issues.append(f"{child_pointer}: present in expected, missing in actual")
+            elif key not in expected:
+                issues.append(f"{child_pointer}: absent in expected, present in actual")
+            else:
+                _diff_values(child_pointer, expected[key], actual[key], issues)
+        return
+
+    if isinstance(expected, list) and isinstance(actual, list):
+        if len(expected) != len(actual):
+            issues.append(f"{pointer}: expected {len(expected)} items, got {len(actual)}")
+            return
+        for idx, (expected_item, actual_item) in enumerate(zip(expected, actual, strict=True)):
+            _diff_values(_pointer_join(pointer, str(idx)), expected_item, actual_item, issues)
+        return
+
+    if type(expected) is not type(actual):
+        issues.append(
+            f"{pointer}: type changed from {type(expected).__name__} to {type(actual).__name__}"
+        )
+        return
+
+    issues.append(f"{pointer}: was {expected!r}, now {actual!r}")
+
+
+def _print_issue_bucket(header: str, issues: list[str]) -> None:
+    if not issues:
+        return
+    print(f"  {header}:")
+    for issue in issues:
+        print(f"    - {issue}")
 
 
 def _compare_and_report(artifact_name: str, expected_schema: dict, regen_hint: str) -> int:
@@ -62,64 +97,45 @@ def _compare_and_report(artifact_name: str, expected_schema: dict, regen_hint: s
         committed_schema = json.load(f)
     committed_schema = normalize_schema(committed_schema)
 
-    current_paths = set(expected_schema.get("paths", {}).keys())
-    committed_paths = set(committed_schema.get("paths", {}).keys())
+    issues: list[str] = []
+    _diff_values("", expected_schema, committed_schema, issues)
 
-    if current_paths != committed_paths:
+    if issues:
         print(f"❌ {artifact_name} is out of sync!")
         print()
-        new_paths = current_paths - committed_paths
-        removed_paths = committed_paths - current_paths
+        path_issues = [issue for issue in issues if issue.startswith("/paths/")]
+        component_issues = [issue for issue in issues if issue.startswith("/components/")]
+        top_level_issues = [
+            issue
+            for issue in issues
+            if not issue.startswith("/paths/") and not issue.startswith("/components/")
+        ]
 
-        if new_paths:
-            print(f"   New endpoints ({len(new_paths)}):")
-            for path in sorted(new_paths):
-                print(f"     + {path}")
-
-        if removed_paths:
-            print(f"   Removed endpoints ({len(removed_paths)}):")
-            for path in sorted(removed_paths):
-                print(f"     - {path}")
+        _print_issue_bucket("Path drift", path_issues)
+        _print_issue_bucket("Component drift", component_issues)
+        _print_issue_bucket("Top-level drift", top_level_issues)
 
         print()
         print(f"   To fix: {regen_hint}")
         return 1
 
+    current_paths = set(expected_schema.get("paths", {}).keys())
     current_components = expected_schema.get("components", {}).get("schemas", {})
-    committed_components = committed_schema.get("components", {}).get("schemas", {})
-
-    if set(current_components.keys()) != set(committed_components.keys()):
-        print(f"❌ {artifact_name} models have changed!")
-        new_models = set(current_components.keys()) - set(committed_components.keys())
-        removed_models = set(committed_components.keys()) - set(current_components.keys())
-
-        if new_models:
-            print(f"   New models ({len(new_models)}):")
-            for model in sorted(new_models):
-                print(f"     + {model}")
-
-        if removed_models:
-            print(f"   Removed models ({len(removed_models)}):")
-            for model in sorted(removed_models):
-                print(f"     - {model}")
-
-        print()
-        print(f"   To fix: {regen_hint}")
-        return 1
-
     print(f"✅ {artifact_name} is in sync")
     print(f"   Verified {len(current_paths)} endpoints and {len(current_components)} models")
     return 0
 
 
 def main() -> int:
-    current_schema = normalize_schema(app.openapi())
+    current_schema = normalize_schema(normalize_openapi_metadata(app.openapi()))
 
     checks: list[tuple[str, Callable[[dict], dict], str]] = [
         ("openapi.json", lambda s: s, "mise run docs:generate:openapi"),
         (
             "openapi-public.json",
-            lambda s: filter_public(s, settings.API_PUBLIC_V1_PREFIX),
+            lambda s: prune_unreferenced_components(
+                filter_public_paths(s, settings.API_PUBLIC_V1_PREFIX)
+            ),
             "mise run docs:generate:openapi",
         ),
     ]

@@ -2864,6 +2864,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/public/v1/moderation-actions/{action_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Moderation Action Endpoint
+         * @description Fetch a single moderation action by UUID.
+         */
+        get: operations["get_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/public/v1/moderation-actions": {
         parameters: {
             query?: never;
@@ -2884,45 +2904,11 @@ export interface paths {
          */
         get: operations["list_moderation_actions_endpoint_api_public_v1_moderation_actions_get"];
         put?: never;
-        /**
-         * Create Moderation Action Endpoint
-         * @description Create a moderation action in PROPOSED state.
-         *
-         *     Publishes a moderation_action.proposed NATS event after successful creation.
-         */
-        post: operations["create_moderation_action_endpoint_api_public_v1_moderation_actions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/public/v1/moderation-actions/{action_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Moderation Action Endpoint
-         * @description Fetch a single moderation action by UUID.
-         */
-        get: operations["get_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__get"];
-        put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /**
-         * Patch Moderation Action Endpoint
-         * @description Transition a moderation action to a new state.
-         *
-         *     Validates the state transition against VALID_TRANSITIONS and returns 422
-         *     on invalid transitions.  Publishes a NATS event for all target states
-         *     except scan_exempt (plugin-initiated acknowledgement, no event needed).
-         */
-        patch: operations["patch_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__patch"];
+        patch?: never;
         trace?: never;
     };
     "/api/v1/webhooks/register": {
@@ -15466,9 +15452,9 @@ export interface operations {
     list_moderation_actions_endpoint_api_v2_moderation_actions_get: {
         parameters: {
             query?: {
-                community_server_id?: string | null;
-                action_state?: components["schemas"]["ActionState"] | null;
-                action_tier?: components["schemas"]["ActionTier"] | null;
+                "filter[community_server_id]"?: string | null;
+                "filter[action_state]"?: components["schemas"]["ActionState"] | null;
+                "filter[action_tier]"?: components["schemas"]["ActionTier"] | null;
                 limit?: number;
                 offset?: number;
             };
@@ -16435,92 +16421,6 @@ export interface operations {
             };
         };
     };
-    list_moderation_actions_endpoint_api_public_v1_moderation_actions_get: {
-        parameters: {
-            query?: {
-                community_server_id?: string | null;
-                action_state?: components["schemas"]["ActionState"] | null;
-                action_tier?: components["schemas"]["ActionTier"] | null;
-                limit?: number;
-                offset?: number;
-            };
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_moderation_action_endpoint_api_public_v1_moderation_actions_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ModerationActionCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__get: {
         parameters: {
             query?: never;
@@ -16561,22 +16461,22 @@ export interface operations {
             };
         };
     };
-    patch_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__patch: {
+    list_moderation_actions_endpoint_api_public_v1_moderation_actions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                "filter[community_server_id]"?: string | null;
+                "filter[action_state]"?: components["schemas"]["ActionState"] | null;
+                "filter[action_tier]"?: components["schemas"]["ActionTier"] | null;
+                limit?: number;
+                offset?: number;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };
-            path: {
-                action_id: string;
-            };
+            path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ModerationActionUpdate"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

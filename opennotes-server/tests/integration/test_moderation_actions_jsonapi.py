@@ -18,6 +18,7 @@ from httpx import ASGITransport, AsyncClient
 
 from src.main import app
 from src.moderation_actions.models import ActionState, ActionTier, ActionType, ReviewGroup
+from src.moderation_actions.schemas import ModerationActionCreate
 
 
 @pytest.fixture(autouse=True)
@@ -154,6 +155,45 @@ async def modaction_request(modaction_community_server):
         return {"id": req.id}
 
 
+@pytest.fixture
+async def modaction_other_community_server():
+    """Create a second community server that the registered user cannot access."""
+    from src.database import get_session_maker
+    from src.llm_config.models import CommunityServer
+
+    community_server_id = uuid4()
+    platform_id = f"other_guild_modaction_{uuid4().hex[:8]}"
+    async with get_session_maker()() as db:
+        community_server = CommunityServer(
+            id=community_server_id,
+            platform="discord",
+            platform_community_server_id=platform_id,
+            name="Other Guild for Moderation Actions",
+        )
+        db.add(community_server)
+        await db.commit()
+
+    return {"uuid": community_server_id, "platform_community_server_id": platform_id}
+
+
+@pytest.fixture
+async def modaction_other_request(modaction_other_community_server):
+    """Create a Request row in the inaccessible community."""
+    from src.database import get_session_maker
+    from src.notes.models import Request
+
+    async with get_session_maker()() as db:
+        req = Request(
+            request_id=f"modaction_other_req_{uuid4().hex[:8]}",
+            community_server_id=modaction_other_community_server["uuid"],
+            requested_by="other_discord_user",
+        )
+        db.add(req)
+        await db.commit()
+        await db.refresh(req)
+        return {"id": req.id}
+
+
 def _build_create_body(community_server_id, request_id):
     return {
         "request_id": str(request_id),
@@ -166,6 +206,30 @@ def _build_create_body(community_server_id, request_id):
             "scores": [0.95],
         },
     }
+
+
+async def _insert_action(
+    community_server_id,
+    request_id,
+    *,
+    action_state: ActionState = ActionState.PROPOSED,
+    action_tier: ActionTier = ActionTier.TIER_1_IMMEDIATE,
+) -> str:
+    from src.database import get_session_maker
+    from src.moderation_actions.crud import create_moderation_action
+
+    create = ModerationActionCreate(
+        request_id=request_id,
+        community_server_id=community_server_id,
+        action_type=ActionType.HIDE,
+        action_tier=action_tier,
+        action_state=action_state,
+        review_group=ReviewGroup.COMMUNITY,
+        classifier_evidence={"labels": ["hate_speech"], "scores": [0.95]},
+    )
+    async with get_session_maker()() as db:
+        action = await create_moderation_action(db, create)
+        return str(action.id)
 
 
 class TestModerationActionsPost:
@@ -261,6 +325,23 @@ class TestModerationActionsPost:
 
         assert response.status_code == 422
 
+    @pytest.mark.asyncio
+    async def test_post_cross_community_returns_403(
+        self,
+        modaction_auth_client,
+        modaction_other_community_server,
+        modaction_other_request,
+    ):
+        body = _build_create_body(
+            modaction_other_community_server["uuid"],
+            modaction_other_request["id"],
+        )
+
+        with patch("src.events.publisher.EventPublisher.publish_event", new_callable=AsyncMock):
+            response = await modaction_auth_client.post("/api/v2/moderation-actions", json=body)
+
+        assert response.status_code == 403
+
 
 class TestModerationActionsGetSingle:
     """GET /api/v2/moderation-actions/{action_id}"""
@@ -328,6 +409,22 @@ class TestModerationActionsGetSingle:
             response = await client.get(f"/api/v2/moderation-actions/{action_id}")
         assert response.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_get_single_cross_community_returns_403(
+        self,
+        modaction_auth_client,
+        modaction_other_community_server,
+        modaction_other_request,
+    ):
+        action_id = await _insert_action(
+            modaction_other_community_server["uuid"],
+            modaction_other_request["id"],
+        )
+
+        response = await modaction_auth_client.get(f"/api/v2/moderation-actions/{action_id}")
+
+        assert response.status_code == 403
+
 
 class TestModerationActionsGetList:
     """GET /api/v2/moderation-actions"""
@@ -350,7 +447,8 @@ class TestModerationActionsGetList:
             await modaction_auth_client.post("/api/v2/moderation-actions", json=body)
 
         response = await modaction_auth_client.get(
-            f"/api/v2/moderation-actions?community_server_id={modaction_community_server['uuid']}"
+            "/api/v2/moderation-actions",
+            params={"filter[community_server_id]": str(modaction_community_server["uuid"])},
         )
         assert response.status_code == 200
 
@@ -380,9 +478,11 @@ class TestModerationActionsGetList:
             await modaction_auth_client.post("/api/v2/moderation-actions", json=body)
 
         response = await modaction_auth_client.get(
-            f"/api/v2/moderation-actions"
-            f"?community_server_id={modaction_community_server['uuid']}"
-            f"&action_state={ActionState.PROPOSED.value}"
+            "/api/v2/moderation-actions",
+            params={
+                "filter[community_server_id]": str(modaction_community_server["uuid"]),
+                "filter[action_state]": ActionState.PROPOSED.value,
+            },
         )
         assert response.status_code == 200
         data = response.json()
@@ -407,9 +507,11 @@ class TestModerationActionsGetList:
             await modaction_auth_client.post("/api/v2/moderation-actions", json=body)
 
         response = await modaction_auth_client.get(
-            f"/api/v2/moderation-actions"
-            f"?community_server_id={modaction_community_server['uuid']}"
-            f"&action_tier={ActionTier.TIER_1_IMMEDIATE.value}"
+            "/api/v2/moderation-actions",
+            params={
+                "filter[community_server_id]": str(modaction_community_server["uuid"]),
+                "filter[action_tier]": ActionTier.TIER_1_IMMEDIATE.value,
+            },
         )
         assert response.status_code == 200
         data = response.json()
@@ -422,6 +524,56 @@ class TestModerationActionsGetList:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/api/v2/moderation-actions")
         assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_list_scoped_to_user_community(
+        self,
+        modaction_auth_client,
+        modaction_community_server,
+        modaction_request,
+        modaction_other_community_server,
+        modaction_other_request,
+    ):
+        own_action_id = await _insert_action(
+            modaction_community_server["uuid"],
+            modaction_request["id"],
+        )
+        other_action_id = await _insert_action(
+            modaction_other_community_server["uuid"],
+            modaction_other_request["id"],
+        )
+
+        response = await modaction_auth_client.get("/api/v2/moderation-actions")
+
+        assert response.status_code == 200
+        ids = {item["id"] for item in response.json()["data"]}
+        assert own_action_id in ids
+        assert other_action_id not in ids
+
+    @pytest.mark.asyncio
+    async def test_list_filter_community_server_id_and_action_state_aliases(
+        self,
+        modaction_auth_client,
+        modaction_community_server,
+        modaction_request,
+    ):
+        proposed_action_id = await _insert_action(
+            modaction_community_server["uuid"],
+            modaction_request["id"],
+            action_state=ActionState.PROPOSED,
+        )
+
+        response = await modaction_auth_client.get(
+            "/api/v2/moderation-actions",
+            params={
+                "filter[community_server_id]": str(modaction_community_server["uuid"]),
+                "filter[action_state]": ActionState.PROPOSED.value,
+            },
+        )
+
+        assert response.status_code == 200
+        ids = {item["id"] for item in response.json()["data"]}
+        assert proposed_action_id in ids
 
 
 class TestModerationActionsPatch:
@@ -590,6 +742,65 @@ class TestModerationActionsPatch:
                 json={"action_state": ActionState.APPLIED.value},
             )
         assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_patch_cross_community_returns_403(
+        self,
+        modaction_auth_client,
+        modaction_other_community_server,
+        modaction_other_request,
+    ):
+        action_id = await _insert_action(
+            modaction_other_community_server["uuid"],
+            modaction_other_request["id"],
+        )
+
+        with patch("src.events.publisher.EventPublisher.publish_event", new_callable=AsyncMock):
+            response = await modaction_auth_client.patch(
+                f"/api/v2/moderation-actions/{action_id}",
+                json={"action_state": ActionState.APPLIED.value},
+            )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_post_not_on_public_api(
+        self,
+        modaction_auth_client,
+        modaction_community_server,
+        modaction_request,
+    ):
+        body = _build_create_body(
+            modaction_community_server["uuid"],
+            modaction_request["id"],
+        )
+
+        response = await modaction_auth_client.post(
+            "/api/public/v1/moderation-actions",
+            json=body,
+        )
+
+        assert response.status_code in (404, 405)
+
+    @pytest.mark.asyncio
+    async def test_patch_not_on_public_api(
+        self,
+        modaction_auth_client,
+        modaction_community_server,
+        modaction_request,
+    ):
+        action_id = await self._create_action(
+            modaction_auth_client,
+            modaction_community_server["uuid"],
+            modaction_request["id"],
+        )
+
+        response = await modaction_auth_client.patch(
+            f"/api/public/v1/moderation-actions/{action_id}",
+            json={"action_state": ActionState.APPLIED.value},
+        )
+
+        assert response.status_code in (404, 405)
 
     @pytest.mark.asyncio
     async def test_patch_dismissed_publishes_dismissed_event(

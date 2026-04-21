@@ -45,13 +45,28 @@ def test_profiles_router_has_path_allowlist():
     assert profiles_spec.path_allowlist == frozenset({"/user-profiles/lookup"})
 
 
-def test_non_profiles_routers_have_no_path_allowlist():
+def test_moderation_actions_router_has_read_only_path_allowlist():
+    from src.moderation_actions.router import router as moderation_actions_router
+
+    moderation_actions_spec = next(
+        spec for spec in PUBLIC_ADAPTER_ROUTERS if spec.router is moderation_actions_router
+    )
+    # Public adapters may list/fetch moderation actions, but create/update stays
+    # on the legacy/internal mount where community-admin authority is enforced.
+    assert moderation_actions_spec.path_allowlist == frozenset(
+        {"/moderation-actions", "/moderation-actions/{action_id}"}
+    )
+    assert moderation_actions_spec.method_allowlist == frozenset({"GET"})
+
+
+def test_unrestricted_routers_have_no_path_allowlist():
+    from src.moderation_actions.router import router as moderation_actions_router
     from src.users.profiles_jsonapi_router import router as profiles_router
 
     for spec in PUBLIC_ADAPTER_ROUTERS:
-        if spec.router is profiles_router:
+        if spec.router is profiles_router or spec.router is moderation_actions_router:
             continue
         assert spec.path_allowlist is None, (
-            f"Unexpected path_allowlist on {spec.router}; only profiles is expected "
-            "to need allowlisting right now."
+            f"Unexpected path_allowlist on {spec.router}; only profiles and "
+            "moderation-actions are expected to need allowlisting right now."
         )

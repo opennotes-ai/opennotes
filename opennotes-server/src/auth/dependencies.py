@@ -173,3 +173,21 @@ def require_superuser_or_service_account(
 ) -> User:
     require_admin(current_user)
     return current_user
+
+
+async def require_platform_adapter(
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    request: Request,
+) -> User:
+    api_key: APIKey | None = getattr(request.state, "api_key", None)
+    if api_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Platform adapter API key required",
+        )
+    if not api_key.has_scope("platform:adapter"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API key lacks required scope",
+        )
+    return current_user

@@ -14,9 +14,9 @@ from ...types import UNSET, Response, Unset
 
 def _get_kwargs(
     *,
-    community_server_id: None | Unset | UUID = UNSET,
-    action_state: ActionState | None | Unset = UNSET,
-    action_tier: ActionTier | None | Unset = UNSET,
+    filtercommunity_server_id: None | Unset | UUID = UNSET,
+    filteraction_state: ActionState | None | Unset = UNSET,
+    filteraction_tier: ActionTier | None | Unset = UNSET,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
     x_api_key: None | str | Unset = UNSET,
@@ -27,32 +27,32 @@ def _get_kwargs(
 
     params: dict[str, Any] = {}
 
-    json_community_server_id: None | str | Unset
-    if isinstance(community_server_id, Unset):
-        json_community_server_id = UNSET
-    elif isinstance(community_server_id, UUID):
-        json_community_server_id = str(community_server_id)
+    json_filtercommunity_server_id: None | str | Unset
+    if isinstance(filtercommunity_server_id, Unset):
+        json_filtercommunity_server_id = UNSET
+    elif isinstance(filtercommunity_server_id, UUID):
+        json_filtercommunity_server_id = str(filtercommunity_server_id)
     else:
-        json_community_server_id = community_server_id
-    params["community_server_id"] = json_community_server_id
+        json_filtercommunity_server_id = filtercommunity_server_id
+    params["filter[community_server_id]"] = json_filtercommunity_server_id
 
-    json_action_state: None | str | Unset
-    if isinstance(action_state, Unset):
-        json_action_state = UNSET
-    elif isinstance(action_state, ActionState):
-        json_action_state = action_state.value
+    json_filteraction_state: None | str | Unset
+    if isinstance(filteraction_state, Unset):
+        json_filteraction_state = UNSET
+    elif isinstance(filteraction_state, ActionState):
+        json_filteraction_state = filteraction_state.value
     else:
-        json_action_state = action_state
-    params["action_state"] = json_action_state
+        json_filteraction_state = filteraction_state
+    params["filter[action_state]"] = json_filteraction_state
 
-    json_action_tier: None | str | Unset
-    if isinstance(action_tier, Unset):
-        json_action_tier = UNSET
-    elif isinstance(action_tier, ActionTier):
-        json_action_tier = action_tier.value
+    json_filteraction_tier: None | str | Unset
+    if isinstance(filteraction_tier, Unset):
+        json_filteraction_tier = UNSET
+    elif isinstance(filteraction_tier, ActionTier):
+        json_filteraction_tier = filteraction_tier.value
     else:
-        json_action_tier = action_tier
-    params["action_tier"] = json_action_tier
+        json_filteraction_tier = filteraction_tier
+    params["filter[action_tier]"] = json_filteraction_tier
 
     params["limit"] = limit
 
@@ -106,9 +106,9 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-    community_server_id: None | Unset | UUID = UNSET,
-    action_state: ActionState | None | Unset = UNSET,
-    action_tier: ActionTier | None | Unset = UNSET,
+    filtercommunity_server_id: None | Unset | UUID = UNSET,
+    filteraction_state: ActionState | None | Unset = UNSET,
+    filteraction_tier: ActionTier | None | Unset = UNSET,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
     x_api_key: None | str | Unset = UNSET,
@@ -125,9 +125,9 @@ def sync_detailed(
     - offset: pagination offset (default 0)
 
     Args:
-        community_server_id (None | Unset | UUID):
-        action_state (ActionState | None | Unset):
-        action_tier (ActionTier | None | Unset):
+        filtercommunity_server_id (None | Unset | UUID):
+        filteraction_state (ActionState | None | Unset):
+        filteraction_tier (ActionTier | None | Unset):
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
         x_api_key (None | str | Unset):
@@ -141,9 +141,9 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        community_server_id=community_server_id,
-        action_state=action_state,
-        action_tier=action_tier,
+        filtercommunity_server_id=filtercommunity_server_id,
+        filteraction_state=filteraction_state,
+        filteraction_tier=filteraction_tier,
         limit=limit,
         offset=offset,
         x_api_key=x_api_key,
@@ -159,9 +159,9 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-    community_server_id: None | Unset | UUID = UNSET,
-    action_state: ActionState | None | Unset = UNSET,
-    action_tier: ActionTier | None | Unset = UNSET,
+    filtercommunity_server_id: None | Unset | UUID = UNSET,
+    filteraction_state: ActionState | None | Unset = UNSET,
+    filteraction_tier: ActionTier | None | Unset = UNSET,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
     x_api_key: None | str | Unset = UNSET,
@@ -178,9 +178,9 @@ def sync(
     - offset: pagination offset (default 0)
 
     Args:
-        community_server_id (None | Unset | UUID):
-        action_state (ActionState | None | Unset):
-        action_tier (ActionTier | None | Unset):
+        filtercommunity_server_id (None | Unset | UUID):
+        filteraction_state (ActionState | None | Unset):
+        filteraction_tier (ActionTier | None | Unset):
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
         x_api_key (None | str | Unset):
@@ -195,9 +195,9 @@ def sync(
 
     return sync_detailed(
         client=client,
-        community_server_id=community_server_id,
-        action_state=action_state,
-        action_tier=action_tier,
+        filtercommunity_server_id=filtercommunity_server_id,
+        filteraction_state=filteraction_state,
+        filteraction_tier=filteraction_tier,
         limit=limit,
         offset=offset,
         x_api_key=x_api_key,
@@ -207,9 +207,9 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-    community_server_id: None | Unset | UUID = UNSET,
-    action_state: ActionState | None | Unset = UNSET,
-    action_tier: ActionTier | None | Unset = UNSET,
+    filtercommunity_server_id: None | Unset | UUID = UNSET,
+    filteraction_state: ActionState | None | Unset = UNSET,
+    filteraction_tier: ActionTier | None | Unset = UNSET,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
     x_api_key: None | str | Unset = UNSET,
@@ -226,9 +226,9 @@ async def asyncio_detailed(
     - offset: pagination offset (default 0)
 
     Args:
-        community_server_id (None | Unset | UUID):
-        action_state (ActionState | None | Unset):
-        action_tier (ActionTier | None | Unset):
+        filtercommunity_server_id (None | Unset | UUID):
+        filteraction_state (ActionState | None | Unset):
+        filteraction_tier (ActionTier | None | Unset):
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
         x_api_key (None | str | Unset):
@@ -242,9 +242,9 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        community_server_id=community_server_id,
-        action_state=action_state,
-        action_tier=action_tier,
+        filtercommunity_server_id=filtercommunity_server_id,
+        filteraction_state=filteraction_state,
+        filteraction_tier=filteraction_tier,
         limit=limit,
         offset=offset,
         x_api_key=x_api_key,
@@ -258,9 +258,9 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-    community_server_id: None | Unset | UUID = UNSET,
-    action_state: ActionState | None | Unset = UNSET,
-    action_tier: ActionTier | None | Unset = UNSET,
+    filtercommunity_server_id: None | Unset | UUID = UNSET,
+    filteraction_state: ActionState | None | Unset = UNSET,
+    filteraction_tier: ActionTier | None | Unset = UNSET,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
     x_api_key: None | str | Unset = UNSET,
@@ -277,9 +277,9 @@ async def asyncio(
     - offset: pagination offset (default 0)
 
     Args:
-        community_server_id (None | Unset | UUID):
-        action_state (ActionState | None | Unset):
-        action_tier (ActionTier | None | Unset):
+        filtercommunity_server_id (None | Unset | UUID):
+        filteraction_state (ActionState | None | Unset):
+        filteraction_tier (ActionTier | None | Unset):
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
         x_api_key (None | str | Unset):
@@ -295,9 +295,9 @@ async def asyncio(
     return (
         await asyncio_detailed(
             client=client,
-            community_server_id=community_server_id,
-            action_state=action_state,
-            action_tier=action_tier,
+            filtercommunity_server_id=filtercommunity_server_id,
+            filteraction_state=filteraction_state,
+            filteraction_tier=filteraction_tier,
             limit=limit,
             offset=offset,
             x_api_key=x_api_key,

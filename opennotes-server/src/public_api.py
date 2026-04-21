@@ -19,6 +19,9 @@ class PublicRouterSpec:
 
     path_allowlist is None = every route on the router is public.
     path_allowlist is a set = only routes whose .path is in the set are public.
+    method_allowlist is None = every method on matched paths is public.
+    method_allowlist is a set = only routes with at least one matching method
+    are public.
     Use an allowlist when a router mixes adapter-contract routes with self-service
     or admin routes that must stay internal (e.g., profiles mixes /user-profiles/lookup
     with /profiles/me and /profiles/{id}/opennotes-admin).
@@ -26,6 +29,7 @@ class PublicRouterSpec:
 
     router: APIRouter
     path_allowlist: frozenset[str] | None = field(default=None)
+    method_allowlist: frozenset[str] | None = field(default=None)
 
 
 PUBLIC_ADAPTER_ROUTERS: list[PublicRouterSpec] = [
@@ -37,5 +41,9 @@ PUBLIC_ADAPTER_ROUTERS: list[PublicRouterSpec] = [
     ),
     PublicRouterSpec(router=communities_jsonapi_router),
     PublicRouterSpec(router=requests_jsonapi_router),
-    PublicRouterSpec(router=moderation_actions_jsonapi_router),
+    PublicRouterSpec(
+        router=moderation_actions_jsonapi_router,
+        path_allowlist=frozenset({"/moderation-actions", "/moderation-actions/{action_id}"}),
+        method_allowlist=frozenset({"GET"}),
+    ),
 ]
