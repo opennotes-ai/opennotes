@@ -4,10 +4,10 @@ export default {
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
-    '^@opennotes/shared-types$': '<rootDir>/packages/shared-types/src/index.ts',
-    '^@opennotes/shared-types/(.*)$': '<rootDir>/packages/shared-types/src/$1.ts',
-    '^@opennotes/test-utils$': '<rootDir>/packages/test-utils/src/index.ts',
-    '^@opennotes/test-utils/(.*)$': '<rootDir>/packages/test-utils/src/$1.ts',
+    '^@opennotes/shared-types$': '<rootDir>/../packages/shared-types/src/index.ts',
+    '^@opennotes/shared-types/(.*)$': '<rootDir>/../packages/shared-types/src/$1.ts',
+    '^@opennotes/test-utils$': '<rootDir>/../packages/test-utils/src/index.ts',
+    '^@opennotes/test-utils/(.*)$': '<rootDir>/../packages/test-utils/src/$1.ts',
   },
   transform: {
     '^.+\\.tsx?$': [
@@ -22,10 +22,10 @@ export default {
           baseUrl: '.',
           rootDir: '.',
           paths: {
-            '@opennotes/shared-types': ['./packages/shared-types/src/index.ts'],
-            '@opennotes/shared-types/*': ['./packages/shared-types/src/*.ts'],
-            '@opennotes/test-utils': ['./packages/test-utils/src/index.ts'],
-            '@opennotes/test-utils/*': ['./packages/test-utils/src/*.ts'],
+            '@opennotes/shared-types': ['../packages/shared-types/src/index.ts'],
+            '@opennotes/shared-types/*': ['../packages/shared-types/src/*.ts'],
+            '@opennotes/test-utils': ['../packages/test-utils/src/index.ts'],
+            '@opennotes/test-utils/*': ['../packages/test-utils/src/*.ts'],
           },
           strict: true,
           useUnknownInCatchVariables: false,

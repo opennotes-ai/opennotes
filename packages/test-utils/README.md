@@ -54,7 +54,7 @@ Install as an editable package:
 
 ```bash
 cd opennotes-server
-uv pip install -e ../opennotes-discord/packages/test-utils/python
+uv pip install -e ../packages/test-utils/python
 ```
 
 ## Usage
