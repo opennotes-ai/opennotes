@@ -50,6 +50,8 @@ jobs:
             shared:
               - '.github/workflows/**'
               - 'docker-compose*.yml'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
 
   pre-commit:
     name: Pre-commit Hooks
@@ -237,6 +239,31 @@ jobs:
 
       - name: Run TypeScript compiler
         run: pnpm --filter opennotes-playground run type-check
+
+  lint-platform:
+    name: Lint TypeScript (opennotes-platform)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.platform == 'true' || needs.detect-changes.outputs.shared == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies (workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run TypeScript compiler
+        run: pnpm --filter opennotes-platform run type-check
 
   unit-tests-python:
     name: Unit Tests (opennotes-server)
@@ -787,6 +814,37 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_mock-key-for-ci-testing"
         run: pnpm --filter opennotes-playground run build
 
+  test-platform:
+    name: Test & Build (opennotes-platform)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.platform == 'true' || needs.detect-changes.outputs.shared == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies (workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm --filter opennotes-platform run test
+
+      - name: Build
+        env:
+          VITE_SUPABASE_URL: "https://mock-project.supabase.co"
+          VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_mock-key-for-ci-testing"
+        run: pnpm --filter opennotes-platform run build
+
   security-scan-python:
     name: Security Scan Python
     needs: detect-changes
@@ -902,6 +960,40 @@ jobs:
           name: security-reports-playground
           path: opennotes-playground/pnpm-audit.json
 
+  security-scan-platform:
+    name: Security Scan Platform
+    needs: detect-changes
+    if: needs.detect-changes.outputs.platform == 'true' || needs.detect-changes.outputs.shared == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies (workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run pnpm audit
+        working-directory: opennotes-platform
+        run: pnpm audit --json > pnpm-audit.json
+        continue-on-error: true
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports-platform
+          path: opennotes-platform/pnpm-audit.json
+
   validate-api-endpoints:
     name: Validate API Endpoints
     needs: detect-changes
@@ -954,7 +1046,7 @@ jobs:
 
   ci-success:
     name: CI Success
-    needs: [pre-commit, lint-python, lint-typescript, lint-playground, unit-tests-python, integration-tests-python, test-typescript, test-playground, validate-schema, validate-schema-consistency, security-scan-python, security-scan-typescript, security-scan-playground, validate-api-endpoints]
+    needs: [pre-commit, lint-python, lint-typescript, lint-playground, lint-platform, unit-tests-python, integration-tests-python, test-typescript, test-playground, test-platform, validate-schema, validate-schema-consistency, security-scan-python, security-scan-typescript, security-scan-playground, security-scan-platform, validate-api-endpoints]
     if: always()
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
