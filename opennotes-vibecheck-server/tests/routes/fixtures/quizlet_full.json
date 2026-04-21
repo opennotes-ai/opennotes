@@ -1,0 +1,88 @@
+{
+  "_source_note": "Stubbed SidebarPayload shape for the Quizlet blog-post integration test. Every section has at least one populated entry so the end-to-end assertion can verify that the orchestrator composes all four sub-analyses into the aggregate response.",
+  "source_url": "https://quizlet.com/blog/groups-are-now-classes/",
+  "page_title": "Groups are now Classes",
+  "page_kind": "blog_post",
+  "scraped_at": "2024-09-01T12:00:00Z",
+  "cached": false,
+  "safety": {
+    "harmful_content_matches": [
+      {
+        "utterance_id": "comment-1",
+        "max_score": 0.71,
+        "categories": {"harassment": true, "violence": false},
+        "scores": {"harassment": 0.71, "violence": 0.02},
+        "flagged_categories": ["harassment"]
+      }
+    ]
+  },
+  "tone_dynamics": {
+    "scd": {
+      "summary": "The thread opens positively and stays constructive until a breaking-change concern shifts tone toward guarded.",
+      "tone_labels": ["collaborative", "guarded"],
+      "per_speaker_notes": {
+        "Quizlet Team": "Announces a rename and addresses downstream impact.",
+        "bob_dev": "Raises a concrete API-stability concern."
+      },
+      "insufficient_conversation": false
+    },
+    "flashpoint_matches": [
+      {
+        "scan_type": "conversation_flashpoint",
+        "utterance_id": "comment-1",
+        "derailment_score": 62,
+        "risk_level": "Heated",
+        "reasoning": "API-breakage framing escalates the thread's tone.",
+        "context_messages": 2
+      }
+    ]
+  },
+  "facts_claims": {
+    "claims_report": {
+      "deduped_claims": [
+        {
+          "canonical_text": "Existing Quizlet Groups auto-migrate to Classes.",
+          "occurrence_count": 1,
+          "author_count": 1,
+          "utterance_ids": ["reply-0"],
+          "representative_authors": ["Quizlet Team"]
+        }
+      ],
+      "total_claims": 2,
+      "total_unique": 1
+    },
+    "known_misinformation": [
+      {
+        "claim_text": "Existing Quizlet Groups auto-migrate to Classes.",
+        "publisher": "Quizlet Help Center",
+        "review_title": "Migration status for renamed Groups",
+        "review_url": "https://help.quizlet.com/fact-check/groups-classes",
+        "textual_rating": "Accurate",
+        "review_date": "2024-09-02"
+      }
+    ]
+  },
+  "opinions_sentiments": {
+    "opinions_report": {
+      "sentiment_stats": {
+        "per_utterance": [
+          {"utterance_id": "post-0", "label": "positive", "valence": 0.6},
+          {"utterance_id": "comment-0", "label": "positive", "valence": 0.5},
+          {"utterance_id": "comment-1", "label": "negative", "valence": -0.4},
+          {"utterance_id": "reply-0", "label": "neutral", "valence": 0.1}
+        ],
+        "positive_pct": 50.0,
+        "negative_pct": 25.0,
+        "neutral_pct": 25.0,
+        "mean_valence": 0.2
+      },
+      "subjective_claims": [
+        {
+          "claim_text": "Love the rename",
+          "utterance_id": "comment-0",
+          "stance": "supports"
+        }
+      ]
+    }
+  }
+}
