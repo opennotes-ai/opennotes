@@ -1029,6 +1029,14 @@ jobs:
           ENCRYPTION_MASTER_KEY: VifXZGGipg5_7Sqln37MC-coQxLJwNwdSNADRCGCiMM=
         run: uv run python scripts/generate_openapi.py --output openapi.json
 
+      - name: Check OpenAPI schema is in sync (openapi.json + openapi-public.json)
+        working-directory: opennotes-server
+        env:
+          JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-min-32-chars
+          CREDENTIALS_ENCRYPTION_KEY: bEhsd3V1j2dPhxNfPdzHvVardNBKAsgXe4uz3v_XvEo=
+          ENCRYPTION_MASTER_KEY: VifXZGGipg5_7Sqln37MC-coQxLJwNwdSNADRCGCiMM=
+        run: uv run python scripts/check_openapi_sync.py
+
       - name: Validate API endpoints
         run: python3 scripts/validate-api-endpoints.py
 

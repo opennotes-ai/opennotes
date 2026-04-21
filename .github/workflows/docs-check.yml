@@ -1,0 +1,56 @@
+name: docs-check
+
+on:
+  pull_request:
+    paths:
+      - 'opennotes-docs/**'
+      - 'packages/tokens/src/**'
+      - '.github/workflows/docs-check.yml'
+
+# Cancel in-progress runs on the same PR when new commits land
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  broken-links-and-build:
+    name: Mintlify build + broken-links
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # @opennotes/tokens CSS is gitignored under opennotes-docs/styles/tokens/;
+      # CI must vendor it before Mintlify can resolve @imports in style.css.
+      # Pattern spec: docs/integrations/mintlify-tokens.md §6.4
+      - name: Vendor @opennotes/tokens CSS into docs
+        working-directory: opennotes-docs
+        run: |
+          mkdir -p styles/tokens
+          cp ../packages/tokens/src/*.css styles/tokens/
+          ls -la styles/tokens/
+
+      - name: Install Mintlify CLI
+        run: npm install -g mint@latest
+
+      - name: Validate docs.json
+        working-directory: opennotes-docs
+        run: |
+          # Schema check: docs.json must parse as valid JSON and contain the
+          # expected top-level keys. Mintlify's own schema validation runs as
+          # part of `mint build` below, but catching JSON errors early produces
+          # a clearer failure message.
+          node -e "const j = require('./docs.json'); if (!j.navigation || !j.name) { console.error('docs.json missing required keys'); process.exit(1); } console.log('docs.json ok — name=' + j.name);"
+
+      - name: Check broken links
+        working-directory: opennotes-docs
+        run: mint broken-links
+
+      - name: Build site
+        working-directory: opennotes-docs
+        run: mint build

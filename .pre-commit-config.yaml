@@ -156,6 +156,14 @@ repos:
         verbose: true
         require_serial: true
 
+      - id: check-openapi-sync
+        name: Check OpenAPI schema is in sync (openapi.json + openapi-public.json)
+        entry: bash -c 'cd opennotes-server && uv run python scripts/check_openapi_sync.py'
+        language: system
+        files: ^opennotes-server/(src/.*\.py|openapi\.json|openapi-public\.json)$
+        pass_filenames: false
+        require_serial: true
+
       - id: typecheck-discord
         name: TypeScript type check (opennotes-discord)
         entry: pnpm --filter opennotes-discord run type-check
