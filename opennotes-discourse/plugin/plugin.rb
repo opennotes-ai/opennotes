@@ -14,9 +14,14 @@ register_asset "stylesheets/opennotes.scss"
 after_initialize do
   load File.expand_path("../lib/opennotes.rb", __FILE__)
 
-  %w[client user_mapper post_mapper action_executor status_mapper slug_generator community_server_resolver platform_registrar].each do |f|
+  %w[gcp_auth client user_mapper post_mapper action_executor status_mapper slug_generator community_server_resolver platform_registrar].each do |f|
     load File.expand_path("../lib/opennotes/#{f}.rb", __FILE__)
   end
+
+  # Discard detection + token cache on every plugin (re)load so dev-mode and
+  # site-setting-triggered reloads can't inherit a stale @on_gcp or stale
+  # tokens. Probe + fresh metadata fetch are cheap on Cloud Run workers.
+  OpenNotes::GcpAuth.reset_cache! if defined?(OpenNotes::GcpAuth) && OpenNotes::GcpAuth.respond_to?(:reset_cache!)
 
   if SiteSetting.opennotes_platform_community_server_id.blank?
     SiteSetting.opennotes_platform_community_server_id = OpenNotes::SlugGenerator.generate_for_site

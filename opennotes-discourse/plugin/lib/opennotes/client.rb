@@ -20,12 +20,12 @@ module OpenNotes
 
     def initialize(server_url:, api_key:)
       @api_key = api_key
-      @connection = Faraday.new(url: server_url) do |f|
+      @server_url = server_url.to_s.sub(%r{/+\z}, "")
+      @connection = Faraday.new(url: @server_url) do |f|
         f.request :json
         f.response :json
         f.adapter Faraday.default_adapter
       end
-      @server_url = server_url
     end
 
     def get(path, params: {}, user: nil)
@@ -65,7 +65,20 @@ module OpenNotes
 
     def execute_request(method, path, params: nil, body: nil, user: nil)
       @connection.send(method, path) do |req|
-        req.headers["Authorization"] = "Bearer #{@api_key}"
+        req.headers["X-API-Key"] = @api_key
+
+        if OpenNotes::GcpAuth.on_gcp?
+          id_token = OpenNotes::GcpAuth.identity_token(@server_url)
+          if id_token
+            req.headers["Authorization"] = "Bearer #{id_token}"
+          else
+            OpenNotes::GcpAuth.throttle_warn(
+              "client_nil_token:#{@server_url}",
+              "On GCP but no identity token available for audience=#{@server_url}; " \
+                "Cloud Run IAM will reject",
+            )
+          end
+        end
 
         if user
           req.headers["X-Adapter-Platform"] = "discourse"
