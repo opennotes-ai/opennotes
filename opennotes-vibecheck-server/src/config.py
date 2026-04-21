@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     FIRECRAWL_API_KEY: str = ""
-    GOOGLE_FACT_CHECK_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
 
     VIBECHECK_SUPABASE_URL: str = ""

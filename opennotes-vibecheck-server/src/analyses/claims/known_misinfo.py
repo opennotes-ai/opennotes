@@ -2,15 +2,19 @@
 
 Given a single deduped claim string, query
 `https://factchecktools.googleapis.com/v1alpha1/claims:search` for
-published fact-check articles. Map each returned `claimReview` entry to
-a `FactCheckMatch`. The API is best-effort — rate limits and upstream
-errors return `[]` so the broader analysis pipeline never fails just
-because external fact-check coverage is unavailable.
+published fact-check articles. Authenticates via Application Default
+Credentials (same Workload Identity SA that Vertex uses) — no API key
+required once the Fact Check Tools API is enabled on the project.
+
+The API is best-effort — rate limits and upstream errors return `[]`
+so the broader analysis pipeline never fails just because external
+fact-check coverage is unavailable.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import date, datetime
 from typing import Any
 
@@ -19,10 +23,54 @@ import httpx
 from ._factcheck_schemas import FactCheckMatch
 
 FACT_CHECK_API_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
+FACT_CHECK_OAUTH_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 DEFAULT_TIMEOUT_SECONDS = 10.0
 MAX_RESULTS_PER_CLAIM = 5
 
 _logger = logging.getLogger(__name__)
+_creds_lock = threading.RLock()
+_cached_credentials: Any = None
+
+
+def _get_access_token() -> str | None:
+    """Fetch an OAuth2 access token via Application Default Credentials.
+
+    Cached at module level; refreshed on demand via google.auth.transport.Request.
+    Returns None on any auth failure so the caller short-circuits to `[]`.
+    """
+    global _cached_credentials  # noqa: PLW0603
+    try:
+        from google.auth import default as google_auth_default
+        from google.auth.transport.requests import Request as GoogleAuthRequest
+    except ImportError:
+        _logger.warning("google-auth not installed; cannot reach Fact Check API")
+        return None
+
+    with _creds_lock:
+        if _cached_credentials is None:
+            try:
+                creds, _project = google_auth_default(scopes=[FACT_CHECK_OAUTH_SCOPE])
+            except Exception as exc:
+                _logger.warning("ADC lookup failed for Fact Check API: %s", exc)
+                return None
+            _cached_credentials = creds
+
+        creds = _cached_credentials
+        try:
+            if not getattr(creds, "valid", False):
+                creds.refresh(GoogleAuthRequest())
+        except Exception as exc:
+            _logger.warning("Refreshing ADC token failed for Fact Check API: %s", exc)
+            return None
+        token = getattr(creds, "token", None)
+        return token if isinstance(token, str) and token else None
+
+
+def _reset_cached_credentials_for_tests() -> None:
+    """Test-only helper to drop the module-level credential cache."""
+    global _cached_credentials  # noqa: PLW0603
+    with _creds_lock:
+        _cached_credentials = None
 
 
 def _parse_review_date(raw: Any) -> date | None:
@@ -75,31 +123,39 @@ async def check_known_misinformation(
     claim_text: str,
     *,
     httpx_client: httpx.AsyncClient,
-    api_key: str,
     language_code: str = "en",
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> list[FactCheckMatch]:
     """Look up published fact-checks for a single deduped claim.
+
+    Authenticates via Application Default Credentials — on Cloud Run the
+    vibecheck-server SA is used (Fact Check Tools API must be enabled on
+    the project). No API key.
 
     Returns up to `MAX_RESULTS_PER_CLAIM` matches. Rate-limit (429),
     other HTTP errors, and network failures are swallowed with a
     logged warning so the analysis pipeline keeps moving — external
     fact-check coverage is best-effort, not load-bearing.
     """
-    if not claim_text.strip() or not api_key:
+    if not claim_text.strip():
+        return []
+
+    access_token = _get_access_token()
+    if access_token is None:
         return []
 
     params = {
         "query": claim_text,
-        "key": api_key,
         "languageCode": language_code,
         "pageSize": MAX_RESULTS_PER_CLAIM,
     }
+    headers = {"Authorization": f"Bearer {access_token}"}
 
     try:
         response = await httpx_client.get(
             FACT_CHECK_API_URL,
             params=params,
+            headers=headers,
             timeout=timeout,
         )
     except httpx.HTTPError as exc:

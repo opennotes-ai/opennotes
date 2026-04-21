@@ -399,10 +399,6 @@ class TestEndToEndWithFixture:
             )
         ]
 
-        # Ensure the fact-check HTTP-client branch runs.
-        monkeypatch.setenv("GOOGLE_FACT_CHECK_API_KEY", "test-key")
-        get_settings.cache_clear()
-
         _stub_all_analyses(
             monkeypatch,
             utterances=payload,

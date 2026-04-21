@@ -8,10 +8,18 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
+from src.analyses.claims import known_misinfo as km
 from src.analyses.claims.known_misinfo import (
     FACT_CHECK_API_URL,
     check_known_misinformation,
 )
+
+
+@pytest.fixture(autouse=True)
+def _stub_adc_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bypass google.auth.default() — tests don't need real ADC."""
+    km._reset_cached_credentials_for_tests()
+    monkeypatch.setattr(km, "_get_access_token", lambda: "stub-bearer-token")
 
 
 @pytest.fixture
@@ -25,7 +33,7 @@ async def test_matched_response_maps_to_fact_check_rows(
     httpx_mock: HTTPXMock,
 ) -> None:
     httpx_mock.add_response(
-        url=f"{FACT_CHECK_API_URL}?query=vaccines+cause+autism&key=test-key&languageCode=en&pageSize=5",
+        url=f"{FACT_CHECK_API_URL}?query=vaccines+cause+autism&languageCode=en&pageSize=5",
         method="GET",
         json={
             "claims": [
@@ -59,7 +67,6 @@ async def test_matched_response_maps_to_fact_check_rows(
     matches = await check_known_misinformation(
         "vaccines cause autism",
         httpx_client=httpx_client,
-        api_key="test-key",
     )
 
     assert len(matches) == 2
@@ -84,7 +91,7 @@ async def test_empty_response_returns_empty_list(
     httpx_mock: HTTPXMock,
 ) -> None:
     httpx_mock.add_response(
-        url=f"{FACT_CHECK_API_URL}?query=no+matches+here&key=test-key&languageCode=en&pageSize=5",
+        url=f"{FACT_CHECK_API_URL}?query=no+matches+here&languageCode=en&pageSize=5",
         method="GET",
         json={},
     )
@@ -92,7 +99,6 @@ async def test_empty_response_returns_empty_list(
     matches = await check_known_misinformation(
         "no matches here",
         httpx_client=httpx_client,
-        api_key="test-key",
     )
 
     assert matches == []
@@ -104,7 +110,7 @@ async def test_rate_limit_429_returns_empty_list_and_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     httpx_mock.add_response(
-        url=f"{FACT_CHECK_API_URL}?query=rate+limited+claim&key=test-key&languageCode=en&pageSize=5",
+        url=f"{FACT_CHECK_API_URL}?query=rate+limited+claim&languageCode=en&pageSize=5",
         method="GET",
         status_code=429,
         json={"error": {"code": 429, "message": "Rate limit exceeded"}},
@@ -114,7 +120,6 @@ async def test_rate_limit_429_returns_empty_list_and_warns(
         matches = await check_known_misinformation(
             "rate limited claim",
             httpx_client=httpx_client,
-            api_key="test-key",
         )
 
     assert matches == []
@@ -140,7 +145,7 @@ async def test_limits_results_to_top_five_claim_reviews(
         for i in range(8)
     ]
     httpx_mock.add_response(
-        url=f"{FACT_CHECK_API_URL}?query=many+reviews&key=test-key&languageCode=en&pageSize=5",
+        url=f"{FACT_CHECK_API_URL}?query=many+reviews&languageCode=en&pageSize=5",
         method="GET",
         json={"claims": [{"text": "many reviews", "claimReview": reviews}]},
     )
@@ -148,7 +153,6 @@ async def test_limits_results_to_top_five_claim_reviews(
     matches = await check_known_misinformation(
         "many reviews",
         httpx_client=httpx_client,
-        api_key="test-key",
     )
 
     assert len(matches) == 5
@@ -160,7 +164,7 @@ async def test_server_error_returns_empty_list_and_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     httpx_mock.add_response(
-        url=f"{FACT_CHECK_API_URL}?query=server+down&key=test-key&languageCode=en&pageSize=5",
+        url=f"{FACT_CHECK_API_URL}?query=server+down&languageCode=en&pageSize=5",
         method="GET",
         status_code=500,
         json={"error": {"code": 500, "message": "Internal Server Error"}},
@@ -170,7 +174,6 @@ async def test_server_error_returns_empty_list_and_warns(
         matches = await check_known_misinformation(
             "server down",
             httpx_client=httpx_client,
-            api_key="test-key",
         )
 
     assert matches == []
@@ -181,7 +184,7 @@ async def test_missing_optional_fields_are_tolerated(
     httpx_mock: HTTPXMock,
 ) -> None:
     httpx_mock.add_response(
-        url=f"{FACT_CHECK_API_URL}?query=partial+data&key=test-key&languageCode=en&pageSize=5",
+        url=f"{FACT_CHECK_API_URL}?query=partial+data&languageCode=en&pageSize=5",
         method="GET",
         json={
             "claims": [
@@ -203,7 +206,6 @@ async def test_missing_optional_fields_are_tolerated(
     matches = await check_known_misinformation(
         "partial data",
         httpx_client=httpx_client,
-        api_key="test-key",
     )
 
     assert len(matches) == 1

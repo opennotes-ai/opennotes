@@ -169,12 +169,9 @@ async def _safe_known_misinfo(
     claim_text: str,
     *,
     httpx_client: httpx.AsyncClient,
-    api_key: str,
 ) -> list[FactCheckMatch]:
     try:
-        return await check_known_misinformation(
-            claim_text, httpx_client=httpx_client, api_key=api_key
-        )
+        return await check_known_misinformation(claim_text, httpx_client=httpx_client)
     except Exception as exc:
         logger.warning("fact-check lookup failed for claim %r: %s", claim_text[:80], exc)
         return []
@@ -311,17 +308,13 @@ async def _run_pipeline(
         )
 
     known_misinfo: list[FactCheckMatch] = []
-    if claims_report.deduped_claims and settings.GOOGLE_FACT_CHECK_API_KEY:
+    if claims_report.deduped_claims:
         own_httpx = httpx_client is None
         client = httpx_client or httpx.AsyncClient()
         try:
             results = await asyncio.gather(
                 *(
-                    _safe_known_misinfo(
-                        claim.canonical_text,
-                        httpx_client=client,
-                        api_key=settings.GOOGLE_FACT_CHECK_API_KEY,
-                    )
+                    _safe_known_misinfo(claim.canonical_text, httpx_client=client)
                     for claim in claims_report.deduped_claims
                 )
             )
