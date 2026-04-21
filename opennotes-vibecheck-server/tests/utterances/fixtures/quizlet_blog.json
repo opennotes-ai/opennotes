@@ -1,0 +1,45 @@
+{
+  "_source_note": "Hand-crafted synthetic payload modeled on https://quizlet.com/blog/groups-are-now-classes/ (blog post + comment thread). Mirrors Firecrawl /v2/extract 'completed' response shape: { success, status, data: <UtterancesPayload>, ... }.",
+  "success": true,
+  "status": "completed",
+  "data": {
+    "source_url": "https://quizlet.com/blog/groups-are-now-classes/",
+    "scraped_at": "2024-09-01T12:00:00Z",
+    "page_title": "Groups are now Classes",
+    "page_kind": "blog_post",
+    "utterances": [
+      {
+        "utterance_id": "post-0",
+        "kind": "post",
+        "text": "We've renamed Groups to Classes to better reflect how our community uses Quizlet. This makes it easier for teachers to organize study materials for their students.",
+        "author": "Quizlet Team",
+        "timestamp": "2024-09-01T09:00:00Z",
+        "parent_id": null
+      },
+      {
+        "utterance_id": "comment-0",
+        "kind": "comment",
+        "text": "Love the rename! Will existing Groups auto-migrate to Classes or do we need to recreate them manually?",
+        "author": "alice_teacher",
+        "timestamp": "2024-09-01T10:15:00Z",
+        "parent_id": "post-0"
+      },
+      {
+        "utterance_id": "comment-1",
+        "kind": "comment",
+        "text": "This is a breaking change for our integration. Is the API endpoint still /groups/ or has it moved to /classes/?",
+        "author": "bob_dev",
+        "timestamp": "2024-09-01T11:00:00Z",
+        "parent_id": "post-0"
+      },
+      {
+        "utterance_id": "reply-0",
+        "kind": "reply",
+        "text": "Existing Groups migrate automatically. The API endpoint is unchanged in this release for backwards compatibility.",
+        "author": "Quizlet Team",
+        "timestamp": "2024-09-01T11:30:00Z",
+        "parent_id": "comment-1"
+      }
+    ]
+  }
+}

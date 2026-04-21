@@ -1,0 +1,738 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "vibecheck-server",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/frame-compat": {
+      "get": {
+        "tags": [
+          "frame"
+        ],
+        "summary": "Frame Compat",
+        "operationId": "frame_compat_api_frame_compat_get",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Frame Compat Api Frame Compat Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/screenshot": {
+      "get": {
+        "tags": [
+          "frame"
+        ],
+        "summary": "Screenshot",
+        "operationId": "screenshot_api_screenshot_get",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Screenshot Api Screenshot Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyze": {
+      "post": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Analyze",
+        "operationId": "analyze_api_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SidebarPayload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnalyzeRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "HTTP(S) URL of the page to analyze"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "AnalyzeRequest"
+      },
+      "ClaimsReport": {
+        "properties": {
+          "deduped_claims": {
+            "items": {
+              "$ref": "#/components/schemas/DedupedClaim"
+            },
+            "type": "array",
+            "title": "Deduped Claims"
+          },
+          "total_claims": {
+            "type": "integer",
+            "title": "Total Claims"
+          },
+          "total_unique": {
+            "type": "integer",
+            "title": "Total Unique"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deduped_claims",
+          "total_claims",
+          "total_unique"
+        ],
+        "title": "ClaimsReport",
+        "description": "Output of `dedupe_claims` \u2014 prevalence stats for the Facts sidebar."
+      },
+      "DedupedClaim": {
+        "properties": {
+          "canonical_text": {
+            "type": "string",
+            "title": "Canonical Text"
+          },
+          "occurrence_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Occurrence Count"
+          },
+          "author_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Author Count"
+          },
+          "utterance_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Utterance Ids"
+          },
+          "representative_authors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Representative Authors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "canonical_text",
+          "occurrence_count",
+          "author_count",
+          "utterance_ids",
+          "representative_authors"
+        ],
+        "title": "DedupedClaim",
+        "description": "A cluster of semantically-equivalent claims across utterances."
+      },
+      "FactCheckMatch": {
+        "properties": {
+          "claim_text": {
+            "type": "string",
+            "title": "Claim Text"
+          },
+          "publisher": {
+            "type": "string",
+            "title": "Publisher"
+          },
+          "review_title": {
+            "type": "string",
+            "title": "Review Title"
+          },
+          "review_url": {
+            "type": "string",
+            "title": "Review Url"
+          },
+          "textual_rating": {
+            "type": "string",
+            "title": "Textual Rating"
+          },
+          "review_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claim_text",
+          "publisher",
+          "review_title",
+          "review_url",
+          "textual_rating"
+        ],
+        "title": "FactCheckMatch",
+        "description": "A single fact-check article surfaced by the Google Fact Check Tools API.\n\nOne claim (as extracted+deduped from an utterance) can map to multiple\n`FactCheckMatch` rows \u2014 each corresponding to one `claimReview` entry\nreturned by the API. We keep the original claim text alongside the\nreviewer-supplied metadata so the UI can show provenance clearly."
+      },
+      "FactsClaimsSection": {
+        "properties": {
+          "claims_report": {
+            "$ref": "#/components/schemas/ClaimsReport"
+          },
+          "known_misinformation": {
+            "items": {
+              "$ref": "#/components/schemas/FactCheckMatch"
+            },
+            "type": "array",
+            "title": "Known Misinformation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claims_report"
+        ],
+        "title": "FactsClaimsSection",
+        "description": "Deduped verifiable claims and any matching published fact-checks."
+      },
+      "FlashpointMatch": {
+        "properties": {
+          "scan_type": {
+            "type": "string",
+            "const": "conversation_flashpoint",
+            "title": "Scan Type",
+            "default": "conversation_flashpoint"
+          },
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id",
+            "description": "Platform-agnostic identifier of the scored utterance"
+          },
+          "derailment_score": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Derailment Score",
+            "description": "Derailment risk score (0-100)"
+          },
+          "risk_level": {
+            "$ref": "#/components/schemas/RiskLevel",
+            "description": "Categorical risk assessment level"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "description": "Explanation of detected escalation signals"
+          },
+          "context_messages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Context Messages",
+            "description": "Number of context messages analyzed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "derailment_score",
+          "risk_level",
+          "reasoning",
+          "context_messages"
+        ],
+        "title": "FlashpointMatch",
+        "description": "Match result from flashpoint detection for a single utterance.\n\nPort of ``ConversationFlashpointMatch`` from opennotes-server, adapted\nfor the vibecheck utterance model: ``utterance_id`` replaces Discord\n``message_id``; other fields are unchanged."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HarmfulContentMatch": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "max_score": {
+            "type": "number",
+            "title": "Max Score"
+          },
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Categories"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Scores"
+          },
+          "flagged_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flagged Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "max_score",
+          "categories",
+          "scores"
+        ],
+        "title": "HarmfulContentMatch",
+        "description": "A single flagged utterance from the OpenAI moderation API."
+      },
+      "OpinionsReport": {
+        "properties": {
+          "sentiment_stats": {
+            "$ref": "#/components/schemas/SentimentStatsReport"
+          },
+          "subjective_claims": {
+            "items": {
+              "$ref": "#/components/schemas/SubjectiveClaim"
+            },
+            "type": "array",
+            "title": "Subjective Claims"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sentiment_stats",
+          "subjective_claims"
+        ],
+        "title": "OpinionsReport"
+      },
+      "OpinionsSection": {
+        "properties": {
+          "opinions_report": {
+            "$ref": "#/components/schemas/OpinionsReport"
+          }
+        },
+        "type": "object",
+        "required": [
+          "opinions_report"
+        ],
+        "title": "OpinionsSection",
+        "description": "Sentiment distribution and extracted subjective claims."
+      },
+      "RiskLevel": {
+        "type": "string",
+        "enum": [
+          "Low Risk",
+          "Guarded",
+          "Heated",
+          "Hostile",
+          "Dangerous"
+        ],
+        "title": "RiskLevel",
+        "description": "Categorical risk level for conversation flashpoint detection."
+      },
+      "SCDReport": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "Overall conversational-dynamics narrative (<= ~80 words). Captures sentiment shifts, intentions, and persuasive strategies without restating specific topics or claims."
+          },
+          "tone_labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tone Labels",
+            "description": "Short tone descriptors for the conversation as a whole (e.g. 'combative', 'collaborative', 'dismissive', 'civil')."
+          },
+          "per_speaker_notes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Per Speaker Notes",
+            "description": "Map of speaker label -> 1-2 sentence observation about that speaker's tone, intent, or conversational strategy."
+          },
+          "insufficient_conversation": {
+            "type": "boolean",
+            "title": "Insufficient Conversation",
+            "description": "True when the input lacks a real multi-speaker exchange (e.g. a blog post with no comments). When true, callers should treat `summary` as a fixed placeholder and ignore `tone_labels` / `per_speaker_notes`.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary"
+        ],
+        "title": "SCDReport",
+        "description": "Structured output of `analyze_scd`.\n\nMirrors the structural intent of Cornell ConvoKit's SCD trajectory summary:\na short dynamics narrative, a small set of tone labels, and per-speaker\nobservations. For inputs that lack a real multi-speaker conversation, the\nmodel is bypassed and `insufficient_conversation=True` is set."
+      },
+      "SafetySection": {
+        "properties": {
+          "harmful_content_matches": {
+            "items": {
+              "$ref": "#/components/schemas/HarmfulContentMatch"
+            },
+            "type": "array",
+            "title": "Harmful Content Matches"
+          }
+        },
+        "type": "object",
+        "title": "SafetySection",
+        "description": "Harmful-content matches surfaced by OpenAI moderation."
+      },
+      "SentimentScore": {
+        "properties": {
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "label": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative",
+              "neutral"
+            ],
+            "title": "Label"
+          },
+          "valence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Valence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "utterance_id",
+          "label",
+          "valence"
+        ],
+        "title": "SentimentScore"
+      },
+      "SentimentStatsReport": {
+        "properties": {
+          "per_utterance": {
+            "items": {
+              "$ref": "#/components/schemas/SentimentScore"
+            },
+            "type": "array",
+            "title": "Per Utterance"
+          },
+          "positive_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Positive Pct"
+          },
+          "negative_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Negative Pct"
+          },
+          "neutral_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Neutral Pct"
+          },
+          "mean_valence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Mean Valence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "per_utterance",
+          "positive_pct",
+          "negative_pct",
+          "neutral_pct",
+          "mean_valence"
+        ],
+        "title": "SentimentStatsReport"
+      },
+      "SidebarPayload": {
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "page_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Title"
+          },
+          "page_kind": {
+            "type": "string",
+            "enum": [
+              "blog_post",
+              "forum_thread",
+              "article",
+              "other"
+            ],
+            "title": "Page Kind",
+            "default": "other"
+          },
+          "scraped_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scraped At"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached",
+            "default": false
+          },
+          "safety": {
+            "$ref": "#/components/schemas/SafetySection"
+          },
+          "tone_dynamics": {
+            "$ref": "#/components/schemas/ToneDynamicsSection"
+          },
+          "facts_claims": {
+            "$ref": "#/components/schemas/FactsClaimsSection"
+          },
+          "opinions_sentiments": {
+            "$ref": "#/components/schemas/OpinionsSection"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_url",
+          "scraped_at",
+          "safety",
+          "tone_dynamics",
+          "facts_claims",
+          "opinions_sentiments"
+        ],
+        "title": "SidebarPayload",
+        "description": "Top-level response for `POST /api/analyze`.\n\nAggregates all four sidebar sections plus identity/metadata fields the\nfrontend needs to render the result. `cached=True` indicates the payload\nwas served from the Supabase cache (72h TTL) instead of a freshly run\npipeline."
+      },
+      "SubjectiveClaim": {
+        "properties": {
+          "claim_text": {
+            "type": "string",
+            "title": "Claim Text"
+          },
+          "utterance_id": {
+            "type": "string",
+            "title": "Utterance Id"
+          },
+          "stance": {
+            "type": "string",
+            "enum": [
+              "supports",
+              "opposes",
+              "evaluates"
+            ],
+            "title": "Stance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claim_text",
+          "utterance_id",
+          "stance"
+        ],
+        "title": "SubjectiveClaim"
+      },
+      "ToneDynamicsSection": {
+        "properties": {
+          "scd": {
+            "$ref": "#/components/schemas/SCDReport"
+          },
+          "flashpoint_matches": {
+            "items": {
+              "$ref": "#/components/schemas/FlashpointMatch"
+            },
+            "type": "array",
+            "title": "Flashpoint Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scd"
+        ],
+        "title": "ToneDynamicsSection",
+        "description": "Speaker conversational dynamics + per-utterance flashpoint matches."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

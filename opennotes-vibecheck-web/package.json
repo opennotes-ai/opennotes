@@ -1,0 +1,43 @@
+{
+  "name": "opennotes-vibecheck-web",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "types:generate": "openapi-typescript ../opennotes-vibecheck-server/openapi.json -o src/lib/generated-types.ts",
+    "dev": "vinxi dev",
+    "build": "vinxi build",
+    "start": "vinxi start",
+    "test": "vitest run --passWithNoTests",
+    "type-check": "tsc --noEmit",
+    "lint": "pnpm run type-check"
+  },
+  "dependencies": {
+    "@kobalte/core": "^0.13.11",
+    "@opennotes/tokens": "workspace:*",
+    "@opennotes/ui": "workspace:*",
+    "@solidjs/meta": "^0.29.4",
+    "@solidjs/router": "^0.15.3",
+    "@solidjs/start": "^1.1.0",
+    "@tailwindcss/postcss": "^4.2.1",
+    "@tailwindcss/typography": "^0.5.19",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "google-auth-library": "^10.6.1",
+    "openapi-fetch": "^0.17.0",
+    "postcss": "^8.5.8",
+    "solid-js": "^1.9.5",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.1",
+    "tw-animate-css": "^1.4.0",
+    "vinxi": "^0.5.3"
+  },
+  "devDependencies": {
+    "@solidjs/testing-library": "^0.8.10",
+    "@testing-library/jest-dom": "^6.9.1",
+    "jsdom": "^29.0.1",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.7.3",
+    "vite-plugin-solid": "^2.11.12",
+    "vitest": "^4.0.18"
+  }
+}
