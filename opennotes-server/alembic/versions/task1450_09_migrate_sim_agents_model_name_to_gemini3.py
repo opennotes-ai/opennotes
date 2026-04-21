@@ -13,15 +13,25 @@ to instantiate.
 
 Rewrite plan (ordered, idempotent):
 
-- ``google-gla:gemini-2.5-pro``        -> ``google-vertex:gemini-3.1-pro-preview``
-- ``google-vertex:gemini-2.5-pro``     -> ``google-vertex:gemini-3.1-pro-preview``
-- ``google-gla:gemini-2.5-flash``      -> ``google-vertex:gemini-3-flash``
-- ``google-vertex:gemini-2.5-flash``   -> ``google-vertex:gemini-3-flash``
-- ``google-gla:%`` (catch-all)         -> ``google-vertex:gemini-3.1-pro-preview``
+- ``google-gla:gemini-2.5-pro``                  -> ``google-vertex:gemini-3.1-pro-preview``
+- ``google-vertex:gemini-2.5-pro``               -> ``google-vertex:gemini-3.1-pro-preview``
+- ``google-vertex:global/gemini-2.5-pro``        -> ``google-vertex:gemini-3.1-pro-preview``
+- ``google-gla:gemini-2.5-flash``                -> ``google-vertex:gemini-3-flash``
+- ``google-vertex:gemini-2.5-flash``             -> ``google-vertex:gemini-3-flash``
+- ``google-vertex:global/gemini-2.5-flash``      -> ``google-vertex:gemini-3-flash``
+- ``google-gla:%`` (catch-all)                   -> ``google-vertex:gemini-3.1-pro-preview``
 
-CRITICAL ORDERING: the specific 2.5-flash mapping runs BEFORE the
-``google-gla:%`` catch-all so that ``google-gla:gemini-2.5-flash`` is routed
-to ``gemini-3-flash`` rather than collapsed into the pro preview.
+The ``google-vertex:global/...`` shapes come from the older
+``vertex_ai/global/...`` slash format (see ``tests/unit/llm_config/test_model_id.py``)
+that leaked into persisted rows before the runtime normalized them.
+
+CRITICAL ORDERING: the specific 2.5-flash mappings (including the ``global/``
+variant) run BEFORE the ``google-gla:%`` catch-all so that
+``google-gla:gemini-2.5-flash`` is routed to ``gemini-3-flash`` rather than
+collapsed into the pro preview.  The flash statement is also listed BEFORE
+the pro statement in the module body to make the flash-first precedence
+visually obvious, though flash and pro WHERE clauses are disjoint so either
+order is sound.
 
 Idempotency: every statement is ``UPDATE ... WHERE <legacy value>``. Re-running
 after a successful apply matches zero rows because the target values (
@@ -46,17 +56,19 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE opennotes_sim_agents
-           SET model_name = 'google-vertex:gemini-3.1-pro-preview'
-         WHERE model_name = 'google-gla:gemini-2.5-pro'
-            OR model_name = 'google-vertex:gemini-2.5-pro'
+           SET model_name = 'google-vertex:gemini-3-flash'
+         WHERE model_name = 'google-gla:gemini-2.5-flash'
+            OR model_name = 'google-vertex:gemini-2.5-flash'
+            OR model_name = 'google-vertex:global/gemini-2.5-flash'
         """
     )
     op.execute(
         """
         UPDATE opennotes_sim_agents
-           SET model_name = 'google-vertex:gemini-3-flash'
-         WHERE model_name = 'google-gla:gemini-2.5-flash'
-            OR model_name = 'google-vertex:gemini-2.5-flash'
+           SET model_name = 'google-vertex:gemini-3.1-pro-preview'
+         WHERE model_name = 'google-gla:gemini-2.5-pro'
+            OR model_name = 'google-vertex:gemini-2.5-pro'
+            OR model_name = 'google-vertex:global/gemini-2.5-pro'
         """
     )
     op.execute(
