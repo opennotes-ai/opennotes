@@ -5,7 +5,7 @@ ARG VITE_SUPABASE_PUBLISHABLE_KEY
 
 ENV CI=true
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable
 
 WORKDIR /workspace
 

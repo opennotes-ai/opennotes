@@ -5,8 +5,9 @@ WORKDIR /workspace
 # Set CI mode to prevent interactive prompts
 ENV CI=true
 
-# Enable pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Enable pnpm (corepack reads the pinned version from root package.json's
+# packageManager field — keeping pnpm aligned with the host toolchain)
+RUN corepack enable
 
 # Copy root workspace files (lockfile and workspace config live at repo root)
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
@@ -45,8 +46,9 @@ WORKDIR /app
 # Set CI mode to prevent interactive prompts
 ENV CI=true
 
-# Enable pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Enable pnpm (corepack reads the pinned version from the copied root
+# package.json's packageManager field)
+RUN corepack enable
 
 # Copy root workspace files for production install
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
