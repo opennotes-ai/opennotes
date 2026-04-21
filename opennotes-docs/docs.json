@@ -17,27 +17,37 @@
             "pages": [
               "introduction",
               "integration-guide/overview",
-              "integration-guide/onboarding/register-a-community",
+              "integration-guide/quickstart"
+            ]
+          },
+          {
+            "group": "Onboarding",
+            "pages": [
+              "integration-guide/onboarding/register-community",
               "integration-guide/onboarding/manage-instances",
-              "integration-guide/onboarding/mint-api-keys",
+              "integration-guide/onboarding/api-keys",
               "integration-guide/onboarding/configure-tiers"
             ]
           },
           {
             "group": "Concepts",
             "pages": [
-              "integration-guide/concepts/authentication",
-              "integration-guide/concepts/adapter-headers",
-              "integration-guide/concepts/scopes"
+              "integration-guide/concepts/adapter-contract",
+              "integration-guide/concepts/headers-and-auth",
+              "integration-guide/concepts/scopes",
+              "integration-guide/concepts/errors",
+              "integration-guide/concepts/webhooks"
             ]
           },
           {
-            "group": "Adapter choreography",
+            "group": "Walkthrough",
             "pages": [
-              "integration-guide/choreography/overview",
-              "integration-guide/choreography/content-lifecycle",
-              "integration-guide/choreography/review-lifecycle",
-              "integration-guide/choreography/webhooks-and-errors"
+              "integration-guide/walkthrough/index",
+              "integration-guide/walkthrough/01-identify-user",
+              "integration-guide/walkthrough/02-identify-community",
+              "integration-guide/walkthrough/03-submit-request",
+              "integration-guide/walkthrough/04-handle-action",
+              "integration-guide/walkthrough/05-webhooks-and-retries"
             ]
           }
         ]
@@ -57,7 +67,8 @@
               "existing-integrations/discourse/configure",
               "existing-integrations/discourse/upgrade",
               "existing-integrations/discourse/troubleshoot",
-              "existing-integrations/discourse/user-guide"
+              "existing-integrations/discourse/user-guide",
+              "existing-integrations/discourse/architecture"
             ]
           }
         ]
