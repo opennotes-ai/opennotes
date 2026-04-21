@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     VERTEXAI_PROJECT: str = "open-notes-core"
-    VERTEXAI_LOCATION: str = "us-central1"
+    VERTEXAI_LOCATION: str = "global"
     VERTEXAI_MODEL: str = "google-vertex:gemini-3.1-pro-preview"
     VERTEXAI_EMBEDDING_MODEL: str = "google-vertex:gemini-embedding-001"
 
