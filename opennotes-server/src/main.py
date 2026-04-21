@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, status
+from fastapi import APIRouter, Depends, FastAPI, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -854,6 +854,7 @@ app.include_router(
 # onto the public surface. See src/public_api.py and docs/public-api-prefix.md.
 from fastapi.routing import APIRoute as _PublicAPIRoute
 
+from src.auth.dependencies import require_platform_adapter as _require_platform_adapter
 from src.public_api import API_PUBLIC_V1_PREFIX, PUBLIC_ADAPTER_ROUTERS
 
 for _public_spec in PUBLIC_ADAPTER_ROUTERS:
@@ -862,16 +863,25 @@ for _public_spec in PUBLIC_ADAPTER_ROUTERS:
             _public_spec.router,
             prefix=API_PUBLIC_V1_PREFIX,
             tags=["public"],
+            dependencies=[Depends(_require_platform_adapter)],
         )
     else:
         _filtered_router = APIRouter()
         for _route in _public_spec.router.routes:
-            if isinstance(_route, _PublicAPIRoute) and _route.path in _public_spec.path_allowlist:
+            if (
+                isinstance(_route, _PublicAPIRoute)
+                and _route.path in _public_spec.path_allowlist
+                and (
+                    _public_spec.method_allowlist is None
+                    or bool((_route.methods or set()) & _public_spec.method_allowlist)
+                )
+            ):
                 _filtered_router.routes.append(_route)
         app.include_router(
             _filtered_router,
             prefix=API_PUBLIC_V1_PREFIX,
             tags=["public"],
+            dependencies=[Depends(_require_platform_adapter)],
         )
 
 # API v1 routes

@@ -90,11 +90,14 @@ async def list_moderation_actions(
     action_tier: ActionTier | None,
     limit: int,
     offset: int,
+    community_server_id__in: list[UUID] | None = None,
 ) -> list[ModerationAction]:
     query = select(ModerationAction)
 
     if community_server_id is not None:
         query = query.where(ModerationAction.community_server_id == community_server_id)
+    elif community_server_id__in is not None:
+        query = query.where(ModerationAction.community_server_id.in_(community_server_id__in))
     if action_state is not None:
         query = query.where(ModerationAction.action_state == action_state.value)
     if action_tier is not None:

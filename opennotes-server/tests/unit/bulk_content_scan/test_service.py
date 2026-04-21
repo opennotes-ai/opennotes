@@ -44,6 +44,19 @@ def mock_redis():
     return redis
 
 
+@pytest.fixture(autouse=True)
+def mock_claim_relevance_service():
+    """Keep bulk scan unit tests deterministic and offline."""
+    from src.bulk_content_scan.schemas import RelevanceOutcome
+
+    with patch("src.bulk_content_scan.service.ClaimRelevanceService") as service_cls:
+        service = service_cls.return_value
+        service.check_relevance = AsyncMock(
+            return_value=(RelevanceOutcome.RELEVANT, "unit-test relevant")
+        )
+        yield service
+
+
 class TestBulkContentScanServiceInit:
     """Test service initialization."""
 

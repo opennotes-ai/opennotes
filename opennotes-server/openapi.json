@@ -7450,7 +7450,7 @@
         ],
         "parameters": [
           {
-            "name": "community_server_id",
+            "name": "filter[community_server_id]",
             "in": "query",
             "required": false,
             "schema": {
@@ -7463,11 +7463,11 @@
                   "type": "null"
                 }
               ],
-              "title": "Community Server Id"
+              "title": "Filter[Community Server Id]"
             }
           },
           {
-            "name": "action_state",
+            "name": "filter[action_state]",
             "in": "query",
             "required": false,
             "schema": {
@@ -7479,11 +7479,11 @@
                   "type": "null"
                 }
               ],
-              "title": "Action State"
+              "title": "Filter[Action State]"
             }
           },
           {
-            "name": "action_tier",
+            "name": "filter[action_tier]",
             "in": "query",
             "required": false,
             "schema": {
@@ -7495,7 +7495,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Action Tier"
+              "title": "Filter[Action Tier]"
             }
           },
           {
@@ -9338,197 +9338,6 @@
         }
       }
     },
-    "/api/public/v1/moderation-actions": {
-      "post": {
-        "tags": [
-          "public",
-          "moderation-actions"
-        ],
-        "summary": "Create Moderation Action Endpoint",
-        "description": "Create a moderation action in PROPOSED state.\n\nPublishes a moderation_action.proposed NATS event after successful creation.",
-        "operationId": "create_moderation_action_endpoint_api_public_v1_moderation_actions_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "X-API-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ModerationActionCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "401": {
-            "description": "Not authenticated"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "public",
-          "moderation-actions"
-        ],
-        "summary": "List Moderation Actions Endpoint",
-        "description": "List moderation actions with optional filters.\n\nQuery params:\n- community_server_id: filter by community\n- action_state: filter by state (e.g. proposed, applied)\n- action_tier: filter by tier\n- limit: max results (default 50)\n- offset: pagination offset (default 0)",
-        "operationId": "list_moderation_actions_endpoint_api_public_v1_moderation_actions_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "community_server_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Community Server Id"
-            }
-          },
-          {
-            "name": "action_state",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/ActionState"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Action State"
-            }
-          },
-          {
-            "name": "action_tier",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/ActionTier"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Action Tier"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 50,
-              "title": "Limit"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 0,
-              "title": "Offset"
-            }
-          },
-          {
-            "name": "X-API-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "401": {
-            "description": "Not authenticated"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/public/v1/moderation-actions/{action_id}": {
       "get": {
         "tags": [
@@ -9594,15 +9403,17 @@
             }
           }
         }
-      },
-      "patch": {
+      }
+    },
+    "/api/public/v1/moderation-actions": {
+      "get": {
         "tags": [
           "public",
           "moderation-actions"
         ],
-        "summary": "Patch Moderation Action Endpoint",
-        "description": "Transition a moderation action to a new state.\n\nValidates the state transition against VALID_TRANSITIONS and returns 422\non invalid transitions.  Publishes a NATS event for all target states\nexcept scan_exempt (plugin-initiated acknowledgement, no event needed).",
-        "operationId": "patch_moderation_action_endpoint_api_public_v1_moderation_actions__action_id__patch",
+        "summary": "List Moderation Actions Endpoint",
+        "description": "List moderation actions with optional filters.\n\nQuery params:\n- community_server_id: filter by community\n- action_state: filter by state (e.g. proposed, applied)\n- action_tier: filter by tier\n- limit: max results (default 50)\n- offset: pagination offset (default 0)",
+        "operationId": "list_moderation_actions_endpoint_api_public_v1_moderation_actions_get",
         "security": [
           {
             "HTTPBearer": []
@@ -9610,13 +9421,72 @@
         ],
         "parameters": [
           {
-            "name": "action_id",
-            "in": "path",
-            "required": true,
+            "name": "filter[community_server_id]",
+            "in": "query",
+            "required": false,
             "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Action Id"
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Community Server Id]"
+            }
+          },
+          {
+            "name": "filter[action_state]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Action State]"
+            }
+          },
+          {
+            "name": "filter[action_tier]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionTier"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Action Tier]"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
             }
           },
           {
@@ -9636,16 +9506,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ModerationActionUpdate"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",

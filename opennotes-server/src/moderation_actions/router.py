@@ -15,12 +15,18 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.auth.community_dependencies import (
+    get_user_community_ids,
+    verify_community_admin_by_uuid,
+    verify_community_membership_by_uuid,
+)
 from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.permissions import is_service_account
 from src.common.jsonapi import JSONAPI_CONTENT_TYPE, create_error_response
 from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
@@ -138,6 +144,7 @@ async def _publish_for_state(action: Any, target_state: ActionState) -> None:
 @router.post("", response_class=JSONResponse, status_code=status.HTTP_201_CREATED)
 async def create_moderation_action_endpoint(
     body: ModerationActionCreate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
@@ -145,6 +152,9 @@ async def create_moderation_action_endpoint(
 
     Publishes a moderation_action.proposed NATS event after successful creation.
     """
+    if not is_service_account(current_user):
+        await verify_community_admin_by_uuid(body.community_server_id, current_user, db, request)
+
     try:
         action = await create_moderation_action(db, body)
     except Exception as e:
@@ -183,6 +193,7 @@ async def create_moderation_action_endpoint(
 @router.get("/{action_id}", response_class=JSONResponse)
 async def get_moderation_action_endpoint(
     action_id: UUID,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
@@ -200,6 +211,14 @@ async def get_moderation_action_endpoint(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
+    if not is_service_account(current_user):
+        await verify_community_membership_by_uuid(
+            action.community_server_id,
+            current_user,
+            db,
+            request,
+        )
+
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content=_single_response(action),
@@ -209,11 +228,12 @@ async def get_moderation_action_endpoint(
 
 @router.get("", response_class=JSONResponse)
 async def list_moderation_actions_endpoint(
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
-    community_server_id: UUID | None = None,
-    action_state: ActionState | None = None,
-    action_tier: ActionTier | None = None,
+    community_server_id: UUID | None = Query(None, alias="filter[community_server_id]"),
+    action_state: ActionState | None = Query(None, alias="filter[action_state]"),
+    action_tier: ActionTier | None = Query(None, alias="filter[action_tier]"),
     limit: int = 50,
     offset: int = 0,
 ) -> JSONResponse:
@@ -226,9 +246,25 @@ async def list_moderation_actions_endpoint(
     - limit: max results (default 50)
     - offset: pagination offset (default 0)
     """
+    community_server_id__in: list[UUID] | None = None
+    if is_service_account(current_user):
+        pass
+    elif community_server_id is not None:
+        await verify_community_membership_by_uuid(community_server_id, current_user, db, request)
+    else:
+        user_community_ids = await get_user_community_ids(current_user, db)
+        if not user_community_ids:
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content=_list_response([]),
+                media_type=JSONAPI_CONTENT_TYPE,
+            )
+        community_server_id__in = user_community_ids
+
     actions = await list_moderation_actions(
         db=db,
         community_server_id=community_server_id,
+        community_server_id__in=community_server_id__in,
         action_state=action_state,
         action_tier=action_tier,
         limit=limit,
@@ -246,6 +282,7 @@ async def list_moderation_actions_endpoint(
 async def patch_moderation_action_endpoint(
     action_id: UUID,
     body: ModerationActionUpdate,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
@@ -266,6 +303,14 @@ async def patch_moderation_action_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             content=error.model_dump(by_alias=True),
             media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    if not is_service_account(current_user):
+        await verify_community_admin_by_uuid(
+            existing.community_server_id,
+            current_user,
+            db,
+            request,
         )
 
     try:
