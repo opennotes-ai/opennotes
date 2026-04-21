@@ -1,0 +1,5 @@
+packages:
+  - 'opennotes-playground'
+  - 'opennotes-platform'
+  - 'opennotes-discord'
+  - 'packages/*'
