@@ -14,6 +14,21 @@ def _stub_provider_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _stub_google_adc(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+
+    import google.auth
+
+    fake_creds = MagicMock()
+    monkeypatch.setattr(google.auth, "default", lambda *_, **__: (fake_creds, "test-project"))
+
+    from src.llm_config import model_factory as mf
+
+    monkeypatch.setattr(mf.settings, "VERTEXAI_PROJECT", "test-project", raising=False)
+    monkeypatch.setattr(mf.settings, "VERTEXAI_LOCATION", "global", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _disable_httpx_env_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
     # pydantic-ai's provider __init__ methods build an httpx.AsyncClient via
     # create_async_http_client(), which honors ALL_PROXY / HTTPS_PROXY env

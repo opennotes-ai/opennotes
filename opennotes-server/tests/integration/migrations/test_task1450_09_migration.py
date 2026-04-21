@@ -21,10 +21,7 @@ from sqlalchemy import text
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MIGRATION_PATH = (
-    _REPO_ROOT
-    / "alembic"
-    / "versions"
-    / "task1450_09_migrate_sim_agents_model_name_to_gemini3.py"
+    _REPO_ROOT / "alembic" / "versions" / "task1450_09_migrate_sim_agents_model_name_to_gemini3.py"
 )
 
 
@@ -103,9 +100,7 @@ async def _run_upgrade(db_session) -> None:
 
 @pytest.mark.asyncio
 async def test_migration_rewrites_google_gla_pro_to_pro_preview(db_session):
-    agent_id = await _seed_agent(
-        db_session, "agent-gla-pro", "google-gla:gemini-2.5-pro"
-    )
+    agent_id = await _seed_agent(db_session, "agent-gla-pro", "google-gla:gemini-2.5-pro")
 
     await _run_upgrade(db_session)
 
@@ -114,9 +109,7 @@ async def test_migration_rewrites_google_gla_pro_to_pro_preview(db_session):
 
 @pytest.mark.asyncio
 async def test_migration_rewrites_google_gla_flash_to_gemini_3_flash(db_session):
-    agent_id = await _seed_agent(
-        db_session, "agent-gla-flash", "google-gla:gemini-2.5-flash"
-    )
+    agent_id = await _seed_agent(db_session, "agent-gla-flash", "google-gla:gemini-2.5-flash")
 
     await _run_upgrade(db_session)
 
@@ -125,9 +118,7 @@ async def test_migration_rewrites_google_gla_flash_to_gemini_3_flash(db_session)
 
 @pytest.mark.asyncio
 async def test_migration_rewrites_google_vertex_2_5_pro(db_session):
-    agent_id = await _seed_agent(
-        db_session, "agent-vertex-pro", "google-vertex:gemini-2.5-pro"
-    )
+    agent_id = await _seed_agent(db_session, "agent-vertex-pro", "google-vertex:gemini-2.5-pro")
 
     await _run_upgrade(db_session)
 
@@ -136,9 +127,7 @@ async def test_migration_rewrites_google_vertex_2_5_pro(db_session):
 
 @pytest.mark.asyncio
 async def test_migration_rewrites_google_vertex_2_5_flash(db_session):
-    agent_id = await _seed_agent(
-        db_session, "agent-vertex-flash", "google-vertex:gemini-2.5-flash"
-    )
+    agent_id = await _seed_agent(db_session, "agent-vertex-flash", "google-vertex:gemini-2.5-flash")
 
     await _run_upgrade(db_session)
 
@@ -147,9 +136,7 @@ async def test_migration_rewrites_google_vertex_2_5_flash(db_session):
 
 @pytest.mark.asyncio
 async def test_migration_catch_all_for_unknown_google_gla_models(db_session):
-    agent_id = await _seed_agent(
-        db_session, "agent-gla-unknown", "google-gla:gemini-1.5-weirdo"
-    )
+    agent_id = await _seed_agent(db_session, "agent-gla-unknown", "google-gla:gemini-1.5-weirdo")
 
     await _run_upgrade(db_session)
 
@@ -158,12 +145,8 @@ async def test_migration_catch_all_for_unknown_google_gla_models(db_session):
 
 @pytest.mark.asyncio
 async def test_migration_is_idempotent(db_session):
-    pro_id = await _seed_agent(
-        db_session, "agent-idem-pro", "google-gla:gemini-2.5-pro"
-    )
-    flash_id = await _seed_agent(
-        db_session, "agent-idem-flash", "google-gla:gemini-2.5-flash"
-    )
+    pro_id = await _seed_agent(db_session, "agent-idem-pro", "google-gla:gemini-2.5-pro")
+    flash_id = await _seed_agent(db_session, "agent-idem-flash", "google-gla:gemini-2.5-flash")
     vertex_pro_id = await _seed_agent(
         db_session, "agent-idem-vertex-pro", "google-vertex:gemini-2.5-pro"
     )

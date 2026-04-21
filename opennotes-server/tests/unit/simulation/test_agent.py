@@ -1365,11 +1365,21 @@ class TestWebSearchToolGating:
         assert any(isinstance(t, WebSearchTool) for t in captured_kwargs["builtin_tools"])
 
     @pytest.mark.asyncio
-    async def test_run_turn_passes_websearch_for_google_vertex_gemini3(self, mock_db):
+    async def test_run_turn_passes_websearch_for_google_vertex_gemini3(self, mock_db, monkeypatch):
+        from unittest.mock import MagicMock as MockCls
         from unittest.mock import patch
+
+        import google.auth
 
         from src.llm_config.local_models import OpenNotesGoogleModel
         from tests._model_fixtures import GOOGLE_VERTEX_PRO_TEST_MODEL
+
+        fake_creds = MockCls()
+        monkeypatch.setattr(google.auth, "default", lambda *_, **__: (fake_creds, "test-project"))
+        from src.llm_config import model_factory as mf
+
+        monkeypatch.setattr(mf.settings, "VERTEXAI_PROJECT", "test-project", raising=False)
+        monkeypatch.setattr(mf.settings, "VERTEXAI_LOCATION", "global", raising=False)
 
         google_model = ModelId.from_pydantic_ai(GOOGLE_VERTEX_PRO_TEST_MODEL)
         deps = SimAgentDeps(
