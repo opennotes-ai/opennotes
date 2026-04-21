@@ -16,13 +16,24 @@ DEFAULT_TIMEOUT_SECONDS = 60.0
 _RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
-def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
-    """Inline Pydantic's $defs/$ref into a single flat schema.
+_FIRECRAWL_UNSUPPORTED_KEYS = frozenset(
+    {
+        # Firecrawl's /v2/extract rejects schemas that reference $defs/$ref
+        # (it doesn't resolve them) and rejects `format: date-time` and other
+        # format hints. Drop all of these — we reparse datetimes in Pydantic
+        # post-fetch.
+        "$defs",
+        "definitions",
+        "format",
+    }
+)
 
-    Firecrawl's /v2/extract rejects schemas that use $defs/$ref (it doesn't
-    resolve references). Pydantic always emits them for nested models. We
-    walk the tree, drop $defs, and replace each $ref with the referenced
-    subschema.
+
+def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a Pydantic-generated JSON schema for Firecrawl's /v2/extract.
+
+    - Inline every $ref into the target subschema (drop $defs).
+    - Strip `format` keys (Firecrawl rejects format: date-time etc.).
     """
     defs = schema.get("$defs") or schema.get("definitions") or {}
 
@@ -35,7 +46,7 @@ def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(target, dict):
                     return walk({k: v for k, v in target.items()})
                 return {}
-            return {k: walk(v) for k, v in node.items() if k not in ("$defs", "definitions")}
+            return {k: walk(v) for k, v in node.items() if k not in _FIRECRAWL_UNSUPPORTED_KEYS}
         if isinstance(node, list):
             return [walk(v) for v in node]
         return node
