@@ -119,10 +119,8 @@
           {
             "group": "Moderation Actions",
             "pages": [
-              "POST /api/public/v1/moderation-actions",
               "GET /api/public/v1/moderation-actions",
-              "GET /api/public/v1/moderation-actions/{action_id}",
-              "PATCH /api/public/v1/moderation-actions/{action_id}"
+              "GET /api/public/v1/moderation-actions/{action_id}"
             ]
           },
           {
