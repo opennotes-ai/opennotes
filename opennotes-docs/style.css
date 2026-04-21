@@ -3,3 +3,20 @@
 @import "./styles/tokens/theme.css";
 @import "./styles/tokens/animations.css";
 @import "./styles/tokens/fonts-cdn.css";
+
+/* Mintlify's built-in brand widgets (sidebar active link, focus rings, search
+   highlights, inline link accents) consume `--primary` via
+   `rgb(var(--primary) / <alpha>)`, which only parses an "R G B" triplet.
+   theme.css sets --primary to oklch(...), breaking that wrapper and leaving
+   widgets to fall back to currentColor. Re-assert Mintlify-shaped triplets
+   here so brand accents render in the correct green. Tailwind's
+   --color-primary mapping is irrelevant on this site because Mintlify owns
+   MDX rendering and we don't emit bg-primary / text-primary utility classes. */
+:root {
+  --primary: 0 171 120;       /* oklch(0.65 0.15 165) */
+  --primary-light: 88 198 155; /* oklch(0.75 0.12 165) — matches our --accent */
+  --primary-dark: 0 137 96;    /* oklch(0.55 0.15 165) */
+}
+.dark {
+  --primary: 0 187 135;       /* oklch(0.70 0.15 165) */
+}
