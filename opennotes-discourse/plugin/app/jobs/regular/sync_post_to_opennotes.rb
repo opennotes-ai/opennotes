@@ -11,12 +11,13 @@ module Jobs
       return unless opennotes_monitored_category?(post.topic&.category)
       return if OpenNotes::ActionExecutor.scan_exempt?(post)
 
-      community_server_id = OpenNotes::CommunityServerResolver.community_server_id
-      return unless community_server_id
+      platform_community_server_id = SiteSetting.opennotes_platform_community_server_id
+      return if platform_community_server_id.blank?
 
       client = self.class.opennotes_client
 
-      payload = OpenNotes::PostMapper.to_request(post, community_server_id: community_server_id)
+      payload =
+        OpenNotes::PostMapper.to_request(post, community_server_id: platform_community_server_id)
       response = client.post("#{OpenNotes::PUBLIC_API_PREFIX}/requests", body: payload)
 
       handle_response(post, response, client)

@@ -9,7 +9,7 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
   fab!(:flagger) { Fabricate(:user, trust_level: 2) }
 
   let(:client) { instance_double(OpenNotes::Client) }
-  let(:community_server_id) { "test-community-server-id" }
+  let(:platform_slug) { "forum.example.com-abcd1234" }
 
   before do
     SiteSetting.opennotes_enabled = true
@@ -17,8 +17,8 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
     SiteSetting.opennotes_api_key = "test-api-key"
     SiteSetting.opennotes_monitored_categories = category.slug
     SiteSetting.opennotes_route_flags_to_community = true
+    SiteSetting.opennotes_platform_community_server_id = platform_slug
 
-    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(community_server_id)
     allow(OpenNotes::Client).to receive(:new).and_return(client)
   end
 
@@ -50,10 +50,30 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
           type: "requests",
           attributes: include(
             platform_message_id: post.id.to_s,
+            community_server_id: platform_slug,
             metadata: include(source: "user_flag"),
           ),
         ),
       )
+    end
+
+    it "sends the platform slug (not an internal UUID) as community_server_id" do
+      captured_body = nil
+      allow(client).to receive(:post) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        { "data" => { "id" => "req-flag-slug" } }
+      end
+
+      described_class.new.execute(args)
+
+      expect(captured_body.dig(:data, :attributes, :community_server_id)).to eq(platform_slug)
+    end
+
+    it "does not call CommunityServerResolver.community_server_uuid (avoids UUID being sent)" do
+      expect(OpenNotes::CommunityServerResolver).not_to receive(:community_server_uuid)
+      allow(client).to receive(:post).and_return({ "data" => { "id" => "req-flag-no-resolver" } })
+
+      described_class.new.execute(args)
     end
 
     it "creates a ReviewableOpennotesItem" do
@@ -149,8 +169,8 @@ RSpec.describe Jobs::SyncFlagToOpennotes do
       end
     end
 
-    it "skips when resolver returns no community_server_id" do
-      allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(nil)
+    it "skips when opennotes_platform_community_server_id is blank" do
+      SiteSetting.opennotes_platform_community_server_id = ""
       allow(client).to receive(:post)
 
       described_class.new.execute(args)

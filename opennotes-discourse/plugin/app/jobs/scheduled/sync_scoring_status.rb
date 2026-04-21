@@ -10,8 +10,8 @@ module Jobs
     def execute(_args)
       return unless SiteSetting.opennotes_enabled
 
-      community_server_id = OpenNotes::CommunityServerResolver.community_server_id
-      return unless community_server_id
+      platform_community_server_id = SiteSetting.opennotes_platform_community_server_id
+      return if platform_community_server_id.blank?
 
       last_poll = PluginStore.get("discourse-opennotes", "last_scoring_poll_at")
       last_poll ||= 30.minutes.ago.iso8601
@@ -23,7 +23,7 @@ module Jobs
         params: {
           "filter[status]" => "COMPLETED",
           "filter[requested_at__gte]" => last_poll,
-          "filter[community_server_id]" => community_server_id,
+          "filter[community_server_id]" => platform_community_server_id,
         },
       )
 

@@ -9,7 +9,7 @@ module Opennotes
     SCORE_FIELDS = %w[score scoring_status current_rating].freeze
 
     def index
-      server_id = OpenNotes::CommunityServerResolver.community_server_id
+      server_id = OpenNotes::CommunityServerResolver.community_server_uuid
       return render json: { data: [] } unless server_id
 
       client = self.class.opennotes_client

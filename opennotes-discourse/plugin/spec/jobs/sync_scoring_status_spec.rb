@@ -8,15 +8,15 @@ RSpec.describe Jobs::SyncScoringStatus do
   fab!(:post) { Fabricate(:post, topic: topic) }
 
   let(:client) { instance_double(OpenNotes::Client) }
-  let(:community_server_id) { "test-community-server-id" }
+  let(:platform_slug) { "forum.example.com-abcd1234" }
   let(:request_id) { "req-1" }
 
   before do
     SiteSetting.opennotes_enabled = true
     SiteSetting.opennotes_server_url = "https://opennotes.example.com"
     SiteSetting.opennotes_api_key = "test-api-key"
+    SiteSetting.opennotes_platform_community_server_id = platform_slug
 
-    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(community_server_id)
     allow(described_class).to receive(:opennotes_client).and_return(client)
   end
 
@@ -42,6 +42,36 @@ RSpec.describe Jobs::SyncScoringStatus do
       state: state,
       opennotes_request_id: request_id,
     )
+  end
+
+  describe "community_server_id filter" do
+    it "sends the platform slug (not an internal UUID) as filter[community_server_id]" do
+      captured_params = nil
+      allow(client).to receive(:get) do |*_args, **kwargs|
+        captured_params = kwargs[:params]
+        { "data" => [] }
+      end
+
+      described_class.new.execute({})
+
+      expect(captured_params["filter[community_server_id]"]).to eq(platform_slug)
+    end
+
+    it "does not call CommunityServerResolver.community_server_uuid" do
+      expect(OpenNotes::CommunityServerResolver).not_to receive(:community_server_uuid)
+      allow(client).to receive(:get).and_return({ "data" => [] })
+
+      described_class.new.execute({})
+    end
+
+    it "skips when opennotes_platform_community_server_id is blank" do
+      SiteSetting.opennotes_platform_community_server_id = ""
+      allow(client).to receive(:get)
+
+      described_class.new.execute({})
+
+      expect(client).not_to have_received(:get)
+    end
   end
 
   describe "terminal-state guard" do

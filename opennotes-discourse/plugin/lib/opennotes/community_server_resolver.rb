@@ -9,7 +9,7 @@ module OpenNotes
 
     module_function
 
-    def community_server_id
+    def community_server_uuid
       cached = Discourse.cache.read(CACHE_KEY)
       return cached if cached.present?
 
@@ -43,7 +43,7 @@ module OpenNotes
 
       if server_url.blank? || api_key.blank? || slug.blank?
         Rails.logger.warn(
-          "[OpenNotes] Cannot resolve community_server_id: missing server_url, api_key, or platform_community_server_id"
+          "[OpenNotes] Cannot resolve community_server_uuid: missing server_url, api_key, or platform_community_server_id"
         )
         return nil
       end
