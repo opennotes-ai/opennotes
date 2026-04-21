@@ -3,21 +3,31 @@ FROM node:22-slim AS builder
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_PUBLISHABLE_KEY
 
-RUN corepack enable pnpm
+ENV CI=true
 
-WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+WORKDIR /workspace
 
-COPY . .
-RUN pnpm build
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY opennotes-playground/package.json ./opennotes-playground/package.json
+COPY opennotes-platform/package.json ./opennotes-platform/package.json
+COPY opennotes-discord/package.json ./opennotes-discord/package.json
+COPY packages/shared-types/package.json ./packages/shared-types/package.json
+COPY packages/test-utils/package.json ./packages/test-utils/package.json
+
+RUN pnpm install --frozen-lockfile --filter opennotes-platform...
+
+COPY packages ./packages
+COPY opennotes-platform ./opennotes-platform
+
+RUN pnpm --filter opennotes-platform run build
 
 FROM node:22-slim AS runtime
 
 WORKDIR /app
 
-COPY --from=builder /app/.output /app/.output
+COPY --from=builder /workspace/opennotes-platform/.output /app/.output
 
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nodejs
 USER nodejs
