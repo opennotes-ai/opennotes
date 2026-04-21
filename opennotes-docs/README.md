@@ -95,13 +95,13 @@ DNS (a `docs` CNAME → Mintlify's publishing host) is configured in the `infras
 1. Vendors `@opennotes/tokens` CSS into `styles/tokens/` (same step `pnpm run vendor:tokens` performs locally).
 2. Validates that `docs.json` is parseable JSON with the required top-level keys.
 3. Runs `mint broken-links` — fails the job on any broken internal link.
-4. Runs `mint build` — fails on docs.json schema errors, missing pages referenced from nav, or OpenAPI-source resolution errors.
+4. Runs `mint validate` — strict build; fails on docs.json schema errors, missing pages referenced from nav, or OpenAPI-source resolution errors.
 
 Reproduce locally:
 
 ```bash
 mise run docs:broken-links     # link check
-mise run docs:build             # full build
+mise run docs:validate          # strict build
 ```
 
 OpenAPI drift is gated separately by the `validate-api-endpoints` job in `.github/workflows/ci.yml`, which runs `scripts/check_openapi_sync.py`. That blocks any server PR whose code changes aren't reflected in the committed `openapi.json` / `openapi-public.json`.

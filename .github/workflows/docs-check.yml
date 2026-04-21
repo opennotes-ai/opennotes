@@ -51,6 +51,6 @@ jobs:
         working-directory: opennotes-docs
         run: mint broken-links
 
-      - name: Build site
+      - name: Validate site (strict build)
         working-directory: opennotes-docs
-        run: mint build
+        run: mint validate

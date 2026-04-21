@@ -5,9 +5,9 @@ node = "22"
 description = "Run Mintlify locally (auto-vendors @opennotes/tokens first)"
 run = "pnpm run dev"
 
-[tasks."docs:build"]
-description = "Build the Mintlify site"
-run = "pnpm run build"
+[tasks."docs:validate"]
+description = "Validate the Mintlify site (strict build; fails on warnings)"
+run = "pnpm run validate"
 
 [tasks."docs:broken-links"]
 description = "Check for broken links in the docs"
