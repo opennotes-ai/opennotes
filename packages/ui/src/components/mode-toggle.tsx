@@ -1,6 +1,6 @@
 import { createSignal, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Button } from "~/components/ui/button";
+import { Button } from "./ui/button";
 
 export default function ModeToggle() {
   const [dark, setDark] = createSignal(false);

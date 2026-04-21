@@ -1,6 +1,6 @@
 import type { ComponentProps } from "solid-js";
 import { splitProps } from "solid-js";
-import { cn } from "@opennotes/ui/utils";
+import { cn } from "../../utils";
 
 export default function SectionHeader(
   props: { title: string; subtitle: string } & ComponentProps<"div">,

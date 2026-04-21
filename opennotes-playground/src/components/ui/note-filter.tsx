@@ -8,7 +8,7 @@ import {
   DropdownMenuGroupLabel,
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
-} from "~/components/ui/dropdown-menu";
+} from "@opennotes/ui/components/ui/dropdown-menu";
 
 type FilterGroup = {
   label: string;

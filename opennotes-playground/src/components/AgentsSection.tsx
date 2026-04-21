@@ -1,16 +1,16 @@
 import { createSignal, createMemo, createEffect, on, For, Show } from "solid-js";
-import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "@opennotes/ui/components/ui/popover";
 import type { EChartsOption } from "echarts";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "@opennotes/ui/utils";
 import { SEMANTIC_COLORS } from "@opennotes/ui/palettes";
-import { Badge, type BadgeVariant } from "~/components/ui/badge";
-import InlineHistogram from "~/components/ui/inline-histogram";
-import IdBadge from "~/components/ui/id-badge";
-import PaginationControls from "~/components/ui/pagination-controls";
-import SortableHeader, { type SortDirection } from "~/components/ui/sortable-header";
-import { EChart } from "~/components/ui/echart";
-import SectionHeader from "~/components/ui/section-header";
+import { Badge, type BadgeVariant } from "@opennotes/ui/components/ui/badge";
+import InlineHistogram from "@opennotes/ui/components/ui/inline-histogram";
+import IdBadge from "@opennotes/ui/components/ui/id-badge";
+import PaginationControls from "@opennotes/ui/components/ui/pagination-controls";
+import SortableHeader, { type SortDirection } from "@opennotes/ui/components/ui/sortable-header";
+import { EChart } from "@opennotes/ui/components/ui/echart";
+import SectionHeader from "@opennotes/ui/components/ui/section-header";
 
 type AgentBehaviorData = components["schemas"]["AgentBehaviorData"];
 type RatingDistributionData = components["schemas"]["RatingDistributionData"];

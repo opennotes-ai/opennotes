@@ -1,6 +1,6 @@
 import { For, createMemo } from "solid-js";
-import { humanizeLabel } from "@opennotes/ui/utils";
-import { getSemanticColor } from "@opennotes/ui/palettes";
+import { humanizeLabel } from "../../utils";
+import { getSemanticColor } from "../../palettes";
 
 export const CHART_COLORS = [
   "var(--chart-1)",

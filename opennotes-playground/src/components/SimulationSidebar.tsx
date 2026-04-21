@@ -1,6 +1,6 @@
 import { For, createSignal, onMount, onCleanup } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Sheet, SheetContent, SheetTitle } from "~/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@opennotes/ui/components/ui/sheet";
 import { SECTIONS } from "./sections";
 import { cn } from "@opennotes/ui/utils";
 

@@ -1,12 +1,12 @@
 import { For, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "./button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "~/components/ui/select";
+} from "./select";
 
 interface PaginationControlsProps {
   currentPage: number;

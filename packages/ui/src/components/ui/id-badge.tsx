@@ -1,6 +1,6 @@
-import { Tooltip, TooltipTrigger, TooltipContent } from "~/components/ui/tooltip";
-import { Badge, type BadgeVariant } from "~/components/ui/badge";
-import { formatIdBadgeLabel, formatIdBadgeTooltip } from "@opennotes/ui/utils";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./tooltip";
+import { Badge, type BadgeVariant } from "./badge";
+import { formatIdBadgeLabel, formatIdBadgeTooltip } from "../../utils";
 
 type IdBadgeProps = {
   idValue: string | null | undefined;

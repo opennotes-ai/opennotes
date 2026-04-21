@@ -1,8 +1,8 @@
 import { A } from "@solidjs/router";
 import type { components } from "~/lib/generated-types";
 import { formatDate, getMetric, humanizeLabel } from "@opennotes/ui/utils";
-import { Badge, type BadgeVariant } from "~/components/ui/badge";
-import IdBadge from "~/components/ui/id-badge";
+import { Badge, type BadgeVariant } from "@opennotes/ui/components/ui/badge";
+import IdBadge from "@opennotes/ui/components/ui/id-badge";
 
 type SimulationResource = components["schemas"]["SimulationResource"];
 

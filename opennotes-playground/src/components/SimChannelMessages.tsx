@@ -2,12 +2,12 @@ import { Show, For, createSignal, createEffect } from "solid-js";
 import { createAsync } from "@solidjs/router";
 import { getAgentAvatar } from "~/lib/agent-avatar";
 import { cn } from "@opennotes/ui/utils";
-import { Skeleton } from "~/components/ui/skeleton";
-import { Button } from "~/components/ui/button";
+import { Skeleton } from "@opennotes/ui/components/ui/skeleton";
+import { Button } from "@opennotes/ui/components/ui/button";
 import { fetchChannelMessages } from "~/routes/simulations/[id]";
 import type { components } from "~/lib/generated-types";
-import EmptyState from "~/components/ui/empty-state";
-import { MessageCircle, AlertTriangle } from "~/components/ui/icons";
+import EmptyState from "@opennotes/ui/components/ui/empty-state";
+import { MessageCircle, AlertTriangle } from "@opennotes/ui/components/ui/icons";
 
 type SimChannelMessageResource =
   components["schemas"]["SimChannelMessageResource"];

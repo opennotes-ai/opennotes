@@ -1,6 +1,6 @@
 import { A } from "@solidjs/router";
 import { Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "./ui/button";
 
 interface PaginationProps {
   currentPage: number;

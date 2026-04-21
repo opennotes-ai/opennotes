@@ -1,6 +1,6 @@
 import { createSignal, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
-import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
 export default function FontToggle() {
   const [serif, setSerif] = createSignal(false);

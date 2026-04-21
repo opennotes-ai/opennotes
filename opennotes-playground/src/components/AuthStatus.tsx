@@ -2,7 +2,7 @@ import { action, query, createAsync, redirect, useSubmission, A } from "@solidjs
 import { Show, Suspense } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import { createClient } from "~/lib/supabase-server";
-import { Button } from "~/components/ui/button";
+import { Button } from "@opennotes/ui/components/ui/button";
 
 const getAuthUser = query(async () => {
   "use server";

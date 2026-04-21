@@ -1,5 +1,5 @@
 import type { ComponentProps } from "solid-js";
-import { cn } from "@opennotes/ui/utils";
+import { cn } from "../../utils";
 
 export function Skeleton(props: ComponentProps<"div">) {
   return (

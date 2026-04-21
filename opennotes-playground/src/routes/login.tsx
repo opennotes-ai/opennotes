@@ -3,8 +3,8 @@ import { Show } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import { createClient } from "~/lib/supabase-server";
 import { safeRedirectPath } from "~/lib/safe-redirect";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Button } from "@opennotes/ui/components/ui/button";
+import { Input } from "@opennotes/ui/components/ui/input";
 import { OAuthButtons } from "~/components/OAuthButtons";
 
 const loginAction = action(async (formData: FormData) => {
