@@ -16,6 +16,33 @@ DEFAULT_TIMEOUT_SECONDS = 60.0
 _RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
+def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Inline Pydantic's $defs/$ref into a single flat schema.
+
+    Firecrawl's /v2/extract rejects schemas that use $defs/$ref (it doesn't
+    resolve references). Pydantic always emits them for nested models. We
+    walk the tree, drop $defs, and replace each $ref with the referenced
+    subschema.
+    """
+    defs = schema.get("$defs") or schema.get("definitions") or {}
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith(("#/$defs/", "#/definitions/")):
+                key = ref.rsplit("/", 1)[-1]
+                target = defs.get(key)
+                if isinstance(target, dict):
+                    return walk({k: v for k, v in target.items()})
+                return {}
+            return {k: walk(v) for k, v in node.items() if k not in ("$defs", "definitions")}
+        if isinstance(node, list):
+            return [walk(v) for v in node]
+        return node
+
+    return walk(schema)
+
+
 class FirecrawlError(Exception):
     def __init__(self, message: str, *, status_code: int | None = None) -> None:
         super().__init__(message)
@@ -95,7 +122,7 @@ class FirecrawlClient:
         """
         body = {
             "urls": [url],
-            "schema": schema.model_json_schema(),
+            "schema": _inline_defs(schema.model_json_schema()),
         }
         envelope = await self._post_json("/v2/extract", body)
 
