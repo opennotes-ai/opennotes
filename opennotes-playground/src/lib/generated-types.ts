@@ -6453,7 +6453,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "openai" | "anthropic" | "google" | "cohere" | "custom";
+            provider: "openai" | "anthropic" | "vertex_ai";
             /**
              * Api Key
              * @description API key for the LLM provider
@@ -6581,7 +6581,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "openai" | "anthropic" | "google" | "cohere" | "custom";
+            provider: "openai" | "anthropic" | "vertex_ai";
             /** Api Key */
             api_key: string;
             /** Settings */
