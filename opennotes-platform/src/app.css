@@ -2,6 +2,8 @@
 @import "@opennotes/tokens";
 @plugin "@tailwindcss/typography";
 
+@source "../../packages/ui/src";
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
