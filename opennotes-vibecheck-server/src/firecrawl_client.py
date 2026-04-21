@@ -186,13 +186,22 @@ class FirecrawlClient:
                 raise FirecrawlError(f"firecrawl /v2/extract/{job_id} polling timed out after {poll_timeout}s")
             await asyncio.sleep(poll_interval)
 
-    async def scrape(self, url: str, formats: list[str]) -> dict[str, Any]:
+    async def scrape(
+        self,
+        url: str,
+        formats: list[str],
+        *,
+        only_main_content: bool = False,
+    ) -> dict[str, Any]:
         """Call Firecrawl /v2/scrape and return the `data` sub-object.
 
-        Used by the screenshot pipeline (BE-10). `formats` accepts values like
-        ["markdown", "screenshot", "screenshot@fullPage"].
+        `formats` accepts values like ["markdown", "screenshot", "screenshot@fullPage"].
+        `only_main_content=True` strips nav/footer/aside from the markdown,
+        which gives much cleaner content for downstream parsing.
         """
         body: dict[str, Any] = {"url": url, "formats": formats}
+        if only_main_content:
+            body["onlyMainContent"] = True
         envelope = await self._post_json("/v2/scrape", body)
         if envelope.get("success") is False:
             raise FirecrawlError(
