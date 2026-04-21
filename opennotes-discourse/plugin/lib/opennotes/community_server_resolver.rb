@@ -50,7 +50,7 @@ module OpenNotes
 
       client = OpenNotes::Client.new(server_url: server_url, api_key: api_key)
       response = client.get(
-        "/api/v2/community-servers/lookup",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/community-servers/lookup",
         params: { platform: "discourse", platform_community_server_id: slug },
       )
       extract_id(response)

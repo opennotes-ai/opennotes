@@ -37,18 +37,18 @@ RSpec.describe OpenNotes::Client do
 
   describe "#get" do
     it "sends a GET request with authorization headers" do
-      stubs.get("/api/v2/requests") do |env|
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |env|
         expect(env.request_headers["Authorization"]).to eq("Bearer test-api-key")
         expect(env.request_headers).not_to have_key("X-Platform-Type")
         [200, { "Content-Type" => "application/json" }, '{"data": []}']
       end
 
-      result = client.get("/api/v2/requests")
+      result = client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests")
       expect(result).to eq("data" => [])
     end
 
     it "includes adapter headers when user is provided" do
-      stubs.get("/api/v2/requests") do |env|
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |env|
         expect(env.request_headers["X-Adapter-Platform"]).to eq("discourse")
         expect(env.request_headers["X-Adapter-User-Id"]).to eq("42")
         expect(env.request_headers["X-Adapter-Username"]).to eq("alice")
@@ -59,27 +59,27 @@ RSpec.describe OpenNotes::Client do
         [200, { "Content-Type" => "application/json" }, '{"data": []}']
       end
 
-      client.get("/api/v2/requests", user: user)
+      client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests", user: user)
     end
 
     it "does not include adapter headers when no user is provided" do
-      stubs.get("/api/v2/requests") do |env|
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |env|
         expect(env.request_headers).not_to have_key("X-Adapter-Platform")
         expect(env.request_headers).not_to have_key("X-Adapter-User-Id")
         [200, { "Content-Type" => "application/json" }, '{"data": []}']
       end
 
-      client.get("/api/v2/requests")
+      client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests")
     end
 
     it "passes query parameters" do
-      stubs.get("/api/v2/requests") do |env|
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |env|
         expect(env.url.query).to include("filter")
         expect(env.url.query).to include("pending")
         [200, { "Content-Type" => "application/json" }, '{"data": []}']
       end
 
-      client.get("/api/v2/requests", params: { "filter[status]" => "pending" })
+      client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests", params: { "filter[status]" => "pending" })
     end
   end
 
@@ -87,13 +87,13 @@ RSpec.describe OpenNotes::Client do
     it "sends a POST request with JSON body" do
       body = { data: { type: "requests", attributes: { content: "test" } } }
 
-      stubs.post("/api/v2/requests") do |env|
+      stubs.post("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |env|
         parsed = JSON.parse(env.body)
         expect(parsed["data"]["type"]).to eq("requests")
         [201, { "Content-Type" => "application/json" }, '{"data": {"id": "123"}}']
       end
 
-      result = client.post("/api/v2/requests", body: body)
+      result = client.post("#{OpenNotes::PUBLIC_API_PREFIX}/requests", body: body)
       expect(result).to eq("data" => { "id" => "123" })
     end
   end
@@ -102,34 +102,34 @@ RSpec.describe OpenNotes::Client do
     it "sends a PATCH request with JSON body" do
       body = { data: { type: "requests", attributes: { status: "completed" } } }
 
-      stubs.patch("/api/v2/requests/123") do |env|
+      stubs.patch("#{OpenNotes::PUBLIC_API_PREFIX}/requests/123") do |env|
         parsed = JSON.parse(env.body)
         expect(parsed["data"]["attributes"]["status"]).to eq("completed")
         [200, { "Content-Type" => "application/json" }, '{"data": {"id": "123"}}']
       end
 
-      result = client.patch("/api/v2/requests/123", body: body)
+      result = client.patch("#{OpenNotes::PUBLIC_API_PREFIX}/requests/123", body: body)
       expect(result).to eq("data" => { "id" => "123" })
     end
 
     it "passes query parameters on PATCH requests" do
-      stubs.patch("/api/v2/requests/123") do |env|
+      stubs.patch("#{OpenNotes::PUBLIC_API_PREFIX}/requests/123") do |env|
         expect(env.url.query).to include("platform")
         expect(env.url.query).to include("discourse")
         [200, { "Content-Type" => "application/json" }, '{"data": {"id": "123"}}']
       end
 
-      client.patch("/api/v2/requests/123", params: { platform: "discourse" }, body: {})
+      client.patch("#{OpenNotes::PUBLIC_API_PREFIX}/requests/123", params: { platform: "discourse" }, body: {})
     end
   end
 
   describe "#delete" do
     it "sends a DELETE request" do
-      stubs.delete("/api/v2/requests/123") do |_env|
+      stubs.delete("#{OpenNotes::PUBLIC_API_PREFIX}/requests/123") do |_env|
         [204, { "Content-Type" => "application/json" }, ""]
       end
 
-      result = client.delete("/api/v2/requests/123")
+      result = client.delete("#{OpenNotes::PUBLIC_API_PREFIX}/requests/123")
       expect(result).to be_nil
     end
   end
@@ -138,7 +138,7 @@ RSpec.describe OpenNotes::Client do
     it "retries on 429 status with exponential backoff" do
       attempt = 0
 
-      stubs.get("/api/v2/requests") do |_env|
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |_env|
         attempt += 1
         if attempt < 3
           [429, { "Content-Type" => "application/json" }, '{"error": "rate limited"}']
@@ -148,7 +148,7 @@ RSpec.describe OpenNotes::Client do
       end
 
       allow(client).to receive(:sleep)
-      result = client.get("/api/v2/requests")
+      result = client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests")
       expect(result).to eq("data" => [])
       expect(attempt).to eq(3)
     end
@@ -156,7 +156,7 @@ RSpec.describe OpenNotes::Client do
     it "retries on 500 status" do
       attempt = 0
 
-      stubs.get("/api/v2/requests") do |_env|
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |_env|
         attempt += 1
         if attempt == 1
           [500, { "Content-Type" => "application/json" }, '{"error": "server error"}']
@@ -166,17 +166,17 @@ RSpec.describe OpenNotes::Client do
       end
 
       allow(client).to receive(:sleep)
-      result = client.get("/api/v2/requests")
+      result = client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests")
       expect(result).to eq("data" => [])
     end
 
     it "raises ApiError after max retries exhausted" do
-      stubs.get("/api/v2/requests") do |_env|
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |_env|
         [503, { "Content-Type" => "application/json" }, '{"error": "unavailable"}']
       end
 
       allow(client).to receive(:sleep)
-      expect { client.get("/api/v2/requests") }.to raise_error(OpenNotes::ApiError) do |error|
+      expect { client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") }.to raise_error(OpenNotes::ApiError) do |error|
         expect(error.status).to eq(503)
       end
     end
@@ -184,35 +184,35 @@ RSpec.describe OpenNotes::Client do
     it "does not retry on 400 client errors" do
       attempt = 0
 
-      stubs.get("/api/v2/requests") do |_env|
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |_env|
         attempt += 1
         [400, { "Content-Type" => "application/json" }, '{"error": "bad request"}']
       end
 
-      expect { client.get("/api/v2/requests") }.to raise_error(OpenNotes::ApiError)
+      expect { client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") }.to raise_error(OpenNotes::ApiError)
       expect(attempt).to eq(1)
     end
 
     it "does not retry on 404" do
       attempt = 0
 
-      stubs.get("/api/v2/requests") do |_env|
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |_env|
         attempt += 1
         [404, { "Content-Type" => "application/json" }, '{"error": "not found"}']
       end
 
-      expect { client.get("/api/v2/requests") }.to raise_error(OpenNotes::ApiError)
+      expect { client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") }.to raise_error(OpenNotes::ApiError)
       expect(attempt).to eq(1)
     end
   end
 
   describe "error handling" do
     it "raises ApiError with status and body on non-retryable errors" do
-      stubs.post("/api/v2/requests") do |_env|
+      stubs.post("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |_env|
         [422, { "Content-Type" => "application/json" }, '{"errors": [{"detail": "invalid"}]}']
       end
 
-      expect { client.post("/api/v2/requests", body: {}) }.to raise_error(OpenNotes::ApiError) do |error|
+      expect { client.post("#{OpenNotes::PUBLIC_API_PREFIX}/requests", body: {}) }.to raise_error(OpenNotes::ApiError) do |error|
         expect(error.status).to eq(422)
         expect(error.body).to eq("errors" => [{ "detail" => "invalid" }])
         expect(error.message).to include("422")

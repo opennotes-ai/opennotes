@@ -59,7 +59,7 @@ RSpec.describe Opennotes::CommunityReviewsController, type: :request do
     allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(resolver_uuid)
     allow(mock_client).to receive(:get) do |path, **_kwargs|
       case path
-      when "/api/v2/moderation-actions"
+      when "#{OpenNotes::PUBLIC_API_PREFIX}/moderation-actions"
         actions
       else
         raise "Unexpected get call: #{path}"
@@ -69,9 +69,9 @@ RSpec.describe Opennotes::CommunityReviewsController, type: :request do
 
   def stub_client_show(request_data:, notes_data:)
     allow(mock_client).to receive(:get) do |path, **_kwargs|
-      if path.start_with?("/api/v2/requests/")
+      if path.start_with?("#{OpenNotes::PUBLIC_API_PREFIX}/requests/")
         request_data
-      elsif path == "/api/v2/notes"
+      elsif path == "#{OpenNotes::PUBLIC_API_PREFIX}/notes"
         notes_data
       else
         raise "Unexpected get call: #{path}"

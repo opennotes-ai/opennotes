@@ -19,7 +19,7 @@ module Jobs
       client = self.class.opennotes_client
 
       response = client.get(
-        "/api/v2/requests",
+        "#{OpenNotes::PUBLIC_API_PREFIX}/requests",
         params: {
           "filter[status]" => "COMPLETED",
           "filter[requested_at__gte]" => last_poll,

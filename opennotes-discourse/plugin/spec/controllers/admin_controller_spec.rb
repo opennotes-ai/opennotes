@@ -53,7 +53,7 @@ RSpec.describe Opennotes::AdminController, type: :request do
         allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(server_uuid)
         mock_client = instance_double(OpenNotes::Client)
         allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
-        expect(mock_client).not_to receive(:get).with("/api/v2/community-servers/lookup", any_args)
+        expect(mock_client).not_to receive(:get).with("#{OpenNotes::PUBLIC_API_PREFIX}/community-servers/lookup", any_args)
         allow(mock_client).to receive(:get)
           .with("/api/v2/community-servers/#{server_uuid}/scoring-analysis")
           .and_return({})

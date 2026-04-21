@@ -11,6 +11,9 @@ module Opennotes
         return
       end
 
+      # scoring-analysis lives on scoring_jsonapi_router, which is NOT in the
+      # server's PUBLIC_ADAPTER_ROUTERS allowlist. Keep this one call on the
+      # legacy /api/v2 prefix until scoring is audited and added to the allowlist.
       data = build_client.get("/api/v2/community-servers/#{server_uuid}/scoring-analysis")
       render json: data
     rescue OpenNotes::ApiError => e

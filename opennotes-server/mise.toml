@@ -116,8 +116,11 @@ description = "Serve API documentation"
 run = "uv run python -m http.server 8001 --directory ../../docs"
 
 [tasks."docs:generate:openapi"]
-description = "Generate OpenAPI specification (JSON and YAML)"
-run = "uv run python generate_openapi.py"
+description = "Generate openapi.json (full) and openapi-public.json (public surface only)"
+run = """
+uv run python scripts/generate_openapi.py --output openapi.json
+uv run python scripts/generate_openapi.py --public-only --output openapi-public.json
+"""
 
 [tasks."docs:check"]
 description = "Check if OpenAPI schema is in sync with FastAPI app"
