@@ -109,15 +109,18 @@ async def _request_with_validated_redirects(
 ) -> httpx.Response:
     current_url = url
     for _ in range(max_redirects + 1):
+        # Re-validate at every request to make the SSRF guard obvious to
+        # dataflow analysis — on iteration 0 this is redundant (caller validated)
+        # but on later iterations it's the only check between an attacker-chosen
+        # Location header and client.request().
+        _validate_http_url(current_url)
         response = await client.request(method, current_url)
         if response.status_code not in (301, 302, 303, 307, 308):
             return response
         location = response.headers.get("location")
         if not location:
             return response
-        next_url = str(httpx.URL(current_url).join(location))
-        _validate_http_url(next_url)
-        current_url = next_url
+        current_url = str(httpx.URL(current_url).join(location))
     raise HTTPException(status_code=502, detail="Too many redirects")
 
 
