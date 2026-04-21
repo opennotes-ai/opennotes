@@ -1,6 +1,9 @@
 .mintlify/
 node_modules/
-styles/tokens/*.css
-# Vendored OpenAPI artifact — populated by vendor:openapi (see package.json)
-# Canonical source of truth lives at ../opennotes-server/openapi-public.json
-openapi-public.json
+
+# Vendored artifacts below are tracked in-tree so Mintlify Cloud (which does
+# not run pnpm scripts / prebuild hooks deterministically) serves the correct
+# CSS and OpenAPI. Canonical sources live at ../packages/tokens/src/ and
+# ../opennotes-server/openapi-public.json; refresh with `pnpm run vendor:all`.
+# TODO(TASK-1468.12): revert to ignoring these once Mintlify Cloud prebuild
+# hooks are verified to run vendor:all on every deploy.
