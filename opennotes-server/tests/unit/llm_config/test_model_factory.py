@@ -27,6 +27,10 @@ def _stub_google_adc(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mf.settings, "VERTEXAI_PROJECT", "test-project", raising=False)
     monkeypatch.setattr(mf.settings, "VERTEXAI_LOCATION", "global", raising=False)
 
+    mf._build_google_vertex_model.cache_clear()
+    yield
+    mf._build_google_vertex_model.cache_clear()
+
 
 @pytest.fixture(autouse=True)
 def _disable_httpx_env_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,6 +94,37 @@ class TestInferModelWithOverrides:
     def test_infer_model_with_overrides_rejects_google_gla(self):
         with pytest.raises(ValueError, match="google-gla provider was removed"):
             infer_model_with_overrides("google-gla:gemini-2.0-flash")
+
+    def test_memoizes_google_vertex_model_per_identity(self) -> None:
+        first = infer_model_with_overrides("google-vertex:gemini-3.1-pro-preview")
+        second = infer_model_with_overrides("google-vertex:gemini-3.1-pro-preview")
+        assert isinstance(first, OpenNotesGoogleModel)
+        assert first is second
+
+    def test_memoization_distinguishes_by_model_name(self) -> None:
+        first = infer_model_with_overrides("google-vertex:gemini-3.1-pro-preview")
+        second = infer_model_with_overrides("google-vertex:gemini-3-flash")
+        assert isinstance(first, OpenNotesGoogleModel)
+        assert isinstance(second, OpenNotesGoogleModel)
+        assert first is not second
+
+    def test_fails_fast_when_vertexai_project_is_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.llm_config import model_factory as mf
+
+        monkeypatch.setattr(mf.settings, "VERTEXAI_PROJECT", None, raising=False)
+        with pytest.raises(ValueError, match="VERTEXAI_PROJECT is not configured"):
+            infer_model_with_overrides("google-vertex:gemini-3.1-pro-preview")
+
+    def test_fails_fast_when_vertexai_project_is_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.llm_config import model_factory as mf
+
+        monkeypatch.setattr(mf.settings, "VERTEXAI_PROJECT", "", raising=False)
+        with pytest.raises(ValueError, match="VERTEXAI_PROJECT is not configured"):
+            infer_model_with_overrides("google-vertex:gemini-3.1-pro-preview")
 
 
 class TestToPydanticAiModelRoundTrip:

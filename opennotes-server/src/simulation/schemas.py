@@ -14,6 +14,10 @@ REASONING_MODEL_PATTERN = re.compile(r"^o[1-9]\d*(-mini|-preview|-pro)?(-\d{4}-\
 
 
 def validate_model_name_value(v: str) -> str:
+    if v.startswith("google-gla:"):
+        raise ValueError(
+            "google-gla provider was removed in TASK-1450. Use 'google-vertex:' prefix instead."
+        )
     try:
         model_id = ModelId.from_pydantic_ai(v)
     except ValueError as exc:

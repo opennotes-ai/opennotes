@@ -132,6 +132,27 @@ class TestSimAgentReasoningModelValidation:
             SimAgentUpdateAttributes(model_name="openai:o4-mini")
 
 
+class TestSimAgentGoogleGlaRejection:
+    def test_rejects_google_gla_prefix_in_create(self) -> None:
+        from src.simulation.sim_agents_jsonapi_router import SimAgentCreateAttributes
+
+        with pytest.raises(ValidationError, match="TASK-1450") as exc_info:
+            SimAgentCreateAttributes(
+                name="TestAgent",
+                personality="A test agent",
+                model_name="google-gla:gemini-whatever",
+            )
+        error_str = str(exc_info.value)
+        assert "google-gla" in error_str
+        assert "google-vertex" in error_str
+
+    def test_rejects_google_gla_prefix_in_update(self) -> None:
+        from src.simulation.sim_agents_jsonapi_router import SimAgentUpdateAttributes
+
+        with pytest.raises(ValidationError, match="TASK-1450"):
+            SimAgentUpdateAttributes(model_name="google-gla:gemini-2.5-flash")
+
+
 class TestSimAgentUpdateModelNameValidation:
     def test_rejects_invalid_model_name(self) -> None:
         from src.simulation.sim_agents_jsonapi_router import SimAgentUpdateAttributes
