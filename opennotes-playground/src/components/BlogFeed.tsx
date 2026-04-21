@@ -3,9 +3,9 @@ import { query, createAsync } from "@solidjs/router";
 import { getRequestEvent } from "solid-js/web";
 import BlogPost from "./BlogPost";
 import type { BlogPost as BlogPostType } from "~/lib/blog.server";
-import { Button } from "~/components/ui/button";
-import EmptyState from "~/components/ui/empty-state";
-import { FileText } from "~/components/ui/icons";
+import { Button } from "@opennotes/ui/components/ui/button";
+import EmptyState from "@opennotes/ui/components/ui/empty-state";
+import { FileText } from "@opennotes/ui/components/ui/icons";
 
 const getInitialPosts = query(async () => {
   "use server";

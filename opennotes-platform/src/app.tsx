@@ -3,6 +3,7 @@ import { Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { ErrorBoundary, Suspense } from "solid-js";
 import { MetaProvider, Title } from "@solidjs/meta";
+import { Button } from "@opennotes/ui/components/ui/button";
 
 export default function App() {
   return (
@@ -17,7 +18,9 @@ export default function App() {
             fallback={(err, reset) => (
               <div class="p-8">
                 <p class="text-red-600">Something went wrong: {err.message}</p>
-                <button onClick={reset} class="mt-2 text-primary hover:underline">Try again</button>
+                <Button variant="link" size="sm" onClick={reset} class="mt-2 px-0">
+                  Try again
+                </Button>
               </div>
             )}
           >

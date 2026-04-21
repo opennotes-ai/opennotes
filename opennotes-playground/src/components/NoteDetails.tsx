@@ -1,14 +1,14 @@
 import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import { cn } from "@opennotes/ui/utils";
 import { formatDate, humanizeLabel } from "~/lib/format";
-import { Badge, type BadgeVariant } from "~/components/ui/badge";
-import IdBadge from "~/components/ui/id-badge";
-import { getHelpfulnessTooltip, TERM_DESCRIPTIONS } from "~/lib/scoring-tiers";
-import { cn } from "~/lib/cn";
+import { Badge, type BadgeVariant } from "@opennotes/ui/components/ui/badge";
+import IdBadge from "@opennotes/ui/components/ui/id-badge";
+import { getHelpfulnessTooltip, TERM_DESCRIPTIONS } from "@opennotes/ui/palettes";
 import NoteFilter, { type NoteFilterValues } from "~/components/ui/note-filter";
-import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
-import EmptyState from "~/components/ui/empty-state";
-import { ClipboardList } from "~/components/ui/icons";
+import { ToggleGroup, ToggleGroupItem } from "@opennotes/ui/components/ui/toggle-group";
+import EmptyState from "@opennotes/ui/components/ui/empty-state";
+import { ClipboardList } from "@opennotes/ui/components/ui/icons";
 
 type DetailedNoteResource = components["schemas"]["DetailedNoteResource"];
 

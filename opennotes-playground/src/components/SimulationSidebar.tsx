@@ -1,8 +1,8 @@
 import { For, createSignal, onMount, onCleanup } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Sheet, SheetContent, SheetTitle } from "~/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@opennotes/ui/components/ui/sheet";
 import { SECTIONS } from "./sections";
-import { cn } from "~/lib/cn";
+import { cn } from "@opennotes/ui/utils";
 
 const [activeSection, setActiveSection] = createSignal<string>(SECTIONS[0].id);
 

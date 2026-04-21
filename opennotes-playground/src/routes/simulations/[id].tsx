@@ -1,8 +1,8 @@
 import { query, createAsync, useParams, useLocation, A } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import { Show, Switch, Match, Suspense, createSignal, createEffect, on, untrack } from "solid-js";
-import EmptyState from "~/components/ui/empty-state";
-import { AlertCircle, Search } from "~/components/ui/icons";
+import EmptyState from "@opennotes/ui/components/ui/empty-state";
+import { AlertCircle, Search } from "@opennotes/ui/components/ui/icons";
 import {
   getSimulation,
   getSimulationAnalysis,
@@ -10,19 +10,28 @@ import {
   getSimulationTimeline,
   getSimulationChannelMessages,
 } from "~/lib/api-client.server";
-import { formatDate, formatIdBadgeLabel, getMetric, humanizeLabel } from "~/lib/format";
-import { parseFragment, scrollToAndHighlight, findPageForItem } from "~/lib/anchor-scroll";
-import { Badge, type BadgeVariant } from "~/components/ui/badge";
-import { SectionSkeleton } from "~/components/ui/skeleton";
+import {
+  parseFragment,
+  scrollToAndHighlight,
+  findPageForItem,
+} from "@opennotes/ui/utils";
+import {
+  formatDate,
+  formatIdBadgeLabel,
+  getMetric,
+  humanizeLabel,
+} from "~/lib/format";
+import { Badge, type BadgeVariant } from "@opennotes/ui/components/ui/badge";
+import { SectionSkeleton } from "@opennotes/ui/components/ui/skeleton";
 import SimulationSidebar, { MobileSidebarToggle } from "~/components/SimulationSidebar";
-import IdBadge from "~/components/ui/id-badge";
-import PaginationControls from "~/components/ui/pagination-controls";
+import IdBadge from "@opennotes/ui/components/ui/id-badge";
+import PaginationControls from "@opennotes/ui/components/ui/pagination-controls";
 import AgentsSection from "~/components/AgentsSection";
 import NotesRatingsSection from "~/components/NotesRatingsSection";
 import ScoringAnalysisSection from "~/components/ScoringAnalysisSection";
 import NoteDetails from "~/components/NoteDetails";
 import { SimChannelMessages } from "~/components/SimChannelMessages";
-import SectionHeader from "~/components/ui/section-header";
+import SectionHeader from "@opennotes/ui/components/ui/section-header";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 

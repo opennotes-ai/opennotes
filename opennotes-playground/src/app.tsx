@@ -4,9 +4,9 @@ import { FileRoutes } from "@solidjs/start/router";
 import { ErrorBoundary, Suspense } from "solid-js";
 import { MetaProvider, Title } from "@solidjs/meta";
 import AuthStatus from "~/components/AuthStatus";
-import ModeToggle from "~/components/ModeToggle";
-import EmptyState from "~/components/ui/empty-state";
-import { AlertCircle } from "~/components/ui/icons";
+import ModeToggle from "@opennotes/ui/components/mode-toggle";
+import EmptyState from "@opennotes/ui/components/ui/empty-state";
+import { AlertCircle } from "@opennotes/ui/components/ui/icons";
 
 export default function App() {
   return (

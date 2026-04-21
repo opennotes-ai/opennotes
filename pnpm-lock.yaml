@@ -138,9 +138,15 @@ importers:
 
   opennotes-platform:
     dependencies:
+      '@kobalte/core':
+        specifier: ^0.13.11
+        version: 0.13.11(solid-js@1.9.12)
       '@opennotes/tokens':
         specifier: workspace:*
         version: link:../packages/tokens
+      '@opennotes/ui':
+        specifier: workspace:*
+        version: link:../packages/ui
       '@solidjs/meta':
         specifier: ^0.29.4
         version: 0.29.4(solid-js@1.9.12)
@@ -162,6 +168,9 @@ importers:
       '@tailwindcss/typography':
         specifier: ^0.5.19
         version: 0.5.19(tailwindcss@4.2.3)
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -184,6 +193,15 @@ importers:
         specifier: ^0.5.3
         version: 0.5.11(@types/node@20.19.39)(db0@0.3.4)(ioredis@5.10.1)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)
     devDependencies:
+      '@solidjs/testing-library':
+        specifier: ^0.8.10
+        version: 0.8.10(@solidjs/router@0.15.4(solid-js@1.9.12))(solid-js@1.9.12)
+      '@testing-library/jest-dom':
+        specifier: ^6.9.1
+        version: 6.9.1
+      jsdom:
+        specifier: ^29.0.1
+        version: 29.0.2
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -202,6 +220,9 @@ importers:
       '@opennotes/tokens':
         specifier: workspace:*
         version: link:../packages/tokens
+      '@opennotes/ui':
+        specifier: workspace:*
+        version: link:../packages/ui
       '@solidjs/meta':
         specifier: ^0.29.4
         version: 0.29.4(solid-js@1.9.12)
@@ -327,6 +348,46 @@ importers:
       '@fontsource/ibm-plex-serif':
         specifier: ^5.2.0
         version: 5.2.7
+
+  packages/ui:
+    dependencies:
+      '@opennotes/tokens':
+        specifier: workspace:*
+        version: link:../tokens
+    devDependencies:
+      '@kobalte/core':
+        specifier: ^0.13.11
+        version: 0.13.11(solid-js@1.9.12)
+      '@solidjs/router':
+        specifier: ^0.15.3
+        version: 0.15.4(solid-js@1.9.12)
+      '@solidjs/testing-library':
+        specifier: ^0.8.10
+        version: 0.8.10(@solidjs/router@0.15.4(solid-js@1.9.12))(solid-js@1.9.12)
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      echarts:
+        specifier: ^6.0.0
+        version: 6.0.0
+      jsdom:
+        specifier: ^29.0.1
+        version: 29.0.2
+      solid-js:
+        specifier: ^1.9.5
+        version: 1.9.12
+      tailwind-merge:
+        specifier: ^3.5.0
+        version: 3.5.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@29.0.2)(vite@6.4.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0))
 
 packages:
 

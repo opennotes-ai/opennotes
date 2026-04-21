@@ -2,9 +2,9 @@ import { For, Show, createMemo } from "solid-js";
 import type { EChartsOption } from "echarts";
 import type { components } from "~/lib/generated-types";
 import { humanizeLabel } from "~/lib/format";
-import { SEMANTIC_COLORS } from "~/lib/chart-colors";
-import { EChart } from "~/components/ui/echart";
-import SectionHeader from "~/components/ui/section-header";
+import { SEMANTIC_COLORS } from "@opennotes/ui/palettes";
+import { EChart } from "@opennotes/ui/components/ui/echart";
+import SectionHeader from "@opennotes/ui/components/ui/section-header";
 
 type NoteQualityData = components["schemas"]["NoteQualityData"];
 type RatingDistributionData = components["schemas"]["RatingDistributionData"];

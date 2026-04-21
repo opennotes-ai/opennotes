@@ -2,11 +2,11 @@ import { query, createAsync, useSearchParams } from "@solidjs/router";
 import { For, Show, Suspense } from "solid-js";
 import { listSimulations } from "~/lib/api-client.server";
 import SimulationCard from "~/components/SimulationCard";
-import Pagination from "~/components/Pagination";
+import Pagination from "@opennotes/ui/components/pagination";
 import BlogFeed from "~/components/BlogFeed";
-import FontToggle from "~/components/FontToggle";
-import EmptyState from "~/components/ui/empty-state";
-import { BarChart3, AlertTriangle } from "~/components/ui/icons";
+import FontToggle from "@opennotes/ui/components/font-toggle";
+import EmptyState from "@opennotes/ui/components/ui/empty-state";
+import { BarChart3, AlertTriangle } from "@opennotes/ui/components/ui/icons";
 
 const getSimulations = query(async (page: number) => {
   "use server";
