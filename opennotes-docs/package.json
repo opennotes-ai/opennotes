@@ -5,9 +5,13 @@
   "description": "OpenNotes documentation site (Mintlify)",
   "scripts": {
     "vendor:tokens": "mkdir -p styles/tokens && cp ../packages/tokens/src/*.css styles/tokens/",
-    "prevalidate": "pnpm run vendor:tokens",
-    "dev": "pnpm run vendor:tokens && mint dev",
+    "vendor:openapi": "cp ../opennotes-server/openapi-public.json ./openapi-public.json",
+    "vendor:all": "pnpm run vendor:tokens && pnpm run vendor:openapi",
+    "prevalidate": "pnpm run vendor:all",
+    "predev": "pnpm run vendor:all",
+    "prebroken-links": "pnpm run vendor:all",
+    "dev": "mint dev",
     "validate": "mint validate",
-    "broken-links": "pnpm run vendor:tokens && mint broken-links"
+    "broken-links": "mint broken-links"
   }
 }

@@ -5,6 +5,7 @@ on:
     paths:
       - 'opennotes-docs/**'
       - 'packages/tokens/src/**'
+      - 'opennotes-server/openapi-public.json'
       - '.github/workflows/docs-check.yml'
 
 # Cancel in-progress runs on the same PR when new commits land
@@ -25,15 +26,18 @@ jobs:
         with:
           node-version: '22'
 
-      # @opennotes/tokens CSS is gitignored under opennotes-docs/styles/tokens/;
-      # CI must vendor it before Mintlify can resolve @imports in style.css.
-      # Pattern spec: docs/integrations/mintlify-tokens.md §6.4
-      - name: Vendor @opennotes/tokens CSS into docs
+      # Mintlify only reads files under the docs project root, so two artifacts
+      # that live elsewhere in the opennotes monorepo must be vendored in
+      # before `mint validate`:
+      #   - @opennotes/tokens CSS -> styles/tokens/ (see mintlify-tokens.md §6.4)
+      #   - openapi-public.json   -> opennotes-docs/ (referenced from docs.json)
+      - name: Vendor external artifacts (@opennotes/tokens CSS + openapi-public.json)
         working-directory: opennotes-docs
         run: |
           mkdir -p styles/tokens
           cp ../packages/tokens/src/*.css styles/tokens/
-          ls -la styles/tokens/
+          cp ../opennotes-server/openapi-public.json ./openapi-public.json
+          ls -la styles/tokens/ openapi-public.json
 
       - name: Install Mintlify CLI
         run: npm install -g mint@latest

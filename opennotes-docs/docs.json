@@ -75,7 +75,7 @@
       },
       {
         "tab": "API Reference",
-        "openapi": "../opennotes-server/openapi-public.json",
+        "openapi": "openapi-public.json",
         "groups": [
           {
             "group": "Overview",

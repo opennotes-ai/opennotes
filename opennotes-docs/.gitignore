@@ -1,3 +1,6 @@
 .mintlify/
 node_modules/
 styles/tokens/*.css
+# Vendored OpenAPI artifact — populated by vendor:openapi (see package.json)
+# Canonical source of truth lives at ../opennotes-server/openapi-public.json
+openapi-public.json
