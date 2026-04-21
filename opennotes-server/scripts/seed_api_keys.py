@@ -33,6 +33,8 @@ import json
 import os
 import secrets
 import sys
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from uuid import UUID
 
@@ -44,6 +46,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.password import get_password_hash
 from src.database import get_engine
+
+
+class KeySeedStatus(str, Enum):
+    CREATED = "created"
+    REACTIVATED = "reactivated"
+    ACTIVE_ROTATED = "active_rotated"
+    SCOPE_ONLY_UPDATED = "scope_only_updated"
+    NO_OP = "no_op"
+
+
+@dataclass(frozen=True)
+class KeySeedResult:
+    """Outcome of a `seed_api_key` call.
+
+    `hash_written` is True iff the DB write touched `key_hash` / `key_prefix`.
+    `should_publish_plaintext` tells the caller whether the plaintext that was
+    hashed is authentically paired with a fresh DB row — i.e. whether pushing
+    it to Google Secret Manager will land a version whose hash the DB can
+    verify. Prod helpers gate the GSM push on this flag to prevent the DB
+    hash ↔ GSM plaintext drift that caused the 2026-04-16 Discord 401 incident.
+    """
+
+    status: KeySeedStatus
+    hash_written: bool
+    should_publish_plaintext: bool
+
 
 DEV_API_KEY = "XcvlCe7ewY4z4VzbWeogvkJZA-5hxY_xJn5PJmZJN0c"
 DEV_API_KEY_NAME = "Discord Bot (Development)"
@@ -152,7 +180,20 @@ async def seed_api_key(
     key_prefix: str | None = None,
     user_id: UUID | None = None,
     scopes: list[str] | None = None,
-) -> None:
+    *,
+    force_rotate_active: bool = False,
+) -> KeySeedResult:
+    """Upsert an API key row and report what actually happened.
+
+    The caller owns the transaction boundary — this function never commits or
+    rolls back. The return value drives the GSM-push gate in prod helpers;
+    see the module docstring and KeySeedResult for the invariant.
+
+    When `force_rotate_active=True` and the row is active, BOTH `key_hash`
+    AND `key_prefix` are rewritten atomically. This matters because
+    `verify_api_key` looks up rows by `key_prefix`; a stale prefix would 401
+    even if the hash matched.
+    """
     if user_id is None:
         user_id = await get_or_create_service_user(db)
 
@@ -171,15 +212,7 @@ async def seed_api_key(
         existing_scopes = json.loads(existing_scopes_text) if existing_scopes_text else None
         needs_scope_update = existing_scopes != scopes
 
-        if is_active and not needs_scope_update:
-            print(f"✓ API key '{key_name}' already exists and is active")
-        elif is_active and needs_scope_update:
-            await db.execute(
-                text("UPDATE api_keys SET scopes = CAST(:scopes AS jsonb) WHERE id = :id"),
-                {"id": api_key_id, "scopes": scopes_json},
-            )
-            print(f"✓ Updated scopes on API key '{key_name}'")
-        else:
+        if not is_active:
             await db.execute(
                 text(
                     "UPDATE api_keys SET is_active = true, key_hash = :key_hash, key_prefix = :key_prefix, scopes = CAST(:scopes AS jsonb) WHERE id = :id"
@@ -192,7 +225,49 @@ async def seed_api_key(
                 },
             )
             print(f"✓ Reactivated API key '{key_name}'")
-        return
+            return KeySeedResult(
+                status=KeySeedStatus.REACTIVATED,
+                hash_written=True,
+                should_publish_plaintext=True,
+            )
+
+        if force_rotate_active:
+            await db.execute(
+                text(
+                    "UPDATE api_keys SET key_hash = :key_hash, key_prefix = :key_prefix, scopes = CAST(:scopes AS jsonb) WHERE id = :id"
+                ),
+                {
+                    "id": api_key_id,
+                    "key_hash": key_hash,
+                    "key_prefix": key_prefix,
+                    "scopes": scopes_json,
+                },
+            )
+            print(f"✓ Rotated active API key '{key_name}' (hash+prefix rewritten)")
+            return KeySeedResult(
+                status=KeySeedStatus.ACTIVE_ROTATED,
+                hash_written=True,
+                should_publish_plaintext=True,
+            )
+
+        if needs_scope_update:
+            await db.execute(
+                text("UPDATE api_keys SET scopes = CAST(:scopes AS jsonb) WHERE id = :id"),
+                {"id": api_key_id, "scopes": scopes_json},
+            )
+            print(f"✓ Updated scopes on API key '{key_name}'")
+            return KeySeedResult(
+                status=KeySeedStatus.SCOPE_ONLY_UPDATED,
+                hash_written=False,
+                should_publish_plaintext=False,
+            )
+
+        print(f"✓ API key '{key_name}' already exists and is active")
+        return KeySeedResult(
+            status=KeySeedStatus.NO_OP,
+            hash_written=False,
+            should_publish_plaintext=False,
+        )
 
     result = await db.execute(
         text("""
@@ -216,6 +291,12 @@ async def seed_api_key(
     print("  Never expires: True")
     if scopes:
         print(f"  Scopes: {scopes}")
+
+    return KeySeedResult(
+        status=KeySeedStatus.CREATED,
+        hash_written=True,
+        should_publish_plaintext=True,
+    )
 
 
 async def get_or_create_playground_user(db: AsyncSession):
@@ -379,6 +460,7 @@ async def seed_playground_api_key(db: AsyncSession) -> None:
         key_prefix="playground",
         user_id=user_id,
         scopes=PLAYGROUND_SCOPES,
+        force_rotate_active=True,
     )
 
 
@@ -392,6 +474,7 @@ async def seed_platform_api_key(db: AsyncSession) -> None:
         key_prefix="platform",
         user_id=user_id,
         scopes=PLATFORM_SCOPES,
+        force_rotate_active=True,
     )
 
 
@@ -405,12 +488,19 @@ async def seed_discourse_api_key(db: AsyncSession) -> None:
         key_prefix="discourse",
         user_id=user_id,
         scopes=DISCOURSE_SCOPES,
+        force_rotate_active=True,
     )
 
 
 async def seed_dev_api_key(db: AsyncSession) -> None:
     key_hash = get_password_hash(DEV_API_KEY)
-    await seed_api_key(db, key_hash, DEV_API_KEY_NAME, scopes=DISCORD_BOT_SCOPES)
+    await seed_api_key(
+        db,
+        key_hash,
+        DEV_API_KEY_NAME,
+        scopes=DISCORD_BOT_SCOPES,
+        force_rotate_active=True,
+    )
 
 
 def _resolve_provided_key(env_var: str) -> tuple[str, str | None] | None:
@@ -474,11 +564,18 @@ async def _seed_and_save_prod_key(db: AsyncSession) -> None:
         api_key, key_prefix = generate_api_key()
 
     key_hash = get_password_hash(api_key)
-    await seed_api_key(db, key_hash, PROD_API_KEY_NAME, key_prefix, scopes=DISCORD_BOT_SCOPES)
+    result = await seed_api_key(
+        db,
+        key_hash,
+        PROD_API_KEY_NAME,
+        key_prefix,
+        scopes=DISCORD_BOT_SCOPES,
+        force_rotate_active=pushed_from_override,
+    )
     await db.commit()
 
     try:
-        if not pushed_from_override:
+        if result.should_publish_plaintext and not pushed_from_override:
             _push_plaintext_to_gsm(GSM_RESOURCE_ID_OPENNOTES, api_key)
     finally:
         del api_key
@@ -494,18 +591,19 @@ async def _seed_and_save_prod_playground_key(db: AsyncSession) -> None:
 
     user_id = await get_or_create_playground_user(db)
     key_hash = get_password_hash(api_key)
-    await seed_api_key(
+    result = await seed_api_key(
         db,
         key_hash,
         PROD_PLAYGROUND_API_KEY_NAME,
         key_prefix,
         user_id=user_id,
         scopes=PLAYGROUND_SCOPES,
+        force_rotate_active=pushed_from_override,
     )
     await db.commit()
 
     try:
-        if not pushed_from_override:
+        if result.should_publish_plaintext and not pushed_from_override:
             _push_plaintext_to_gsm(GSM_RESOURCE_ID_PLAYGROUND, api_key)
     finally:
         del api_key
@@ -521,18 +619,19 @@ async def _seed_and_save_prod_platform_key(db: AsyncSession) -> None:
 
     user_id = await get_or_create_platform_user(db)
     key_hash = get_password_hash(api_key)
-    await seed_api_key(
+    result = await seed_api_key(
         db,
         key_hash,
         PROD_PLATFORM_API_KEY_NAME,
         key_prefix,
         user_id=user_id,
         scopes=PLATFORM_SCOPES,
+        force_rotate_active=pushed_from_override,
     )
     await db.commit()
 
     try:
-        if not pushed_from_override:
+        if result.should_publish_plaintext and not pushed_from_override:
             _push_plaintext_to_gsm(GSM_RESOURCE_ID_PLATFORM, api_key)
     finally:
         del api_key
@@ -548,18 +647,19 @@ async def _seed_and_save_prod_discourse_key(db: AsyncSession) -> None:
 
     user_id = await get_or_create_discourse_user(db)
     key_hash = get_password_hash(api_key)
-    await seed_api_key(
+    result = await seed_api_key(
         db,
         key_hash,
         PROD_DISCOURSE_API_KEY_NAME,
         key_prefix,
         user_id=user_id,
         scopes=DISCOURSE_SCOPES,
+        force_rotate_active=pushed_from_override,
     )
     await db.commit()
 
     try:
-        if not pushed_from_override:
+        if result.should_publish_plaintext and not pushed_from_override:
             _push_plaintext_to_gsm(GSM_RESOURCE_ID_DISCOURSE, api_key)
     finally:
         del api_key

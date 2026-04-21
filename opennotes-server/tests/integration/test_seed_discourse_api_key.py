@@ -89,3 +89,66 @@ async def test_discourse_seed_idempotent(db_session):
     )
     count = result.scalar_one()
     assert count == 1, "idempotent seeding must not duplicate the API key"
+
+
+@pytest.mark.asyncio
+async def test_discourse_seed_rotates_stale_prefix_on_active_row(db_session):
+    """TASK-1462.01: stale key_prefix + stale key_hash on an active row must
+    be rotated atomically so the dev plaintext auths via the prefix lookup."""
+    scripts_dir = str(Path(__file__).parent.parent.parent / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+
+    seed_mod = importlib.import_module("seed_api_keys")
+
+    from sqlalchemy import text
+
+    from src.auth.password import get_password_hash
+
+    await db_session.execute(
+        text("""
+            INSERT INTO users (username, email, hashed_password, full_name,
+                               is_active, principal_type, platform_roles,
+                               created_at, updated_at)
+            VALUES (:u, :e, :pw, :n, TRUE, 'agent', '[]'::jsonb, NOW(), NOW())
+        """),
+        {
+            "u": DISCOURSE_USERNAME,
+            "e": "discourse-adapter-community-opennotes-ai@opennotes.local",
+            "pw": get_password_hash("throwaway"),
+            "n": "Discourse Adapter (community.opennotes.ai)",
+        },
+    )
+
+    user_row = await db_session.execute(
+        text("SELECT id FROM users WHERE username = :u"),
+        {"u": DISCOURSE_USERNAME},
+    )
+    user_id = user_row.scalar_one()
+
+    stale_hash = get_password_hash("opk_stale_wrong_discourse_plaintext_to_rotate")
+    await db_session.execute(
+        text("""
+            INSERT INTO api_keys (user_id, name, key_hash, key_prefix, is_active, scopes, created_at)
+            VALUES (:user_id, 'Discourse Adapter (Development)', :key_hash,
+                    'stale', TRUE, CAST(:scopes AS jsonb), NOW())
+        """),
+        {
+            "user_id": user_id,
+            "key_hash": stale_hash,
+            "scopes": '["platform:adapter"]',
+        },
+    )
+    await db_session.commit()
+
+    await seed_mod.seed_discourse_api_key(db_session)
+    await db_session.commit()
+
+    result = await verify_api_key(db_session, DISCOURSE_DEV_API_KEY)
+    assert result is not None, (
+        "discourse seed must rotate stale hash + prefix to re-enable dev auth"
+    )
+    api_key_obj, _ = result
+    assert api_key_obj.key_prefix == "discourse", (
+        f"key_prefix must be rotated from 'stale' to 'discourse'; got {api_key_obj.key_prefix!r}"
+    )

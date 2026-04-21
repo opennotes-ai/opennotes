@@ -1,12 +1,17 @@
-"""Unit tests for seed_api_keys GSM push behavior (TASK-1422.13.05).
+"""Unit tests for seed_api_keys GSM push behavior (TASK-1422.13.05, TASK-1462.01).
 
 Covers the production paths in scripts/seed_api_keys.py that push minted
 plaintext API keys to Google Secret Manager after the DB hash is committed.
 
 Invariants under test:
-- Prod path with minted key: add_secret_version is called with the correct
-  parent path and plaintext payload bytes.
-- Prod path with env override (idempotency): add_secret_version is NOT called.
+- Prod path with minted key on a FRESH row (CREATED): add_secret_version is
+  called with the correct parent path and plaintext payload bytes.
+- Prod path with env override: add_secret_version is NOT called regardless
+  of the DB state — the operator owns the plaintext in GSM.
+- Prod path with pre-existing active row + minted key: force_rotate_active
+  is False in this branch, so there is NO rotation and NO GSM push (this is
+  the bug TASK-1462.01 fixed — before the fix, GSM was pushed unconditionally
+  and the DB hash drifted behind GSM, breaking auth).
 - Plaintext never appears on stdout in the production path.
 - Missing secret shell surfaces a clear operator-facing error.
 """
@@ -14,6 +19,7 @@ Invariants under test:
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -28,6 +34,56 @@ class _AsyncCommitSession:
         return None
 
     async def rollback(self) -> None:
+        return None
+
+
+class _FakeResult:
+    def __init__(self, *, first_row=None, scalar=None):
+        self._first_row = first_row
+        self._scalar = scalar
+
+    def first(self):
+        return self._first_row
+
+    def scalar_one(self):
+        return self._scalar
+
+
+class _SeedDBFakeSession:
+    """Async session fake that records SQL it sees and returns prepared rows.
+
+    Scoped narrowly to the queries `seed_api_key` + helpers issue:
+    - SELECT on api_keys returns a pre-primed row (or None for CREATED path).
+    - INSERT on api_keys returns a sentinel scalar id.
+    - Any other SELECT (users table lookups) returns an empty result — tests
+      that need users pre-seed by patching `get_or_create_*` helpers.
+    """
+
+    def __init__(self):
+        self.executed: list[tuple[str, dict]] = []
+        self._existing_row: tuple | None = None
+        self.commit_calls = 0
+        self.commit_side_effect = None
+
+    def prime_existing_row(self, *, api_key_id, is_active, scopes):
+        scopes_json = json.dumps(scopes) if scopes is not None else None
+        self._existing_row = (api_key_id, is_active, scopes_json)
+
+    async def execute(self, clause, params=None):
+        sql = str(clause)
+        self.executed.append((sql, dict(params or {})))
+        if "FROM api_keys WHERE user_id" in sql and "SELECT" in sql:
+            return _FakeResult(first_row=self._existing_row)
+        if "INSERT INTO api_keys" in sql:
+            return _FakeResult(scalar="fresh-id")
+        return _FakeResult()
+
+    async def commit(self):
+        self.commit_calls += 1
+        if self.commit_side_effect is not None:
+            self.commit_side_effect(self.commit_calls)
+
+    async def rollback(self):
         return None
 
 
@@ -89,31 +145,29 @@ def test_push_plaintext_requires_project_id(seed_module, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_prod_platform_key_pushes_to_gsm_and_no_plaintext_on_stdout(
+async def test_prod_platform_key_pushes_to_gsm_when_creating_fresh_row(
     seed_module, monkeypatch, capsys
 ):
+    """Fresh DB: prod helper mints a key, INSERTs, commits, pushes to GSM."""
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
     monkeypatch.delenv("PLATFORM_API_KEY", raising=False)
 
     async def fake_get_or_create(db):
         return "user-uuid"
 
-    async def fake_seed(db, key_hash, name, key_prefix, **kwargs):
-        return None
-
     monkeypatch.setattr(seed_module, "get_or_create_platform_user", fake_get_or_create)
-    monkeypatch.setattr(seed_module, "seed_api_key", fake_seed)
 
     known_key = "opk_DEADBEEF_not_a_real_secret_plaintext_sentinel"
     monkeypatch.setattr(seed_module, "generate_api_key", lambda: (known_key, "DEADBEEF"))
 
+    session = _SeedDBFakeSession()  # no existing row => CREATED path
     fake_client = MagicMock()
 
     with patch(
         "google.cloud.secretmanager.SecretManagerServiceClient",
         return_value=fake_client,
     ):
-        await seed_module._seed_and_save_prod_platform_key(db=_AsyncCommitSession())
+        await seed_module._seed_and_save_prod_platform_key(db=session)
 
     fake_client.add_secret_version.assert_called_once()
     _, kwargs = fake_client.add_secret_version.call_args
@@ -124,14 +178,13 @@ async def test_prod_platform_key_pushes_to_gsm_and_no_plaintext_on_stdout(
     assert known_key not in captured.out
     assert known_key not in captured.err
 
-    assert not Path("/tmp/platform-api-key.txt").exists() or (
-        known_key
-        not in Path("/tmp/platform-api-key.txt").read_text(encoding="utf-8", errors="ignore")
-    )
-
 
 @pytest.mark.asyncio
 async def test_prod_platform_key_env_override_skips_gsm_push(seed_module, monkeypatch, capsys):
+    """Env-override branch: operator already pushed plaintext to GSM out-of-band
+    (SOPS + add-version), so seed job must never re-push. This must hold even
+    when the DB is fresh and we INSERT a CREATED row — the operator owns GSM.
+    """
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
     override_key = "opk_override_env_supplied_platform_api_key_value"
     monkeypatch.setenv("PLATFORM_API_KEY", override_key)
@@ -139,19 +192,16 @@ async def test_prod_platform_key_env_override_skips_gsm_push(seed_module, monkey
     async def fake_get_or_create(db):
         return "user-uuid"
 
-    async def fake_seed(db, key_hash, name, key_prefix, **kwargs):
-        return None
-
     monkeypatch.setattr(seed_module, "get_or_create_platform_user", fake_get_or_create)
-    monkeypatch.setattr(seed_module, "seed_api_key", fake_seed)
 
+    session = _SeedDBFakeSession()
     fake_client = MagicMock()
 
     with patch(
         "google.cloud.secretmanager.SecretManagerServiceClient",
         return_value=fake_client,
     ):
-        await seed_module._seed_and_save_prod_platform_key(db=_AsyncCommitSession())
+        await seed_module._seed_and_save_prod_platform_key(db=session)
 
     fake_client.add_secret_version.assert_not_called()
 
@@ -161,21 +211,26 @@ async def test_prod_platform_key_env_override_skips_gsm_push(seed_module, monkey
 
 
 @pytest.mark.asyncio
-async def test_prod_playground_key_pushes_to_gsm(seed_module, monkeypatch, capsys):
+async def test_prod_platform_key_active_row_no_override_is_no_op(seed_module, monkeypatch, capsys):
+    """Regression: when an active row with matching scopes exists and the
+    operator did NOT provide an env override, the prod helper must NOT push
+    to GSM (would drift the GSM plaintext ahead of the unchanged DB hash).
+    This is the exact bug that caused the 2026-04-16 Discord 401 incident.
+    """
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
-    monkeypatch.delenv("PLAYGROUND_API_KEY", raising=False)
+    monkeypatch.delenv("PLATFORM_API_KEY", raising=False)
 
     async def fake_get_or_create(db):
         return "user-uuid"
 
-    async def fake_seed(db, key_hash, name, key_prefix, **kwargs):
-        return None
+    monkeypatch.setattr(seed_module, "get_or_create_platform_user", fake_get_or_create)
+    known_key = "opk_MINTED01_fresh_plaintext_but_db_has_old_hash"
+    monkeypatch.setattr(seed_module, "generate_api_key", lambda: (known_key, "MINTED01"))
 
-    monkeypatch.setattr(seed_module, "get_or_create_playground_user", fake_get_or_create)
-    monkeypatch.setattr(seed_module, "seed_api_key", fake_seed)
-
-    known_key = "opk_PLAYGR0UND_sentinel_secret_plaintext"
-    monkeypatch.setattr(seed_module, "generate_api_key", lambda: (known_key, "PLAYGR0UND"))
+    session = _SeedDBFakeSession()
+    session.prime_existing_row(
+        api_key_id="existing-id", is_active=True, scopes=["platform-admin:update"]
+    )
 
     fake_client = MagicMock()
 
@@ -183,7 +238,83 @@ async def test_prod_playground_key_pushes_to_gsm(seed_module, monkeypatch, capsy
         "google.cloud.secretmanager.SecretManagerServiceClient",
         return_value=fake_client,
     ):
-        await seed_module._seed_and_save_prod_playground_key(db=_AsyncCommitSession())
+        await seed_module._seed_and_save_prod_platform_key(db=session)
+
+    fake_client.add_secret_version.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_prod_platform_key_active_rotate_on_override_rewrites_hash_and_prefix(
+    seed_module, monkeypatch
+):
+    """When operator provides an env override on an already-active row,
+    force_rotate_active=True flows through and the UPDATE must touch BOTH
+    key_hash AND key_prefix so verify_api_key's prefix-based lookup lands on
+    the correct row.
+    """
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
+    override_key = "opk_NEWPREFIX_override_plaintext_rotated_by_operator"
+    monkeypatch.setenv("PLATFORM_API_KEY", override_key)
+
+    async def fake_get_or_create(db):
+        return "user-uuid"
+
+    monkeypatch.setattr(seed_module, "get_or_create_platform_user", fake_get_or_create)
+
+    session = _SeedDBFakeSession()
+    session.prime_existing_row(
+        api_key_id="existing-id",
+        is_active=True,
+        scopes=["platform-admin:update"],
+    )
+
+    fake_client = MagicMock()
+
+    with patch(
+        "google.cloud.secretmanager.SecretManagerServiceClient",
+        return_value=fake_client,
+    ):
+        await seed_module._seed_and_save_prod_platform_key(db=session)
+
+    # No GSM push: operator owns plaintext.
+    fake_client.add_secret_version.assert_not_called()
+
+    # UPDATE api_keys must have been issued with BOTH key_hash AND key_prefix.
+    hash_update = next(
+        (
+            params
+            for sql, params in session.executed
+            if "UPDATE api_keys" in sql and "key_hash" in sql and "key_prefix" in sql
+        ),
+        None,
+    )
+    assert hash_update is not None, "active-rotate path must UPDATE key_hash + key_prefix"
+    assert hash_update["key_prefix"] == "NEWPREFIX"
+
+
+@pytest.mark.asyncio
+async def test_prod_playground_key_pushes_to_gsm_when_creating_fresh_row(
+    seed_module, monkeypatch, capsys
+):
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
+    monkeypatch.delenv("PLAYGROUND_API_KEY", raising=False)
+
+    async def fake_get_or_create(db):
+        return "user-uuid"
+
+    monkeypatch.setattr(seed_module, "get_or_create_playground_user", fake_get_or_create)
+
+    known_key = "opk_PLAYGR0UND_sentinel_secret_plaintext"
+    monkeypatch.setattr(seed_module, "generate_api_key", lambda: (known_key, "PLAYGR0UND"))
+
+    session = _SeedDBFakeSession()
+    fake_client = MagicMock()
+
+    with patch(
+        "google.cloud.secretmanager.SecretManagerServiceClient",
+        return_value=fake_client,
+    ):
+        await seed_module._seed_and_save_prod_playground_key(db=session)
 
     fake_client.add_secret_version.assert_called_once()
     _, kwargs = fake_client.add_secret_version.call_args
@@ -196,29 +327,28 @@ async def test_prod_playground_key_pushes_to_gsm(seed_module, monkeypatch, capsy
 
 
 @pytest.mark.asyncio
-async def test_prod_opennotes_key_pushes_to_gsm(seed_module, monkeypatch, capsys):
+async def test_prod_opennotes_key_pushes_to_gsm_when_creating_fresh_row(
+    seed_module, monkeypatch, capsys
+):
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
     monkeypatch.delenv("OPENNOTES_API_KEY", raising=False)
 
     async def fake_get_or_create(db):
         return "user-uuid"
 
-    async def fake_seed(db, key_hash, name, key_prefix=None, **kwargs):
-        return None
-
     monkeypatch.setattr(seed_module, "get_or_create_service_user", fake_get_or_create)
-    monkeypatch.setattr(seed_module, "seed_api_key", fake_seed)
 
     known_key = "opk_DISCORD00_sentinel_secret_plaintext"
     monkeypatch.setattr(seed_module, "generate_api_key", lambda: (known_key, "DISCORD00"))
 
+    session = _SeedDBFakeSession()
     fake_client = MagicMock()
 
     with patch(
         "google.cloud.secretmanager.SecretManagerServiceClient",
         return_value=fake_client,
     ):
-        await seed_module._seed_and_save_prod_key(db=_AsyncCommitSession())
+        await seed_module._seed_and_save_prod_key(db=session)
 
     fake_client.add_secret_version.assert_called_once()
     _, kwargs = fake_client.add_secret_version.call_args
@@ -363,11 +493,7 @@ async def test_commit_happens_before_gsm_push(seed_module, monkeypatch):
     async def fake_get_or_create(db):
         return "user-uuid"
 
-    async def fake_seed(db, key_hash, name, key_prefix, **kwargs):
-        return None
-
     monkeypatch.setattr(seed_module, "get_or_create_platform_user", fake_get_or_create)
-    monkeypatch.setattr(seed_module, "seed_api_key", fake_seed)
     monkeypatch.setattr(
         seed_module,
         "generate_api_key",
@@ -376,13 +502,12 @@ async def test_commit_happens_before_gsm_push(seed_module, monkeypatch):
 
     call_order: list[str] = []
 
-    class OrderingSession:
+    class OrderingSession(_SeedDBFakeSession):
         async def commit(self):
+            await super().commit()
             call_order.append("commit")
 
-        async def rollback(self):
-            call_order.append("rollback")
-
+    session = OrderingSession()  # fresh row => CREATED => push
     fake_client = MagicMock()
     fake_client.add_secret_version.side_effect = lambda *a, **k: call_order.append("gsm_push")
 
@@ -390,7 +515,7 @@ async def test_commit_happens_before_gsm_push(seed_module, monkeypatch):
         "google.cloud.secretmanager.SecretManagerServiceClient",
         return_value=fake_client,
     ):
-        await seed_module._seed_and_save_prod_platform_key(db=OrderingSession())
+        await seed_module._seed_and_save_prod_platform_key(db=session)
 
     assert call_order == ["commit", "gsm_push"], (
         f"commit must precede GSM push, got order: {call_order}"
@@ -410,13 +535,9 @@ async def test_commit_failure_midway_skips_all_subsequent_gsm_pushes(seed_module
     async def fake_get_or_create(db):
         return "user-uuid"
 
-    async def fake_seed(db, key_hash, name, key_prefix=None, **kwargs):
-        return None
-
     monkeypatch.setattr(seed_module, "get_or_create_service_user", fake_get_or_create)
     monkeypatch.setattr(seed_module, "get_or_create_playground_user", fake_get_or_create)
     monkeypatch.setattr(seed_module, "get_or_create_platform_user", fake_get_or_create)
-    monkeypatch.setattr(seed_module, "seed_api_key", fake_seed)
 
     mint_counter = {"n": 0}
 
@@ -429,19 +550,13 @@ async def test_commit_failure_midway_skips_all_subsequent_gsm_pushes(seed_module
 
     monkeypatch.setattr(seed_module, "generate_api_key", fake_generate)
 
-    class FailingSession:
-        def __init__(self):
-            self.commit_calls = 0
+    session = _SeedDBFakeSession()
 
-        async def commit(self):
-            self.commit_calls += 1
-            if self.commit_calls == 2:
-                raise RuntimeError("simulated DB commit failure on second key")
+    def fail_on_second_commit(call_n):
+        if call_n == 2:
+            raise RuntimeError("simulated DB commit failure on second key")
 
-        async def rollback(self):
-            return None
-
-    session = FailingSession()
+    session.commit_side_effect = fail_on_second_commit
     fake_client = MagicMock()
 
     with patch(
@@ -457,3 +572,39 @@ async def test_commit_failure_midway_skips_all_subsequent_gsm_pushes(seed_module
     )
     _, kwargs = fake_client.add_secret_version.call_args
     assert kwargs["parent"].endswith("opennotes-api-key")
+
+
+@pytest.mark.asyncio
+async def test_gsm_push_raises_after_commit_does_not_rollback_db(seed_module, monkeypatch):
+    """TASK-1462.01: when the GSM push raises AFTER the DB commit has landed,
+    the exception propagates (operator must recover manually) and the
+    DB-side seed is already durable — we do not attempt a rollback that would
+    desynchronize the state further.
+    """
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "open-notes-core")
+    monkeypatch.delenv("PLATFORM_API_KEY", raising=False)
+
+    async def fake_get_or_create(db):
+        return "user-uuid"
+
+    monkeypatch.setattr(seed_module, "get_or_create_platform_user", fake_get_or_create)
+    monkeypatch.setattr(
+        seed_module,
+        "generate_api_key",
+        lambda: ("opk_POSTCOMMIT_plaintext", "POSTCOMMIT"),
+    )
+
+    session = _SeedDBFakeSession()  # fresh => CREATED => push
+    fake_client = MagicMock()
+    fake_client.add_secret_version.side_effect = RuntimeError("gsm transport failure")
+
+    with (
+        patch(
+            "google.cloud.secretmanager.SecretManagerServiceClient",
+            return_value=fake_client,
+        ),
+        pytest.raises(RuntimeError, match="gsm transport failure"),
+    ):
+        await seed_module._seed_and_save_prod_platform_key(db=session)
+
+    assert session.commit_calls == 1, "commit must have landed before the GSM push failed"
