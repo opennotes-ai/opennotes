@@ -1,6 +1,7 @@
 import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
-import { formatDate, humanizeLabel, cn } from "@opennotes/ui/utils";
+import { cn } from "@opennotes/ui/utils";
+import { formatDate, humanizeLabel } from "~/lib/format";
 import { Badge, type BadgeVariant } from "@opennotes/ui/components/ui/badge";
 import IdBadge from "@opennotes/ui/components/ui/id-badge";
 import { getHelpfulnessTooltip, TERM_DESCRIPTIONS } from "@opennotes/ui/palettes";

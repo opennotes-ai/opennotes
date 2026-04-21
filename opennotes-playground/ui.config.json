@@ -6,7 +6,7 @@
     "prefix": ""
   },
   "aliases": {
-    "components": "~/components/ui",
-    "utils": "~/lib/cn"
+    "components": "@opennotes/ui/components/ui",
+    "utils": "@opennotes/ui/utils"
   }
 }

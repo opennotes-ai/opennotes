@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatIdBadgeLabel } from "./format";
+import { formatIdBadgeLabel } from "./ids";
 import { parseFragment, findPageForItem } from "./anchor-scroll";
 
 const UUID_A = "0195a3bc-3dc8-7f2b-9e07-c4e21c0f5a10";

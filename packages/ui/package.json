@@ -47,8 +47,6 @@
     "src"
   ],
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
     "test": "vitest run",
     "type-check": "tsc --noEmit"
   },
@@ -74,7 +72,6 @@
     "jsdom": "^29.0.1",
     "solid-js": "^1.9.5",
     "tailwind-merge": "^3.5.0",
-    "tsup": "^8.5.0",
     "typescript": "^5.7.3",
     "vitest": "^4.0.18"
   },

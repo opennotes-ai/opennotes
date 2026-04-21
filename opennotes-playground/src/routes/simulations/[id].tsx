@@ -11,14 +11,16 @@ import {
   getSimulationChannelMessages,
 } from "~/lib/api-client.server";
 import {
-  formatDate,
-  formatIdBadgeLabel,
-  getMetric,
-  humanizeLabel,
   parseFragment,
   scrollToAndHighlight,
   findPageForItem,
 } from "@opennotes/ui/utils";
+import {
+  formatDate,
+  formatIdBadgeLabel,
+  getMetric,
+  humanizeLabel,
+} from "~/lib/format";
 import { Badge, type BadgeVariant } from "@opennotes/ui/components/ui/badge";
 import { SectionSkeleton } from "@opennotes/ui/components/ui/skeleton";
 import SimulationSidebar, { MobileSidebarToggle } from "~/components/SimulationSidebar";

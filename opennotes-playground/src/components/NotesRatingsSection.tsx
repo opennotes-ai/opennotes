@@ -1,7 +1,7 @@
 import { For, Show, createMemo } from "solid-js";
 import type { EChartsOption } from "echarts";
 import type { components } from "~/lib/generated-types";
-import { humanizeLabel } from "@opennotes/ui/utils";
+import { humanizeLabel } from "~/lib/format";
 import { SEMANTIC_COLORS } from "@opennotes/ui/palettes";
 import { EChart } from "@opennotes/ui/components/ui/echart";
 import SectionHeader from "@opennotes/ui/components/ui/section-header";

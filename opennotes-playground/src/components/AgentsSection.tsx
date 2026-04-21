@@ -2,7 +2,7 @@ import { createSignal, createMemo, createEffect, on, For, Show } from "solid-js"
 import { Popover, PopoverTrigger, PopoverContent } from "@opennotes/ui/components/ui/popover";
 import type { EChartsOption } from "echarts";
 import type { components } from "~/lib/generated-types";
-import { humanizeLabel } from "@opennotes/ui/utils";
+import { humanizeLabel } from "~/lib/format";
 import { SEMANTIC_COLORS } from "@opennotes/ui/palettes";
 import { Badge, type BadgeVariant } from "@opennotes/ui/components/ui/badge";
 import InlineHistogram from "@opennotes/ui/components/ui/inline-histogram";
@@ -185,7 +185,7 @@ export default function AgentsSection(props: {
                         </span>
                       }
                     >
-                      <InlineHistogram data={agent.action_distribution} />
+                      <InlineHistogram data={agent.action_distribution} formatLabel={humanizeLabel} />
                     </Show>
                   </td>
                 </tr>

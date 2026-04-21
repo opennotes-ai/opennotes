@@ -1,6 +1,7 @@
 import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
-import { humanizeLabel, softHyphenate } from "@opennotes/ui/utils";
+import { softHyphenate } from "@opennotes/ui/utils";
+import { humanizeLabel } from "~/lib/format";
 import { TIER_DESCRIPTIONS, TERM_DESCRIPTIONS } from "@opennotes/ui/palettes";
 import SectionHeader from "@opennotes/ui/components/ui/section-header";
 

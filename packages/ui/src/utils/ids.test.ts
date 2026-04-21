@@ -5,7 +5,7 @@ import {
   isUuidLike,
   proquintToHexSuffix,
   resolveAnchorId,
-} from "./format";
+} from "./ids";
 
 const UUID_SAMPLE = "0195a3bc-3dc8-7f2b-9e07-c4e21c0f5a10";
 
@@ -82,8 +82,6 @@ describe("id badge formatting", () => {
 });
 
 describe("proquint reverse lookup", () => {
-  const UUID_SAMPLE = "0195a3bc-3dc8-7f2b-9e07-c4e21c0f5a10";
-
   it("round-trips encode then decode for known UUID", () => {
     const label = formatIdBadgeLabel(UUID_SAMPLE);
     const hexSuffix = proquintToHexSuffix(label);
@@ -123,7 +121,7 @@ describe("resolveAnchorId", () => {
   });
 
   it("returns null for non-matching input", () => {
-    expect(resolveAnchorId("note-nonexistent", items, "note")).toBeNull();
+    expect(resolveAnchorId("note-nonexistent", [], "note")).toBeNull();
   });
 
   it("returns null for empty items", () => {

@@ -11,6 +11,7 @@
     "lint": "pnpm run type-check"
   },
   "dependencies": {
+    "@kobalte/core": "^0.13.11",
     "@opennotes/tokens": "workspace:*",
     "@opennotes/ui": "workspace:*",
     "@solidjs/meta": "^0.29.4",
@@ -20,6 +21,7 @@
     "@supabase/supabase-js": "^2.98.0",
     "@tailwindcss/postcss": "^4.2.1",
     "@tailwindcss/typography": "^0.5.19",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "google-auth-library": "^10.6.2",
     "postcss": "^8.5.8",
@@ -29,6 +31,9 @@
     "vinxi": "^0.5.3"
   },
   "devDependencies": {
+    "@solidjs/testing-library": "^0.8.10",
+    "@testing-library/jest-dom": "^6.9.1",
+    "jsdom": "^29.0.1",
     "typescript": "^5.7.3",
     "vite-plugin-solid": "^2.11.12",
     "vitest": "^4.0.18"

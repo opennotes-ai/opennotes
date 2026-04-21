@@ -1,4 +1,4 @@
-import { resolveAnchorId } from "./format";
+import { resolveAnchorId } from "./ids";
 
 export type AnchorTarget = {
   type: "note" | "agent" | "request";
