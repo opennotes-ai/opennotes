@@ -4,6 +4,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    VERTEXAI_PROJECT: str = "open-notes-core"
+    VERTEXAI_LOCATION: str = "us-central1"
+    VERTEXAI_MODEL: str = "google-vertex:gemini-3.1-pro-preview"
+    VERTEXAI_EMBEDDING_MODEL: str = "google-vertex:gemini-embedding-001"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     FIRECRAWL_API_KEY: str = ""
@@ -21,3 +26,7 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+# --- Vertex AI settings (Gemini 3.1 Pro Preview is the primary LLM;
+#     OpenAI is only used for moderation).
+#     Settings names mirror opennotes-server convention.
