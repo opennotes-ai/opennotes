@@ -18,6 +18,8 @@ after_initialize do
     load File.expand_path("../lib/opennotes/#{f}.rb", __FILE__)
   end
 
+  OpenNotes::GcpAuth.reset_cache! if defined?(OpenNotes::GcpAuth) && OpenNotes::GcpAuth.respond_to?(:reset_cache!)
+
   if SiteSetting.opennotes_platform_community_server_id.blank?
     SiteSetting.opennotes_platform_community_server_id = OpenNotes::SlugGenerator.generate_for_site
   end

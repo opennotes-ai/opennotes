@@ -28,8 +28,71 @@ RSpec.describe OpenNotes::Client do
   before do
     SiteSetting.opennotes_platform_community_server_id = "community.example.com-abcd1234"
     allow(Discourse).to receive(:current_hostname).and_return("community.example.com")
+    OpenNotes::GcpAuth.reset_cache!
     client.instance_variable_set(:@connection, test_connection)
     allow(OpenNotes::GcpAuth).to receive(:on_gcp?).and_return(false)
+  end
+
+  describe "server_url normalization" do
+    it "strips a trailing slash so Cloud Run ID token audience matches exactly" do
+      trailing = described_class.new(server_url: "https://opennotes.example.com/", api_key: api_key)
+      expect(trailing.server_url).to eq("https://opennotes.example.com")
+
+      plain = described_class.new(server_url: "https://opennotes.example.com", api_key: api_key)
+      expect(plain.server_url).to eq("https://opennotes.example.com")
+    end
+
+    it "passes the normalized audience to identity_token on GCP" do
+      trailing = described_class.new(server_url: "https://opennotes.example.com/", api_key: api_key)
+      trailing.instance_variable_set(:@connection, test_connection)
+
+      allow(OpenNotes::GcpAuth).to receive(:on_gcp?).and_return(true)
+      expect(OpenNotes::GcpAuth).to receive(:identity_token)
+        .with("https://opennotes.example.com")
+        .and_return("fake-id-token")
+
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |_env|
+        [200, { "Content-Type" => "application/json" }, '{"data": []}']
+      end
+
+      trailing.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests")
+    end
+  end
+
+  shared_examples "sets auth headers from GCP state" do |verb:, path:, faraday_verb: verb|
+    it "sets X-API-Key and no Authorization when off GCP (#{verb.upcase})" do
+      stubs.public_send(faraday_verb, path) do |env|
+        expect(env.request_headers["X-API-Key"]).to eq("test-api-key")
+        expect(env.request_headers).not_to have_key("Authorization")
+        [200, { "Content-Type" => "application/json" }, "{}"]
+      end
+
+      client.public_send(verb, path)
+    end
+
+    it "sets both X-API-Key and Authorization: Bearer <id_token> when on GCP (#{verb.upcase})" do
+      allow(OpenNotes::GcpAuth).to receive(:on_gcp?).and_return(true)
+      allow(OpenNotes::GcpAuth).to receive(:identity_token).with(server_url).and_return("fake-id-token")
+
+      stubs.public_send(faraday_verb, path) do |env|
+        expect(env.request_headers["X-API-Key"]).to eq("test-api-key")
+        expect(env.request_headers["Authorization"]).to eq("Bearer fake-id-token")
+        [200, { "Content-Type" => "application/json" }, "{}"]
+      end
+
+      client.public_send(verb, path)
+    end
+  end
+
+  describe "auth headers across verbs" do
+    include_examples "sets auth headers from GCP state",
+                     verb: :get, path: "/cross-verb-get"
+    include_examples "sets auth headers from GCP state",
+                     verb: :post, path: "/cross-verb-post"
+    include_examples "sets auth headers from GCP state",
+                     verb: :patch, path: "/cross-verb-patch"
+    include_examples "sets auth headers from GCP state",
+                     verb: :delete, path: "/cross-verb-delete"
   end
 
   after do
