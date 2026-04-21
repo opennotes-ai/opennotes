@@ -169,3 +169,32 @@ class TestScreenshot:
     def test_invalid_url_returns_400(self, client: TestClient) -> None:
         resp = client.get("/api/screenshot", params={"url": "javascript:alert(1)"})
         assert resp.status_code == 400
+
+
+class TestSSRFValidation:
+    def test_localhost_hostname_rejected(self, client: TestClient) -> None:
+        resp = client.get("/api/frame-compat", params={"url": "http://localhost/admin"})
+        assert resp.status_code == 400
+
+    def test_metadata_hostname_rejected(self, client: TestClient) -> None:
+        resp = client.get(
+            "/api/frame-compat",
+            params={"url": "http://metadata.google.internal/computeMetadata/v1/"},
+        )
+        assert resp.status_code == 400
+
+    def test_internal_tld_rejected(self, client: TestClient) -> None:
+        resp = client.get("/api/frame-compat", params={"url": "http://svc.internal/"})
+        assert resp.status_code == 400
+
+    def test_private_ip_resolution_rejected(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import socket
+
+        def _resolve_to_private(*_args: object, **_kwargs: object) -> list:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.5", 0))]
+
+        monkeypatch.setattr(socket, "getaddrinfo", _resolve_to_private)
+        resp = client.get("/api/frame-compat", params={"url": "http://evil.example.com/"})
+        assert resp.status_code == 400
