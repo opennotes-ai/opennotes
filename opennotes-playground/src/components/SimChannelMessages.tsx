@@ -1,7 +1,7 @@
 import { Show, For, createSignal, createEffect } from "solid-js";
 import { createAsync } from "@solidjs/router";
 import { getAgentAvatar } from "~/lib/agent-avatar";
-import { cn } from "~/lib/cn";
+import { cn } from "@opennotes/ui/utils";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Button } from "~/components/ui/button";
 import { fetchChannelMessages } from "~/routes/simulations/[id]";

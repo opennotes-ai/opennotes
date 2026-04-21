@@ -4,7 +4,7 @@ import { splitProps, type Component } from "solid-js"
 import type { PolymorphicProps } from "@kobalte/core/polymorphic"
 import * as TooltipPrimitive from "@kobalte/core/tooltip"
 
-import { cn } from "~/lib/cn"
+import { cn } from "@opennotes/ui/utils"
 
 const TooltipTrigger = TooltipPrimitive.Trigger
 

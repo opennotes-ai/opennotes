@@ -15,6 +15,7 @@
   "dependencies": {
     "@kobalte/core": "^0.13.11",
     "@opennotes/tokens": "workspace:*",
+    "@opennotes/ui": "workspace:*",
     "@solidjs/meta": "^0.29.4",
     "@solidjs/router": "^0.15.3",
     "@solidjs/start": "^1.1.0",

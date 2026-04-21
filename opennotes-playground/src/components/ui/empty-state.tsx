@@ -1,7 +1,7 @@
 import type { JSX, ComponentProps } from "solid-js";
 import { Show, splitProps } from "solid-js";
 import { A } from "@solidjs/router";
-import { cn } from "~/lib/cn";
+import { cn } from "@opennotes/ui/utils";
 
 interface EmptyStateProps extends ComponentProps<"div"> {
   icon?: JSX.Element;

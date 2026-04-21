@@ -42,18 +42,18 @@ function uuidSuffixToProquint(uuid: string): string {
 
 function decodeProquintWord(pq: string): number {
   let word = 0;
-  word |= PROQUINT_CONSONANTS.indexOf(pq[0]);
-  word |= PROQUINT_VOWELS.indexOf(pq[1]) << 4;
-  word |= PROQUINT_CONSONANTS.indexOf(pq[2]) << 6;
-  word |= PROQUINT_VOWELS.indexOf(pq[3]) << 10;
-  word |= PROQUINT_CONSONANTS.indexOf(pq[4]) << 12;
+  word |= PROQUINT_CONSONANTS.indexOf(pq[0]!);
+  word |= PROQUINT_VOWELS.indexOf(pq[1]!) << 4;
+  word |= PROQUINT_CONSONANTS.indexOf(pq[2]!) << 6;
+  word |= PROQUINT_VOWELS.indexOf(pq[3]!) << 10;
+  word |= PROQUINT_CONSONANTS.indexOf(pq[4]!) << 12;
   return word;
 }
 
 export function proquintToHexSuffix(proquint: string): string {
   const [upper, lower] = proquint.split("-");
-  const upperWord = decodeProquintWord(upper);
-  const lowerWord = decodeProquintWord(lower);
+  const upperWord = decodeProquintWord(upper!);
+  const lowerWord = decodeProquintWord(lower!);
   return upperWord.toString(16).padStart(4, "0") + lowerWord.toString(16).padStart(4, "0");
 }
 

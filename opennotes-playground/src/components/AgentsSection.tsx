@@ -2,8 +2,8 @@ import { createSignal, createMemo, createEffect, on, For, Show } from "solid-js"
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import type { EChartsOption } from "echarts";
 import type { components } from "~/lib/generated-types";
-import { humanizeLabel } from "~/lib/format";
-import { SEMANTIC_COLORS } from "~/lib/chart-colors";
+import { humanizeLabel } from "@opennotes/ui/utils";
+import { SEMANTIC_COLORS } from "@opennotes/ui/palettes";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import InlineHistogram from "~/components/ui/inline-histogram";
 import IdBadge from "~/components/ui/id-badge";

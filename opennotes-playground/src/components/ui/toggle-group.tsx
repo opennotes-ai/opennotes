@@ -5,7 +5,7 @@ import type { PolymorphicProps } from "@kobalte/core/polymorphic"
 import * as ToggleGroupPrimitive from "@kobalte/core/toggle-group"
 import type { VariantProps } from "class-variance-authority"
 
-import { cn } from "~/lib/cn"
+import { cn } from "@opennotes/ui/utils"
 import { toggleVariants } from "~/components/ui/toggle"
 
 const ToggleGroupContext = createContext<VariantProps<typeof toggleVariants>>({

@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js";
-import { cn } from "~/lib/cn";
+import { cn } from "@opennotes/ui/utils";
 import {
   DropdownMenu,
   DropdownMenuTrigger,

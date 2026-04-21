@@ -117,9 +117,9 @@ describe("resolveAnchorId", () => {
   });
 
   it("matches by proquint", () => {
-    const label = formatIdBadgeLabel(items[0].id);
+    const label = formatIdBadgeLabel(items[0]!.id);
     const result = resolveAnchorId(`note-${label}`, items, "note");
-    expect(result).toBe(items[0].id);
+    expect(result).toBe(items[0]!.id);
   });
 
   it("returns null for non-matching input", () => {

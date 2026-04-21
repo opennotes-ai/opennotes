@@ -2,7 +2,7 @@ import type { ComponentProps } from "solid-js";
 import { splitProps } from "solid-js";
 import type { VariantProps } from "class-variance-authority";
 import { cva } from "class-variance-authority";
-import { cn } from "~/lib/cn";
+import { cn } from "@opennotes/ui/utils";
 
 export const badgeVariants = cva(
   "inline-flex items-center rounded-md px-[0.55em] py-[0.175em] text-[clamp(0.75rem,0.72em,0.9375rem)] font-semibold transition-colors",

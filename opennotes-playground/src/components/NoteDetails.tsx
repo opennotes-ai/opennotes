@@ -1,10 +1,9 @@
 import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
-import { formatDate, humanizeLabel } from "~/lib/format";
+import { formatDate, humanizeLabel, cn } from "@opennotes/ui/utils";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import IdBadge from "~/components/ui/id-badge";
-import { getHelpfulnessTooltip, TERM_DESCRIPTIONS } from "~/lib/scoring-tiers";
-import { cn } from "~/lib/cn";
+import { getHelpfulnessTooltip, TERM_DESCRIPTIONS } from "@opennotes/ui/palettes";
 import NoteFilter, { type NoteFilterValues } from "~/components/ui/note-filter";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import EmptyState from "~/components/ui/empty-state";

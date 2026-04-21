@@ -4,7 +4,7 @@ import { splitProps } from "solid-js"
 import type { PolymorphicProps } from "@kobalte/core/polymorphic"
 import * as PopoverPrimitive from "@kobalte/core/popover"
 
-import { cn } from "~/lib/cn"
+import { cn } from "@opennotes/ui/utils"
 
 const PopoverTrigger = PopoverPrimitive.Trigger
 

@@ -4,7 +4,7 @@ import { splitProps } from "solid-js"
 import * as DropdownMenuPrimitive from "@kobalte/core/dropdown-menu"
 import type { PolymorphicProps } from "@kobalte/core/polymorphic"
 
-import { cn } from "~/lib/cn"
+import { cn } from "@opennotes/ui/utils"
 
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal

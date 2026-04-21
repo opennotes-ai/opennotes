@@ -1,7 +1,7 @@
 import type { Component, ComponentProps } from "solid-js"
 import { splitProps } from "solid-js"
 
-import { cn } from "~/lib/cn"
+import { cn } from "@opennotes/ui/utils"
 
 const Card: Component<ComponentProps<"div">> = (props) => {
   const [local, others] = splitProps(props, ["class"])

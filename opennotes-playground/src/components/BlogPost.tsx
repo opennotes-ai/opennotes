@@ -1,5 +1,5 @@
 import { Show } from "solid-js";
-import { formatDate } from "~/lib/format";
+import { formatDate } from "@opennotes/ui/utils";
 import type { BlogPost as BlogPostType } from "~/lib/blog.server";
 
 export default function BlogPost(props: { post: BlogPostType }) {

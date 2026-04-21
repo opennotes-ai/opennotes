@@ -10,8 +10,15 @@ import {
   getSimulationTimeline,
   getSimulationChannelMessages,
 } from "~/lib/api-client.server";
-import { formatDate, formatIdBadgeLabel, getMetric, humanizeLabel } from "~/lib/format";
-import { parseFragment, scrollToAndHighlight, findPageForItem } from "~/lib/anchor-scroll";
+import {
+  formatDate,
+  formatIdBadgeLabel,
+  getMetric,
+  humanizeLabel,
+  parseFragment,
+  scrollToAndHighlight,
+  findPageForItem,
+} from "@opennotes/ui/utils";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import { SectionSkeleton } from "~/components/ui/skeleton";
 import SimulationSidebar, { MobileSidebarToggle } from "~/components/SimulationSidebar";

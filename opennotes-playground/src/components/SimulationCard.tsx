@@ -1,6 +1,6 @@
 import { A } from "@solidjs/router";
 import type { components } from "~/lib/generated-types";
-import { formatDate, getMetric, humanizeLabel } from "~/lib/format";
+import { formatDate, getMetric, humanizeLabel } from "@opennotes/ui/utils";
 import { Badge, type BadgeVariant } from "~/components/ui/badge";
 import IdBadge from "~/components/ui/id-badge";
 
