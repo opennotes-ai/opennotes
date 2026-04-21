@@ -2,9 +2,45 @@ import { Show, Suspense } from "solid-js";
 import { createAsync, useSearchParams, A } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import LoadingShimmer from "~/components/LoadingShimmer";
+import PageFrame from "~/components/PageFrame";
+import CachedBadge from "~/components/CachedBadge";
+import Sidebar from "~/components/sidebar/Sidebar";
 import { getAnalysis, type AnalyzeQueryResult } from "./analyze.data";
 
-function AnalysisResult(props: { result: AnalyzeQueryResult }) {
+function AnalysisLayout(props: {
+  url: string;
+  result: Extract<AnalyzeQueryResult, { ok: true }>;
+}) {
+  return (
+    <div class="space-y-6">
+      <header class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <h1 class="truncate text-lg font-semibold tracking-tight text-foreground">
+            {props.result.payload.page_title ?? "Untitled page"}
+          </h1>
+          <p class="mt-0.5 break-all text-xs text-muted-foreground">
+            {props.url}
+          </p>
+        </div>
+        <CachedBadge
+          cached={props.result.payload.cached}
+          cachedAt={props.result.payload.scraped_at}
+        />
+      </header>
+
+      <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <PageFrame
+          url={props.url}
+          canIframe={props.result.frameCompat.canIframe}
+          screenshotUrl={props.result.frameCompat.screenshotUrl}
+        />
+        <Sidebar payload={props.result.payload} />
+      </div>
+    </div>
+  );
+}
+
+function AnalysisResult(props: { url: string; result: AnalyzeQueryResult }) {
   return (
     <Show
       when={props.result.ok === true ? props.result : null}
@@ -20,14 +56,7 @@ function AnalysisResult(props: { result: AnalyzeQueryResult }) {
       }
     >
       {(okResult) => (
-        <article class="space-y-4 rounded-md border border-border bg-card p-6">
-          <h2 class="text-lg font-semibold">
-            {okResult().payload.page_title ?? "Untitled page"}
-          </h2>
-          <p class="text-sm text-muted-foreground">
-            Analysis ready. The full sidebar renders in the next slice.
-          </p>
-        </article>
+        <AnalysisLayout url={props.url} result={okResult()} />
       )}
     </Show>
   );
@@ -47,13 +76,18 @@ export default function AnalyzePage() {
   return (
     <>
       <Title>vibecheck — analyzing</Title>
-      <main class="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-10">
+      <main class="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-8">
         <nav class="flex items-center justify-between">
           <A
             href="/"
-            class="text-sm text-muted-foreground underline-offset-4 hover:underline"
+            class="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
-            &larr; Analyze a different URL
+            <span aria-hidden="true">&larr;</span>
+            <span>vibecheck</span>
+            <span aria-hidden="true" class="mx-1 text-muted-foreground/60">
+              /
+            </span>
+            <span>back</span>
           </A>
         </nav>
 
@@ -68,30 +102,18 @@ export default function AnalyzePage() {
           }
         >
           {(url) => (
-            <section aria-labelledby="analysis-heading" class="space-y-4">
-              <div>
-                <h1
-                  id="analysis-heading"
-                  class="text-2xl font-semibold tracking-tight"
-                >
-                  Analyzing
-                </h1>
-                <p class="mt-1 break-all text-sm text-muted-foreground">
-                  {url()}
-                </p>
-              </div>
-
-              <Suspense
+            <Suspense
+              fallback={<LoadingShimmer label="Analyzing URL" rows={4} />}
+            >
+              <Show
+                when={analysis()}
                 fallback={<LoadingShimmer label="Analyzing URL" rows={4} />}
               >
-                <Show
-                  when={analysis()}
-                  fallback={<LoadingShimmer label="Analyzing URL" rows={4} />}
-                >
-                  {(result) => <AnalysisResult result={result()} />}
-                </Show>
-              </Suspense>
-            </section>
+                {(result) => (
+                  <AnalysisResult url={url()} result={result()} />
+                )}
+              </Show>
+            </Suspense>
           )}
         </Show>
       </main>
