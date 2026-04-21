@@ -1,98 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@opennotes/tokens";
 @plugin "@tailwindcss/typography";
-
-@custom-variant dark (&:is(.dark *));
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
-  --font-serif: "IBM Plex Serif", Georgia, serif;
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --animate-content-show: content-show 150ms ease-out;
-  --animate-content-hide: content-hide 150ms ease-in;
-}
-
-:root {
-  --radius: 0.625rem;
-  --background: oklch(0.99 0.005 160);
-  --foreground: oklch(0.25 0.015 160);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.25 0.015 160);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.25 0.015 160);
-  --primary: oklch(0.65 0.15 165);
-  --primary-foreground: oklch(0.99 0.005 160);
-  --secondary: oklch(0.85 0.08 165);
-  --secondary-foreground: oklch(0.25 0.015 160);
-  --muted: oklch(0.95 0.01 160);
-  --muted-foreground: oklch(0.50 0.01 160);
-  --accent: oklch(0.75 0.12 165);
-  --accent-foreground: oklch(0.99 0.005 160);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.99 0.005 160);
-  --border: oklch(0.90 0.01 160);
-  --input: oklch(0.90 0.01 160);
-  --ring: oklch(0.65 0.15 165);
-  --chart-1: oklch(0.65 0.15 165);
-  --chart-2: oklch(0.60 0.14 250);
-  --chart-3: oklch(0.70 0.14 35);
-  --chart-4: oklch(0.55 0.12 300);
-  --chart-5: oklch(0.65 0.10 80);
-}
-
-.dark {
-  --background: oklch(0.15 0.01 160);
-  --foreground: oklch(0.95 0.005 160);
-  --card: oklch(0.20 0.01 160);
-  --card-foreground: oklch(0.95 0.005 160);
-  --popover: oklch(0.20 0.01 160);
-  --popover-foreground: oklch(0.95 0.005 160);
-  --primary: oklch(0.70 0.15 165);
-  --primary-foreground: oklch(0.15 0.01 160);
-  --secondary: oklch(0.30 0.02 165);
-  --secondary-foreground: oklch(0.95 0.005 160);
-  --muted: oklch(0.25 0.01 160);
-  --muted-foreground: oklch(0.65 0.01 160);
-  --accent: oklch(0.35 0.05 165);
-  --accent-foreground: oklch(0.95 0.005 160);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.99 0.005 160);
-  --border: oklch(0.30 0.01 160);
-  --input: oklch(0.30 0.01 160);
-  --ring: oklch(0.70 0.15 165);
-  --chart-1: oklch(0.70 0.15 165);
-  --chart-2: oklch(0.65 0.14 250);
-  --chart-3: oklch(0.75 0.14 35);
-  --chart-4: oklch(0.60 0.12 300);
-  --chart-5: oklch(0.70 0.10 80);
-}
 
 @layer base {
   * {
@@ -106,23 +15,4 @@
 
 .blog-serif .prose {
   font-family: var(--font-serif);
-}
-
-@keyframes content-show {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes content-hide {
-  from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(0.96); }
-}
-
-@keyframes anchor-fade {
-  from { background-color: oklch(0.65 0.15 165 / 0.15); }
-  to { background-color: transparent; }
-}
-
-.anchor-highlight {
-  animation: anchor-fade 2s ease-out;
 }
