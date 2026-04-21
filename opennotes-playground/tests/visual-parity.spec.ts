@@ -4,12 +4,10 @@ const DESKTOP = { width: 1280, height: 720 } as const;
 const MOBILE = { width: 375, height: 812 } as const;
 
 async function preparePage(page: Page) {
-  await page
-    .addStyleTag({
-      content:
-        "*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; transition-delay: 0s !important; caret-color: transparent !important; }",
-    })
-    .catch(() => {});
+  await page.addStyleTag({
+    content:
+      "*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; transition-delay: 0s !important; caret-color: transparent !important; }",
+  });
   await page.evaluate(async () => {
     if (document.fonts && document.fonts.ready) {
       await document.fonts.ready;

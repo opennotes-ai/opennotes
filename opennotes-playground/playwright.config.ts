@@ -12,7 +12,6 @@ export default defineConfig({
       animations: "disabled",
       caret: "hide",
       maxDiffPixelRatio: 0.02,
-      threshold: 0.2,
     },
   },
   projects: [
@@ -25,7 +24,7 @@ export default defineConfig({
     {
       command: "node tests/mock-server.cjs",
       port: 9999,
-      reuseExistingServer: false,
+      reuseExistingServer: true,
     },
     {
       command:
