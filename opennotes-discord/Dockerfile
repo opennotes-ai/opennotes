@@ -8,16 +8,24 @@ ENV CI=true
 # Enable pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy dependency resolution files only (lockfile, workspace config, package.json per package)
-COPY opennotes-discord/pnpm-workspace.yaml opennotes-discord/package.json opennotes-discord/pnpm-lock.yaml ./
-COPY opennotes-discord/packages/shared-types/package.json ./packages/shared-types/package.json
-COPY opennotes-discord/packages/test-utils/package.json ./packages/test-utils/package.json
+# Copy root workspace files (lockfile and workspace config live at repo root)
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 
-# Install all workspace dependencies (cached unless lockfile or package.json changes)
-RUN pnpm install --frozen-lockfile
+# Copy each workspace member's package.json so pnpm can resolve the full
+# workspace graph against the root lockfile. Playground/platform package.jsons
+# are copied (no source) so --frozen-lockfile sees every member the lockfile
+# expects; the --filter keeps the install scoped to opennotes-discord's graph.
+COPY packages/shared-types/package.json ./packages/shared-types/package.json
+COPY packages/test-utils/package.json ./packages/test-utils/package.json
+COPY opennotes-discord/package.json ./opennotes-discord/package.json
+COPY opennotes-playground/package.json ./opennotes-playground/package.json
+COPY opennotes-platform/package.json ./opennotes-platform/package.json
+
+# Install dependencies scoped to the opennotes-discord graph
+RUN pnpm install --frozen-lockfile --filter opennotes-discord...
 
 # Copy workspace package source and build (cached unless packages/ source changes)
-COPY opennotes-discord/packages ./packages
+COPY packages ./packages
 RUN rm -rf packages/*/dist packages/*/*.tsbuildinfo && \
     pnpm --filter './packages/**' run build
 
@@ -25,9 +33,8 @@ RUN rm -rf packages/*/dist packages/*/*.tsbuildinfo && \
 COPY opennotes-server/openapi.json ./opennotes-server/openapi.json
 COPY opennotes-discord ./opennotes-discord
 
-# Set working directory to Discord bot for final build steps
+# Build the Discord bot
 WORKDIR /workspace/opennotes-discord
-RUN pnpm install --frozen-lockfile
 RUN pnpm run build
 
 # Production stage
@@ -41,16 +48,23 @@ ENV CI=true
 # Enable pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy workspace files for production install
-COPY opennotes-discord/pnpm-workspace.yaml opennotes-discord/package.json opennotes-discord/pnpm-lock.yaml ./
+# Copy root workspace files for production install
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 
 # Copy BUILT workspace packages from builder (must be before pnpm install)
 COPY --from=builder /workspace/packages ./packages
 
-# Install only production dependencies (packages already have dist/)
-RUN pnpm install --frozen-lockfile --prod
+# Copy workspace member package.jsons so pnpm can resolve the workspace graph
+COPY --from=builder /workspace/opennotes-discord/package.json ./opennotes-discord/package.json
+COPY --from=builder /workspace/opennotes-playground/package.json ./opennotes-playground/package.json
+COPY --from=builder /workspace/opennotes-platform/package.json ./opennotes-platform/package.json
 
-# Copy built application directly to /app/dist (matches package.json start script)
-COPY --from=builder /workspace/opennotes-discord/dist ./dist
+# Install only production dependencies scoped to the opennotes-discord graph
+RUN pnpm install --frozen-lockfile --prod --filter opennotes-discord...
+
+# Copy built application into the discord workspace directory
+COPY --from=builder /workspace/opennotes-discord/dist ./opennotes-discord/dist
+
+WORKDIR /app/opennotes-discord
 
 CMD ["node", "--require", "./dist/instrumentation.cjs", "dist/index.js"]
