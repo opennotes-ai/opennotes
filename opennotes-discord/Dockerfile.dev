@@ -5,29 +5,40 @@ WORKDIR /workspace
 # Enable pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy workspace configuration
+# Copy root workspace files (lockfile and workspace config live at repo root)
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 
-# Copy workspace packages (shared dependencies)
+# Copy each workspace member's package.json so pnpm can resolve the full
+# workspace graph against the root lockfile. Playground/platform package.jsons
+# are copied (no source) so the workspace graph is complete; the --filter
+# keeps the install scoped to opennotes-discord's graph.
+COPY packages/shared-types/package.json ./packages/shared-types/package.json
+COPY packages/test-utils/package.json ./packages/test-utils/package.json
+COPY opennotes-discord/package.json ./opennotes-discord/package.json
+COPY opennotes-playground/package.json ./opennotes-playground/package.json
+COPY opennotes-platform/package.json ./opennotes-platform/package.json
+
+# Install dependencies scoped to the opennotes-discord graph (dev deps included)
+RUN pnpm install --filter opennotes-discord...
+
+# Copy workspace package source and build (shared-types must exist before the
+# discord bot's tsc pass can resolve @opennotes/shared-types)
 COPY packages ./packages
+RUN rm -rf packages/*/dist packages/*/*.tsbuildinfo && \
+    pnpm --filter './packages/**' run build
 
 # Copy OpenAPI spec for type generation
 COPY opennotes-server/openapi.json ./opennotes-server/openapi.json
 
-# Copy Discord bot package
+# Copy Discord bot source
 COPY opennotes-discord ./opennotes-discord
 
-# Install all workspace dependencies
-RUN pnpm install
-
-# Set working directory to Discord bot
+# Build the Discord bot (source is overridden by a bind mount at runtime)
 WORKDIR /workspace/opennotes-discord
-
-# Build the application
 RUN pnpm run build
 
 # Expose port for development
 EXPOSE 3000
 
-# Use nodemon for hot-reloading in development
+# Use hot-reloading dev command (tsx watch / nodemon as configured in package.json)
 CMD ["pnpm", "run", "dev"]

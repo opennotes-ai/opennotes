@@ -1,15 +1,24 @@
 # Dependencies
 node_modules/
+**/node_modules/
 .pnpm-store/
+**/.pnpm-store/
 __pycache__/
+**/__pycache__/
 *.pyc
 .venv/
 venv/
 
 # Build outputs
 dist/
+**/dist/
 build/
+**/build/
 *.egg-info/
+.output/
+**/.output/
+.vinxi/
+**/.vinxi/
 
 # Git
 .git/
@@ -23,14 +32,18 @@ build/
 
 # Test and coverage
 coverage/
+**/coverage/
 .coverage
 htmlcov/
 .pytest_cache/
 .mypy_cache/
 
-# Environment files (secrets)
+# Environment files (secrets) — keep .env.yaml.example so it can be referenced at build time
 .env
 .env.*
+**/.env
+**/.env.*
+!.env.yaml.example
 !.env.example
 
 # Docker
@@ -46,6 +59,7 @@ Thumbs.db
 
 # TypeScript build info
 *.tsbuildinfo
+**/*.tsbuildinfo
 
 # Documentation that doesn't need to be in container
 docs/

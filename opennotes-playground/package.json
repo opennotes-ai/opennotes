@@ -45,11 +45,5 @@
     "typescript": "^5.7.3",
     "vite-plugin-solid": "^2.11.12",
     "vitest": "^4.0.18"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@parcel/watcher",
-      "esbuild"
-    ]
   }
 }

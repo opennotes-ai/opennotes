@@ -1,0 +1,25 @@
+{
+  "name": "opennotes-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "type-check": "pnpm -r run type-check",
+    "dev:playground": "pnpm --filter opennotes-playground run dev",
+    "dev:platform": "pnpm --filter opennotes-platform run dev",
+    "dev:discord": "pnpm --filter opennotes-discord run dev"
+  },
+  "pnpm": {
+    "overrides": {
+      "tmp": ">=0.2.4",
+      "js-yaml": ">=4.1.1"
+    },
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild"
+    ]
+  }
+}

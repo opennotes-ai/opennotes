@@ -202,9 +202,7 @@ run = 'uv run opennotes "$@"'
 description = "Install project dependencies"
 run = [
     "cd {{vars.server_dir}} && uv sync --link-mode hardlink",
-    "cd {{vars.discord_dir}} && pnpm install",
-    "cd {{vars.playground_dir}} && pnpm install",
-    "cd {{vars.platform_dir}} && pnpm install",
+    "pnpm install",
     "cd opennotes-cli && uv sync"
 ]
 
@@ -213,10 +211,10 @@ description = "Start development environment and generate types"
 run = '''
 # Generate OpenAPI spec and TypeScript types
 echo "Generating OpenAPI spec and TypeScript types..."
-cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --output openapi.json
-uv run python scripts/generate_openapi.py --public-only --output openapi-public.json
-cd ../{{vars.discord_dir}} && pnpm types:generate
-cd ../{{vars.playground_dir}} && pnpm types:generate
+(cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --output openapi.json)
+(cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --public-only --output openapi-public.json)
+pnpm --filter opennotes-discord run types:generate
+pnpm --filter opennotes-playground run types:generate
 
 echo ""
 echo "Development environment ready!"
@@ -237,6 +235,18 @@ description = "Run platform dev server on port 3200"
 dir = "{{vars.platform_dir}}"
 run = "pnpm dev"
 env = { PORT = "3200" }
+
+[tasks."dev:discord"]
+description = "Run Discord bot dev server"
+run = "pnpm --filter opennotes-discord run dev"
+
+[tasks."typecheck:all"]
+description = "Run type-check across all pnpm workspace packages"
+run = "pnpm -r run type-check"
+
+[tasks."build:all"]
+description = "Run build across all pnpm workspace packages"
+run = "pnpm -r run build"
 
 # ========================================
 # Testing Tasks
@@ -742,26 +752,24 @@ run = "uv sync"
 sources = ["pyproject.toml", "uv.lock"]
 outputs = [".venv/pyvenv.cfg"]
 
-[tasks."build:deps:discord"]
-description = "Install Discord bot dependencies (skipped if lock files unchanged)"
-dir = "{{vars.discord_dir}}"
+[tasks."build:deps:node"]
+description = "Install pnpm workspace dependencies (skipped if root lockfile unchanged)"
 run = "pnpm install"
-sources = ["pnpm-lock.yaml"]
+sources = ["pnpm-lock.yaml", "package.json", "pnpm-workspace.yaml"]
 outputs = ["node_modules/.modules.yaml"]
+
+# Back-compat aliases — all three resolve to the single root pnpm install under the workspace layout
+[tasks."build:deps:discord"]
+description = "Alias: install workspace pnpm deps (back-compat)"
+depends = ["build:deps:node"]
 
 [tasks."build:deps:playground"]
-description = "Install Playground dependencies (skipped if lock files unchanged)"
-dir = "{{vars.playground_dir}}"
-run = "pnpm install"
-sources = ["pnpm-lock.yaml"]
-outputs = ["node_modules/.modules.yaml"]
+description = "Alias: install workspace pnpm deps (back-compat)"
+depends = ["build:deps:node"]
 
 [tasks."build:deps:platform"]
-description = "Install Platform dependencies (skipped if lock files unchanged)"
-dir = "{{vars.platform_dir}}"
-run = "pnpm install"
-sources = ["pnpm-lock.yaml"]
-outputs = ["node_modules/.modules.yaml"]
+description = "Alias: install workspace pnpm deps (back-compat)"
+depends = ["build:deps:node"]
 
 [tasks."build:containers:all"]
 description = "Build all Docker images"
@@ -781,12 +789,12 @@ run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} -f {{vars.discord_dir
 [tasks."build:containers:playground"]
 depends = ["_env:convert", "build:types:openapi", "build:deps:playground"]
 description = "Build opennotes-playground image"
-run = "docker build -t opennotes-playground:{{env.IMAGE_TAG}} {{vars.playground_dir}}/"
+run = "docker build -t opennotes-playground:{{env.IMAGE_TAG}} -f {{vars.playground_dir}}/Dockerfile --build-arg VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-http://localhost} --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY:-dummy} ."
 
 [tasks."build:containers:platform"]
 depends = ["build:deps:platform"]
 description = "Build opennotes-platform image"
-run = "docker build -t opennotes-platform:{{env.IMAGE_TAG}} {{vars.platform_dir}}/"
+run = "docker build -t opennotes-platform:{{env.IMAGE_TAG}} -f {{vars.platform_dir}}/Dockerfile --build-arg VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-http://localhost} --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY:-dummy} ."
 
 [tasks."build:containers:postgres"]
 description = "Build PostgreSQL image with pgvector, pgroonga, and pg_cron (smart rebuild)"
@@ -834,10 +842,10 @@ echo "Generating OpenAPI specifications (full + public-only)..."
 (cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --public-only --output openapi-public.json)
 
 echo "Regenerating TypeScript types for Discord bot..."
-(cd {{vars.discord_dir}} && pnpm types:generate)
+pnpm --filter opennotes-discord run types:generate
 
 echo "Regenerating TypeScript types for Playground..."
-(cd {{vars.playground_dir}} && pnpm types:generate)
+pnpm --filter opennotes-playground run types:generate
 
 echo "Regenerating CLI API client..."
 rm -rf opennotes-cli/src/opennotes_cli/api_client
