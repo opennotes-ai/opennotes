@@ -29,6 +29,7 @@ RSpec.describe OpenNotes::Client do
     SiteSetting.opennotes_platform_community_server_id = "community.example.com-abcd1234"
     allow(Discourse).to receive(:current_hostname).and_return("community.example.com")
     client.instance_variable_set(:@connection, test_connection)
+    allow(OpenNotes::GcpAuth).to receive(:on_gcp?).and_return(false)
   end
 
   after do
@@ -36,15 +37,42 @@ RSpec.describe OpenNotes::Client do
   end
 
   describe "#get" do
-    it "sends a GET request with authorization headers" do
+    it "sends a GET request with the API key in X-API-Key and no Authorization header when off GCP" do
       stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |env|
-        expect(env.request_headers["Authorization"]).to eq("Bearer test-api-key")
+        expect(env.request_headers["X-API-Key"]).to eq("test-api-key")
+        expect(env.request_headers).not_to have_key("Authorization")
         expect(env.request_headers).not_to have_key("X-Platform-Type")
         [200, { "Content-Type" => "application/json" }, '{"data": []}']
       end
 
       result = client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests")
       expect(result).to eq("data" => [])
+    end
+
+    it "sends both X-API-Key and Authorization: Bearer <id_token> when on GCP" do
+      allow(OpenNotes::GcpAuth).to receive(:on_gcp?).and_return(true)
+      allow(OpenNotes::GcpAuth).to receive(:identity_token).with(server_url).and_return("fake-id-token")
+
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |env|
+        expect(env.request_headers["X-API-Key"]).to eq("test-api-key")
+        expect(env.request_headers["Authorization"]).to eq("Bearer fake-id-token")
+        [200, { "Content-Type" => "application/json" }, '{"data": []}']
+      end
+
+      client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests")
+    end
+
+    it "still sends X-API-Key when on GCP but identity token fetch returns nil" do
+      allow(OpenNotes::GcpAuth).to receive(:on_gcp?).and_return(true)
+      allow(OpenNotes::GcpAuth).to receive(:identity_token).with(server_url).and_return(nil)
+
+      stubs.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests") do |env|
+        expect(env.request_headers["X-API-Key"]).to eq("test-api-key")
+        expect(env.request_headers).not_to have_key("Authorization")
+        [200, { "Content-Type" => "application/json" }, '{"data": []}']
+      end
+
+      client.get("#{OpenNotes::PUBLIC_API_PREFIX}/requests")
     end
 
     it "includes adapter headers when user is provided" do

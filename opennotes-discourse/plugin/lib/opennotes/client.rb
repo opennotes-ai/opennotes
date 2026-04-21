@@ -65,7 +65,12 @@ module OpenNotes
 
     def execute_request(method, path, params: nil, body: nil, user: nil)
       @connection.send(method, path) do |req|
-        req.headers["Authorization"] = "Bearer #{@api_key}"
+        req.headers["X-API-Key"] = @api_key
+
+        if OpenNotes::GcpAuth.on_gcp?
+          id_token = OpenNotes::GcpAuth.identity_token(@server_url)
+          req.headers["Authorization"] = "Bearer #{id_token}" if id_token
+        end
 
         if user
           req.headers["X-Adapter-Platform"] = "discourse"
