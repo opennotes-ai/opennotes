@@ -8,7 +8,7 @@ RSpec.describe Jobs::SyncScoringStatus do
   fab!(:post) { Fabricate(:post, topic: topic) }
 
   let(:client) { instance_double(OpenNotes::Client) }
-  let(:community_server_id) { "test-community-server-id" }
+  let(:community_server_uuid) { "11111111-2222-3333-4444-555555555555" }
   let(:request_id) { "req-1" }
 
   before do
@@ -16,7 +16,7 @@ RSpec.describe Jobs::SyncScoringStatus do
     SiteSetting.opennotes_server_url = "https://opennotes.example.com"
     SiteSetting.opennotes_api_key = "test-api-key"
 
-    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(community_server_id)
+    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(community_server_uuid)
     allow(described_class).to receive(:opennotes_client).and_return(client)
   end
 
@@ -42,6 +42,29 @@ RSpec.describe Jobs::SyncScoringStatus do
       state: state,
       opennotes_request_id: request_id,
     )
+  end
+
+  describe "community_server_id filter" do
+    it "sends the internal UUID (not the platform slug) as filter[community_server_id]" do
+      captured_params = nil
+      allow(client).to receive(:get) do |*_args, **kwargs|
+        captured_params = kwargs[:params]
+        { "data" => [] }
+      end
+
+      described_class.new.execute({})
+
+      expect(captured_params["filter[community_server_id]"]).to eq(community_server_uuid)
+    end
+
+    it "skips the poll when CommunityServerResolver cannot resolve a UUID" do
+      allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(nil)
+      allow(client).to receive(:get)
+
+      described_class.new.execute({})
+
+      expect(client).not_to have_received(:get)
+    end
   end
 
   describe "terminal-state guard" do

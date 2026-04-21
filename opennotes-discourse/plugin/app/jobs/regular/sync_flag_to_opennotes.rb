@@ -17,12 +17,13 @@ module Jobs
       flagged_by = User.find_by(id: flagged_by_id)
       return unless flagged_by
 
-      community_server_id = OpenNotes::CommunityServerResolver.community_server_id
-      return unless community_server_id
+      platform_community_server_id = SiteSetting.opennotes_platform_community_server_id
+      return if platform_community_server_id.blank?
 
       client = self.class.opennotes_client
 
-      payload = build_flag_payload(post, community_server_id, flag_type, flagged_by)
+      payload =
+        build_flag_payload(post, platform_community_server_id, flag_type, flagged_by)
       response = client.post("#{OpenNotes::PUBLIC_API_PREFIX}/requests", body: payload, user: flagged_by)
 
       handle_response(post, response)

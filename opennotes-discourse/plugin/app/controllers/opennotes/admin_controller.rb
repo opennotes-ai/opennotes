@@ -5,7 +5,7 @@ module Opennotes
     requires_plugin "discourse-opennotes"
 
     def dashboard
-      server_uuid = OpenNotes::CommunityServerResolver.community_server_id
+      server_uuid = OpenNotes::CommunityServerResolver.community_server_uuid
       unless server_uuid
         render json: { error: "Community server not registered" }, status: :not_found
         return

@@ -19,7 +19,7 @@ RSpec.describe Opennotes::AdminController, type: :request do
       before { sign_in(admin) }
 
       it "resolves UUID via CommunityServerResolver and returns scoring analysis" do
-        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(server_uuid)
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(server_uuid)
         mock_client = instance_double(OpenNotes::Client)
         allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
         allow(mock_client).to receive(:get)
@@ -40,7 +40,7 @@ RSpec.describe Opennotes::AdminController, type: :request do
       end
 
       it "returns 404 when resolver cannot obtain a UUID" do
-        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(nil)
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(nil)
 
         get "/admin/plugins/discourse-opennotes/dashboard.json"
         expect(response).to have_http_status(:not_found)
@@ -50,7 +50,7 @@ RSpec.describe Opennotes::AdminController, type: :request do
       end
 
       it "does not call the server-side lookup endpoint directly" do
-        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(server_uuid)
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(server_uuid)
         mock_client = instance_double(OpenNotes::Client)
         allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
         expect(mock_client).not_to receive(:get).with("#{OpenNotes::PUBLIC_API_PREFIX}/community-servers/lookup", any_args)
@@ -62,7 +62,7 @@ RSpec.describe Opennotes::AdminController, type: :request do
       end
 
       it "returns 503 when opennotes server is unavailable" do
-        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(server_uuid)
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(server_uuid)
         mock_client = instance_double(OpenNotes::Client)
         allow(OpenNotes::Client).to receive(:new).and_return(mock_client)
         allow(mock_client).to receive(:get).and_raise(Faraday::ConnectionFailed.new("connection refused"))
