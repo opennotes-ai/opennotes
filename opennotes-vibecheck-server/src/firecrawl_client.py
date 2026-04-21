@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -124,33 +125,66 @@ class FirecrawlClient:
                 return await _send()
         raise FirecrawlError(f"firecrawl {path} exhausted retries")
 
-    async def extract(self, url: str, schema: type[BaseModel]) -> BaseModel:
-        """Call Firecrawl /v2/extract with a Pydantic schema and return an instance.
+    async def extract(
+        self,
+        url: str,
+        schema: type[BaseModel],
+        *,
+        poll_interval: float = 2.0,
+        poll_timeout: float = 120.0,
+    ) -> BaseModel:
+        """Call Firecrawl /v2/extract and poll until the job completes.
 
-        Firecrawl returns a JSON envelope `{success, status, data, ...}` where
-        `data` matches the supplied JSON schema. We instantiate `schema` from
-        that sub-object.
+        /v2/extract is async: the initial POST returns {success, id} immediately,
+        then you GET /v2/extract/{id} repeatedly until status=completed and
+        `data` is populated. Previous code assumed sync response and crashed on
+        the empty first envelope.
         """
         body = {
             "urls": [url],
             "schema": _inline_defs(schema.model_json_schema()),
         }
         envelope = await self._post_json("/v2/extract", body)
-
         if envelope.get("success") is False:
             raise FirecrawlError(
                 f"firecrawl /v2/extract reported failure: {envelope.get('error', 'unknown')}"
             )
-        status = envelope.get("status")
-        if status and status not in ("completed", None):
-            raise FirecrawlError(
-                f"firecrawl /v2/extract returned status={status}: {envelope.get('error', '')}"
-            )
-
         data = envelope.get("data")
         if data is None:
-            raise FirecrawlError("firecrawl /v2/extract returned no data field")
+            job_id = envelope.get("id")
+            if not job_id:
+                raise FirecrawlError("firecrawl /v2/extract returned no job id and no data")
+            data = await self._poll_extract(job_id, poll_interval=poll_interval, poll_timeout=poll_timeout)
         return schema.model_validate(data)
+
+    async def _poll_extract(
+        self, job_id: str, *, poll_interval: float, poll_timeout: float
+    ) -> dict[str, Any]:
+        """Poll GET /v2/extract/{id} until status=completed."""
+        deadline = asyncio.get_event_loop().time() + poll_timeout
+        url = f"{self._api_base}/v2/extract/{job_id}"
+        while True:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.get(url, headers=self._headers)
+            if response.status_code >= 400:
+                raise FirecrawlError(
+                    f"firecrawl /v2/extract/{job_id} status poll failed: {response.status_code} {response.text[:200]}",
+                    status_code=response.status_code,
+                )
+            envelope = response.json()
+            status = envelope.get("status")
+            if status == "completed":
+                data = envelope.get("data")
+                if data is None:
+                    raise FirecrawlError(f"firecrawl /v2/extract/{job_id} completed with no data")
+                return data
+            if status in ("failed", "cancelled"):
+                raise FirecrawlError(
+                    f"firecrawl /v2/extract/{job_id} ended with status={status}: {envelope.get('error', '')}"
+                )
+            if asyncio.get_event_loop().time() > deadline:
+                raise FirecrawlError(f"firecrawl /v2/extract/{job_id} polling timed out after {poll_timeout}s")
+            await asyncio.sleep(poll_interval)
 
     async def scrape(self, url: str, formats: list[str]) -> dict[str, Any]:
         """Call Firecrawl /v2/scrape and return the `data` sub-object.
