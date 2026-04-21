@@ -1,5 +1,6 @@
 packages:
   - 'opennotes-playground'
   - 'opennotes-platform'
+  - 'opennotes-vibecheck-web'
   - 'opennotes-discord'
   - 'packages/*'
