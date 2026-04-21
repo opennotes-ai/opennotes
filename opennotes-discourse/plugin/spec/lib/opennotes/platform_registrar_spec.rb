@@ -14,7 +14,7 @@ RSpec.describe OpenNotes::PlatformRegistrar do
     SiteSetting.opennotes_platform_community_server_id = slug
     allow(Discourse).to receive(:current_hostname).and_return("forum.example.com")
     allow(OpenNotes::Client).to receive(:new).and_return(client)
-    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(uuid)
+    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(uuid)
   end
 
   describe ".register" do
@@ -58,14 +58,6 @@ RSpec.describe OpenNotes::PlatformRegistrar do
       expect(result[:reason]).to eq(:missing_settings)
     end
 
-    it "returns lookup_failed when resolver returns nil" do
-      allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(nil)
-      expect(client).not_to receive(:patch)
-      result = described_class.register
-      expect(result[:ok]).to be false
-      expect(result[:reason]).to eq(:lookup_failed)
-    end
-
     it "returns api_error on OpenNotes::ApiError (does not raise)" do
       allow(client).to receive(:patch).and_raise(OpenNotes::ApiError.new(403, { "error" => "forbidden" }))
       expect(Rails.logger).to receive(:warn).with(/PATCH .*failed \(403\)/)
@@ -82,6 +74,80 @@ RSpec.describe OpenNotes::PlatformRegistrar do
       expect(result[:ok]).to be false
       expect(result[:reason]).to eq(:connection_error)
     end
+
+    context "bootstrap create-if-missing" do
+      it "POSTs /api/v1/community-servers when resolver returns nil and proceeds to PATCH" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(nil)
+        allow(OpenNotes::CommunityServerResolver).to receive(:persist)
+        expect(client).to receive(:post).with(
+          "/api/v1/community-servers",
+          body: {
+            platform: "discourse",
+            platform_community_server_id: slug,
+            name: "My Forum",
+          },
+        ).and_return({ "id" => uuid, "platform" => "discourse" }).ordered
+        expect(OpenNotes::CommunityServerResolver).to receive(:persist).with(uuid).ordered
+        expect(client).to receive(:patch).and_return({}).ordered
+
+        result = described_class.register
+        expect(result[:ok]).to be true
+        expect(result[:uuid]).to eq(uuid)
+      end
+
+      it "re-resolves via lookup on 409 conflict during create" do
+        call_count = 0
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid) do
+          call_count += 1
+          call_count == 1 ? nil : uuid
+        end
+        expect(client).to receive(:post).and_raise(
+          OpenNotes::ApiError.new(409, { "detail" => "already exists" }),
+        )
+        expect(OpenNotes::CommunityServerResolver).to receive(:invalidate!)
+        expect(client).to receive(:patch).and_return({})
+
+        result = described_class.register
+        expect(result[:ok]).to be true
+        expect(result[:uuid]).to eq(uuid)
+      end
+
+      it "returns create_failed on non-409 ApiError during create" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(nil)
+        expect(client).to receive(:post).and_raise(
+          OpenNotes::ApiError.new(403, { "detail" => "forbidden" }),
+        )
+        expect(client).not_to receive(:patch)
+
+        result = described_class.register
+        expect(result[:ok]).to be false
+        expect(result[:reason]).to eq(:create_failed)
+        expect(result[:status]).to eq(403)
+      end
+
+      it "returns connection_error when create POST fails with Faraday error" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(nil)
+        expect(client).to receive(:post).and_raise(Faraday::ConnectionFailed.new("no route"))
+        expect(client).not_to receive(:patch)
+
+        result = described_class.register
+        expect(result[:ok]).to be false
+        expect(result[:reason]).to eq(:connection_error)
+      end
+
+      it "returns lookup_failed when 409 happens but post-conflict lookup still returns nil" do
+        allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(nil)
+        expect(client).to receive(:post).and_raise(
+          OpenNotes::ApiError.new(409, { "detail" => "already exists" }),
+        )
+        expect(OpenNotes::CommunityServerResolver).to receive(:invalidate!)
+        expect(client).not_to receive(:patch)
+
+        result = described_class.register
+        expect(result[:ok]).to be false
+        expect(result[:reason]).to eq(:lookup_failed)
+      end
+    end
   end
 
   describe ".on_setting_saved" do
@@ -91,16 +157,17 @@ RSpec.describe OpenNotes::PlatformRegistrar do
       described_class.on_setting_saved(:title)
     end
 
-    it "triggers registration when opennotes_server_url is saved" do
+    it "invalidates resolver cache AND re-registers when opennotes_server_url changes" do
       allow(client).to receive(:patch).and_return({})
-      expect(OpenNotes::CommunityServerResolver).not_to receive(:invalidate!)
-      expect(described_class).to receive(:register).and_call_original
+      expect(OpenNotes::CommunityServerResolver).to receive(:invalidate!).ordered
+      expect(described_class).to receive(:register).ordered.and_call_original
       described_class.on_setting_saved("opennotes_server_url")
     end
 
-    it "triggers registration when opennotes_api_key is saved" do
+    it "invalidates resolver cache AND re-registers when opennotes_api_key changes" do
       allow(client).to receive(:patch).and_return({})
-      expect(described_class).to receive(:register).and_call_original
+      expect(OpenNotes::CommunityServerResolver).to receive(:invalidate!).ordered
+      expect(described_class).to receive(:register).ordered.and_call_original
       described_class.on_setting_saved("opennotes_api_key")
     end
 

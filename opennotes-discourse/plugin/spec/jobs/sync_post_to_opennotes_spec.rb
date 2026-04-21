@@ -9,15 +9,15 @@ RSpec.describe Jobs::SyncPostToOpennotes do
   fab!(:user) { post.user }
 
   let(:client) { instance_double(OpenNotes::Client) }
-  let(:community_server_id) { "test-community-server-id" }
+  let(:platform_slug) { "forum.example.com-abcd1234" }
 
   before do
     SiteSetting.opennotes_enabled = true
     SiteSetting.opennotes_server_url = "https://opennotes.example.com"
     SiteSetting.opennotes_api_key = "test-api-key"
     SiteSetting.opennotes_monitored_categories = category.slug
+    SiteSetting.opennotes_platform_community_server_id = platform_slug
 
-    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(community_server_id)
     allow(OpenNotes::Client).to receive(:new).and_return(client)
   end
 
@@ -41,9 +41,29 @@ RSpec.describe Jobs::SyncPostToOpennotes do
           attributes: include(
             platform_message_id: post.id.to_s,
             original_message_content: post.raw,
+            community_server_id: platform_slug,
           ),
         ),
       )
+    end
+
+    it "sends the platform slug (not an internal UUID) as community_server_id" do
+      captured_body = nil
+      allow(client).to receive(:post) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        { "data" => { "id" => "req-slug" } }
+      end
+
+      described_class.new.execute(post_id: post.id)
+
+      expect(captured_body.dig(:data, :attributes, :community_server_id)).to eq(platform_slug)
+    end
+
+    it "does not call CommunityServerResolver.community_server_uuid (avoids UUID being sent)" do
+      expect(OpenNotes::CommunityServerResolver).not_to receive(:community_server_uuid)
+      allow(client).to receive(:post).and_return({ "data" => { "id" => "req-no-resolver" } })
+
+      described_class.new.execute(post_id: post.id)
     end
 
     it "skips when opennotes is disabled" do
@@ -113,20 +133,13 @@ RSpec.describe Jobs::SyncPostToOpennotes do
       expect(client).not_to have_received(:post)
     end
 
-    it "skips when resolver returns no community_server_id" do
-      allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(nil)
+    it "skips when opennotes_platform_community_server_id is blank" do
+      SiteSetting.opennotes_platform_community_server_id = ""
       allow(client).to receive(:post)
 
       described_class.new.execute(post_id: post.id)
 
       expect(client).not_to have_received(:post)
-    end
-
-    it "calls CommunityServerResolver instead of reading PluginStore directly" do
-      expect(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(community_server_id)
-      allow(client).to receive(:post).and_return({ "data" => { "id" => "req-x" } })
-
-      described_class.new.execute(post_id: post.id)
     end
 
     it "skips scan-exempt posts" do

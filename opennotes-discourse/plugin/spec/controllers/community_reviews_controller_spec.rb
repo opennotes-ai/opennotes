@@ -56,7 +56,7 @@ RSpec.describe Opennotes::CommunityReviewsController, type: :request do
   end
 
   def stub_client_index(resolver_uuid: server_uuid, actions: actions_response)
-    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_id).and_return(resolver_uuid)
+    allow(OpenNotes::CommunityServerResolver).to receive(:community_server_uuid).and_return(resolver_uuid)
     allow(mock_client).to receive(:get) do |path, **_kwargs|
       case path
       when "#{OpenNotes::PUBLIC_API_PREFIX}/moderation-actions"
