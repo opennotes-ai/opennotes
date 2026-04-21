@@ -15,6 +15,35 @@ from src.llm_config.providers.direct_provider import (
 from tests._model_fixtures import GOOGLE_VERTEX_FLASH_TEST_MODEL
 
 
+@pytest.fixture(autouse=True)
+def _stub_google_vertex_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    import google.auth
+
+    from src.llm_config import model_factory as mf
+
+    fake_creds = MagicMock()
+    monkeypatch.setattr(google.auth, "default", lambda *_, **__: (fake_creds, "test-project"))
+    monkeypatch.setattr(mf.settings, "VERTEXAI_PROJECT", "test-project", raising=False)
+    monkeypatch.setattr(mf.settings, "VERTEXAI_LOCATION", "global", raising=False)
+
+    mf._build_google_vertex_model.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _disable_httpx_env_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in (
+        "ALL_PROXY",
+        "all_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "NO_PROXY",
+        "no_proxy",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
 def _make_mock_response(
     text: str = "Hello! How can I help you?",
     model_name: str = "gpt-5.1",
@@ -412,6 +441,71 @@ class TestDirectProvider:
 
             call_kwargs = mock_mr.call_args.kwargs
             assert call_kwargs["model"] == "openai:gpt-5-mini"
+
+    @pytest.mark.asyncio
+    async def test_complete_routes_default_vertex_model_through_overrides(self) -> None:
+        from src.llm_config.local_models import OpenNotesGoogleModel
+
+        provider = DirectProvider(
+            api_key=ADC_SENTINEL,
+            default_model="google-vertex:gemini-3.1-pro-preview",
+            settings=DirectProviderSettings(),
+            provider_name="vertex_ai",
+        )
+        mock_resp = _make_mock_response(model_name="gemini-3.1-pro-preview")
+
+        with patch(
+            "src.llm_config.providers.direct_provider.model_request",
+            new_callable=AsyncMock,
+            return_value=mock_resp,
+        ) as mock_mr:
+            await provider.complete(
+                [LLMMessage(role="user", content="Hello")],
+                DirectCompletionParams(),
+            )
+
+            call_kwargs = mock_mr.call_args.kwargs
+            assert isinstance(call_kwargs["model"], OpenNotesGoogleModel)
+
+    @pytest.mark.asyncio
+    async def test_stream_complete_routes_default_vertex_model_through_overrides(self) -> None:
+        from pydantic_ai.messages import PartDeltaEvent, TextPartDelta
+
+        from src.llm_config.local_models import OpenNotesGoogleModel
+
+        provider = DirectProvider(
+            api_key=ADC_SENTINEL,
+            default_model="google-vertex:gemini-3.1-pro-preview",
+            settings=DirectProviderSettings(),
+            provider_name="vertex_ai",
+        )
+
+        events = [
+            PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="Hello")),
+        ]
+
+        mock_stream = MagicMock()
+
+        async def async_iter():
+            for event in events:
+                yield event
+
+        mock_stream.__aiter__ = lambda self: async_iter()
+        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_stream.__aexit__ = AsyncMock(return_value=False)
+
+        with patch(
+            "src.llm_config.providers.direct_provider.model_request_stream",
+            return_value=mock_stream,
+        ) as mock_mrs:
+            async for _ in provider.stream_complete(
+                [LLMMessage(role="user", content="Hello")],
+                DirectCompletionParams(),
+            ):
+                pass
+
+            call_kwargs = mock_mrs.call_args.kwargs
+            assert isinstance(call_kwargs["model"], OpenNotesGoogleModel)
 
     def test_provider_name_is_set(self) -> None:
         provider = DirectProvider(

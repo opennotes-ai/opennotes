@@ -20,6 +20,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.settings import ModelSettings
 
+from src.llm_config.model_factory import infer_model_with_overrides
 from src.llm_config.model_id import ModelId
 from src.llm_config.providers.base import LLMMessage, LLMProvider, LLMResponse, ProviderSettings
 from src.monitoring import get_logger
@@ -89,7 +90,11 @@ class DirectProvider(LLMProvider[DirectProviderSettings, DirectCompletionParams]
                 "DEFAULT_FULL_MODEL, or other model configuration is set correctly."
             )
 
-        model_for_request = params.model.to_pydantic_ai_model() if params.model else model_str
+        model_for_request = (
+            params.model.to_pydantic_ai_model()
+            if params.model
+            else infer_model_with_overrides(self.default_model)
+        )
         pydantic_messages = self._convert_messages(messages)
         model_settings = self._build_model_settings(params)
 
@@ -147,7 +152,11 @@ class DirectProvider(LLMProvider[DirectProviderSettings, DirectCompletionParams]
                 "Model name cannot be empty. Check that model configuration is set correctly."
             )
 
-        model_for_request = params.model.to_pydantic_ai_model() if params.model else model_str
+        model_for_request = (
+            params.model.to_pydantic_ai_model()
+            if params.model
+            else infer_model_with_overrides(self.default_model)
+        )
         pydantic_messages = self._convert_messages(messages)
         model_settings = self._build_model_settings(params)
 
