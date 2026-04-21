@@ -1,0 +1,13 @@
+{
+  "name": "@opennotes/docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OpenNotes documentation site (Mintlify)",
+  "scripts": {
+    "vendor:tokens": "mkdir -p styles/tokens && cp ../packages/tokens/src/*.css styles/tokens/",
+    "prebuild": "pnpm run vendor:tokens",
+    "dev": "pnpm run vendor:tokens && mint dev",
+    "build": "mint build",
+    "broken-links": "pnpm run vendor:tokens && mint broken-links"
+  }
+}

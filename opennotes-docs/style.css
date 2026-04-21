@@ -1,0 +1,5 @@
+/* Auto-loaded by the Mintlify CLI on every page. Vendored tokens live in
+   styles/tokens/ (gitignored, populated by `pnpm run vendor:tokens`). */
+@import "./styles/tokens/theme.css";
+@import "./styles/tokens/animations.css";
+@import "./styles/tokens/fonts-cdn.css";

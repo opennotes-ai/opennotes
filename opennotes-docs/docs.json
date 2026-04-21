@@ -1,0 +1,101 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "OpenNotes Docs",
+  "colors": {
+    "primary": "#3EB489",
+    "light": "#3EB489",
+    "dark": "#3EB489"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Integration Guide",
+        "groups": [
+          {
+            "group": "Start here",
+            "pages": [
+              "introduction",
+              "integration-guide/overview",
+              "integration-guide/onboarding/register-a-community",
+              "integration-guide/onboarding/manage-instances",
+              "integration-guide/onboarding/mint-api-keys",
+              "integration-guide/onboarding/configure-tiers"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "integration-guide/concepts/authentication",
+              "integration-guide/concepts/adapter-headers",
+              "integration-guide/concepts/scopes"
+            ]
+          },
+          {
+            "group": "Adapter choreography",
+            "pages": [
+              "integration-guide/choreography/overview",
+              "integration-guide/choreography/content-lifecycle",
+              "integration-guide/choreography/review-lifecycle",
+              "integration-guide/choreography/webhooks-and-errors"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Existing Integrations",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["existing-integrations/overview"]
+          },
+          {
+            "group": "Discourse plugin",
+            "pages": [
+              "existing-integrations/discourse/overview",
+              "existing-integrations/discourse/install",
+              "existing-integrations/discourse/configure",
+              "existing-integrations/discourse/upgrade",
+              "existing-integrations/discourse/troubleshoot",
+              "existing-integrations/discourse/user-guide"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/authentication",
+              "api-reference/conventions"
+            ]
+          }
+        ],
+        "openapi": {
+          "source": "../opennotes-server/openapi-public.json",
+          "directory": "api-reference/endpoints"
+        }
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Platform",
+        "href": "https://platform.opennotes.ai"
+      },
+      {
+        "label": "GitHub",
+        "href": "https://github.com/opennotes-ai/opennotes"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/opennotes-ai/opennotes"
+    }
+  }
+}

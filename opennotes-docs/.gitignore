@@ -1,0 +1,3 @@
+.mintlify/
+node_modules/
+styles/tokens/*.css

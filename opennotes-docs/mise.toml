@@ -1,0 +1,23 @@
+[tools]
+node = "22"
+
+[tasks."docs:dev"]
+description = "Run Mintlify locally (auto-vendors @opennotes/tokens first)"
+run = "pnpm run dev"
+
+[tasks."docs:build"]
+description = "Build the Mintlify site"
+run = "pnpm run build"
+
+[tasks."docs:broken-links"]
+description = "Check for broken links in the docs"
+run = "pnpm run broken-links"
+
+[tasks."docs:vendor-tokens"]
+description = "Copy @opennotes/tokens CSS into styles/tokens/"
+run = "pnpm run vendor:tokens"
+
+[tasks."docs:regenerate-openapi"]
+description = "Regenerate openapi-public.json in opennotes-server (docs read it via relative path)"
+dir = "../opennotes-server"
+run = "mise run docs:generate:openapi"
