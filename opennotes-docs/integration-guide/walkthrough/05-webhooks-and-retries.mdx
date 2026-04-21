@@ -25,7 +25,7 @@ def verify_signature(secret: str, body: bytes, header: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", header)
 ```
 
-Register a webhook via `POST /api/public/v1/webhooks` (not shown in this walkthrough — see the [API reference](/api-reference/endpoints/create-webhook-api-public-v1-webhooks-post)).
+Register a webhook via `POST /api/public/v1/webhooks` (not shown in this walkthrough — see the [API Reference](/api-reference/overview)).
 
 ## Retry schedule
 
