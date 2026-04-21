@@ -19,7 +19,7 @@
   "files": [
     "src"
   ],
-  "dependencies": {
+  "optionalDependencies": {
     "@fontsource/ibm-plex-sans": "^5.2.0",
     "@fontsource/ibm-plex-serif": "^5.2.0"
   },

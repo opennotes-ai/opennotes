@@ -314,7 +314,7 @@ importers:
         version: 5.9.3
 
   packages/tokens:
-    dependencies:
+    optionalDependencies:
       '@fontsource/ibm-plex-sans':
         specifier: ^5.2.0
         version: 5.2.8
@@ -6672,9 +6672,11 @@ snapshots:
 
   '@floating-ui/utils@0.2.11': {}
 
-  '@fontsource/ibm-plex-sans@5.2.8': {}
+  '@fontsource/ibm-plex-sans@5.2.8':
+    optional: true
 
-  '@fontsource/ibm-plex-serif@5.2.7': {}
+  '@fontsource/ibm-plex-serif@5.2.7':
+    optional: true
 
   '@grpc/grpc-js@1.14.3':
     dependencies:
