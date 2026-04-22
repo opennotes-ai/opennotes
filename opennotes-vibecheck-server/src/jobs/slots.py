@@ -32,13 +32,24 @@ WHERE job_id = $1
   AND attempt_id = $2
 """
 
-# claim_slot's extra guard: only transition from pending/failed (or missing).
+# claim_slot guards (spec §"Slot write contract", codex W3 P1-4):
+#   1. job.attempt_id matches the caller's task_attempt (CAS against a
+#      retry-rotated attempt).
+#   2. job.status is still in an active phase. The sweeper flips a stalled
+#      job's status to `failed` without rotating attempt_id (because there
+#      is no retry being minted — just a terminal transition), so a stale
+#      Cloud Tasks redelivery carrying the still-matching task_attempt could
+#      otherwise re-flip a slot back to `running` on a finalized job. The
+#      status guard closes that hole.
+#   3. The slot itself is either missing or in a reclaim-eligible state
+#      (pending | failed).
 _CLAIM_SQL = """
 UPDATE vibecheck_jobs
 SET sections = sections || jsonb_build_object($3::text, $4::jsonb),
     updated_at = now()
 WHERE job_id = $1
   AND attempt_id = $2
+  AND status IN ('pending', 'extracting', 'analyzing')
   AND (
     NOT (sections ? $3::text)
     OR sections -> $3::text ->> 'state' IN ('pending', 'failed')
@@ -121,8 +132,10 @@ async def claim_slot(
     and only the first observes the pending/failed predicate as true. Later
     claimers see `state='running'` and the WHERE clause rejects their update.
 
-    Returns the newly minted slot `attempt_id` on success, or None if the
-    slot is already running/done or the job's `attempt_id` doesn't match.
+    Returns the newly minted slot `attempt_id` on success, or None when any
+    of the CAS guards fails: the job's `attempt_id` no longer matches, the
+    job's `status` is terminal (`done`/`failed`), or the slot is already
+    running/done.
     """
     slot_attempt = uuid4()
     now = datetime.now(UTC)

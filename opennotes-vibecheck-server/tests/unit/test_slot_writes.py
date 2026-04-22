@@ -216,6 +216,72 @@ async def test_claim_slot_permits_reclaim_after_failed(db_pool) -> None:
     assert second_attempt != first_attempt
 
 
+# --- Fix B (codex W3 P1-4): claim_slot requires active job status ---------
+#
+# Terminal jobs (done/failed) must not accept new slot claims. The sweeper
+# flips job.status to 'failed' on heartbeat expiry without rotating
+# attempt_id, so a stale Cloud Tasks redelivery with the matching
+# task_attempt could otherwise re-flip a slot back to 'running' on a
+# finalized job. The guard closes that hole.
+
+
+async def test_claim_slot_rejected_when_job_status_is_failed(db_pool) -> None:
+    """A terminal (failed) job must not accept new slot claims even when
+    task_attempt still matches.
+    """
+    task_attempt = uuid4()
+    job_id = await _insert_job(db_pool, task_attempt)
+
+    # Fail the job in place — attempt_id is NOT rotated (simulates the
+    # heartbeat-expiry path: sweeper flips status without bumping attempt).
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET status = 'failed' WHERE job_id = $1",
+            job_id,
+        )
+
+    slot_attempt = await claim_slot(
+        db_pool, job_id, task_attempt, SectionSlug.SAFETY_MODERATION
+    )
+
+    assert slot_attempt is None
+    sections = await _read_sections(db_pool, job_id)
+    assert SectionSlug.SAFETY_MODERATION.value not in sections
+
+
+async def test_claim_slot_rejected_when_job_status_is_done(db_pool) -> None:
+    """A terminal (done) job must not accept new slot claims."""
+    task_attempt = uuid4()
+    job_id = await _insert_job(db_pool, task_attempt)
+
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET status = 'done' WHERE job_id = $1",
+            job_id,
+        )
+
+    slot_attempt = await claim_slot(
+        db_pool, job_id, task_attempt, SectionSlug.TONE_DYNAMICS_SCD
+    )
+
+    assert slot_attempt is None
+    sections = await _read_sections(db_pool, job_id)
+    assert SectionSlug.TONE_DYNAMICS_SCD.value not in sections
+
+
+async def test_claim_slot_permitted_when_job_is_analyzing(db_pool) -> None:
+    """Active statuses (extracting, analyzing) must still permit new claims."""
+    task_attempt = uuid4()
+    job_id = await _insert_job(db_pool, task_attempt)
+
+    # _insert_job seeds 'analyzing' by default — assert and exercise.
+    slot_attempt = await claim_slot(
+        db_pool, job_id, task_attempt, SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO
+    )
+
+    assert isinstance(slot_attempt, UUID)
+
+
 # --- mark_slot_done / mark_slot_failed CAS ---------------------------------
 
 
