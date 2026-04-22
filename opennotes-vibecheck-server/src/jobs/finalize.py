@@ -141,7 +141,7 @@ async def maybe_finalize_job(
     db: Any,
     job_id: UUID,
     *,
-    expected_task_attempt: UUID | None = None,
+    expected_task_attempt: UUID,
 ) -> bool:
     """Finalize the job if every slot is done, serialized with slot writers.
 
@@ -166,7 +166,9 @@ async def maybe_finalize_job(
     on *unrelated* slots do not contend, and the finalize read-then-UPSERT
     is the only long-held critical section.
 
-    `expected_task_attempt` (when provided) gates the UPSERT: if a retry
+    `expected_task_attempt` is **required** (codex W3 P1-5) — the previous
+    optional-with-None default silently skipped the CAS guard when callers
+    forgot to pass it, defeating the slot-write contract. If a retry
     rotated the job's `attempt_id` after this worker launched the
     finalizer, the stale finalize aborts without touching the cache.
     Similarly, a job whose status already moved to `done`/`failed` returns
@@ -177,10 +179,7 @@ async def maybe_finalize_job(
         if row is None:
             return False
 
-        if (
-            expected_task_attempt is not None
-            and row["attempt_id"] != expected_task_attempt
-        ):
+        if row["attempt_id"] != expected_task_attempt:
             return False
         if row["status"] not in _NON_TERMINAL_STATUSES:
             return False

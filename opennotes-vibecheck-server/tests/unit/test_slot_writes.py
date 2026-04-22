@@ -607,7 +607,9 @@ async def test_maybe_finalize_job_waits_for_all_seven_slots(db_pool) -> None:
     # 6 of 7 done.
     await _seed_slots(db_pool, job_id, task_attempt, _ALL_SLUGS[:-1])
 
-    finalized = await maybe_finalize_job(db_pool, job_id)
+    finalized = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=task_attempt
+    )
 
     assert finalized is False
     async with db_pool.acquire() as conn:
@@ -621,7 +623,9 @@ async def test_maybe_finalize_job_upserts_cache_when_all_slots_done(db_pool) -> 
     job_id = await _insert_job(db_pool, task_attempt, url=url)
     await _seed_slots(db_pool, job_id, task_attempt, _ALL_SLUGS)
 
-    finalized = await maybe_finalize_job(db_pool, job_id)
+    finalized = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=task_attempt
+    )
 
     assert finalized is True
     async with db_pool.acquire() as conn:
@@ -647,8 +651,12 @@ async def test_maybe_finalize_job_is_idempotent_on_repeat_call(db_pool) -> None:
     job_id = await _insert_job(db_pool, task_attempt, url=url)
     await _seed_slots(db_pool, job_id, task_attempt, _ALL_SLUGS)
 
-    first = await maybe_finalize_job(db_pool, job_id)
-    second = await maybe_finalize_job(db_pool, job_id)
+    first = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=task_attempt
+    )
+    second = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=task_attempt
+    )
 
     assert first is True
     assert second is True
@@ -657,6 +665,17 @@ async def test_maybe_finalize_job_is_idempotent_on_repeat_call(db_pool) -> None:
             "SELECT COUNT(*) FROM vibecheck_analyses WHERE url = $1", url
         )
     assert rowcount == 1
+
+
+async def test_maybe_finalize_job_without_task_attempt_raises_typeerror() -> None:
+    """expected_task_attempt is a required kwarg. Callers that skip it must
+    fail loudly — the previous `expected_task_attempt: UUID | None = None`
+    default let callers silently opt out of the CAS guard, defeating the
+    purpose of the slot-write contract.
+    """
+    with pytest.raises(TypeError):
+        # Intentionally skip expected_task_attempt to exercise the guard.
+        await maybe_finalize_job(object(), uuid4())  # pyright: ignore[reportCallIssue]
 
 
 # --- Finalize lock consistency (P1.4) --------------------------------------
