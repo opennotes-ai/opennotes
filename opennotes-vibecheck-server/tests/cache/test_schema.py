@@ -135,6 +135,50 @@ class TestSweeperFunctions:
     ) -> None:
         assert "INTERVAL '30 seconds'" in schema_sql
 
+    def test_orphan_sweeper_pending_tier_only_targets_pending_status(
+        self, schema_sql: str
+    ) -> None:
+        # Tier 1 must be pending-only — earlier draft applied 240s to all
+        # non-terminal jobs and would have killed long-running healthy
+        # extracting/analyzing jobs.
+        assert (
+            "status = 'pending' AND (now() - created_at) > INTERVAL '240 seconds'"
+            in schema_sql
+        )
+
+    def test_orphan_sweeper_heartbeat_tier_uses_coalesce_grace(
+        self, schema_sql: str
+    ) -> None:
+        # COALESCE(heartbeat_at, updated_at, created_at) lets a freshly-active
+        # job get a 30s grace period before being failed.
+        assert (
+            "COALESCE(heartbeat_at, updated_at, created_at)" in schema_sql
+        )
+
+    def test_sweepers_pin_search_path(self, schema_sql: str) -> None:
+        # SECURITY DEFINER without search_path is a hijack vector via
+        # untrusted schemas; pin to public + pg_temp.
+        assert schema_sql.count("SET search_path = public, pg_temp") >= 2
+
+    def test_sweepers_revoke_execute_from_public(self, schema_sql: str) -> None:
+        # Without REVOKE, anon/authenticated could trigger postgres-privileged
+        # mutations.
+        assert (
+            "REVOKE ALL ON FUNCTION vibecheck_sweep_orphan_jobs() "
+            "FROM PUBLIC, anon, authenticated"
+        ) in schema_sql
+        assert (
+            "REVOKE ALL ON FUNCTION vibecheck_purge_terminal_jobs() "
+            "FROM PUBLIC, anon, authenticated"
+        ) in schema_sql
+
+    def test_cron_calls_schema_qualified_functions(
+        self, schema_sql: str
+    ) -> None:
+        # search_path on the cron worker is unpredictable; use public.<fn>().
+        assert "public.vibecheck_sweep_orphan_jobs()" in schema_sql
+        assert "public.vibecheck_purge_terminal_jobs()" in schema_sql
+
 
 class TestPgCronSchedules:
     def test_orphan_sweep_scheduled_every_minute(self, schema_sql: str) -> None:

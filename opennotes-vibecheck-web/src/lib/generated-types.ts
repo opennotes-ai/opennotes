@@ -64,7 +64,7 @@ export interface paths {
         };
         /**
          * Schema anchor (placeholder, removed in TASK-1473.14)
-         * @description Forces JobState into the OpenAPI schema until the real GET /api/analyze/{job_id} endpoint lands. Always returns 410.
+         * @description Forces JobState into the OpenAPI schema until the real GET /api/analyze/{job_id} endpoint lands. Always returns 410 Gone.
          */
         get: operations["schema_anchor_api__internal__schema_anchor_get"];
         put?: never;
@@ -657,6 +657,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["JobState"];
                 };
+            };
+            /** @description Always — this route is a placeholder so openapi-typescript emits matching JobState/SectionSlot/SectionSlug/etc. type aliases. TASK-1473.14 replaces it with the real polling endpoint. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

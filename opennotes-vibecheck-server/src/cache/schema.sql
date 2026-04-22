@@ -176,20 +176,31 @@ CREATE INDEX IF NOT EXISTS vibecheck_job_utterances_job_position_idx
 -- =========================================================================
 
 -- Two-tier orphan detector:
---   * Pending tier — any non-terminal job older than 240s is timed out.
---   * Heartbeat tier — extracting/analyzing jobs whose worker hasn't
---     touched heartbeat_at in 30s are timed out.
+--   * Pending tier — `pending` jobs older than 240s never got picked up by
+--     a worker; mark them timed out.
+--   * Heartbeat tier — `extracting`/`analyzing` jobs whose worker has not
+--     touched `heartbeat_at` in 30s are stalled. We coalesce against
+--     `updated_at` so a job that just transitioned out of `pending`
+--     (and hasn't emitted its first heartbeat yet) gets a 30s grace period
+--     instead of being failed instantly.
 -- Marks them failed with error_code='timeout' so the frontend can render
 -- the inline failure card with a retry option.
+--
+-- SECURITY DEFINER + OWNER postgres lets the cron-side caller mutate the
+-- RLS-locked tables without holding broad role membership. EXECUTE is
+-- revoked from PUBLIC/anon/authenticated below so only the postgres
+-- superuser (and explicitly-granted roles) can invoke it. `search_path`
+-- is pinned to defeat hijack via untrusted schemas.
 CREATE OR REPLACE FUNCTION vibecheck_sweep_orphan_jobs()
 RETURNS INT
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     swept INT;
 BEGIN
-    UPDATE vibecheck_jobs
+    UPDATE public.vibecheck_jobs
     SET
         status        = 'failed',
         error_code    = 'timeout',
@@ -205,15 +216,14 @@ BEGIN
     WHERE
         status NOT IN ('done', 'failed')
         AND (
-            -- Tier 1: any job still non-terminal after 240s.
-            (now() - created_at) > INTERVAL '240 seconds'
-            -- Tier 2: extracting/analyzing without a recent heartbeat.
+            -- Tier 1: pending jobs older than 240s never reached a worker.
+            (status = 'pending' AND (now() - created_at) > INTERVAL '240 seconds')
+            -- Tier 2: active jobs with stale heartbeat. COALESCE so a job
+            -- that just became active gets at least one 30s heartbeat window.
             OR (
                 status IN ('extracting', 'analyzing')
-                AND (
-                    heartbeat_at IS NULL
-                    OR (now() - heartbeat_at) > INTERVAL '30 seconds'
-                )
+                AND (now() - COALESCE(heartbeat_at, updated_at, created_at))
+                    > INTERVAL '30 seconds'
             )
         );
     GET DIAGNOSTICS swept = ROW_COUNT;
@@ -221,34 +231,38 @@ BEGIN
 END;
 $$;
 ALTER FUNCTION vibecheck_sweep_orphan_jobs() OWNER TO postgres;
+REVOKE ALL ON FUNCTION vibecheck_sweep_orphan_jobs() FROM PUBLIC, anon, authenticated;
 
 -- Purges terminal jobs older than 7 days. Cascades to job_utterances via FK.
 -- Scrape bundles are TTL-pruned independently via vibecheck_scrapes.expires_at
 -- (used by future tickets); kept here as a single hourly maintenance pass.
+-- See vibecheck_sweep_orphan_jobs for the SECURITY DEFINER rationale.
 CREATE OR REPLACE FUNCTION vibecheck_purge_terminal_jobs()
 RETURNS INT
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     purged INT;
 BEGIN
-    DELETE FROM vibecheck_jobs
+    DELETE FROM public.vibecheck_jobs
     WHERE status IN ('done', 'failed')
       AND finished_at IS NOT NULL
       AND finished_at < (now() - INTERVAL '7 days');
     GET DIAGNOSTICS purged = ROW_COUNT;
 
-    DELETE FROM vibecheck_scrapes
+    DELETE FROM public.vibecheck_scrapes
     WHERE expires_at < now();
 
-    DELETE FROM vibecheck_analyses
+    DELETE FROM public.vibecheck_analyses
     WHERE expires_at < now();
 
     RETURN purged;
 END;
 $$;
 ALTER FUNCTION vibecheck_purge_terminal_jobs() OWNER TO postgres;
+REVOKE ALL ON FUNCTION vibecheck_purge_terminal_jobs() FROM PUBLIC, anon, authenticated;
 
 -- =========================================================================
 -- pg_cron schedules (idempotent)
@@ -264,7 +278,7 @@ BEGIN
     PERFORM cron.schedule(
         'vibecheck-orphan-sweep',
         '* * * * *',
-        $cron$SELECT vibecheck_sweep_orphan_jobs();$cron$
+        $cron$SELECT public.vibecheck_sweep_orphan_jobs();$cron$
     );
 
     IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'vibecheck-purge-terminal') THEN
@@ -273,7 +287,7 @@ BEGIN
     PERFORM cron.schedule(
         'vibecheck-purge-terminal',
         '5 * * * *',
-        $cron$SELECT vibecheck_purge_terminal_jobs();$cron$
+        $cron$SELECT public.vibecheck_purge_terminal_jobs();$cron$
     );
 END
 $$;

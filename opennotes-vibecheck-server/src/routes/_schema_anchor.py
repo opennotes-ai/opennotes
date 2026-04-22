@@ -24,8 +24,18 @@ router = APIRouter(prefix="/api/_internal", tags=["_schema_anchor"])
     summary="Schema anchor (placeholder, removed in TASK-1473.14)",
     description=(
         "Forces JobState into the OpenAPI schema until the real "
-        "GET /api/analyze/{job_id} endpoint lands. Always returns 410."
+        "GET /api/analyze/{job_id} endpoint lands. Always returns 410 Gone."
     ),
+    responses={
+        410: {
+            "description": (
+                "Always — this route is a placeholder so openapi-typescript "
+                "emits matching JobState/SectionSlot/SectionSlug/etc. type "
+                "aliases. TASK-1473.14 replaces it with the real polling "
+                "endpoint."
+            )
+        }
+    },
 )
 async def schema_anchor() -> JobState:
     raise HTTPException(status_code=410, detail="schema-anchor placeholder")
