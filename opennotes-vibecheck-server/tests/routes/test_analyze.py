@@ -162,26 +162,28 @@ def _stub_all_analyses(
     extract_mock = AsyncMock(return_value=utterances)
     monkeypatch.setattr(analyze_route, "extract_utterances", extract_mock)
 
-    mod_iter = iter(moderation_matches + [None] * len(utterances.utterances))
-    moderation_mock = AsyncMock(side_effect=lambda u, s: next(mod_iter, None))
-    monkeypatch.setattr(analyze_route, "check_content_moderation", moderation_mock)
+    # Bulk variants replaced per-utterance loops in the orchestrator; mock those.
+    n = len(utterances.utterances)
+    moderation_bulk_return = moderation_matches + [None] * (n - len(moderation_matches))
+    moderation_mock = AsyncMock(return_value=moderation_bulk_return[:n])
+    monkeypatch.setattr(analyze_route, "check_content_moderation_bulk", moderation_mock)
 
-    fp_iter = iter(flashpoint_matches + [None] * len(utterances.utterances))
+    fp_iter = iter(flashpoint_matches + [None] * n)
     flashpoint_mock = AsyncMock(side_effect=lambda u, c, s: next(fp_iter, None))
     monkeypatch.setattr(analyze_route, "detect_flashpoint", flashpoint_mock)
 
-    claims_iter = iter(extracted_claims_per_utt)
-    extract_claims_mock = AsyncMock(side_effect=lambda u, s: next(claims_iter, []))
-    monkeypatch.setattr(analyze_route, "extract_claims", extract_claims_mock)
+    extract_claims_mock = AsyncMock(
+        return_value=extracted_claims_per_utt + [[] for _ in range(max(0, n - len(extracted_claims_per_utt)))]
+    )
+    monkeypatch.setattr(analyze_route, "extract_claims_bulk", extract_claims_mock)
 
     dedupe_mock = AsyncMock(return_value=claims_report)
     monkeypatch.setattr(analyze_route, "dedupe_claims", dedupe_mock)
 
-    subjective_iter = iter(subjective_per_utt)
     subjective_mock = AsyncMock(
-        side_effect=lambda u, *, settings, index: next(subjective_iter, [])
+        return_value=subjective_per_utt + [[] for _ in range(max(0, n - len(subjective_per_utt)))]
     )
-    monkeypatch.setattr(analyze_route, "extract_subjective_claims", subjective_mock)
+    monkeypatch.setattr(analyze_route, "extract_subjective_claims_bulk", subjective_mock)
 
     sentiment_mock = AsyncMock(return_value=sentiment_stats)
     monkeypatch.setattr(analyze_route, "compute_sentiment_stats", sentiment_mock)
@@ -208,11 +210,11 @@ def _stub_all_analyses(
 
     return {
         "extract_utterances": extract_mock,
-        "moderation": moderation_mock,
+        "moderation_bulk": moderation_mock,
         "flashpoint": flashpoint_mock,
-        "extract_claims": extract_claims_mock,
+        "extract_claims_bulk": extract_claims_mock,
         "dedupe": dedupe_mock,
-        "subjective": subjective_mock,
+        "subjective_bulk": subjective_mock,
         "sentiment": sentiment_mock,
         "scd": scd_mock,
         "known_misinformation": misinfo_mock,
@@ -236,7 +238,7 @@ class TestCacheHitShortCircuits:
         assert body["source_url"] == QUIZLET_URL
         # Confirm no analysis was invoked.
         assert mocks["extract_utterances"].await_count == 0
-        assert mocks["moderation"].await_count == 0
+        assert mocks["moderation_bulk"].await_count == 0
         assert mocks["scd"].await_count == 0
 
 
@@ -254,11 +256,12 @@ class TestCacheMissRunsPipeline:
         body = resp.json()
         assert body["cached"] is False
         assert mocks["extract_utterances"].await_count == 1
-        # 4 utterances -> 4 per-utterance moderation + flashpoint + claim + subjective calls.
-        assert mocks["moderation"].await_count == 4
+        # Bulk analyses: ONE call each across all 4 utterances.
+        assert mocks["moderation_bulk"].await_count == 1
+        assert mocks["extract_claims_bulk"].await_count == 1
+        assert mocks["subjective_bulk"].await_count == 1
+        # Flashpoint still per-utterance (needs per-call prior context).
         assert mocks["flashpoint"].await_count == 4
-        assert mocks["extract_claims"].await_count == 4
-        assert mocks["subjective"].await_count == 4
         assert mocks["sentiment"].await_count == 1
         assert mocks["scd"].await_count == 1
         assert len(cache.put_calls) == 1

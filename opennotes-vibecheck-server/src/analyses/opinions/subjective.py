@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from src.analyses.opinions._schemas import (
     SubjectiveClaim,
+    _BulkSubjectiveClaimsLLM,
     _SubjectiveClaimsLLM,
 )
 from src.config import Settings, get_settings
@@ -33,36 +34,76 @@ def _utterance_id(utterance: Utterance, index: int = 0) -> str:
     return utterance.utterance_id or f"utt-{index}"
 
 
+_BULK_SYSTEM_PROMPT = (
+    _SYSTEM_PROMPT
+    + " You will receive a numbered list of utterances. Return one "
+    "`_PerUtteranceSubjectiveClaims` per input utterance, matching the "
+    "input index. Preserve order. Emit an empty `claims` list for "
+    "utterances without subjective content."
+)
+
+
 async def extract_subjective_claims(
     utterance: Utterance,
     *,
     settings: Settings | None = None,
     index: int = 0,
 ) -> list[SubjectiveClaim]:
-    """Return subjective claims contained in ``utterance``.
+    """Thin wrapper over ``extract_subjective_claims_bulk`` for single-utterance callers."""
+    results = await extract_subjective_claims_bulk(
+        [utterance], settings=settings, start_index=index
+    )
+    return results[0] if results else []
 
-    Factual, verifiable statements are filtered out by the LLM prompt. The
-    ``index`` argument is used only as a fallback when the utterance has no
-    ``utterance_id`` assigned.
+
+async def extract_subjective_claims_bulk(
+    utterances: list[Utterance],
+    *,
+    settings: Settings | None = None,
+    start_index: int = 0,
+) -> list[list[SubjectiveClaim]]:
+    """Extract subjective claims for every utterance in ONE LLM call.
+
+    Returns a list of claim-lists index-aligned with ``utterances``. Empty
+    or id-less utterances get an empty list without costing a model call.
+    ``start_index`` is a fallback prefix for synthetic utterance_ids when
+    utterances don't have their own.
     """
-    settings = settings or get_settings()
-    uid = _utterance_id(utterance, index)
+    if not utterances:
+        return []
 
+    out: list[list[SubjectiveClaim]] = [[] for _ in utterances]
+    prompt_lines: list[str] = []
+    for i, u in enumerate(utterances):
+        text = (u.text or "").strip()
+        if not text:
+            continue
+        prompt_lines.append(f"[{i}] {text}")
+
+    if not prompt_lines:
+        return out
+
+    settings = settings or get_settings()
     agent = build_agent(
         settings,
-        output_type=_SubjectiveClaimsLLM,
-        system_prompt=_SYSTEM_PROMPT,
+        output_type=_BulkSubjectiveClaimsLLM,
+        system_prompt=_BULK_SYSTEM_PROMPT,
     )
+    result = await agent.run("Utterances:\n" + "\n".join(prompt_lines))
+    parsed: _BulkSubjectiveClaimsLLM = result.output
 
-    prompt = f"Utterance (utterance_id={uid}):\n{utterance.text}"
-    result = await agent.run(prompt)
-    parsed: _SubjectiveClaimsLLM = result.output
+    for entry in parsed.results:
+        idx = entry.utterance_index
+        if 0 <= idx < len(utterances):
+            uid = _utterance_id(utterances[idx], start_index + idx)
+            out[idx] = [
+                SubjectiveClaim(claim_text=c.claim_text, utterance_id=uid, stance=c.stance)
+                for c in entry.claims
+            ]
+    return out
 
-    return [
-        SubjectiveClaim(
-            claim_text=claim.claim_text,
-            utterance_id=uid,
-            stance=claim.stance,
-        )
-        for claim in parsed.claims
-    ]
+
+__all__ = [
+    "extract_subjective_claims",
+    "extract_subjective_claims_bulk",
+]

@@ -61,17 +61,27 @@ class OpenAIModerationService:
             model=MODERATION_MODEL,
             input=[{"type": "text", "text": text}],
         )
-        return self._parse_response(response)
+        return self._parse_response(response.results[0])
 
-    def _parse_response(self, response) -> ModerationResult:
-        result = response.results[0]
+    async def moderate_texts(self, texts: list[str]) -> list[ModerationResult]:
+        """Moderate multiple texts in ONE request.
 
+        OpenAI's moderation endpoint accepts an array input and returns one
+        result per input in order. Empty input -> empty output (no call).
+        """
+        if not texts:
+            return []
+        response = await self.client.moderations.create(
+            model=MODERATION_MODEL,
+            input=[{"type": "text", "text": t} for t in texts],
+        )
+        return [self._parse_response(r) for r in response.results]
+
+    def _parse_response(self, result) -> ModerationResult:
         categories: dict[str, bool] = {}
         scores: dict[str, float] = {}
-
         categories_obj = result.categories
         scores_obj = result.category_scores
-
         for name in MODERATION_CATEGORY_NAMES:
             attr_name = name.replace("/", "_").replace("-", "_")
             if hasattr(categories_obj, attr_name):
