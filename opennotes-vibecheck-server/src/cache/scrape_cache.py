@@ -49,8 +49,35 @@ from supabase import Client
 from src.cache.supabase_cache import normalize_url
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.monitoring import get_logger
+from src.utils.url_security import validate_public_http_url
 
 logger = get_logger(__name__)
+
+
+def canonical_cache_key(raw_url: str) -> str:
+    """Return the canonical dedup/cache key for a raw user URL.
+
+    Funnels `validate_public_http_url` → `normalize_url`. Two normalization
+    passes run, in order, with distinct jobs (spec + codex W3 P2-7):
+
+    1. `validate_public_http_url` enforces SSRF/scheme/host rules and returns
+       the **"public host + path"** form: scheme lowercased, host IDNA-encoded
+       and lowercased, trailing dot dropped from host, fragment removed, path
+       and query preserved verbatim.
+
+    2. `normalize_url` then collapses the **"dedup key"** form: strips common
+       tracking params (utm_*, fbclid, gclid, mc_*) and a single trailing
+       slash off the path. Cache keys and dedup keys are keyed off this
+       output so `?utm_source=foo` and the bare URL share a row.
+
+    Callers that compute a DB key (advisory lock, `vibecheck_jobs.normalized_url`,
+    `vibecheck_scrapes.normalized_url`, `vibecheck_analyses.url`) should use
+    this helper instead of composing the two passes by hand — mixing the two
+    forms is the path to dedup drift. `InvalidURL` propagates unchanged for
+    callers that want to return a 400 to the client.
+    """
+    public = validate_public_http_url(raw_url)
+    return normalize_url(public)
 
 _TABLE_NAME = "vibecheck_scrapes"
 _BUCKET_NAME = "vibecheck-screenshots"

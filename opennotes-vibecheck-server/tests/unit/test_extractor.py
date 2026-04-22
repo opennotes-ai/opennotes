@@ -143,18 +143,29 @@ class _FakeRunResult:
 
 @dataclass
 class _FakeAgent:
-    """Records prompts passed to run() and returns a fixed payload."""
+    """Records prompts passed to run() and tool registrations.
+
+    `tool_registrations` captures each `(name, callable)` pair that
+    `_register_tools` attaches so tests can assert the extractor actually
+    wires both `get_html` and `get_screenshot` — a previous no-op
+    `tool()` stand-in let a silent deletion of `_register_tools(agent)`
+    in production slip past the test suite (codex W3 P2-8).
+    """
 
     payload: UtterancesPayload
     prompts: list[str] = field(default_factory=list)
+    tool_registrations: list[tuple[str, Any]] = field(default_factory=list)
 
     def tool(self, func: Any = None, /, **_kwargs: Any) -> Any:
-        """Stand-in decorator that no-ops tool registration."""
+        """Spy decorator. Supports both `@agent.tool` and `@agent.tool(...)`."""
         if func is None:
+
             def _wrap(f: Any) -> Any:
+                self.tool_registrations.append((getattr(f, "__name__", "?"), f))
                 return f
 
             return _wrap
+        self.tool_registrations.append((getattr(func, "__name__", "?"), func))
         return func
 
     async def run(self, user_prompt: str, *, deps: Any = None) -> _FakeRunResult:
@@ -267,6 +278,34 @@ def test_system_prompt_instructs_markdown_first_and_single_tool_call() -> None:
     prompt = EXTRACTOR_SYSTEM_PROMPT.lower()
     assert "markdown-first" in prompt
     assert "at most once" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Fix D (codex W3 P2-8) — _register_tools actually wires the tool surface
+#
+# Previously `_FakeAgent.tool()` was a no-op, so a production refactor that
+# dropped `_register_tools(agent)` would slip past every test in this
+# module. The spy variant records registrations so we can assert them.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_registers_both_tools_on_agent(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """Both `get_html` and `get_screenshot` must be decorated onto the agent
+    during extractor setup. The spy records each registration so a silent
+    removal of `_register_tools(agent)` fails loudly.
+    """
+    client = _FakeFirecrawlClient(result=_scrape())
+    cache = _FakeScrapeCache()
+    fake_agent = _stub_agent(monkeypatch, _payload())
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    names = [name for name, _f in fake_agent.tool_registrations]
+    assert "get_html" in names
+    assert "get_screenshot" in names
 
 
 # ---------------------------------------------------------------------------

@@ -47,8 +47,8 @@ def test_configure_logfire_installs_extra_patterns(_reset_logfire_flag: None) ->
 
     The built-in Logfire scrubber only forwards to our callback when one of
     its own patterns matches. Without `extra_patterns`, `token=`,
-    `X-Amz-Signature=`, `X-Goog-Signature=`, `sign=`, and `bearer` never
-    match, so our callback never fires and Supabase signed URLs leak.
+    `X-Amz-Signature=`, `X-Goog-Signature=`, `sign=`, `sig=`, and `bearer`
+    never match, so our callback never fires and Supabase signed URLs leak.
     """
     from src.monitoring import configure_logfire
 
@@ -73,9 +73,16 @@ def test_configure_logfire_installs_extra_patterns(_reset_logfire_flag: None) ->
 
     patterns = captured.get("extra_patterns")
     assert patterns is not None, "extra_patterns must be passed to ScrubbingOptions"
-    joined = " ".join(str(p) for p in patterns)  # type: ignore[arg-type]
+    pattern_strs: list[str] = [str(p) for p in patterns]  # pyright: ignore[reportGeneralTypeIssues]
+    joined = " ".join(pattern_strs)
     assert "token" in joined.lower()
     assert "x-amz-signature" in joined.lower()
     assert "x-goog-signature" in joined.lower()
     assert "sign" in joined.lower()
     assert "bearer" in joined.lower()
+    # codex W3 P1-6: the sanitizer regex matches `sig=` (the shortest
+    # Firecrawl/Supabase alias) but the Logfire extra_patterns list was
+    # missing it, so the scrubber callback never fired for that shape.
+    assert any("sig=" in p for p in pattern_strs), (
+        "extra_patterns must include a literal 'sig=' token"
+    )

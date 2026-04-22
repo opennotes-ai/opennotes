@@ -45,13 +45,20 @@ class _SanitizeFilter(logging.Filter):
 
 
 def _ensure_root_configured() -> None:
+    """Install a single default stdout handler with PII scrubbing.
+
+    Idempotent via a sentinel attribute on the handler (`_vibecheck_default`).
+    We stamp the sentinel via `setattr` + read via `getattr` rather than
+    dotted access so basedpyright doesn't reject the dynamic attribute on
+    the stdlib `StreamHandler` typed surface.
+    """
     root = logging.getLogger()
     if any(getattr(h, "_vibecheck_default", False) for h in root.handlers):
         return
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter(fmt=_LOG_FORMAT, datefmt=_DATE_FORMAT))
     handler.addFilter(_SanitizeFilter())
-    handler._vibecheck_default = True  # type: ignore[attr-defined]
+    setattr(handler, "_vibecheck_default", True)  # noqa: B010
     root.addHandler(handler)
     if root.level == logging.WARNING:
         root.setLevel(logging.INFO)
@@ -71,12 +78,20 @@ _logfire_configured = False
 # surfaces matching span attributes to our callback, which then runs
 # `_sanitize` to strip the credential while preserving surrounding
 # debugging context.
+#
+# Must stay in sync with `_SIGNED_QUERY_RE` in `src.utils.error_sanitizer`:
+# any alias the sanitizer rewrites must also trigger the Logfire callback,
+# otherwise an attribute whose value matches the sanitizer regex still ships
+# unredacted because Logfire never surfaces it to us. `sig=` is the shortest
+# alias (used by Firecrawl and some Supabase variants) and was missed in
+# the initial list — codex W3 P1-6.
 _LOGFIRE_EXTRA_PATTERNS: tuple[str, ...] = (
     r"token",
     r"X-Amz-Signature",
     r"X-Goog-Signature",
     r"signature",
     r"sign=",
+    r"sig=",
     r"bearer",
 )
 

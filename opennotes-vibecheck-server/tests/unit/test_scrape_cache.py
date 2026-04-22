@@ -12,9 +12,10 @@ from typing import Any
 import httpx
 import pytest
 
-from src.cache.scrape_cache import SupabaseScrapeCache
+from src.cache.scrape_cache import SupabaseScrapeCache, canonical_cache_key
 from src.cache.supabase_cache import normalize_url
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
+from src.utils.url_security import InvalidURL
 
 # ---------------------------------------------------------------------------
 # Fake Supabase client (table + storage)
@@ -186,7 +187,7 @@ def _make_scrape(
         markdown=markdown,
         html=html,
         screenshot=screenshot,
-        metadata=ScrapeMetadata(title=title, sourceURL="https://example.com/a"),
+        metadata=ScrapeMetadata(title=title, source_url="https://example.com/a"),
     )
 
 
@@ -668,3 +669,49 @@ class TestOrphanBlobCleanup:
         bucket = fake.storage.from_("vibecheck-screenshots")
         assert bucket.remove_calls == []
         assert bucket.upload_calls == []
+
+
+# ---------------------------------------------------------------------------
+# Fix D (codex W3 P2-7) — canonical_cache_key funnels validator + normalize
+#
+# Dedup keys and cache keys must always agree. validate_public_http_url
+# normalizes the "public host + path" form (scheme/host/fragment/IDNA);
+# normalize_url strips tracking params + trailing slashes. Mixing only one
+# pass would let ?utm_source=x and the bare URL occupy different DB rows.
+# ---------------------------------------------------------------------------
+
+
+class TestCanonicalCacheKey:
+    def test_strips_tracking_params_after_validator(self) -> None:
+        """Validator preserves query verbatim; canonical key must drop UTM."""
+        key = canonical_cache_key("https://example.com/a?utm_source=x&keep=y")
+
+        assert "utm_source" not in key
+        assert "keep=y" in key
+
+    def test_lowercases_scheme_and_host(self) -> None:
+        key = canonical_cache_key("HTTPS://Example.COM/path")
+
+        assert key.startswith("https://example.com")
+
+    def test_drops_fragment(self) -> None:
+        key = canonical_cache_key("https://example.com/a#frag")
+
+        assert "#" not in key
+
+    def test_strips_trailing_slash_on_path(self) -> None:
+        key = canonical_cache_key("https://example.com/a/")
+
+        assert key == "https://example.com/a"
+
+    def test_tracking_param_and_trailing_slash_same_key(self) -> None:
+        """The two URLs share a single canonical dedup key."""
+        bare = canonical_cache_key("https://example.com/a")
+        noisy = canonical_cache_key("https://example.com/a/?utm_source=x")
+
+        assert bare == noisy
+
+    def test_propagates_invalid_url(self) -> None:
+        """Validator rejection bubbles up; caller decides how to surface."""
+        with pytest.raises(InvalidURL):
+            canonical_cache_key("ftp://example.com/a")
