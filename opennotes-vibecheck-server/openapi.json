@@ -101,6 +101,7 @@
           "analyze"
         ],
         "summary": "Analyze",
+        "description": "Async handoff for `POST /api/analyze`.\n\nReturns `AnalyzeResponse` on the success path. On SSRF-guard failure,\nadvisory-lock contention, or a post-commit enqueue failure, returns a\n`JSONResponse` whose body shape is `{error_code, message}` and whose\nstatus mirrors the failure category (400, 503, 500 respectively). We\nreturn a response object (rather than raising HTTPException) so the\nbody has a stable top-level `error_code` slug \u2014 `{\"detail\": ...}`\nwould force the client to string-match.",
         "operationId": "analyze_api_analyze_post",
         "requestBody": {
           "content": {
@@ -113,13 +114,109 @@
           "required": true
         },
         "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analyze/{job_id}": {
+      "get": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Poll an async vibecheck job",
+        "description": "Read-only polling endpoint.\n\nReturns the current `JobState` including the `sections` dict (per-slot\nprogress), `sidebar_payload` once terminal, and a `next_poll_ms` hint.\n404 when `job_id` is not found. Rate-limited to\n`RATE_LIMIT_POLL_BURST` req/s + `RATE_LIMIT_POLL_SUSTAINED` req/min\nper `(ip, job_id)` tuple \u2014 exceeding either returns 429 with a\n`Retry-After` header.",
+        "operationId": "poll_api_analyze__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SidebarPayload"
+                  "$ref": "#/components/schemas/JobState"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/_internal/jobs/{job_id}/run": {
+      "post": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Run",
+        "description": "Drive one Cloud Tasks delivery through the orchestrator.\n\nThe path's `job_id` and the body's `job_id` must agree \u2014 Cloud Tasks\nsigns the URL as well as the body, so a drift here signals either\nmisconfig or tampering; we reject with 400 rather than trust one side.\n\nOrchestrator return values map to HTTP status:\n    200: success / stale claim / terminal-failure (no Cloud Tasks retry)\n    503: transient failure (Cloud Tasks retries per queue config)\n\nResponse body is intentionally minimal \u2014 Cloud Tasks ignores it.",
+        "operationId": "run__internal_jobs__job_id__run_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunJobBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -243,6 +340,30 @@
           "url"
         ],
         "title": "AnalyzeRequest"
+      },
+      "AnalyzeResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "cached"
+        ],
+        "title": "AnalyzeResponse",
+        "description": "202 handoff payload.\n\nThe response shape is intentionally minimal: the client uses `job_id` to\npoll `GET /api/analyze/{job_id}` (TASK-1473.14) for progressive fill.\n`cached=true` signals that the pipeline was skipped because a fresh\n`vibecheck_analyses` row was already available \u2014 the polled job will\nreach `status=done` immediately."
       },
       "ClaimsReport": {
         "properties": {
@@ -587,6 +708,35 @@
             "title": "Next Poll Ms",
             "description": "Server-suggested delay until the client should re-poll. Clients use this to implement adaptive cadence (typically 500ms early, 1500ms+ near completion).",
             "default": 1500
+          },
+          "page_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Title",
+            "description": "Extracted page title, sourced from vibecheck_job_utterances. Null until the extractor runs."
+          },
+          "page_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageKind"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Extracted page shape, sourced from vibecheck_job_utterances. Null until the extractor runs."
+          },
+          "utterance_count": {
+            "type": "integer",
+            "title": "Utterance Count",
+            "description": "Number of utterances extracted for this job. 0 until the extractor writes any rows.",
+            "default": 0
           }
         },
         "type": "object",
@@ -670,6 +820,27 @@
         ],
         "title": "RiskLevel",
         "description": "Categorical risk level for conversation flashpoint detection."
+      },
+      "RunJobBody": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "expected_attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Expected Attempt Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "expected_attempt_id"
+        ],
+        "title": "RunJobBody",
+        "description": "Cloud Tasks request payload for the run endpoint."
       },
       "SCDReport": {
         "properties": {

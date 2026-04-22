@@ -73,6 +73,12 @@ CREATE TABLE vibecheck_job_utterances (
     timestamp_at TIMESTAMPTZ,
     parent_id TEXT,
     position INT NOT NULL DEFAULT 0,
+    -- Page-level metadata snapshotted by the extractor onto each utterance
+    -- row (codex W4 P2-2). The GET endpoint reads the first non-null value
+    -- via correlated subqueries to populate JobState.page_title /
+    -- .page_kind without multiplying the projection.
+    page_title TEXT,
+    page_kind TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
@@ -406,5 +412,87 @@ async def test_rate_limit_is_keyed_per_job_id(
         rb = await client.get(f"/api/analyze/{job_b}")
         assert ra.status_code == 200
         assert rb.status_code == 200
+
+    get_settings.cache_clear()
+
+
+# --- Codex W4 Fix C: JobState page fields + Retry-After bucket math --------
+
+
+async def test_job_state_includes_page_title_when_utterances_exist(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """JobState must expose page_title/page_kind/utterance_count joined from
+    vibecheck_job_utterances (codex W4 P2-2)."""
+    url = "https://example.com/with-utterances"
+    job_id = await _insert_job(db_pool, status="analyzing", url=url)
+    async with db_pool.acquire() as conn:
+        for i in range(3):
+            await conn.execute(
+                """
+                INSERT INTO vibecheck_job_utterances
+                    (job_id, kind, text, position, page_title, page_kind)
+                VALUES ($1, 'post', $2, $3, 'Example Title', 'article')
+                """,
+                job_id,
+                f"utterance {i}",
+                i,
+            )
+
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["page_title"] == "Example Title"
+    assert body["page_kind"] == "article"
+    assert body["utterance_count"] == 3
+
+
+async def test_job_state_page_fields_null_before_extraction(
+    client: httpx.AsyncClient, db_pool: Any
+) -> None:
+    """Before the extractor runs, page_title/page_kind must be null and
+    utterance_count must be 0 (codex W4 P2-2)."""
+    job_id = await _insert_job(db_pool, status="pending")
+
+    resp = await client.get(f"/api/analyze/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["page_title"] is None
+    assert body["page_kind"] is None
+    assert body["utterance_count"] == 0
+
+
+async def test_retry_after_reflects_minute_bucket_reset_not_hardcoded(
+    client: httpx.AsyncClient, db_pool: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the 300/min sustained bucket rejects, Retry-After must reflect
+    the moving-window reset time (> 1s, ≤ 60s) — not a hardcoded `1`
+    (codex W4 P2-3)."""
+    # Tight sustained budget (3/min) + generous burst (1000/s) so the
+    # sustained limit is what actually trips. The 4th poll gets 429 because
+    # the per-minute window still holds the earlier 3 hits.
+    monkeypatch.setenv("RATE_LIMIT_POLL_BURST", "1000")
+    monkeypatch.setenv("RATE_LIMIT_POLL_SUSTAINED", "3")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    analyze_route.limiter.reset()
+    analyze_route.poll_rate_reset()
+
+    job_id = await _insert_job(db_pool, status="pending")
+
+    for _ in range(3):
+        ok = await client.get(f"/api/analyze/{job_id}")
+        assert ok.status_code == 200
+
+    rejected = await client.get(f"/api/analyze/{job_id}")
+    assert rejected.status_code == 429
+    header_names_lower = {k.lower(): v for k, v in rejected.headers.items()}
+    retry_after_raw = header_names_lower.get("retry-after")
+    assert retry_after_raw is not None
+    retry_after = int(retry_after_raw)
+    # Must be strictly greater than the old hardcoded `1` and bounded by
+    # the window size (60s).
+    assert 1 < retry_after <= 60
 
     get_settings.cache_clear()

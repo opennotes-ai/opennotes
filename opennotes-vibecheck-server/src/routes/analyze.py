@@ -44,6 +44,7 @@ from slowapi.util import get_remote_address
 from src.analyses.schemas import (
     JobState,
     JobStatus,
+    PageKind,
     SectionSlot,
     SectionSlug,
     SidebarPayload,
@@ -498,10 +499,10 @@ def _poll_sustained_limit_str() -> str:
 async def _poll_rate_check(request: Request) -> None:
     """Enforce the composite (ip, job_id) rate budget.
 
-    Raises `HTTPException(429, headers={"Retry-After": "1"})` when either
-    the per-second burst or the per-minute sustained budget is exceeded.
-    Both budgets share a single `(ip, job_id)` key so a burst hit
-    triggers regardless of which window the client is inside.
+    Raises `HTTPException(429, headers={"Retry-After": <seconds>})` when
+    either the per-second burst or the per-minute sustained budget is
+    exceeded. Both budgets share a single `(ip, job_id)` key so a burst
+    hit triggers regardless of which window the client is inside.
 
     The inline implementation (rather than `@poll_limiter.limit`) is
     driven by slowapi's header-injection wrapper: it insists the
@@ -509,16 +510,34 @@ async def _poll_rate_check(request: Request) -> None:
     headers onto the success path. Doing the check here keeps the
     handler free to return a pydantic model and keeps Retry-After on
     the 429 only.
+
+    Retry-After is computed from the moving window's reset timestamp so a
+    client blocked by the 300/min bucket actually waits until the window
+    slides (up to ~60s) — not the prior hardcoded `1s` that produced a
+    60s hot-loop (codex W4 P2-3). Floor at 1 so we never emit
+    `Retry-After: 0`; cap at the limit's window size so clock skew can't
+    return a hostile value.
     """
+    import time
+
     key = _ip_and_job_id_key(request)
     for limit_str in (_poll_burst_limit_str(), _poll_sustained_limit_str()):
         item = _parse_limit(limit_str)
         allowed = await _poll_strategy.hit(item, key)
         if not allowed:
+            try:
+                stats = await _poll_strategy.get_window_stats(item, key)
+                # `+1` so a fractional-sub-second remainder (reset 0.3s away)
+                # rounds up to a Retry-After of at least 1s.
+                reset_in = int(stats.reset_time - time.time()) + 1
+            except Exception:  # noqa: BLE001 — defensive: never fail the header
+                reset_in = 1
+            window_seconds = int(item.GRANULARITY.seconds)
+            reset_in = max(1, min(reset_in, window_seconds))
             raise HTTPException(
                 status_code=429,
                 detail={"error_code": "rate_limited", "message": "poll rate exceeded"},
-                headers={"Retry-After": "1"},
+                headers={"Retry-After": str(reset_in)},
             )
 
 
@@ -551,22 +570,47 @@ _POLL_DELAY_BY_STATUS: dict[JobStatus, int] = {
 # Explicit projection — never SELECT * on this read path. See brief:
 # the GET endpoint must pick exact columns so adding a new column to
 # vibecheck_jobs doesn't silently widen the response and leak fields.
+#
+# Page metadata (page_title, page_kind, utterance_count) comes from
+# `vibecheck_job_utterances` via two correlated subqueries. A LEFT JOIN
+# would multiply the job row by the number of utterances (the join table
+# is row-per-utterance); subqueries keep the projection one-row-per-job
+# and aggregate utterance_count in the same query. Codex W4 P2-2.
 _SELECT_JOB_SQL = """
 SELECT
-    job_id,
-    url,
-    status,
-    attempt_id,
-    error_code,
-    error_message,
-    error_host,
-    sections,
-    sidebar_payload,
-    cached,
-    created_at,
-    updated_at
-FROM vibecheck_jobs
-WHERE job_id = $1
+    j.job_id,
+    j.url,
+    j.status,
+    j.attempt_id,
+    j.error_code,
+    j.error_message,
+    j.error_host,
+    j.sections,
+    j.sidebar_payload,
+    j.cached,
+    j.created_at,
+    j.updated_at,
+    (
+        SELECT u.page_title
+        FROM vibecheck_job_utterances u
+        WHERE u.job_id = j.job_id
+          AND u.page_title IS NOT NULL
+        LIMIT 1
+    ) AS page_title,
+    (
+        SELECT u.page_kind
+        FROM vibecheck_job_utterances u
+        WHERE u.job_id = j.job_id
+          AND u.page_kind IS NOT NULL
+        LIMIT 1
+    ) AS page_kind,
+    (
+        SELECT COUNT(*)
+        FROM vibecheck_job_utterances u
+        WHERE u.job_id = j.job_id
+    ) AS utterance_count
+FROM vibecheck_jobs j
+WHERE j.job_id = $1
 """
 
 
@@ -606,6 +650,11 @@ def _row_to_job_state(row: Any) -> JobState:
         if sidebar_raw is not None
         else None
     )
+    page_kind_raw = row["page_kind"] if "page_kind" in row.keys() else None
+    page_kind = PageKind(page_kind_raw) if isinstance(page_kind_raw, str) else None
+    utterance_count_raw = (
+        row["utterance_count"] if "utterance_count" in row.keys() else 0
+    )
     return JobState(
         job_id=row["job_id"],
         url=row["url"],
@@ -620,6 +669,9 @@ def _row_to_job_state(row: Any) -> JobState:
         sidebar_payload=sidebar_payload,
         cached=bool(row["cached"]),
         next_poll_ms=_POLL_DELAY_BY_STATUS[status],
+        page_title=row["page_title"] if "page_title" in row.keys() else None,
+        page_kind=page_kind,
+        utterance_count=int(utterance_count_raw or 0),
     )
 
 
