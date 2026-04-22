@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import ipaddress
-import socket
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -11,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from src.config import get_settings
 from src.firecrawl_client import FirecrawlClient, ScrapeResult
 from src.monitoring import get_logger
+from src.utils.url_security import InvalidURL, validate_public_http_url
 
 logger = get_logger(__name__)
 
@@ -20,41 +18,20 @@ _HEAD_TIMEOUT_SECONDS = 5.0
 _SCREENSHOT_TIMEOUT_SECONDS = 30.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
-_BLOCKED_HOSTNAMES = {"metadata.google.internal", "metadata", "localhost"}
-
-
-def _resolve_public_ip(hostname: str) -> str:
-    try:
-        infos = socket.getaddrinfo(hostname, None)
-    except OSError as exc:
-        raise HTTPException(status_code=400, detail="URL host could not be resolved") from exc
-    for info in infos:
-        sockaddr = info[4]
-        ip_str = sockaddr[0]
-        try:
-            ip = ipaddress.ip_address(ip_str)
-        except ValueError:
-            continue
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_multicast
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
-            raise HTTPException(status_code=400, detail="URL resolves to a non-public address")
-    return hostname
 
 
 def _validate_http_url(url: str) -> None:
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise HTTPException(status_code=400, detail="URL must be an http(s) URL")
-    hostname = parsed.hostname.lower()
-    if hostname in _BLOCKED_HOSTNAMES or hostname.endswith(".internal"):
-        raise HTTPException(status_code=400, detail="URL host is not allowed")
-    _resolve_public_ip(hostname)
+    """Delegate SSRF validation to the shared guard and raise HTTP 400 on failure.
+
+    Kept as a thin wrapper so the three call sites in this module (both routes
+    plus the redirect-follower) retain their original shape — the guard itself
+    lives in `src.utils.url_security` and is reused by the async analyze
+    pipeline (TASK-1473.11/.12).
+    """
+    try:
+        validate_public_http_url(url)
+    except InvalidURL as exc:
+        raise HTTPException(status_code=400, detail=f"URL rejected: {exc.reason}") from exc
 
 
 def _frame_ancestors_blocks(csp_value: str) -> tuple[bool, str | None]:
