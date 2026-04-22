@@ -27,13 +27,27 @@ class _FakeResponse:
 
 
 class _FakeTableQuery:
-    """Captures chained Supabase-style table calls against an in-memory store."""
+    """Captures chained Supabase-style table calls against an in-memory store.
 
-    def __init__(self, store: dict[str, dict[str, Any]]) -> None:
+    Mirrors the supabase-py postgrest builder surface we actually use: `.select`
+    + `.eq` for the lookup key, `.gt("expires_at", iso_ts)` for the TTL
+    predicate (strictly greater-than; server-side `expires_at > $1`), and
+    `.upsert(row, on_conflict=...)` for writes. The execute() step is
+    deliberately tight — supports only the shapes the real code relies on, so
+    a new query shape surfaces as `AssertionError(unexpected op)` instead of
+    silently returning wrong data.
+    """
+
+    def __init__(
+        self, store: dict[str, dict[str, Any]], upsert_error: Exception | None = None
+    ) -> None:
         self._store = store
+        self._upsert_error = upsert_error
         self._op: str | None = None
         self._eq_col: str | None = None
         self._eq_val: str | None = None
+        self._gt_col: str | None = None
+        self._gt_val: str | None = None
         self._upsert_row: dict[str, Any] | None = None
 
     def select(self, *_fields: str) -> _FakeTableQuery:
@@ -45,9 +59,9 @@ class _FakeTableQuery:
         self._eq_val = value
         return self
 
-    def gte(self, column: str, value: str) -> _FakeTableQuery:
-        assert column == "expires_at"
-        assert value == "now()"
+    def gt(self, column: str, value: str) -> _FakeTableQuery:
+        self._gt_col = column
+        self._gt_val = value
         return self
 
     def maybe_single(self) -> _FakeTableQuery:
@@ -66,12 +80,19 @@ class _FakeTableQuery:
             row = self._store.get(self._eq_val)
             if row is None:
                 return _FakeResponse(None)
-            expires = datetime.fromisoformat(row["expires_at"])
-            if expires <= datetime.now(UTC):
-                return _FakeResponse(None)
+            # Apply TTL predicate if set — strictly greater-than, matching
+            # `.gt("expires_at", now_iso)`. If not set, fall through without
+            # filtering (storage-key-only lookups don't pass a TTL).
+            if self._gt_col == "expires_at" and self._gt_val is not None:
+                threshold = datetime.fromisoformat(self._gt_val)
+                row_expires = datetime.fromisoformat(row["expires_at"])
+                if not row_expires > threshold:
+                    return _FakeResponse(None)
             return _FakeResponse(dict(row))
         if self._op == "upsert":
             assert self._upsert_row is not None
+            if self._upsert_error is not None:
+                raise self._upsert_error
             self._store[self._upsert_row["normalized_url"]] = dict(self._upsert_row)
             return _FakeResponse(dict(self._upsert_row))
         raise AssertionError(f"unexpected op {self._op}")
@@ -83,6 +104,7 @@ class _FakeBucket:
         self._uploads = uploads
         self.upload_calls: list[tuple[str, bytes, dict[str, Any] | None]] = []
         self.signed_calls: list[tuple[str, int]] = []
+        self.remove_calls: list[list[str]] = []
 
     def upload(
         self,
@@ -107,6 +129,18 @@ class _FakeBucket:
             )
         }
 
+    def remove(self, paths: list[str]) -> list[dict[str, Any]]:
+        """Mirror supabase-py Storage `.remove()` — removes one or more paths.
+        Returns a list with one dict per path (success-shaped for our tests).
+        """
+        self.remove_calls.append(list(paths))
+        removed = []
+        for p in paths:
+            if p in self._uploads:
+                del self._uploads[p]
+            removed.append({"name": p})
+        return removed
+
 
 class _FakeStorage:
     def __init__(self) -> None:
@@ -124,10 +158,16 @@ class _FakeSupabaseClient:
         self.store: dict[str, dict[str, Any]] = {}
         self.storage = _FakeStorage()
         self.tables_called: list[str] = []
+        # When set, the next upsert raises this error. Lets tests exercise
+        # the orphan-blob cleanup path where the DB write fails after a
+        # successful screenshot upload.
+        self.next_upsert_error: Exception | None = None
 
     def table(self, name: str) -> _FakeTableQuery:
         self.tables_called.append(name)
-        return _FakeTableQuery(self.store)
+        err = self.next_upsert_error
+        self.next_upsert_error = None
+        return _FakeTableQuery(self.store, upsert_error=err)
 
 
 # ---------------------------------------------------------------------------
@@ -427,3 +467,204 @@ class TestScreenshotPersistence:
         row = fake.store[normalize_url("https://example.com/a")]
         assert row["screenshot_storage_key"] is None
         assert fake.storage.uploads == {}
+
+
+# ---------------------------------------------------------------------------
+# Fix B — TTL predicate is strictly-greater-than + server-evaluable ISO ts
+# ---------------------------------------------------------------------------
+
+
+class TestTtlPredicate:
+    @pytest.mark.asyncio
+    async def test_boundary_row_not_yet_expired_returns_cached_value(self) -> None:
+        """`expires_at` slightly in the future must still be returned — the
+        TTL filter is `expires_at > now()` and a 10s buffer is comfortably
+        past `now()` even after ISO-roundtrip latency.
+        """
+        fake = _FakeSupabaseClient()
+        url = "https://example.com/fresh"
+        fake.store[normalize_url(url)] = {
+            "normalized_url": normalize_url(url),
+            "url": url,
+            "host": "example.com",
+            "page_kind": "other",
+            "page_title": "Fresh",
+            "markdown": "md",
+            "html": None,
+            "screenshot_storage_key": None,
+            "scraped_at": datetime.now(UTC).isoformat(),
+            "expires_at": (datetime.now(UTC) + timedelta(seconds=10)).isoformat(),
+        }
+        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+
+        got = await cache.get(url)
+
+        assert got is not None
+        assert got.markdown == "md"
+
+    @pytest.mark.asyncio
+    async def test_boundary_row_expired_by_one_second_returns_none(self) -> None:
+        """A row whose `expires_at` is 1s in the past must not be returned,
+        even though the legacy `.gte("now()")` string-literal comparison
+        would have admitted it.
+        """
+        fake = _FakeSupabaseClient()
+        url = "https://example.com/just-expired"
+        fake.store[normalize_url(url)] = {
+            "normalized_url": normalize_url(url),
+            "url": url,
+            "host": "example.com",
+            "page_kind": "other",
+            "page_title": None,
+            "markdown": "stale",
+            "html": None,
+            "screenshot_storage_key": None,
+            "scraped_at": (datetime.now(UTC) - timedelta(seconds=2)).isoformat(),
+            "expires_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+        }
+        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+
+        got = await cache.get(url)
+
+        assert got is None
+
+
+# ---------------------------------------------------------------------------
+# Fix B — Signed URL uses the storage_key snapshotted at get()/put() time,
+# not a fresh row lookup that could race a concurrent put().
+# ---------------------------------------------------------------------------
+
+
+class TestSignedUrlSnapshot:
+    @pytest.mark.asyncio
+    async def test_signed_url_uses_snapshotted_storage_key_not_row_lookup(
+        self,
+    ) -> None:
+        """If a second `put()` replaces the cached row between `get()` and
+        `signed_screenshot_url()`, the signed URL must still reference the
+        storage_key captured at the original `get()` — not the newer row's
+        key. Re-lookup by source_url would TOCTOU-race against a concurrent
+        put and sign stale data pointers.
+        """
+        fake = _FakeSupabaseClient()
+        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+
+        # First put → storage_key#1.
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(),
+            screenshot_bytes=b"first-png",
+        )
+        got = await cache.get("https://example.com/a")
+        assert got is not None
+        first_storage_key = fake.store[normalize_url("https://example.com/a")][
+            "screenshot_storage_key"
+        ]
+        assert first_storage_key is not None
+
+        # Concurrent put replaces the row with a new storage_key#2.
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(),
+            screenshot_bytes=b"second-png",
+        )
+        second_storage_key = fake.store[normalize_url("https://example.com/a")][
+            "screenshot_storage_key"
+        ]
+        assert second_storage_key is not None
+        assert second_storage_key != first_storage_key
+
+        # Now sign using the first cached result — must reference the
+        # snapshotted first_storage_key, not the row's current value.
+        signed = await cache.signed_screenshot_url(got)
+
+        assert signed is not None
+        assert first_storage_key in signed
+        assert second_storage_key not in signed
+
+    @pytest.mark.asyncio
+    async def test_signed_url_on_put_result_uses_snapshotted_key(self) -> None:
+        """`put()` returns a cached-scrape handle that carries the
+        storage_key it just wrote. Signing directly off the put() return
+        must not race any subsequent put.
+        """
+        fake = _FakeSupabaseClient()
+        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+
+        original = await cache.put(
+            "https://example.com/a",
+            _make_scrape(),
+            screenshot_bytes=b"original",
+        )
+        original_key = fake.store[normalize_url("https://example.com/a")][
+            "screenshot_storage_key"
+        ]
+
+        # Replace the row with a second put.
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(),
+            screenshot_bytes=b"replacement",
+        )
+        replacement_key = fake.store[normalize_url("https://example.com/a")][
+            "screenshot_storage_key"
+        ]
+        assert replacement_key != original_key
+
+        signed = await cache.signed_screenshot_url(original)
+
+        assert signed is not None
+        assert original_key in signed
+
+
+# ---------------------------------------------------------------------------
+# Fix B — Orphan blob cleanup on DB upsert failure.
+# ---------------------------------------------------------------------------
+
+
+class TestOrphanBlobCleanup:
+    @pytest.mark.asyncio
+    async def test_put_upsert_failure_triggers_blob_cleanup_attempt(self) -> None:
+        """When the Storage upload succeeds but the DB upsert fails, the
+        freshly-uploaded blob must be deleted (best-effort) so it doesn't
+        orphan in the bucket. Cross-transactional consistency is not
+        guaranteed — the pg_cron sweeper catches anything this misses — but
+        cleaning up synchronously shrinks the orphan window dramatically.
+        """
+        fake = _FakeSupabaseClient()
+        fake.next_upsert_error = RuntimeError("db unavailable")
+        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(),
+            screenshot_bytes=b"pngbytes",
+        )
+
+        bucket = fake.storage.from_("vibecheck-screenshots")
+        assert len(bucket.remove_calls) == 1
+        # The blob that was just uploaded should be the one removed.
+        assert len(bucket.remove_calls[0]) == 1
+        removed_path = bucket.remove_calls[0][0]
+        # Upload + remove match the same path; post-remove the bucket is empty.
+        assert removed_path not in bucket._uploads  # noqa: SLF001
+        assert len(bucket.upload_calls) == 1
+        assert bucket.upload_calls[0][0] == removed_path
+
+    @pytest.mark.asyncio
+    async def test_put_with_no_screenshot_skips_cleanup_on_upsert_failure(
+        self,
+    ) -> None:
+        """No upload happened, so nothing to clean up even if upsert fails."""
+        fake = _FakeSupabaseClient()
+        fake.next_upsert_error = RuntimeError("db unavailable")
+        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+
+        await cache.put(
+            "https://example.com/a",
+            _make_scrape(screenshot=None),
+        )
+
+        bucket = fake.storage.from_("vibecheck-screenshots")
+        assert bucket.remove_calls == []
+        assert bucket.upload_calls == []

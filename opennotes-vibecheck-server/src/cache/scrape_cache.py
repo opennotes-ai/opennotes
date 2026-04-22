@@ -16,7 +16,22 @@ HTML sanitation choice: regex rather than BeautifulSoup. The four targets
 syntactic shape that a small set of regex passes strips safely, and avoiding
 a ~1MB parser dep for this one method keeps the cache module self-contained.
 If the target set expands to attribute-level sanitation we should switch to
-a real parser.
+a real parser. (See TASK-1473 follow-up filed for hardening beyond this
+regex set — malformed/nested/unclosed tags are out of scope for the first
+pass.)
+
+Race / orphan notes:
+
+- `signed_screenshot_url(cached)` signs by the `storage_key` that was
+  captured when the `ScrapeResult` was fetched from the cache, NOT by
+  re-querying the row. If two concurrent `put()` calls land for the same
+  normalized URL, the later upsert replaces the row's `screenshot_storage_key`
+  — re-lookup by `source_url` would then sign the *newer* key against the
+  *older* cached result (TOCTOU). Snapshotting the key removes the race.
+- When a `put()`'s DB upsert fails after the Storage upload already
+  succeeded, the just-uploaded blob would orphan in the bucket. We attempt a
+  best-effort `.remove([key])` on the same path to shrink the orphan window;
+  the pg_cron sweeper is the long-term backstop if the cleanup itself fails.
 """
 from __future__ import annotations
 
@@ -28,6 +43,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
+from pydantic import ConfigDict, Field
 from supabase import Client
 
 from src.cache.supabase_cache import normalize_url
@@ -49,6 +65,21 @@ _SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE | re.DO
 _STYLE_RE = re.compile(r"<style\b[^>]*>.*?</style\s*>", re.IGNORECASE | re.DOTALL)
 _LINK_RE = re.compile(r"<link\b[^>]*/?>", re.IGNORECASE)
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+class CachedScrape(ScrapeResult):
+    """A `ScrapeResult` augmented with the Supabase storage_key captured at
+    cache write (or cache read) time.
+
+    Subclasses `ScrapeResult` so existing callers that access `.markdown`,
+    `.html`, `.metadata`, etc. continue to work unchanged. The attached
+    `storage_key` lets `signed_screenshot_url` mint a URL for the exact
+    object this scrape references, immune to a concurrent `put()` that may
+    have replaced the row's stored key in the meantime.
+    """
+
+    storage_key: str | None = Field(default=None)
+    model_config = ConfigDict(populate_by_name=True)
 
 
 def _sanitize_html(html: str | None) -> str | None:
@@ -78,14 +109,20 @@ class SupabaseScrapeCache:
         self._client = client
         self._ttl_hours = ttl_hours
 
-    async def get(self, url: str) -> ScrapeResult | None:
+    async def get(self, url: str) -> CachedScrape | None:
         norm = normalize_url(url)
+        # TTL filter: strictly greater-than, evaluated server-side against an
+        # ISO timestamp we compute now. The prior `.gte("now()")` passed the
+        # literal string "now()" as a comparison value, which postgrest sent
+        # as a string literal (never as SQL) so every row trivially "matched"
+        # the filter. Fake Supabase client in tests masked it.
+        now_iso = datetime.now(UTC).isoformat()
         try:
             resp = (
                 self._client.table(_TABLE_NAME)
                 .select(_SELECTED_COLUMNS)
                 .eq("normalized_url", norm)
-                .gte("expires_at", "now()")
+                .gt("expires_at", now_iso)
                 .maybe_single()
                 .execute()
             )
@@ -97,14 +134,14 @@ class SupabaseScrapeCache:
         data = resp.data
         if not isinstance(data, dict):
             return None
-        return _row_to_scrape_result(data)
+        return _row_to_cached_scrape(data)
 
     async def put(
         self,
         url: str,
         scrape: ScrapeResult,
         screenshot_bytes: bytes | None = None,
-    ) -> ScrapeResult:
+    ) -> CachedScrape:
         norm = normalize_url(url)
         host = urlparse(norm).netloc
 
@@ -133,17 +170,33 @@ class SupabaseScrapeCache:
             ).execute()
         except Exception as exc:
             logger.warning("scrape cache put failed for %s: %s", norm, exc)
-        return scrape
+            # Storage upload succeeded but DB upsert failed → best-effort
+            # cleanup so the blob doesn't orphan. pg_cron sweeps anything
+            # this misses.
+            if storage_key is not None:
+                self._cleanup_orphan_blob(storage_key)
+            storage_key = None
+        return CachedScrape(
+            markdown=scrape.markdown,
+            html=scrape.html,
+            raw_html=scrape.raw_html,
+            screenshot=scrape.screenshot,
+            links=scrape.links,
+            metadata=scrape.metadata,
+            warning=scrape.warning,
+            storage_key=storage_key,
+        )
 
     async def signed_screenshot_url(self, scrape: ScrapeResult) -> str | None:
         """Mint a fresh 15-minute signed URL for a cached screenshot.
 
-        The stored row carries the storage key; we look it up again via the
-        source_url on the ScrapeResult metadata. Returns None when no key is
-        persisted for this scrape, or when signing fails.
+        Uses the storage_key snapshotted on the passed-in `CachedScrape`
+        (attached at `get()` / `put()` time). When given a bare `ScrapeResult`
+        — i.e. not from this cache — there is no key to sign against, so we
+        return None rather than racing a DB lookup against a concurrent put.
         """
-        storage_key = await self._resolve_storage_key(scrape)
-        if storage_key is None:
+        storage_key = getattr(scrape, "storage_key", None)
+        if not isinstance(storage_key, str) or not storage_key:
             return None
         try:
             resp = self._client.storage.from_(_BUCKET_NAME).create_signed_url(
@@ -159,26 +212,19 @@ class SupabaseScrapeCache:
             return None
         return signed
 
-    async def _resolve_storage_key(self, scrape: ScrapeResult) -> str | None:
-        source_url = scrape.metadata.source_url if scrape.metadata else None
-        if not source_url:
-            return None
-        norm = normalize_url(source_url)
+    def _cleanup_orphan_blob(self, storage_key: str) -> None:
+        """Remove a just-uploaded blob when its corresponding DB upsert fails.
+
+        Best-effort: we log and swallow Storage errors because the pg_cron
+        sweeper catches whatever this misses, and raising here would hide the
+        original upsert failure from the caller's retry logic.
+        """
         try:
-            resp = (
-                self._client.table(_TABLE_NAME)
-                .select("screenshot_storage_key")
-                .eq("normalized_url", norm)
-                .maybe_single()
-                .execute()
-            )
+            self._client.storage.from_(_BUCKET_NAME).remove([storage_key])
         except Exception as exc:
-            logger.warning("scrape cache storage-key lookup failed for %s: %s", norm, exc)
-            return None
-        if not resp or not resp.data or not isinstance(resp.data, dict):
-            return None
-        key = resp.data.get("screenshot_storage_key")
-        return key if isinstance(key, str) else None
+            logger.warning(
+                "orphan blob cleanup failed for %s: %s", storage_key, exc
+            )
 
     async def _upload_screenshot(
         self,
@@ -220,14 +266,16 @@ async def _fetch_bytes(url: str) -> bytes | None:
         return None
 
 
-def _row_to_scrape_result(row: dict[str, Any]) -> ScrapeResult:
+def _row_to_cached_scrape(row: dict[str, Any]) -> CachedScrape:
     metadata = ScrapeMetadata(
         title=row.get("page_title"),
-        sourceURL=row.get("url"),
+        source_url=row.get("url"),
     )
-    return ScrapeResult(
+    storage_key = row.get("screenshot_storage_key")
+    return CachedScrape(
         markdown=row.get("markdown"),
         html=row.get("html"),
         screenshot=None,
         metadata=metadata,
+        storage_key=storage_key if isinstance(storage_key, str) else None,
     )
