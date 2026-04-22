@@ -153,18 +153,32 @@ async def _try_advisory_lock(conn: Any, normalized_url: str) -> bool:
     )
 
 
-async def _find_inflight_job(conn: Any, normalized_url: str) -> UUID | None:
-    """Return the job_id of a non-terminal job for this normalized_url, if any."""
-    row = await conn.fetchval(
+async def _find_inflight_job(
+    conn: Any, normalized_url: str
+) -> tuple[UUID, JobStatus] | None:
+    """Return `(job_id, status)` of a non-terminal job for this URL, if any.
+
+    Surfacing the real status (not a hardcoded `pending`) lets the dedup
+    response report the lifecycle stage the existing worker is actually in
+    — a client that polls immediately after getting back `extracting`
+    avoids the fake-pending hot-loop that codex W4 P3 flagged.
+    """
+    row = await conn.fetchrow(
         """
-        SELECT job_id FROM vibecheck_jobs
+        SELECT job_id, status FROM vibecheck_jobs
         WHERE normalized_url = $1
           AND status IN ('pending', 'extracting', 'analyzing')
         LIMIT 1
         """,
         normalized_url,
     )
-    return row if isinstance(row, UUID) else None
+    if row is None:
+        return None
+    job_id = row["job_id"]
+    status_raw = row["status"]
+    if not isinstance(job_id, UUID) or not isinstance(status_raw, str):
+        return None
+    return job_id, JobStatus(status_raw)
 
 
 async def _lookup_cache(conn: Any, normalized_url: str) -> dict[str, Any] | None:
@@ -280,9 +294,12 @@ async def _handle_locked_submit(
 
     existing = await _find_inflight_job(conn, normalized_url)
     if existing is not None:
+        existing_job_id, existing_status = existing
         return (
             AnalyzeResponse(
-                job_id=existing, status=JobStatus.PENDING, cached=False
+                job_id=existing_job_id,
+                status=existing_status,
+                cached=False,
             ),
             None,
         )
@@ -348,12 +365,38 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
         async with pool.acquire() as conn, conn.transaction():
             got_lock = await _try_advisory_lock(conn, normalized_url)
             if not got_lock:
-                existing = await _find_inflight_job(conn, normalized_url)
-                if existing is not None:
+                # Contended branch: another submitter holds the lock. Do a
+                # non-locking cache check BEFORE falling back to in-flight
+                # lookup — a fresh `vibecheck_analyses` row must still win
+                # even if a stale non-terminal job row exists for the same
+                # URL (codex W4 P2-1). Cache hit inserts a fresh done-job
+                # row outside the contended lock; the race is benign because
+                # `vibecheck_analyses` is the source of truth within TTL.
+                cached_payload = await _lookup_cache(conn, normalized_url)
+                if cached_payload is not None:
+                    cached_job_id = await _insert_cached_done_job(
+                        conn,
+                        url=normalized_url,
+                        normalized_url=normalized_url,
+                        host=host,
+                        sidebar_payload=cached_payload,
+                    )
                     return (
                         AnalyzeResponse(
-                            job_id=existing,
-                            status=JobStatus.PENDING,
+                            job_id=cached_job_id,
+                            status=JobStatus.DONE,
+                            cached=True,
+                        ),
+                        None,
+                        True,
+                    )
+                existing = await _find_inflight_job(conn, normalized_url)
+                if existing is not None:
+                    existing_job_id, existing_status = existing
+                    return (
+                        AnalyzeResponse(
+                            job_id=existing_job_id,
+                            status=existing_status,
                             cached=False,
                         ),
                         None,

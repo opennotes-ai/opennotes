@@ -535,3 +535,68 @@ async def test_cache_hit_normalizes_for_lookup(
     assert body["status"] == "done"
     # Cache hit must not enqueue.
     assert enqueue_mock.await_count == 0
+
+
+# --- Codex W4 Fix B: contended path cache check + dedup surfaces real status
+
+
+async def test_contended_advisory_lock_still_returns_cache_hit(
+    client: httpx.AsyncClient, db_pool: Any, enqueue_mock: AsyncMock
+) -> None:
+    """Advisory lock contended AND a fresh cache row exists — the handler
+    must still serve `cached=true, status=done` instead of hiding the cache
+    behind a stale in-flight job (codex W4 P2-1)."""
+    url = "https://example.com/contended-with-cache"
+    await _insert_cache_entry(db_pool, url, _minimal_sidebar_payload(url))
+
+    blocker_started = asyncio.Event()
+    blocker_release = asyncio.Event()
+
+    async def hold_lock() -> None:
+        async with db_pool.acquire() as conn, conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext($1))", url
+            )
+            blocker_started.set()
+            await blocker_release.wait()
+
+    blocker_task = asyncio.create_task(hold_lock())
+    try:
+        await blocker_started.wait()
+        resp = await client.post("/api/analyze", json={"url": url})
+    finally:
+        blocker_release.set()
+        await blocker_task
+
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["cached"] is True
+    assert body["status"] == "done"
+    assert enqueue_mock.await_count == 0
+
+
+async def test_dedup_response_surfaces_actual_job_status(
+    client: httpx.AsyncClient, db_pool: Any, enqueue_mock: AsyncMock
+) -> None:
+    """A POST that dedups to an existing `extracting` job must report
+    `status=extracting` — not a hardcoded `pending` (codex W4 P3)."""
+    url = "https://example.com/status-extracting"
+    async with db_pool.acquire() as conn:
+        existing_job_id = await conn.fetchval(
+            """
+            INSERT INTO vibecheck_jobs (url, normalized_url, host, status)
+            VALUES ($1, $1, 'example.com', 'extracting')
+            RETURNING job_id
+            """,
+            url,
+        )
+    assert isinstance(existing_job_id, UUID)
+
+    resp = await client.post("/api/analyze", json={"url": url})
+
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["job_id"] == str(existing_job_id)
+    assert body["status"] == "extracting"
+    assert body["cached"] is False
+    assert enqueue_mock.await_count == 0
