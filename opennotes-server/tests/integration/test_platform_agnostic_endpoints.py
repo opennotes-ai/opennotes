@@ -130,6 +130,26 @@ async def service_account_headers(service_account_user: User) -> dict:
 
 
 @pytest.fixture
+async def platform_adapter_headers(service_account_user: User) -> dict:
+    """API key headers for public adapter-surface requests."""
+    from src.auth.models import APIKeyCreate
+    from src.users.crud import create_api_key
+
+    async with get_session_maker()() as db:
+        _, raw_key = await create_api_key(
+            db=db,
+            user_id=service_account_user.id,
+            api_key_create=APIKeyCreate(
+                name=f"platform-adapter-{uuid4().hex[:8]}",
+                scopes=["platform:adapter"],
+            ),
+        )
+        await db.commit()
+
+    return {"X-API-Key": raw_key}
+
+
+@pytest.fixture
 async def admin_user_for_discord(discord_community_server: CommunityServer) -> User:
     """Regular user who is a community admin in the Discord server."""
     unique = uuid4().hex[:10]
@@ -541,7 +561,7 @@ class TestRequestsPlatformAgnostic:
     async def test_create_request_with_discourse_platform_claim_uses_discourse_server(
         self,
         discourse_community_server: CommunityServer,
-        service_account_headers: dict,
+        platform_adapter_headers: dict,
     ):
         """Signed Discourse platform context resolves the existing Discourse slug."""
         from sqlalchemy import select
@@ -560,7 +580,7 @@ class TestRequestsPlatformAgnostic:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/api/public/v1/requests",
-                headers={**service_account_headers, "X-Platform-Claims": platform_claims},
+                headers={**platform_adapter_headers, "X-Platform-Claims": platform_claims},
                 json={
                     "data": {
                         "type": "requests",
