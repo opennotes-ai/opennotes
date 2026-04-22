@@ -48,10 +48,11 @@ from src.analyses.schemas import (
     SectionSlug,
     SidebarPayload,
 )
+from src.cache.scrape_cache import canonical_cache_key
 from src.config import get_settings
 from src.jobs.enqueue import enqueue_job
 from src.monitoring import get_logger
-from src.utils.url_security import InvalidURL, validate_public_http_url
+from src.utils.url_security import InvalidURL
 
 logger = get_logger(__name__)
 
@@ -316,11 +317,18 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
     """
     settings = get_settings()
 
-    # 1. SSRF guard + normalization.
+    # 1. SSRF guard + canonical normalization.
+    # `canonical_cache_key` funnels `validate_public_http_url` (SSRF + public
+    # host form) and then `normalize_url` (strip tracking params + trailing
+    # slash). We key the advisory lock, cache lookup, in-flight dedup, and
+    # job-row insert on this canonical form so `?utm_source=x` variants share
+    # a dedup identity with the bare URL. Composing the two passes inline
+    # would re-introduce the drift codex W4 P1 flagged — route through the
+    # helper instead.
     if not body.url:
         return _error_response(400, "invalid_url", "url is required")
     try:
-        normalized_url = validate_public_http_url(body.url)
+        normalized_url = canonical_cache_key(body.url)
     except InvalidURL as exc:
         logger.info("POST /api/analyze rejected url: reason=%s", exc.reason)
         return _error_response(

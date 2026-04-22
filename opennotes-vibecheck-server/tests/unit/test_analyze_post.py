@@ -470,3 +470,68 @@ async def test_contention_without_inflight_row_returns_503_retry_after(
     # critical section.
     assert await _count_jobs(db_pool, normalized_url=url) == 0
     assert enqueue_mock.await_count == 0
+
+
+# --- Codex W4 Fix A: canonical URL normalization for dedup + cache ---------
+
+
+async def test_tracking_params_are_stripped_for_dedup(
+    client: httpx.AsyncClient, db_pool: Any, enqueue_mock: AsyncMock
+) -> None:
+    """Two POSTs with different tracking params for the same page must land
+    on the same job — `utm_source=a` and `utm_source=b` both canonicalize
+    to the same dedup key."""
+    first = await client.post(
+        "/api/analyze", json={"url": "https://example.com/p?utm_source=a"}
+    )
+    second = await client.post(
+        "/api/analyze", json={"url": "https://example.com/p?utm_source=b"}
+    )
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert first.json()["job_id"] == second.json()["job_id"]
+    # Exactly one row, single enqueue — single-flight actually engaged.
+    assert await _count_jobs(db_pool, normalized_url="https://example.com/p") == 1
+    assert enqueue_mock.await_count == 1
+
+
+async def test_casing_variants_are_normalized_for_dedup(
+    client: httpx.AsyncClient, db_pool: Any, enqueue_mock: AsyncMock
+) -> None:
+    """Scheme + host casing and a trailing slash must all collapse to the
+    same canonical key."""
+    first = await client.post(
+        "/api/analyze", json={"url": "HTTPS://EXAMPLE.COM/path"}
+    )
+    second = await client.post(
+        "/api/analyze", json={"url": "https://example.com/path/"}
+    )
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert first.json()["job_id"] == second.json()["job_id"]
+    assert (
+        await _count_jobs(db_pool, normalized_url="https://example.com/path") == 1
+    )
+    assert enqueue_mock.await_count == 1
+
+
+async def test_cache_hit_normalizes_for_lookup(
+    client: httpx.AsyncClient, db_pool: Any, enqueue_mock: AsyncMock
+) -> None:
+    """Cache row keyed on canonical URL must match a POST with tracking params."""
+    canonical = "https://example.com/cached-path"
+    await _insert_cache_entry(db_pool, canonical, _minimal_sidebar_payload(canonical))
+
+    resp = await client.post(
+        "/api/analyze",
+        json={"url": "https://example.com/cached-path?utm_source=x&gclid=y"},
+    )
+
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["cached"] is True
+    assert body["status"] == "done"
+    # Cache hit must not enqueue.
+    assert enqueue_mock.await_count == 0
