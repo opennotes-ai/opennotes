@@ -7,9 +7,17 @@ for structured utterance extraction. The agent may call `get_html()` or
 `get_screenshot()` as tools when markdown alone is ambiguous.
 
 Cache ladder (scrape tier):
-    1. scrape_cache.get(url)           -> hit reuses
+    1. scrape_cache.get(url)           -> hit reuses (returns CachedScrape)
     2. client.scrape(url, all formats) -> miss fetches, persists via cache.put
+                                         (put() returns CachedScrape with
+                                         Supabase storage_key for the PNG)
     3. Gemini extracts utterances      -> payload returned
+
+Both the hit and miss branches produce a `CachedScrape`: a `ScrapeResult`
+subclass carrying the Supabase `storage_key` snapshotted at cache read or
+write time. The agent's `get_screenshot()` tool signs off that snapshotted
+key rather than re-querying the row — immune to a concurrent `put()` that
+would otherwise TOCTOU-race the signature against a replaced row.
 
 Returned payload has `scraped_at` unconditionally overwritten to
 `datetime.now(UTC)` after the agent returns. This closes TASK-1471.23 at
@@ -32,7 +40,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ImageUrl
 
 from src.analyses.schemas import PageKind
-from src.cache.scrape_cache import SupabaseScrapeCache
+from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings, get_settings
 from src.firecrawl_client import FirecrawlClient, ScrapeResult
 from src.services.gemini_agent import build_agent
@@ -97,12 +105,15 @@ class ExtractorDeps:
     """Dependencies passed to the pydantic-ai agent via `RunContext.deps`.
 
     `scrape` is the bundle the agent's tools read from (html, markdown,
-    source URL). `scrape_cache` is the signer — the screenshot tool re-mints
-    a signed URL on each call so the 15-minute Supabase TTL never leaks into
-    agent output.
+    source URL) — a `CachedScrape` carrying the snapshotted Supabase
+    `storage_key`, so the screenshot tool can sign the exact object this
+    scrape references even when a concurrent `put()` has since replaced
+    the row. `scrape_cache` is the signer — the screenshot tool re-mints
+    a signed URL on each call so the 15-minute Supabase TTL never leaks
+    into agent output.
     """
 
-    scrape: ScrapeResult
+    scrape: CachedScrape
     scrape_cache: SupabaseScrapeCache
 
 
@@ -212,8 +223,17 @@ async def _get_or_scrape(
     url: str,
     client: FirecrawlClient,
     scrape_cache: SupabaseScrapeCache,
-) -> ScrapeResult:
-    """Cache-hit → return cached. Miss → Firecrawl multi-format + persist."""
+) -> CachedScrape:
+    """Cache-hit → return cached. Miss → Firecrawl multi-format + persist.
+
+    Returns a `CachedScrape` in both branches so the caller (and downstream
+    agent tools) always sees the Supabase `storage_key` attached at cache
+    write or cache read time. On cache miss, the `put()` return value
+    carries the newly minted key; when `put()` raises we fall back to a
+    keyless `CachedScrape` wrapper over the fresh `ScrapeResult` so the
+    agent tools at least observe the markdown/html payload — the screenshot
+    tool will return None because there is no key to sign against.
+    """
     cached = await scrape_cache.get(url)
     if cached is not None:
         return cached
@@ -228,10 +248,21 @@ async def _get_or_scrape(
         raise UtteranceExtractionError(f"firecrawl scrape failed: {exc}") from exc
 
     try:
-        _ = await scrape_cache.put(url, fresh)
+        return await scrape_cache.put(url, fresh)
     except Exception:
-        pass
-    return fresh
+        # Best-effort: persistence failed (e.g. DB down) but we still have
+        # the fresh bundle. Wrap it as a CachedScrape with no storage_key
+        # so the type contract holds and get_screenshot() returns None.
+        return CachedScrape(
+            markdown=fresh.markdown,
+            html=fresh.html,
+            raw_html=fresh.raw_html,
+            screenshot=fresh.screenshot,
+            links=fresh.links,
+            metadata=fresh.metadata,
+            warning=fresh.warning,
+            storage_key=None,
+        )
 
 
 def _assign_stable_ids(payload: UtterancesPayload) -> None:

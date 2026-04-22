@@ -23,7 +23,7 @@ import pytest
 from pydantic_ai.messages import ImageUrl
 
 from src.analyses.schemas import PageKind
-from src.cache.scrape_cache import SupabaseScrapeCache
+from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings
 from src.firecrawl_client import FirecrawlClient, ScrapeMetadata, ScrapeResult
 from src.utterances.extractor import (
@@ -68,25 +68,37 @@ class _FakeFirecrawlClient:
             return ScrapeResult(
                 markdown="# Default\n\ndefault body",
                 html="<p>default</p>",
-                metadata=ScrapeMetadata(sourceURL=url),
+                metadata=ScrapeMetadata(source_url=url),
             )
         return self._result
 
 
 class _FakeScrapeCache:
-    """In-memory stand-in for SupabaseScrapeCache with tracked calls."""
+    """In-memory stand-in for SupabaseScrapeCache with tracked calls.
 
-    def __init__(self, cached: ScrapeResult | None = None) -> None:
+    Matches the production contract from `SupabaseScrapeCache`:
+    `get()` returns `CachedScrape | None`, `put()` returns `CachedScrape`
+    (carrying a `storage_key` when a screenshot was uploaded), and
+    `signed_screenshot_url()` signs off the snapshotted key.
+    """
+
+    def __init__(
+        self,
+        cached: CachedScrape | None = None,
+        *,
+        put_storage_key: str | None = "put-key-default",
+    ) -> None:
         self._cached = cached
+        self._put_storage_key = put_storage_key
         self.get_calls: list[str] = []
         self.put_calls: list[tuple[str, ScrapeResult]] = []
         self.signed_url_result: str | None = (
             "https://fake.supabase.co/storage/v1/object/sign/"
             "vibecheck-screenshots/abc?token=xyz"
         )
-        self.signed_url_calls: list[ScrapeResult] = []
+        self.signed_url_calls: list[CachedScrape | ScrapeResult] = []
 
-    async def get(self, url: str) -> ScrapeResult | None:
+    async def get(self, url: str) -> CachedScrape | None:
         self.get_calls.append(url)
         return self._cached
 
@@ -95,12 +107,32 @@ class _FakeScrapeCache:
         url: str,
         scrape: ScrapeResult,
         screenshot_bytes: bytes | None = None,
-    ) -> ScrapeResult:
+    ) -> CachedScrape:
         self.put_calls.append((url, scrape))
-        return scrape
+        # Match production: `put()` returns a `CachedScrape` carrying the
+        # storage_key assigned at upload time. If no screenshot would have
+        # been uploaded (scrape.screenshot is falsy), mint no key.
+        key = self._put_storage_key if scrape.screenshot else None
+        return CachedScrape(
+            markdown=scrape.markdown,
+            html=scrape.html,
+            raw_html=scrape.raw_html,
+            screenshot=scrape.screenshot,
+            links=scrape.links,
+            metadata=scrape.metadata,
+            warning=scrape.warning,
+            storage_key=key,
+        )
 
-    async def signed_screenshot_url(self, scrape: ScrapeResult) -> str | None:
+    async def signed_screenshot_url(
+        self, scrape: CachedScrape | ScrapeResult
+    ) -> str | None:
         self.signed_url_calls.append(scrape)
+        # Mirror the production contract — sign only when a storage_key is
+        # attached to the passed-in scrape; bare ScrapeResults return None.
+        key = getattr(scrape, "storage_key", None)
+        if not isinstance(key, str) or not key:
+            return None
         return self.signed_url_result
 
 
@@ -152,7 +184,25 @@ def _scrape(
         markdown=markdown,
         html=html,
         screenshot=screenshot,
-        metadata=ScrapeMetadata(sourceURL=source_url, title=title),
+        metadata=ScrapeMetadata(source_url=source_url, title=title),
+    )
+
+
+def _cached_scrape(
+    *,
+    storage_key: str | None = "cached-storage-key",
+    markdown: str | None = "# Cached\n\nFrom cache.",
+    html: str | None = "<p>cached</p>",
+    screenshot: str | None = None,
+    source_url: str = TARGET_URL,
+    title: str | None = "Cached",
+) -> CachedScrape:
+    return CachedScrape(
+        markdown=markdown,
+        html=html,
+        screenshot=screenshot,
+        metadata=ScrapeMetadata(source_url=source_url, title=title),
+        storage_key=storage_key,
     )
 
 
@@ -228,7 +278,7 @@ def test_system_prompt_instructs_markdown_first_and_single_tool_call() -> None:
 async def test_cache_hit_reuses_scrape_without_firecrawl_call(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    cached = _scrape(markdown="# cached\n\nbody from cache")
+    cached = _cached_scrape(markdown="# cached\n\nbody from cache")
     client = _FakeFirecrawlClient()
     cache = _FakeScrapeCache(cached=cached)
     _stub_agent(monkeypatch, _payload())
@@ -258,6 +308,94 @@ async def test_cache_miss_fetches_all_formats_and_persists(
     assert call["only_main_content"] is True
     assert len(cache.put_calls) == 1
     assert cache.put_calls[0][0] == TARGET_URL
+
+
+# ---------------------------------------------------------------------------
+# Fix A (codex W3 P1-2) — cache-miss must thread CachedScrape (with storage_key)
+# into the agent's deps so get_screenshot() can mint a signed URL on first run.
+# Previously _get_or_scrape returned the bare ScrapeResult, dropping the
+# storage_key that cache.put() had just assigned — get_screenshot returned None.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cache_miss_then_get_screenshot_returns_signed_url(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """After a miss → firecrawl → put() round-trip, the agent's
+    `get_screenshot` tool must receive a scrape carrying the newly minted
+    `storage_key` so `signed_screenshot_url()` can sign it.
+    """
+    fresh = _scrape(markdown="# fresh", screenshot="cdn://abc")
+    client = _FakeFirecrawlClient(result=fresh)
+    cache = _FakeScrapeCache(cached=None, put_storage_key="minted-key-123")
+    # Capture the deps the extractor hands into agent.run so we can assert
+    # on the .scrape payload the tool would see.
+    captured_deps: dict[str, Any] = {}
+
+    fake_agent = _FakeAgent(payload=_payload())
+
+    original_run = fake_agent.run
+
+    async def capturing_run(user_prompt: str, *, deps: Any = None) -> _FakeRunResult:
+        captured_deps["deps"] = deps
+        return await original_run(user_prompt, deps=deps)
+
+    fake_agent.run = capturing_run  # pyright: ignore[reportAttributeAccessIssue]
+    monkeypatch.setattr(
+        "src.utterances.extractor.build_agent",
+        lambda settings, output_type=None, system_prompt=None: fake_agent,
+    )
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    deps = captured_deps["deps"]
+    assert isinstance(deps, ExtractorDeps)
+    # After the fix: deps.scrape must be a CachedScrape carrying storage_key.
+    assert isinstance(deps.scrape, CachedScrape)
+    assert deps.scrape.storage_key == "minted-key-123"
+
+    # And the tool itself must successfully mint a signed URL.
+    result = await _get_screenshot_impl(deps)
+    assert isinstance(result, ImageUrl)
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_preserves_storage_key_through_tool_call(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """A cache hit produces a CachedScrape with a storage_key. The agent
+    must receive that exact CachedScrape in deps so tool calls sign off the
+    snapshotted key without re-querying the DB.
+    """
+    cached = _cached_scrape(storage_key="cached-key-xyz", screenshot=None)
+    client = _FakeFirecrawlClient()
+    cache = _FakeScrapeCache(cached=cached)
+
+    captured_deps: dict[str, Any] = {}
+
+    fake_agent = _FakeAgent(payload=_payload())
+    original_run = fake_agent.run
+
+    async def capturing_run(user_prompt: str, *, deps: Any = None) -> _FakeRunResult:
+        captured_deps["deps"] = deps
+        return await original_run(user_prompt, deps=deps)
+
+    fake_agent.run = capturing_run  # pyright: ignore[reportAttributeAccessIssue]
+    monkeypatch.setattr(
+        "src.utterances.extractor.build_agent",
+        lambda settings, output_type=None, system_prompt=None: fake_agent,
+    )
+
+    await _call(TARGET_URL, client, cache, settings)
+
+    deps = captured_deps["deps"]
+    assert isinstance(deps, ExtractorDeps)
+    assert isinstance(deps.scrape, CachedScrape)
+    assert deps.scrape.storage_key == "cached-key-xyz"
+    # No firecrawl, no put — cache hit path.
+    assert client.scrape_calls == []
+    assert cache.put_calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +620,7 @@ def test_get_html_tool_returns_empty_string_when_no_html() -> None:
 
 @pytest.mark.asyncio
 async def test_get_screenshot_tool_returns_signed_url_imageurl() -> None:
-    scrape = _scrape(screenshot="cdn://foo")
+    scrape = _cached_scrape(screenshot="cdn://foo", storage_key="k")
     cache = _FakeScrapeCache()
     cache.signed_url_result = "https://fake/signed?token=abc"
     deps = ExtractorDeps(scrape=scrape, scrape_cache=cache)  # pyright: ignore[reportArgumentType]
@@ -496,12 +634,12 @@ async def test_get_screenshot_tool_returns_signed_url_imageurl() -> None:
 
 @pytest.mark.asyncio
 async def test_get_screenshot_tool_returns_none_url_when_no_screenshot() -> None:
-    """When no screenshot is persisted, the tool returns a sentinel ImageUrl.
+    """When no screenshot is persisted (no storage_key), the tool returns None.
 
-    Agents receive a stub so they can continue from markdown without blowing
+    Agents receive None so they can continue from markdown without blowing
     up on a missing screenshot. Documented in the extractor module.
     """
-    scrape = _scrape(screenshot=None)
+    scrape = _cached_scrape(screenshot=None, storage_key=None)
     cache = _FakeScrapeCache()
     cache.signed_url_result = None
     deps = ExtractorDeps(scrape=scrape, scrape_cache=cache)  # pyright: ignore[reportArgumentType]
@@ -514,7 +652,7 @@ async def test_get_screenshot_tool_returns_none_url_when_no_screenshot() -> None
 @pytest.mark.asyncio
 async def test_signed_url_is_re_minted_on_each_screenshot_tool_call() -> None:
     """15-min TTL means repeated calls must re-sign, not cache."""
-    scrape = _scrape(screenshot="cdn://foo")
+    scrape = _cached_scrape(screenshot="cdn://foo", storage_key="k")
     cache = _FakeScrapeCache()
     deps = ExtractorDeps(scrape=scrape, scrape_cache=cache)  # pyright: ignore[reportArgumentType]
 
