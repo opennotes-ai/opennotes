@@ -89,3 +89,59 @@ async def test_scrape_result_handles_partial_formats(
     assert result.screenshot == "https://cdn.firecrawl.dev/shots/xyz.png"
     assert result.metadata is not None
     assert result.metadata.source_url == "https://example.com/article"
+
+
+# --- Optional defaults + snake_case round-trip (P1.5 + P2.3) ---------------
+
+
+def test_snake_case_input_accepted_by_scrape_result() -> None:
+    """Python call sites can construct ScrapeResult with snake_case kwargs.
+
+    With `populate_by_name=True` and explicit `default=None`, both the
+    alias (camelCase, e.g. `rawHtml`) and the snake_case field name work
+    as kwargs — and all optional fields default so callers can omit any.
+    """
+    result = ScrapeResult(raw_html="<p>x</p>")
+    assert result.raw_html == "<p>x</p>"
+    assert result.markdown is None
+    assert result.html is None
+    assert result.screenshot is None
+    assert result.links is None
+    assert result.metadata is None
+    assert result.warning is None
+
+
+def test_model_dump_emits_snake_case_by_default() -> None:
+    """model_dump() must serialize using Python field names, not aliases.
+
+    Tests and downstream Python code serialize ScrapeResult objects back
+    to dicts; they expect snake_case keys. The camelCase aliases are a
+    wire-format concern that only applies on the way *in* from Firecrawl.
+    """
+    result = ScrapeResult(raw_html="<p>y</p>")
+    dumped = result.model_dump()
+    assert "raw_html" in dumped
+    assert "rawHtml" not in dumped
+    assert dumped["raw_html"] == "<p>y</p>"
+
+
+def test_raw_html_alias_roundtrips() -> None:
+    """Firecrawl envelopes (`rawHtml` on the wire) populate `raw_html`."""
+    result = ScrapeResult.model_validate({"rawHtml": "<p>wire</p>"})
+    assert result.raw_html == "<p>wire</p>"
+
+
+def test_source_url_alias_roundtrips() -> None:
+    """ScrapeMetadata's `sourceURL` wire key maps to `source_url`."""
+    meta = ScrapeMetadata.model_validate(
+        {"sourceURL": "https://example.com/article", "statusCode": 201}
+    )
+    assert meta.source_url == "https://example.com/article"
+    assert meta.status_code == 201
+
+
+def test_scrape_result_empty_construction_is_valid() -> None:
+    """Every ScrapeResult field is optional — `ScrapeResult()` must type-check and run."""
+    result = ScrapeResult()
+    assert result.raw_html is None
+    assert result.metadata is None

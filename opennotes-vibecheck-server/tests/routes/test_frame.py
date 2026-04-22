@@ -200,7 +200,9 @@ class TestSSRFValidation:
     ) -> None:
         import socket
 
-        def _resolve_to_private(*_args: object, **_kwargs: object) -> list:
+        def _resolve_to_private(
+            *_args: object, **_kwargs: object
+        ) -> list[tuple[int, int, int, str, tuple[str, int]]]:
             return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.5", 0))]
 
         monkeypatch.setattr(socket, "getaddrinfo", _resolve_to_private)

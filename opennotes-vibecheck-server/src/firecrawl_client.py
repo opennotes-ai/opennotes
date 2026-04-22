@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -56,23 +56,37 @@ def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
 
 
 class ScrapeMetadata(BaseModel):
-    title: str | None = None
-    description: str | None = None
-    language: str | None = None
-    source_url: str | None = Field(None, alias="sourceURL")
-    status_code: int | None = Field(None, alias="statusCode")
-    error: str | None = None
+    # `validation_alias=AliasChoices(snake_case, camelCase)` lets Pydantic
+    # accept either shape on the way *in* (wire JSON uses `sourceURL`;
+    # Python call sites use `source_url`) while keeping the Python field
+    # name as the primary parameter so basedpyright doesn't treat the
+    # alias as a required-by-keyword argument. `default=None` is explicit
+    # so every field is optional — required for `ScrapeMetadata(...)` to
+    # type-check with any subset of kwargs.
+    title: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    language: str | None = Field(default=None)
+    source_url: str | None = Field(
+        default=None, validation_alias=AliasChoices("source_url", "sourceURL")
+    )
+    status_code: int | None = Field(
+        default=None, validation_alias=AliasChoices("status_code", "statusCode")
+    )
+    error: str | None = Field(default=None)
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class ScrapeResult(BaseModel):
-    markdown: str | None = None
-    html: str | None = None
-    raw_html: str | None = Field(None, alias="rawHtml")
-    screenshot: str | None = None
-    links: list[str] | None = None
-    metadata: ScrapeMetadata | None = None
-    warning: str | None = None
+    # See ScrapeMetadata comment — same rationale for `validation_alias`.
+    markdown: str | None = Field(default=None)
+    html: str | None = Field(default=None)
+    raw_html: str | None = Field(
+        default=None, validation_alias=AliasChoices("raw_html", "rawHtml")
+    )
+    screenshot: str | None = Field(default=None)
+    links: list[str] | None = Field(default=None)
+    metadata: ScrapeMetadata | None = Field(default=None)
+    warning: str | None = Field(default=None)
     model_config = ConfigDict(populate_by_name=True)
 
 
