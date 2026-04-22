@@ -4,11 +4,20 @@ Each sub-analysis owns its own `_schemas.py` (or equivalently-named schema
 module) under `src/analyses/<name>/`. This module is the single place that
 composes those sub-schemas into the single `SidebarPayload` contract the
 frontend consumes from `POST /api/analyze`.
+
+This module also hosts the typed contracts for the async job pipeline
+introduced in TASK-1473: `SectionSlug`, `SectionState`, `SectionSlot`,
+`JobStatus`, `ErrorCode`, `JobState`, `PageKind`. Downstream tickets wire
+these into routes and storage; emission into the generated OpenAPI schema
+is anchored by `routes/_schema_anchor.py` until TASK-1473.14 lands the real
+`GET /api/analyze/{job_id}` endpoint.
 """
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from enum import StrEnum
+from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +27,81 @@ from src.analyses.opinions._schemas import OpinionsReport
 from src.analyses.safety._schemas import HarmfulContentMatch
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
+
+
+class PageKind(StrEnum):
+    """Shape of the source page the extractor handled.
+
+    The extractor in TASK-1473.10 picks one of these; downstream rendering
+    and analysis logic branches on the value (e.g., hierarchical_thread
+    enables tree-aware flashpoint context).
+    """
+
+    BLOG_POST = "blog_post"
+    FORUM_THREAD = "forum_thread"
+    HIERARCHICAL_THREAD = "hierarchical_thread"
+    BLOG_INDEX = "blog_index"
+    ARTICLE = "article"
+    OTHER = "other"
+
+
+class SectionSlug(StrEnum):
+    """The seven sidebar slots the async pipeline fills independently."""
+
+    SAFETY_MODERATION = "safety__moderation"
+    TONE_DYNAMICS_FLASHPOINT = "tone_dynamics__flashpoint"
+    TONE_DYNAMICS_SCD = "tone_dynamics__scd"
+    FACTS_CLAIMS_DEDUP = "facts_claims__dedup"
+    FACTS_CLAIMS_KNOWN_MISINFO = "facts_claims__known_misinfo"
+    OPINIONS_SENTIMENTS_SENTIMENT = "opinions_sentiments__sentiment"
+    OPINIONS_SENTIMENTS_SUBJECTIVE = "opinions_sentiments__subjective"
+
+
+class SectionState(StrEnum):
+    """Lifecycle of a single sidebar slot during a job."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class JobStatus(StrEnum):
+    """Lifecycle of a vibecheck job from POST to terminal state."""
+
+    PENDING = "pending"
+    EXTRACTING = "extracting"
+    ANALYZING = "analyzing"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class ErrorCode(StrEnum):
+    """Stable error codes the frontend branches on for inline copy + retry UX."""
+
+    INVALID_URL = "invalid_url"
+    UNSUPPORTED_SITE = "unsupported_site"
+    UPSTREAM_ERROR = "upstream_error"
+    EXTRACTION_FAILED = "extraction_failed"
+    TIMEOUT = "timeout"
+    RATE_LIMITED = "rate_limited"
+    INTERNAL = "internal"
+
+
+class SectionSlot(BaseModel):
+    """One sidebar slot's state inside a JobState.
+
+    `attempt_id` is regenerated on each retry; Cloud Tasks redeliveries that
+    carry a stale attempt_id are rejected by the worker. `data` holds the
+    section-specific payload once `state == DONE` (shape varies by slug).
+    """
+
+    state: SectionState
+    attempt_id: UUID
+    data: dict[str, Any] | None = None
+    error: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 class SafetySection(BaseModel):
@@ -57,19 +141,57 @@ class SidebarPayload(BaseModel):
 
     source_url: str
     page_title: str | None = None
-    page_kind: Literal["blog_post", "forum_thread", "article", "other"] = "other"
+    page_kind: PageKind = PageKind.OTHER
     scraped_at: datetime
     cached: bool = False
+    cached_at: datetime | None = None
     safety: SafetySection
     tone_dynamics: ToneDynamicsSection
     facts_claims: FactsClaimsSection
     opinions_sentiments: OpinionsSection
 
 
+class JobState(BaseModel):
+    """GET /api/analyze/{job_id} response shape (wired in TASK-1473.14).
+
+    Combines job-level lifecycle (status/error_code/error_message), per-slot
+    progress (sections), the assembled sidebar (sidebar_payload, populated
+    once all slots finish), and an adaptive polling hint (next_poll_ms) so
+    clients can back off as the job completes.
+    """
+
+    job_id: UUID
+    url: str
+    status: JobStatus
+    attempt_id: UUID
+    error_code: ErrorCode | None = None
+    error_message: str | None = None
+    error_host: str | None = Field(
+        default=None,
+        description="When ErrorCode.UNSUPPORTED_SITE is returned, the host that triggered the rejection.",
+    )
+    created_at: datetime
+    updated_at: datetime
+    sections: dict[SectionSlug, SectionSlot] = Field(default_factory=dict)
+    sidebar_payload: SidebarPayload | None = None
+    cached: bool = False
+    next_poll_ms: int = Field(
+        default=1500,
+        description="Server-suggested delay until the client should re-poll. Clients use this to implement adaptive cadence (typically 500ms early, 1500ms+ near completion).",
+    )
+
+
 __all__ = [
+    "ErrorCode",
     "FactsClaimsSection",
+    "JobState",
+    "JobStatus",
     "OpinionsSection",
+    "PageKind",
     "SafetySection",
+    "SectionSlot",
+    "SectionSlug",
+    "SectionState",
     "SidebarPayload",
     "ToneDynamicsSection",
 ]

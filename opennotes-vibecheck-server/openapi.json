@@ -136,6 +136,53 @@
         }
       }
     },
+    "/api/_internal/_schema_anchor": {
+      "get": {
+        "tags": [
+          "_schema_anchor"
+        ],
+        "summary": "Schema anchor (placeholder, removed in TASK-1473.14)",
+        "description": "Forces JobState into the OpenAPI schema until the real GET /api/analyze/{job_id} endpoint lands. Always returns 410 Gone.",
+        "operationId": "schema_anchor_api__internal__schema_anchor_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobState"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Always \u2014 this route is a placeholder so openapi-typescript emits matching JobState/SectionSlot/SectionSlug/etc. type aliases. TASK-1473.14 replaces it with the real polling endpoint."
+          }
+        }
+      }
+    },
+    "/_healthz": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health__healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health  Healthz Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -151,6 +198,28 @@
                   },
                   "type": "object",
                   "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health  Get"
                 }
               }
             }
@@ -243,6 +312,20 @@
         ],
         "title": "DedupedClaim",
         "description": "A cluster of semantically-equivalent claims across utterances."
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "invalid_url",
+          "unsupported_site",
+          "upstream_error",
+          "extraction_failed",
+          "timeout",
+          "rate_limited",
+          "internal"
+        ],
+        "title": "ErrorCode",
+        "description": "Stable error codes the frontend branches on for inline copy + retry UX."
       },
       "FactCheckMatch": {
         "properties": {
@@ -412,6 +495,124 @@
         "title": "HarmfulContentMatch",
         "description": "A single flagged utterance from the OpenAI moderation API."
       },
+      "JobState": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attempt Id"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Host",
+            "description": "When ErrorCode.UNSUPPORTED_SITE is returned, the host that triggered the rejection."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "sections": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SectionSlot"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/SectionSlug"
+            },
+            "type": "object",
+            "title": "Sections"
+          },
+          "sidebar_payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SidebarPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached",
+            "default": false
+          },
+          "next_poll_ms": {
+            "type": "integer",
+            "title": "Next Poll Ms",
+            "description": "Server-suggested delay until the client should re-poll. Clients use this to implement adaptive cadence (typically 500ms early, 1500ms+ near completion).",
+            "default": 1500
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "url",
+          "status",
+          "attempt_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JobState",
+        "description": "GET /api/analyze/{job_id} response shape (wired in TASK-1473.14).\n\nCombines job-level lifecycle (status/error_code/error_message), per-slot\nprogress (sections), the assembled sidebar (sidebar_payload, populated\nonce all slots finish), and an adaptive polling hint (next_poll_ms) so\nclients can back off as the job completes."
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "extracting",
+          "analyzing",
+          "done",
+          "failed"
+        ],
+        "title": "JobStatus",
+        "description": "Lifecycle of a vibecheck job from POST to terminal state."
+      },
       "OpinionsReport": {
         "properties": {
           "sentiment_stats": {
@@ -444,6 +645,19 @@
         ],
         "title": "OpinionsSection",
         "description": "Sentiment distribution and extracted subjective claims."
+      },
+      "PageKind": {
+        "type": "string",
+        "enum": [
+          "blog_post",
+          "forum_thread",
+          "hierarchical_thread",
+          "blog_index",
+          "article",
+          "other"
+        ],
+        "title": "PageKind",
+        "description": "Shape of the source page the extractor handled.\n\nThe extractor in TASK-1473.10 picks one of these; downstream rendering\nand analysis logic branches on the value (e.g., hierarchical_thread\nenables tree-aware flashpoint context)."
       },
       "RiskLevel": {
         "type": "string",
@@ -507,6 +721,97 @@
         "type": "object",
         "title": "SafetySection",
         "description": "Harmful-content matches surfaced by OpenAI moderation."
+      },
+      "SectionSlot": {
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/SectionState"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attempt Id"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "attempt_id"
+        ],
+        "title": "SectionSlot",
+        "description": "One sidebar slot's state inside a JobState.\n\n`attempt_id` is regenerated on each retry; Cloud Tasks redeliveries that\ncarry a stale attempt_id are rejected by the worker. `data` holds the\nsection-specific payload once `state == DONE` (shape varies by slug)."
+      },
+      "SectionSlug": {
+        "type": "string",
+        "enum": [
+          "safety__moderation",
+          "tone_dynamics__flashpoint",
+          "tone_dynamics__scd",
+          "facts_claims__dedup",
+          "facts_claims__known_misinfo",
+          "opinions_sentiments__sentiment",
+          "opinions_sentiments__subjective"
+        ],
+        "title": "SectionSlug",
+        "description": "The seven sidebar slots the async pipeline fills independently."
+      },
+      "SectionState": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "done",
+          "failed"
+        ],
+        "title": "SectionState",
+        "description": "Lifecycle of a single sidebar slot during a job."
       },
       "SentimentScore": {
         "properties": {
@@ -600,14 +905,7 @@
             "title": "Page Title"
           },
           "page_kind": {
-            "type": "string",
-            "enum": [
-              "blog_post",
-              "forum_thread",
-              "article",
-              "other"
-            ],
-            "title": "Page Kind",
+            "$ref": "#/components/schemas/PageKind",
             "default": "other"
           },
           "scraped_at": {
@@ -619,6 +917,18 @@
             "type": "boolean",
             "title": "Cached",
             "default": false
+          },
+          "cached_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached At"
           },
           "safety": {
             "$ref": "#/components/schemas/SafetySection"

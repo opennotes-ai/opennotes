@@ -8,7 +8,6 @@ from src.services.gemini_agent import build_agent
 
 from .schema import UtterancesPayload
 
-
 UTTERANCE_EXTRACTION_PROMPT = """\
 You are extracting structured utterances from a scraped webpage's markdown.
 

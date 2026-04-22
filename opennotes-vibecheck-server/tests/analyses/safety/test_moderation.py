@@ -1,4 +1,5 @@
 import pytest
+
 """Unit tests for the harmful-content moderation capability."""
 
 from unittest.mock import AsyncMock
