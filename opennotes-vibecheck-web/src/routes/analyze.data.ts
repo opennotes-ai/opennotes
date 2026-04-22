@@ -51,6 +51,11 @@ export const getAnalysis = query(
       const { analyzeUrl, getClient } = await import("~/lib/api-client.server");
       const client = getClient();
 
+      // Iframe-first strategy: always try to iframe the page in the browser.
+      // Pre-fetch a screenshot in parallel so the client has one ready to
+      // swap in if the iframe fails (X-Frame-Options / CSP frame-ancestors
+      // / bot-protection intercepts). Frame-compat is still probed as a
+      // soft hint we surface in the UI, but it no longer gates anything.
       const analysisTask = analyzeUrl(targetUrl);
       const frameTask = (async (): Promise<FrameCompatResponse> => {
         try {
@@ -58,34 +63,35 @@ export const getAnalysis = query(
             params: { query: { url: targetUrl } },
           });
           if (error || !data) {
-            return { can_iframe: false, blocking_header: null };
+            return { can_iframe: true, blocking_header: null };
           }
           return data as unknown as FrameCompatResponse;
         } catch (frameError: unknown) {
           console.warn("vibecheck frame-compat probe failed:", frameError);
-          return { can_iframe: false, blocking_header: null };
+          // Default to trying the iframe; the browser will tell us if it fails.
+          return { can_iframe: true, blocking_header: null };
         }
       })();
-
-      const [payload, frameProbe] = await Promise.all([
-        analysisTask,
-        frameTask,
-      ]);
-
-      let screenshotUrl: string | null = null;
-      if (!frameProbe.can_iframe) {
+      const screenshotTask = (async (): Promise<string | null> => {
         try {
           const { data, error } = await client.GET("/api/screenshot", {
             params: { query: { url: targetUrl } },
           });
           if (!error && data) {
-            screenshotUrl =
-              (data as unknown as ScreenshotResponse).screenshot_url ?? null;
+            return (data as unknown as ScreenshotResponse).screenshot_url ?? null;
           }
+          return null;
         } catch (shotError: unknown) {
           console.warn("vibecheck screenshot fetch failed:", shotError);
+          return null;
         }
-      }
+      })();
+
+      const [payload, frameProbe, screenshotUrl] = await Promise.all([
+        analysisTask,
+        frameTask,
+        screenshotTask,
+      ]);
 
       return {
         ok: true,

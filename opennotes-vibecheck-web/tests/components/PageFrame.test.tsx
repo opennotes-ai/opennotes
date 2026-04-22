@@ -28,7 +28,10 @@ describe("<PageFrame />", () => {
     expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
-  it("renders a screenshot when canIframe=false and a screenshot URL exists", () => {
+  it("still renders the iframe first even when canIframe=false (probe is only a hint)", () => {
+    // Iframe-first: the backend probe (canIframe) is treated as advisory only.
+    // The iframe gets a chance to load; it falls back to the screenshot or
+    // unavailable state only after the iframe actually errors or times out.
     render(() => (
       <PageFrame
         url="https://example.com/article"
@@ -37,27 +40,29 @@ describe("<PageFrame />", () => {
       />
     ));
 
-    const img = screen.getByTestId(
-      "page-frame-screenshot",
-    ) as HTMLImageElement;
-    expect(img).not.toBeNull();
-    expect(img.tagName.toLowerCase()).toBe("img");
-    expect(img.getAttribute("src")).toBe("https://cdn.example.com/shot.png");
-    expect(screen.queryByTestId("page-frame-iframe")).toBeNull();
+    expect(screen.getByTestId("page-frame-iframe")).not.toBeNull();
+    expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
-  it("shows an unavailable state when iframe is blocked and no screenshot was produced", () => {
+  it("swaps to the screenshot when the iframe errors", async () => {
     render(() => (
       <PageFrame
         url="https://example.com/article"
-        canIframe={false}
-        screenshotUrl={null}
+        canIframe={true}
+        screenshotUrl="https://cdn.example.com/shot.png"
       />
     ));
 
+    const iframe = screen.getByTestId(
+      "page-frame-iframe",
+    ) as HTMLIFrameElement;
+    iframe.dispatchEvent(new Event("error"));
+
+    const img = (await screen.findByTestId(
+      "page-frame-screenshot",
+    )) as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("https://cdn.example.com/shot.png");
     expect(screen.queryByTestId("page-frame-iframe")).toBeNull();
-    expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
-    expect(screen.getByTestId("page-frame-unavailable")).not.toBeNull();
   });
 
   it("always shows an 'Open original' link", () => {
