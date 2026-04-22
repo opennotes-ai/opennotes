@@ -56,6 +56,42 @@ WHERE job_id = $1
   )
 """
 
+# retry_claim_slot is the section-retry analog of `_CLAIM_SQL`. It fires
+# from the public retry endpoint after the retry gate has already
+# established that (a) the job is in a terminal phase (done/failed) and
+# (b) the slot's current state is `failed`. The UPDATE:
+#   1. CAS-matches the caller's `prior_slot_attempt_id` on the slot's
+#      recorded attempt so two concurrent Retry clicks serialize — the
+#      loser observes the rotated attempt_id and the CAS fails.
+#   2. CAS-matches `state = 'failed'` so a slot that was concurrently
+#      moved back to `running` by another retry path doesn't get stomped.
+#   3. Rotates the slot to state=`running` with a fresh attempt_id.
+#   4. Flips the job's top-level `status` back to `analyzing` and clears
+#      `finished_at`/`error_code`/`error_message` so the downstream
+#      `mark_slot_done`/`mark_slot_failed` and `maybe_finalize_job`
+#      guards (which require status IN ('pending','extracting','analyzing'))
+#      accept the worker's writes. The job's `attempt_id` is intentionally
+#      NOT rotated — retry is a slot-scoped rotation; the envelope
+#      attempt_id only changes on a full pipeline re-run.
+# We do NOT gate on the job's prior status here because the route handler
+# already verified `status IN ('done','failed')` inside the same request
+# — adding a redundant status CAS would complicate the concurrent-retry
+# semantics without closing any hole.
+_RETRY_CLAIM_SQL = """
+UPDATE vibecheck_jobs
+SET sections = sections || jsonb_build_object($2::text, $3::jsonb),
+    status = 'analyzing',
+    error_code = NULL,
+    error_message = NULL,
+    error_host = NULL,
+    finished_at = NULL,
+    updated_at = now()
+WHERE job_id = $1
+  AND sections ? $2::text
+  AND sections -> $2::text ->> 'state' = 'failed'
+  AND sections -> $2::text ->> 'attempt_id' = $4::text
+"""
+
 # mark_slot_done/failed enforce the full slot write contract from spec
 # §"Slot write contract":
 #   1. job.attempt_id still equals the expected task_attempt (stale worker
@@ -155,6 +191,42 @@ async def claim_slot(
     return slot_attempt if _rowcount(result) == 1 else None
 
 
+async def retry_claim_slot(
+    db: Any,
+    job_id: UUID,
+    slug: SectionSlug,
+    prior_slot_attempt_id: UUID,
+) -> UUID | None:
+    """Atomically flip `sections[slug]` from failed -> running with a new
+    attempt_id, iff the slot's current attempt_id still equals
+    `prior_slot_attempt_id`.
+
+    The predicate serializes concurrent Retry clicks: the second caller
+    reads the just-rotated attempt_id (not `prior_slot_attempt_id`) and
+    its UPDATE affects 0 rows. The caller maps that to a 409
+    `concurrent_retry_already_claimed`.
+
+    Returns the newly minted slot `attempt_id` on success, or None on CAS
+    failure (stale prior, state no longer 'failed', or job row removed).
+    """
+    new_slot_attempt = uuid4()
+    now = datetime.now(UTC)
+    slot = SectionSlot(
+        state=SectionState.RUNNING,
+        attempt_id=new_slot_attempt,
+        started_at=now,
+    )
+    async with db.acquire() as conn:
+        result = await conn.execute(
+            _RETRY_CLAIM_SQL,
+            job_id,
+            slug.value,
+            _dump_slot(slot),
+            str(prior_slot_attempt_id),
+        )
+    return new_slot_attempt if _rowcount(result) == 1 else None
+
+
 async def mark_slot_done(
     db: Any,
     job_id: UUID,
@@ -237,5 +309,6 @@ __all__ = [
     "claim_slot",
     "mark_slot_done",
     "mark_slot_failed",
+    "retry_claim_slot",
     "write_slot",
 ]

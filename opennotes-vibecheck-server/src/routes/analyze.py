@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -47,11 +48,13 @@ from src.analyses.schemas import (
     PageKind,
     SectionSlot,
     SectionSlug,
+    SectionState,
     SidebarPayload,
 )
 from src.cache.scrape_cache import canonical_cache_key
 from src.config import get_settings
-from src.jobs.enqueue import enqueue_job
+from src.jobs.enqueue import enqueue_job, enqueue_section_retry
+from src.jobs.slots import retry_claim_slot
 from src.monitoring import get_logger
 from src.utils.url_security import InvalidURL
 
@@ -702,10 +705,205 @@ async def poll(job_id: UUID, request: Request) -> JobState:
     return _row_to_job_state(row)
 
 
+# =========================================================================
+# POST /api/analyze/{job_id}/retry/{slug} — section retry (TASK-1473.13)
+# =========================================================================
+#
+# Retry is a slot-scoped rotation: the public handler verifies the gate
+# (job terminal + slot failed + utterances exist), CAS-flips the slot via
+# `retry_claim_slot`, and enqueues a per-section Cloud Task. The heavy
+# work happens in the internal worker target
+# (`/_internal/jobs/{job_id}/sections/{slug}/run`).
+#
+# Rate limiting shares the poll endpoint's composite (ip, job_id) key so
+# a client that mashes Retry doesn't starve its own poll budget on a
+# different job. We use slowapi's `@limiter.limit` decorator with the
+# same `_ip_and_job_id_key` key function as the GET poll bucket — both
+# limits are per-hour with the configured POST budget so retry clicks
+# count against the same bucket as fresh submits.
+#
+# Error-code slugs (stable for frontend branching, no string-matching):
+#   not_found                               -> 404 (unknown job_id)
+#   can_only_retry_after_extraction_succeeds -> 409 (no utterances)
+#   cannot_retry_while_running               -> 409 (job is pending/extracting/analyzing)
+#   slot_not_in_retryable_state              -> 409 (slot missing or not 'failed')
+#   concurrent_retry_already_claimed         -> 409 (CAS lost to a concurrent click)
+#   internal                                 -> 500 (post-CAS enqueue failure)
+
+
+class RetryResponse(BaseModel):
+    """202 handoff payload for a successful retry CAS."""
+
+    job_id: UUID
+    slug: SectionSlug
+    slot_attempt_id: UUID
+
+
+_LOAD_RETRY_STATE_SQL = """
+SELECT
+    j.status,
+    j.sections -> $2::text AS slot,
+    EXISTS (
+        SELECT 1 FROM vibecheck_job_utterances u WHERE u.job_id = j.job_id
+    ) AS has_utterances
+FROM vibecheck_jobs j
+WHERE j.job_id = $1
+"""
+
+
+async def _mark_slot_failed_internal(
+    pool: Any,
+    job_id: UUID,
+    slug: SectionSlug,
+    slot_attempt: UUID,
+    *,
+    error_code: str,
+    error: str,
+) -> None:
+    """Revert a just-claimed retry slot to `failed` after an enqueue failure.
+
+    The retry handler's CAS already made this worker the sole owner of the
+    slot; we can UPDATE without re-checking attempt_id. We DO restore the
+    job's status to `failed` so the poll endpoint doesn't appear to hang
+    in `analyzing` forever while no Cloud Task was published.
+    """
+    now = datetime.now(UTC)
+    slot = SectionSlot(
+        state=SectionState.FAILED,
+        attempt_id=slot_attempt,
+        error=error,
+        finished_at=now,
+    )
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE vibecheck_jobs
+            SET sections = sections || jsonb_build_object($2::text, $3::jsonb),
+                status = 'failed',
+                error_code = $4,
+                error_message = $5,
+                finished_at = now(),
+                updated_at = now()
+            WHERE job_id = $1
+            """,
+            job_id,
+            slug.value,
+            json.dumps(slot.model_dump(mode="json")),
+            error_code,
+            error,
+        )
+
+
+@router.post(
+    "/analyze/{job_id}/retry/{slug}",
+    status_code=202,
+    response_model=RetryResponse,
+)
+@limiter.limit(_rate_limit_value, key_func=_ip_and_job_id_key)
+async def retry_section(
+    request: Request, job_id: UUID, slug: SectionSlug
+) -> Any:
+    """Retry one failed slot of a terminal job.
+
+    Gate order (strict — each step assumes the prior one passed):
+      1. Job must exist (404 otherwise).
+      2. Utterances must have been extracted (409 otherwise — retry is
+         meaningless if extraction itself failed; the user should resubmit).
+      3. Job status must be terminal (`done`/`failed`) — running phases
+         get 409 `cannot_retry_while_running`.
+      4. The requested slot must exist and be in `failed` state.
+      5. CAS on the slot's prior attempt_id; a concurrent click loses
+         with 409 `concurrent_retry_already_claimed`.
+      6. Post-CAS enqueue. On failure revert the slot to `failed` and
+         flip the job back to `failed/internal` — the user sees a stable
+         error card instead of a phantom `analyzing` state.
+    """
+    pool = _get_db_pool(request)
+    settings = get_settings()
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(_LOAD_RETRY_STATE_SQL, job_id, slug.value)
+
+    if row is None:
+        return _error_response(404, "not_found", "job not found")
+
+    has_utterances = bool(row["has_utterances"])
+    if not has_utterances:
+        return _error_response(
+            409,
+            "can_only_retry_after_extraction_succeeds",
+            "job has no utterances; resubmit the URL instead of retrying a slot",
+        )
+
+    status_raw = row["status"]
+    if status_raw not in ("done", "failed"):
+        return _error_response(
+            409,
+            "cannot_retry_while_running",
+            f"job status={status_raw}; retry only after done/failed",
+        )
+
+    slot_raw = row["slot"]
+    slot_data = (
+        json.loads(slot_raw)
+        if isinstance(slot_raw, str)
+        else (dict(slot_raw) if slot_raw is not None else None)
+    )
+    if slot_data is None or slot_data.get("state") != "failed":
+        return _error_response(
+            409,
+            "slot_not_in_retryable_state",
+            "target slot is not in 'failed' state",
+        )
+
+    try:
+        prior_slot_attempt_id = UUID(str(slot_data["attempt_id"]))
+    except (KeyError, ValueError, TypeError):
+        # Defensive: a slot row without a parseable attempt_id cannot CAS.
+        return _error_response(
+            409, "slot_not_in_retryable_state", "slot missing attempt_id"
+        )
+
+    new_slot_attempt = await retry_claim_slot(
+        pool, job_id, slug, prior_slot_attempt_id
+    )
+    if new_slot_attempt is None:
+        return _error_response(
+            409,
+            "concurrent_retry_already_claimed",
+            "another retry click already rotated this slot",
+        )
+
+    try:
+        await enqueue_section_retry(job_id, slug, new_slot_attempt, settings)
+    except Exception as exc:
+        logger.warning(
+            "enqueue_section_retry failed for job %s slug %s: %s",
+            job_id,
+            slug.value,
+            exc,
+        )
+        await _mark_slot_failed_internal(
+            pool,
+            job_id,
+            slug,
+            new_slot_attempt,
+            error_code="internal",
+            error="enqueue failed",
+        )
+        return _error_response(500, "internal", "enqueue failed")
+
+    return RetryResponse(
+        job_id=job_id, slug=slug, slot_attempt_id=new_slot_attempt
+    )
+
+
 __all__ = [
     "AnalyzeRequest",
     "AnalyzeResponse",
+    "RetryResponse",
     "enqueue_job",
+    "enqueue_section_retry",
     "limiter",
     "poll_limiter",
     "router",

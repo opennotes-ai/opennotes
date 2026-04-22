@@ -32,6 +32,7 @@ from uuid import UUID
 from src.monitoring import get_logger
 
 if TYPE_CHECKING:
+    from src.analyses.schemas import SectionSlug
     from src.config import Settings
 
 logger = get_logger(__name__)
@@ -169,4 +170,99 @@ async def enqueue_job(
     await client.create_task(request={"parent": parent, "task": task})
 
 
-__all__ = ["build_task_name", "enqueue_job"]
+def build_section_task_name(
+    job_id: UUID, slug: SectionSlug, expected_slot_attempt_id: UUID
+) -> str:
+    """Compose the Cloud Tasks `name` for a (job, slug, slot_attempt) triple.
+
+    Including `slug` + `expected_slot_attempt_id` ensures that retries of
+    *different* slots on the same job — or retries of the same slot with
+    different attempts — publish distinct task names. Cloud Tasks' dedup
+    window rejects duplicate names, which gives us idempotency for free:
+    double-clicking Retry before the first enqueue returns publishes
+    exactly one task. The winning CAS in `retry_claim_slot` guarantees
+    only one caller holds the "current" slot_attempt_id, so this name is
+    stable for the duration of the retry's Cloud Tasks retry budget.
+    """
+    return f"vibecheck-retry-{job_id}-{slug.value}-{expected_slot_attempt_id}"
+
+
+def _section_target_url(
+    settings: Settings, job_id: UUID, slug: SectionSlug
+) -> str:
+    """Compose the internal section-retry worker URL Cloud Tasks POSTs to."""
+    base = settings.VIBECHECK_SERVER_URL.rstrip("/")
+    return f"{base}/_internal/jobs/{job_id}/sections/{slug.value}/run"
+
+
+async def enqueue_section_retry(
+    job_id: UUID,
+    slug: SectionSlug,
+    expected_slot_attempt_id: UUID,
+    settings: Settings,
+) -> None:
+    """Publish a Cloud Task that will invoke the section-retry worker target.
+
+    Body payload: `{"job_id": ..., "slug": ..., "expected_slot_attempt_id": ...}`.
+    The worker CAS-claims the slot on `expected_slot_attempt_id`; a
+    stale redelivery (newer retry already rotated the slot) hits a 200
+    no-op path.
+    """
+    _require_settings(settings)
+
+    try:
+        client = _get_async_client()
+    except ImportError as exc:  # pragma: no cover — prod-only path
+        raise RuntimeError(
+            "google-cloud-tasks is not installed; enqueue_section_retry cannot publish"
+        ) from exc
+
+    parent = client.queue_path(
+        settings.VIBECHECK_TASKS_PROJECT,
+        settings.VIBECHECK_TASKS_LOCATION,
+        settings.VIBECHECK_TASKS_QUEUE,
+    )
+    task_name = build_section_task_name(job_id, slug, expected_slot_attempt_id)
+    fq_name = f"{parent}/tasks/{task_name}"
+    target_url = _section_target_url(settings, job_id, slug)
+
+    body = json.dumps(
+        {
+            "job_id": str(job_id),
+            "slug": slug.value,
+            "expected_slot_attempt_id": str(expected_slot_attempt_id),
+        }
+    ).encode("utf-8")
+
+    task: dict[str, Any] = {
+        "name": fq_name,
+        "http_request": {
+            "http_method": "POST",
+            "url": target_url,
+            "headers": {"Content-Type": "application/json"},
+            "body": body,
+            "oidc_token": {
+                "service_account_email": settings.VIBECHECK_TASKS_ENQUEUER_SA,
+                "audience": settings.VIBECHECK_SERVER_URL,
+            },
+        },
+    }
+
+    logger.info(
+        "enqueue_section_retry publishing task_name=%s job_id=%s slug=%s slot_attempt=%s target=%s",
+        task_name,
+        job_id,
+        slug.value,
+        expected_slot_attempt_id,
+        target_url,
+    )
+
+    await client.create_task(request={"parent": parent, "task": task})
+
+
+__all__ = [
+    "build_section_task_name",
+    "build_task_name",
+    "enqueue_job",
+    "enqueue_section_retry",
+]

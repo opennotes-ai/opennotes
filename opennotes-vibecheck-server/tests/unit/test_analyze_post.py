@@ -600,3 +600,88 @@ async def test_dedup_response_surfaces_actual_job_status(
     assert body["status"] == "extracting"
     assert body["cached"] is False
     assert enqueue_mock.await_count == 0
+
+
+# --- W4-Fix-D: POST rate-limit + single-flight concurrency -----------------
+# These tests restore coverage that was deleted along with the legacy
+# `tests/routes/test_analyze.py`. They exercise the two guards that bound
+# blast radius on /api/analyze: the slowapi per-IP bucket (429 on burst)
+# and the advisory-lock single-flight dedup (one row, one enqueue when
+# many POSTs for the same URL race).
+
+
+async def test_post_rate_limit_returns_429_on_burst(
+    client: httpx.AsyncClient,
+    db_pool: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    enqueue_mock: AsyncMock,
+) -> None:
+    """Exceeding the per-IP hour bucket on POST /api/analyze returns 429.
+
+    slowapi shares a single in-memory bucket keyed on the remote address,
+    which is `127.0.0.1` under ASGITransport. Configure a tight budget
+    (2/hour) so the third POST in the same test run trips the limiter
+    deterministically, and assert it does NOT mint a job row or publish
+    a Cloud Task — the rate-limit gate short-circuits before the handler
+    runs. Restores W4-Fix-D coverage lost when `tests/routes/test_analyze.py`
+    was removed.
+    """
+    monkeypatch.setenv("RATE_LIMIT_PER_IP_PER_HOUR", "2")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    analyze_route.limiter.reset()
+
+    first = await client.post(
+        "/api/analyze", json={"url": "https://example.com/burst-a"}
+    )
+    second = await client.post(
+        "/api/analyze", json={"url": "https://example.com/burst-b"}
+    )
+    assert first.status_code == 202, first.text
+    assert second.status_code == 202, second.text
+
+    third = await client.post(
+        "/api/analyze", json={"url": "https://example.com/burst-c"}
+    )
+    assert third.status_code == 429, third.text
+    # The rejected request must not have touched the DB or enqueued work.
+    assert (
+        await _count_jobs(db_pool, normalized_url="https://example.com/burst-c")
+        == 0
+    )
+    # Only the two successful POSTs enqueued — the rate-limited third did not.
+    assert enqueue_mock.await_count == 2
+
+    get_settings.cache_clear()
+
+
+async def test_concurrent_posts_for_same_url_all_return_same_job_id(
+    client: httpx.AsyncClient,
+    db_pool: Any,
+    enqueue_mock: AsyncMock,
+) -> None:
+    """Three concurrent POSTs for the same URL share one job_id and one
+    enqueue. The advisory-lock single-flight guard plus the in-flight dedup
+    branch guarantee that only one INSERT wins; concurrent losers come back
+    with the winner's job_id rather than creating parallel rows.
+    """
+    url = "https://example.com/single-flight-target"
+
+    results = await asyncio.gather(
+        client.post("/api/analyze", json={"url": url}),
+        client.post("/api/analyze", json={"url": url}),
+        client.post("/api/analyze", json={"url": url}),
+    )
+    for r in results:
+        assert r.status_code == 202, r.text
+
+    bodies = [r.json() for r in results]
+    job_ids = {b["job_id"] for b in bodies}
+    assert len(job_ids) == 1, (
+        f"concurrent POSTs must dedup to one job_id, got {job_ids}"
+    )
+
+    # Exactly one DB row + exactly one enqueue.
+    assert await _count_jobs(db_pool, normalized_url=url) == 1
+    assert enqueue_mock.await_count == 1

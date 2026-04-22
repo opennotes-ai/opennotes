@@ -49,7 +49,7 @@ from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings
 from src.firecrawl_client import FirecrawlClient
 from src.jobs.finalize import maybe_finalize_job
-from src.jobs.slots import mark_slot_failed, write_slot
+from src.jobs.slots import mark_slot_done, mark_slot_failed, write_slot
 from src.monitoring import get_logger
 from src.utils.url_security import InvalidURL, revalidate_redirect_target
 from src.utterances.extractor import extract_utterances
@@ -630,6 +630,151 @@ async def run_job(
             logger.warning("heartbeat cancellation raised: %s", exc)
 
 
+# ---------------------------------------------------------------------------
+# Section-retry entrypoint (TASK-1473.13).
+# ---------------------------------------------------------------------------
+
+
+_LOAD_JOB_ATTEMPT_SQL = """
+SELECT attempt_id, sections -> $2::text AS slot
+FROM vibecheck_jobs
+WHERE job_id = $1
+"""
+
+
+async def _load_job_attempt_and_slot(
+    pool: Any,
+    job_id: UUID,
+    slug: SectionSlug,
+) -> tuple[UUID, dict[str, Any]] | None:
+    """Read the job's current `attempt_id` and the target slot JSON.
+
+    Returns None when the job row is missing or the slot isn't present —
+    the caller treats that as a stale redelivery and returns 200 no-op.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(_LOAD_JOB_ATTEMPT_SQL, job_id, slug.value)
+    if row is None:
+        return None
+    slot_raw = row["slot"]
+    if slot_raw is None:
+        return None
+    import json as _json  # noqa: PLC0415
+
+    slot = (
+        _json.loads(slot_raw)
+        if isinstance(slot_raw, str)
+        else dict(slot_raw)
+    )
+    if not isinstance(row["attempt_id"], UUID):
+        return None
+    return row["attempt_id"], slot
+
+
+async def run_section_retry(
+    pool: Any,
+    job_id: UUID,
+    slug: SectionSlug,
+    expected_slot_attempt_id: UUID,
+    settings: Settings,
+) -> RunResult:
+    """Drive one section-retry Cloud Tasks delivery.
+
+    Semantics:
+      1. Load `(job.attempt_id, slot)`. Missing job or missing slot → 200
+         idempotent no-op (a prune or re-submit happened after enqueue).
+      2. If the slot's current attempt_id no longer matches
+         `expected_slot_attempt_id`, or the slot is no longer `running`,
+         a newer retry already claimed the slot. Return 200 no-op.
+      3. Run the per-slug analysis. For this ticket the analysis stubs
+         out to `_empty_section_data` (same shape the orchestrator's
+         original fan-out uses) so `maybe_finalize_job` can assemble a
+         valid SidebarPayload. TASK-1473.13 follow-up wires real services.
+      4. `mark_slot_done` with `expected_task_attempt=job.attempt_id`.
+         If the CAS fails (stale job attempt, or job moved terminal out
+         from under us), we return 200 no-op — the newer owner will
+         handle finalization.
+      5. `maybe_finalize_job(expected_task_attempt=job.attempt_id)`. If
+         every slot is now `done`, the sidebar_payload cache is UPSERTed.
+      6. Unclassified exceptions are treated as transient: write a failed
+         slot (best-effort) and return 503 so Cloud Tasks retries.
+    """
+    loaded = await _load_job_attempt_and_slot(pool, job_id, slug)
+    if loaded is None:
+        logger.info(
+            "section-retry: job or slot missing for job=%s slug=%s — no-op",
+            job_id,
+            slug.value,
+        )
+        return RunResult(status_code=200)
+    task_attempt, slot = loaded
+
+    slot_state = slot.get("state")
+    slot_attempt_str = str(slot.get("attempt_id") or "")
+    if slot_state != "running" or slot_attempt_str != str(expected_slot_attempt_id):
+        logger.info(
+            "section-retry: stale slot for job=%s slug=%s expected=%s "
+            "current=%s state=%s — no-op",
+            job_id,
+            slug.value,
+            expected_slot_attempt_id,
+            slot_attempt_str,
+            slot_state,
+        )
+        return RunResult(status_code=200)
+
+    try:
+        data = _empty_section_data(slug)
+        rows = await mark_slot_done(
+            pool,
+            job_id,
+            slug,
+            expected_slot_attempt_id,
+            data,
+            expected_task_attempt=task_attempt,
+        )
+        if rows == 0:
+            # The slot's write-envelope guard (job.attempt_id, job.status,
+            # or slot.state) failed. Treat as stale: the sweeper or a
+            # fresher attempt owns the row now.
+            logger.info(
+                "section-retry: mark_slot_done CAS failed for job=%s slug=%s — no-op",
+                job_id,
+                slug.value,
+            )
+            return RunResult(status_code=200)
+
+        await maybe_finalize_job(
+            pool, job_id, expected_task_attempt=task_attempt
+        )
+        return RunResult(status_code=200)
+    except Exception as exc:
+        logger.log(
+            logging.ERROR,
+            "section-retry: unclassified failure for job=%s slug=%s",
+            job_id,
+            slug.value,
+            exc_info=True,
+        )
+        try:
+            await mark_slot_failed(
+                pool,
+                job_id,
+                slug,
+                expected_slot_attempt_id,
+                error=str(exc),
+                expected_task_attempt=task_attempt,
+            )
+        except Exception as inner:  # noqa: BLE001 — best-effort cleanup
+            logger.warning(
+                "section-retry: mark_slot_failed also raised for job=%s slug=%s: %s",
+                job_id,
+                slug.value,
+                inner,
+            )
+        return RunResult(status_code=503)
+
+
 __all__ = [
     "HEARTBEAT_INTERVAL_SEC",
     "HandlerSuperseded",
@@ -637,4 +782,5 @@ __all__ = [
     "TerminalError",
     "TransientError",
     "run_job",
+    "run_section_retry",
 ]
