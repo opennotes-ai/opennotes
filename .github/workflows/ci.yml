@@ -21,6 +21,7 @@ jobs:
       discord: ${{ steps.filter.outputs.discord }}
       playground: ${{ steps.filter.outputs.playground }}
       platform: ${{ steps.filter.outputs.platform }}
+      vibecheck: ${{ steps.filter.outputs.vibecheck }}
       shared: ${{ steps.filter.outputs.shared }}
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +41,9 @@ jobs:
               - 'packages/**'
             platform:
               - 'opennotes-platform/**'
+              - 'packages/**'
+            vibecheck:
+              - 'opennotes-vibecheck-web/**'
               - 'packages/**'
             shared:
               - '.github/workflows/**'
@@ -259,6 +263,31 @@ jobs:
 
       - name: Run TypeScript compiler
         run: pnpm --filter opennotes-platform run type-check
+
+  lint-vibecheck:
+    name: Lint TypeScript (opennotes-vibecheck-web)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.vibecheck == 'true' || needs.detect-changes.outputs.shared == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies (workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run TypeScript compiler
+        run: pnpm --filter opennotes-vibecheck-web run type-check
 
   unit-tests-python:
     name: Unit Tests (opennotes-server)
@@ -809,6 +838,31 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_mock-key-for-ci-testing"
         run: pnpm --filter opennotes-playground run build
 
+  test-design-system:
+    name: Test Design System Contracts
+    needs: detect-changes
+    if: needs.detect-changes.outputs.playground == 'true' || needs.detect-changes.outputs.platform == 'true' || needs.detect-changes.outputs.vibecheck == 'true' || needs.detect-changes.outputs.shared == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies (workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run token contract tests
+        run: pnpm --filter @opennotes/tokens run test
+
   test-platform:
     name: Test & Build (opennotes-platform)
     needs: detect-changes
@@ -839,6 +893,36 @@ jobs:
           VITE_SUPABASE_URL: "https://mock-project.supabase.co"
           VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_mock-key-for-ci-testing"
         run: pnpm --filter opennotes-platform run build
+
+  test-vibecheck:
+    name: Test & Build (opennotes-vibecheck-web)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.vibecheck == 'true' || needs.detect-changes.outputs.shared == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies (workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm --filter opennotes-vibecheck-web run test
+
+      - name: Build
+        env:
+          VIBECHECK_SERVER_URL: "https://mock-vibecheck-server.run.app"
+        run: pnpm --filter opennotes-vibecheck-web run build
 
   security-scan-python:
     name: Security Scan Python
@@ -1049,7 +1133,7 @@ jobs:
 
   ci-success:
     name: CI Success
-    needs: [pre-commit, lint-python, lint-typescript, lint-playground, lint-platform, unit-tests-python, integration-tests-python, test-typescript, test-playground, test-platform, validate-schema, validate-schema-consistency, security-scan-python, security-scan-typescript, security-scan-playground, security-scan-platform, validate-api-endpoints]
+    needs: [pre-commit, lint-python, lint-typescript, lint-playground, lint-platform, lint-vibecheck, unit-tests-python, integration-tests-python, test-typescript, test-playground, test-design-system, test-platform, test-vibecheck, validate-schema, validate-schema-consistency, security-scan-python, security-scan-typescript, security-scan-playground, security-scan-platform, validate-api-endpoints]
     if: always()
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15

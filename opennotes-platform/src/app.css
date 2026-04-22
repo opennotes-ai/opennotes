@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@opennotes/tokens";
+@import "@opennotes/tokens/fonts-cdn.css";
 @plugin "@tailwindcss/typography";
 
 @source "../../packages/ui/src";
