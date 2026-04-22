@@ -21,6 +21,18 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_IP_PER_HOUR: int = 10
     CACHE_TTL_HOURS: int = 72
 
+    # TASK-1473.14 — GET /api/analyze/{job_id} poll rate limit.
+    # Two separate buckets (slowapi applies both via stacked decorators):
+    #   RATE_LIMIT_POLL_BURST is a per-second cap so a runaway client
+    #   cannot flood the DB in a single tight loop.
+    #   RATE_LIMIT_POLL_SUSTAINED is a per-minute cap that bounds
+    #   cumulative load while still allowing the progressive-fill UI
+    #   to poll at ~500ms cadence for the full job lifetime.
+    # Both buckets are keyed on (ip, job_id) so distinct jobs don't
+    # share a budget.
+    RATE_LIMIT_POLL_BURST: int = 10
+    RATE_LIMIT_POLL_SUSTAINED: int = 300
+
 
 @lru_cache
 def get_settings() -> Settings:

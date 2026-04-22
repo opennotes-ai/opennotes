@@ -41,7 +41,13 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from src.analyses.schemas import JobStatus
+from src.analyses.schemas import (
+    JobState,
+    JobStatus,
+    SectionSlot,
+    SectionSlug,
+    SidebarPayload,
+)
 from src.config import get_settings
 from src.jobs.enqueue import enqueue_job
 from src.monitoring import get_logger
@@ -384,10 +390,220 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
     return response
 
 
+# =========================================================================
+# GET /api/analyze/{job_id} — polling endpoint (TASK-1473.14)
+# =========================================================================
+#
+# Pure read: single SELECT with explicit projection, no mutation. The handler
+# assembles a `JobState` from the row and a server-suggested `next_poll_ms`
+# hint so the client's polling cadence adapts to lifecycle stage.
+#
+# Rate limiting uses a second Limiter instance keyed on the composite
+# `(ip, job_id)` tuple so a client that polls one job aggressively does not
+# starve their polls of another. Both a per-second burst and a per-minute
+# sustained budget apply (slowapi stacks the decorators).
+#
+# We intentionally do NOT touch orphan detection here — pg_cron sweeps
+# those via `vibecheck_sweep_orphan_jobs()`. The GET path is read-only so
+# polling never produces writes that could race the sweeper.
+
+
+def _ip_and_job_id_key(request: Request) -> str:
+    """Composite slowapi key so the burst budget scopes to (ip, job_id)."""
+    raw_job = request.path_params.get("job_id", "")
+    return f"{get_remote_address(request)}:{raw_job}"
+
+
+# A dedicated Limiter instance so the POST limiter's storage does not
+# cross-contaminate the GET budget. Storage defaults to in-process memory,
+# which matches slowapi's single-process Cloud Run deployment model.
+#
+# We construct our own `MovingWindowRateLimiter` backed by an in-memory
+# storage so the poll handler can emit a Retry-After header on reject
+# without tangling with slowapi's header-injection path (which assumes a
+# Response-typed handler return and conflicts with pydantic response
+# models). The Limiter wrapper is retained only for ergonomic storage
+# construction — the actual check happens inline via `_poll_rate_check`.
+poll_limiter = Limiter(key_func=_ip_and_job_id_key)
+
+from limits import parse as _parse_limit  # noqa: E402  — kept near the consumers
+from limits.aio.storage import MemoryStorage as _AsyncMemoryStorage  # noqa: E402
+from limits.aio.strategies import (  # noqa: E402
+    MovingWindowRateLimiter as _AsyncMovingWindowRateLimiter,
+)
+
+_poll_storage = _AsyncMemoryStorage()
+_poll_strategy = _AsyncMovingWindowRateLimiter(_poll_storage)
+
+
+def _poll_burst_limit_str() -> str:
+    return f"{get_settings().RATE_LIMIT_POLL_BURST}/second"
+
+
+def _poll_sustained_limit_str() -> str:
+    return f"{get_settings().RATE_LIMIT_POLL_SUSTAINED}/minute"
+
+
+async def _poll_rate_check(request: Request) -> None:
+    """Enforce the composite (ip, job_id) rate budget.
+
+    Raises `HTTPException(429, headers={"Retry-After": "1"})` when either
+    the per-second burst or the per-minute sustained budget is exceeded.
+    Both budgets share a single `(ip, job_id)` key so a burst hit
+    triggers regardless of which window the client is inside.
+
+    The inline implementation (rather than `@poll_limiter.limit`) is
+    driven by slowapi's header-injection wrapper: it insists the
+    decorated handler returns a starlette `Response` and also forces
+    headers onto the success path. Doing the check here keeps the
+    handler free to return a pydantic model and keeps Retry-After on
+    the 429 only.
+    """
+    key = _ip_and_job_id_key(request)
+    for limit_str in (_poll_burst_limit_str(), _poll_sustained_limit_str()):
+        item = _parse_limit(limit_str)
+        allowed = await _poll_strategy.hit(item, key)
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail={"error_code": "rate_limited", "message": "poll rate exceeded"},
+                headers={"Retry-After": "1"},
+            )
+
+
+def poll_rate_reset() -> None:
+    """Drop all in-process poll rate state. Used by tests between cases."""
+    try:
+        _poll_storage.storage.clear()  # type: ignore[attr-defined]
+    except AttributeError:
+        pass
+    try:
+        _poll_storage.events.clear()  # type: ignore[attr-defined]
+    except AttributeError:
+        pass
+
+
+# next_poll_ms ladder (spec AC#4):
+#   pending   -> 500   (extraction has not started; fast re-poll)
+#   extracting-> 500   (keep cadence tight during the short extract phase)
+#   analyzing -> 1500  (long phase; back off to reduce DB load)
+#   done      -> 0     (terminal — client stops polling)
+#   failed    -> 0     (terminal — client stops polling)
+_POLL_DELAY_BY_STATUS: dict[JobStatus, int] = {
+    JobStatus.PENDING: 500,
+    JobStatus.EXTRACTING: 500,
+    JobStatus.ANALYZING: 1500,
+    JobStatus.DONE: 0,
+    JobStatus.FAILED: 0,
+}
+
+# Explicit projection — never SELECT * on this read path. See brief:
+# the GET endpoint must pick exact columns so adding a new column to
+# vibecheck_jobs doesn't silently widen the response and leak fields.
+_SELECT_JOB_SQL = """
+SELECT
+    job_id,
+    url,
+    status,
+    attempt_id,
+    error_code,
+    error_message,
+    error_host,
+    sections,
+    sidebar_payload,
+    cached,
+    created_at,
+    updated_at
+FROM vibecheck_jobs
+WHERE job_id = $1
+"""
+
+
+def _parse_jsonb(raw: Any) -> Any:
+    """asyncpg may hand back a JSON string or a pre-decoded value."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return json.loads(raw)
+    return raw
+
+
+def _parse_sections(raw: Any) -> dict[SectionSlug, SectionSlot]:
+    """Parse the `sections` JSONB into typed SectionSlot per known slug.
+
+    Unknown keys are dropped silently — the schema anchor only emits the
+    seven documented slugs and the frontend must not branch on ad-hoc
+    payloads that might appear mid-migration.
+    """
+    decoded = _parse_jsonb(raw) or {}
+    if not isinstance(decoded, dict):
+        return {}
+    out: dict[SectionSlug, SectionSlot] = {}
+    for slug in SectionSlug:
+        entry = decoded.get(slug.value)
+        if entry is None:
+            continue
+        out[slug] = SectionSlot.model_validate(entry)
+    return out
+
+
+def _row_to_job_state(row: Any) -> JobState:
+    status = JobStatus(row["status"])
+    sidebar_raw = _parse_jsonb(row["sidebar_payload"])
+    sidebar_payload = (
+        SidebarPayload.model_validate(sidebar_raw)
+        if sidebar_raw is not None
+        else None
+    )
+    return JobState(
+        job_id=row["job_id"],
+        url=row["url"],
+        status=status,
+        attempt_id=row["attempt_id"],
+        error_code=row["error_code"],
+        error_message=row["error_message"],
+        error_host=row["error_host"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        sections=_parse_sections(row["sections"]),
+        sidebar_payload=sidebar_payload,
+        cached=bool(row["cached"]),
+        next_poll_ms=_POLL_DELAY_BY_STATUS[status],
+    )
+
+
+@router.get(
+    "/analyze/{job_id}",
+    response_model=JobState,
+    summary="Poll an async vibecheck job",
+)
+async def poll(job_id: UUID, request: Request) -> JobState:
+    """Read-only polling endpoint.
+
+    Returns the current `JobState` including the `sections` dict (per-slot
+    progress), `sidebar_payload` once terminal, and a `next_poll_ms` hint.
+    404 when `job_id` is not found. Rate-limited to
+    `RATE_LIMIT_POLL_BURST` req/s + `RATE_LIMIT_POLL_SUSTAINED` req/min
+    per `(ip, job_id)` tuple — exceeding either returns 429 with a
+    `Retry-After` header.
+    """
+    await _poll_rate_check(request)
+    pool = _get_db_pool(request)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(_SELECT_JOB_SQL, job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error_code": "not_found", "message": "job not found"},
+        )
+    return _row_to_job_state(row)
+
+
 __all__ = [
     "AnalyzeRequest",
     "AnalyzeResponse",
     "enqueue_job",
     "limiter",
+    "poll_limiter",
     "router",
 ]
