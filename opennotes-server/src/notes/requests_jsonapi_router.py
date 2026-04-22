@@ -37,6 +37,7 @@ from src.auth.community_dependencies import (
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.ownership_dependencies import verify_request_ownership
 from src.auth.permissions import is_service_account
+from src.auth.platform_claims import get_request_platform
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
@@ -554,7 +555,7 @@ async def create_request_jsonapi(
         community_server = await get_community_server_by_platform_id(
             db=db,
             community_server_id=attrs.community_server_id,
-            platform="discord",
+            platform=get_request_platform(request),
             auto_create=True,
         )
         if not community_server:

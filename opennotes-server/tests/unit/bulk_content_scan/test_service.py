@@ -182,7 +182,11 @@ class TestProcessMessages:
         self, mock_session, mock_embedding_service, mock_redis
     ):
         """process_messages should accept a single BulkScanMessage."""
-        from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
+        from src.bulk_content_scan.schemas import (
+            BulkScanMessage,
+            FlaggedMessage,
+            RelevanceOutcome,
+        )
         from src.bulk_content_scan.service import BulkContentScanService
         from src.fact_checking.embedding_schemas import (
             FactCheckMatch,
@@ -214,6 +218,9 @@ class TestProcessMessages:
             embedding_service=mock_embedding_service,
             redis_client=mock_redis,
         )
+        service._check_relevance_with_llm = AsyncMock(
+            return_value=(RelevanceOutcome.RELEVANT, "Relevant to test claim")
+        )
 
         scan_id = uuid4()
         msg = BulkScanMessage(
@@ -242,7 +249,7 @@ class TestProcessMessages:
         self, mock_session, mock_embedding_service, mock_redis
     ):
         """process_messages should accept a sequence of messages."""
-        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.schemas import BulkScanMessage, RelevanceOutcome
         from src.bulk_content_scan.service import BulkContentScanService
         from src.fact_checking.embedding_schemas import (
             FactCheckMatch,
@@ -273,6 +280,9 @@ class TestProcessMessages:
             session=mock_session,
             embedding_service=mock_embedding_service,
             redis_client=mock_redis,
+        )
+        service._check_relevance_with_llm = AsyncMock(
+            return_value=(RelevanceOutcome.RELEVANT, "Relevant to test claim")
         )
 
         scan_id = uuid4()
@@ -344,7 +354,7 @@ class TestProcessMessages:
     ):
         """process_messages should accept scan_types parameter."""
         from src.bulk_content_scan.scan_types import ScanType
-        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.schemas import BulkScanMessage, RelevanceOutcome
         from src.bulk_content_scan.service import BulkContentScanService
         from src.fact_checking.embedding_schemas import (
             FactCheckMatch,
@@ -375,6 +385,9 @@ class TestProcessMessages:
             session=mock_session,
             embedding_service=mock_embedding_service,
             redis_client=mock_redis,
+        )
+        service._check_relevance_with_llm = AsyncMock(
+            return_value=(RelevanceOutcome.RELEVANT, "Relevant to test claim")
         )
 
         scan_id = uuid4()
@@ -1431,7 +1444,7 @@ class TestEmbeddingServiceErrorHandling:
         When the embedding service fails for one message, subsequent messages
         should still be processed.
         """
-        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.schemas import BulkScanMessage, RelevanceOutcome
         from src.bulk_content_scan.service import BulkContentScanService
         from src.fact_checking.embedding_schemas import (
             FactCheckMatch,
@@ -1470,6 +1483,9 @@ class TestEmbeddingServiceErrorHandling:
             session=mock_session,
             embedding_service=mock_embedding_service,
             redis_client=mock_redis,
+        )
+        service._check_relevance_with_llm = AsyncMock(
+            return_value=(RelevanceOutcome.RELEVANT, "Relevant to test claim")
         )
 
         scan_id = uuid4()
@@ -1697,7 +1713,7 @@ class TestIsFlaggedConsistencyWithFlaggedMessage:
         self, mock_session, mock_embedding_service, mock_redis
     ):
         """is_flagged should be True when _build_flagged_message succeeds."""
-        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.schemas import BulkScanMessage, RelevanceOutcome
         from src.bulk_content_scan.service import BulkContentScanService
         from src.fact_checking.embedding_schemas import (
             FactCheckMatch,
@@ -1730,6 +1746,9 @@ class TestIsFlaggedConsistencyWithFlaggedMessage:
             session=mock_session,
             embedding_service=mock_embedding_service,
             redis_client=mock_redis,
+        )
+        service._check_relevance_with_llm = AsyncMock(
+            return_value=(RelevanceOutcome.RELEVANT, "Relevant to test claim")
         )
 
         scan_id = uuid4()

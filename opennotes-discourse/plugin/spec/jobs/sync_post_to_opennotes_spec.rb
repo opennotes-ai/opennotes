@@ -59,6 +59,18 @@ RSpec.describe Jobs::SyncPostToOpennotes do
       expect(captured_body.dig(:data, :attributes, :community_server_id)).to eq(platform_slug)
     end
 
+    it "passes post author context for platform adapter headers" do
+      captured_kwargs = nil
+      allow(client).to receive(:post) do |*_args, **kwargs|
+        captured_kwargs = kwargs
+        { "data" => { "id" => "req-adapter-context" } }
+      end
+
+      described_class.new.execute(post_id: post.id)
+
+      expect(captured_kwargs[:user]).to eq(user)
+    end
+
     it "does not call CommunityServerResolver.community_server_uuid (avoids UUID being sent)" do
       expect(OpenNotes::CommunityServerResolver).not_to receive(:community_server_uuid)
       allow(client).to receive(:post).and_return({ "data" => { "id" => "req-no-resolver" } })
