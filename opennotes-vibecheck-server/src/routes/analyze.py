@@ -40,7 +40,7 @@ from src.analyses.schemas import (
 )
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
-from src.analyses.tone.flashpoint import detect_flashpoint
+from src.analyses.tone.flashpoint import detect_flashpoints_bulk
 from src.analyses.tone.scd import analyze_scd
 from src.cache.supabase_cache import SupabaseCache, normalize_url
 from src.config import Settings, get_settings
@@ -95,20 +95,14 @@ async def _safe_moderation_bulk(
         return [None for _ in utterances]
 
 
-async def _safe_flashpoint(
-    utterance: Utterance,
-    context: list[Utterance],
-    service: FlashpointDetectionService | None,
-) -> FlashpointMatch | None:
+async def _safe_flashpoint_bulk(
+    utterances: list[Utterance], settings: Settings
+) -> list[FlashpointMatch | None]:
     try:
-        return await detect_flashpoint(utterance, context, service)
+        return await detect_flashpoints_bulk(utterances, settings)
     except Exception as exc:
-        logger.warning(
-            "flashpoint failed for utterance_id=%s: %s",
-            utterance.utterance_id,
-            exc,
-        )
-        return None
+        logger.warning("bulk flashpoint detection failed: %s", exc)
+        return [None for _ in utterances]
 
 
 async def _safe_extract_claims_bulk(
@@ -246,19 +240,7 @@ async def _run_pipeline(
     subjective_task = _safe_subjective_bulk(utterances, settings)
     sentiment_task = _safe_sentiment(utterances, settings)
     scd_task = _safe_scd(utterances, settings)
-    # Flashpoint (DSPy) still per-utterance because it needs prior conversation
-    # context per call; with a small semaphore to cap bursts.
-    flashpoint_sem = asyncio.Semaphore(4)
-
-    async def _flashpoint_one(idx: int, u: Utterance) -> FlashpointMatch | None:
-        async with flashpoint_sem:
-            return await _safe_flashpoint(
-                u, _prior_context(utterances, idx), flashpoint_service
-            )
-
-    flashpoint_task = asyncio.gather(
-        *(_flashpoint_one(idx, u) for idx, u in enumerate(utterances))
-    )
+    flashpoint_task = _safe_flashpoint_bulk(utterances, settings)
 
     (
         moderation_results,

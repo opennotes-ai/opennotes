@@ -168,9 +168,9 @@ def _stub_all_analyses(
     moderation_mock = AsyncMock(return_value=moderation_bulk_return[:n])
     monkeypatch.setattr(analyze_route, "check_content_moderation_bulk", moderation_mock)
 
-    fp_iter = iter(flashpoint_matches + [None] * n)
-    flashpoint_mock = AsyncMock(side_effect=lambda u, c, s: next(fp_iter, None))
-    monkeypatch.setattr(analyze_route, "detect_flashpoint", flashpoint_mock)
+    flashpoint_bulk_return = flashpoint_matches + [None] * (n - len(flashpoint_matches))
+    flashpoint_mock = AsyncMock(return_value=flashpoint_bulk_return[:n])
+    monkeypatch.setattr(analyze_route, "detect_flashpoints_bulk", flashpoint_mock)
 
     extract_claims_mock = AsyncMock(
         return_value=extracted_claims_per_utt + [[] for _ in range(max(0, n - len(extracted_claims_per_utt)))]
@@ -211,7 +211,7 @@ def _stub_all_analyses(
     return {
         "extract_utterances": extract_mock,
         "moderation_bulk": moderation_mock,
-        "flashpoint": flashpoint_mock,
+        "flashpoint_bulk": flashpoint_mock,
         "extract_claims_bulk": extract_claims_mock,
         "dedupe": dedupe_mock,
         "subjective_bulk": subjective_mock,
@@ -260,8 +260,7 @@ class TestCacheMissRunsPipeline:
         assert mocks["moderation_bulk"].await_count == 1
         assert mocks["extract_claims_bulk"].await_count == 1
         assert mocks["subjective_bulk"].await_count == 1
-        # Flashpoint still per-utterance (needs per-call prior context).
-        assert mocks["flashpoint"].await_count == 4
+        assert mocks["flashpoint_bulk"].await_count == 1
         assert mocks["sentiment"].await_count == 1
         assert mocks["scd"].await_count == 1
         assert len(cache.put_calls) == 1

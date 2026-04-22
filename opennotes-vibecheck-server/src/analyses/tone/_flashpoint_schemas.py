@@ -21,6 +21,21 @@ class RiskLevel(StrEnum):
     DANGEROUS = "Dangerous"
 
 
+class _FlashpointLLM(BaseModel):
+    """Per-utterance LLM output used by the bulk flashpoint batcher."""
+
+    utterance_index: int = Field(ge=0)
+    derailment_score: int = Field(ge=0, le=100)
+    risk_level: RiskLevel
+    reasoning: str = ""
+
+
+class _BulkFlashpointLLM(BaseModel):
+    """Bulk LLM output: one `_FlashpointLLM` per input utterance, by index."""
+
+    results: list[_FlashpointLLM] = Field(default_factory=list)
+
+
 class FlashpointMatch(BaseModel):
     """Match result from flashpoint detection for a single utterance.
 
