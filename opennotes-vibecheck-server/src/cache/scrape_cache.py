@@ -214,6 +214,45 @@ class SupabaseScrapeCache:
             storage_key=storage_key,
         )
 
+    async def evict(self, url: str) -> None:
+        """Discard the cached scrape row + screenshot blob for a URL.
+
+        Used by the orchestrator's post-scrape redirect revalidation
+        (TASK-1473.12, codex P1-3): when Firecrawl follows a 3xx into a
+        private host we must not retain the response — a later retry that
+        hits the same normalized_url should re-fetch, not replay the
+        poisoned cache entry.
+
+        Best-effort: either leg (row delete or blob remove) may fail; we
+        log and continue so a partial cleanup still progresses the caller
+        toward the TerminalError path. pg_cron sweeps anything we miss.
+        """
+        norm = normalize_url(url)
+        storage_key: str | None = None
+        try:
+            resp = (
+                self._client.table(_TABLE_NAME)
+                .select("screenshot_storage_key")
+                .eq("normalized_url", norm)
+                .maybe_single()
+                .execute()
+            )
+            if resp and isinstance(resp.data, dict):
+                key = resp.data.get("screenshot_storage_key")
+                storage_key = key if isinstance(key, str) else None
+        except Exception as exc:
+            logger.warning("scrape cache evict lookup failed for %s: %s", norm, exc)
+
+        try:
+            self._client.table(_TABLE_NAME).delete().eq(
+                "normalized_url", norm
+            ).execute()
+        except Exception as exc:
+            logger.warning("scrape cache evict delete failed for %s: %s", norm, exc)
+
+        if storage_key:
+            self._cleanup_orphan_blob(storage_key)
+
     async def signed_screenshot_url(self, scrape: ScrapeResult) -> str | None:
         """Mint a fresh 15-minute signed URL for a cached screenshot.
 

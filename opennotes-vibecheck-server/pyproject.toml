@@ -17,6 +17,8 @@ dependencies = [
     "dspy-ai>=2.5.0",
     "supabase>=2.8.0",
     "tenacity>=9.0.0",
+    "google-cloud-tasks>=2.16.0",
+    "google-auth>=2.0.0",
 ]
 
 [project.optional-dependencies]
