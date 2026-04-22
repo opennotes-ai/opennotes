@@ -5,7 +5,7 @@ import type { paths, components } from "./generated-types";
 
 export type SidebarPayload = components["schemas"]["SidebarPayload"];
 
-const FETCH_TIMEOUT_MS = 90_000;
+const FETCH_TIMEOUT_MS = 540_000;
 const FETCH_MAX_ATTEMPTS = 2;
 const FETCH_RETRY_BASE_DELAY_MS = 250;
 const IDENTITY_TOKEN_MAX_RETRIES = 3;
