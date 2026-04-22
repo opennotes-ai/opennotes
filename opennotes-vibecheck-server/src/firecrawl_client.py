@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -53,6 +53,27 @@ def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
         return node
 
     return walk(schema)
+
+
+class ScrapeMetadata(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    language: str | None = None
+    source_url: str | None = Field(None, alias="sourceURL")
+    status_code: int | None = Field(None, alias="statusCode")
+    error: str | None = None
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
+class ScrapeResult(BaseModel):
+    markdown: str | None = None
+    html: str | None = None
+    raw_html: str | None = Field(None, alias="rawHtml")
+    screenshot: str | None = None
+    links: list[str] | None = None
+    metadata: ScrapeMetadata | None = None
+    warning: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class FirecrawlError(Exception):
@@ -192,12 +213,15 @@ class FirecrawlClient:
         formats: list[str],
         *,
         only_main_content: bool = False,
-    ) -> dict[str, Any]:
-        """Call Firecrawl /v2/scrape and return the `data` sub-object.
+    ) -> ScrapeResult:
+        """Call Firecrawl /v2/scrape and return a typed `ScrapeResult`.
 
         `formats` accepts values like ["markdown", "screenshot", "screenshot@fullPage"].
         `only_main_content=True` strips nav/footer/aside from the markdown,
         which gives much cleaner content for downstream parsing.
+
+        Fields on the returned `ScrapeResult` are all optional: only the
+        formats you requested are populated (Firecrawl omits the rest).
         """
         body: dict[str, Any] = {"url": url, "formats": formats}
         if only_main_content:
@@ -210,4 +234,4 @@ class FirecrawlClient:
         data = envelope.get("data")
         if not isinstance(data, dict):
             raise FirecrawlError("firecrawl /v2/scrape returned no data object")
-        return data
+        return ScrapeResult.model_validate(data)

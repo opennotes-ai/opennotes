@@ -52,8 +52,8 @@ async def extract_utterances(
     except Exception as exc:
         raise UtteranceExtractionError(f"firecrawl scrape failed: {exc}") from exc
 
-    markdown = scrape.get("markdown")
-    if not isinstance(markdown, str) or not markdown.strip():
+    markdown = scrape.markdown
+    if not markdown or not markdown.strip():
         raise UtteranceExtractionError("firecrawl scrape returned no markdown")
 
     agent = build_agent(

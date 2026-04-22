@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -120,12 +120,12 @@ class TestFrameCompat:
 
 class TestScreenshot:
     def test_returns_screenshot_url(self, client: TestClient) -> None:
-        stub_result = MagicMock()
-        stub_result.screenshot = "https://cdn.firecrawl.dev/shots/abc.png"
-        stub_result.metadata = None
+        from src.firecrawl_client import ScrapeResult
+
+        stub_result = ScrapeResult(screenshot="https://cdn.firecrawl.dev/shots/abc.png")
 
         class StubClient:
-            def scrape(self, url: str, formats: list[str]) -> MagicMock:
+            async def scrape(self, url: str, formats: list[str]) -> ScrapeResult:
                 return stub_result
 
         with patch("src.routes.frame.get_firecrawl_client", return_value=StubClient()):
@@ -136,12 +136,20 @@ class TestScreenshot:
         assert resp.json() == {"screenshot_url": "https://cdn.firecrawl.dev/shots/abc.png"}
 
     def test_falls_back_to_metadata_screenshot(self, client: TestClient) -> None:
-        stub_result = MagicMock()
-        stub_result.screenshot = None
-        stub_result.metadata = {"screenshot": "https://cdn.firecrawl.dev/shots/xyz.png"}
+        from src.firecrawl_client import ScrapeMetadata, ScrapeResult
+
+        # ScrapeMetadata has extra='allow' — a `screenshot` field inside
+        # metadata lands in model_extra and _extract_screenshot_url falls back
+        # to it when the top-level screenshot is absent.
+        stub_result = ScrapeResult(
+            screenshot=None,
+            metadata=ScrapeMetadata.model_validate(
+                {"screenshot": "https://cdn.firecrawl.dev/shots/xyz.png"}
+            ),
+        )
 
         class StubClient:
-            def scrape(self, url: str, formats: list[str]) -> MagicMock:
+            async def scrape(self, url: str, formats: list[str]) -> ScrapeResult:
                 return stub_result
 
         with patch("src.routes.frame.get_firecrawl_client", return_value=StubClient()):
@@ -152,12 +160,12 @@ class TestScreenshot:
         assert resp.json() == {"screenshot_url": "https://cdn.firecrawl.dev/shots/xyz.png"}
 
     def test_missing_screenshot_returns_502(self, client: TestClient) -> None:
-        stub_result = MagicMock()
-        stub_result.screenshot = None
-        stub_result.metadata = {}
+        from src.firecrawl_client import ScrapeResult
+
+        stub_result = ScrapeResult(screenshot=None, metadata=None)
 
         class StubClient:
-            def scrape(self, url: str, formats: list[str]) -> MagicMock:
+            async def scrape(self, url: str, formats: list[str]) -> ScrapeResult:
                 return stub_result
 
         with patch("src.routes.frame.get_firecrawl_client", return_value=StubClient()):

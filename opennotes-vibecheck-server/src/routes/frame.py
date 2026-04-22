@@ -7,9 +7,9 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from firecrawl import Firecrawl
 
 from src.config import get_settings
+from src.firecrawl_client import FirecrawlClient, ScrapeResult
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
@@ -132,30 +132,32 @@ async def frame_compat(url: str = Query(...)) -> dict[str, Any]:
     return {"can_iframe": can_iframe, "blocking_header": blocking_header}
 
 
-class _InlineFirecrawl:
-    def __init__(self, api_key: str) -> None:
-        self._inner = Firecrawl(api_key=api_key, timeout=_SCREENSHOT_TIMEOUT_SECONDS)
-
-    def scrape(self, url: str, formats: list[str]) -> Any:
-        return self._inner.scrape(url, formats=formats)  # pyright: ignore[reportArgumentType]
-
-
-def get_firecrawl_client() -> Any:
-    # TODO(TASK-1471.05): replace with shared src.firecrawl_client.FirecrawlClient
-    # once BE-2 lands it. Minimal inline firecrawl-py call until then.
+def get_firecrawl_client() -> FirecrawlClient:
     settings = get_settings()
-    return _InlineFirecrawl(api_key=settings.FIRECRAWL_API_KEY)
+    return FirecrawlClient(
+        api_key=settings.FIRECRAWL_API_KEY,
+        timeout=_SCREENSHOT_TIMEOUT_SECONDS,
+    )
 
 
-def _extract_screenshot_url(result: Any) -> str | None:
+def _extract_screenshot_url(result: ScrapeResult | Any) -> str | None:
     direct = getattr(result, "screenshot", None)
     if isinstance(direct, str) and direct:
         return direct
+    # Defensive fallback: some Firecrawl responses nest the screenshot URL in
+    # `metadata.screenshot` (extra field — ScrapeMetadata has extra='allow').
     metadata = getattr(result, "metadata", None)
+    if metadata is None:
+        return None
     if isinstance(metadata, dict):
         meta_shot = metadata.get("screenshot")
-        if isinstance(meta_shot, str) and meta_shot:
-            return meta_shot
+    else:
+        meta_shot = getattr(metadata, "screenshot", None)
+        if meta_shot is None:
+            extras = getattr(metadata, "model_extra", None) or {}
+            meta_shot = extras.get("screenshot")
+    if isinstance(meta_shot, str) and meta_shot:
+        return meta_shot
     return None
 
 
@@ -164,7 +166,7 @@ async def screenshot(url: str = Query(...)) -> dict[str, str]:
     _validate_http_url(url)
     fc = get_firecrawl_client()
     try:
-        result = fc.scrape(url, formats=["screenshot"])
+        result = await fc.scrape(url, formats=["screenshot"])
     except Exception as exc:
         logger.warning("firecrawl scrape failed for %s: %s", url, exc)
         raise HTTPException(status_code=502, detail="Screenshot service failed") from exc
