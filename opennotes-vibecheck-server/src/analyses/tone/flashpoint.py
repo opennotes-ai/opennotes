@@ -89,7 +89,7 @@ async def detect_flashpoints_bulk(
     )
     try:
         result = await agent.run("Conversation:\n" + "\n".join(numbered))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("bulk flashpoint detection failed: %s", exc)
         return out
     parsed: _BulkFlashpointLLM = result.output
@@ -111,7 +111,7 @@ async def detect_flashpoints_bulk(
     return out
 
 
-async def detect_flashpoint(  # noqa: D401 — legacy API kept for backward compat
+async def detect_flashpoint(
     utterance: Utterance,
     context: list[Utterance],
     service: FlashpointDetectionService | None,

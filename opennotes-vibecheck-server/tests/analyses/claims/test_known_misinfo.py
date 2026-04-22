@@ -7,8 +7,8 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
-from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.claims import known_misinfo as km
+from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.claims.known_misinfo import (
     FACT_CHECK_API_URL,
     check_known_misinformation,

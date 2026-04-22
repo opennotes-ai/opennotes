@@ -55,6 +55,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/_internal/_schema_anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Schema anchor (placeholder, removed in TASK-1473.14)
+         * @description Forces JobState into the OpenAPI schema until the real GET /api/analyze/{job_id} endpoint lands. Always returns 410.
+         */
+        get: operations["schema_anchor_api__internal__schema_anchor_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/_healthz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health */
+        get: operations["health__healthz_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -64,6 +101,23 @@ export interface paths {
         };
         /** Health */
         get: operations["health_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health */
+        get: operations["health__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -112,6 +166,12 @@ export interface components {
             /** Representative Authors */
             representative_authors: string[];
         };
+        /**
+         * ErrorCode
+         * @description Stable error codes the frontend branches on for inline copy + retry UX.
+         * @enum {string}
+         */
+        ErrorCode: "invalid_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "timeout" | "rate_limited" | "internal";
         /**
          * FactCheckMatch
          * @description A single fact-check article surfaced by the Google Fact Check Tools API.
@@ -207,6 +267,70 @@ export interface components {
             /** Flagged Categories */
             flagged_categories?: string[];
         };
+        /**
+         * JobState
+         * @description GET /api/analyze/{job_id} response shape (wired in TASK-1473.14).
+         *
+         *     Combines job-level lifecycle (status/error_code/error_message), per-slot
+         *     progress (sections), the assembled sidebar (sidebar_payload, populated
+         *     once all slots finish), and an adaptive polling hint (next_poll_ms) so
+         *     clients can back off as the job completes.
+         */
+        JobState: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Url */
+            url: string;
+            status: components["schemas"]["JobStatus"];
+            /**
+             * Attempt Id
+             * Format: uuid
+             */
+            attempt_id: string;
+            error_code?: components["schemas"]["ErrorCode"] | null;
+            /** Error Message */
+            error_message?: string | null;
+            /**
+             * Error Host
+             * @description When ErrorCode.UNSUPPORTED_SITE is returned, the host that triggered the rejection.
+             */
+            error_host?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Sections */
+            sections?: {
+                [key: string]: components["schemas"]["SectionSlot"];
+            };
+            sidebar_payload?: components["schemas"]["SidebarPayload"] | null;
+            /**
+             * Cached
+             * @default false
+             */
+            cached: boolean;
+            /**
+             * Next Poll Ms
+             * @description Server-suggested delay until the client should re-poll. Clients use this to implement adaptive cadence (typically 500ms early, 1500ms+ near completion).
+             * @default 1500
+             */
+            next_poll_ms: number;
+        };
+        /**
+         * JobStatus
+         * @description Lifecycle of a vibecheck job from POST to terminal state.
+         * @enum {string}
+         */
+        JobStatus: "pending" | "extracting" | "analyzing" | "done" | "failed";
         /** OpinionsReport */
         OpinionsReport: {
             sentiment_stats: components["schemas"]["SentimentStatsReport"];
@@ -220,6 +344,16 @@ export interface components {
         OpinionsSection: {
             opinions_report: components["schemas"]["OpinionsReport"];
         };
+        /**
+         * PageKind
+         * @description Shape of the source page the extractor handled.
+         *
+         *     The extractor in TASK-1473.10 picks one of these; downstream rendering
+         *     and analysis logic branches on the value (e.g., hierarchical_thread
+         *     enables tree-aware flashpoint context).
+         * @enum {string}
+         */
+        PageKind: "blog_post" | "forum_thread" | "hierarchical_thread" | "blog_index" | "article" | "other";
         /**
          * RiskLevel
          * @description Categorical risk level for conversation flashpoint detection.
@@ -268,6 +402,44 @@ export interface components {
             /** Harmful Content Matches */
             harmful_content_matches?: components["schemas"]["HarmfulContentMatch"][];
         };
+        /**
+         * SectionSlot
+         * @description One sidebar slot's state inside a JobState.
+         *
+         *     `attempt_id` is regenerated on each retry; Cloud Tasks redeliveries that
+         *     carry a stale attempt_id are rejected by the worker. `data` holds the
+         *     section-specific payload once `state == DONE` (shape varies by slug).
+         */
+        SectionSlot: {
+            state: components["schemas"]["SectionState"];
+            /**
+             * Attempt Id
+             * Format: uuid
+             */
+            attempt_id: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error?: string | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+        };
+        /**
+         * SectionSlug
+         * @description The seven sidebar slots the async pipeline fills independently.
+         * @enum {string}
+         */
+        SectionSlug: "safety__moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective";
+        /**
+         * SectionState
+         * @description Lifecycle of a single sidebar slot during a job.
+         * @enum {string}
+         */
+        SectionState: "pending" | "running" | "done" | "failed";
         /** SentimentScore */
         SentimentScore: {
             /** Utterance Id */
@@ -307,12 +479,8 @@ export interface components {
             source_url: string;
             /** Page Title */
             page_title?: string | null;
-            /**
-             * Page Kind
-             * @default other
-             * @enum {string}
-             */
-            page_kind: "blog_post" | "forum_thread" | "article" | "other";
+            /** @default other */
+            page_kind: components["schemas"]["PageKind"];
             /**
              * Scraped At
              * Format: date-time
@@ -323,6 +491,8 @@ export interface components {
              * @default false
              */
             cached: boolean;
+            /** Cached At */
+            cached_at?: string | null;
             safety: components["schemas"]["SafetySection"];
             tone_dynamics: components["schemas"]["ToneDynamicsSection"];
             facts_claims: components["schemas"]["FactsClaimsSection"];
@@ -470,7 +640,71 @@ export interface operations {
             };
         };
     };
+    schema_anchor_api__internal__schema_anchor_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobState"];
+                };
+            };
+        };
+    };
+    health__healthz_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
     health_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    health__get: {
         parameters: {
             query?: never;
             header?: never;

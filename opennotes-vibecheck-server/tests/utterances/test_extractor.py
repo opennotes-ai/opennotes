@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from pytest_httpx import HTTPXMock
 
+from src.analyses.schemas import PageKind
 from src.config import Settings
 from src.firecrawl_client import FIRECRAWL_API_BASE, FirecrawlClient
 from src.utterances import (
@@ -62,7 +63,7 @@ def _sample_payload() -> UtterancesPayload:
         source_url="",
         scraped_at=datetime(2024, 9, 1, 12, 0, tzinfo=UTC),
         page_title="Groups are now Classes",
-        page_kind="blog_post",
+        page_kind=PageKind.BLOG_POST,
         utterances=[
             Utterance(utterance_id=None, kind="post", text="Post body with Classes."),
             Utterance(utterance_id=None, kind="comment", text="first comment", author="a"),
@@ -127,7 +128,7 @@ async def test_extract_utterances_regenerates_duplicate_ids(
         source_url="",
         scraped_at=datetime(2024, 9, 1, tzinfo=UTC),
         page_title="Dup",
-        page_kind="blog_post",
+        page_kind=PageKind.BLOG_POST,
         utterances=[
             Utterance(utterance_id="dup", kind="post", text="original post"),
             Utterance(utterance_id="dup", kind="comment", text="first", author="b"),

@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from src.analyses.schemas import PageKind
+
 
 class Utterance(BaseModel):
     utterance_id: str | None = None
@@ -18,4 +20,4 @@ class UtterancesPayload(BaseModel):
     scraped_at: datetime
     utterances: list[Utterance]
     page_title: str | None = None
-    page_kind: Literal["blog_post", "forum_thread", "article", "other"] = "other"
+    page_kind: PageKind = PageKind.OTHER

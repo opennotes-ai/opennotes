@@ -4,7 +4,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from src.monitoring import get_logger
-from src.routes import analyze, frame
+from src.routes import _schema_anchor, analyze, frame
 from src.startup import lifespan
 
 logger = get_logger(__name__)
@@ -15,6 +15,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # py
 app.add_middleware(SlowAPIMiddleware)
 app.include_router(frame.router)
 app.include_router(analyze.router)
+app.include_router(_schema_anchor.router)
 
 
 @app.get("/")

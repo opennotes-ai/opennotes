@@ -51,7 +51,7 @@ async def check_content_moderation_bulk(
     texts = [u.text for _, u in scanable]
     try:
         results = await moderation_service.moderate_texts(texts)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning(
             "Error in bulk content moderation",
             extra={"error": str(e), "batch_size": len(texts)},

@@ -10,7 +10,6 @@ from __future__ import annotations
 from src.analyses.opinions._schemas import (
     SubjectiveClaim,
     _BulkSubjectiveClaimsLLM,
-    _SubjectiveClaimsLLM,
 )
 from src.config import Settings, get_settings
 from src.services.gemini_agent import build_agent

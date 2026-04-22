@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import pytest
-
 from dataclasses import dataclass
 from typing import Any
+
+import pytest
 
 from src.analyses.opinions import subjective as subjective_module
 from src.analyses.opinions._schemas import (
