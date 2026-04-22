@@ -90,7 +90,7 @@ export default function UrlInput(props: UrlInputProps) {
             setValue(e.currentTarget.value);
             if (error()) setError(null);
           }}
-          aria-invalid={error() ? "true" : "false"}
+          aria-invalid={error() ? "true" : undefined}
           aria-describedby={error() ? "vibecheck-url-error" : undefined}
           class="flex-1 px-4 py-3 text-base shadow-xs"
         />

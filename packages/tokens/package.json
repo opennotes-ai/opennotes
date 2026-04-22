@@ -19,6 +19,9 @@
   "files": [
     "src"
   ],
+  "scripts": {
+    "test": "vitest run"
+  },
   "peerDependencies": {
     "@fontsource/ibm-plex-sans": "^5.2.0",
     "@fontsource/ibm-plex-serif": "^5.2.0"
@@ -33,7 +36,8 @@
   },
   "devDependencies": {
     "@fontsource/ibm-plex-sans": "^5.2.0",
-    "@fontsource/ibm-plex-serif": "^5.2.0"
+    "@fontsource/ibm-plex-serif": "^5.2.0",
+    "vitest": "^4.0.18"
   },
   "keywords": [
     "opennotes",

@@ -2,6 +2,8 @@ import { action, redirect, useSubmission, A } from "@solidjs/router";
 import { Show } from "solid-js";
 import { getRequestEvent } from "solid-js/web";
 import { createClient } from "~/lib/supabase-server";
+import { Button } from "@opennotes/ui/components/ui/button";
+import { Input } from "@opennotes/ui/components/ui/input";
 
 const loginAction = action(async (formData: FormData) => {
   "use server";
@@ -34,18 +36,18 @@ export default function LoginPage() {
       <form action={loginAction} method="post" class="mt-6 space-y-4">
         <div class="space-y-1.5">
           <label for="email" class="text-sm font-medium">Email</label>
-          <input id="email" name="email" type="email" required class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+          <Input id="email" name="email" type="email" required />
         </div>
         <div class="space-y-1.5">
           <label for="password" class="text-sm font-medium">Password</label>
-          <input id="password" name="password" type="password" required class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+          <Input id="password" name="password" type="password" required />
         </div>
         <Show when={submission.result}>
           <p class="text-sm text-red-600 dark:text-red-400">{submission.result}</p>
         </Show>
-        <button type="submit" class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90" disabled={submission.pending}>
+        <Button type="submit" class="w-full" disabled={submission.pending}>
           {submission.pending ? "Signing in..." : "Sign In"}
-        </button>
+        </Button>
       </form>
       <p class="mt-4 text-center text-sm text-muted-foreground">
         Don't have an account?{" "}

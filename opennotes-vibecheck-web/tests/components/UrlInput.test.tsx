@@ -70,6 +70,18 @@ describe("<UrlInput />", () => {
     ).toBeDefined();
   });
 
+  it("does not mark the field invalid before validation fails", () => {
+    render(() => <UrlInput action="/submit" />);
+
+    const input = screen.getByLabelText(
+      /url to analyze/i,
+    ) as HTMLInputElement;
+
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+    expect(input.getAttribute("aria-describedby")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("shows an error and blocks submit when the input is empty", () => {
     const onValidSubmit = vi.fn();
     render(() => (
@@ -83,6 +95,11 @@ describe("<UrlInput />", () => {
 
     expect(submitted).toBe(false);
     expect(onValidSubmit).not.toHaveBeenCalled();
+    const input = screen.getByLabelText(
+      /url to analyze/i,
+    ) as HTMLInputElement;
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-describedby")).toBe("vibecheck-url-error");
     expect(screen.getByRole("alert").textContent).toMatch(/enter a url/i);
   });
 
@@ -155,6 +172,8 @@ describe("<UrlInput />", () => {
 
     fireEvent.input(input, { target: { value: "h" } });
 
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+    expect(input.getAttribute("aria-describedby")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

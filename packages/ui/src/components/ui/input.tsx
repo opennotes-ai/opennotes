@@ -7,7 +7,7 @@ export function Input(props: ComponentProps<"input">) {
   return (
     <input
       class={cn(
-        "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-[invalid]:border-destructive aria-[invalid]:ring-destructive/30",
+        "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-destructive/30",
         local.class,
       )}
       {...rest}
