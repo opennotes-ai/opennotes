@@ -20,41 +20,54 @@ async def check_content_moderation(
     utterance: Utterance,
     moderation_service: OpenAIModerationService | None,
 ) -> HarmfulContentMatch | None:
-    """Run OpenAI content moderation on a single utterance.
+    """Thin single-utterance wrapper over ``check_content_moderation_bulk``."""
+    results = await check_content_moderation_bulk([utterance], moderation_service)
+    return results[0] if results else None
 
-    Args:
-        utterance: The Firecrawl-extracted utterance to moderate.
-        moderation_service: OpenAIModerationService instance, or None if not configured.
 
-    Returns:
-        HarmfulContentMatch if the utterance was flagged, None otherwise.
-        Never raises — OpenAI API errors are logged and swallowed.
+async def check_content_moderation_bulk(
+    utterances: list[Utterance],
+    moderation_service: OpenAIModerationService | None,
+) -> list[HarmfulContentMatch | None]:
+    """Run OpenAI content moderation on all utterances in ONE request.
+
+    OpenAI's moderation API accepts an array input and returns one result per
+    input in order. Index-aligned output; `None` in slot i means unflagged (or
+    that utterance lacked text / id).
     """
+    out: list[HarmfulContentMatch | None] = [None for _ in utterances]
+    if not utterances:
+        return out
     if moderation_service is None:
-        logger.warning(
-            "Moderation service not configured",
-            extra={"utterance_id": utterance.utterance_id},
-        )
-        return None
+        logger.warning("Moderation service not configured")
+        return out
 
+    scanable: list[tuple[int, Utterance]] = [
+        (i, u) for i, u in enumerate(utterances) if (u.text or "").strip()
+    ]
+    if not scanable:
+        return out
+
+    texts = [u.text for _, u in scanable]
     try:
-        moderation_result = await moderation_service.moderate_text(utterance.text)
-
-        if moderation_result.flagged:
-            return HarmfulContentMatch(
-                utterance_id=utterance.utterance_id or "",
-                max_score=moderation_result.max_score,
-                categories=moderation_result.categories,
-                scores=moderation_result.scores,
-                flagged_categories=moderation_result.flagged_categories,
-            )
-    except Exception as e:
+        results = await moderation_service.moderate_texts(texts)
+    except Exception as e:  # noqa: BLE001
         logger.warning(
-            "Error in content moderation capability",
-            extra={
-                "utterance_id": utterance.utterance_id,
-                "error": str(e),
-            },
+            "Error in bulk content moderation",
+            extra={"error": str(e), "batch_size": len(texts)},
         )
+        return out
 
-    return None
+    for (orig_idx, utterance), result in zip(scanable, results, strict=False):
+        if result.flagged:
+            out[orig_idx] = HarmfulContentMatch(
+                utterance_id=utterance.utterance_id or "",
+                max_score=result.max_score,
+                categories=result.categories,
+                scores=result.scores,
+                flagged_categories=result.flagged_categories,
+            )
+    return out
+
+
+__all__ = ["check_content_moderation", "check_content_moderation_bulk"]

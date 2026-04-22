@@ -50,3 +50,12 @@ class _SubjectiveClaimLLM(BaseModel):
 
 class _SubjectiveClaimsLLM(BaseModel):
     claims: list[_SubjectiveClaimLLM]
+
+
+class _PerUtteranceSubjectiveClaims(BaseModel):
+    utterance_index: int = Field(ge=0)
+    claims: list[_SubjectiveClaimLLM] = Field(default_factory=list)
+
+
+class _BulkSubjectiveClaimsLLM(BaseModel):
+    results: list[_PerUtteranceSubjectiveClaims] = Field(default_factory=list)

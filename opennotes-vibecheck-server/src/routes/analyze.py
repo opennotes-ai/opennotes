@@ -20,7 +20,7 @@ from slowapi.util import get_remote_address
 from src.analyses.claims._claims_schemas import Claim, ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.claims.dedupe import dedupe_claims
-from src.analyses.claims.extract import extract_claims
+from src.analyses.claims.extract import extract_claims_bulk
 from src.analyses.claims.known_misinfo import check_known_misinformation
 from src.analyses.opinions._schemas import (
     OpinionsReport,
@@ -28,9 +28,9 @@ from src.analyses.opinions._schemas import (
     SubjectiveClaim,
 )
 from src.analyses.opinions.sentiment import compute_sentiment_stats
-from src.analyses.opinions.subjective import extract_subjective_claims
+from src.analyses.opinions.subjective import extract_subjective_claims_bulk
 from src.analyses.safety._schemas import HarmfulContentMatch
-from src.analyses.safety.moderation import check_content_moderation
+from src.analyses.safety.moderation import check_content_moderation_bulk
 from src.analyses.schemas import (
     FactsClaimsSection,
     OpinionsSection,
@@ -84,19 +84,15 @@ def _empty_sentiment_stats() -> SentimentStatsReport:
     )
 
 
-async def _safe_moderation(
-    utterance: Utterance,
+async def _safe_moderation_bulk(
+    utterances: list[Utterance],
     service: OpenAIModerationService | None,
-) -> HarmfulContentMatch | None:
+) -> list[HarmfulContentMatch | None]:
     try:
-        return await check_content_moderation(utterance, service)
+        return await check_content_moderation_bulk(utterances, service)
     except Exception as exc:
-        logger.warning(
-            "moderation failed for utterance_id=%s: %s",
-            utterance.utterance_id,
-            exc,
-        )
-        return None
+        logger.warning("bulk moderation failed: %s", exc)
+        return [None for _ in utterances]
 
 
 async def _safe_flashpoint(
@@ -115,18 +111,14 @@ async def _safe_flashpoint(
         return None
 
 
-async def _safe_extract_claims(
-    utterance: Utterance, settings: Settings
-) -> list[Claim]:
+async def _safe_extract_claims_bulk(
+    utterances: list[Utterance], settings: Settings
+) -> list[list[Claim]]:
     try:
-        return await extract_claims(utterance, settings)
+        return await extract_claims_bulk(utterances, settings)
     except Exception as exc:
-        logger.warning(
-            "claim extraction failed for utterance_id=%s: %s",
-            utterance.utterance_id,
-            exc,
-        )
-        return []
+        logger.warning("bulk claim extraction failed: %s", exc)
+        return [[] for _ in utterances]
 
 
 async def _safe_scd(
@@ -149,20 +141,14 @@ async def _safe_sentiment(
         return _empty_sentiment_stats()
 
 
-async def _safe_subjective(
-    utterance: Utterance, settings: Settings, index: int
-) -> list[SubjectiveClaim]:
+async def _safe_subjective_bulk(
+    utterances: list[Utterance], settings: Settings
+) -> list[list[SubjectiveClaim]]:
     try:
-        return await extract_subjective_claims(
-            utterance, settings=settings, index=index
-        )
+        return await extract_subjective_claims_bulk(utterances, settings=settings)
     except Exception as exc:
-        logger.warning(
-            "subjective extraction failed for utterance_id=%s: %s",
-            utterance.utterance_id,
-            exc,
-        )
-        return []
+        logger.warning("bulk subjective extraction failed: %s", exc)
+        return [[] for _ in utterances]
 
 
 async def _safe_known_misinfo(
@@ -254,23 +240,25 @@ async def _run_pipeline(
 ) -> SidebarPayload:
     utterances = payload.utterances
 
-    moderation_task = asyncio.gather(
-        *(_safe_moderation(u, moderation_service) for u in utterances)
-    )
-    flashpoint_task = asyncio.gather(
-        *(
-            _safe_flashpoint(u, _prior_context(utterances, idx), flashpoint_service)
-            for idx, u in enumerate(utterances)
-        )
-    )
-    claims_task = asyncio.gather(
-        *(_safe_extract_claims(u, settings) for u in utterances)
-    )
-    subjective_task = asyncio.gather(
-        *(_safe_subjective(u, settings, idx) for idx, u in enumerate(utterances))
-    )
+    # Batched analyses: one LLM call each (no per-utterance bursts).
+    moderation_task = _safe_moderation_bulk(utterances, moderation_service)
+    claims_task = _safe_extract_claims_bulk(utterances, settings)
+    subjective_task = _safe_subjective_bulk(utterances, settings)
     sentiment_task = _safe_sentiment(utterances, settings)
     scd_task = _safe_scd(utterances, settings)
+    # Flashpoint (DSPy) still per-utterance because it needs prior conversation
+    # context per call; with a small semaphore to cap bursts.
+    flashpoint_sem = asyncio.Semaphore(4)
+
+    async def _flashpoint_one(idx: int, u: Utterance) -> FlashpointMatch | None:
+        async with flashpoint_sem:
+            return await _safe_flashpoint(
+                u, _prior_context(utterances, idx), flashpoint_service
+            )
+
+    flashpoint_task = asyncio.gather(
+        *(_flashpoint_one(idx, u) for idx, u in enumerate(utterances))
+    )
 
     (
         moderation_results,
