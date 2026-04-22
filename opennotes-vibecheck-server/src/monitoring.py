@@ -64,6 +64,22 @@ def get_logger(name: str) -> logging.Logger:
 
 _logfire_configured = False
 
+# Supabase signed URLs and upstream signed-URL formats carry these
+# query-param and header substrings. Logfire's built-in scrubber matches
+# on pydantic/OTel attribute names but does NOT scan attribute *values*
+# for these tokens — we add them as `extra_patterns` so the scrubber
+# surfaces matching span attributes to our callback, which then runs
+# `_sanitize` to strip the credential while preserving surrounding
+# debugging context.
+_LOGFIRE_EXTRA_PATTERNS: tuple[str, ...] = (
+    r"token",
+    r"X-Amz-Signature",
+    r"X-Goog-Signature",
+    r"signature",
+    r"sign=",
+    r"bearer",
+)
+
 
 def configure_logfire(**configure_kwargs: Any) -> None:
     """Configure Logfire with `_sanitize`-based span attribute scrubbing.
@@ -72,10 +88,11 @@ def configure_logfire(**configure_kwargs: Any) -> None:
     are forwarded to `logfire.configure()` so callers can still pass
     `send_to_logfire`, `token`, service metadata, etc.
 
-    We pass a `ScrubbingOptions(callback=...)` that rewrites the attribute
-    string in place. Logfire's built-in scrubber surfaces suspected secrets
-    to the callback; returning the sanitized value preserves debugging
-    context while stripping credentials.
+    We pass a `ScrubbingOptions(callback=..., extra_patterns=...)`. Logfire's
+    built-in patterns miss signed-URL keys like `X-Amz-Signature`, so
+    `extra_patterns` widens the trigger set; the callback then rewrites
+    each matching value through `_sanitize` to preserve debugging context
+    without leaking the credential.
     """
     global _logfire_configured
     if _logfire_configured:
@@ -87,6 +104,9 @@ def configure_logfire(**configure_kwargs: Any) -> None:
         logging.getLogger(__name__).warning("logfire unavailable, skipping configure: %s", exc)
         return
 
-    scrubbing = logfire.ScrubbingOptions(callback=logfire_scrub_callback)
+    scrubbing = logfire.ScrubbingOptions(
+        callback=logfire_scrub_callback,
+        extra_patterns=list(_LOGFIRE_EXTRA_PATTERNS),
+    )
     logfire.configure(scrubbing=scrubbing, **configure_kwargs)
     _logfire_configured = True

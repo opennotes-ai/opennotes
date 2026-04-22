@@ -20,13 +20,17 @@ from typing import Any
 
 _REDACTED = "<redacted>"
 
-_BEARER_RE = re.compile(r"Bearer\s+\S+")
-_AUTH_URL_RE = re.compile(r"https?://[^\s]*auth[^\s]*")
+_BEARER_RE = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
+_AUTH_URL_RE = re.compile(r"https?://[^\s]*auth[^\s]*", re.IGNORECASE)
 _USER_HOME_RE = re.compile(r"/Users/[^/\s]+/")
 _LINUX_HOME_RE = re.compile(r"/home/[^/\s]+/")
-_GCP_PROJECT_RE = re.compile(r"google-mpf-[A-Za-z0-9\-]+?\.com")
+_GCP_PROJECT_RE = re.compile(r"google-mpf-[A-Za-z0-9\-]+?\.com", re.IGNORECASE)
+# Case-insensitive so capitalized `?Token=` or mixed-case `?x-amz-signature=`
+# still redact. `signature` appears before `sign` in the alternation so the
+# longer alias wins; `sig` is the shortest alias and matches last.
 _SIGNED_QUERY_RE = re.compile(
-    r"(?P<prefix>[?&])(?:token|X-Amz-Signature|X-Goog-Signature|sign)=[^&\s]+"
+    r"(?P<prefix>[?&])(?:token|X-Amz-Signature|X-Goog-Signature|signature|sign|sig)=[^&\s]+",
+    re.IGNORECASE,
 )
 
 

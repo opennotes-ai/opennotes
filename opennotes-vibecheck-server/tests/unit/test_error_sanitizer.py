@@ -96,6 +96,35 @@ class TestSanitizeSignedUrls:
         assert "ABCDEF" not in result
         assert "foo=1" in result
 
+    def test_capitalized_token_query_param_is_redacted(self) -> None:
+        """Case-insensitive: `Token=` must redact the same as `token=`.
+
+        Supabase and other S3-style signed URLs sometimes carry capitalized
+        query keys (`?Token=...` or `?TOKEN=...`). A case-sensitive matcher
+        silently lets these through.
+        """
+        result = _sanitize("https://s3/obj?Token=ZZZ&foo=1")
+        assert "ZZZ" not in result
+        assert "foo=1" in result
+        assert "<redacted>" in result
+
+    def test_mixed_case_x_amz_signature_is_redacted(self) -> None:
+        result = _sanitize("https://s3/obj?x-amz-signature=ZZZ&foo=1")
+        assert "ZZZ" not in result
+        assert "foo=1" in result
+
+    def test_mid_query_signature_alias_is_redacted(self) -> None:
+        """`signature=` (full word) must redact alongside `sign=`."""
+        result = _sanitize("https://cdn/x?foo=1&signature=ABCDEF")
+        assert "ABCDEF" not in result
+        assert "foo=1" in result
+
+    def test_mid_query_sig_alias_is_redacted(self) -> None:
+        """`sig=` (abbreviated) must redact alongside `sign=`."""
+        result = _sanitize("https://cdn/x?foo=1&sig=ABCDEF")
+        assert "ABCDEF" not in result
+        assert "foo=1" in result
+
 
 class TestSanitizeExceptionInput:
     def test_sanitize_accepts_exception(self) -> None:
