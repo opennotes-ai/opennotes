@@ -204,6 +204,7 @@ async def test_claim_slot_permits_reclaim_after_failed(db_pool) -> None:
         SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE,
         first_attempt,
         "boom",
+        expected_task_attempt=task_attempt,
     )
     assert rows == 1
 
@@ -233,6 +234,7 @@ async def test_mark_slot_done_fails_on_stale_slot_attempt(db_pool) -> None:
         SectionSlug.TONE_DYNAMICS_FLASHPOINT,
         stale_attempt,
         {"flashpoint_matches": []},
+        expected_task_attempt=task_attempt,
     )
 
     assert rows == 0
@@ -254,6 +256,7 @@ async def test_mark_slot_done_writes_payload_when_attempt_matches(db_pool) -> No
         SectionSlug.SAFETY_MODERATION,
         slot_attempt,
         {"harmful_content_matches": []},
+        expected_task_attempt=task_attempt,
     )
 
     assert rows == 1
@@ -262,6 +265,145 @@ async def test_mark_slot_done_writes_payload_when_attempt_matches(db_pool) -> No
     assert entry["state"] == "done"
     assert entry["data"] == {"harmful_content_matches": []}
     assert entry["finished_at"] is not None
+
+
+# --- Terminal CAS guards (P1.3): task_attempt + status + prior slot state --
+
+
+async def test_mark_slot_done_fails_when_job_task_attempt_has_rotated(db_pool) -> None:
+    """A superseded job attempt must not accept terminal slot writes.
+
+    Scenario: worker A claims the slot; before A finishes, the job was
+    retried, rotating `attempt_id`. A's late `mark_slot_done` must no-op
+    even though A still holds the matching `slot_attempt_id` — otherwise a
+    stale worker can mutate a fresh attempt's cache.
+    """
+    initial_attempt = uuid4()
+    job_id = await _insert_job(db_pool, initial_attempt)
+    live_slot = await claim_slot(
+        db_pool, job_id, initial_attempt, SectionSlug.TONE_DYNAMICS_FLASHPOINT
+    )
+    assert live_slot is not None
+
+    # Simulate a retry rotating the job-level attempt_id.
+    rotated_attempt = uuid4()
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET attempt_id = $2 WHERE job_id = $1",
+            job_id,
+            rotated_attempt,
+        )
+
+    rows = await mark_slot_done(
+        db_pool,
+        job_id,
+        SectionSlug.TONE_DYNAMICS_FLASHPOINT,
+        live_slot,
+        {"flashpoint_matches": []},
+        expected_task_attempt=initial_attempt,
+    )
+
+    assert rows == 0
+    sections = await _read_sections(db_pool, job_id)
+    # Slot must still be running — the stale worker did not clobber it.
+    assert sections[SectionSlug.TONE_DYNAMICS_FLASHPOINT.value]["state"] == "running"
+
+
+async def test_mark_slot_done_fails_when_slot_state_is_not_running(db_pool) -> None:
+    """Once a slot reaches a terminal state, re-delivered done writes no-op."""
+    task_attempt = uuid4()
+    job_id = await _insert_job(db_pool, task_attempt)
+    live_slot = await claim_slot(
+        db_pool, job_id, task_attempt, SectionSlug.SAFETY_MODERATION
+    )
+    assert live_slot is not None
+
+    first = await mark_slot_done(
+        db_pool,
+        job_id,
+        SectionSlug.SAFETY_MODERATION,
+        live_slot,
+        {"harmful_content_matches": []},
+        expected_task_attempt=task_attempt,
+    )
+    assert first == 1
+
+    second = await mark_slot_done(
+        db_pool,
+        job_id,
+        SectionSlug.SAFETY_MODERATION,
+        live_slot,
+        {"harmful_content_matches": [{"spurious": "write"}]},
+        expected_task_attempt=task_attempt,
+    )
+
+    assert second == 0
+    sections = await _read_sections(db_pool, job_id)
+    # Original done payload wins — the second (stale) write did not clobber.
+    assert sections[SectionSlug.SAFETY_MODERATION.value]["data"] == {
+        "harmful_content_matches": []
+    }
+
+
+async def test_mark_slot_done_fails_when_job_status_is_terminal(db_pool) -> None:
+    """A job that flipped to failed/done must reject further slot terminal writes."""
+    task_attempt = uuid4()
+    job_id = await _insert_job(db_pool, task_attempt)
+    live_slot = await claim_slot(
+        db_pool, job_id, task_attempt, SectionSlug.TONE_DYNAMICS_SCD
+    )
+    assert live_slot is not None
+
+    # Sweeper (or explicit error path) transitions the job to failed.
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET status = 'failed' WHERE job_id = $1",
+            job_id,
+        )
+
+    rows = await mark_slot_done(
+        db_pool,
+        job_id,
+        SectionSlug.TONE_DYNAMICS_SCD,
+        live_slot,
+        {"scd": {"summary": "late"}},
+        expected_task_attempt=task_attempt,
+    )
+
+    assert rows == 0
+    sections = await _read_sections(db_pool, job_id)
+    assert sections[SectionSlug.TONE_DYNAMICS_SCD.value]["state"] == "running"
+
+
+async def test_mark_slot_failed_fails_when_job_task_attempt_has_rotated(db_pool) -> None:
+    """mark_slot_failed must enforce the same CAS envelope as mark_slot_done."""
+    initial_attempt = uuid4()
+    job_id = await _insert_job(db_pool, initial_attempt)
+    live_slot = await claim_slot(
+        db_pool, job_id, initial_attempt, SectionSlug.FACTS_CLAIMS_DEDUP
+    )
+    assert live_slot is not None
+
+    rotated_attempt = uuid4()
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET attempt_id = $2 WHERE job_id = $1",
+            job_id,
+            rotated_attempt,
+        )
+
+    rows = await mark_slot_failed(
+        db_pool,
+        job_id,
+        SectionSlug.FACTS_CLAIMS_DEDUP,
+        live_slot,
+        "boom",
+        expected_task_attempt=initial_attempt,
+    )
+
+    assert rows == 0
+    sections = await _read_sections(db_pool, job_id)
+    assert sections[SectionSlug.FACTS_CLAIMS_DEDUP.value]["state"] == "running"
 
 
 # --- write_slot (generic contract) -----------------------------------------

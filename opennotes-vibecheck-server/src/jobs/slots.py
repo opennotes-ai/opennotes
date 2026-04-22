@@ -45,15 +45,27 @@ WHERE job_id = $1
   )
 """
 
-# mark_slot_done/failed guard against stale slot attempt_ids (Cloud Tasks
-# redelivery of a retried slot). The predicate also forces the slot to exist.
+# mark_slot_done/failed enforce the full slot write contract from spec
+# §"Slot write contract":
+#   1. job.attempt_id still equals the expected task_attempt (stale worker
+#      after a retry rotation cannot mutate the fresh attempt's cache).
+#   2. job.status is non-terminal (no writes after the job flipped to
+#      done/failed — the sweeper or error path owns those rows).
+#   3. the slot's recorded attempt_id matches (CAS on the slot-level
+#      attempt so Cloud Tasks redeliveries of an earlier superseded slot
+#      silently drop).
+#   4. the slot is currently `running` (don't flip done→done or failed→
+#      done on a redelivered terminal write).
 _FINALIZE_SLOT_SQL = """
 UPDATE vibecheck_jobs
 SET sections = sections || jsonb_build_object($2::text, $3::jsonb),
     updated_at = now()
 WHERE job_id = $1
+  AND attempt_id = $5
+  AND status IN ('pending', 'extracting', 'analyzing')
   AND sections ? $2::text
   AND sections -> $2::text ->> 'attempt_id' = $4::text
+  AND sections -> $2::text ->> 'state' = 'running'
 """
 
 
@@ -136,12 +148,24 @@ async def mark_slot_done(
     slug: SectionSlug,
     slot_attempt: UUID,
     data: dict[str, Any],
+    *,
+    expected_task_attempt: UUID,
 ) -> int:
-    """Mark a running slot as done iff its `attempt_id` matches `slot_attempt`.
+    """Mark a running slot as done iff the full CAS envelope holds.
 
-    Returns 1 on success, 0 if the slot was re-claimed (stale attempt) or is
-    missing entirely. Cloud Tasks redeliveries from an earlier, already-
-    superseded slot attempt are silently dropped by the CAS.
+    CAS guards (spec §"Slot write contract"):
+      * `job.attempt_id == expected_task_attempt` — reject stale workers
+        whose job attempt was rotated by a retry.
+      * `job.status` is non-terminal — reject writes after the sweeper or
+        error path flipped the job to done/failed.
+      * `slot.attempt_id == slot_attempt` — reject Cloud Tasks redeliveries
+        from an earlier superseded slot attempt.
+      * `slot.state == 'running'` — reject a second terminal write that
+        would clobber an earlier done/failed payload.
+
+    Returns 1 on success, 0 if any guard fails. The caller should treat 0
+    as a silent no-op (the slot is already in a consistent state owned by
+    a different worker).
     """
     now = datetime.now(UTC)
     slot = SectionSlot(
@@ -157,6 +181,7 @@ async def mark_slot_done(
             slug.value,
             _dump_slot(slot),
             str(slot_attempt),
+            expected_task_attempt,
         )
     return _rowcount(result)
 
@@ -167,11 +192,14 @@ async def mark_slot_failed(
     slug: SectionSlug,
     slot_attempt: UUID,
     error: str,
+    *,
+    expected_task_attempt: UUID,
 ) -> int:
-    """Mark a running slot as failed iff its `attempt_id` matches `slot_attempt`.
+    """Mark a running slot as failed iff the full CAS envelope holds.
 
-    Returns 1 on success, 0 on stale attempt. A failed slot is eligible for
-    reclaim via `claim_slot` (which permits pending|failed -> running).
+    See `mark_slot_done` for the guard list — this function enforces the
+    same envelope. A failed slot (written here) is eligible for reclaim
+    via `claim_slot` because claim's predicate accepts pending|failed.
     """
     now = datetime.now(UTC)
     slot = SectionSlot(
@@ -187,6 +215,7 @@ async def mark_slot_failed(
             slug.value,
             _dump_slot(slot),
             str(slot_attempt),
+            expected_task_attempt,
         )
     return _rowcount(result)
 
