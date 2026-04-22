@@ -6,28 +6,32 @@ export interface PageFrameProps {
   screenshotUrl: string | null;
 }
 
-const IFRAME_LOAD_TIMEOUT_MS = 5_000;
+// Iframe gets a generous window to load before we decide it's broken — many
+// sites take 10+ seconds to hydrate. The screenshot is prefetched in parallel
+// server-side, so swapping to it on failure is instant.
+const IFRAME_LOAD_TIMEOUT_MS = 20_000;
 
 export default function PageFrame(props: PageFrameProps) {
+  // Always try the iframe first — even when the backend probe said
+  // can_iframe=false. The probe is unreliable against bot-protected sites
+  // (Cloudflare 403's our HEAD with SAMEORIGIN but serves the real page to
+  // real browsers). We only fall back to the screenshot if the iframe actually
+  // fails to load or times out.
   const [iframeFailed, setIframeFailed] = createSignal(false);
   const [iframeLoaded, setIframeLoaded] = createSignal(false);
 
-  const showIframe = () =>
-    props.canIframe && !iframeFailed();
+  const showIframe = () => !iframeFailed();
 
-  const showScreenshot = () =>
-    (!props.canIframe || iframeFailed()) && !!props.screenshotUrl;
+  const showScreenshot = () => iframeFailed() && !!props.screenshotUrl;
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   onMount(() => {
-    if (props.canIframe) {
-      timeoutId = setTimeout(() => {
-        if (!iframeLoaded()) {
-          setIframeFailed(true);
-        }
-      }, IFRAME_LOAD_TIMEOUT_MS);
-    }
+    timeoutId = setTimeout(() => {
+      if (!iframeLoaded()) {
+        setIframeFailed(true);
+      }
+    }, IFRAME_LOAD_TIMEOUT_MS);
   });
 
   onCleanup(() => {
