@@ -591,3 +591,97 @@ async def test_maybe_finalize_job_is_idempotent_on_repeat_call(db_pool) -> None:
             "SELECT COUNT(*) FROM vibecheck_analyses WHERE url = $1", url
         )
     assert rowcount == 1
+
+
+# --- Finalize lock consistency (P1.4) --------------------------------------
+
+
+async def test_finalize_does_not_upsert_when_job_task_attempt_rotated(
+    db_pool,
+) -> None:
+    """A stale finalize (from a superseded task_attempt) must not touch the cache.
+
+    Simulates the race in spec §"Finalize lock consistency": worker A's
+    heartbeat expires, the sweeper rotates job.attempt_id for a retry, and
+    A's late finalize coroutine fires after the rotation. A must abort
+    without UPSERTing into vibecheck_analyses.
+    """
+    original_attempt = uuid4()
+    url = "https://example.com/stale-finalize"
+    job_id = await _insert_job(db_pool, original_attempt, url=url)
+    await _seed_slots(db_pool, job_id, original_attempt, _ALL_SLUGS)
+
+    # Simulate a retry rotation AFTER the slot writes but before finalize.
+    rotated_attempt = uuid4()
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET attempt_id = $2 WHERE job_id = $1",
+            job_id,
+            rotated_attempt,
+        )
+
+    finalized = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=original_attempt
+    )
+
+    assert finalized is False
+    async with db_pool.acquire() as conn:
+        rowcount = await conn.fetchval(
+            "SELECT COUNT(*) FROM vibecheck_analyses WHERE url = $1", url
+        )
+    assert rowcount == 0
+
+
+async def test_finalize_does_not_upsert_when_job_status_is_terminal(db_pool) -> None:
+    """Once a job flipped to failed, finalize must not resurrect the cache row."""
+    task_attempt = uuid4()
+    url = "https://example.com/failed-job"
+    job_id = await _insert_job(db_pool, task_attempt, url=url)
+    await _seed_slots(db_pool, job_id, task_attempt, _ALL_SLUGS)
+
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET status = 'failed' WHERE job_id = $1",
+            job_id,
+        )
+
+    finalized = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=task_attempt
+    )
+
+    assert finalized is False
+    async with db_pool.acquire() as conn:
+        rowcount = await conn.fetchval(
+            "SELECT COUNT(*) FROM vibecheck_analyses WHERE url = $1", url
+        )
+    assert rowcount == 0
+
+
+async def test_finalize_upsert_races_are_serialized(db_pool) -> None:
+    """Two concurrent finalize calls on the same job must produce one cache row.
+
+    FOR UPDATE on the vibecheck_jobs row serializes the two finalizers;
+    the ON CONFLICT UPSERT keyed on url ensures a single vibecheck_analyses
+    row regardless of the observed order. Without the row lock, both
+    finalizers could re-assemble and UPSERT in rapid succession — the
+    cache would still end up single-rowed, but the second finalizer would
+    perform wasted work and observe a half-merged slot snapshot under
+    realistic concurrent-slot-write load.
+    """
+    task_attempt = uuid4()
+    url = "https://example.com/race"
+    job_id = await _insert_job(db_pool, task_attempt, url=url)
+    await _seed_slots(db_pool, job_id, task_attempt, _ALL_SLUGS)
+
+    results = await asyncio.gather(
+        maybe_finalize_job(db_pool, job_id, expected_task_attempt=task_attempt),
+        maybe_finalize_job(db_pool, job_id, expected_task_attempt=task_attempt),
+    )
+
+    # Both observe a consistent, fully-done slot set and succeed.
+    assert all(results)
+    async with db_pool.acquire() as conn:
+        rowcount = await conn.fetchval(
+            "SELECT COUNT(*) FROM vibecheck_analyses WHERE url = $1", url
+        )
+    assert rowcount == 1

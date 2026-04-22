@@ -1,10 +1,13 @@
 """Job finalization: assemble SidebarPayload once every slot is done.
 
-`maybe_finalize_job` is safe to call after any slot write. It takes a job-
-level advisory lock so concurrent invocations can't double-write the cache
-and can't observe a half-merged slot snapshot. If every slot is `done`, it
-assembles a `SidebarPayload` from the slot fragments and UPSERTs into
-`vibecheck_analyses` (the legacy 72h cache).
+`maybe_finalize_job` is safe to call after any slot write. It takes a
+row-level `SELECT FOR UPDATE` lock on the `vibecheck_jobs` row so that
+concurrent finalizers serialize and slot writers block until finalize
+commits — the previous `pg_advisory_xact_lock` was not held by slot
+writers and therefore could not prevent half-merged snapshots (codex W1
+P1.4). If every slot is `done`, finalize assembles a `SidebarPayload`
+from the slot fragments and UPSERTs into `vibecheck_analyses` (the
+legacy 72h cache).
 """
 from __future__ import annotations
 
@@ -33,10 +36,16 @@ from src.analyses.tone._scd_schemas import SCDReport
 
 _CACHE_TTL = timedelta(hours=72)
 
+# SELECT FOR UPDATE serializes concurrent finalizers on the job row and
+# blocks slot writers that grab the same row-level lock for their UPDATE.
+# We fetch `attempt_id` and `status` so the caller can verify neither has
+# drifted from the worker's expected envelope before assembling + UPSERTing.
 _LOAD_SQL = """
-SELECT url, sections, sidebar_payload IS NOT NULL AS already_finalized
+SELECT url, sections, attempt_id, status,
+       sidebar_payload IS NOT NULL AS already_finalized
 FROM vibecheck_jobs
 WHERE job_id = $1
+FOR UPDATE
 """
 
 _UPSERT_CACHE_SQL = """
@@ -46,6 +55,8 @@ ON CONFLICT (url) DO UPDATE
 SET sidebar_payload = EXCLUDED.sidebar_payload,
     expires_at = EXCLUDED.expires_at
 """
+
+_NON_TERMINAL_STATUSES = frozenset({"pending", "extracting", "analyzing"})
 
 
 def _load_sections(raw: Any) -> dict[SectionSlug, SectionSlot]:
@@ -126,25 +137,52 @@ def _assemble_payload(
     )
 
 
-async def maybe_finalize_job(db: Any, job_id: UUID) -> bool:
-    """Finalize the job if every slot is done, under an advisory lock.
+async def maybe_finalize_job(
+    db: Any,
+    job_id: UUID,
+    *,
+    expected_task_attempt: UUID | None = None,
+) -> bool:
+    """Finalize the job if every slot is done, serialized with slot writers.
 
     Returns True iff a SidebarPayload was assembled and upserted into
     `vibecheck_analyses` (also True on an idempotent re-finalize where the
-    cache row already existed). False when any slot is still pending/
-    running/failed.
+    cache row already existed). Returns False when any slot is still
+    pending/running/failed, when the job's `attempt_id` no longer matches
+    the caller's expected envelope, or when the job has already flipped
+    to a terminal status.
 
-    The lock is keyed on `hashtext(job_id::text)` and held for the duration
-    of the transaction so two concurrent finalizers serialize rather than
-    both writing the cache (and potentially racing on sub-schema assembly).
+    **Locking strategy (spec §"Finalize lock consistency", codex P1.4).**
+    The load is `SELECT ... FOR UPDATE`, which takes a row-level lock on
+    the `vibecheck_jobs` row for the duration of the transaction. Concurrent
+    finalizers serialize on that lock; slot writers that UPDATE the same
+    row are blocked until finalize commits, so finalize never observes a
+    half-merged slot snapshot. This supersedes the previous
+    `pg_advisory_xact_lock(hashtext(job_id))` which was not held by
+    `slots.py` writers and therefore could not serialize them.
+
+    Strategy B was chosen over forcing each slot writer to grab the lock
+    too (Strategy A) because Strategy B scales better: per-section retries
+    on *unrelated* slots do not contend, and the finalize read-then-UPSERT
+    is the only long-held critical section.
+
+    `expected_task_attempt` (when provided) gates the UPSERT: if a retry
+    rotated the job's `attempt_id` after this worker launched the
+    finalizer, the stale finalize aborts without touching the cache.
+    Similarly, a job whose status already moved to `done`/`failed` returns
+    False — the error path or sweeper owns those rows.
     """
     async with db.acquire() as conn, conn.transaction():
-        await conn.execute(
-            "SELECT pg_advisory_xact_lock(hashtext($1::text))",
-            str(job_id),
-        )
         row = await conn.fetchrow(_LOAD_SQL, job_id)
         if row is None:
+            return False
+
+        if (
+            expected_task_attempt is not None
+            and row["attempt_id"] != expected_task_attempt
+        ):
+            return False
+        if row["status"] not in _NON_TERMINAL_STATUSES:
             return False
 
         sections = _load_sections(row["sections"])
