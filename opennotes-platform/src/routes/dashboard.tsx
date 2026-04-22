@@ -15,6 +15,8 @@ import {
   Suspense,
 } from "solid-js";
 import type { AdminAPIKey } from "~/lib/api-client.server";
+import { Button } from "@opennotes/ui/components/ui/button";
+import { Input } from "@opennotes/ui/components/ui/input";
 
 const SCOPE_TEMPLATES: Record<string, string[]> = {
   "Discourse Plugin": [
@@ -230,9 +232,9 @@ export default function DashboardPage() {
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-bold tracking-tight">API Keys</h1>
         <Show when={!showCreateForm()}>
-          <button
+          <Button
             onClick={() => setShowCreateForm(true)}
-            class="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            class="gap-1.5"
           >
             <svg
               class="h-4 w-4"
@@ -244,7 +246,7 @@ export default function DashboardPage() {
               <path d="M12 5v14m-7-7h14" />
             </svg>
             Create Key
-          </button>
+          </Button>
         </Show>
       </div>
 
@@ -259,13 +261,13 @@ export default function DashboardPage() {
               >
                 Key name
               </label>
-              <input
+              <Input
                 id="keyName"
                 type="text"
                 value={keyName()}
                 onInput={(e) => setKeyName(e.currentTarget.value)}
                 placeholder="e.g. Production Discourse"
-                class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                class="mt-1"
                 required
               />
             </div>
@@ -277,17 +279,18 @@ export default function DashboardPage() {
               <div class="mt-2 flex flex-wrap gap-2">
                 <For each={Object.keys(SCOPE_TEMPLATES)}>
                   {(name) => (
-                    <button
+                    <Button
                       type="button"
+                      size="sm"
                       onClick={() => applyTemplate(name)}
-                      class={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                      class={`rounded-full border ${
                         isTemplateActive(name)
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border bg-muted text-muted-foreground hover:bg-muted/80"
                       }`}
                     >
                       {name}
-                    </button>
+                    </Button>
                   )}
                 </For>
               </div>
@@ -300,17 +303,18 @@ export default function DashboardPage() {
               <div class="mt-2 flex flex-wrap gap-2">
                 <For each={ALL_PUBLIC_SCOPES}>
                   {(scope) => (
-                    <button
+                    <Button
                       type="button"
+                      size="sm"
                       onClick={() => toggleScope(scope)}
-                      class={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      class={`border text-xs ${
                         selectedScopes().has(scope)
                           ? "border-primary/50 bg-primary/10 text-primary"
                           : "border-border bg-background text-muted-foreground hover:border-primary/30"
                       }`}
                     >
                       {scope}
-                    </button>
+                    </Button>
                   )}
                 </For>
               </div>
@@ -321,14 +325,13 @@ export default function DashboardPage() {
             </Show>
 
             <div class="flex items-center gap-3">
-              <button
+              <Button
                 type="submit"
                 disabled={
                   selectedScopes().size === 0 ||
                   !keyName() ||
                   createSubmission.pending
                 }
-                class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Show
                   when={!createSubmission.pending}
@@ -336,14 +339,15 @@ export default function DashboardPage() {
                 >
                   Create Key
                 </Show>
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={resetForm}
-                class="text-sm text-muted-foreground hover:text-foreground"
+                class="text-muted-foreground hover:text-foreground"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
         </div>
@@ -409,12 +413,13 @@ function KeysTable(props: {
           <p class="text-sm text-destructive">
             Failed to load API keys. The server may be unreachable.
           </p>
-          <button
+          <Button
+            variant="link"
             onClick={() => revalidate("keys")}
-            class="mt-3 text-sm font-medium text-primary hover:underline"
+            class="mt-3 px-0"
           >
             Retry
-          </button>
+          </Button>
         </div>
       </Match>
       <Match
@@ -485,12 +490,13 @@ function KeysTable(props: {
                           {formatDate(key.created_at)}
                         </td>
                         <td class="px-4 py-3 text-right">
-                          <button
+                          <Button
+                            variant="link"
                             onClick={() => props.onRevoke(key)}
-                            class="text-sm text-destructive hover:text-destructive/80"
+                            class="px-0 text-destructive hover:text-destructive/80"
                           >
                             Revoke
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     )}
@@ -531,9 +537,10 @@ function KeyRevealModal(props: {
           </code>
         </div>
         <div class="mt-4 flex items-center gap-3">
-          <button
+          <Button
+            variant="outline"
             onClick={props.onCopy}
-            class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted"
+            class="gap-1.5"
           >
             <Show
               when={!props.copied}
@@ -563,7 +570,7 @@ function KeyRevealModal(props: {
               </svg>
               Copy to Clipboard
             </Show>
-          </button>
+          </Button>
         </div>
         <div class="mt-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
           <p class="text-xs text-destructive">
@@ -572,12 +579,11 @@ function KeyRevealModal(props: {
           </p>
         </div>
         <div class="mt-5 flex justify-end">
-          <button
+          <Button
             onClick={props.onDismiss}
-            class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             I've saved my key
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -612,21 +618,22 @@ function RevokeConfirmDialog(props: {
           <p class="mt-3 text-sm text-destructive">{props.revokeError}</p>
         </Show>
         <div class="mt-5 flex justify-end gap-3">
-          <button
+          <Button
+            variant="outline"
             onClick={props.onCancel}
-            class="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
+            class="text-muted-foreground"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="destructive"
             onClick={props.onConfirm}
             disabled={props.pending}
-            class="rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
           >
             <Show when={!props.pending} fallback="Revoking...">
               Revoke Key
             </Show>
-          </button>
+          </Button>
         </div>
       </div>
     </div>
