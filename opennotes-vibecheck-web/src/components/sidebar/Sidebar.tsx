@@ -6,6 +6,7 @@ import type {
   SidebarPayload,
 } from "~/lib/api-client.server";
 import type { components } from "~/lib/generated-types";
+import { makeEmptyScd } from "~/lib/sidebar-defaults";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
 import {
   SafetyModerationReport,
@@ -55,13 +56,6 @@ function doneSlot(attemptId: string, data: unknown): SectionSlot {
   };
 }
 
-const EMPTY_SCD: SCDReport = {
-  summary: "",
-  tone_labels: [],
-  per_speaker_notes: {},
-  insufficient_conversation: true,
-};
-
 const EMPTY_CLAIMS_REPORT: ClaimsReport = {
   deduped_claims: [],
   total_claims: 0,
@@ -88,7 +82,7 @@ function synthesizeSectionsFromPayload(
     flashpoint_matches: payload.tone_dynamics?.flashpoint_matches ?? [],
   };
   const scdData = {
-    scd: payload.tone_dynamics?.scd ?? EMPTY_SCD,
+    scd: payload.tone_dynamics?.scd ?? makeEmptyScd(),
   };
   const claimsDedupData = {
     claims_report:
@@ -131,7 +125,7 @@ function extractFlashpointMatches(data: unknown): FlashpointMatch[] {
 }
 
 function extractScd(data: unknown): SCDReport {
-  return (asRecord(data).scd ?? EMPTY_SCD) as SCDReport;
+  return (asRecord(data).scd ?? makeEmptyScd()) as SCDReport;
 }
 
 function extractClaimsReport(data: unknown): ClaimsReport {

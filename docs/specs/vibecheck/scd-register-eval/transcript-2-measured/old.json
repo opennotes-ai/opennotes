@@ -1,0 +1,34 @@
+{
+  "narrative": "The conversation starts with an open, inquisitive prompt from the first speaker seeking a decision-making heuristic. A second speaker offers a concrete, experience-based rule, which prompts a third speaker to politely push back and reframe the underlying criteria. Instead of becoming defensive, the second speaker readily concedes, acknowledging the validity of the reframing while explaining their original reasoning. The first speaker then re-enters the discussion to synthesize both perspectives, proposing a unified practical rule. Finally, the third speaker validates this synthesized conclusion. Overall, the exchange is highly collaborative and analytical. The participants effectively use polite disagreement, concession, and synthesis to collectively refine their understanding without any escalation or hostility.",
+  "speaker_arcs": [
+    {
+      "speaker": "dgreene",
+      "note": "Initiates the discussion with an open inquiry and returns later to synthesize the differing perspectives into a unified, practical conclusion.",
+      "utterance_id_range": null
+    },
+    {
+      "speaker": "emoss",
+      "note": "Provides a definitive initial answer, then demonstrates a collaborative stance by readily conceding to polite pushback and agreeing with the reframing.",
+      "utterance_id_range": null
+    },
+    {
+      "speaker": "fperez",
+      "note": "Enters to politely challenge the initial answer by reframing the core metric, ultimately validating the final synthesized conclusion.",
+      "utterance_id_range": null
+    }
+  ],
+  "summary": "The conversation begins with one speaker asking a genuine question. Another provides a definitive answer based on experience. A third speaker politely pushes back, offering an alternative perspective. Rather than escalating, the second speaker concedes and agrees with the refinement. The first speaker then synthesizes both viewpoints into a practical heuristic, which the third speaker validates. The discussion is highly collaborative, maintaining a civil, respectful tone throughout as participants build upon each other's ideas to reach consensus.",
+  "tone_labels": [
+    "collaborative",
+    "civil",
+    "analytical",
+    "polite",
+    "constructive"
+  ],
+  "per_speaker_notes": {
+    "emoss": "Offers an initial concrete heuristic and demonstrates collaborative openness by conceding to polite pushback.",
+    "dgreene": "Initiates the discussion with an open inquiry and later synthesizes the ensuing points into a practical conclusion.",
+    "fperez": "Politely reframes another speaker's premise and later validates the final group synthesis."
+  },
+  "insufficient_conversation": false
+}

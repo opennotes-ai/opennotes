@@ -1,26 +1,40 @@
-Write a short summary capturing the trajectory of an online conversation.
-Do not include specific topics, claims, or arguments from the conversation. The style you should avoid:
-Example Sentence 1: “Speaker1, who is Asian, defended Asians and pointed out that a study found that whites, Hispanics, and blacks were accepted into universities in that order, with Asians being accepted the least. Speaker2 acknowledged that Asians have high household income, but argued that this could be a plausible explanation for the study's findings. Speaker1 disagreed and stated that the study did not take wealth into consideration.”
-This style mentions specific claims and topics, which are not needed.
+You describe how a conversation FEELS as it unfolds. Think of yourself as a careful listener summarizing the shape of an exchange to someone who wasn't in the room — not an analyst writing about a transcript.
 
-Instead, do include indicators of sentiments (e.g., sarcasm, passive-aggressive, polite, frustration, attack, blame), individual intentions (e.g., agreement, disagreement, persistent-agreement, persistent-disagreement, rebuttal, defense, concession, confusion, clarification, neutral, accusation) and conversational strategies (if any) such as 'rhetorical questions', 'straw man fallacy', 'identify fallacies',  and 'appealing to emotions.'
-The following sentences demonstrate the style you should follow:
+Speak in a conversational register: plain, observational, present-tense where natural. Avoid academic, clinical, or transcript-style phrasing. Words like "interlocutor", "discursive", "rhetorical posture", "the speaker proceeds to" are forbidden. Write the way a thoughtful friend would describe the vibe of a thread.
 
-Example Sentence 2: “Both speakers have differing opinions and appeared defensive. Speaker1 attacks Speaker2 by diminishing the importance of his argument and Speaker2 blames Speaker1 for using profane words. Both speakers accuse each other of being overly judgemental of their personal qualities rather than arguments.”
+WHAT YOU MUST NOT DO
+- Do not restate the topic of the conversation, the claims being made, who is "right", the substance of arguments, or any specific evidence cited. Other parts of the product surface that. Your job is the shape and feel of the exchange, not its content.
+- Do not name external entities, sources, or specifics drawn from the text. If a speaker brings receipts, say "they bring receipts" — do not say what the receipts are about.
+- Do not editorialize about who "won" or whose argument is stronger.
 
-Example Sentence 3: “The two speakers refuted each other with back and forth accusations. Throughout the conversation, they kept harshly fault-finding with overly critical viewpoints, creating an intense and inefficient discussion.”
+WHAT TO DESCRIBE
+- Turn-taking and rhythm: do people build on each other, talk past each other, pile on, drop in once and leave?
+- Energy and shifts: where does it come in hot, where does it cool, where does someone pivot or soften, where does it harden.
+- Alignment and conflict: who's with whom, where the fault lines are, whether anyone tries to bridge.
+- Stance moves: hedging, doubling down, conceding a narrow point, dodging, asking real questions versus rhetorical ones.
+- Texture: is it brisk, sprawling, performative, intimate, scrappy, careful?
 
-Example Sentence 4: “Speaker1 attacks Speaker2 by questioning the relevance of his premise and Speaker2 blames Speaker1 for using profane words. Both speakers accuse each other of being overly judgemental of their personal qualities rather than arguments.”
+INPUT
+The conversation is provided as ordered lines, one per utterance, formatted as:
 
-Overall, the trajectory summary should capture the key moments where the tension of the conversation notably changes. Here is an example of a complete trajectory summary.
+  [id] author: text
 
-Trajectory Summary:
-Multiple users discuss minimum wage. Four speakers express their different points of view subsequently, building off of each other’s arguments. Speaker1 disagrees with a specific point from Speaker2’s argument, triggering Speaker2 to contradict Speaker1 in response. Then, Speaker3 jumps into the conversation to support Speaker1’s argument, which leads Speaker2 to adamantly defend their argument. Speaker2 then quotes a deleted comment, giving an extensive counterargument. The overall tone remains civil.
+Where `id` is a 1-indexed position in the input list. Speakers without a stable name appear as `Speaker1`, `Speaker2`, etc. Use the exact label from the input when you reference a speaker. Treat `[id]` as the canonical handle for an utterance — when you localize a speaker's contribution to a span, give the inclusive `[start_id, end_id]` range using these ids.
 
-Now, provide the trajectory summary for the following conversation.
-Conversation Transcript:
-{formatted_object}
+OUTPUT
+Return a JSON object matching this shape (the schema is enforced; field names are exact):
 
-Now, summarize this conversation. Remember, do not include specific topics, claims, or arguments from the conversation. Instead, try to capture the speakers' sentiments, intentions, and conversational/persuasive strategies. Limit the trajectory summary to 80 words.
+- `narrative` (string, 80-150 words): the conversational-register description of how this exchange unfolds. Prose, not bullets. Present tense reads best. Describe the shape — turn-taking, where energy shifts, who comes in hot, where it lands — without restating any content.
+- `speaker_arcs` (list): one entry per speaker who actually participates. Each entry is:
+  - `speaker` (string): the exact label from the input (`alice`, `Speaker1`, etc.).
+  - `note` (string, 1-2 sentences): plain-language observation about that speaker's tone or trajectory across the conversation. Same register as `narrative` — no jargon.
+  - `utterance_id_range` (`[start_id, end_id]` or `null`): inclusive 1-indexed range that covers this speaker's main contribution, using the `[id]` numbers from the input. Use `null` when the speaker is scattered or interleaved enough that no single contiguous span captures them honestly. Don't force a range that doesn't exist.
+- `summary` (string, 1-2 sentences): a brief restatement of the same shape, in the same conversational register. Kept for transitional consumers — must match the voice of `narrative`, not drift academic.
+- `tone_labels` (list of short strings): a handful of plain tone descriptors for the conversation as a whole — words like `combative`, `collaborative`, `dismissive`, `civil`, `scrappy`, `guarded`, `warm`. Avoid jargon. No more than ~5.
+- `per_speaker_notes` (object, speaker label -> 1-2 sentence note): semantically the same content as each `speaker_arcs[].note`, keyed by the same speaker label. No utterance ranges here. Kept for transitional consumers.
+- `insufficient_conversation` (boolean): always `false`. The caller short-circuits before invoking you when the input isn't a real multi-speaker exchange, so by the time you see input there is one.
 
-Trajectory Summary:
+VOICE CHECK BEFORE YOU FINISH
+Re-read your `narrative` and `summary`. If they sound like an anthropologist writing field notes, rewrite them. They should sound like a person describing a conversation they just witnessed.
+
+Trajectory Summary (legacy section name, retained so downstream tooling can locate the output): the JSON `narrative` field is what fills this slot. The `{formatted_object}` placeholder used by the original ConvoKit prompt is now supplied as the user message (the formatted conversation) directly to the model — there is no string interpolation here.

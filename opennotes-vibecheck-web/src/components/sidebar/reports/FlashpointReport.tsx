@@ -1,48 +1,82 @@
-import { For, Show } from "solid-js";
+import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
 
 type FlashpointMatch = components["schemas"]["FlashpointMatch"];
+type RiskLevel = components["schemas"]["RiskLevel"];
+
+const RISK_PHRASES: Record<RiskLevel, string> = {
+  Dangerous: "a dangerous flashpoint",
+  Hostile: "a sharp clash",
+  Heated: "a heated exchange",
+  Guarded: "a brief tense moment",
+  "Low Risk": "a brief tense moment",
+};
+
+const RISK_QUALIFIERS: Record<RiskLevel, string> = {
+  Dangerous: "severe risk",
+  Hostile: "high risk",
+  Heated: "moderate risk",
+  Guarded: "low risk",
+  "Low Risk": "low risk",
+};
+
+function phraseFor(level: RiskLevel): string {
+  return RISK_PHRASES[level] ?? "a tense moment";
+}
+
+function qualifierFor(level: RiskLevel): string {
+  return RISK_QUALIFIERS[level] ?? "elevated risk";
+}
+
+function formatScore(score: number): string {
+  if (!Number.isFinite(score)) return "derailment unavailable";
+  return `derailment ~${Math.round(score)}/100`;
+}
 
 export interface FlashpointReportProps {
   matches: FlashpointMatch[];
 }
 
-export default function FlashpointReport(props: FlashpointReportProps) {
+export default function FlashpointReport(
+  props: FlashpointReportProps,
+): JSX.Element {
   const matches = (): FlashpointMatch[] => props.matches ?? [];
 
   return (
-    <div data-testid="report-tone_dynamics__flashpoint" class="space-y-2">
-      <p class="text-[11px] text-muted-foreground">
-        {matches().length} moment{matches().length === 1 ? "" : "s"}
-      </p>
+    <div data-testid="report-tone_dynamics__flashpoint" class="space-y-3">
       <Show
         when={matches().length > 0}
         fallback={
-          <p class="text-xs text-muted-foreground">
-            No flashpoint moments detected.
+          <p
+            data-testid="flashpoint-empty"
+            class="text-xs text-muted-foreground"
+          >
+            Things stay even-keeled across this thread.
           </p>
         }
       >
-        <ul class="space-y-1.5">
+        <ul class="space-y-3">
           <For each={matches()}>
             {(match) => (
-              <li class="text-xs">
-                <div class="flex items-center gap-2">
-                  <span
-                    data-testid="flashpoint-risk-level"
-                    class="inline-flex items-center rounded-full bg-chart-3/15 px-1.5 py-0.5 text-[10px] font-medium text-foreground"
-                  >
-                    {match.risk_level}
-                  </span>
-                  <span class="font-mono text-[10px] text-muted-foreground">
-                    {match.derailment_score}/100
-                  </span>
-                </div>
-                <p class="mt-1 line-clamp-2 text-foreground">
-                  {match.reasoning}
+              <li data-testid="flashpoint-entry" class="space-y-1">
+                <p
+                  data-testid="flashpoint-headline"
+                  class="text-xs text-foreground"
+                >
+                  {phraseFor(match.risk_level)} around turn{" "}
+                  {match.utterance_id} &mdash; {qualifierFor(match.risk_level)}.
                 </p>
-                <p class="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                  utterance {match.utterance_id}
+                <p
+                  data-testid="flashpoint-score"
+                  class="font-mono text-[10px] text-muted-foreground"
+                >
+                  {formatScore(match.derailment_score)}
+                </p>
+                <p
+                  data-testid="flashpoint-reasoning"
+                  class="line-clamp-2 text-xs text-muted-foreground"
+                >
+                  {match.reasoning}
                 </p>
               </li>
             )}

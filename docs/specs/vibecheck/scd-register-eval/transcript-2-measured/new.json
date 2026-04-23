@@ -1,0 +1,39 @@
+{
+  "narrative": "The exchange kicks off with a direct question seeking advice on a common trade-off. Someone quickly jumps in with a specific, experience-based answer to get things started. Almost immediately, a third person enters to gently challenge the premise of that answer, suggesting a different underlying way to look at the problem. Instead of getting defensive, the second person readily concedes, validating the new perspective while explaining their original reasoning. The initial questioner then steps back in to play synthesizer, blending both viewpoints into a practical rule of thumb. The conversation wraps up smoothly with the third person validating this new synthesis. Overall, it is a brisk, highly collaborative thread where participants actively listen, gracefully accept pushback, and work together to arrive at a shared conclusion.",
+  "speaker_arcs": [
+    {
+      "speaker": "dgreene",
+      "note": "Opens the floor with a genuine question, absorbs the resulting back-and-forth, and returns to synthesize a practical middle ground.",
+      "utterance_id_range": [
+        1,
+        5
+      ]
+    },
+    {
+      "speaker": "emoss",
+      "note": "Offers a firm, experience-based answer initially, but gracefully accepts pushback and adapts their stance.",
+      "utterance_id_range": [
+        2,
+        4
+      ]
+    },
+    {
+      "speaker": "fperez",
+      "note": "Steps in to gently reframe the core metric being discussed and finishes by validating the group's final consensus.",
+      "utterance_id_range": [
+        3,
+        6
+      ]
+    }
+  ],
+  "summary": "A brisk, highly collaborative exchange where a direct question leads to a quick answer, a gentle reframing, and an eventual synthesis. The participants actively listen and build on each other's points, landing smoothly on a shared agreement.",
+  "tone_labels": [
+    "collaborative",
+    "constructive",
+    "civil",
+    "pragmatic",
+    "warm"
+  ],
+  "per_speaker_notes": {},
+  "insufficient_conversation": false
+}

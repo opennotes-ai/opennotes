@@ -11,9 +11,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import pytest
+from pydantic import ValidationError
 
 from src.analyses.tone import scd as scd_mod
-from src.analyses.tone._scd_schemas import SCDReport
+from src.analyses.tone._scd_schemas import SCDReport, SpeakerArc
 from src.config import Settings
 from src.utterances import Utterance
 
@@ -78,6 +79,25 @@ def settings() -> Settings:
 @pytest.fixture
 def fake_report() -> SCDReport:
     return SCDReport(
+        narrative=(
+            "Two voices come in at different angles and circle each other for "
+            "a few turns. One keeps poking at the framing; the other holds "
+            "the line at first, then gives a little ground on a narrow point. "
+            "By the end the heat has come off and they land somewhere "
+            "uneasy but civil."
+        ),
+        speaker_arcs=[
+            SpeakerArc(
+                speaker="alice",
+                note="Stays skeptical throughout, mostly through pointed questions.",
+                utterance_id_range=[1, 3],
+            ),
+            SpeakerArc(
+                speaker="bob",
+                note="Starts defensive and softens into a narrow concession.",
+                utterance_id_range=None,
+            ),
+        ],
         summary=(
             "Two speakers exchange disagreement with occasional rhetorical "
             "questions, gradually moving toward a reluctant concession."
@@ -119,6 +139,49 @@ class TestAnalyzeScdMultiSpeaker:
         assert set(report.per_speaker_notes.keys()) == {"alice", "bob"}
         assert report.insufficient_conversation is False
 
+    async def test_multi_speaker_run_populates_new_shape(
+        self,
+        spy: _BuildAgentSpy,
+        settings: Settings,
+    ):
+        utterances = [
+            _utt("alice", "I don't think that's quite right."),
+            _utt("bob", "Why would you even say that?"),
+            _utt("alice", "Because the premise is shaky."),
+            _utt("bob", "Fine — maybe on that one point."),
+        ]
+
+        report = await scd_mod.analyze_scd(utterances, settings)
+
+        assert report.narrative.strip()
+        assert report.speaker_arcs
+        assert report.summary.strip()
+        assert report.tone_labels
+        assert report.per_speaker_notes
+
+    async def test_multi_speaker_run_speaker_arcs_have_correct_shape(
+        self,
+        spy: _BuildAgentSpy,
+        settings: Settings,
+    ):
+        utterances = [
+            _utt("alice", "I don't think that's quite right."),
+            _utt("bob", "Why would you even say that?"),
+            _utt("alice", "Because the premise is shaky."),
+            _utt("bob", "Fine — maybe on that one point."),
+        ]
+
+        report = await scd_mod.analyze_scd(utterances, settings)
+
+        assert report.speaker_arcs
+        for arc in report.speaker_arcs:
+            assert isinstance(arc.speaker, str) and arc.speaker
+            assert isinstance(arc.note, str) and arc.note
+            if arc.utterance_id_range is not None:
+                assert isinstance(arc.utterance_id_range, list)
+                assert len(arc.utterance_id_range) == 2
+                assert all(isinstance(i, int) for i in arc.utterance_id_range)
+
     async def test_builds_agent_with_prompt_and_output_type(
         self,
         spy: _BuildAgentSpy,
@@ -150,7 +213,9 @@ class TestAnalyzeScdMultiSpeaker:
         await scd_mod.analyze_scd(utterances, settings)
 
         assert spy.last_agent is not None
-        assert spy.last_agent.run_calls == ["alice: First line.\nbob: Second line."]
+        assert spy.last_agent.run_calls == [
+            "[1] alice: First line.\n[2] bob: Second line."
+        ]
 
     async def test_missing_author_gets_stable_speaker_label(
         self,
@@ -167,9 +232,9 @@ class TestAnalyzeScdMultiSpeaker:
 
         assert spy.last_agent is not None
         formatted = spy.last_agent.run_calls[0]
-        assert "alice: Here is a claim." in formatted
-        assert "bob: I disagree with the framing." in formatted
-        assert "Speaker1: Anonymous aside." in formatted
+        assert "[1] alice: Here is a claim." in formatted
+        assert "[2] bob: I disagree with the framing." in formatted
+        assert "[3] Speaker1: Anonymous aside." in formatted
 
 
 class TestAnalyzeScdInsufficientConversation:
@@ -183,6 +248,8 @@ class TestAnalyzeScdInsufficientConversation:
         assert report.insufficient_conversation is True
         assert report.per_speaker_notes == {}
         assert report.tone_labels == []
+        assert report.narrative == ""
+        assert report.speaker_arcs == []
         assert spy.build_calls == []
         assert spy.last_agent is None
 
@@ -197,6 +264,8 @@ class TestAnalyzeScdInsufficientConversation:
 
         assert report.insufficient_conversation is True
         assert report.summary  # not empty — has a placeholder explanation
+        assert report.narrative == ""
+        assert report.speaker_arcs == []
         assert spy.build_calls == []
         assert spy.last_agent is None
 
@@ -213,6 +282,8 @@ class TestAnalyzeScdInsufficientConversation:
         report = await scd_mod.analyze_scd(utterances, settings)
 
         assert report.insufficient_conversation is True
+        assert report.narrative == ""
+        assert report.speaker_arcs == []
         assert spy.build_calls == []
         assert spy.last_agent is None
 
@@ -223,4 +294,36 @@ class TestPromptVendored:
         prompt = scd_mod._load_scd_prompt()
         assert prompt.strip()
         assert "Trajectory Summary" in prompt
-        assert "{formatted_object}" in prompt
+        assert "narrative" in prompt
+        assert "speaker_arcs" in prompt
+        assert "FEELS" in prompt
+
+
+class TestSCDReportSchemaShape:
+    def test_speaker_arc_with_range(self):
+        arc = SpeakerArc(speaker="alice", note="x", utterance_id_range=[3, 7])
+        round_tripped = SpeakerArc.model_validate(arc.model_dump())
+        assert round_tripped.speaker == "alice"
+        assert round_tripped.note == "x"
+        assert round_tripped.utterance_id_range == [3, 7]
+
+    def test_speaker_arc_without_range_defaults_to_none(self):
+        arc = SpeakerArc(speaker="alice", note="x")
+        assert arc.utterance_id_range is None
+
+    def test_scd_report_new_fields_default_empty(self):
+        report = SCDReport(summary="placeholder", insufficient_conversation=True)
+        assert report.narrative == ""
+        assert report.speaker_arcs == []
+
+    def test_speaker_arc_rejects_wrong_length(self):
+        with pytest.raises(ValidationError):
+            SpeakerArc(speaker="x", note="y", utterance_id_range=[3])
+
+    def test_speaker_arc_rejects_start_after_end(self):
+        with pytest.raises(ValidationError):
+            SpeakerArc(speaker="x", note="y", utterance_id_range=[7, 3])
+
+    def test_speaker_arc_rejects_zero_or_negative_index(self):
+        with pytest.raises(ValidationError):
+            SpeakerArc(speaker="x", note="y", utterance_id_range=[0, 5])

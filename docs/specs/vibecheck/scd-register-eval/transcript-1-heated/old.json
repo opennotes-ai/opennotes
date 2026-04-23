@@ -1,0 +1,52 @@
+{
+  "narrative": "The conversation begins with the original poster seeking validation for their feelings of shock and distress regarding a major life change. A respondent immediately offers firm validation, but a second respondent challenges this, suggesting a more empathetic and investigative approach. This sparks a brief, slightly combative debate between the two respondents over conversational burden and accountability. As the original poster provides clarifying details that emphasize their feelings of betrayal, a fourth speaker jumps in to mediate. The mediator points out that the debate is distracting from the original poster's immediate need for emotional support. This intervention acts as a turning point; both debaters quickly concede their arguments, apologize for their previous intensity, and collaboratively shift their focus to offering unified sympathy and supportive advice to the original poster.",
+  "speaker_arcs": [
+    {
+      "speaker": "op_throwaway",
+      "note": "Starts by seeking validation for emotional distress, later returning to provide clarification that deepens their expression of hurt.",
+      "utterance_id_range": [
+        1,
+        6
+      ]
+    },
+    {
+      "speaker": "alex_91",
+      "note": "Initially provides blunt validation, becomes defensive in a debate with another user, but eventually concedes to a mediator and apologizes.",
+      "utterance_id_range": [
+        2,
+        8
+      ]
+    },
+    {
+      "speaker": "brenna_h",
+      "note": "Challenges the initial advice by advocating for empathy, engages in a brief debate, and ultimately de-escalates to offer unified support.",
+      "utterance_id_range": [
+        3,
+        9
+      ]
+    },
+    {
+      "speaker": "cyrus_t",
+      "note": "Enters as a mediator to resolve the ongoing debate, redirecting the group's focus to validating the original poster's emotional state.",
+      "utterance_id_range": [
+        7,
+        7
+      ]
+    }
+  ],
+  "summary": "The conversation begins with the original poster seeking validation for their emotional distress. Two speakers offer conflicting advice, leading to a brief, slightly tense debate over where the burden of action lies. The original poster provides further context, deepening their expression of hurt. A fourth speaker intervenes to mediate, pointing out that the debaters are missing the primary emotional need of the original poster. Both debaters promptly concede, de-escalating the tension and shifting to unified, empathetic support.",
+  "tone_labels": [
+    "validating",
+    "combative",
+    "empathetic",
+    "conciliatory",
+    "supportive"
+  ],
+  "per_speaker_notes": {
+    "cyrus_t": "Acts as a stabilizing force, effectively using a mediatory tone to de-escalate tension and refocus the group.",
+    "op_throwaway": "Expresses vulnerability and seeks validation, providing context that steers the conversation's emotional weight.",
+    "alex_91": "Exhibits a fiercely protective and blunt tone initially, but demonstrates self-awareness and a willingness to concede when corrected.",
+    "brenna_h": "Employs a challenging but analytical strategy, advocating for curiosity before ultimately softening to show empathy."
+  },
+  "insufficient_conversation": false
+}

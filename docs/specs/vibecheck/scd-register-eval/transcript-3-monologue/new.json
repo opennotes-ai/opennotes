@@ -1,0 +1,9 @@
+{
+  "narrative": "",
+  "speaker_arcs": [],
+  "summary": "Insufficient conversation for dynamics analysis: fewer than two distinct speakers participated, so no cross-speaker trajectory can be summarized.",
+  "tone_labels": [],
+  "per_speaker_notes": {},
+  "insufficient_conversation": true,
+  "_eval_note": "insufficient_conversation short-circuit fired before LLM call; OLD and NEW prompts produce identical output for this input."
+}

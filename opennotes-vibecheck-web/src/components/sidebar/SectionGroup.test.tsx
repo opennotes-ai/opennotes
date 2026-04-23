@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
 import Sidebar from "./Sidebar";
 import type { SectionSlug, SidebarPayload } from "~/lib/api-client.server";
+import { makeEmptyScd } from "~/lib/sidebar-defaults";
 
 const TONE_SLUGS: SectionSlug[] = [
   "tone_dynamics__flashpoint",
@@ -26,12 +27,7 @@ function makeTonePayload(): SidebarPayload {
     cached_at: null,
     safety: { harmful_content_matches: [] },
     tone_dynamics: {
-      scd: {
-        summary: "",
-        tone_labels: [],
-        per_speaker_notes: {},
-        insufficient_conversation: true,
-      },
+      scd: makeEmptyScd(),
       flashpoint_matches: [],
     },
     facts_claims: {
@@ -180,12 +176,10 @@ describe("SectionGroup", () => {
       tone_dynamics__scd: {
         state: "done",
         attempt_id: "a2",
-        data: {
+        data: makeEmptyScd({
           summary: "done",
-          tone_labels: [],
-          per_speaker_notes: {},
           insufficient_conversation: false,
-        },
+        }),
       },
     };
     render(() => (
@@ -363,12 +357,12 @@ describe("Sidebar (done slots, per-slug reports)", () => {
         state: "done",
         attempt_id: "s-scd",
         data: {
-          scd: {
+          scd: makeEmptyScd({
             summary: "scd summary text",
             tone_labels: ["curious"],
             per_speaker_notes: { Alice: "opens with evidence" },
             insufficient_conversation: false,
-          },
+          }),
         },
       },
       facts_claims__dedup: {
@@ -506,12 +500,10 @@ describe("Sidebar (done slots, per-slug reports)", () => {
         ],
       },
       tone_dynamics: {
-        scd: {
+        scd: makeEmptyScd({
           summary: "payload summary",
-          tone_labels: [],
-          per_speaker_notes: {},
           insufficient_conversation: false,
-        },
+        }),
         flashpoint_matches: [],
       },
       facts_claims: {
