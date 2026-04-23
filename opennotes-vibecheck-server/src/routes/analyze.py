@@ -939,46 +939,43 @@ WHERE j.job_id = $1
 """
 
 
-async def _mark_slot_failed_internal(
+async def _revert_slot_after_enqueue_failure(
     pool: Any,
     job_id: UUID,
     slug: SectionSlug,
-    slot_attempt: UUID,
-    *,
-    error_code: str,
-    error: str,
+    new_slot_attempt: UUID,
+    prior_slot: dict[str, Any],
 ) -> None:
-    """Revert a just-claimed retry slot to `failed` after an enqueue failure.
+    """Restore a just-claimed retry slot to its prior failed snapshot.
 
-    The retry handler's CAS already made this worker the sole owner of the
-    slot; we can UPDATE without re-checking attempt_id. We DO restore the
-    job's status to `failed` so the poll endpoint doesn't appear to hang
-    in `analyzing` forever while no Cloud Task was published.
+    Narrowed from the previous `_mark_slot_failed_internal` (TASK-1473.47):
+    that helper unconditionally flipped the entire job to
+    `status=failed/error_code=internal/error_message='enqueue failed'`,
+    wiping prior error context, prematurely declaring the job terminal,
+    and (worst) clobbering a concurrent retry of a sibling slot that had
+    already moved the job back to `analyzing`.
+
+    The new contract: only the slot rotation is reverted, CAS-keyed on
+    the new slot attempt_id so a concurrent worker that already advanced
+    the slot is left alone. Job-level fields (`status`, `error_code`,
+    `error_message`, `error_host`, `finished_at`) stay as `retry_claim_slot`
+    set them. The orphan sweeper reclaims the job if no worker ever picks
+    it up; sibling-slot retries continue to drive the job forward.
     """
-    now = datetime.now(UTC)
-    slot = SectionSlot(
-        state=SectionState.FAILED,
-        attempt_id=slot_attempt,
-        error=error,
-        finished_at=now,
-    )
     async with pool.acquire() as conn:
         await conn.execute(
             """
             UPDATE vibecheck_jobs
             SET sections = sections || jsonb_build_object($2::text, $3::jsonb),
-                status = 'failed',
-                error_code = $4,
-                error_message = $5,
-                finished_at = now(),
                 updated_at = now()
             WHERE job_id = $1
+              AND sections ? $2::text
+              AND sections -> $2::text ->> 'attempt_id' = $4::text
             """,
             job_id,
             slug.value,
-            json.dumps(slot.model_dump(mode="json")),
-            error_code,
-            error,
+            json.dumps(prior_slot),
+            str(new_slot_attempt),
         )
 
 
@@ -1074,13 +1071,12 @@ async def retry_section(
             slug.value,
             exc,
         )
-        await _mark_slot_failed_internal(
+        await _revert_slot_after_enqueue_failure(
             pool,
             job_id,
             slug,
             new_slot_attempt,
-            error_code="internal",
-            error="enqueue failed",
+            prior_slot=slot_data,
         )
         return _error_response(500, "internal", "enqueue failed")
 
