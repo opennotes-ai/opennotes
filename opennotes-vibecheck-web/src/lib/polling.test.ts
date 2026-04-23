@@ -308,6 +308,28 @@ describe("createPollingResource", () => {
     });
   });
 
+  it("treats a Seroval-shaped 404 (plain Error with statusCode own-property) as terminal too", async () => {
+    const serialized = new Error("missing");
+    Object.assign(serialized, { statusCode: 404, name: "VibecheckApiError" });
+    mockPollJob.mockRejectedValueOnce(serialized);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const { error } = createPollingResource(() => "job-404-shape");
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(1);
+      expect(error()).toBeInstanceOf(Error);
+      expect((error() as Error & { statusCode?: number }).statusCode).toBe(404);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(1);
+
+      dispose();
+    });
+  });
+
   it("fires no further fetches after createRoot is disposed", async () => {
     const first = makeJobState({ status: "pending", next_poll_ms: 500 });
     mockPollJob.mockResolvedValue(first);

@@ -169,6 +169,7 @@ export function createPollingResource(
     currentJobId = id;
     clearTimer();
     abortInFlight();
+    setError(null);
     const gen = generation;
     void tick(gen);
   };

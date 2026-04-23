@@ -525,52 +525,42 @@ describe("Sidebar (done slots, per-slug reports)", () => {
   it("renders each slug's own report and none of its siblings' content", () => {
     render(() => <Sidebar sections={doneSections()} />);
 
-    expect(
-      screen.getByTestId("report-safety__moderation"),
-    ).toBeDefined();
-    expect(
-      screen.getByTestId("report-tone_dynamics__flashpoint"),
-    ).toBeDefined();
-    expect(screen.getByTestId("report-tone_dynamics__scd")).toBeDefined();
-    expect(
-      screen.getByTestId("report-facts_claims__dedup"),
-    ).toBeDefined();
-    expect(
-      screen.getByTestId("report-facts_claims__known_misinfo"),
-    ).toBeDefined();
-    expect(
-      screen.getByTestId("report-opinions_sentiments__sentiment"),
-    ).toBeDefined();
-    expect(
-      screen.getByTestId("report-opinions_sentiments__subjective"),
-    ).toBeDefined();
+    const safetyReport = screen.getByTestId("report-safety__moderation");
+    expect(safetyReport.textContent).toContain("u-safety");
 
     const flashReport = screen.getByTestId(
       "report-tone_dynamics__flashpoint",
     );
+    expect(flashReport.textContent).toContain("tone shifts sharply");
     expect(flashReport.textContent).not.toContain("scd summary text");
+
     const scdReport = screen.getByTestId("report-tone_dynamics__scd");
+    expect(scdReport.textContent).toContain("scd summary text");
     expect(scdReport.textContent).not.toContain("tone shifts sharply");
 
     const dedupReport = screen.getByTestId("report-facts_claims__dedup");
+    expect(dedupReport.textContent).toContain("canonical claim text");
     expect(dedupReport.textContent).not.toContain("known-misinfo-claim");
+
     const knownReport = screen.getByTestId(
       "report-facts_claims__known_misinfo",
     );
+    expect(knownReport.textContent).toContain("known-misinfo-claim");
     expect(knownReport.textContent).not.toContain("canonical claim text");
 
     const sentimentReport = screen.getByTestId(
       "report-opinions_sentiments__sentiment",
     );
+    expect(sentimentReport.textContent).toContain("mean valence");
     expect(sentimentReport.textContent).not.toContain(
       "subjective-claim-one",
     );
+
     const subjectiveReport = screen.getByTestId(
       "report-opinions_sentiments__subjective",
     );
-    expect(subjectiveReport.textContent).not.toContain(
-      "mean valence",
-    );
+    expect(subjectiveReport.textContent).toContain("subjective-claim-one");
+    expect(subjectiveReport.textContent).not.toContain("mean valence");
   });
 
   it("renders done slots without any left-stripe border classes", () => {
