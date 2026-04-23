@@ -98,7 +98,7 @@ export default function AnalyzePage() {
   };
 
   const sidebarPayload = () => jobState()?.sidebar_payload ?? null;
-  const isCached = () => sidebarPayload()?.cached === true;
+  const isCached = () => jobState()?.cached === true;
   const cachedAt = () => sidebarPayload()?.cached_at ?? null;
 
   return (

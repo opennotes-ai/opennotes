@@ -64,10 +64,7 @@ vi.mock("~/routes/analyze.data", () => {
     url: "/__mock_retry_action",
     with: () => retryStub,
   });
-  const pollStub = Object.assign(vi.fn(), {
-    keyFor: () => "vibecheck-poll-job",
-    key: "vibecheck-poll-job",
-  });
+  const pollStub = vi.fn();
   return {
     getFrameCompat: getFrameCompatStub,
     retrySectionAction: retryStub,
@@ -162,5 +159,100 @@ describe("AnalyzePage route", () => {
     expect(failureCard.getAttribute("data-error-code")).toBe(
       "unsupported_site",
     );
+  });
+
+  it("renders CachedBadge with a timestamp when JobState.cached=true and sidebar_payload.cached_at is set (even if payload.cached is false)", async () => {
+    renderAt("/analyze?job=job-cache&c=1&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "done",
+        cached: true,
+        sidebar_payload: {
+          source_url: "https://news.example.com/a",
+          page_title: null,
+          page_kind: "article",
+          scraped_at: "2026-04-22T00:00:00Z",
+          cached: false,
+          cached_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          safety: { harmful_content_matches: [] },
+          tone_dynamics: {
+            scd: {
+              summary: "",
+              tone_labels: [],
+              per_speaker_notes: {},
+              insufficient_conversation: true,
+            },
+            flashpoint_matches: [],
+          },
+          facts_claims: {
+            claims_report: {
+              deduped_claims: [],
+              total_claims: 0,
+              total_unique: 0,
+            },
+            known_misinformation: [],
+          },
+          opinions_sentiments: {
+            opinions_report: {
+              sentiment_stats: {
+                per_utterance: [],
+                positive_pct: 0,
+                negative_pct: 0,
+                neutral_pct: 0,
+                mean_valence: 0,
+              },
+              subjective_claims: [],
+            },
+          },
+        },
+      } as unknown as Partial<JobState>),
+    );
+
+    const badge = await screen.findByTestId("cached-badge");
+    expect(badge.textContent?.toLowerCase()).toContain("cached");
+    expect(badge.textContent).toMatch(/ago/);
+  });
+
+  it("renders CachedBadge without a timestamp when JobState.cached=true and cached_at is null", async () => {
+    renderAt("/analyze?job=job-cache-no-ts&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "done",
+        cached: true,
+        sidebar_payload: null,
+      } as unknown as Partial<JobState>),
+    );
+
+    const badge = await screen.findByTestId("cached-badge");
+    expect(badge.textContent?.toLowerCase()).toContain("cached");
+    expect(badge.textContent?.toLowerCase()).not.toMatch(/ago/);
+    expect(badge.textContent?.toLowerCase()).not.toMatch(/just now/);
+  });
+
+  it("does not render CachedBadge when JobState.cached=false", async () => {
+    renderAt("/analyze?job=job-fresh&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "done",
+        cached: false,
+      }),
+    );
+
+    expect(screen.queryByTestId("cached-badge")).toBeNull();
   });
 });

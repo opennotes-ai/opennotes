@@ -134,14 +134,11 @@ export const analyzeAction = action(async (formData: FormData) => {
   await resolveAnalyzeRedirect(formData);
 }, "vibecheck-analyze");
 
-export const pollJobState = query(
-  async (jobId: string): Promise<JobState> => {
-    "use server";
-    const { pollJob } = await import("~/lib/api-client.server");
-    return pollJob(jobId);
-  },
-  "vibecheck-poll-job",
-);
+export async function pollJobState(jobId: string): Promise<JobState> {
+  "use server";
+  const { pollJob } = await import("~/lib/api-client.server");
+  return pollJob(jobId);
+}
 
 export const retrySectionAction = action(
   async (formData: FormData) => {

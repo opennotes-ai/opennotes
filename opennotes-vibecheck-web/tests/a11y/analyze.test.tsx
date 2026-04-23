@@ -68,10 +68,7 @@ vi.mock("~/routes/analyze.data", () => {
     url: "/__mock_retry_action",
     with: () => retryStub,
   });
-  const pollStub = Object.assign(vi.fn(), {
-    keyFor: () => "vibecheck-poll-job",
-    key: "vibecheck-poll-job",
-  });
+  const pollStub = vi.fn();
   return {
     getFrameCompat: getFrameCompatStub,
     retrySectionAction: retryStub,

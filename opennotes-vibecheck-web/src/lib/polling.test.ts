@@ -450,6 +450,24 @@ describe("createPollingResource", () => {
     });
   });
 
+  it("back-to-back pollJobState calls for the same jobId each trigger a fresh fetch (no cached query coalescing)", async () => {
+    const { pollJobState } = await import("~/routes/analyze.data");
+    const first = makeJobState({ status: "done", next_poll_ms: 500 });
+    const second = makeJobState({ status: "analyzing", next_poll_ms: 500 });
+    mockPollJob
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second);
+
+    const [a, b] = await Promise.all([
+      pollJobState("job-same"),
+      pollJobState("job-same"),
+    ]);
+
+    expect(mockPollJob).toHaveBeenCalledTimes(2);
+    expect(a).toEqual(first);
+    expect(b).toEqual(second);
+  });
+
   it("refetch() after the 3-error terminal clears the error and resumes polling", async () => {
     const ok = makeJobState({ status: "pending", next_poll_ms: 1500 });
     mockPollJob

@@ -185,7 +185,9 @@ const OPINIONS_RENDER: Partial<
 
 export default function Sidebar(props: SidebarProps) {
   const effectiveSections = createMemo<SlugToSlots>(() => {
-    if (props.sections) return props.sections as SlugToSlots;
+    const raw = props.sections;
+    const hasSlots = raw !== undefined && Object.keys(raw).length > 0;
+    if (hasSlots) return raw as SlugToSlots;
     if (props.payload) return synthesizeSectionsFromPayload(props.payload);
     return {};
   });
