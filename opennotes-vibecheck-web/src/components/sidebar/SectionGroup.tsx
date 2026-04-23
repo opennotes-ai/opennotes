@@ -8,30 +8,37 @@ import {
   createSignal,
   type JSX,
 } from "solid-js";
-import type { SectionSlot, SectionSlug } from "~/lib/api-client.server";
+import type { SectionSlot } from "~/lib/api-client.server";
+import type {
+  PartialSectionSlots,
+  SectionSlugLiteral,
+} from "~/lib/section-slots";
 import { SKELETONS } from "./skeletons";
 import RetryButton from "./RetryButton";
 import { sectionDisplayName } from "./display";
 
-export type SlugToSlots = Partial<Record<SectionSlug, SectionSlot>>;
+export type SlugToSlots = PartialSectionSlots;
 
 export interface SectionGroupProps {
   label: string;
-  slugs: SectionSlug[];
+  slugs: SectionSlugLiteral[];
   sections: SlugToSlots;
-  render: Partial<Record<SectionSlug, (data: unknown) => JSX.Element>>;
+  render: Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>;
   jobId?: string;
-  onRetry?: (slug: SectionSlug) => void;
+  onRetry?: (slug: SectionSlugLiteral) => void;
   cachedHint?: boolean;
 }
 
-function slotFor(sections: SlugToSlots, slug: SectionSlug): SectionSlot {
+function slotFor(
+  sections: SlugToSlots,
+  slug: SectionSlugLiteral,
+): SectionSlot {
   const existing = sections[slug];
   if (existing) return existing;
   return { state: "pending", attempt_id: "" };
 }
 
-function slugHeadingLabel(slug: SectionSlug): string {
+function slugHeadingLabel(slug: SectionSlugLiteral): string {
   switch (slug) {
     case "safety__moderation":
       return "Moderation";
