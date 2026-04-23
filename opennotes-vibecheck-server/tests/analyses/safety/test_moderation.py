@@ -179,6 +179,7 @@ class TestHarmfulContentMatchSchema:
             categories={"hate": False},
             scores={"hate": 0.5},
             flagged_categories=[],
+            source="openai",
         )
         assert match.utterance_id == "utt_1"
         assert match.max_score == 0.5

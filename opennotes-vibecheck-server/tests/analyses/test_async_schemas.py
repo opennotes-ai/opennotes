@@ -1,4 +1,4 @@
-"""Behavior contracts for the async-pipeline schemas (TASK-1473.03)."""
+"""Behavior contracts for the async-pipeline schemas (TASK-1473.03, TASK-1474.02)."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -8,6 +8,7 @@ import pytest
 
 from src.analyses.schemas import (
     ErrorCode,
+    ImageModerationSection,
     JobState,
     JobStatus,
     PageKind,
@@ -15,7 +16,10 @@ from src.analyses.schemas import (
     SectionSlug,
     SectionState,
     SidebarPayload,
+    VideoModerationSection,
+    WebRiskSection,
 )
+from src.utterances.schema import Utterance
 
 
 def _empty_sidebar_payload(
@@ -64,9 +68,12 @@ def _empty_sidebar_payload(
 
 
 class TestSectionSlug:
-    def test_covers_all_seven_sidebar_slots(self) -> None:
+    def test_covers_all_sidebar_slots(self) -> None:
         assert {slug.value for slug in SectionSlug} == {
             "safety__moderation",
+            "safety__web_risk",
+            "safety__image_moderation",
+            "safety__video_moderation",
             "tone_dynamics__flashpoint",
             "tone_dynamics__scd",
             "facts_claims__dedup",
@@ -80,9 +87,10 @@ class TestSectionSlug:
 
 
 class TestErrorCode:
-    def test_covers_seven_error_categories(self) -> None:
+    def test_covers_error_categories(self) -> None:
         assert {code.value for code in ErrorCode} == {
             "invalid_url",
+            "unsafe_url",
             "unsupported_site",
             "upstream_error",
             "extraction_failed",
@@ -228,3 +236,71 @@ class TestSidebarPayloadPageKindUpgrade:
             source_url="https://forum.example.com/t/x",
         )
         assert sidebar.page_kind is PageKind.HIERARCHICAL_THREAD
+
+
+class TestSectionSlugNewMembers:
+    def test_section_slug_has_new_web_risk_member(self) -> None:
+        assert SectionSlug("safety__web_risk") is SectionSlug.SAFETY_WEB_RISK
+
+    def test_section_slug_has_new_image_moderation_member(self) -> None:
+        assert SectionSlug("safety__image_moderation") is SectionSlug.SAFETY_IMAGE_MODERATION
+
+    def test_section_slug_has_new_video_moderation_member(self) -> None:
+        assert SectionSlug("safety__video_moderation") is SectionSlug.SAFETY_VIDEO_MODERATION
+
+
+class TestErrorCodeNewMembers:
+    def test_error_code_has_unsafe_url(self) -> None:
+        assert ErrorCode("unsafe_url") is ErrorCode.UNSAFE_URL
+
+
+class TestSidebarPayloadNewSections:
+    def test_sidebar_payload_round_trips_new_sections_with_defaults(self) -> None:
+        sidebar = _empty_sidebar_payload(datetime.now(UTC))
+        assert sidebar.web_risk == WebRiskSection()
+        assert sidebar.image_moderation == ImageModerationSection()
+        assert sidebar.video_moderation == VideoModerationSection()
+
+    def test_sidebar_payload_web_risk_defaults_to_empty_findings(self) -> None:
+        sidebar = _empty_sidebar_payload(datetime.now(UTC))
+        assert sidebar.web_risk.findings == []
+
+    def test_sidebar_payload_image_moderation_defaults_to_empty_matches(self) -> None:
+        sidebar = _empty_sidebar_payload(datetime.now(UTC))
+        assert sidebar.image_moderation.matches == []
+
+    def test_sidebar_payload_video_moderation_defaults_to_empty_matches(self) -> None:
+        sidebar = _empty_sidebar_payload(datetime.now(UTC))
+        assert sidebar.video_moderation.matches == []
+
+
+class TestUtteranceNewMediaFields:
+    def test_utterance_defaults_mentioned_lists_to_empty(self) -> None:
+        utterance = Utterance(kind="post", text="hello world")
+        assert utterance.mentioned_urls == []
+        assert utterance.mentioned_images == []
+        assert utterance.mentioned_videos == []
+
+    def test_utterance_accepts_mentioned_urls(self) -> None:
+        utterance = Utterance(
+            kind="post",
+            text="check this out",
+            mentioned_urls=["https://example.com"],
+        )
+        assert utterance.mentioned_urls == ["https://example.com"]
+
+    def test_utterance_accepts_mentioned_images(self) -> None:
+        utterance = Utterance(
+            kind="post",
+            text="see image",
+            mentioned_images=["https://example.com/img.jpg"],
+        )
+        assert utterance.mentioned_images == ["https://example.com/img.jpg"]
+
+    def test_utterance_accepts_mentioned_videos(self) -> None:
+        utterance = Utterance(
+            kind="post",
+            text="watch video",
+            mentioned_videos=["https://example.com/video.mp4"],
+        )
+        assert utterance.mentioned_videos == ["https://example.com/video.mp4"]
