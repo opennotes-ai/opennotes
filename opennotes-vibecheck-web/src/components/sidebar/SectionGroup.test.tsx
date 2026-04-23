@@ -27,6 +27,8 @@ function makeTonePayload(): SidebarPayload {
     safety: { harmful_content_matches: [] },
     tone_dynamics: {
       scd: {
+        narrative: "",
+        speaker_arcs: [],
         summary: "",
         tone_labels: [],
         per_speaker_notes: {},
@@ -181,6 +183,8 @@ describe("SectionGroup", () => {
         state: "done",
         attempt_id: "a2",
         data: {
+          narrative: "",
+          speaker_arcs: [],
           summary: "done",
           tone_labels: [],
           per_speaker_notes: {},
@@ -364,6 +368,8 @@ describe("Sidebar (done slots, per-slug reports)", () => {
         attempt_id: "s-scd",
         data: {
           scd: {
+            narrative: "",
+            speaker_arcs: [],
             summary: "scd summary text",
             tone_labels: ["curious"],
             per_speaker_notes: { Alice: "opens with evidence" },
@@ -507,6 +513,8 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       },
       tone_dynamics: {
         scd: {
+          narrative: "",
+          speaker_arcs: [],
           summary: "payload summary",
           tone_labels: [],
           per_speaker_notes: {},

@@ -56,6 +56,8 @@ function doneSlot(attemptId: string, data: unknown): SectionSlot {
 }
 
 const EMPTY_SCD: SCDReport = {
+  narrative: "",
+  speaker_arcs: [],
   summary: "",
   tone_labels: [],
   per_speaker_notes: {},

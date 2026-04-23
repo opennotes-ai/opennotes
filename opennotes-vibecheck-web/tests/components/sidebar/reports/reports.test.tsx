@@ -53,67 +53,394 @@ describe("<SafetyModerationReport />", () => {
 });
 
 describe("<FlashpointReport />", () => {
-  it("falls back to neutral copy when there are no matches", () => {
+  it("renders a conversational empty state when matches is empty", () => {
     const { container } = render(() => <FlashpointReport matches={[]} />);
-    expect(container.textContent).toContain("No flashpoint moments detected");
+
+    const empty = screen.getByTestId("flashpoint-empty");
+    expect(empty).not.toBeNull();
+    expect(empty.textContent).toMatch(/even-keeled/i);
+    expect(screen.queryByText(/flashpoint moments detected/i)).toBeNull();
     expect(container.innerHTML).not.toMatch(/\bborder-l\b/);
   });
 
-  it("renders risk level and score per match", () => {
+  it("renders empty state when matches is undefined (defensive path)", () => {
+    render(() => (
+      // @ts-expect-error: testing the defensive `props.matches ?? []` path
+      <FlashpointReport matches={undefined} />
+    ));
+
+    const empty = screen.getByTestId("flashpoint-empty");
+    expect(empty).not.toBeNull();
+    expect(empty.textContent).toMatch(/even-keeled/i);
+  });
+
+  it("renders empty state when matches is null (defensive path)", () => {
+    render(() => (
+      // @ts-expect-error: testing the defensive `props.matches ?? []` path
+      <FlashpointReport matches={null} />
+    ));
+
+    const empty = screen.getByTestId("flashpoint-empty");
+    expect(empty).not.toBeNull();
+    expect(empty.textContent).toMatch(/even-keeled/i);
+  });
+
+  it("renders a single Hostile match with sharp-clash headline", () => {
     const matches: FlashpointMatch[] = [
       {
         scan_type: "conversation_flashpoint",
-        utterance_id: "u-9",
+        utterance_id: "14",
+        derailment_score: 88,
+        risk_level: "Hostile",
+        reasoning: "personal attack and name-calling",
+        context_messages: 3,
+      },
+    ];
+
+    render(() => <FlashpointReport matches={matches} />);
+
+    const headline = screen.getByTestId("flashpoint-headline");
+    expect(headline.textContent).toMatch(/sharp clash/i);
+    expect(headline.textContent).toMatch(/turn 14/);
+    expect(headline.textContent).toMatch(/high risk/i);
+  });
+
+  it("renders a single Heated match with heated-exchange headline", () => {
+    const matches: FlashpointMatch[] = [
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "7",
+        derailment_score: 65,
         risk_level: "Heated",
-        derailment_score: 72,
-        reasoning: "heated exchange escalates rapidly",
+        reasoning: "rising frustration on both sides",
+        context_messages: 2,
+      },
+    ];
+
+    render(() => <FlashpointReport matches={matches} />);
+
+    const headline = screen.getByTestId("flashpoint-headline");
+    expect(headline.textContent).toMatch(/heated exchange/i);
+    expect(headline.textContent).toMatch(/turn 7/);
+    expect(headline.textContent).toMatch(/moderate risk/i);
+  });
+
+  it("renders a single Low Risk match with brief-tense-moment headline", () => {
+    const matches: FlashpointMatch[] = [
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "3",
+        derailment_score: 22,
+        risk_level: "Low Risk",
+        reasoning: "minor disagreement, quickly resolved",
+        context_messages: 2,
+      },
+    ];
+
+    render(() => <FlashpointReport matches={matches} />);
+
+    const headline = screen.getByTestId("flashpoint-headline");
+    expect(headline.textContent).toMatch(/brief tense moment/i);
+    expect(headline.textContent).toMatch(/turn 3/);
+    expect(headline.textContent).toMatch(/low risk/i);
+  });
+
+  it("renders a single Guarded match with brief-tense-moment phrase and low-risk qualifier", () => {
+    const matches: FlashpointMatch[] = [
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "5",
+        derailment_score: 25,
+        risk_level: "Guarded",
+        reasoning: "minor friction surfacing",
+        context_messages: 2,
+      },
+    ];
+
+    render(() => <FlashpointReport matches={matches} />);
+
+    const headline = screen.getByTestId("flashpoint-headline");
+    expect(headline.textContent).toMatch(/brief tense moment/i);
+    expect(headline.textContent).toMatch(/turn 5/);
+    expect(headline.textContent).toMatch(/low risk/i);
+  });
+
+  it("renders a single Dangerous match with severe-risk qualifier", () => {
+    const matches: FlashpointMatch[] = [
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "21",
+        derailment_score: 97,
+        risk_level: "Dangerous",
+        reasoning: "explicit threats exchanged",
         context_messages: 4,
       },
     ];
+
     render(() => <FlashpointReport matches={matches} />);
-    expect(screen.getByTestId("flashpoint-risk-level").textContent).toBe(
-      "Heated",
+
+    const headline = screen.getByTestId("flashpoint-headline");
+    expect(headline.textContent).toMatch(/dangerous flashpoint/i);
+    expect(headline.textContent).toMatch(/turn 21/);
+    expect(headline.textContent).toMatch(/severe risk/i);
+  });
+
+  it("renders the derailment score in a secondary muted line", () => {
+    const matches: FlashpointMatch[] = [
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "9",
+        derailment_score: 73,
+        risk_level: "Heated",
+        reasoning: "tone is climbing",
+        context_messages: 2,
+      },
+    ];
+
+    render(() => <FlashpointReport matches={matches} />);
+
+    const score = screen.getByTestId("flashpoint-score");
+    expect(score.textContent).toMatch(/derailment ~73\/100/);
+  });
+
+  it("renders the reasoning paragraph beneath the headline", () => {
+    const matches: FlashpointMatch[] = [
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "12",
+        derailment_score: 60,
+        risk_level: "Heated",
+        reasoning: "sarcasm hardening into outright dismissal",
+        context_messages: 3,
+      },
+    ];
+
+    render(() => <FlashpointReport matches={matches} />);
+
+    const reasoning = screen.getByTestId("flashpoint-reasoning");
+    expect(reasoning.textContent).toMatch(
+      /sarcasm hardening into outright dismissal/,
     );
-    expect(screen.getByText(/72\/100/)).toBeDefined();
-    expect(
-      screen.getByText(/heated exchange escalates rapidly/),
-    ).toBeDefined();
+    expect(reasoning.className).toMatch(/line-clamp-2/);
+  });
+
+  it("renders multiple matches in input order", () => {
+    const matches: FlashpointMatch[] = [
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "4",
+        derailment_score: 30,
+        risk_level: "Guarded",
+        reasoning: "first wobble",
+        context_messages: 2,
+      },
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "11",
+        derailment_score: 70,
+        risk_level: "Heated",
+        reasoning: "second escalation",
+        context_messages: 3,
+      },
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "18",
+        derailment_score: 90,
+        risk_level: "Hostile",
+        reasoning: "third break",
+        context_messages: 4,
+      },
+    ];
+
+    render(() => <FlashpointReport matches={matches} />);
+
+    const headlines = screen
+      .getAllByTestId("flashpoint-headline")
+      .map((el) => el.textContent ?? "");
+    expect(headlines).toHaveLength(3);
+    expect(headlines[0]).toMatch(/turn 4/);
+    expect(headlines[1]).toMatch(/turn 11/);
+    expect(headlines[2]).toMatch(/turn 18/);
   });
 });
 
+function makeScd(overrides: Partial<SCDReport> = {}): SCDReport {
+  return {
+    narrative: "",
+    summary: "",
+    tone_labels: [],
+    per_speaker_notes: {},
+    speaker_arcs: [],
+    insufficient_conversation: false,
+    ...overrides,
+  };
+}
+
 describe("<ScdReport />", () => {
-  it("surfaces the insufficient-conversation notice and no summary", () => {
-    const scd: SCDReport = {
-      summary: "",
-      tone_labels: [],
-      per_speaker_notes: {},
+  it("renders narrative when non-empty", () => {
+    const scd = makeScd({
+      narrative:
+        "Alice opens warmly, Bob pushes back, and the thread cools by the end.",
+    });
+
+    render(() => <ScdReport scd={scd} />);
+
+    const narrative = screen.getByTestId("scd-narrative");
+    expect(narrative.textContent).toMatch(/Alice opens warmly/);
+    expect(screen.queryByTestId("scd-insufficient")).toBeNull();
+  });
+
+  it("falls back to summary when narrative is empty and insufficient_conversation is false", () => {
+    const scd = makeScd({
+      narrative: "",
+      summary: "Summary fallback paragraph for back-compat.",
+    });
+
+    render(() => <ScdReport scd={scd} />);
+
+    const narrative = screen.getByTestId("scd-narrative");
+    expect(narrative.textContent).toMatch(/Summary fallback paragraph/);
+  });
+
+  it("renders insufficient placeholder when insufficient_conversation is true", () => {
+    const scd = makeScd({
+      narrative: "ignored when insufficient",
+      summary: "ignored too",
+      tone_labels: ["combative"],
+      speaker_arcs: [{ speaker: "alice", note: "n/a" }],
       insufficient_conversation: true,
-    };
+    });
+
     const { container } = render(() => <ScdReport scd={scd} />);
-    expect(screen.getByTestId("scd-insufficient")).toBeDefined();
+
+    const placeholder = screen.getByTestId("scd-insufficient");
+    expect(placeholder.textContent).toMatch(/back-and-forth/i);
+    expect(screen.queryByTestId("scd-narrative")).toBeNull();
+    expect(screen.queryByTestId("scd-speaker-arc")).toBeNull();
+    expect(screen.queryByTestId("scd-tone-label")).toBeNull();
     expect(container.innerHTML).not.toMatch(/\bborder-l\b/);
   });
 
-  it("renders summary, tone labels, and per-speaker notes", () => {
-    const scd: SCDReport = {
-      summary: "Debate with supportive tone overall",
-      tone_labels: ["respectful", "focused"],
-      per_speaker_notes: {
-        Alice: "raises counter-evidence calmly",
-        Bob: "concedes on one point",
-      },
-      insufficient_conversation: false,
-    };
+  it("renders speaker_arcs with range badge when utterance_id_range present", () => {
+    const scd = makeScd({
+      narrative: "narrative present",
+      speaker_arcs: [
+        {
+          speaker: "alice",
+          note: "gets defensive around the middle of the thread",
+          utterance_id_range: [3, 7],
+        },
+      ],
+    });
+
     render(() => <ScdReport scd={scd} />);
-    expect(
-      screen.getByText(/Debate with supportive tone overall/),
-    ).toBeDefined();
+
+    const arc = screen.getByTestId("scd-speaker-arc");
+    expect(arc.textContent).toMatch(/alice/);
+    expect(arc.textContent).toMatch(/gets defensive/);
+
+    const range = screen.getByTestId("scd-arc-range");
+    expect(range.textContent).toMatch(/turns 3-7/);
+    expect(range.getAttribute("aria-label")).toMatch(/turns 3-7/);
+  });
+
+  it("renders speaker_arcs without range badge when utterance_id_range is null", () => {
+    const scd = makeScd({
+      narrative: "narrative present",
+      speaker_arcs: [
+        {
+          speaker: "bob",
+          note: "stays measured throughout",
+          utterance_id_range: null,
+        },
+      ],
+    });
+
+    render(() => <ScdReport scd={scd} />);
+
+    const arc = screen.getByTestId("scd-speaker-arc");
+    expect(arc.textContent).toMatch(/bob/);
+    expect(arc.textContent).toMatch(/stays measured/);
+    expect(screen.queryByTestId("scd-arc-range")).toBeNull();
+  });
+
+  it("renders multiple speaker_arcs in input order", () => {
+    const scd = makeScd({
+      narrative: "narrative present",
+      speaker_arcs: [
+        { speaker: "alice", note: "opens warmly" },
+        { speaker: "bob", note: "pushes back" },
+        { speaker: "carol", note: "tries to bridge" },
+      ],
+    });
+
+    render(() => <ScdReport scd={scd} />);
+
+    const arcs = screen
+      .getAllByTestId("scd-speaker-arc")
+      .map((el) => el.textContent ?? "");
+    expect(arcs).toHaveLength(3);
+    expect(arcs[0]).toMatch(/alice/);
+    expect(arcs[1]).toMatch(/bob/);
+    expect(arcs[2]).toMatch(/carol/);
+  });
+
+  it("renders tone_labels as chips", () => {
+    const scd = makeScd({
+      narrative: "narrative present",
+      tone_labels: ["combative", "dismissive"],
+    });
+
+    render(() => <ScdReport scd={scd} />);
+
     const labels = screen
       .getAllByTestId("scd-tone-label")
-      .map((n) => n.textContent);
-    expect(labels).toEqual(["respectful", "focused"]);
-    expect(screen.getByText(/Alice/)).toBeDefined();
-    expect(screen.getByText(/Bob/)).toBeDefined();
+      .map((el) => el.textContent);
+    expect(labels).toEqual(["combative", "dismissive"]);
+  });
+
+  it("renders nothing for arcs when speaker_arcs is undefined", () => {
+    const scd: SCDReport = {
+      narrative: "narrative present",
+      summary: "",
+      tone_labels: [],
+      per_speaker_notes: {},
+      insufficient_conversation: false,
+    };
+
+    render(() => <ScdReport scd={scd} />);
+
+    expect(screen.queryByTestId("scd-speaker-arc")).toBeNull();
+  });
+
+  it("uses no academic words in default insufficient copy", () => {
+    const scd = makeScd({ insufficient_conversation: true });
+
+    render(() => <ScdReport scd={scd} />);
+
+    const placeholder = screen.getByTestId("scd-insufficient");
+    const text = placeholder.textContent ?? "";
+    expect(text).not.toMatch(/SCD/);
+    expect(text).not.toMatch(/utterance/i);
+  });
+
+  it("uses no academic words in body copy for a populated SCDReport", () => {
+    const scd = makeScd({
+      narrative: "Alice and Bob trade jabs before settling down.",
+      tone_labels: ["combative"],
+      speaker_arcs: [
+        {
+          speaker: "alice",
+          note: "softens after the midpoint",
+          utterance_id_range: [4, 9],
+        },
+      ],
+    });
+
+    const { container } = render(() => <ScdReport scd={scd} />);
+
+    const text = container.textContent ?? "";
+    expect(text).not.toMatch(/SCD/);
   });
 });
 

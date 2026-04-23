@@ -28,6 +28,8 @@ function makePayload(overrides: Partial<SidebarPayload> = {}): SidebarPayload {
     safety: { harmful_content_matches: [] },
     tone_dynamics: {
       scd: {
+        narrative: "",
+        speaker_arcs: [],
         summary: "",
         tone_labels: [],
         per_speaker_notes: {},
