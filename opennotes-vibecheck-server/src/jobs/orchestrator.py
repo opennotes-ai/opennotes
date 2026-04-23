@@ -405,6 +405,9 @@ async def _run_section(
 
 _EMPTY_SECTION_DATA: dict[SectionSlug, dict[str, Any]] = {
     SectionSlug.SAFETY_MODERATION: {"harmful_content_matches": []},
+    SectionSlug.SAFETY_WEB_RISK: {"findings": []},
+    SectionSlug.SAFETY_IMAGE_MODERATION: {"matches": []},
+    SectionSlug.SAFETY_VIDEO_MODERATION: {"matches": []},
     SectionSlug.TONE_DYNAMICS_FLASHPOINT: {"flashpoint_matches": []},
     SectionSlug.TONE_DYNAMICS_SCD: {
         "scd": {
