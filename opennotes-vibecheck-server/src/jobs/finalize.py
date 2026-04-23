@@ -88,12 +88,13 @@ def _assemble_payload(
     the section-level schemas that `SidebarPayload` requires.
     """
     safety_data = sections[SectionSlug.SAFETY_MODERATION].data or {}
-    safety = SafetySection(
-        harmful_content_matches=[
-            HarmfulContentMatch.model_validate(m)
-            for m in safety_data.get("harmful_content_matches", [])
-        ]
-    )
+    raw_matches = safety_data.get("harmful_content_matches", [])
+    validated_matches: list[HarmfulContentMatch] = []
+    for m in raw_matches:
+        if isinstance(m, dict) and "source" not in m:
+            m = {**m, "source": "openai"}
+        validated_matches.append(HarmfulContentMatch.model_validate(m))
+    safety = SafetySection(harmful_content_matches=validated_matches)
 
     flashpoint_data = sections[SectionSlug.TONE_DYNAMICS_FLASHPOINT].data or {}
     scd_data = sections[SectionSlug.TONE_DYNAMICS_SCD].data or {}

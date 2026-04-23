@@ -61,6 +61,7 @@ async def check_content_moderation_bulk(
     for (orig_idx, utterance), result in zip(scanable, results, strict=False):
         if result.flagged:
             out[orig_idx] = HarmfulContentMatch(
+                source="openai",
                 utterance_id=utterance.utterance_id or "",
                 max_score=result.max_score,
                 categories=result.categories,
