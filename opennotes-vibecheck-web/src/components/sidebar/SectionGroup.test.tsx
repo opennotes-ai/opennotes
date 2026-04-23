@@ -1,11 +1,40 @@
-import { afterEach, describe, it, expect, vi } from "vitest";
-import { cleanup, render, screen, fireEvent } from "@solidjs/testing-library";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@solidjs/testing-library";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
 import Sidebar from "./Sidebar";
 import type { SectionSlug, SidebarPayload } from "~/lib/api-client.server";
 import { makeEmptyScd } from "~/lib/sidebar-defaults";
+
+const { retrySectionActionMock } = vi.hoisted(() => ({
+  retrySectionActionMock: vi.fn(),
+}));
+
+vi.mock("~/routes/analyze.data", () => {
+  const stub = Object.assign(vi.fn(), {
+    base: "/__mock_retry_action",
+    url: "/__mock_retry_action",
+    with: () => stub,
+  });
+  return { retrySectionAction: stub };
+});
+
+vi.mock("@solidjs/router", async () => {
+  const actual = await vi.importActual<typeof import("@solidjs/router")>(
+    "@solidjs/router",
+  );
+  return {
+    ...actual,
+    useAction: () => retrySectionActionMock,
+  };
+});
 
 const TONE_SLUGS: SectionSlug[] = [
   "tone_dynamics__flashpoint",
@@ -55,6 +84,10 @@ function makeTonePayload(): SidebarPayload {
 
 afterEach(() => {
   cleanup();
+});
+
+beforeEach(() => {
+  retrySectionActionMock.mockReset();
 });
 
 describe("SectionGroup", () => {
@@ -230,6 +263,47 @@ describe("SectionGroup", () => {
     const reveal = container.querySelector<HTMLDivElement>(".section-reveal");
     expect(reveal).not.toBeNull();
     expect(reveal?.getAttribute("data-slot-attempt-id")).toBe("attempt-xyz");
+  });
+
+  it("renders the production RetryButton (not the legacy fallback) when jobId is set", async () => {
+    retrySectionActionMock.mockResolvedValue({ ok: true });
+    const onRetry = vi.fn();
+    const sections: SlugToSlots = {
+      facts_claims__dedup: {
+        state: "failed",
+        attempt_id: "a1",
+        error: "boom",
+      },
+      facts_claims__known_misinfo: { state: "pending", attempt_id: "" },
+    };
+    render(() => (
+      <SectionGroup
+        label="Facts/claims"
+        slugs={FACTS_SLUGS}
+        sections={sections}
+        render={{}}
+        jobId="job-real"
+        onRetry={onRetry}
+      />
+    ));
+
+    const btn = screen.getByTestId(
+      "retry-facts_claims__dedup",
+    ) as HTMLButtonElement;
+    expect(btn.getAttribute("data-in-flight")).toBe("false");
+    expect(btn.getAttribute("aria-label")).toMatch(/^Retry /);
+
+    fireEvent.click(btn);
+
+    await waitFor(() => {
+      expect(retrySectionActionMock).toHaveBeenCalledTimes(1);
+    });
+    const fd = retrySectionActionMock.mock.calls[0][0] as FormData;
+    expect(fd.get("job_id")).toBe("job-real");
+    expect(fd.get("slug")).toBe("facts_claims__dedup");
+    await waitFor(() => {
+      expect(onRetry).toHaveBeenCalledWith("facts_claims__dedup");
+    });
   });
 
   it("does not introduce left-stripe borders on cluster containers", () => {

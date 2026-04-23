@@ -239,6 +239,31 @@ describe("AnalyzePage route", () => {
     expect(badge.textContent?.toLowerCase()).not.toMatch(/just now/);
   });
 
+  it("redirects /analyze?pending_error=invalid_url (no ?job) home and unmounts the analyze layout/failure card", async () => {
+    const history = createMemoryHistory();
+    history.set({
+      value: "/analyze?pending_error=invalid_url",
+      scroll: false,
+      replace: true,
+    });
+    render(() => (
+      <MetaProvider>
+        <MemoryRouter history={history}>
+          <Route path="/analyze" component={AnalyzePage} />
+          <Route
+            path="/"
+            component={() => <div data-testid="home-stub" />}
+          />
+        </MemoryRouter>
+      </MetaProvider>
+    ));
+    await waitFor(() => {
+      expect(screen.queryByTestId("home-stub")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("analyze-layout")).toBeNull();
+    expect(screen.queryByTestId("job-failure-card")).toBeNull();
+  });
+
   it("does not render CachedBadge when JobState.cached=false", async () => {
     renderAt("/analyze?job=job-fresh&url=https://news.example.com/a");
 

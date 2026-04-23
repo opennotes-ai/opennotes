@@ -150,4 +150,86 @@ describe("<RetryButton />", () => {
     expect(errorMsg.textContent).toMatch(/retry failed/i);
     expect(onSuccess).not.toHaveBeenCalled();
   });
+
+  it("inline error message never leaks the raw thrown message", async () => {
+    const RAW = "internal-debug-token-DO-NOT-LEAK-12345";
+    retrySectionActionMock.mockRejectedValue(new Error(RAW));
+    render(() => (
+      <RetryButton
+        jobId="job-7"
+        slug="tone_dynamics__scd"
+        slotState="failed"
+      />
+    ));
+    fireEvent.click(screen.getByTestId("retry-tone_dynamics__scd"));
+    const errorMsg = await screen.findByTestId(
+      "retry-error-tone_dynamics__scd",
+    );
+    expect(errorMsg.textContent ?? "").not.toContain(RAW);
+  });
+
+  it("disables the button mid-flight and renders 'Retrying...' until the action settles", async () => {
+    let resolveRetry!: (value: unknown) => void;
+    retrySectionActionMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRetry = resolve;
+        }),
+    );
+    render(() => (
+      <RetryButton
+        jobId="job-7"
+        slug="tone_dynamics__scd"
+        slotState="failed"
+      />
+    ));
+    const btn = screen.getByTestId(
+      "retry-tone_dynamics__scd",
+    ) as HTMLButtonElement;
+
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(btn.disabled).toBe(true);
+    });
+    expect(btn.getAttribute("data-in-flight")).toBe("true");
+    expect(btn.textContent).toMatch(/retrying/i);
+
+    resolveRetry({ ok: true });
+    await waitFor(() => {
+      expect(btn.disabled).toBe(false);
+    });
+    expect(btn.getAttribute("data-in-flight")).toBe("false");
+    expect(btn.textContent).toMatch(/^Retry$/);
+  });
+
+  it("double-click while a retry is in flight only invokes the action once", async () => {
+    let resolveRetry!: (value: unknown) => void;
+    retrySectionActionMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRetry = resolve;
+        }),
+    );
+    const onSuccess = vi.fn();
+    render(() => (
+      <RetryButton
+        jobId="job-7"
+        slug="tone_dynamics__scd"
+        slotState="failed"
+        onSuccess={onSuccess}
+      />
+    ));
+    const btn = screen.getByTestId("retry-tone_dynamics__scd");
+
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+
+    expect(retrySectionActionMock).toHaveBeenCalledTimes(1);
+
+    resolveRetry({ ok: true });
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
+  });
 });
