@@ -161,6 +161,19 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
         CHECK (kind IN ('post', 'comment', 'reply'))
 );
 
+-- TASK-1473.36 (PR #407 BLOCKER): the GET /api/analyze/{job_id} poll
+-- selector reads `u.page_title` / `u.page_kind` via correlated subqueries
+-- to populate JobState (codex W4 P2-2). The columns lived only on
+-- `vibecheck_scrapes` originally, so a fresh non-cached job's poll raised
+-- asyncpg UndefinedColumn in production. Add as nullable text columns
+-- with `page_kind` defaulting to the same `'other'` sentinel the scrape
+-- bundle uses; existing rows backfill to `(NULL, 'other')` which the
+-- selector's `IS NOT NULL` predicate already filters out.
+ALTER TABLE vibecheck_job_utterances
+    ADD COLUMN IF NOT EXISTS page_title TEXT;
+ALTER TABLE vibecheck_job_utterances
+    ADD COLUMN IF NOT EXISTS page_kind TEXT NOT NULL DEFAULT 'other';
+
 ALTER TABLE vibecheck_job_utterances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vibecheck_job_utterances FORCE ROW LEVEL SECURITY;
 REVOKE ALL ON vibecheck_job_utterances FROM anon, authenticated;

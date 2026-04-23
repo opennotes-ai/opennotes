@@ -78,7 +78,7 @@ CREATE TABLE vibecheck_job_utterances (
     -- via correlated subqueries to populate JobState.page_title /
     -- .page_kind without multiplying the projection.
     page_title TEXT,
-    page_kind TEXT,
+    page_kind TEXT NOT NULL DEFAULT 'other',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
