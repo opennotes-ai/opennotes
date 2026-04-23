@@ -10,22 +10,33 @@ import { createRoot, createSignal } from "solid-js";
 import type { JobState } from "~/lib/api-client.server";
 
 const mockPollJob = vi.fn();
+const mockPollJobSignals: Array<AbortSignal | undefined> = [];
 
 class MockVibecheckApiError extends Error {
   public errorBody: unknown;
+  public headers: Headers;
   constructor(
     message: string,
     public statusCode: number,
     errorBody: unknown = null,
+    headers?: Headers | Record<string, string>,
   ) {
     super(message);
     this.name = "VibecheckApiError";
     this.errorBody = errorBody;
+    this.headers = headers
+      ? headers instanceof Headers
+        ? headers
+        : new Headers(headers)
+      : new Headers();
   }
 }
 
 vi.mock("~/routes/analyze.data", () => ({
-  pollJobState: (jobId: string) => mockPollJob(jobId),
+  pollJobState: (jobId: string, signal?: AbortSignal) => {
+    mockPollJobSignals.push(signal);
+    return mockPollJob(jobId);
+  },
 }));
 
 function makeJobState(overrides: Partial<JobState> = {}): JobState {
@@ -51,6 +62,7 @@ async function flushMicrotasks(rounds = 5): Promise<void> {
 
 beforeEach(() => {
   mockPollJob.mockReset();
+  mockPollJobSignals.length = 0;
   vi.useFakeTimers();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -596,5 +608,235 @@ describe("createPollingResource", () => {
 
       dispose();
     });
+  });
+
+  it("passes a live AbortSignal to pollJobState on every tick", async () => {
+    const ok = makeJobState({ status: "pending", next_poll_ms: 500 });
+    mockPollJob.mockResolvedValue(ok);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      createPollingResource(() => "job-signal");
+      await flushMicrotasks();
+      expect(mockPollJobSignals).toHaveLength(1);
+      expect(mockPollJobSignals[0]).toBeInstanceOf(AbortSignal);
+      expect(mockPollJobSignals[0]?.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(500);
+      await flushMicrotasks();
+      expect(mockPollJobSignals).toHaveLength(2);
+      expect(mockPollJobSignals[1]).toBeInstanceOf(AbortSignal);
+
+      dispose();
+    });
+  });
+
+  it("aborts the in-flight signal observed by the underlying fetch when disposed mid-flight", async () => {
+    let resolveFirst!: (value: JobState) => void;
+    const firstPromise = new Promise<JobState>((resolve) => {
+      resolveFirst = resolve;
+    });
+    mockPollJob.mockReturnValueOnce(firstPromise);
+
+    const { createPollingResource } = await import("./polling");
+
+    const handle = await new Promise<{ dispose: () => void }>((resolve) => {
+      createRoot((dispose) => {
+        createPollingResource(() => "job-abort");
+        resolve({ dispose });
+      });
+    });
+
+    await flushMicrotasks();
+    expect(mockPollJobSignals).toHaveLength(1);
+    const signal = mockPollJobSignals[0]!;
+    expect(signal.aborted).toBe(false);
+
+    handle.dispose();
+
+    expect(signal.aborted).toBe(true);
+
+    resolveFirst(makeJobState({ status: "analyzing", next_poll_ms: 500 }));
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(mockPollJob).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts the in-flight signal when jobId changes", async () => {
+    let resolveFirst!: (value: JobState) => void;
+    const firstPromise = new Promise<JobState>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const secondState = makeJobState({
+      job_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      status: "analyzing",
+      next_poll_ms: 500,
+    });
+    mockPollJob
+      .mockReturnValueOnce(firstPromise)
+      .mockResolvedValueOnce(secondState);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const [id, setId] = createSignal("job-old");
+      createPollingResource(id);
+      await flushMicrotasks();
+      const firstSignal = mockPollJobSignals[0]!;
+      expect(firstSignal.aborted).toBe(false);
+
+      setId("job-new");
+      await flushMicrotasks();
+      expect(firstSignal.aborted).toBe(true);
+
+      resolveFirst(makeJobState({ status: "done" }));
+      await flushMicrotasks();
+      dispose();
+    });
+  });
+
+  it("handles 429 with Retry-After (seconds) by deferring next poll without burning the error budget", async () => {
+    const ok = makeJobState({ status: "pending", next_poll_ms: 1500 });
+    mockPollJob
+      .mockResolvedValueOnce(ok)
+      .mockRejectedValueOnce(
+        new MockVibecheckApiError("rate limited", 429, null, {
+          "Retry-After": "5",
+        }),
+      )
+      .mockResolvedValueOnce(ok);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const { error } = createPollingResource(() => "job-429");
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1500);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(2);
+      expect(error()).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(mockPollJob).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(3);
+      expect(error()).toBeNull();
+
+      dispose();
+    });
+  });
+
+  it("survives three consecutive 429s without raising error() (429 must not consume the error budget)", async () => {
+    const ok = makeJobState({ status: "pending", next_poll_ms: 1500 });
+    mockPollJob
+      .mockResolvedValueOnce(ok)
+      .mockRejectedValueOnce(
+        new MockVibecheckApiError("rl", 429, null, { "Retry-After": "1" }),
+      )
+      .mockRejectedValueOnce(
+        new MockVibecheckApiError("rl", 429, null, { "Retry-After": "1" }),
+      )
+      .mockRejectedValueOnce(
+        new MockVibecheckApiError("rl", 429, null, { "Retry-After": "1" }),
+      )
+      .mockResolvedValueOnce(ok);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const { error } = createPollingResource(() => "job-429-budget");
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(1500);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(1500);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(3);
+      expect(error()).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(1500);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(4);
+      expect(error()).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(1500);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(5);
+      expect(error()).toBeNull();
+
+      dispose();
+    });
+  });
+
+  it("falls back to clamped nextPollMs when 429 has no Retry-After header", async () => {
+    const ok = makeJobState({ status: "pending", next_poll_ms: 1500 });
+    mockPollJob
+      .mockResolvedValueOnce(ok)
+      .mockRejectedValueOnce(new MockVibecheckApiError("rl", 429))
+      .mockResolvedValueOnce(ok);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const { error } = createPollingResource(() => "job-429-noheader");
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1500);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(2);
+      expect(error()).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(1499);
+      expect(mockPollJob).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(3);
+      expect(error()).toBeNull();
+
+      dispose();
+    });
+  });
+});
+
+describe("parseRetryAfter", () => {
+  it("parses integer seconds to milliseconds", async () => {
+    const { parseRetryAfter } = await import("./polling");
+    expect(parseRetryAfter("5")).toBe(5000);
+    expect(parseRetryAfter("0")).toBe(0);
+  });
+
+  it("parses decimal seconds and rounds up", async () => {
+    const { parseRetryAfter } = await import("./polling");
+    expect(parseRetryAfter("1.25")).toBe(1250);
+  });
+
+  it("parses HTTP-date and returns ms until that instant", async () => {
+    const { parseRetryAfter } = await import("./polling");
+    const now = Date.parse("2026-04-22T00:00:00Z");
+    const tenSecondsLater = "Wed, 22 Apr 2026 00:00:10 GMT";
+    expect(parseRetryAfter(tenSecondsLater, now)).toBe(10_000);
+  });
+
+  it("returns 0 for a past HTTP-date", async () => {
+    const { parseRetryAfter } = await import("./polling");
+    const now = Date.parse("2026-04-22T00:01:00Z");
+    expect(parseRetryAfter("Wed, 22 Apr 2026 00:00:00 GMT", now)).toBe(0);
+  });
+
+  it("returns null for null, empty, or unparseable input", async () => {
+    const { parseRetryAfter } = await import("./polling");
+    expect(parseRetryAfter(null)).toBeNull();
+    expect(parseRetryAfter("")).toBeNull();
+    expect(parseRetryAfter("   ")).toBeNull();
+    expect(parseRetryAfter("not a date or number")).toBeNull();
+    expect(parseRetryAfter("-3")).toBeNull();
   });
 });

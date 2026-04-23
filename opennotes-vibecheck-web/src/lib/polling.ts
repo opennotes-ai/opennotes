@@ -35,6 +35,49 @@ function is404Error(err: unknown): boolean {
   return candidate.statusCode === 404;
 }
 
+function is429Error(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const candidate = err as { statusCode?: unknown };
+  return candidate.statusCode === 429;
+}
+
+function readRetryAfterHeader(err: unknown): string | null {
+  if (typeof err !== "object" || err === null) return null;
+  const headers = (err as { headers?: unknown }).headers;
+  if (!headers) return null;
+  if (headers instanceof Headers) {
+    return headers.get("Retry-After");
+  }
+  if (typeof headers === "object") {
+    const record = headers as Record<string, string | undefined>;
+    return (
+      record["Retry-After"] ??
+      record["retry-after"] ??
+      null
+    );
+  }
+  return null;
+}
+
+export function parseRetryAfter(
+  raw: string | null,
+  now: number = Date.now(),
+): number | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  if (/^-/.test(trimmed)) return null;
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    if (!Number.isFinite(seconds) || seconds < 0) return null;
+    return Math.ceil(seconds * 1000);
+  }
+  const parsed = Date.parse(trimmed);
+  if (!Number.isFinite(parsed)) return null;
+  const delta = parsed - now;
+  return delta > 0 ? delta : 0;
+}
+
 export function createPollingResource(
   jobId: Accessor<string>,
 ): PollingResource {
@@ -68,7 +111,7 @@ export function createPollingResource(
     const controller = new AbortController();
     inFlightController = controller;
     try {
-      const result = await pollJobState(idAtStart);
+      const result = await pollJobState(idAtStart, controller.signal);
       if (
         gen !== generation ||
         stopped ||
@@ -104,6 +147,21 @@ export function createPollingResource(
         stopped = true;
         clearTimer();
         setError(normalized);
+        return;
+      }
+      if (is429Error(err)) {
+        const latest = state();
+        const baseInterval = clampInterval(latest?.next_poll_ms);
+        const retryAfterMs = parseRetryAfter(readRetryAfterHeader(err));
+        const interval =
+          retryAfterMs !== null
+            ? Math.max(retryAfterMs, baseInterval)
+            : baseInterval;
+        clearTimer();
+        timerId = setTimeout(() => {
+          timerId = null;
+          void tick(gen);
+        }, interval);
         return;
       }
       consecutiveErrors += 1;

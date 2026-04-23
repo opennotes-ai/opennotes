@@ -45,15 +45,22 @@ const DEFAULT_DEV_BASE_URL = "http://localhost:8000";
 
 export class VibecheckApiError extends Error {
   public errorBody: ApiErrorBody | null;
+  public headers: Headers;
 
   constructor(
     message: string,
     public statusCode: number,
     errorBody: ApiErrorBody | null = null,
+    headers?: Headers | Record<string, string> | null,
   ) {
     super(message);
     this.name = "VibecheckApiError";
     this.errorBody = errorBody;
+    this.headers = headers
+      ? headers instanceof Headers
+        ? headers
+        : new Headers(headers)
+      : new Headers();
   }
 }
 
@@ -234,17 +241,22 @@ export async function analyzeUrl(targetUrl: string): Promise<AnalyzeResponse> {
       `vibecheck /api/analyze failed (${codeFragment})`,
       response?.status ?? 500,
       errorBody,
+      response?.headers ?? null,
     );
   }
   return data;
 }
 
-export async function pollJob(jobId: string): Promise<JobState> {
+export async function pollJob(
+  jobId: string,
+  options?: { signal?: AbortSignal },
+): Promise<JobState> {
   let result;
   try {
     const client = getClient();
     result = await client.GET("/api/analyze/{job_id}", {
       params: { path: { job_id: jobId } },
+      signal: options?.signal,
     });
   } catch (err: unknown) {
     normalizeTransportError(err, `GET /api/analyze/${jobId}`);
@@ -256,6 +268,7 @@ export async function pollJob(jobId: string): Promise<JobState> {
       `vibecheck GET /api/analyze/${jobId} failed`,
       response?.status ?? 500,
       errorBody,
+      response?.headers ?? null,
     );
   }
   return data;
@@ -281,6 +294,7 @@ export async function retrySection(
       `vibecheck retry ${slug} on ${jobId} failed`,
       response?.status ?? 500,
       errorBody,
+      response?.headers ?? null,
     );
   }
   return data;
