@@ -44,28 +44,47 @@ test("AC6: reduced-motion media disables skeleton pulse and section reveal", asy
     page.locator('[data-testid="analyze-layout"]'),
   ).toBeVisible({ timeout: 30_000 });
 
-  // Sample skeletons while sections are still running. We wait until
-  // at least one slot reports a `running` state OR until something has
-  // settled — whichever comes first. The .skeleton-pulse element only
-  // mounts during `running`, so missing it is OK as long as the rule
-  // would still apply.
-  const skeletonNames = await page.evaluate(() => {
-    const out: Array<{ tag: string; animationName: string }> = [];
-    const els = document.querySelectorAll(".skeleton-pulse");
-    for (const el of Array.from(els).slice(0, 6)) {
-      out.push({
-        tag: (el as HTMLElement).tagName.toLowerCase(),
-        animationName: getComputedStyle(el).animationName,
-      });
-    }
-    return out;
-  });
+  // Sample skeletons while sections are still running. The
+  // .skeleton-pulse element only mounts during `running`, so we poll
+  // briefly for at least one to appear. If a cache-hit shortcut means
+  // no skeleton ever renders, we record that explicitly rather than
+  // letting the for-loop run zero iterations and pass vacuously.
+  const sampleDeadline = Date.now() + 15_000;
+  let skeletonNames: Array<{ tag: string; animationName: string }> = [];
+  while (Date.now() < sampleDeadline) {
+    skeletonNames = await page.evaluate(() => {
+      const out: Array<{ tag: string; animationName: string }> = [];
+      const els = document.querySelectorAll(".skeleton-pulse");
+      for (const el of Array.from(els).slice(0, 6)) {
+        out.push({
+          tag: (el as HTMLElement).tagName.toLowerCase(),
+          animationName: getComputedStyle(el).animationName,
+        });
+      }
+      return out;
+    });
+    if (skeletonNames.length > 0) break;
+    if (await page.locator('[data-testid="cached-badge"]').isVisible()) break;
+    await page.waitForTimeout(100);
+  }
 
-  for (const sample of skeletonNames) {
+  const isCached = await page.locator('[data-testid="cached-badge"]').isVisible();
+  if (isCached && skeletonNames.length === 0) {
     expect(
-      sample.animationName,
-      `.skeleton-pulse animation-name must be 'none' under reduced motion (got '${sample.animationName}' on <${sample.tag}>)`,
-    ).toBe("none");
+      skeletonNames,
+      "Cache-hit short-circuited skeleton mount — reduced-motion exercised via .section-reveal below",
+    ).toHaveLength(0);
+  } else {
+    expect(
+      skeletonNames.length,
+      "Expected at least one .skeleton-pulse element to sample animation-name against under reduced motion (uncached path mounts skeletons during 'running' state)",
+    ).toBeGreaterThan(0);
+    for (const sample of skeletonNames) {
+      expect(
+        sample.animationName,
+        `.skeleton-pulse animation-name must be 'none' under reduced motion (got '${sample.animationName}' on <${sample.tag}>)`,
+      ).toBe("none");
+    }
   }
 
   // Wait for completion so we can inspect the section-reveal class

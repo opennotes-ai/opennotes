@@ -78,12 +78,39 @@ test("AC2: cache-hit second submit shows no skeleton flash and resolves <500ms",
     return samples;
   }, ALL_SECTION_SLUGS as unknown as string[]);
 
-  for (const sample of skeletonOpacities) {
-    if (sample.count === 0) continue; // no skeleton currently rendered → no flash possible
+  // Two valid no-flash outcomes for a cache-hit:
+  //   1. No .skeleton-pulse renders at all (cached payload SSR'd as `done`).
+  //   2. Skeletons render briefly but data-cached-hint="1" pins opacity to 0.
+  //
+  // The vacuous failure mode the brief flagged is when EVERY sample has
+  // count === 0 AND we never assert anything. If skeletons exist anywhere,
+  // they MUST be at opacity 0; if skeletons don't exist anywhere, that is
+  // itself a valid no-flash result and we record it explicitly.
+  const samplesWithSkeleton = skeletonOpacities.filter((s) => s.count > 0);
+  if (samplesWithSkeleton.length === 0) {
+    const allSlotStates = await page.evaluate((slugs) => {
+      const out: Record<string, string> = {};
+      for (const slug of slugs) {
+        const el = document.querySelector(
+          `[data-testid="slot-${slug}"]`,
+        ) as HTMLElement | null;
+        out[slug] = el?.dataset.slotState ?? "absent";
+      }
+      return out;
+    }, ALL_SECTION_SLUGS as unknown as string[]);
     expect(
-      Number(sample.opacity),
-      `Skeleton for ${sample.slug} must have opacity 0 on cache-hit (got ${sample.opacity})`,
-    ).toBe(0);
+      Object.values(allSlotStates).every(
+        (state) => state === "done" || state === "failed",
+      ),
+      `Cache-hit produced zero skeletons, which is only valid when every slot is already terminal (states: ${JSON.stringify(allSlotStates)})`,
+    ).toBe(true);
+  } else {
+    for (const sample of samplesWithSkeleton) {
+      expect(
+        Number(sample.opacity),
+        `Skeleton for ${sample.slug} must have opacity 0 on cache-hit (got ${sample.opacity})`,
+      ).toBe(0);
+    }
   }
 
   // Content must land within 500ms — assert at least one slot reaches
