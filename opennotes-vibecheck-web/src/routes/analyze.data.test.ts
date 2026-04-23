@@ -111,4 +111,22 @@ describe("analyzeAction", () => {
     const response = await callAction("https://example.com/p");
     expect(response.headers.get("Location")).toBe("/?error=invalid_url");
   });
+
+  it("transport failure (503 upstream_error from normalizeTransportError) redirects to /analyze?pending_error=upstream_error&url=…", async () => {
+    const { VibecheckApiError } = await import("~/lib/api-client.server");
+    analyzeUrlMock.mockRejectedValue(
+      new VibecheckApiError(
+        "vibecheck /api/analyze transport failure: network broken",
+        503,
+        { error_code: "upstream_error", message: "network broken" },
+      ),
+    );
+    const url = "https://example.com/broken-transport";
+    const response = await callAction(url);
+    const location = response.headers.get("Location") ?? "";
+    expect(location).toContain("/analyze?");
+    expect(location).toContain("pending_error=upstream_error");
+    expect(location).toContain(`url=${encodeURIComponent(url)}`);
+    expect(location).not.toContain("network broken");
+  });
 });

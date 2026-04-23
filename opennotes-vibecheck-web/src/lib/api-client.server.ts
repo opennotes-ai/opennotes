@@ -175,11 +175,27 @@ function parseErrorBody(candidate: unknown): ApiErrorBody | null {
   return Object.keys(body).length > 0 ? body : null;
 }
 
+function normalizeTransportError(err: unknown, context: string): never {
+  if (err instanceof VibecheckApiError) throw err;
+  const message = err instanceof Error ? err.message : String(err);
+  throw new VibecheckApiError(
+    `vibecheck ${context} transport failure: ${message}`,
+    503,
+    { error_code: "upstream_error", message },
+  );
+}
+
 export async function analyzeUrl(targetUrl: string): Promise<AnalyzeResponse> {
-  const client = getClient();
-  const { data, error, response } = await client.POST("/api/analyze", {
-    body: { url: targetUrl },
-  });
+  let result;
+  try {
+    const client = getClient();
+    result = await client.POST("/api/analyze", {
+      body: { url: targetUrl },
+    });
+  } catch (err: unknown) {
+    normalizeTransportError(err, "/api/analyze");
+  }
+  const { data, error, response } = result;
   if (error || !data) {
     const errorBody = parseErrorBody(error);
     const codeFragment = errorBody?.error_code ?? "unknown";
@@ -193,10 +209,16 @@ export async function analyzeUrl(targetUrl: string): Promise<AnalyzeResponse> {
 }
 
 export async function pollJob(jobId: string): Promise<JobState> {
-  const client = getClient();
-  const { data, error, response } = await client.GET("/api/analyze/{job_id}", {
-    params: { path: { job_id: jobId } },
-  });
+  let result;
+  try {
+    const client = getClient();
+    result = await client.GET("/api/analyze/{job_id}", {
+      params: { path: { job_id: jobId } },
+    });
+  } catch (err: unknown) {
+    normalizeTransportError(err, `GET /api/analyze/${jobId}`);
+  }
+  const { data, error, response } = result;
   if (error || !data) {
     const errorBody = parseErrorBody(error);
     throw new VibecheckApiError(
@@ -212,11 +234,16 @@ export async function retrySection(
   jobId: string,
   slug: SectionSlug,
 ): Promise<RetryResponse> {
-  const client = getClient();
-  const { data, error, response } = await client.POST(
-    "/api/analyze/{job_id}/retry/{slug}",
-    { params: { path: { job_id: jobId, slug } } },
-  );
+  let result;
+  try {
+    const client = getClient();
+    result = await client.POST("/api/analyze/{job_id}/retry/{slug}", {
+      params: { path: { job_id: jobId, slug } },
+    });
+  } catch (err: unknown) {
+    normalizeTransportError(err, `retry ${slug} on ${jobId}`);
+  }
+  const { data, error, response } = result;
   if (error || !data) {
     const errorBody = parseErrorBody(error);
     throw new VibecheckApiError(

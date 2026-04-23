@@ -393,7 +393,7 @@ describe("analyzeUrl", () => {
     fetchSpy.mockRestore();
   });
 
-  it("rethrows when both fetch attempts fail", async () => {
+  it("normalizes transport failures to VibecheckApiError(503, upstream_error)", async () => {
     process.env.NODE_ENV = "development";
     process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
 
@@ -403,15 +403,20 @@ describe("analyzeUrl", () => {
         throw new TypeError("network broken");
       });
 
-    const { analyzeUrl } = await import("./api-client.server");
+    const { analyzeUrl, VibecheckApiError } = await import(
+      "./api-client.server"
+    );
     let caught: unknown = null;
     try {
       await analyzeUrl("https://news.example.com/a");
     } catch (err) {
       caught = err;
     }
-    expect(caught).toBeInstanceOf(TypeError);
-    expect((caught as Error).message).toMatch(/network broken/);
+    expect(caught).toBeInstanceOf(VibecheckApiError);
+    const apiErr = caught as InstanceType<typeof VibecheckApiError>;
+    expect(apiErr.statusCode).toBe(503);
+    expect(apiErr.errorBody?.error_code).toBe("upstream_error");
+    expect(apiErr.errorBody?.message).toMatch(/network broken/);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     fetchSpy.mockRestore();
   });

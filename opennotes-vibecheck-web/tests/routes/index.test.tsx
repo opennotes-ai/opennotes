@@ -16,7 +16,6 @@ vi.mock("../../src/routes/analyze.data", () => {
   });
   return {
     analyzeAction: stub,
-    getAnalysis: vi.fn(),
   };
 });
 

@@ -1,11 +1,5 @@
 import { action, query, redirect } from "@solidjs/router";
-import {
-  VibecheckApiError,
-  analyzeUrl,
-  getClient,
-  retrySection as retrySectionApi,
-  type SectionSlug,
-} from "~/lib/api-client.server";
+import type { SectionSlug } from "~/lib/api-client.server";
 
 interface FrameCompatResponse {
   can_iframe: boolean;
@@ -41,6 +35,7 @@ export const getFrameCompat = query(
     if (!targetUrl || !isHttpUrl(targetUrl)) {
       return { ok: false, message: "invalid url" };
     }
+    const { getClient } = await import("~/lib/api-client.server");
     const client = getClient();
     const frameTask = (async (): Promise<FrameCompatResponse> => {
       try {
@@ -93,6 +88,10 @@ function redirectParams(params: Record<string, string | undefined>): string {
 }
 
 export async function resolveAnalyzeRedirect(formData: FormData): Promise<never> {
+  "use server";
+  const { analyzeUrl, VibecheckApiError } = await import(
+    "~/lib/api-client.server"
+  );
   const rawUrl = String(formData.get("url") ?? "").trim();
   if (!rawUrl || !isHttpUrl(rawUrl)) {
     throw redirect("/?error=invalid_url");
@@ -138,12 +137,13 @@ export const analyzeAction = action(async (formData: FormData) => {
 export const retrySectionAction = action(
   async (formData: FormData) => {
     "use server";
+    const { retrySection } = await import("~/lib/api-client.server");
     const jobId = String(formData.get("job_id") ?? "");
     const slug = String(formData.get("slug") ?? "") as SectionSlug;
     if (!jobId || !slug) {
       throw new Error("retrySectionAction: job_id and slug are required");
     }
-    return retrySectionApi(jobId, slug);
+    return retrySection(jobId, slug);
   },
   "vibecheck-retry-section",
 );
