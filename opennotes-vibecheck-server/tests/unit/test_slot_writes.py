@@ -572,9 +572,40 @@ def _minimal_slot_payloads() -> dict[SectionSlug, dict[str, Any]]:
                 }
             ]
         },
-        SectionSlug.SAFETY_WEB_RISK: {"findings": []},
-        SectionSlug.SAFETY_IMAGE_MODERATION: {"matches": []},
-        SectionSlug.SAFETY_VIDEO_MODERATION: {"matches": []},
+        SectionSlug.SAFETY_WEB_RISK: {
+            "findings": [
+                {
+                    "url": "https://sentinel-web-risk.example.test/attack",
+                    "threat_types": ["SOCIAL_ENGINEERING"],
+                }
+            ]
+        },
+        SectionSlug.SAFETY_IMAGE_MODERATION: {
+            "matches": [
+                {
+                    "utterance_id": "utt-img-sentinel-001",
+                    "image_url": "https://sentinel-image-mod.example.test/img.png",
+                    "adult": 0.11,
+                    "violence": 0.22,
+                    "racy": 0.33,
+                    "medical": 0.44,
+                    "spoof": 0.55,
+                    "flagged": True,
+                    "max_likelihood": 0.55,
+                }
+            ]
+        },
+        SectionSlug.SAFETY_VIDEO_MODERATION: {
+            "matches": [
+                {
+                    "utterance_id": "utt-vid-sentinel-001",
+                    "video_url": "https://sentinel-video-mod.example.test/vid.mp4",
+                    "frame_findings": [],
+                    "flagged": True,
+                    "max_likelihood": 0.77,
+                }
+            ]
+        },
         SectionSlug.TONE_DYNAMICS_FLASHPOINT: {
             "flashpoint_matches": [
                 {
@@ -746,6 +777,21 @@ async def test_maybe_finalize_job_upserts_cache_when_all_slots_done(db_pool) -> 
     assert opinions["subjective_claims"][0]["claim_text"] == "sentinel-subjective-claim"
     assert opinions["subjective_claims"][0]["stance"] == "opposes"
 
+    web_risk_findings = payload["web_risk"]["findings"]
+    assert len(web_risk_findings) == 1
+    assert web_risk_findings[0]["url"] == "https://sentinel-web-risk.example.test/attack"
+    assert web_risk_findings[0]["threat_types"] == ["SOCIAL_ENGINEERING"]
+
+    image_mod_matches = payload["image_moderation"]["matches"]
+    assert len(image_mod_matches) == 1
+    assert image_mod_matches[0]["image_url"] == "https://sentinel-image-mod.example.test/img.png"
+    assert image_mod_matches[0]["utterance_id"] == "utt-img-sentinel-001"
+
+    video_mod_matches = payload["video_moderation"]["matches"]
+    assert len(video_mod_matches) == 1
+    assert video_mod_matches[0]["video_url"] == "https://sentinel-video-mod.example.test/vid.mp4"
+    assert video_mod_matches[0]["utterance_id"] == "utt-vid-sentinel-001"
+
     # Cross-contamination guard: each per-slot sentinel string must appear
     # in exactly one section's serialized form, never bleed into a sibling.
     serialized = json.dumps(payload)
@@ -756,6 +802,9 @@ async def test_maybe_finalize_job_upserts_cache_when_all_slots_done(db_pool) -> 
         "sentinel-claim-canonical",
         "sentinel-publisher",
         "sentinel-subjective-claim",
+        "sentinel-web-risk.example.test",
+        "sentinel-image-mod.example.test",
+        "sentinel-video-mod.example.test",
     ):
         assert serialized.count(sentinel) == 1, (
             f"sentinel {sentinel!r} appeared "
