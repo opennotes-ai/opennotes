@@ -1,8 +1,10 @@
 """Unit tests for SupabaseScrapeCache (TASK-1473.08).
 
-The Supabase client is faked in-process: these tests exercise the cache's
-round-trip behavior, HTML sanitation, and signed-URL surface against a
-deterministic fake, never the live Storage API.
+The Supabase client is faked in-process. After the GCS migration
+(2026-04-23) the screenshot leg is a separate `ScreenshotStore` interface;
+the in-memory test double is `InMemoryScreenshotStore`. These tests
+exercise the cache's round-trip behavior, HTML sanitation, and signed-URL
+surface against a deterministic fake, never the live Postgres or GCS APIs.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ import httpx
 import pytest
 
 from src.cache.scrape_cache import SupabaseScrapeCache, canonical_cache_key
+from src.cache.screenshot_store import InMemoryScreenshotStore
 from src.cache.supabase_cache import normalize_url
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.utils.url_security import InvalidURL
@@ -100,65 +103,9 @@ class _FakeTableQuery:
         raise AssertionError(f"unexpected op {self._op}")
 
 
-class _FakeBucket:
-    def __init__(self, bucket_name: str, uploads: dict[str, bytes]) -> None:
-        self.bucket_name = bucket_name
-        self._uploads = uploads
-        self.upload_calls: list[tuple[str, bytes, dict[str, Any] | None]] = []
-        self.signed_calls: list[tuple[str, int]] = []
-        self.remove_calls: list[list[str]] = []
-
-    def upload(
-        self,
-        path: str,
-        file: bytes,
-        file_options: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        self.upload_calls.append((path, file, file_options))
-        self._uploads[path] = file
-        return {"path": path}
-
-    def create_signed_url(self, path: str, expires_in: int) -> dict[str, Any]:
-        self.signed_calls.append((path, expires_in))
-        if path not in self._uploads:
-            # Supabase returns a 400-shaped error dict in this case; our code
-            # should surface None to the caller rather than crash.
-            return {"error": "not found", "signedURL": None}
-        return {
-            "signedURL": (
-                f"https://fake.supabase.co/storage/v1/object/sign/"
-                f"{self.bucket_name}/{path}?token=abc&exp={expires_in}"
-            )
-        }
-
-    def remove(self, paths: list[str]) -> list[dict[str, Any]]:
-        """Mirror supabase-py Storage `.remove()` — removes one or more paths.
-        Returns a list with one dict per path (success-shaped for our tests).
-        """
-        self.remove_calls.append(list(paths))
-        removed = []
-        for p in paths:
-            if p in self._uploads:
-                del self._uploads[p]
-            removed.append({"name": p})
-        return removed
-
-
-class _FakeStorage:
-    def __init__(self) -> None:
-        self.uploads: dict[str, bytes] = {}
-        self._buckets: dict[str, _FakeBucket] = {}
-
-    def from_(self, bucket_name: str) -> _FakeBucket:
-        if bucket_name not in self._buckets:
-            self._buckets[bucket_name] = _FakeBucket(bucket_name, self.uploads)
-        return self._buckets[bucket_name]
-
-
 class _FakeSupabaseClient:
     def __init__(self) -> None:
         self.store: dict[str, dict[str, Any]] = {}
-        self.storage = _FakeStorage()
         self.tables_called: list[str] = []
         # When set, the next upsert raises this error. Lets tests exercise
         # the orphan-blob cleanup path where the DB write fails after a
@@ -170,6 +117,20 @@ class _FakeSupabaseClient:
         err = self.next_upsert_error
         self.next_upsert_error = None
         return _FakeTableQuery(self.store, upsert_error=err)
+
+
+def _make_cache(
+    fake: _FakeSupabaseClient, store: InMemoryScreenshotStore | None = None
+) -> tuple[SupabaseScrapeCache, InMemoryScreenshotStore]:
+    """Construct a SupabaseScrapeCache wired to the supplied fakes.
+
+    Returns the (cache, screenshot_store) pair so tests can assert on the
+    store independently. The pair is what the GCS migration introduced —
+    pre-migration the storage handle hung off the supabase client.
+    """
+    s = store or InMemoryScreenshotStore()
+    cache = SupabaseScrapeCache(fake, s)  # pyright: ignore[reportArgumentType]
+    return cache, s
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +164,7 @@ class TestRoundTrip:
         self,
     ) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
         scrape = _make_scrape(
             markdown="# Article\n\nThe body.",
             html="<p>keep</p>",
@@ -221,7 +182,7 @@ class TestRoundTrip:
     @pytest.mark.asyncio
     async def test_get_returns_none_when_url_not_cached(self) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
 
         got = await cache.get("https://nowhere.example.com/")
 
@@ -243,7 +204,7 @@ class TestRoundTrip:
             "scraped_at": (datetime.now(UTC) - timedelta(hours=100)).isoformat(),
             "expires_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
         }
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
 
         got = await cache.get(url)
 
@@ -252,7 +213,7 @@ class TestRoundTrip:
     @pytest.mark.asyncio
     async def test_put_normalizes_url_before_storing(self) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
 
         await cache.put("HTTPS://Example.com/A/?utm_source=x", _make_scrape())
         got = await cache.get("https://example.com/A")
@@ -271,7 +232,7 @@ class TestHtmlSanitation:
         self,
     ) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
         raw = (
             '<script>bad()</script>'
             '<style>h1 { color: red; }</style>'
@@ -295,7 +256,7 @@ class TestHtmlSanitation:
     @pytest.mark.asyncio
     async def test_sanitation_is_case_insensitive(self) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
         raw = "<SCRIPT>x</SCRIPT><Style>y</Style><p>ok</p>"
         scrape = _make_scrape(html=raw)
 
@@ -311,7 +272,7 @@ class TestHtmlSanitation:
     @pytest.mark.asyncio
     async def test_html_none_is_preserved_as_none(self) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
         scrape = _make_scrape(html=None)
 
         await cache.put("https://example.com/a", scrape)
@@ -332,7 +293,7 @@ class TestScreenshotPersistence:
         self,
     ) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, store = _make_cache(fake)
         scrape = _make_scrape(screenshot="https://firecrawl.cdn/abc.png")
         screenshot_bytes = b"\x89PNG\r\n\x1a\nfakebody"
 
@@ -340,8 +301,8 @@ class TestScreenshotPersistence:
             "https://example.com/a", scrape, screenshot_bytes=screenshot_bytes
         )
 
-        assert len(fake.storage.uploads) == 1
-        (stored_path, stored_bytes) = next(iter(fake.storage.uploads.items()))
+        assert len(store.uploads) == 1
+        (stored_path, stored_bytes) = next(iter(store.uploads.items()))
         assert stored_bytes == screenshot_bytes
         # The cached row stores the path, not the Firecrawl CDN URL.
         row = fake.store[normalize_url("https://example.com/a")]
@@ -356,21 +317,21 @@ class TestScreenshotPersistence:
         self,
     ) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, store = _make_cache(fake)
         scrape = _make_scrape(screenshot=None)
 
         await cache.put("https://example.com/a", scrape)
 
         row = fake.store[normalize_url("https://example.com/a")]
         assert row["screenshot_storage_key"] is None
-        assert fake.storage.uploads == {}
+        assert store.uploads == {}
 
     @pytest.mark.asyncio
     async def test_signed_screenshot_url_returns_none_when_no_storage_key(
         self,
     ) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
         await cache.put("https://example.com/a", _make_scrape(screenshot=None))
         got = await cache.get("https://example.com/a")
         assert got is not None
@@ -384,7 +345,7 @@ class TestScreenshotPersistence:
         self,
     ) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, store = _make_cache(fake)
         await cache.put(
             "https://example.com/a",
             _make_scrape(),
@@ -397,18 +358,19 @@ class TestScreenshotPersistence:
 
         assert signed is not None
         assert signed.startswith("https://")
-        assert "token=" in signed
-        bucket = fake.storage.from_("vibecheck-screenshots")
-        assert len(bucket.signed_calls) >= 1
+        # InMemoryScreenshotStore stamps an X-Goog-Expires marker; the real
+        # GCSScreenshotStore returns a v4-signed URL with the same expiry.
+        assert "X-Goog-Expires=900" in signed
+        assert len(store.signed_calls) >= 1
         # 15 minutes == 900s.
-        assert bucket.signed_calls[-1][1] == 900
+        assert store.signed_calls[-1][1] == 900
 
     @pytest.mark.asyncio
     async def test_signed_screenshot_url_is_resignable_on_repeat_calls(
         self,
     ) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, store = _make_cache(fake)
         await cache.put(
             "https://example.com/a",
             _make_scrape(),
@@ -422,9 +384,8 @@ class TestScreenshotPersistence:
 
         assert first is not None
         assert second is not None
-        bucket = fake.storage.from_("vibecheck-screenshots")
         # Two independent sign calls happened (re-signable), not cached.
-        assert len(bucket.signed_calls) == 2
+        assert len(store.signed_calls) == 2
 
     @pytest.mark.asyncio
     async def test_put_fetches_bytes_from_cdn_url_when_bytes_not_provided(
@@ -432,7 +393,7 @@ class TestScreenshotPersistence:
         httpx_mock: Any,
     ) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, store = _make_cache(fake)
         cdn_bytes = b"cdn-png-bytes"
         httpx_mock.add_response(
             url="https://firecrawl.cdn/abc.png",
@@ -445,8 +406,8 @@ class TestScreenshotPersistence:
             _make_scrape(screenshot="https://firecrawl.cdn/abc.png"),
         )
 
-        assert len(fake.storage.uploads) == 1
-        assert next(iter(fake.storage.uploads.values())) == cdn_bytes
+        assert len(store.uploads) == 1
+        assert next(iter(store.uploads.values())) == cdn_bytes
 
     @pytest.mark.asyncio
     async def test_put_skips_upload_when_cdn_fetch_fails(
@@ -454,7 +415,7 @@ class TestScreenshotPersistence:
         httpx_mock: Any,
     ) -> None:
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, store = _make_cache(fake)
         httpx_mock.add_exception(
             httpx.ConnectError("boom"),
             url="https://firecrawl.cdn/abc.png",
@@ -468,7 +429,7 @@ class TestScreenshotPersistence:
         # Cache row still persisted, but with no storage key and no upload.
         row = fake.store[normalize_url("https://example.com/a")]
         assert row["screenshot_storage_key"] is None
-        assert fake.storage.uploads == {}
+        assert store.uploads == {}
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +458,7 @@ class TestTtlPredicate:
             "scraped_at": datetime.now(UTC).isoformat(),
             "expires_at": (datetime.now(UTC) + timedelta(seconds=10)).isoformat(),
         }
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
 
         got = await cache.get(url)
 
@@ -524,7 +485,7 @@ class TestTtlPredicate:
             "scraped_at": (datetime.now(UTC) - timedelta(seconds=2)).isoformat(),
             "expires_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
         }
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
 
         got = await cache.get(url)
 
@@ -549,7 +510,7 @@ class TestSignedUrlSnapshot:
         put and sign stale data pointers.
         """
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
 
         # First put → storage_key#1.
         await cache.put(
@@ -591,7 +552,7 @@ class TestSignedUrlSnapshot:
         must not race any subsequent put.
         """
         fake = _FakeSupabaseClient()
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, _ = _make_cache(fake)
 
         original = await cache.put(
             "https://example.com/a",
@@ -635,7 +596,7 @@ class TestOrphanBlobCleanup:
         """
         fake = _FakeSupabaseClient()
         fake.next_upsert_error = RuntimeError("db unavailable")
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, store = _make_cache(fake)
 
         await cache.put(
             "https://example.com/a",
@@ -643,15 +604,12 @@ class TestOrphanBlobCleanup:
             screenshot_bytes=b"pngbytes",
         )
 
-        bucket = fake.storage.from_("vibecheck-screenshots")
-        assert len(bucket.remove_calls) == 1
-        # The blob that was just uploaded should be the one removed.
-        assert len(bucket.remove_calls[0]) == 1
-        removed_path = bucket.remove_calls[0][0]
-        # Upload + remove match the same path; post-remove the bucket is empty.
-        assert removed_path not in bucket._uploads  # noqa: SLF001
-        assert len(bucket.upload_calls) == 1
-        assert bucket.upload_calls[0][0] == removed_path
+        assert len(store.delete_calls) == 1
+        removed_path = store.delete_calls[0]
+        # Upload + delete match the same path; post-delete the store is empty.
+        assert removed_path not in store.uploads
+        assert len(store.upload_calls) == 1
+        assert store.upload_calls[0][0] == removed_path
 
     @pytest.mark.asyncio
     async def test_put_with_no_screenshot_skips_cleanup_on_upsert_failure(
@@ -660,16 +618,15 @@ class TestOrphanBlobCleanup:
         """No upload happened, so nothing to clean up even if upsert fails."""
         fake = _FakeSupabaseClient()
         fake.next_upsert_error = RuntimeError("db unavailable")
-        cache = SupabaseScrapeCache(fake)  # pyright: ignore[reportArgumentType]
+        cache, store = _make_cache(fake)
 
         await cache.put(
             "https://example.com/a",
             _make_scrape(screenshot=None),
         )
 
-        bucket = fake.storage.from_("vibecheck-screenshots")
-        assert bucket.remove_calls == []
-        assert bucket.upload_calls == []
+        assert store.delete_calls == []
+        assert store.upload_calls == []
 
 
 # ---------------------------------------------------------------------------

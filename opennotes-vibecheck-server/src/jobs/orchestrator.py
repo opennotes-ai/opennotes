@@ -282,15 +282,30 @@ def _build_scrape_cache(settings: Settings) -> SupabaseScrapeCache:
     to service_role (see src/cache/schema.sql header), so anon-keyed
     clients 42501 on every get/put. Fall back to anon if service_role
     isn't configured so dev envs without the lockdown keep working.
+
+    Screenshot blobs live in GCS (`VIBECHECK_GCS_SCREENSHOT_BUCKET`); when
+    unset (dev/test), the cache falls back to an in-memory store so the
+    DB leg still works and `screenshot_storage_key` rows just stay null.
     """
     from supabase import create_client  # noqa: PLC0415
+
+    from src.cache.screenshot_store import (  # noqa: PLC0415
+        GCSScreenshotStore,
+        InMemoryScreenshotStore,
+        ScreenshotStore,
+    )
 
     key = (
         settings.VIBECHECK_SUPABASE_SERVICE_ROLE_KEY
         or settings.VIBECHECK_SUPABASE_ANON_KEY
     )
     client = create_client(settings.VIBECHECK_SUPABASE_URL, key)
-    return SupabaseScrapeCache(client, ttl_hours=settings.CACHE_TTL_HOURS)
+    store: ScreenshotStore
+    if settings.VIBECHECK_GCS_SCREENSHOT_BUCKET:
+        store = GCSScreenshotStore(settings.VIBECHECK_GCS_SCREENSHOT_BUCKET)
+    else:
+        store = InMemoryScreenshotStore()
+    return SupabaseScrapeCache(client, store, ttl_hours=settings.CACHE_TTL_HOURS)
 
 
 def _build_firecrawl_client(settings: Settings) -> FirecrawlClient:

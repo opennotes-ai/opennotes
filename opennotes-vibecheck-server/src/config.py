@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     VIBECHECK_DATABASE_HOST: str = ""
     VIBECHECK_DATABASE_PORT: int = 0
 
+    # GCS bucket holding scrape screenshots (TASK-1480 GCS migration,
+    # 2026-04-23). Replaces the prior Supabase Storage bucket — simpler
+    # IAM, no anon-vs-service-role split, and avoids the missing-Supabase-
+    # bucket failure mode we hit in prod. When unset (dev/test), the
+    # cache falls back to an in-memory store and rows persist with a null
+    # screenshot_storage_key. Provisioned in infra (gcs_screenshots.tf).
+    VIBECHECK_GCS_SCREENSHOT_BUCKET: str = ""
+
     RATE_LIMIT_PER_IP_PER_HOUR: int = 10
     CACHE_TTL_HOURS: int = 72
     MAX_IMAGES_MODERATED: int = 30

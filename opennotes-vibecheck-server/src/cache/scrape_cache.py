@@ -1,4 +1,4 @@
-"""Scrape cache backed by Supabase Postgres + Storage (TASK-1473.08).
+"""Scrape cache backed by Supabase Postgres + GCS (TASK-1473.08, GCS migration 2026-04-23).
 
 The scrape cache persists the full Firecrawl `ScrapeResult` bundle so retried
 or finalize-path jobs can resume without repaying the Firecrawl cost. Two
@@ -6,10 +6,11 @@ resources are coordinated per entry:
 
 - A row in `vibecheck_scrapes` (keyed by normalized URL, 72h TTL) storing
   markdown + sanitized HTML + metadata.
-- An object in the `vibecheck-screenshots` Supabase Storage bucket holding
-  the PNG bytes. Only the storage key is stored in the row — never the
-  short-lived Firecrawl CDN URL, and never a signed URL (which expires).
-  Callers mint a fresh 15-minute signed URL via `signed_screenshot_url`.
+- An object in the configured GCS bucket holding the PNG bytes (see
+  `screenshot_store.py`). Only the storage key is stored in the row —
+  never the short-lived Firecrawl CDN URL, and never a signed URL (which
+  expires). Callers mint a fresh 15-minute signed URL via
+  `signed_screenshot_url`.
 
 HTML sanitation choice: regex rather than BeautifulSoup. The four targets
 (`<script>`, `<style>`, `<link>`, HTML comments) all have a well-defined
@@ -45,9 +46,11 @@ import httpx
 from pydantic import ConfigDict, Field
 from supabase import Client
 
+from src.cache.screenshot_store import ScreenshotStore
 from src.cache.supabase_cache import normalize_url
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
 from src.monitoring import get_logger
+from src.utils.html_sanitize import strip_noise
 from src.utils.url_security import validate_public_http_url
 
 logger = get_logger(__name__)
@@ -79,15 +82,12 @@ def canonical_cache_key(raw_url: str) -> str:
     return normalize_url(public)
 
 _TABLE_NAME = "vibecheck_scrapes"
-_BUCKET_NAME = "vibecheck-screenshots"
 _SIGNED_URL_TTL_SECONDS = 15 * 60
 
 _SELECTED_COLUMNS = (
     "normalized_url, url, host, page_kind, page_title, markdown, html, "
     "screenshot_storage_key, scraped_at, expires_at"
 )
-
-from src.utils.html_sanitize import strip_noise
 
 
 class CachedScrape(ScrapeResult):
@@ -112,8 +112,8 @@ def _sanitize_html(html: str | None) -> str | None:
 def _storage_key_for(url: str) -> str:
     """Deterministic-per-url prefix + uuid suffix.
 
-    The sha256-of-url prefix makes per-URL storage buckets inspectable in the
-    Supabase dashboard; the uuid4 suffix keeps re-scrapes from overwriting
+    The sha256-of-url prefix groups per-URL screenshots together in the
+    bucket listing; the uuid4 suffix keeps re-scrapes from overwriting
     the previous capture so a stale signed URL in flight still resolves.
     """
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
@@ -121,10 +121,21 @@ def _storage_key_for(url: str) -> str:
 
 
 class SupabaseScrapeCache:
-    """72h-TTL cache for Firecrawl ScrapeResult bundles + screenshots."""
+    """72h-TTL cache for Firecrawl ScrapeResult bundles + screenshots.
 
-    def __init__(self, client: Client, ttl_hours: int = 72) -> None:
+    Hybrid: Supabase Postgres holds the row, an external `ScreenshotStore`
+    (GCS in production) holds the PNG bytes. The two are coordinated by
+    `screenshot_storage_key` on the row.
+    """
+
+    def __init__(
+        self,
+        client: Client,
+        screenshot_store: ScreenshotStore,
+        ttl_hours: int = 72,
+    ) -> None:
         self._client = client
+        self._store = screenshot_store
         self._ttl_hours = ttl_hours
 
     async def get(self, url: str) -> CachedScrape | None:
@@ -255,33 +266,16 @@ class SupabaseScrapeCache:
         storage_key = getattr(scrape, "storage_key", None)
         if not isinstance(storage_key, str) or not storage_key:
             return None
-        try:
-            resp = self._client.storage.from_(_BUCKET_NAME).create_signed_url(
-                storage_key, _SIGNED_URL_TTL_SECONDS
-            )
-        except Exception as exc:
-            logger.warning("signed url creation failed for %s: %s", storage_key, exc)
-            return None
-        if not isinstance(resp, dict):
-            return None
-        signed = resp.get("signedURL") or resp.get("signed_url")
-        if not isinstance(signed, str):
-            return None
-        return signed
+        return self._store.signed_url(storage_key, ttl_seconds=_SIGNED_URL_TTL_SECONDS)
 
     def _cleanup_orphan_blob(self, storage_key: str) -> None:
         """Remove a just-uploaded blob when its corresponding DB upsert fails.
 
-        Best-effort: we log and swallow Storage errors because the pg_cron
-        sweeper catches whatever this misses, and raising here would hide the
-        original upsert failure from the caller's retry logic.
+        Best-effort: store-level errors are logged inside `delete()` because
+        the pg_cron sweeper catches whatever this misses, and raising here
+        would hide the original upsert failure from the caller's retry logic.
         """
-        try:
-            self._client.storage.from_(_BUCKET_NAME).remove([storage_key])
-        except Exception as exc:
-            logger.warning(
-                "orphan blob cleanup failed for %s: %s", storage_key, exc
-            )
+        self._store.delete(storage_key)
 
     async def _upload_screenshot(
         self,
@@ -296,14 +290,7 @@ class SupabaseScrapeCache:
         if not bytes_to_upload:
             return None
         storage_key = _storage_key_for(url)
-        try:
-            self._client.storage.from_(_BUCKET_NAME).upload(
-                storage_key,
-                bytes_to_upload,
-                {"content-type": "image/png", "upsert": "true"},
-            )
-        except Exception as exc:
-            logger.warning("screenshot upload failed for %s: %s", url, exc)
+        if not self._store.upload(storage_key, bytes_to_upload, content_type="image/png"):
             return None
         return storage_key
 

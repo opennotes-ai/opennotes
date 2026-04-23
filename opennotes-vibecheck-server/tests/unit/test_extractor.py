@@ -93,8 +93,8 @@ class _FakeScrapeCache:
         self.get_calls: list[str] = []
         self.put_calls: list[tuple[str, ScrapeResult]] = []
         self.signed_url_result: str | None = (
-            "https://fake.supabase.co/storage/v1/object/sign/"
-            "vibecheck-screenshots/abc?token=xyz"
+            "https://storage.googleapis.com/test-vibecheck-screenshots/abc"
+            "?X-Goog-Expires=900"
         )
         self.signed_url_calls: list[CachedScrape | ScrapeResult] = []
 
