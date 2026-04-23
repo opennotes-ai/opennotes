@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
     parent_id TEXT,
     position INT NOT NULL DEFAULT 0,
     page_title TEXT,
-    page_kind TEXT NOT NULL DEFAULT 'other',
+    page_kind TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

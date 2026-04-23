@@ -197,6 +197,18 @@ ALTER TABLE vibecheck_job_utterances
 ALTER TABLE vibecheck_job_utterances
     ADD COLUMN IF NOT EXISTS page_kind TEXT NOT NULL DEFAULT 'other';
 
+-- TASK-1473.60: the NOT NULL DEFAULT 'other' from 1473.36 made every
+-- backfilled row look "populated" to the IS NOT NULL poll selector.
+-- Going forward, page_kind is only set when real extraction writes
+-- utterances via persist_utterances (TASK-1473.57), so the column is
+-- nullable and the default is dropped. Existing rows with
+-- page_kind='other' (from the prior default) remain valid but are
+-- distinguishable from NULL by the new selector.
+ALTER TABLE vibecheck_job_utterances
+    ALTER COLUMN page_kind DROP DEFAULT;
+ALTER TABLE vibecheck_job_utterances
+    ALTER COLUMN page_kind DROP NOT NULL;
+
 ALTER TABLE vibecheck_job_utterances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vibecheck_job_utterances FORCE ROW LEVEL SECURITY;
 REVOKE ALL ON vibecheck_job_utterances FROM anon, authenticated;
