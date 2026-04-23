@@ -89,10 +89,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # unavailable in a given environment (e.g. stripped-down unit runs).
     configure_logfire()
     settings = get_settings()
-    if settings.VIBECHECK_SUPABASE_URL and settings.VIBECHECK_SUPABASE_ANON_KEY:
-        client = _build_supabase_client(
-            settings.VIBECHECK_SUPABASE_URL, settings.VIBECHECK_SUPABASE_ANON_KEY
-        )
+    cache_key = (
+        settings.VIBECHECK_SUPABASE_SERVICE_ROLE_KEY
+        or settings.VIBECHECK_SUPABASE_ANON_KEY
+    )
+    if settings.VIBECHECK_SUPABASE_URL and cache_key:
+        # The analysis cache writes through vibecheck_analyses, which is RLS-
+        # locked to service_role (src/cache/schema.sql). Prefer the
+        # service-role key; fall back to anon so dev envs without the
+        # lockdown applied keep working.
+        client = _build_supabase_client(settings.VIBECHECK_SUPABASE_URL, cache_key)
         _apply_schema(client)
         app.state.cache = SupabaseCache(client, ttl_hours=settings.CACHE_TTL_HOURS)
         logger.info("vibecheck supabase cache initialized (ttl=%sh)", settings.CACHE_TTL_HOURS)

@@ -278,18 +278,18 @@ def _build_scrape_cache(settings: Settings) -> SupabaseScrapeCache:
     """Factory seam so tests can inject a fake cache.
 
     In production this wires a real Supabase client against the configured
-    URL/anon key. The vibecheck-server lifespan already carries a
-    SupabaseCache on `app.state.cache`, but the scrape cache is a
-    different table + bucket pair so we construct it here rather than
-    threading through app.state — keeps the orchestrator's dependency
-    surface small and unit-testable.
+    URL + service-role key. The scrape cache tables are RLS-locked down
+    to service_role (see src/cache/schema.sql header), so anon-keyed
+    clients 42501 on every get/put. Fall back to anon if service_role
+    isn't configured so dev envs without the lockdown keep working.
     """
     from supabase import create_client  # noqa: PLC0415
 
-    client = create_client(
-        settings.VIBECHECK_SUPABASE_URL,
-        settings.VIBECHECK_SUPABASE_ANON_KEY,
+    key = (
+        settings.VIBECHECK_SUPABASE_SERVICE_ROLE_KEY
+        or settings.VIBECHECK_SUPABASE_ANON_KEY
     )
+    client = create_client(settings.VIBECHECK_SUPABASE_URL, key)
     return SupabaseScrapeCache(client, ttl_hours=settings.CACHE_TTL_HOURS)
 
 

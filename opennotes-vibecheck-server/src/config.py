@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     VIBECHECK_SUPABASE_URL: str = ""
     VIBECHECK_SUPABASE_DB_PASSWORD: str = ""
     VIBECHECK_SUPABASE_ANON_KEY: str = ""
+    # Service-role key bypasses RLS. The cache tables
+    # (vibecheck_scrapes / _analyses / _jobs / _job_utterances /
+    # _web_risk_lookups) are locked down to service_role only — writes and
+    # reads from the orchestrator + lifespan cache MUST use this key or
+    # they hit `permission denied for table ...` under RLS. Anon key is
+    # still exposed for public-facing read paths.
+    VIBECHECK_SUPABASE_SERVICE_ROLE_KEY: str = ""
 
     VIBECHECK_DATABASE_HOST: str = ""
     VIBECHECK_DATABASE_PORT: int = 0
