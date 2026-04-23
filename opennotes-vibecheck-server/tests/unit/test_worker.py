@@ -64,7 +64,8 @@ CREATE TABLE vibecheck_jobs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     heartbeat_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ
+    finished_at TIMESTAMPTZ,
+    test_fail_slug TEXT
 );
 
 CREATE INDEX vibecheck_jobs_normalized_url_idx
@@ -338,6 +339,8 @@ async def test_claim_succeeds_and_handler_runs_pipeline(
         task_attempt: UUID,
         url: str,
         settings: Any,
+        *,
+        test_fail_slug: str | None = None,
     ) -> None:
         invoked_with["job_id"] = job_id
         invoked_with["task_attempt"] = task_attempt
@@ -393,6 +396,8 @@ async def test_heartbeat_bumps_during_long_pipeline(
         task_attempt: UUID,
         url: str,
         settings: Any,
+        *,
+        test_fail_slug: str | None = None,
     ) -> None:
         # Sleep long enough for multiple heartbeat intervals.
         await asyncio.sleep(0.8)
@@ -436,6 +441,8 @@ async def test_transient_error_resets_and_returns_503(
         task_attempt: UUID,
         url: str,
         settings: Any,
+        *,
+        test_fail_slug: str | None = None,
     ) -> None:
         raise orchestrator.TransientError("firecrawl 503")
 
@@ -479,6 +486,8 @@ async def test_terminal_error_marks_failed_and_returns_200(
         task_attempt: UUID,
         url: str,
         settings: Any,
+        *,
+        test_fail_slug: str | None = None,
     ) -> None:
         raise orchestrator.TerminalError(
             ErrorCode.EXTRACTION_FAILED, "extraction lost contact with gemini"
@@ -521,6 +530,8 @@ async def test_unclassified_exception_treated_as_transient(
         task_attempt: UUID,
         url: str,
         settings: Any,
+        *,
+        test_fail_slug: str | None = None,
     ) -> None:
         raise RuntimeError("something unexpected")
 

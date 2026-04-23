@@ -374,21 +374,29 @@ async def _insert_pending_job(
     url: str,
     normalized_url: str,
     host: str,
+    test_fail_slug: str | None = None,
 ) -> tuple[UUID, UUID]:
-    """Insert a `status=pending` row and return `(job_id, attempt_id)`."""
+    """Insert a `status=pending` row and return `(job_id, attempt_id)`.
+
+    `test_fail_slug` is the orchestrator-side test hook for the
+    Playwright section-retry spec (TASK-1473.35). Production submits
+    leave it None — the route only persists a non-None value when the
+    server is started with `VIBECHECK_ALLOW_TEST_FAIL_HEADER=1`.
+    """
     attempt_id = uuid4()
     job_id = await conn.fetchval(
         """
         INSERT INTO vibecheck_jobs (
-            url, normalized_url, host, status, attempt_id
+            url, normalized_url, host, status, attempt_id, test_fail_slug
         )
-        VALUES ($1, $2, $3, 'pending', $4)
+        VALUES ($1, $2, $3, 'pending', $4, $5)
         RETURNING job_id
         """,
         url,
         normalized_url,
         host,
         attempt_id,
+        test_fail_slug,
     )
     assert isinstance(job_id, UUID)
     return job_id, attempt_id
@@ -417,6 +425,7 @@ async def _handle_locked_submit(
     url: str,
     normalized_url: str,
     host: str,
+    test_fail_slug: str | None = None,
 ) -> tuple[AnalyzeResponse, UUID | None]:
     """Run the inside-lock branch logic. Returns `(response, attempt_to_enqueue)`.
 
@@ -451,7 +460,11 @@ async def _handle_locked_submit(
         )
 
     job_id, attempt_id = await _insert_pending_job(
-        conn, url=url, normalized_url=normalized_url, host=host
+        conn,
+        url=url,
+        normalized_url=normalized_url,
+        host=host,
+        test_fail_slug=test_fail_slug,
     )
     return (
         AnalyzeResponse(
@@ -479,6 +492,24 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
     would force the client to string-match.
     """
     settings = get_settings()
+
+    # TASK-1473.35: e2e test hook. When the env flag is set the route
+    # extracts X-Vibecheck-Test-Fail-Slug from the request and persists
+    # it on the job row; the orchestrator's _run_section turns it into
+    # a synthetic failure so Playwright can drive a real round-trip
+    # retry. Default-off in production.
+    test_fail_slug: str | None = None
+    if settings.VIBECHECK_ALLOW_TEST_FAIL_HEADER:
+        candidate = request.headers.get("X-Vibecheck-Test-Fail-Slug")
+        if candidate:
+            valid_slugs = {s.value for s in SectionSlug}
+            if candidate in valid_slugs:
+                test_fail_slug = candidate
+            else:
+                logger.info(
+                    "ignoring X-Vibecheck-Test-Fail-Slug=%s (unknown slug)",
+                    candidate,
+                )
 
     # 1. SSRF guard + canonical normalization.
     # `canonical_cache_key` funnels `validate_public_http_url` (SSRF + public
@@ -587,6 +618,7 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
                 url=body.url,
                 normalized_url=normalized_url,
                 host=host,
+                test_fail_slug=test_fail_slug,
             )
             return response, attempt, True
 

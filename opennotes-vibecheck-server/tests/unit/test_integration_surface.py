@@ -80,17 +80,39 @@ CREATE TABLE vibecheck_jobs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     heartbeat_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ
+    finished_at TIMESTAMPTZ,
+    test_fail_slug TEXT
 );
 
 CREATE INDEX vibecheck_jobs_normalized_url_idx
     ON vibecheck_jobs(normalized_url);
+
+CREATE UNIQUE INDEX vibecheck_jobs_unique_done_cached_normalized_url
+    ON vibecheck_jobs(normalized_url)
+    WHERE status = 'done' AND cached = true;
+
+CREATE TABLE vibecheck_web_risk_lookups (
+    url TEXT PRIMARY KEY,
+    finding_payload JSONB NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
 """
 
 
 @pytest.fixture(autouse=True)
 def _restore_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket, "getaddrinfo", _REAL_GETADDRINFO)
+
+
+@pytest.fixture(autouse=True)
+def _mock_check_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import AsyncMock as _AsyncMock
+    monkeypatch.setattr(
+        analyze_route,
+        "check_urls",
+        _AsyncMock(return_value={}),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -110,6 +132,7 @@ async def db_pool(
     async with pool.acquire() as conn:
         await conn.execute(
             "DROP TABLE IF EXISTS vibecheck_analyses CASCADE; "
+            "DROP TABLE IF EXISTS vibecheck_web_risk_lookups CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_jobs CASCADE;"
         )
         await conn.execute(_MINIMAL_DDL)
@@ -167,9 +190,10 @@ async def test_claim_job_rotates_attempt_id_and_flips_status(
 
     result = await _claim_job(db_pool, job_id, initial)
     assert result is not None
-    new_attempt, url = result
+    new_attempt, url, test_fail_slug = result
     assert new_attempt != initial
     assert url == "https://example.com/work"
+    assert test_fail_slug is None
     async with db_pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT status, attempt_id FROM vibecheck_jobs WHERE job_id = $1",
@@ -224,6 +248,8 @@ async def test_run_job_redelivery_returns_no_op_after_first_run(
         task_attempt: UUID,
         url: str,
         settings: Any,
+        *,
+        test_fail_slug: str | None = None,
     ) -> None:
         pipeline_runs.append(task_attempt)
 

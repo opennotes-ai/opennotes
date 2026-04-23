@@ -126,6 +126,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS
     ON vibecheck_jobs(normalized_url)
     WHERE status = 'done' AND cached = true;
 
+-- TASK-1473.35: e2e test hook for the section-retry Playwright spec.
+-- When VIBECHECK_ALLOW_TEST_FAIL_HEADER=1 and the public POST carries
+-- X-Vibecheck-Test-Fail-Slug: <slug>, the slug name is recorded here
+-- and the orchestrator's `_run_section` forces a synthetic failure for
+-- that slug. Always-null in production (the env flag defaults to off
+-- so the route ignores the header).
+ALTER TABLE vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS test_fail_slug TEXT;
+
 -- =========================================================================
 -- vibecheck_scrapes (persisted scrape bundles for retry resumption)
 -- =========================================================================

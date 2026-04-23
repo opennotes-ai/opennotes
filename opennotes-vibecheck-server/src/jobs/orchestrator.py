@@ -121,7 +121,7 @@ SET status = 'extracting',
 WHERE job_id = $1
   AND attempt_id = $3
   AND status = 'pending'
-RETURNING attempt_id, url
+RETURNING attempt_id, url, test_fail_slug
 """
 
 _RESET_SQL = """
@@ -165,13 +165,15 @@ async def _claim_job(
     pool: Any,
     job_id: UUID,
     expected_attempt_id: UUID,
-) -> tuple[UUID, str] | None:
+) -> tuple[UUID, str, str | None] | None:
     """Atomically rotate attempt_id and set status=extracting.
 
-    Returns (new_attempt_id, url) on success, None when the CAS fails
-    (stale expected_attempt_id or status already moved). Cloud Tasks
-    redeliveries of a superseded enqueue fall into the None branch; the
-    caller returns 200 no-op.
+    Returns (new_attempt_id, url, test_fail_slug) on success, None when
+    the CAS fails (stale expected_attempt_id or status already moved).
+    `test_fail_slug` is the e2e Playwright hook (TASK-1473.35);
+    always-None in production where the env flag defaults off. Cloud
+    Tasks redeliveries of a superseded enqueue fall into the None
+    branch; the caller returns 200 no-op.
     """
     new_attempt = uuid4()
     async with pool.acquire() as conn:
@@ -180,7 +182,7 @@ async def _claim_job(
         )
     if row is None:
         return None
-    return row["attempt_id"], row["url"]
+    return row["attempt_id"], row["url"], row["test_fail_slug"]
 
 
 async def _reset_for_retry(
@@ -381,6 +383,8 @@ async def _run_section(
     slug: SectionSlug,
     payload: Any,
     settings: Settings,
+    *,
+    test_fail_slug: str | None = None,
 ) -> None:
     """Run a single analysis slot and persist its output.
 
@@ -392,12 +396,21 @@ async def _run_section(
     return normally. `maybe_finalize_job` notices the failed slot later
     and waits (or the sweeper does) — terminal assembly happens only
     when every slot is done.
+
+    `test_fail_slug` is the e2e Playwright hook (TASK-1473.35). When it
+    matches `slug.value`, the handler is short-circuited and the slot is
+    written as failed with a recognizable error string, letting the
+    section-retry spec drive a real round-trip.
     """
     slot_attempt = uuid4()
     handler = _SECTION_HANDLERS.get(slug)
     slot_state = SectionState.DONE
     slot_error: str | None = None
-    if handler is not None:
+    if test_fail_slug is not None and test_fail_slug == slug.value:
+        slot_state = SectionState.FAILED
+        slot_error = "synthetic test failure (X-Vibecheck-Test-Fail-Slug)"
+        data: dict[str, Any] = {}
+    elif handler is not None:
         try:
             data = await handler(pool, job_id, task_attempt, payload, settings)
         except Exception as exc:
@@ -524,6 +537,8 @@ async def _run_all_sections(
     task_attempt: UUID,
     payload: Any,
     settings: Settings,
+    *,
+    test_fail_slug: str | None = None,
 ) -> None:
     """Fan out every section in parallel; aggregate via `asyncio.gather`.
 
@@ -538,7 +553,10 @@ async def _run_all_sections(
     """
     await asyncio.gather(
         *[
-            _run_section(pool, job_id, task_attempt, slug, payload, settings)
+            _run_section(
+                pool, job_id, task_attempt, slug, payload, settings,
+                test_fail_slug=test_fail_slug,
+            )
             for slug in SectionSlug
         ],
     )
@@ -555,6 +573,8 @@ async def _run_pipeline(
     task_attempt: UUID,
     url: str,
     settings: Settings,
+    *,
+    test_fail_slug: str | None = None,
 ) -> None:
     """The scrape->extract->analyze sequence, error-classified.
 
@@ -596,7 +616,10 @@ async def _run_pipeline(
     # Fan out per-section analysis. Slot-level failures are written by
     # `_run_section` itself; this await only raises on orchestrator
     # infrastructure errors.
-    await _run_all_sections(pool, job_id, task_attempt, payload, settings)
+    await _run_all_sections(
+        pool, job_id, task_attempt, payload, settings,
+        test_fail_slug=test_fail_slug,
+    )
 
     # Finalize: UPSERT the sidebar_payload cache if every slot is done.
     # When finalize returns False the job is intentionally NOT cached yet
@@ -657,7 +680,7 @@ async def run_job(
             clear_contextvars(job_tokens)
         return RunResult(status_code=200)
 
-    task_attempt, url = claim
+    task_attempt, url, test_fail_slug = claim
     job_tokens = bind_contextvars(job_id=job_id, attempt_id=task_attempt)
     heartbeat = asyncio.create_task(
         _heartbeat_loop(
@@ -670,7 +693,10 @@ async def run_job(
 
     try:
         try:
-            await _run_pipeline(pool, job_id, task_attempt, url, settings)
+            await _run_pipeline(
+                pool, job_id, task_attempt, url, settings,
+                test_fail_slug=test_fail_slug,
+            )
         except TransientError as exc:
             terminal_status = "pending"
             logger.warning(
