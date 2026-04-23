@@ -2,33 +2,44 @@
 
 ## `scd_prompt.txt`
 
-Speaker Conversational Dynamics (SCD) trajectory-summary prompt, vendored
-verbatim from Cornell NLP's ConvoKit project.
+Speaker Conversational Dynamics (SCD) prompt used by `analyze_scd`. The current
+file is an **OpenNotes-authored adaptation** that produces vibecheck's
+conversational-register output (the `narrative` + `speaker_arcs` fields on
+`SCDReport`, alongside the back-compat `summary` / `tone_labels` /
+`per_speaker_notes`).
+
+### Provenance
+
+The original `scd_prompt.txt` was vendored verbatim from Cornell NLP's ConvoKit
+project as the starting point for this work:
 
 - Source: https://github.com/CornellNLP/ConvoKit/blob/master/convokit/convo_similarity/prompts/scd_prompt.txt
 - Upstream project: https://github.com/CornellNLP/ConvoKit
 - License: BSD-3-Clause (see `LICENSE.md` at the ConvoKit repo root)
 
-The prompt produces short trajectory summaries of online conversations that
-emphasize sentiment, intent, and conversational strategies while avoiding
-specific topics or claims. The `{formatted_object}` placeholder in the original
-prompt is where the formatted conversation transcript is interpolated before
-the LLM call.
+The verbatim ConvoKit version was the only content of this file at every commit
+prior to TASK-1471.23.02. To recover it, `git log --follow` this file and check
+out any revision before that task's commit.
 
-### Modifications from upstream
+### Why we adapted it
 
-The vendored file is byte-identical to the ConvoKit source except for
-normalization applied by this repo's pre-commit hooks:
+ConvoKit's prompt produces an academic, transcript-style trajectory summary
+(third-person past tense, "Speaker1 attacks Speaker2 by..."). vibecheck surfaces
+SCD output in a sidebar where it sits next to claim-level analyses; users
+reported the original voice felt like an anthropologist's field notes. The
+adapted prompt asks for the same structural intent — sentiment, intent, and
+conversational strategies, with content specifics suppressed — but in a
+conversational register, and additionally produces a structured `speaker_arcs`
+list with optional 1-indexed `utterance_id_range` spans for timeline
+visualization.
 
-- Trailing whitespace on individual lines is stripped. Upstream uses trailing
-  spaces as Markdown soft breaks; these are invisible to the LLM.
-- A single terminating newline is added at end-of-file.
+### License
 
-No prompt semantics are altered.
+Because the current prompt is a derivative work of a BSD-3-Clause-licensed
+input, the BSD-3-Clause notice continues to apply. The Cornell University
+copyright/license note from upstream:
 
-### ConvoKit attribution / copyright notice
-
-Copyright (c) 2017, Cornell University All rights reserved. Redistribution
-and use in source and binary forms, with or without modification, are
-permitted under the terms of the BSD-3-Clause license. See the upstream
-`LICENSE.md` for the full text.
+> Copyright (c) 2017, Cornell University. All rights reserved. Redistribution
+> and use in source and binary forms, with or without modification, are
+> permitted under the terms of the BSD-3-Clause license. See the upstream
+> `LICENSE.md` for the full text.
