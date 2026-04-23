@@ -14,9 +14,26 @@ export type ErrorCode = components["schemas"]["ErrorCode"];
 export type RetryResponse = components["schemas"]["RetryResponse"];
 
 export interface ApiErrorBody {
-  error_code?: string;
+  error_code?: ErrorCode;
   message?: string;
   error_host?: string;
+}
+
+export const PUBLIC_ERROR_CODES: readonly ErrorCode[] = [
+  "invalid_url",
+  "unsupported_site",
+  "upstream_error",
+  "extraction_failed",
+  "timeout",
+  "rate_limited",
+  "internal",
+];
+
+export function clampErrorCode(raw: unknown): ErrorCode | undefined {
+  if (typeof raw !== "string") return undefined;
+  return (PUBLIC_ERROR_CODES as readonly string[]).includes(raw)
+    ? (raw as ErrorCode)
+    : undefined;
 }
 
 const FETCH_TIMEOUT_MS = 540_000;
@@ -166,12 +183,26 @@ export function getClient() {
 }
 
 function parseErrorBody(candidate: unknown): ApiErrorBody | null {
-  if (!candidate || typeof candidate !== "object") return null;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return null;
+  }
   const raw = candidate as Record<string, unknown>;
   const body: ApiErrorBody = {};
-  if (typeof raw.error_code === "string") body.error_code = raw.error_code;
+  const code = clampErrorCode(raw.error_code);
+  if (code) body.error_code = code;
   if (typeof raw.message === "string") body.message = raw.message;
   if (typeof raw.error_host === "string") body.error_host = raw.error_host;
+  if (Object.keys(body).length === 0) {
+    const detail = raw.detail;
+    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+      const nested = detail as Record<string, unknown>;
+      const nestedCode = clampErrorCode(nested.error_code);
+      if (nestedCode) body.error_code = nestedCode;
+      if (typeof nested.message === "string") body.message = nested.message;
+      if (typeof nested.error_host === "string")
+        body.error_host = nested.error_host;
+    }
+  }
   return Object.keys(body).length > 0 ? body : null;
 }
 

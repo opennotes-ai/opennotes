@@ -129,4 +129,79 @@ describe("analyzeAction", () => {
     expect(location).toContain(`url=${encodeURIComponent(url)}`);
     expect(location).not.toContain("network broken");
   });
+
+  it("URL with embedded ?query and #fragment encodes safely into the redirect", async () => {
+    analyzeUrlMock.mockResolvedValue({
+      job_id: "job-q",
+      status: "pending",
+      cached: false,
+    });
+    const url = "https://example.com/p?a=1&b=two#frag";
+    const response = await callAction(url);
+    expect(response.headers.get("Location")).toBe("/analyze?job=job-q");
+  });
+
+  it("URL containing CRLF-like control characters yields a Location with no raw newline (header-injection safe)", async () => {
+    analyzeUrlMock.mockResolvedValue({
+      job_id: "job-crlf",
+      status: "pending",
+      cached: false,
+    });
+    const response = await callAction(
+      "https://example.com/p\r\nLocation: https://attacker.example/",
+    );
+    const location = response.headers.get("Location") ?? "";
+    expect(location).toBe("/analyze?job=job-crlf");
+    expect(location).not.toContain("\n");
+    expect(location).not.toContain("\r");
+  });
+
+  it("upstream_error with hostile message in URL: redirect Location encodes the URL exactly and contains no raw newline", async () => {
+    const { VibecheckApiError } = await import("~/lib/api-client.server");
+    analyzeUrlMock.mockRejectedValue(
+      new VibecheckApiError("upstream_error", 500, {
+        error_code: "upstream_error",
+        message: "ignored",
+      }),
+    );
+    const url = "https://example.com/p?x=hello%20world";
+    const response = await callAction(url);
+    const location = response.headers.get("Location") ?? "";
+    expect(location).toBe(
+      `/analyze?pending_error=upstream_error&url=${encodeURIComponent(url)}`,
+    );
+    expect(location).not.toContain("\n");
+    expect(location).not.toContain("\r");
+  });
+
+  it("clamps unknown backend error_code to upstream_error in pending_error redirect", async () => {
+    const { VibecheckApiError } = await import("~/lib/api-client.server");
+    analyzeUrlMock.mockRejectedValue(
+      new VibecheckApiError("internal_debug_slug", 500, {
+        error_code: "internal_debug_slug" as never,
+        message: "leaked debug",
+      }),
+    );
+    const url = "https://example.com/p";
+    const response = await callAction(url);
+    const location = response.headers.get("Location") ?? "";
+    expect(location).toContain("pending_error=upstream_error");
+    expect(location).not.toContain("internal_debug_slug");
+    expect(location).not.toContain("leaked debug");
+  });
+
+  it("clamps known but unrelated error_code (rate_limited) into pending_error verbatim", async () => {
+    const { VibecheckApiError } = await import("~/lib/api-client.server");
+    analyzeUrlMock.mockRejectedValue(
+      new VibecheckApiError("rate_limited", 429, {
+        error_code: "rate_limited",
+        message: "slow down",
+      }),
+    );
+    const url = "https://example.com/p";
+    const response = await callAction(url);
+    const location = response.headers.get("Location") ?? "";
+    expect(location).toContain("pending_error=rate_limited");
+    expect(location).toContain(`url=${encodeURIComponent(url)}`);
+  });
 });

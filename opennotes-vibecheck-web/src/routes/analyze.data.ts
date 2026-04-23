@@ -89,7 +89,7 @@ function redirectParams(params: Record<string, string | undefined>): string {
 
 export async function resolveAnalyzeRedirect(formData: FormData): Promise<never> {
   "use server";
-  const { analyzeUrl, VibecheckApiError } = await import(
+  const { analyzeUrl, VibecheckApiError, clampErrorCode } = await import(
     "~/lib/api-client.server"
   );
   const rawUrl = String(formData.get("url") ?? "").trim();
@@ -102,7 +102,7 @@ export async function resolveAnalyzeRedirect(formData: FormData): Promise<never>
     response = await analyzeUrl(rawUrl);
   } catch (err: unknown) {
     if (err instanceof VibecheckApiError) {
-      const code = err.errorBody?.error_code;
+      const code = clampErrorCode(err.errorBody?.error_code);
       const host = err.errorBody?.error_host;
       if (code === "invalid_url") {
         throw redirect("/?error=invalid_url");

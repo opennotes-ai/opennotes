@@ -393,6 +393,121 @@ describe("analyzeUrl", () => {
     fetchSpy.mockRestore();
   });
 
+  it("clamps an unknown backend error_code to undefined on the parsed errorBody", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error_code: "secret_internal_slug",
+              message: "leaked",
+            }),
+            { status: 500 },
+          ),
+      );
+
+    const { analyzeUrl, VibecheckApiError } = await import(
+      "./api-client.server"
+    );
+    let caught: unknown = null;
+    try {
+      await analyzeUrl("https://example.com/p");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(VibecheckApiError);
+    const apiErr = caught as InstanceType<typeof VibecheckApiError>;
+    expect(apiErr.errorBody?.error_code).toBeUndefined();
+    expect(apiErr.errorBody?.message).toBe("leaked");
+    fetchSpy.mockRestore();
+  });
+
+  it("parses nested FastAPI detail objects with error_code/message/error_host", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              detail: {
+                error_code: "unsupported_site",
+                message: "blocked host",
+                error_host: "linkedin.com",
+              },
+            }),
+            { status: 422 },
+          ),
+      );
+
+    const { analyzeUrl, VibecheckApiError } = await import(
+      "./api-client.server"
+    );
+    let caught: unknown = null;
+    try {
+      await analyzeUrl("https://www.linkedin.com/post");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(VibecheckApiError);
+    const apiErr = caught as InstanceType<typeof VibecheckApiError>;
+    expect(apiErr.errorBody?.error_code).toBe("unsupported_site");
+    expect(apiErr.errorBody?.message).toBe("blocked host");
+    expect(apiErr.errorBody?.error_host).toBe("linkedin.com");
+    fetchSpy.mockRestore();
+  });
+
+  it("returns null errorBody for non-JSON / empty / array bodies", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    const cases = [
+      JSON.stringify([{ error_code: "ignored" }]),
+      JSON.stringify({}),
+    ];
+
+    const { analyzeUrl, VibecheckApiError } = await import(
+      "./api-client.server"
+    );
+
+    for (const body of cases) {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockImplementation(async () => new Response(body, { status: 500 }));
+      let caught: unknown = null;
+      try {
+        await analyzeUrl("https://example.com/p");
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(VibecheckApiError);
+      const apiErr = caught as InstanceType<typeof VibecheckApiError>;
+      expect(apiErr.errorBody).toBeNull();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("clampErrorCode accepts every public ErrorCode and rejects everything else", async () => {
+    const { clampErrorCode, PUBLIC_ERROR_CODES } = await import(
+      "./api-client.server"
+    );
+    for (const code of PUBLIC_ERROR_CODES) {
+      expect(clampErrorCode(code)).toBe(code);
+    }
+    expect(clampErrorCode("nope")).toBeUndefined();
+    expect(clampErrorCode("")).toBeUndefined();
+    expect(clampErrorCode(null)).toBeUndefined();
+    expect(clampErrorCode(undefined)).toBeUndefined();
+    expect(clampErrorCode(42)).toBeUndefined();
+    expect(clampErrorCode({ error_code: "invalid_url" })).toBeUndefined();
+  });
+
   it("normalizes transport failures to VibecheckApiError(503, upstream_error)", async () => {
     process.env.NODE_ENV = "development";
     process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
