@@ -9,13 +9,20 @@ import {
  * AC4 — Section-level retry
  *
  * Spec note: vibecheck-server has no first-class "inject failure" test
- * hook today (no `X-Vibecheck-Test-Fail`, no `VIBECHECK_E2E_FAIL_SLUG`
- * env, etc. — see TASK-1473.34 follow-up). To exercise the retry UI in
- * a real browser without a backend hook we intercept the SolidStart
- * server-action response that powers the polling resource and rewrite
- * the slot's `state` to `failed` for a single slug. Once Retry is
- * clicked we let the natural response through again and assert the
- * slot recovers to `done`.
+ * hook today. TASK-1473.35 tracks adding an `X-Vibecheck-Test-Fail-Slug`
+ * request header that the orchestrator can honor server-side. Once that
+ * lands, this proxy can be deleted in favor of:
+ *
+ *   await page.context().setExtraHTTPHeaders({
+ *     "X-Vibecheck-Test-Fail-Slug": TARGET_SLUG,
+ *   });
+ *
+ * Until then we intercept the polling response and rewrite a slot's
+ * `state` to `failed` for the target slug. The rewriter is pinned to
+ * the full JobState shape (`job_id`, `attempt_id`, `sections`) so a
+ * silent payload-shape change does NOT result in a vacuous no-op test.
+ * Before we begin asserting on UI state we assert that injection was
+ * actually observed.
  *
  * The injected slug is `safety__moderation` because it's typically the
  * fastest section to complete in the live pipeline, which keeps the
@@ -25,51 +32,57 @@ import {
 const TARGET_SLUG = "safety__moderation";
 
 interface JobStatePayload {
-  status?: string;
-  sections?: Record<string, { state?: string; attempt_id?: string }>;
+  job_id: string;
+  attempt_id: string;
+  sections: Record<string, { state?: string; attempt_id?: string }>;
   [key: string]: unknown;
 }
 
-function rewriteSlotToFailed(body: string): string {
+function isJobStateShape(obj: Record<string, unknown>): obj is JobStatePayload {
+  return (
+    typeof obj.job_id === "string" &&
+    typeof obj.attempt_id === "string" &&
+    obj.sections !== null &&
+    typeof obj.sections === "object" &&
+    !Array.isArray(obj.sections)
+  );
+}
+
+function rewriteSlotToFailed(body: string): { body: string; rewrote: boolean } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
   } catch {
-    return body;
+    return { body, rewrote: false };
   }
-  // SolidStart wraps action/query results — they may surface as
-  // `{ data: ... }`, as a top-level JobState, or inside an array with
-  // a marker frame. Walk the structure and rewrite any object that
-  // looks like a JobState.
+  let rewrote = false;
   const visit = (node: unknown): unknown => {
     if (!node || typeof node !== "object") return node;
     if (Array.isArray(node)) return node.map(visit);
     const obj = node as Record<string, unknown>;
-    const looksLikeJobState =
-      "sections" in obj &&
-      obj.sections &&
-      typeof obj.sections === "object";
-    if (looksLikeJobState) {
-      const cast = obj as JobStatePayload;
-      const sections = { ...(cast.sections ?? {}) };
+    if (isJobStateShape(obj)) {
+      const sections = { ...obj.sections };
       const existing = sections[TARGET_SLUG] ?? { attempt_id: "injected" };
       sections[TARGET_SLUG] = {
         ...existing,
         state: "failed",
         attempt_id: existing.attempt_id ?? "injected",
       };
+      rewrote = true;
       return { ...obj, sections };
     }
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) out[k] = visit(v);
     return out;
   };
-  return JSON.stringify(visit(parsed));
+  const next = visit(parsed);
+  return { body: JSON.stringify(next), rewrote };
 }
 
 async function maybeRewriteJobStateResponse(
   route: Route,
   shouldRewrite: () => boolean,
+  onRewrite: () => void,
 ): Promise<void> {
   const url = route.request().url();
   const isPoll =
@@ -88,7 +101,12 @@ async function maybeRewriteJobStateResponse(
   }
   const headers = response.headers();
   const body = await response.text();
-  const newBody = shouldRewrite() ? rewriteSlotToFailed(body) : body;
+  if (!shouldRewrite()) {
+    await route.fulfill({ status, headers, body });
+    return;
+  }
+  const { body: newBody, rewrote } = rewriteSlotToFailed(body);
+  if (rewrote) onRewrite();
   await route.fulfill({
     status,
     headers,
@@ -102,9 +120,16 @@ test("AC4: section-level Retry recovers a failed slot to done", async ({
   test.setTimeout(220_000);
 
   let injectFailure = true;
+  let rewriteCount = 0;
 
   await page.route("**/*", (route) =>
-    maybeRewriteJobStateResponse(route, () => injectFailure),
+    maybeRewriteJobStateResponse(
+      route,
+      () => injectFailure,
+      () => {
+        rewriteCount += 1;
+      },
+    ),
   );
 
   const { jobId } = await submitUrlAndWaitForAnalyze(
@@ -116,6 +141,23 @@ test("AC4: section-level Retry recovers a failed slot to done", async ({
   await expect(
     page.locator('[data-testid="analyze-layout"]'),
   ).toBeVisible({ timeout: 30_000 });
+
+  // Confirm the proxy is actually observing JobState payloads BEFORE we
+  // wait for `failed` state. If isJobStateShape() ever silently rejects
+  // a renamed payload (e.g. job_id → jobId), waitForSectionState would
+  // simply time out 180s later with no hint of why. Polling rewriteCount
+  // surfaces the shape break directly with an actionable error.
+  const injectionDeadline = Date.now() + 60_000;
+  while (rewriteCount === 0 && Date.now() < injectionDeadline) {
+    await page.waitForTimeout(250);
+  }
+  expect(
+    rewriteCount,
+    "Proxy must have rewritten at least one polling response — if this is 0 " +
+      "the JobState payload shape likely changed (job_id/attempt_id/sections) " +
+      "and the rewriter silently no-op'd. Update isJobStateShape() or migrate " +
+      "to the X-Vibecheck-Test-Fail-Slug header from TASK-1473.35.",
+  ).toBeGreaterThan(0);
 
   // Wait until the polling response carries a `failed` state for the
   // injected slug. We rely on the DOM rather than network introspection
