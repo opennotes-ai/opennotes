@@ -14,7 +14,7 @@ import { render, cleanup } from "@solidjs/testing-library";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import ScdReport from "../../src/components/sidebar/ScdReport";
+import ScdReport from "../../src/components/sidebar/reports/ScdReport";
 import type { components } from "../../src/lib/generated-types";
 
 type SCDReport = components["schemas"]["SCDReport"];
