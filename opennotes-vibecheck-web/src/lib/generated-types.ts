@@ -47,8 +47,139 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Analyze */
+        /**
+         * Analyze
+         * @description Async handoff for `POST /api/analyze`.
+         *
+         *     Returns `AnalyzeResponse` on the success path. On SSRF-guard failure,
+         *     advisory-lock contention, or a post-commit enqueue failure, returns a
+         *     `JSONResponse` whose body shape is `{error_code, message}` and whose
+         *     status mirrors the failure category (400, 503, 500 respectively). We
+         *     return a response object (rather than raising HTTPException) so the
+         *     body has a stable top-level `error_code` slug — `{"detail": ...}`
+         *     would force the client to string-match.
+         */
         post: operations["analyze_api_analyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analyze/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Poll an async vibecheck job
+         * @description Read-only polling endpoint.
+         *
+         *     Returns the current `JobState` including the `sections` dict (per-slot
+         *     progress), `sidebar_payload` once terminal, and a `next_poll_ms` hint.
+         *     404 when `job_id` is not found. Rate-limited to
+         *     `RATE_LIMIT_POLL_BURST` req/s + `RATE_LIMIT_POLL_SUSTAINED` req/min
+         *     per `(ip, job_id)` tuple — exceeding either returns 429 with a
+         *     `Retry-After` header.
+         */
+        get: operations["poll_api_analyze__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analyze/{job_id}/retry/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Section
+         * @description Retry one failed slot of a terminal job.
+         *
+         *     Gate order (strict — each step assumes the prior one passed):
+         *       1. Job must exist (404 otherwise).
+         *       2. Utterances must have been extracted (409 otherwise — retry is
+         *          meaningless if extraction itself failed; the user should resubmit).
+         *       3. Job status must be terminal (`done`/`failed`) — running phases
+         *          get 409 `cannot_retry_while_running`.
+         *       4. The requested slot must exist and be in `failed` state.
+         *       5. CAS on the slot's prior attempt_id; a concurrent click loses
+         *          with 409 `concurrent_retry_already_claimed`.
+         *       6. Post-CAS enqueue. On failure revert the slot to `failed` and
+         *          flip the job back to `failed/internal` — the user sees a stable
+         *          error card instead of a phantom `analyzing` state.
+         */
+        post: operations["retry_section_api_analyze__job_id__retry__slug__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/_internal/jobs/{job_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run
+         * @description Drive one Cloud Tasks delivery through the orchestrator.
+         *
+         *     The path's `job_id` and the body's `job_id` must agree — Cloud Tasks
+         *     signs the URL as well as the body, so a drift here signals either
+         *     misconfig or tampering; we reject with 400 rather than trust one side.
+         *
+         *     Orchestrator return values map to HTTP status:
+         *         200: success / stale claim / terminal-failure (no Cloud Tasks retry)
+         *         503: transient failure (Cloud Tasks retries per queue config)
+         *
+         *     Response body is intentionally minimal — Cloud Tasks ignores it.
+         */
+        post: operations["run__internal_jobs__job_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/_internal/jobs/{job_id}/sections/{slug}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Section
+         * @description Drive one section-retry Cloud Tasks delivery.
+         *
+         *     OIDC verification runs at the router-level dependency so a reject
+         *     happens before this handler sees the request. On entry we validate
+         *     that the path parameters match the body (Cloud Tasks signs both — a
+         *     mismatch is either tampering or misconfig; we refuse), then hand off
+         *     to `run_section_retry` which owns the CAS-claim → analyze →
+         *     mark-done/failed → maybe-finalize sequence.
+         *
+         *     Status codes mirror the main worker: 200 on success / stale / terminal,
+         *     503 on transient failure (Cloud Tasks retries per queue config).
+         */
+        post: operations["run_section__internal_jobs__job_id__sections__slug__run_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -137,6 +268,26 @@ export interface components {
              * @description HTTP(S) URL of the page to analyze
              */
             url: string;
+        };
+        /**
+         * AnalyzeResponse
+         * @description 202 handoff payload.
+         *
+         *     The response shape is intentionally minimal: the client uses `job_id` to
+         *     poll `GET /api/analyze/{job_id}` (TASK-1473.14) for progressive fill.
+         *     `cached=true` signals that the pipeline was skipped because a fresh
+         *     `vibecheck_analyses` row was already available — the polled job will
+         *     reach `status=done` immediately.
+         */
+        AnalyzeResponse: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
+            /** Cached */
+            cached: boolean;
         };
         /**
          * ClaimsReport
@@ -324,6 +475,19 @@ export interface components {
              * @default 1500
              */
             next_poll_ms: number;
+            /**
+             * Page Title
+             * @description Extracted page title, sourced from vibecheck_job_utterances. Null until the extractor runs.
+             */
+            page_title?: string | null;
+            /** @description Extracted page shape, sourced from vibecheck_job_utterances. Null until the extractor runs. */
+            page_kind?: components["schemas"]["PageKind"] | null;
+            /**
+             * Utterance Count
+             * @description Number of utterances extracted for this job. 0 until the extractor writes any rows.
+             * @default 0
+             */
+            utterance_count: number;
         };
         /**
          * JobStatus
@@ -355,11 +519,61 @@ export interface components {
          */
         PageKind: "blog_post" | "forum_thread" | "hierarchical_thread" | "blog_index" | "article" | "other";
         /**
+         * RetryResponse
+         * @description 202 handoff payload for a successful retry CAS.
+         */
+        RetryResponse: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            slug: components["schemas"]["SectionSlug"];
+            /**
+             * Slot Attempt Id
+             * Format: uuid
+             */
+            slot_attempt_id: string;
+        };
+        /**
          * RiskLevel
          * @description Categorical risk level for conversation flashpoint detection.
          * @enum {string}
          */
         RiskLevel: "Low Risk" | "Guarded" | "Heated" | "Hostile" | "Dangerous";
+        /**
+         * RunJobBody
+         * @description Cloud Tasks request payload for the run endpoint.
+         */
+        RunJobBody: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Expected Attempt Id
+             * Format: uuid
+             */
+            expected_attempt_id: string;
+        };
+        /**
+         * RunSectionBody
+         * @description Cloud Tasks request payload for the per-section retry endpoint.
+         */
+        RunSectionBody: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            slug: components["schemas"]["SectionSlug"];
+            /**
+             * Expected Slot Attempt Id
+             * Format: uuid
+             */
+            expected_slot_attempt_id: string;
+        };
         /**
          * SCDReport
          * @description Structured output of `analyze_scd`.
@@ -621,12 +835,146 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyzeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    poll_api_analyze__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SidebarPayload"];
+                    "application/json": components["schemas"]["JobState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_section_api_analyze__job_id__retry__slug__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                slug: components["schemas"]["SectionSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run__internal_jobs__job_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunJobBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_section__internal_jobs__job_id__sections__slug__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                slug: components["schemas"]["SectionSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunSectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

@@ -4,11 +4,18 @@ import { Title } from "@solidjs/meta";
 import UrlInput from "~/components/UrlInput";
 import { analyzeAction } from "./analyze.data";
 
-function errorLabelFor(code: string | undefined): string | null {
+function errorLabelFor(
+  code: string | undefined,
+  host: string | undefined,
+): string | null {
   if (!code) return null;
   switch (code) {
     case "invalid_url":
       return "That URL couldn't be parsed. Double-check the scheme and host.";
+    case "unsupported_site":
+      return host
+        ? `We can't analyze ${host} yet. Try a different URL.`
+        : "We can't analyze that site yet. Try a different URL.";
     case "upstream_error":
       return "The analyzer couldn't reach that page. Try again in a moment.";
     default:
@@ -23,6 +30,7 @@ export default function HomePage() {
   const errorMessage = () =>
     errorLabelFor(
       typeof searchParams.error === "string" ? searchParams.error : undefined,
+      typeof searchParams.host === "string" ? searchParams.host : undefined,
     );
 
   return (

@@ -181,6 +181,58 @@
         }
       }
     },
+    "/api/analyze/{job_id}/retry/{slug}": {
+      "post": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Retry Section",
+        "description": "Retry one failed slot of a terminal job.\n\nGate order (strict \u2014 each step assumes the prior one passed):\n  1. Job must exist (404 otherwise).\n  2. Utterances must have been extracted (409 otherwise \u2014 retry is\n     meaningless if extraction itself failed; the user should resubmit).\n  3. Job status must be terminal (`done`/`failed`) \u2014 running phases\n     get 409 `cannot_retry_while_running`.\n  4. The requested slot must exist and be in `failed` state.\n  5. CAS on the slot's prior attempt_id; a concurrent click loses\n     with 409 `concurrent_retry_already_claimed`.\n  6. Post-CAS enqueue. On failure revert the slot to `failed` and\n     flip the job back to `failed/internal` \u2014 the user sees a stable\n     error card instead of a phantom `analyzing` state.",
+        "operationId": "retry_section_api_analyze__job_id__retry__slug__post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SectionSlug"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/_internal/jobs/{job_id}/run": {
       "post": {
         "tags": [
@@ -207,6 +259,66 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RunJobBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/_internal/jobs/{job_id}/sections/{slug}/run": {
+      "post": {
+        "tags": [
+          "internal"
+        ],
+        "summary": "Run Section",
+        "description": "Drive one section-retry Cloud Tasks delivery.\n\nOIDC verification runs at the router-level dependency so a reject\nhappens before this handler sees the request. On entry we validate\nthat the path parameters match the body (Cloud Tasks signs both \u2014 a\nmismatch is either tampering or misconfig; we refuse), then hand off\nto `run_section_retry` which owns the CAS-claim \u2192 analyze \u2192\nmark-done/failed \u2192 maybe-finalize sequence.\n\nStatus codes mirror the main worker: 200 on success / stale / terminal,\n503 on transient failure (Cloud Tasks retries per queue config).",
+        "operationId": "run_section__internal_jobs__job_id__sections__slug__run_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SectionSlug"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSectionBody"
               }
             }
           }
@@ -809,6 +921,31 @@
         "title": "PageKind",
         "description": "Shape of the source page the extractor handled.\n\nThe extractor in TASK-1473.10 picks one of these; downstream rendering\nand analysis logic branches on the value (e.g., hierarchical_thread\nenables tree-aware flashpoint context)."
       },
+      "RetryResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/SectionSlug"
+          },
+          "slot_attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Slot Attempt Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "slug",
+          "slot_attempt_id"
+        ],
+        "title": "RetryResponse",
+        "description": "202 handoff payload for a successful retry CAS."
+      },
       "RiskLevel": {
         "type": "string",
         "enum": [
@@ -841,6 +978,31 @@
         ],
         "title": "RunJobBody",
         "description": "Cloud Tasks request payload for the run endpoint."
+      },
+      "RunSectionBody": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/SectionSlug"
+          },
+          "expected_slot_attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Expected Slot Attempt Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "slug",
+          "expected_slot_attempt_id"
+        ],
+        "title": "RunSectionBody",
+        "description": "Cloud Tasks request payload for the per-section retry endpoint."
       },
       "SCDReport": {
         "properties": {

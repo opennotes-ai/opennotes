@@ -1,10 +1,12 @@
 import { action, query, redirect } from "@solidjs/router";
-import type { SidebarPayload } from "~/lib/api-client.server";
+import {
+  VibecheckApiError,
+  analyzeUrl,
+  getClient,
+  retrySection as retrySectionApi,
+  type SectionSlug,
+} from "~/lib/api-client.server";
 
-// /api/frame-compat and /api/screenshot responses are plain dicts in the
-// backend FastAPI routes (not named pydantic models), so openapi-typescript
-// emits them as `{ [key: string]: unknown }` / `{ [key: string]: string }`.
-// We narrow at the call site below.
 interface FrameCompatResponse {
   can_iframe: boolean;
   blocking_header: string | null;
@@ -20,13 +22,9 @@ export interface FrameCompatResult {
   screenshotUrl: string | null;
 }
 
-export type AnalyzeQueryResult =
-  | {
-      ok: true;
-      payload: SidebarPayload;
-      frameCompat: FrameCompatResult;
-    }
-  | { ok: false; error: "invalid_url" | "upstream_error"; message: string };
+export type FrameCompatQueryResult =
+  | { ok: true; frameCompat: FrameCompatResult }
+  | { ok: false; message: string };
 
 function isHttpUrl(candidate: string): boolean {
   try {
@@ -37,92 +35,115 @@ function isHttpUrl(candidate: string): boolean {
   }
 }
 
-export const getAnalysis = query(
-  async (targetUrl: string): Promise<AnalyzeQueryResult> => {
+export const getFrameCompat = query(
+  async (targetUrl: string): Promise<FrameCompatQueryResult> => {
     "use server";
     if (!targetUrl || !isHttpUrl(targetUrl)) {
-      return {
-        ok: false,
-        error: "invalid_url",
-        message: "Provide an http:// or https:// URL to analyze.",
-      };
+      return { ok: false, message: "invalid url" };
     }
-    try {
-      const { analyzeUrl, getClient } = await import("~/lib/api-client.server");
-      const client = getClient();
-
-      // Iframe-first strategy: always try to iframe the page in the browser.
-      // Pre-fetch a screenshot in parallel so the client has one ready to
-      // swap in if the iframe fails (X-Frame-Options / CSP frame-ancestors
-      // / bot-protection intercepts). Frame-compat is still probed as a
-      // soft hint we surface in the UI, but it no longer gates anything.
-      const analysisTask = analyzeUrl(targetUrl);
-      const frameTask = (async (): Promise<FrameCompatResponse> => {
-        try {
-          const { data, error } = await client.GET("/api/frame-compat", {
-            params: { query: { url: targetUrl } },
-          });
-          if (error || !data) {
-            return { can_iframe: true, blocking_header: null };
-          }
-          return data as unknown as FrameCompatResponse;
-        } catch (frameError: unknown) {
-          console.warn("vibecheck frame-compat probe failed:", frameError);
-          // Default to trying the iframe; the browser will tell us if it fails.
-          return { can_iframe: true, blocking_header: null };
+    const client = getClient();
+    const frameTask = (async (): Promise<FrameCompatResponse> => {
+      try {
+        const { data, error } = await client.GET("/api/frame-compat", {
+          params: { query: { url: targetUrl } },
+        });
+        if (error || !data) return { can_iframe: true, blocking_header: null };
+        return data as unknown as FrameCompatResponse;
+      } catch (err: unknown) {
+        console.warn("vibecheck frame-compat probe failed:", err);
+        return { can_iframe: true, blocking_header: null };
+      }
+    })();
+    const screenshotTask = (async (): Promise<string | null> => {
+      try {
+        const { data, error } = await client.GET("/api/screenshot", {
+          params: { query: { url: targetUrl } },
+        });
+        if (!error && data) {
+          return (data as unknown as ScreenshotResponse).screenshot_url ?? null;
         }
-      })();
-      const screenshotTask = (async (): Promise<string | null> => {
-        try {
-          const { data, error } = await client.GET("/api/screenshot", {
-            params: { query: { url: targetUrl } },
-          });
-          if (!error && data) {
-            return (data as unknown as ScreenshotResponse).screenshot_url ?? null;
-          }
-          return null;
-        } catch (shotError: unknown) {
-          console.warn("vibecheck screenshot fetch failed:", shotError);
-          return null;
-        }
-      })();
-
-      const [payload, frameProbe, screenshotUrl] = await Promise.all([
-        analysisTask,
-        frameTask,
-        screenshotTask,
-      ]);
-
-      return {
-        ok: true,
-        payload,
-        frameCompat: {
-          canIframe: frameProbe.can_iframe,
-          blockingHeader: frameProbe.blocking_header,
-          screenshotUrl,
-        },
-      };
-    } catch (error: unknown) {
-      console.error("vibecheck analyze query failed:", error);
-      const message =
-        error instanceof Error ? error.message : "Analysis failed.";
-      return { ok: false, error: "upstream_error", message };
-    }
+        return null;
+      } catch (err: unknown) {
+        console.warn("vibecheck screenshot fetch failed:", err);
+        return null;
+      }
+    })();
+    const [frameProbe, screenshotUrl] = await Promise.all([
+      frameTask,
+      screenshotTask,
+    ]);
+    return {
+      ok: true,
+      frameCompat: {
+        canIframe: frameProbe.can_iframe,
+        blockingHeader: frameProbe.blocking_header,
+        screenshotUrl,
+      },
+    };
   },
-  "vibecheck-analysis",
+  "vibecheck-frame-compat",
 );
 
-export const analyzeAction = action(async (formData: FormData) => {
-  "use server";
+function redirectParams(params: Record<string, string | undefined>): string {
+  const usp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") usp.set(k, v);
+  }
+  return usp.toString();
+}
+
+export async function resolveAnalyzeRedirect(formData: FormData): Promise<never> {
   const rawUrl = String(formData.get("url") ?? "").trim();
   if (!rawUrl || !isHttpUrl(rawUrl)) {
     throw redirect("/?error=invalid_url");
   }
 
-  const result = await getAnalysis(rawUrl);
-  if (!result.ok) {
-    throw redirect(`/?error=${encodeURIComponent(result.error)}`);
+  let response;
+  try {
+    response = await analyzeUrl(rawUrl);
+  } catch (err: unknown) {
+    if (err instanceof VibecheckApiError) {
+      const code = err.errorBody?.error_code;
+      const host = err.errorBody?.error_host;
+      if (code === "invalid_url") {
+        throw redirect("/?error=invalid_url");
+      }
+      if (code === "unsupported_site") {
+        const qs = redirectParams({
+          pending_error: "unsupported_site",
+          url: rawUrl,
+          host,
+        });
+        throw redirect(`/analyze?${qs}`);
+      }
+      const qs = redirectParams({
+        pending_error: code ?? "upstream_error",
+        url: rawUrl,
+      });
+      throw redirect(`/analyze?${qs}`);
+    }
+    throw err;
   }
 
-  throw redirect(`/analyze?url=${encodeURIComponent(rawUrl)}`);
+  const qs = new URLSearchParams({ job: response.job_id });
+  if (response.cached) qs.set("c", "1");
+  throw redirect(`/analyze?${qs.toString()}`);
+}
+
+export const analyzeAction = action(async (formData: FormData) => {
+  "use server";
+  await resolveAnalyzeRedirect(formData);
 }, "vibecheck-analyze");
+
+export const retrySectionAction = action(
+  async (formData: FormData) => {
+    "use server";
+    const jobId = String(formData.get("job_id") ?? "");
+    const slug = String(formData.get("slug") ?? "") as SectionSlug;
+    if (!jobId || !slug) {
+      throw new Error("retrySectionAction: job_id and slug are required");
+    }
+    return retrySectionApi(jobId, slug);
+  },
+  "vibecheck-retry-section",
+);

@@ -1,77 +1,17 @@
-import { Show, Suspense } from "solid-js";
-import { createAsync, useSearchParams, A } from "@solidjs/router";
+import { Show } from "solid-js";
+import { useSearchParams, A } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
-import LoadingShimmer from "~/components/LoadingShimmer";
-import PageFrame from "~/components/PageFrame";
-import CachedBadge from "~/components/CachedBadge";
-import Sidebar from "~/components/sidebar/Sidebar";
-import { getAnalysis, type AnalyzeQueryResult } from "./analyze.data";
-
-function AnalysisLayout(props: {
-  url: string;
-  result: Extract<AnalyzeQueryResult, { ok: true }>;
-}) {
-  return (
-    <div class="space-y-6">
-      <header class="flex flex-wrap items-center justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <h1 class="truncate text-lg font-semibold tracking-tight text-foreground">
-            {props.result.payload.page_title ?? "Untitled page"}
-          </h1>
-          <p class="mt-0.5 break-all text-xs text-muted-foreground">
-            {props.url}
-          </p>
-        </div>
-        <CachedBadge
-          cached={props.result.payload.cached}
-          cachedAt={props.result.payload.scraped_at}
-        />
-      </header>
-
-      <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <PageFrame
-          url={props.url}
-          canIframe={props.result.frameCompat.canIframe}
-          screenshotUrl={props.result.frameCompat.screenshotUrl}
-        />
-        <Sidebar payload={props.result.payload} />
-      </div>
-    </div>
-  );
-}
-
-function AnalysisResult(props: { url: string; result: AnalyzeQueryResult }) {
-  return (
-    <Show
-      when={props.result.ok === true ? props.result : null}
-      fallback={
-        <div
-          role="alert"
-          class="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive"
-        >
-          {props.result.ok === false
-            ? props.result.message
-            : "Analysis failed."}
-        </div>
-      }
-    >
-      {(okResult) => (
-        <AnalysisLayout url={props.url} result={okResult()} />
-      )}
-    </Show>
-  );
-}
 
 export default function AnalyzePage() {
   const [searchParams] = useSearchParams();
-  const targetUrl = () =>
+  const jobId = () =>
+    typeof searchParams.job === "string" ? searchParams.job : "";
+  const pendingError = () =>
+    typeof searchParams.pending_error === "string"
+      ? searchParams.pending_error
+      : "";
+  const pendingUrl = () =>
     typeof searchParams.url === "string" ? searchParams.url : "";
-
-  const analysis = createAsync<AnalyzeQueryResult | null>(async () => {
-    const url = targetUrl();
-    if (!url) return null;
-    return getAnalysis(url);
-  });
 
   return (
     <>
@@ -92,29 +32,41 @@ export default function AnalyzePage() {
         </nav>
 
         <Show
-          when={targetUrl()}
+          when={pendingError() || jobId()}
           fallback={
             <div class="rounded-md border border-border bg-card p-6 text-center">
               <p class="text-sm text-muted-foreground">
-                No URL provided. Go back and submit one to analyze.
+                No job provided. Go back and submit a URL to analyze.
               </p>
             </div>
           }
         >
-          {(url) => (
-            <Suspense
-              fallback={<LoadingShimmer label="Analyzing URL" rows={4} />}
-            >
-              <Show
-                when={analysis()}
-                fallback={<LoadingShimmer label="Analyzing URL" rows={4} />}
+          <Show
+            when={pendingError()}
+            fallback={
+              <div
+                data-testid="analyze-placeholder"
+                class="rounded-md border border-border bg-card p-6"
               >
-                {(result) => (
-                  <AnalysisResult url={url()} result={result()} />
-                )}
-              </Show>
-            </Suspense>
-          )}
+                <p class="text-sm text-muted-foreground">
+                  Analyzing job {jobId()}&hellip;
+                </p>
+              </div>
+            }
+          >
+            {(code) => (
+              <div
+                role="alert"
+                data-testid="analyze-pending-error"
+                class="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive"
+              >
+                <p>
+                  {code()}: couldn&rsquo;t start analysis for{" "}
+                  <span class="break-all">{pendingUrl()}</span>
+                </p>
+              </div>
+            )}
+          </Show>
         </Show>
       </main>
     </>

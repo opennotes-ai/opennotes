@@ -219,24 +219,12 @@ describe("getAuthorizationHeader", () => {
 
 describe("analyzeUrl", () => {
   const samplePayload = {
-    source_url: "https://news.example.com/a",
-    page_title: "Example",
-    sections: {
-      tone_dynamics: { flashpoint: null, scd: null },
-      facts_claims: { claims: [], known_misinformation: [] },
-      opinions_sentiments: {
-        sentiment_stats: {
-          positive_pct: 0,
-          negative_pct: 0,
-          neutral_pct: 1,
-        },
-        subjective_claims: [],
-      },
-      harmful_content: null,
-    },
+    job_id: "00000000-0000-0000-0000-000000000001",
+    status: "pending",
+    cached: false,
   };
 
-  const freshPayloadResponse = (status = 200) =>
+  const freshPayloadResponse = (status = 202) =>
     new Response(JSON.stringify(samplePayload), { status });
 
   it("does not add Authorization header in development", async () => {
@@ -291,7 +279,13 @@ describe("analyzeUrl", () => {
       .spyOn(globalThis, "fetch")
       .mockImplementation(
         async () =>
-          new Response(JSON.stringify({ detail: "bad url" }), { status: 400 }),
+          new Response(
+            JSON.stringify({
+              error_code: "invalid_url",
+              message: "bad url",
+            }),
+            { status: 400 },
+          ),
       );
 
     const { analyzeUrl, VibecheckApiError } = await import(
@@ -305,9 +299,48 @@ describe("analyzeUrl", () => {
       caught = err;
     }
     expect(caught).toBeInstanceOf(VibecheckApiError);
-    expect((caught as InstanceType<typeof VibecheckApiError>).statusCode).toBe(
-      400,
+    const apiErr = caught as InstanceType<typeof VibecheckApiError>;
+    expect(apiErr.statusCode).toBe(400);
+    expect(apiErr.errorBody).toEqual({
+      error_code: "invalid_url",
+      message: "bad url",
+    });
+
+    fetchSpy.mockRestore();
+  });
+
+  it("parses error_host from a 422 unsupported_site response", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error_code: "unsupported_site",
+              message: "blocked host",
+              error_host: "linkedin.com",
+            }),
+            { status: 422 },
+          ),
+      );
+
+    const { analyzeUrl, VibecheckApiError } = await import(
+      "./api-client.server"
     );
+
+    let caught: unknown = null;
+    try {
+      await analyzeUrl("https://www.linkedin.com/post");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(VibecheckApiError);
+    const apiErr = caught as InstanceType<typeof VibecheckApiError>;
+    expect(apiErr.errorBody?.error_host).toBe("linkedin.com");
+    expect(apiErr.errorBody?.error_code).toBe("unsupported_site");
 
     fetchSpy.mockRestore();
   });
