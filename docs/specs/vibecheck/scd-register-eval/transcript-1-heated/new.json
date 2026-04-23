@@ -1,0 +1,51 @@
+{
+  "narrative": "It begins with a raw, vulnerable request for a reality check. One person jumps in to offer firm validation, but someone else immediately pushes back to argue for more nuance. This kicks off a brisk, mildly combative side-debate between the two commenters. The original poster briefly surfaces to add context, but the energy doesn't really shift until a new voice drops in to play referee. This newcomer gently calls out the bickering and redirects everyone's focus back to the original poster's emotional state. The intervention works perfectly: both debaters instantly drop their defensive postures, concede the point, and unite to close the thread out with warm, aligned support.",
+  "speaker_arcs": [
+    {
+      "speaker": "op_throwaway",
+      "note": "Reaches out in a state of shock looking for grounding, and steps in just once more to clarify the situation while letting others hash it out.",
+      "utterance_id_range": [
+        1,
+        6
+      ]
+    },
+    {
+      "speaker": "alex_91",
+      "note": "Starts off deeply validating but highly definitive, gets into a defensive scrap, and then gracefully takes the L and softens their stance.",
+      "utterance_id_range": [
+        2,
+        8
+      ]
+    },
+    {
+      "speaker": "brenna_h",
+      "note": "Enters pushing for nuance and gets defensive when challenged, but ultimately lets the argument go to show up for the original poster.",
+      "utterance_id_range": [
+        3,
+        9
+      ]
+    },
+    {
+      "speaker": "cyrus_t",
+      "note": "Acts as the essential circuit breaker, dropping in just once to reframe the entire vibe and successfully de-escalate the room.",
+      "utterance_id_range": [
+        7,
+        7
+      ]
+    }
+  ],
+  "summary": "A raw plea for perspective triggers a brief, scrappy side-debate between commenters. A newcomer intervenes to stop the bickering, successfully getting everyone to back down and pivot to unified support.",
+  "tone_labels": [
+    "vulnerable",
+    "scrappy",
+    "reconciliatory",
+    "supportive"
+  ],
+  "per_speaker_notes": {
+    "cyrus_t": "Acts as the essential circuit breaker, dropping in just once to reframe the entire vibe and successfully de-escalate the room.",
+    "alex_91": "Starts off deeply validating but highly definitive, gets into a defensive scrap, and then gracefully takes the L and softens their stance.",
+    "op_throwaway": "Reaches out in a state of shock looking for grounding, and steps in just once more to clarify the situation while letting others hash it out.",
+    "brenna_h": "Enters pushing for nuance and gets defensive when challenged, but ultimately lets the argument go to show up for the original poster."
+  },
+  "insufficient_conversation": false
+}
