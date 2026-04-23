@@ -41,6 +41,7 @@ export default function AnalyzePage() {
     typeof searchParams.url === "string" ? searchParams.url : "";
   const pendingHost = () =>
     typeof searchParams.host === "string" ? searchParams.host : "";
+  const cachedHint = () => searchParams.c === "1";
 
   const polling = createPollingResource(jobId);
 
@@ -193,6 +194,7 @@ export default function AnalyzePage() {
                   payload={sidebarPayload()}
                   jobId={jobId() || undefined}
                   onRetry={handleRetry}
+                  cachedHint={cachedHint()}
                 />
               </div>
             }

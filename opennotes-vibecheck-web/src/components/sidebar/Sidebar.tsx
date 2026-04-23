@@ -30,6 +30,7 @@ export interface SidebarProps {
   payload?: SidebarPayload | null;
   jobId?: string;
   onRetry?: (slug: SectionSlug) => void;
+  cachedHint?: boolean;
 }
 
 const SAFETY_SLUGS: SectionSlug[] = ["safety__moderation"];
@@ -203,6 +204,7 @@ export default function Sidebar(props: SidebarProps) {
         render={SAFETY_RENDER}
         jobId={props.jobId}
         onRetry={props.onRetry}
+        cachedHint={props.cachedHint}
       />
       <SectionGroup
         label="Tone/dynamics"
@@ -211,6 +213,7 @@ export default function Sidebar(props: SidebarProps) {
         render={TONE_RENDER}
         jobId={props.jobId}
         onRetry={props.onRetry}
+        cachedHint={props.cachedHint}
       />
       <SectionGroup
         label="Facts/claims"
@@ -219,6 +222,7 @@ export default function Sidebar(props: SidebarProps) {
         render={FACTS_RENDER}
         jobId={props.jobId}
         onRetry={props.onRetry}
+        cachedHint={props.cachedHint}
       />
       <SectionGroup
         label="Opinions/sentiments"
@@ -227,6 +231,7 @@ export default function Sidebar(props: SidebarProps) {
         render={OPINIONS_RENDER}
         jobId={props.jobId}
         onRetry={props.onRetry}
+        cachedHint={props.cachedHint}
       />
     </aside>
   );

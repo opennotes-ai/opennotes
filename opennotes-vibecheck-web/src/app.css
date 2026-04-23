@@ -40,3 +40,17 @@
 .section-reveal {
   animation: section-reveal-kf 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-pulse {
+    animation: none;
+    opacity: 0.55;
+  }
+  .section-reveal {
+    animation: none;
+  }
+}
+
+[data-cached-hint="1"] .skeleton-pulse {
+  opacity: 0;
+}

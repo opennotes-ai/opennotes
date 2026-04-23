@@ -2,6 +2,7 @@ import { Show, createSignal, type JSX } from "solid-js";
 import { useAction } from "@solidjs/router";
 import type { SectionSlug } from "~/lib/api-client.server";
 import { retrySectionAction } from "~/routes/analyze.data";
+import { sectionDisplayName } from "./display";
 
 export interface RetryButtonProps {
   jobId: string;
@@ -45,6 +46,7 @@ export default function RetryButton(props: RetryButtonProps): JSX.Element {
         type="button"
         data-testid={`retry-${props.slug}`}
         data-in-flight={inFlight() ? "true" : "false"}
+        aria-label={`Retry ${sectionDisplayName(props.slug)}`}
         disabled={disabled()}
         onClick={handleClick}
         class="self-start text-[11px] font-medium text-primary underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"

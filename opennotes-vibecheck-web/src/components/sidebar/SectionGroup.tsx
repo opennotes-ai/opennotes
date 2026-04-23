@@ -1,7 +1,17 @@
-import { For, Match, Show, Switch, createMemo, type JSX } from "solid-js";
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSignal,
+  type JSX,
+} from "solid-js";
 import type { SectionSlot, SectionSlug } from "~/lib/api-client.server";
 import { SKELETONS } from "./skeletons";
 import RetryButton from "./RetryButton";
+import { sectionDisplayName } from "./display";
 
 export type SlugToSlots = Partial<Record<SectionSlug, SectionSlot>>;
 
@@ -12,6 +22,7 @@ export interface SectionGroupProps {
   render: Partial<Record<SectionSlug, (data: unknown) => JSX.Element>>;
   jobId?: string;
   onRetry?: (slug: SectionSlug) => void;
+  cachedHint?: boolean;
 }
 
 function slotFor(sections: SlugToSlots, slug: SectionSlug): SectionSlot {
@@ -48,6 +59,24 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
   );
   const totalCount = () => props.slugs.length;
 
+  const announced = new Set<string>();
+  const [announcement, setAnnouncement] = createSignal("");
+
+  createEffect(() => {
+    for (const slug of props.slugs) {
+      const slot = slotFor(props.sections, slug);
+      if (slot.state !== "done" && slot.state !== "failed") continue;
+      const attemptId = slot.attempt_id ?? "";
+      if (!attemptId) continue;
+      const key = `${slug}:${slot.state}:${attemptId}`;
+      if (announced.has(key)) continue;
+      announced.add(key);
+      const display = sectionDisplayName(slug);
+      const verb = slot.state === "done" ? "complete" : "failed";
+      setAnnouncement(`${display} ${verb}`);
+    }
+  });
+
   return (
     <section
       data-testid={`section-group-${props.label}`}
@@ -63,6 +92,15 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
         </span>
       </header>
 
+      <span
+        data-testid={`section-group-announce-${props.label}`}
+        aria-live="polite"
+        role="status"
+        class="sr-only"
+      >
+        {announcement()}
+      </span>
+
       <div class="flex flex-col gap-4">
         <For each={props.slugs}>
           {(slug) => {
@@ -73,6 +111,7 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
               <div
                 data-testid={`slot-${slug}`}
                 data-slot-state={slot().state}
+                data-cached-hint={props.cachedHint ? "1" : undefined}
                 class="flex flex-col gap-2"
               >
                 <p
