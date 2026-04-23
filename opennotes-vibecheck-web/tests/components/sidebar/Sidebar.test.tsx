@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@solidjs/testing-library";
 import Sidebar from "~/components/sidebar/Sidebar";
 import type { JobState, SidebarPayload } from "~/lib/api-client.server";
+import { makeEmptyScd } from "~/lib/sidebar-defaults";
 
 afterEach(() => {
   cleanup();
@@ -27,14 +28,7 @@ function makePayload(overrides: Partial<SidebarPayload> = {}): SidebarPayload {
     cached_at: null,
     safety: { harmful_content_matches: [] },
     tone_dynamics: {
-      scd: {
-        narrative: "",
-        speaker_arcs: [],
-        summary: "",
-        tone_labels: [],
-        per_speaker_notes: {},
-        insufficient_conversation: true,
-      },
+      scd: makeEmptyScd(),
       flashpoint_matches: [],
     },
     facts_claims: {
