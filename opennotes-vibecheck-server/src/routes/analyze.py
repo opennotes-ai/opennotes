@@ -1007,6 +1007,7 @@ async def _revert_slot_after_enqueue_failure(
             WHERE job_id = $1
               AND sections ? $2::text
               AND sections -> $2::text ->> 'attempt_id' = $4::text
+              AND status NOT IN ('done', 'failed')
             """,
             job_id,
             slug.value,
