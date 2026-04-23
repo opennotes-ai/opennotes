@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     VIBECHECK_SUPABASE_DB_PASSWORD: str = ""
     VIBECHECK_SUPABASE_ANON_KEY: str = ""
 
+    VIBECHECK_DATABASE_HOST: str = ""
+    VIBECHECK_DATABASE_PORT: int = 0
+
     RATE_LIMIT_PER_IP_PER_HOUR: int = 10
     CACHE_TTL_HOURS: int = 72
     MAX_IMAGES_MODERATED: int = 30

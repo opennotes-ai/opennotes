@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
+import asyncpg
 from fastapi import FastAPI
 from supabase import Client, create_client
 
@@ -15,9 +17,54 @@ logger = get_logger(__name__)
 
 _SCHEMA_PATH = Path(__file__).parent / "cache" / "schema.sql"
 
+# Supavisor (transaction-mode pooler) host for the vibecheck Supabase project.
+# The hostname encodes the project's region — see infrastructure
+# `supabase-projects.tf::supabase_project.vibecheck.region` (currently us-east-1).
+# Override via VIBECHECK_DATABASE_HOST when the project moves regions or when
+# pointing at a session-mode pooler / direct host. Transaction pooler requires
+# `statement_cache_size=0` because asyncpg's prepared-statement reuse is invalid
+# across connection swaps in transaction-pooled mode.
+_DEFAULT_POOLER_HOST = "aws-1-us-east-1.pooler.supabase.com"
+_DEFAULT_POOLER_PORT = 6543
+
 
 def _build_supabase_client(url: str, key: str) -> Client:
     return create_client(url, key)
+
+
+def _project_ref_from_url(supabase_url: str) -> str | None:
+    host = urlparse(supabase_url).hostname
+    if not host:
+        return None
+    return host.split(".", 1)[0] or None
+
+
+async def _create_db_pool(
+    *,
+    supabase_url: str,
+    db_password: str,
+    host: str,
+    port: int,
+) -> asyncpg.Pool:
+    project_ref = _project_ref_from_url(supabase_url)
+    if not project_ref:
+        raise RuntimeError(
+            f"cannot derive Supabase project ref from VIBECHECK_SUPABASE_URL={supabase_url!r}"
+        )
+    pool = await asyncpg.create_pool(
+        host=host,
+        port=port,
+        user=f"postgres.{project_ref}",
+        password=db_password,
+        database="postgres",
+        ssl="require",
+        statement_cache_size=0,
+        min_size=2,
+        max_size=10,
+    )
+    if pool is None:
+        raise RuntimeError("asyncpg.create_pool returned None")
+    return pool
 
 
 def _apply_schema(client: Client) -> None:
@@ -52,7 +99,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         app.state.cache = None
         logger.warning("vibecheck supabase cache disabled: missing VIBECHECK_SUPABASE_* env")
+
+    # asyncpg pool for the analyze pipeline. Routes raise 503 with
+    # error_code="internal" when this is missing, so a deploy without the
+    # right Supabase credentials is loud rather than silently broken.
+    if settings.VIBECHECK_SUPABASE_URL and settings.VIBECHECK_SUPABASE_DB_PASSWORD:
+        try:
+            app.state.db_pool = await _create_db_pool(
+                supabase_url=settings.VIBECHECK_SUPABASE_URL,
+                db_password=settings.VIBECHECK_SUPABASE_DB_PASSWORD,
+                host=settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
+                port=settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
+            )
+            logger.info(
+                "vibecheck db pool initialized (host=%s port=%s)",
+                settings.VIBECHECK_DATABASE_HOST or _DEFAULT_POOLER_HOST,
+                settings.VIBECHECK_DATABASE_PORT or _DEFAULT_POOLER_PORT,
+            )
+        except Exception as exc:
+            logger.error("vibecheck db pool initialization failed: %s", exc)
+            raise
+    else:
+        app.state.db_pool = None
+        logger.warning(
+            "vibecheck db pool disabled: missing VIBECHECK_SUPABASE_URL / VIBECHECK_SUPABASE_DB_PASSWORD"
+        )
+
     try:
         yield
     finally:
+        pool = getattr(app.state, "db_pool", None)
+        if pool is not None:
+            await pool.close()
+            app.state.db_pool = None
         app.state.cache = None
