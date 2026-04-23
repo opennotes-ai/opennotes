@@ -1,9 +1,10 @@
-from fastapi import FastAPI
-from prometheus_client import make_asgi_app
+from fastapi import Depends, FastAPI, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from src.auth.cloud_tasks_oidc import verify_cloud_tasks_oidc
 from src.monitoring import get_logger
 from src.routes import _schema_anchor, analyze, frame, internal_jobs
 from src.startup import lifespan
@@ -18,7 +19,20 @@ app.include_router(frame.router)
 app.include_router(analyze.router)
 app.include_router(internal_jobs.router)
 app.include_router(_schema_anchor.router)
-app.mount("/metrics", make_asgi_app())
+
+
+@app.get("/metrics", dependencies=[Depends(verify_cloud_tasks_oidc)])
+async def metrics() -> Response:
+    """Prometheus scrape target gated behind OIDC (TASK-1473.37).
+
+    The previous `app.mount("/metrics", make_asgi_app())` exposed job
+    throughput, error counts by host, single-flight contention, and
+    other operational signals to anyone on the internet whenever Cloud
+    Run was configured with `--allow-unauthenticated`. We share the
+    same OIDC dependency the internal worker uses so a misconfigured
+    Cloud Run revision still rejects unsigned scrape attempts.
+    """
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/")
