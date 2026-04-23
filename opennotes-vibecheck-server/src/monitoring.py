@@ -198,5 +198,6 @@ def configure_logfire(**configure_kwargs: Any) -> None:
         callback=logfire_scrub_callback,
         extra_patterns=list(_LOGFIRE_EXTRA_PATTERNS),
     )
+    configure_kwargs.setdefault("send_to_logfire", "if-token-present")
     logfire.configure(scrubbing=scrubbing, **configure_kwargs)
     _logfire_configured = True
