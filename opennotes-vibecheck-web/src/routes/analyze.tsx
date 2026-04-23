@@ -1,77 +1,105 @@
-import { Show, Suspense } from "solid-js";
-import { createAsync, useSearchParams, A } from "@solidjs/router";
+import { Show, Suspense, createMemo } from "solid-js";
+import { useSearchParams, A, createAsync } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
-import LoadingShimmer from "~/components/LoadingShimmer";
-import PageFrame from "~/components/PageFrame";
 import CachedBadge from "~/components/CachedBadge";
+import JobFailureCard from "~/components/JobFailureCard";
+import PageFrame from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
-import { getAnalysis, type AnalyzeQueryResult } from "./analyze.data";
+import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
+import { createPollingResource } from "~/lib/polling";
+import { getFrameCompat } from "./analyze.data";
 
-function AnalysisLayout(props: {
-  url: string;
-  result: Extract<AnalyzeQueryResult, { ok: true }>;
-}) {
-  return (
-    <div class="space-y-6">
-      <header class="flex flex-wrap items-center justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <h1 class="truncate text-lg font-semibold tracking-tight text-foreground">
-            {props.result.payload.page_title ?? "Untitled page"}
-          </h1>
-          <p class="mt-0.5 break-all text-xs text-muted-foreground">
-            {props.url}
-          </p>
-        </div>
-        <CachedBadge
-          cached={props.result.payload.cached}
-          cachedAt={props.result.payload.scraped_at}
-        />
-      </header>
+const ALL_ERROR_CODES: readonly ErrorCode[] = [
+  "invalid_url",
+  "unsupported_site",
+  "upstream_error",
+  "extraction_failed",
+  "timeout",
+  "rate_limited",
+  "internal",
+];
 
-      <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <PageFrame
-          url={props.url}
-          canIframe={props.result.frameCompat.canIframe}
-          screenshotUrl={props.result.frameCompat.screenshotUrl}
-        />
-        <Sidebar payload={props.result.payload} />
-      </div>
-    </div>
-  );
-}
-
-function AnalysisResult(props: { url: string; result: AnalyzeQueryResult }) {
-  return (
-    <Show
-      when={props.result.ok === true ? props.result : null}
-      fallback={
-        <div
-          role="alert"
-          class="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive"
-        >
-          {props.result.ok === false
-            ? props.result.message
-            : "Analysis failed."}
-        </div>
-      }
-    >
-      {(okResult) => (
-        <AnalysisLayout url={props.url} result={okResult()} />
-      )}
-    </Show>
-  );
+function asErrorCode(raw: string | undefined): ErrorCode | null {
+  if (!raw) return null;
+  return (ALL_ERROR_CODES as readonly string[]).includes(raw)
+    ? (raw as ErrorCode)
+    : null;
 }
 
 export default function AnalyzePage() {
   const [searchParams] = useSearchParams();
-  const targetUrl = () =>
+  const jobId = () =>
+    typeof searchParams.job === "string" ? searchParams.job : "";
+  const pendingErrorRaw = () =>
+    typeof searchParams.pending_error === "string"
+      ? searchParams.pending_error
+      : "";
+  const pendingError = createMemo<ErrorCode | null>(() =>
+    asErrorCode(pendingErrorRaw() || undefined),
+  );
+  const pendingUrl = () =>
     typeof searchParams.url === "string" ? searchParams.url : "";
+  const pendingHost = () =>
+    typeof searchParams.host === "string" ? searchParams.host : "";
+  const cachedHint = () => searchParams.c === "1";
 
-  const analysis = createAsync<AnalyzeQueryResult | null>(async () => {
-    const url = targetUrl();
+  const polling = createPollingResource(jobId);
+
+  const jobState = () => polling.state();
+  const jobStatus = () => jobState()?.status;
+  const jobUrl = () => jobState()?.url ?? pendingUrl();
+
+  const frameCompat = createAsync(async () => {
+    const url = jobUrl();
     if (!url) return null;
-    return getAnalysis(url);
+    return getFrameCompat(url);
   });
+
+  const transportError = () => polling.error();
+
+  const failureProps = createMemo(() => {
+    if (jobId()) {
+      const s = jobState();
+      if (s && s.status === "failed") {
+        return {
+          url: s.url ?? pendingUrl(),
+          errorCode: (s.error_code ?? null) as ErrorCode | null,
+          errorHost: s.error_host ?? null,
+          errorMessage: s.error_message ?? null,
+        };
+      }
+      if (transportError()) {
+        return {
+          url: jobUrl(),
+          errorCode: "internal" as ErrorCode,
+          errorHost: null,
+          errorMessage: null as string | null,
+        };
+      }
+      return null;
+    }
+    if (pendingError()) {
+      return {
+        url: pendingUrl(),
+        errorCode: pendingError(),
+        errorHost: pendingHost() || null,
+        errorMessage: null as string | null,
+      };
+    }
+    return null;
+  });
+
+  const showFailure = () => failureProps() !== null;
+
+  const handleRetry = (_slug: SectionSlug) => {
+    // RetryButton has already POSTed /retry/{slug} by the time this fires;
+    // we just kick polling so the UI flips back through pending/running/done.
+    polling.refetch();
+  };
+
+  const sidebarPayload = () => jobState()?.sidebar_payload ?? null;
+  const isCached = () => jobState()?.cached === true;
+  const cachedAt = () => sidebarPayload()?.cached_at ?? null;
 
   return (
     <>
@@ -89,32 +117,100 @@ export default function AnalyzePage() {
             </span>
             <span>back</span>
           </A>
+          <Show when={isCached()}>
+            <CachedBadge cachedAt={cachedAt()} />
+          </Show>
         </nav>
 
         <Show
-          when={targetUrl()}
+          when={jobId() || pendingError()}
           fallback={
-            <div class="rounded-md border border-border bg-card p-6 text-center">
+            <div
+              data-testid="analyze-empty"
+              class="rounded-md border border-border bg-card p-6 text-center"
+            >
               <p class="text-sm text-muted-foreground">
-                No URL provided. Go back and submit one to analyze.
+                No job provided. Go back and submit a URL to analyze.
               </p>
             </div>
           }
         >
-          {(url) => (
-            <Suspense
-              fallback={<LoadingShimmer label="Analyzing URL" rows={4} />}
-            >
-              <Show
-                when={analysis()}
-                fallback={<LoadingShimmer label="Analyzing URL" rows={4} />}
+          <Show
+            when={showFailure()}
+            fallback={
+              <div
+                data-testid="analyze-layout"
+                class="flex flex-col gap-6 lg:grid lg:grid-cols-[3fr_2fr] lg:gap-8"
               >
-                {(result) => (
-                  <AnalysisResult url={url()} result={result()} />
-                )}
-              </Show>
-            </Suspense>
-          )}
+                <div class="flex min-h-[60vh] flex-col gap-4">
+                  <Show
+                    when={jobUrl()}
+                    fallback={
+                      <div class="flex min-h-[60vh] flex-1 items-center justify-center rounded-lg border border-border bg-card text-sm text-muted-foreground">
+                        Preparing analysis&hellip;
+                      </div>
+                    }
+                  >
+                    {(url) => (
+                      <Suspense
+                        fallback={
+                          <div class="flex min-h-[60vh] flex-1 items-center justify-center rounded-lg border border-border bg-card text-sm text-muted-foreground">
+                            Loading preview&hellip;
+                          </div>
+                        }
+                      >
+                        {(() => {
+                          const fc = frameCompat();
+                          const compat =
+                            fc && fc.ok
+                              ? fc.frameCompat
+                              : {
+                                  canIframe: true,
+                                  blockingHeader: null,
+                                  screenshotUrl: null,
+                                };
+                          return (
+                            <PageFrame
+                              url={url()}
+                              canIframe={compat.canIframe}
+                              screenshotUrl={compat.screenshotUrl}
+                            />
+                          );
+                        })()}
+                      </Suspense>
+                    )}
+                  </Show>
+                  <Show when={jobStatus() && jobStatus() !== "done"}>
+                    <p
+                      data-testid="analyze-status"
+                      class="text-xs text-muted-foreground"
+                    >
+                      Status: {jobStatus()}
+                    </p>
+                  </Show>
+                </div>
+                <Sidebar
+                  sections={jobState()?.sections}
+                  payload={sidebarPayload()}
+                  jobId={jobId() || undefined}
+                  onRetry={handleRetry}
+                  cachedHint={cachedHint()}
+                />
+              </div>
+            }
+          >
+            {(_ready) => {
+              const f = failureProps()!;
+              return (
+                <JobFailureCard
+                  url={f.url ?? ""}
+                  errorCode={f.errorCode}
+                  errorHost={f.errorHost}
+                  errorMessage={f.errorMessage}
+                />
+              );
+            }}
+          </Show>
         </Show>
       </main>
     </>
