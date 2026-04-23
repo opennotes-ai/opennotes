@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 import pytest
 
 from src.analyses.tone import scd as scd_mod
-from src.analyses.tone._scd_schemas import SCDReport
+from src.analyses.tone._scd_schemas import SCDReport, SpeakerArc
 from src.config import Settings
 from src.utterances import Utterance
 
@@ -224,3 +224,21 @@ class TestPromptVendored:
         assert prompt.strip()
         assert "Trajectory Summary" in prompt
         assert "{formatted_object}" in prompt
+
+
+class TestSCDReportSchemaShape:
+    def test_speaker_arc_with_range(self):
+        arc = SpeakerArc(speaker="alice", note="x", utterance_id_range=(3, 7))
+        round_tripped = SpeakerArc.model_validate(arc.model_dump())
+        assert round_tripped.speaker == "alice"
+        assert round_tripped.note == "x"
+        assert round_tripped.utterance_id_range == (3, 7)
+
+    def test_speaker_arc_without_range_defaults_to_none(self):
+        arc = SpeakerArc(speaker="alice", note="x")
+        assert arc.utterance_id_range is None
+
+    def test_scd_report_new_fields_default_empty(self):
+        report = SCDReport(summary="placeholder", insufficient_conversation=True)
+        assert report.narrative == ""
+        assert report.speaker_arcs == []

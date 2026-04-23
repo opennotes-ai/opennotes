@@ -8,35 +8,96 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class SpeakerArc(BaseModel):
+    """Per-speaker arc within a conversation, intended for timeline visualization.
+
+    Each arc localizes one speaker's contribution to the conversational shape:
+    a short prose `note` paired with an optional `utterance_id_range` so the
+    frontend can map the arc back onto the rendered transcript timeline. The
+    range is `None` when the LLM cannot confidently localize the arc to a
+    contiguous span (e.g. interleaved or sparse contributions).
+    """
+
+    speaker: str = Field(
+        ...,
+        description=(
+            "Speaker label as it appears in the formatted transcript "
+            "(e.g. 'alice', 'Speaker1')."
+        ),
+    )
+    note: str = Field(
+        ...,
+        description=(
+            "1-2 sentence observation about this speaker's arc: how their "
+            "tone, intent, or stance evolves across the conversation."
+        ),
+    )
+    utterance_id_range: tuple[int, int] | None = Field(
+        default=None,
+        description=(
+            "Inclusive (start, end) utterance index range that this arc "
+            "covers, for timeline-viz alignment. `None` when the LLM cannot "
+            "localize the arc to a contiguous span."
+        ),
+    )
+
+
 class SCDReport(BaseModel):
     """Structured output of `analyze_scd`.
 
-    Mirrors the structural intent of Cornell ConvoKit's SCD trajectory summary:
-    a short dynamics narrative, a small set of tone labels, and per-speaker
-    observations. For inputs that lack a real multi-speaker conversation, the
-    model is bypassed and `insufficient_conversation=True` is set.
+    Mirrors the structural intent of Cornell ConvoKit's SCD trajectory summary,
+    but in a conversational register: a free-form `narrative` describing how
+    the conversation unfolds, and a structured `speaker_arcs` list ready for
+    timeline visualization. Legacy fields (`summary`, `tone_labels`,
+    `per_speaker_notes`, `insufficient_conversation`) are retained so existing
+    consumers continue to work while orchestrator slot wiring is migrated.
+    For inputs that lack a real multi-speaker conversation, the model is
+    bypassed and `insufficient_conversation=True` is set.
     """
 
+    narrative: str = Field(
+        default="",
+        description=(
+            "Conversational-register narrative (~80-150 words) describing how "
+            "the conversation unfolds: turn-taking dynamics, escalation or "
+            "de-escalation, shifts in stance, and persuasive moves. Prose "
+            "voice — does not restate specific topics, claims, or quotes."
+        ),
+    )
+    speaker_arcs: list[SpeakerArc] = Field(
+        default_factory=list,
+        description=(
+            "Per-speaker arcs across the conversation, ordered for timeline "
+            "visualization. Each arc carries the speaker label, a short note "
+            "on their evolution, and an optional utterance index range so "
+            "the frontend can align the arc with the rendered transcript."
+        ),
+    )
     summary: str = Field(
         ...,
         description=(
-            "Overall conversational-dynamics narrative (<= ~80 words). "
+            "Legacy: overall conversational-dynamics narrative (<= ~80 words). "
             "Captures sentiment shifts, intentions, and persuasive strategies "
-            "without restating specific topics or claims."
+            "without restating specific topics or claims. Preserved for "
+            "back-compat with existing consumers; new code should read "
+            "`narrative` instead."
         ),
     )
     tone_labels: list[str] = Field(
         default_factory=list,
         description=(
-            "Short tone descriptors for the conversation as a whole "
-            "(e.g. 'combative', 'collaborative', 'dismissive', 'civil')."
+            "Legacy: short tone descriptors for the conversation as a whole "
+            "(e.g. 'combative', 'collaborative', 'dismissive', 'civil'). "
+            "Preserved for back-compat."
         ),
     )
     per_speaker_notes: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Map of speaker label -> 1-2 sentence observation about that "
-            "speaker's tone, intent, or conversational strategy."
+            "Legacy: map of speaker label -> 1-2 sentence observation about "
+            "that speaker's tone, intent, or conversational strategy. "
+            "Preserved for back-compat; new code should read `speaker_arcs` "
+            "for timeline-viz-ready per-speaker information."
         ),
     )
     insufficient_conversation: bool = Field(
@@ -45,6 +106,6 @@ class SCDReport(BaseModel):
             "True when the input lacks a real multi-speaker exchange "
             "(e.g. a blog post with no comments). When true, callers "
             "should treat `summary` as a fixed placeholder and ignore "
-            "`tone_labels` / `per_speaker_notes`."
+            "`tone_labels` / `per_speaker_notes` / `speaker_arcs`."
         ),
     )
