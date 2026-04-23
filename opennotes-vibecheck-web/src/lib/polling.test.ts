@@ -417,6 +417,39 @@ describe("createPollingResource", () => {
     });
   });
 
+  it("refetch() preserves prior state() until the next poll resolves", async () => {
+    const done = makeJobState({ status: "done", next_poll_ms: 500 });
+    let resolveSecond!: (value: JobState) => void;
+    const secondPromise = new Promise<JobState>((resolve) => {
+      resolveSecond = resolve;
+    });
+    mockPollJob
+      .mockResolvedValueOnce(done)
+      .mockReturnValueOnce(secondPromise);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const { state, refetch } = createPollingResource(
+        () => "job-refetch-preserve",
+      );
+      await flushMicrotasks();
+      expect(state()?.status).toBe("done");
+      expect(mockPollJob).toHaveBeenCalledTimes(1);
+
+      refetch();
+      expect(mockPollJob).toHaveBeenCalledTimes(2);
+      expect(state()?.status).toBe("done");
+
+      const resumed = makeJobState({ status: "analyzing", next_poll_ms: 500 });
+      resolveSecond(resumed);
+      await flushMicrotasks();
+      expect(state()?.status).toBe("analyzing");
+
+      dispose();
+    });
+  });
+
   it("refetch() after the 3-error terminal clears the error and resumes polling", async () => {
     const ok = makeJobState({ status: "pending", next_poll_ms: 1500 });
     mockPollJob

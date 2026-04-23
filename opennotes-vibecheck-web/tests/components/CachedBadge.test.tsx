@@ -7,13 +7,15 @@ afterEach(() => {
 });
 
 describe("<CachedBadge />", () => {
-  it("renders nothing when cachedAt is null", () => {
+  it("renders the badge without a timestamp when cachedAt is null", () => {
     render(() => <CachedBadge cachedAt={null} />);
-    expect(screen.queryByTestId("cached-badge")).toBeNull();
+    const badge = screen.getByTestId("cached-badge");
+    expect(badge.textContent?.toLowerCase()).toContain("cached");
+    expect(badge.textContent?.toLowerCase()).not.toMatch(/ago/);
+    expect(badge.textContent?.toLowerCase()).not.toMatch(/just now/);
   });
 
-  it("renders the badge with no timestamp when cachedAt is a recent ISO string", () => {
-    // A cachedAt less than 1 minute old should render the badge but show no "Nm ago" marker.
+  it("renders the badge with a 'just now' marker when cachedAt is a recent ISO string", () => {
     const justNow = new Date(Date.now() - 5_000).toISOString();
     render(() => <CachedBadge cachedAt={justNow} />);
     const badge = screen.getByTestId("cached-badge");

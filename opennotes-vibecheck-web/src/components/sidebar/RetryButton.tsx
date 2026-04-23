@@ -15,8 +15,7 @@ export default function RetryButton(props: RetryButtonProps): JSX.Element {
   const [inFlight, setInFlight] = createSignal(false);
   const [inlineError, setInlineError] = createSignal<string | null>(null);
 
-  const baseDisabled = () =>
-    props.slotState === "running" || props.slotState === "pending";
+  const baseDisabled = () => props.slotState !== "failed";
   const disabled = () => baseDisabled() || inFlight();
 
   const handleClick = async () => {

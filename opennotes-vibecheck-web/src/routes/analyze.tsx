@@ -57,28 +57,31 @@ export default function AnalyzePage() {
   const transportError = () => polling.error();
 
   const failureProps = createMemo(() => {
+    if (jobId()) {
+      const s = jobState();
+      if (s && s.status === "failed") {
+        return {
+          url: s.url ?? pendingUrl(),
+          errorCode: (s.error_code ?? null) as ErrorCode | null,
+          errorHost: s.error_host ?? null,
+          errorMessage: s.error_message ?? null,
+        };
+      }
+      if (transportError()) {
+        return {
+          url: jobUrl(),
+          errorCode: "internal" as ErrorCode,
+          errorHost: null,
+          errorMessage: null as string | null,
+        };
+      }
+      return null;
+    }
     if (pendingError()) {
       return {
         url: pendingUrl(),
         errorCode: pendingError(),
         errorHost: pendingHost() || null,
-        errorMessage: null as string | null,
-      };
-    }
-    const s = jobState();
-    if (s && s.status === "failed") {
-      return {
-        url: s.url ?? pendingUrl(),
-        errorCode: (s.error_code ?? null) as ErrorCode | null,
-        errorHost: s.error_host ?? null,
-        errorMessage: s.error_message ?? null,
-      };
-    }
-    if (transportError()) {
-      return {
-        url: jobUrl(),
-        errorCode: "internal" as ErrorCode,
-        errorHost: null,
         errorMessage: null as string | null,
       };
     }
@@ -94,6 +97,7 @@ export default function AnalyzePage() {
   };
 
   const sidebarPayload = () => jobState()?.sidebar_payload ?? null;
+  const isCached = () => sidebarPayload()?.cached === true;
   const cachedAt = () => sidebarPayload()?.cached_at ?? null;
 
   return (
@@ -112,7 +116,7 @@ export default function AnalyzePage() {
             </span>
             <span>back</span>
           </A>
-          <Show when={cachedAt()}>
+          <Show when={isCached()}>
             <CachedBadge cachedAt={cachedAt()} />
           </Show>
         </nav>

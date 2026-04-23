@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, fireEvent } from "@solidjs/testing-library";
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@solidjs/testing-library";
 
 const { retrySectionActionMock, useActionMock } = vi.hoisted(() => ({
   retrySectionActionMock: vi.fn(),
@@ -68,6 +74,25 @@ describe("<RetryButton />", () => {
     expect(btn.disabled).toBe(true);
   });
 
+  it("is disabled while slotState is 'done' and does not invoke the retry action", () => {
+    const onSuccess = vi.fn();
+    render(() => (
+      <RetryButton
+        jobId="job-1"
+        slug="facts_claims__dedup"
+        slotState="done"
+        onSuccess={onSuccess}
+      />
+    ));
+    const btn = screen.getByTestId(
+      "retry-facts_claims__dedup",
+    ) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(retrySectionActionMock).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
   it("is enabled while slotState is 'failed'", () => {
     render(() => (
       <RetryButton
@@ -95,12 +120,15 @@ describe("<RetryButton />", () => {
     ));
     const btn = screen.getByTestId("retry-tone_dynamics__scd");
     fireEvent.click(btn);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(retrySectionActionMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(retrySectionActionMock).toHaveBeenCalledTimes(1);
+    });
     const fd = retrySectionActionMock.mock.calls[0][0] as FormData;
     expect(fd.get("job_id")).toBe("job-7");
     expect(fd.get("slug")).toBe("tone_dynamics__scd");
-    expect(onSuccess).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("surfaces an inline error and does not call onSuccess when retry fails", async () => {
@@ -116,11 +144,10 @@ describe("<RetryButton />", () => {
     ));
     const btn = screen.getByTestId("retry-tone_dynamics__scd");
     fireEvent.click(btn);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(onSuccess).not.toHaveBeenCalled();
     const errorMsg = await screen.findByTestId(
       "retry-error-tone_dynamics__scd",
     );
     expect(errorMsg.textContent).toMatch(/retry failed/i);
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 });

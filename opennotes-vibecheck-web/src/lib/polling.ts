@@ -138,7 +138,13 @@ export function createPollingResource(
   const refetch = () => {
     const id = currentJobId ?? jobId();
     if (!id) return;
-    start(id);
+    generation += 1;
+    consecutiveErrors = 0;
+    stopped = false;
+    currentJobId = id;
+    clearTimer();
+    const gen = generation;
+    void tick(gen);
   };
 
   return { state, error, refetch };
