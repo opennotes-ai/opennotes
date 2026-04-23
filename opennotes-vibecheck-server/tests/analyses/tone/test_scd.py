@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Literal
 
 import pytest
 from pydantic import ValidationError
@@ -19,10 +20,14 @@ from src.config import Settings
 from src.utterances import Utterance
 
 
-def _utt(author: str | None, text: str, kind: str = "comment") -> Utterance:
+def _utt(
+    author: str | None,
+    text: str,
+    kind: Literal["post", "comment", "reply"] = "comment",
+) -> Utterance:
     return Utterance(
         utterance_id=f"{author or 'anon'}-{hash(text) & 0xFFFF:04x}",
-        kind=kind,  # type: ignore[arg-type]
+        kind=kind,
         text=text,
         author=author,
         timestamp=datetime(2026, 4, 21, tzinfo=UTC),
@@ -51,7 +56,7 @@ class _BuildAgentSpy:
     """Records that build_agent was invoked with the expected arguments."""
 
     report: SCDReport
-    build_calls: list[dict] = field(default_factory=list)
+    build_calls: list[dict[str, object]] = field(default_factory=list)
     last_agent: _FakeAgent | None = None
 
     def __call__(self, settings, *, output_type=None, system_prompt=None):
@@ -197,7 +202,9 @@ class TestAnalyzeScdMultiSpeaker:
         assert len(spy.build_calls) == 1
         call = spy.build_calls[0]
         assert call["output_type"] is SCDReport
-        assert "Trajectory Summary" in (call["system_prompt"] or "")
+        system_prompt = call["system_prompt"]
+        assert isinstance(system_prompt, str)
+        assert "Trajectory Summary" in system_prompt
         assert call["settings"] is settings
 
     async def test_formats_utterances_as_author_text_lines(

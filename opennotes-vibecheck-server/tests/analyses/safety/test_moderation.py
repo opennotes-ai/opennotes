@@ -25,8 +25,8 @@ def make_utterance(
 def make_moderation_result(
     flagged: bool = False,
     max_score: float = 0.0,
-    categories: dict | None = None,
-    scores: dict | None = None,
+    categories: dict[str, bool] | None = None,
+    scores: dict[str, float] | None = None,
     flagged_categories: list[str] | None = None,
 ) -> ModerationResult:
     return ModerationResult(
