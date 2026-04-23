@@ -9,7 +9,7 @@ semantics that production relies on.
 Coverage:
 
   * Concurrent `_run_section` coroutines for the same job + different
-    slugs land seven distinct slot keys without lost writes.
+    slugs land ten distinct slot keys without lost writes.
   * Two concurrent `claim_slot` calls on the same (job, slug) serialize
     via row-level locking — exactly one wins.
   * `write_slot` racing the same (job, slug, attempt) preserves the last
@@ -137,17 +137,34 @@ async def _read_sections(pool: Any, job_id: UUID) -> dict[str, Any]:
 
 async def test_concurrent_run_section_across_all_slugs_lands_every_slot(
     db_pool: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`asyncio.gather` over every SectionSlug must produce seven JSONB keys.
+    """`asyncio.gather` over every SectionSlug must produce ten JSONB keys.
 
     The orchestrator's production fan-out is exactly this shape; if the
     `sections || jsonb_build_object(...)` merge dropped a write under
-    contention, this test would observe < 7 keys. Each coroutine runs on
+    contention, this test would observe < 10 keys. Each coroutine runs on
     its own pool connection so the test exercises real Postgres
     contention rather than a serialized fixture lock.
     """
+    from src.jobs import orchestrator
+
     task_attempt = uuid4()
     job_id = await _insert_active_job(db_pool, task_attempt)
+
+    for slug in SectionSlug:
+        async def _handler(
+            pool: Any,
+            job_id: Any,
+            task_attempt: Any,
+            payload: Any,
+            settings: Any,
+            *,
+            _slug: SectionSlug = slug,
+        ) -> dict[str, Any]:
+            return {"slug": _slug.value}
+
+        monkeypatch.setitem(orchestrator._SECTION_HANDLERS, slug, _handler)
 
     settings = Settings()
     payload = object()

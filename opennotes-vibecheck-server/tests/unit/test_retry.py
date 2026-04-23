@@ -11,7 +11,7 @@ The retry path is a two-stage flow:
 
     2. Internal `POST /_internal/jobs/{job_id}/sections/{slug}/run` —
        OIDC-verified, CAS-claims the slot on `expected_slot_attempt_id`,
-       runs the one analysis (stub for this ticket), marks the slot
+       runs the one analysis, marks the slot
        done/failed, then calls `maybe_finalize_job` so a successful retry
        can rescue the cache once every slot is `done`.
 
@@ -589,7 +589,7 @@ async def test_section_retry_worker_runs_analysis_and_finalizes(
             }
         else:
             # Mark every other slot done with the matching empty payload.
-            from src.jobs.orchestrator import _empty_section_data  # noqa: PLC0415
+            from src.jobs.orchestrator import _empty_section_data
 
             sections[s.value] = {
                 "state": "done",
@@ -621,6 +621,33 @@ async def test_section_retry_worker_runs_analysis_and_finalizes(
             job_id,
         )
     assert isinstance(job_id, UUID)
+
+    from src.jobs import orchestrator
+
+    async def _retry_handler(
+        pool: Any,
+        job_id: Any,
+        task_attempt: Any,
+        payload: Any,
+        settings: Any,
+    ) -> dict[str, Any]:
+        return {
+            "sentiment_stats": {
+                "per_utterance": [
+                    {
+                        "utterance_id": "retry-u",
+                        "label": "neutral",
+                        "valence": 0.0,
+                    }
+                ],
+                "positive_pct": 0.0,
+                "negative_pct": 0.0,
+                "neutral_pct": 100.0,
+                "mean_valence": 0.0,
+            }
+        }
+
+    monkeypatch.setitem(orchestrator._SECTION_HANDLERS, target_slug, _retry_handler)
 
     resp = await _post_section_run(
         client,

@@ -13,7 +13,7 @@ lifecycle:
        watches heartbeat_at to reclaim orphaned jobs (.18 ticket).
     3. Scrape via Firecrawl (or hit the cache), revalidate the final URL via
        the SSRF guard (catching redirects into private space), extract
-       utterances, then fan out to the seven per-section analysis slots via
+       utterances, then fan out to the ten per-section analysis slots via
        `asyncio.gather`.
     4. Finalize: `maybe_finalize_job` UPSERTs the `vibecheck_analyses` cache
        and flips the job status.
@@ -42,15 +42,22 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
+from src.analyses.claims.dedupe_slot import run_claims_dedup
 from src.analyses.claims.facts_agent import run_facts_claims_known_misinfo
+from src.analyses.opinions.sentiment_slot import run_sentiment
+from src.analyses.opinions.subjective_slot import run_subjective
 from src.analyses.safety.image_moderation_worker import run_image_moderation
 from src.analyses.safety.moderation_slot import run_safety_moderation
 from src.analyses.safety.video_moderation_worker import run_video_moderation
 from src.analyses.safety.web_risk_worker import run_web_risk
 from src.analyses.schemas import ErrorCode, SectionSlot, SectionSlug, SectionState
+from src.analyses.slot_utterances import load_job_utterances
+from src.analyses.tone.flashpoint_slot import run_flashpoint
+from src.analyses.tone.scd_slot import run_scd
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings
 from src.firecrawl_client import FirecrawlClient
@@ -408,8 +415,8 @@ async def _run_section(
     """Run a single analysis slot and persist its output.
 
     Slugs registered in `_SECTION_HANDLERS` invoke the real analyzer and
-    persist its returned payload. Unregistered slugs fall back to the
-    TASK-1473.13 empty-success stub until their handler lands.
+    persist its returned payload. The empty-success fallback remains only
+    as a defensive shape guard for future slugs during development.
 
     A slot failure is NOT a job failure: we call `mark_slot_failed` and
     return normally. `maybe_finalize_job` notices the failed slot later
@@ -501,7 +508,12 @@ _SECTION_HANDLERS: dict[SectionSlug, Any] = {
     SectionSlug.SAFETY_WEB_RISK: run_web_risk,
     SectionSlug.SAFETY_IMAGE_MODERATION: run_image_moderation,
     SectionSlug.SAFETY_VIDEO_MODERATION: run_video_moderation,
+    SectionSlug.TONE_DYNAMICS_FLASHPOINT: run_flashpoint,
+    SectionSlug.TONE_DYNAMICS_SCD: run_scd,
+    SectionSlug.FACTS_CLAIMS_DEDUP: run_claims_dedup,
     SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: run_facts_claims_known_misinfo,
+    SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: run_sentiment,
+    SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: run_subjective,
 }
 
 
@@ -850,10 +862,10 @@ async def run_section_retry(
       2. If the slot's current attempt_id no longer matches
          `expected_slot_attempt_id`, or the slot is no longer `running`,
          a newer retry already claimed the slot. Return 200 no-op.
-      3. Run the per-slug analysis. For this ticket the analysis stubs
-         out to `_empty_section_data` (same shape the orchestrator's
-         original fan-out uses) so `maybe_finalize_job` can assemble a
-         valid SidebarPayload. TASK-1473.13 follow-up wires real services.
+      3. Run the per-slug analysis. Registered handlers get a payload
+         reconstructed from persisted `vibecheck_job_utterances` so a retry
+         after the original extraction can emit the same data shape as the
+         original fan-out.
       4. `mark_slot_done` with `expected_task_attempt=job.attempt_id`.
          If the CAS fails (stale job attempt, or job moved terminal out
          from under us), we return 200 no-op — the newer owner will
@@ -895,7 +907,13 @@ async def run_section_retry(
 
             section_started = time.monotonic()
             try:
-                data = _empty_section_data(slug)
+                handler = _SECTION_HANDLERS.get(slug)
+                if handler is None:
+                    data = _empty_section_data(slug)
+                else:
+                    utterances = await load_job_utterances(pool, job_id)
+                    payload = SimpleNamespace(utterances=utterances)
+                    data = await handler(pool, job_id, task_attempt, payload, settings)
                 rows = await mark_slot_done(
                     pool,
                     job_id,

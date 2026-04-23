@@ -29,12 +29,10 @@ Out of scope (covered by per-component suites):
 
   * Real Firecrawl scrape (RecordingFirecrawlClient stands in).
   * Real Gemini extraction (extract_utterances is monkeypatched).
-  * Per-section analyzer logic — _run_section walks _empty_section_data
-    for unregistered slugs and the registered safety/web-risk handlers
-    early-return on the empty-utterance payload, so this file does NOT
-    prove the analyzers extract real signal. Per-handler suites in
-    tests/analyses/ + the dedicated section worker tests (test_worker,
-    test_retry, test_slot_writes) own that contract.
+  * Per-section analyzer logic — external model calls are monkeypatched to
+    deterministic outputs. This file does prove the real orchestrator writes
+    non-empty Tone/Facts/Opinions section payloads through Postgres and
+    finalize assembles them into SidebarPayload.
 """
 from __future__ import annotations
 
@@ -46,7 +44,11 @@ from uuid import UUID
 import httpx
 import pytest
 
+from src.analyses.claims._claims_schemas import Claim, ClaimsReport, DedupedClaim
+from src.analyses.opinions._schemas import SentimentScore, SentimentStatsReport, SubjectiveClaim
 from src.analyses.schemas import PageKind, SectionSlug
+from src.analyses.tone._flashpoint_schemas import FlashpointMatch, RiskLevel
+from src.analyses.tone._scd_schemas import SCDReport, SpeakerArc
 from src.utterances.schema import UtterancesPayload
 
 from .conftest import RecordingFirecrawlClient, read_job, read_sections
@@ -107,6 +109,99 @@ async def test_post_then_internal_run_then_poll_to_done(
         return payload
 
     monkeypatch.setattr(orchestrator, "extract_utterances", _stub_extract)
+
+    from src.analyses.claims import dedupe_slot
+    from src.analyses.opinions import sentiment_slot, subjective_slot
+    from src.analyses.tone import flashpoint_slot, scd_slot
+
+    async def _stub_flashpoints(utterances: list[Any], settings: Any) -> list[Any]:
+        return [
+            None,
+            FlashpointMatch(
+                utterance_id="u-1",
+                derailment_score=80,
+                risk_level=RiskLevel.HEATED,
+                reasoning="The reply escalates the exchange.",
+                context_messages=1,
+            ),
+            None,
+        ]
+
+    async def _stub_scd(utterances: list[Any], settings: Any) -> SCDReport:
+        return SCDReport(
+            narrative="The exchange shifts from report to criticism.",
+            speaker_arcs=[
+                SpeakerArc(
+                    speaker="author-1",
+                    note="Responds with criticism.",
+                    utterance_id_range=[2, 2],
+                )
+            ],
+            summary="The thread escalates after the first response.",
+            tone_labels=["heated"],
+            per_speaker_notes={"author-1": "Critical response."},
+            insufficient_conversation=False,
+        )
+
+    async def _stub_extract_claims(utterances: list[Any], settings: Any) -> list[list[Claim]]:
+        return [
+            [Claim(claim_text="The rollout broke checkout.", utterance_id="u-0", confidence=0.9)],
+            [Claim(claim_text="Checkout is broken.", utterance_id="u-1", confidence=0.87)],
+            [],
+        ]
+
+    async def _stub_dedupe(
+        claims: list[Claim], utterances: list[Any], settings: Any
+    ) -> ClaimsReport:
+        return ClaimsReport(
+            deduped_claims=[
+                DedupedClaim(
+                    canonical_text="Checkout is broken.",
+                    occurrence_count=2,
+                    author_count=2,
+                    utterance_ids=["u-0", "u-1"],
+                    representative_authors=["author-0", "author-1"],
+                )
+            ],
+            total_claims=2,
+            total_unique=1,
+        )
+
+    async def _stub_sentiment(
+        utterances: list[Any], *, settings: Any = None
+    ) -> SentimentStatsReport:
+        return SentimentStatsReport(
+            per_utterance=[
+                SentimentScore(utterance_id="u-0", label="neutral", valence=0.0),
+                SentimentScore(utterance_id="u-1", label="negative", valence=-0.8),
+            ],
+            positive_pct=0.0,
+            negative_pct=50.0,
+            neutral_pct=50.0,
+            mean_valence=-0.4,
+        )
+
+    async def _stub_subjective(
+        utterances: list[Any], *, settings: Any = None
+    ) -> list[list[SubjectiveClaim]]:
+        return [
+            [],
+            [
+                SubjectiveClaim(
+                    claim_text="The change made the product worse.",
+                    utterance_id="u-1",
+                    stance="evaluates",
+                )
+            ],
+            [],
+        ]
+
+    monkeypatch.setattr(flashpoint_slot, "detect_flashpoints_bulk", _stub_flashpoints)
+    monkeypatch.setattr(scd_slot, "analyze_scd", _stub_scd)
+    monkeypatch.setattr(dedupe_slot, "extract_claims_bulk", _stub_extract_claims)
+    monkeypatch.setattr(dedupe_slot, "dedupe_claims", _stub_dedupe)
+    monkeypatch.setattr(sentiment_slot, "compute_sentiment_stats", _stub_sentiment)
+    monkeypatch.setattr(subjective_slot, "extract_subjective_claims_bulk", _stub_subjective)
 
     # 2. POST /api/analyze — fresh submit returns 202 + new job_id.
     resp = await http_client.post(
@@ -174,6 +269,11 @@ async def test_post_then_internal_run_then_poll_to_done(
     assert "tone_dynamics" in sidebar
     assert "facts_claims" in sidebar
     assert "opinions_sentiments" in sidebar
+    assert sidebar["tone_dynamics"]["flashpoint_matches"][0]["utterance_id"] == "u-1"
+    assert sidebar["tone_dynamics"]["scd"]["summary"] == "The thread escalates after the first response."
+    assert sidebar["facts_claims"]["claims_report"]["deduped_claims"][0]["canonical_text"] == "Checkout is broken."
+    assert sidebar["opinions_sentiments"]["opinions_report"]["sentiment_stats"]["per_utterance"][1]["label"] == "negative"
+    assert sidebar["opinions_sentiments"]["opinions_report"]["subjective_claims"][0]["utterance_id"] == "u-1"
 
     # 7. GET /api/analyze/{id} returns the populated state.
     poll_resp = await http_client.get(f"/api/analyze/{job_id}")

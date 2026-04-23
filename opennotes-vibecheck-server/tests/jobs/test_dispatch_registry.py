@@ -1,11 +1,7 @@
-"""Dispatch-registry integration tests for the TASK-1474 slot handlers.
+"""Dispatch-registry integration tests for async vibecheck slot handlers.
 
-Verifies that each of the 5 registered handlers (SAFETY_MODERATION,
-SAFETY_WEB_RISK, SAFETY_IMAGE_MODERATION, SAFETY_VIDEO_MODERATION,
-FACTS_CLAIMS_KNOWN_MISINFO) is reachable via the orchestrator's
-`_SECTION_HANDLERS` dict and that `_run_section` calls the handler for
-registered slugs while falling back to the empty-data stub for
-unregistered slugs.
+Verifies that every SectionSlug is reachable via the orchestrator's
+`_SECTION_HANDLERS` dict and that `_run_section` calls registered handlers.
 
 These are structural tests — they do NOT exercise the handlers' internal
 HTTP or DB paths. Handler behavior is covered by each task's own test
@@ -20,16 +16,17 @@ from uuid import uuid4
 import pytest
 
 from src.analyses.schemas import SectionSlug
+from src.config import Settings
 
 
-def test_section_handlers_registry_includes_all_1474_slots() -> None:
+def _settings() -> Settings:
+    return Settings()
+
+
+def test_section_handlers_registry_includes_every_section_slug() -> None:
     from src.jobs.orchestrator import _SECTION_HANDLERS
 
-    assert SectionSlug.SAFETY_MODERATION in _SECTION_HANDLERS
-    assert SectionSlug.SAFETY_WEB_RISK in _SECTION_HANDLERS
-    assert SectionSlug.SAFETY_IMAGE_MODERATION in _SECTION_HANDLERS
-    assert SectionSlug.SAFETY_VIDEO_MODERATION in _SECTION_HANDLERS
-    assert SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO in _SECTION_HANDLERS
+    assert set(_SECTION_HANDLERS) == set(SectionSlug)
 
 
 def test_section_handlers_are_callable() -> None:
@@ -37,18 +34,6 @@ def test_section_handlers_are_callable() -> None:
 
     for slug, handler in _SECTION_HANDLERS.items():
         assert callable(handler), f"handler for {slug} is not callable"
-
-
-def test_unregistered_slugs_fall_back_to_empty_stub() -> None:
-    from src.jobs.orchestrator import _SECTION_HANDLERS
-
-    # The 1473-landed slots that haven't yet been wired to real handlers
-    # remain in the empty-stub fallback path.
-    assert SectionSlug.TONE_DYNAMICS_FLASHPOINT not in _SECTION_HANDLERS
-    assert SectionSlug.TONE_DYNAMICS_SCD not in _SECTION_HANDLERS
-    assert SectionSlug.FACTS_CLAIMS_DEDUP not in _SECTION_HANDLERS
-    assert SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT not in _SECTION_HANDLERS
-    assert SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE not in _SECTION_HANDLERS
 
 
 @pytest.mark.asyncio
@@ -82,7 +67,7 @@ async def test_run_section_invokes_registered_handler_and_persists_result(
         task_attempt=uuid4(),
         slug=SectionSlug.SAFETY_WEB_RISK,
         payload=object(),
-        settings=object(),
+        settings=_settings(),
     )
 
     assert captured["called"] is True
@@ -126,7 +111,7 @@ async def test_run_section_writes_failed_slot_when_handler_raises(
         task_attempt=uuid4(),
         slug=SectionSlug.SAFETY_WEB_RISK,
         payload=object(),
-        settings=object(),
+        settings=_settings(),
     )
 
     assert captured["slot_state"] == SectionState.FAILED
@@ -135,28 +120,35 @@ async def test_run_section_writes_failed_slot_when_handler_raises(
 
 
 @pytest.mark.asyncio
-async def test_run_section_uses_empty_stub_for_unregistered_slug(
+async def test_run_section_invokes_new_tone_handler_instead_of_empty_stub(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.jobs import orchestrator
 
     captured: dict[str, object] = {}
 
+    async def fake_handler(pool, job_id, task_attempt, payload, settings):
+        return {"flashpoint_matches": [{"utterance_id": "u-2"}]}
+
     async def fake_write_slot(pool, job_id, task_attempt, slug, slot):
         captured["slug"] = slug
         captured["data"] = slot.data
 
+    monkeypatch.setitem(
+        orchestrator._SECTION_HANDLERS,
+        SectionSlug.TONE_DYNAMICS_FLASHPOINT,
+        fake_handler,
+    )
     monkeypatch.setattr(orchestrator, "write_slot", fake_write_slot)
 
-    # TONE_DYNAMICS_FLASHPOINT has no registered handler → empty stub.
     await orchestrator._run_section(
         pool=object(),
         job_id=uuid4(),
         task_attempt=uuid4(),
         slug=SectionSlug.TONE_DYNAMICS_FLASHPOINT,
         payload=object(),
-        settings=object(),
+        settings=_settings(),
     )
 
     assert captured["slug"] == SectionSlug.TONE_DYNAMICS_FLASHPOINT
-    assert captured["data"] == {"flashpoint_matches": []}
+    assert captured["data"] == {"flashpoint_matches": [{"utterance_id": "u-2"}]}
