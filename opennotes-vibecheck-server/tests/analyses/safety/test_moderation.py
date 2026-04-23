@@ -1,9 +1,16 @@
 """Unit tests for the harmful-content moderation capability."""
 
+import logging
 from unittest.mock import AsyncMock
 
+import pytest
+
 from src.analyses.safety._schemas import HarmfulContentMatch
-from src.analyses.safety.moderation import check_content_moderation
+from src.analyses.safety.moderation import (
+    OpenAIModerationTransientError,
+    check_content_moderation,
+    check_content_moderation_bulk,
+)
 from src.services.openai_moderation import ModerationResult
 from src.utterances.schema import Utterance
 
@@ -146,3 +153,73 @@ class TestOpenAIProducerSourceField:
         assert match is not None
         assert isinstance(match, HarmfulContentMatch)
         assert match.source == "openai"
+
+
+class TestBulkModeration:
+    async def test_flagged_result_produces_harmful_content_match_with_full_shape(self):
+        mock_service = AsyncMock()
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[
+                make_moderation_result(
+                    flagged=True,
+                    max_score=0.91,
+                    categories={"hate": True, "violence": False},
+                    scores={"hate": 0.91, "violence": 0.03},
+                    flagged_categories=["hate"],
+                ),
+                make_moderation_result(flagged=False, max_score=0.02),
+            ]
+        )
+        utt_flagged = make_utterance(utterance_id="utt_a", text="hateful content")
+        utt_clean = make_utterance(utterance_id="utt_b", text="harmless content")
+
+        results = await check_content_moderation_bulk([utt_flagged, utt_clean], mock_service)
+
+        assert len(results) == 2
+        match = results[0]
+        assert isinstance(match, HarmfulContentMatch)
+        assert match.utterance_id == "utt_a"
+        assert match.categories == {"hate": True, "violence": False}
+        assert match.scores == {"hate": 0.91, "violence": 0.03}
+        assert match.flagged_categories == ["hate"]
+        assert match.max_score == pytest.approx(0.91)
+        assert results[1] is None
+
+    async def test_single_moderate_texts_call_multimodal_never_invoked(self):
+        mock_service = AsyncMock()
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[
+                make_moderation_result(flagged=False),
+                make_moderation_result(flagged=False),
+                make_moderation_result(flagged=False),
+            ]
+        )
+        mock_service.moderate_multimodal = AsyncMock()
+
+        utterances = [
+            make_utterance(utterance_id="utt_1", text="first"),
+            make_utterance(utterance_id="utt_2", text="second"),
+            make_utterance(utterance_id="utt_3", text="third"),
+        ]
+
+        await check_content_moderation_bulk(utterances, mock_service)
+
+        mock_service.moderate_texts.assert_called_once()
+        mock_service.moderate_multimodal.assert_not_called()
+
+    async def test_exception_raises_transient_error_with_context_logged(self, caplog):
+        mock_service = AsyncMock()
+        mock_service.moderate_texts = AsyncMock(side_effect=Exception("API error"))
+
+        utterances = [
+            make_utterance(utterance_id="utt_x", text="some text"),
+            make_utterance(utterance_id="utt_y", text="more text"),
+        ]
+
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(OpenAIModerationTransientError) as exc_info:
+                await check_content_moderation_bulk(utterances, mock_service)
+
+        assert "API error" in str(exc_info.value)
+        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any(hasattr(r, "batch_size") and r.batch_size == 2 for r in warning_records)
