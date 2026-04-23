@@ -14,10 +14,9 @@ query planner, not mocked SQL.
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import asyncpg
-import pytest
 
 from src.routes.analyze import _SELECT_JOB_SQL
 

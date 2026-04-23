@@ -56,6 +56,10 @@ from src.config import Settings
 from src.firecrawl_client import FirecrawlClient
 from src.jobs.finalize import maybe_finalize_job
 from src.jobs.slots import mark_slot_done, mark_slot_failed, write_slot
+from src.jobs.utterance_writes import (
+    UtterancePersistenceSuperseded,
+    persist_utterances,
+)
 from src.monitoring import bind_contextvars, clear_contextvars, get_logger
 from src.monitoring_metrics import (
     ACTIVE_JOBS,
@@ -64,10 +68,6 @@ from src.monitoring_metrics import (
     SECTION_DURATION,
     SECTION_FAILURES,
     classify_error,
-)
-from src.jobs.utterance_writes import (
-    UtterancePersistenceSuperseded,
-    persist_utterances,
 )
 from src.utils.url_security import InvalidURL, revalidate_redirect_target
 from src.utterances.extractor import extract_utterances
@@ -922,7 +922,7 @@ async def run_section_retry(
                         error=str(exc),
                         expected_task_attempt=task_attempt,
                     )
-                except Exception as inner:  # noqa: BLE001 — best-effort cleanup
+                except Exception as inner:
                     logger.warning(
                         "section-retry: mark_slot_failed also raised for job=%s slug=%s: %s",
                         job_id,

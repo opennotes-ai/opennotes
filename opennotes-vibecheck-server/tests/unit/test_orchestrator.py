@@ -6,14 +6,13 @@ without standing up Postgres or the FastAPI app.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
 
 from src.analyses.schemas import SectionSlug
 from src.jobs.orchestrator import TransientError, _run_section
-
 
 # ---------------------------------------------------------------------------
 # TASK-1473.59 regression — write_slot DB failure must propagate as

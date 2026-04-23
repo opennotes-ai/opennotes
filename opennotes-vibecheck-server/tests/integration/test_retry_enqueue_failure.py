@@ -20,13 +20,10 @@ import json
 from typing import Any
 from uuid import UUID, uuid4
 
-import pytest
-
 from src.analyses.schemas import SectionSlug
 from src.routes.analyze import _revert_slot_after_enqueue_failure
 
 from .conftest import insert_pending_job, read_sections
-
 
 _SLUG = SectionSlug.TONE_DYNAMICS_SCD
 
@@ -89,15 +86,6 @@ async def test_revert_blocked_when_job_is_done(db_pool: Any) -> None:
         "started_at": None,
         "finished_at": None,
     }
-    new_slot: dict[str, Any] = {
-        "state": "running",
-        "attempt_id": str(new_attempt),
-        "data": None,
-        "error": None,
-        "started_at": None,
-        "finished_at": None,
-    }
-
     job_id = await _seed_job_with_slot(
         db_pool, status="done", slot_attempt_id=new_attempt, slot_state="running"
     )

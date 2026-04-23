@@ -742,7 +742,7 @@ async def _poll_rate_check(request: Request) -> None:
                 # `+1` so a fractional-sub-second remainder (reset 0.3s away)
                 # rounds up to a Retry-After of at least 1s.
                 reset_in = int(stats.reset_time - time.time()) + 1
-            except Exception:  # noqa: BLE001 — defensive: never fail the header
+            except Exception:
                 reset_in = 1
             # Window length = `multiples * granularity_seconds`. Computing
             # via `multiples` makes the cap correct for `300/minute` (60s

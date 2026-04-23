@@ -47,7 +47,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 """
 
 
-class UtterancePersistenceSuperseded(Exception):
+class UtterancePersistenceSuperseded(Exception):  # noqa: N818 — matches HandlerSuperseded spec terminology; not raised as an "Error"
     """Raised when the job's attempt_id drifted while persisting utterances.
 
     The caller (orchestrator) catches this and raises HandlerSuperseded so
@@ -66,30 +66,29 @@ async def persist_utterances(
     Raises:
         UtterancePersistenceSuperseded: job.attempt_id drifted from expected.
     """
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            row = await conn.fetchrow(_SELECT_ATTEMPT_FOR_UPDATE_SQL, job_id)
-            if row is None:
-                raise UtterancePersistenceSuperseded(
-                    f"persist_utterances: job {job_id} not found"
-                )
-            if row["attempt_id"] != expected_attempt:
-                raise UtterancePersistenceSuperseded(
-                    f"persist_utterances: attempt drift for job {job_id} "
-                    f"(expected={expected_attempt}, actual={row['attempt_id']})"
-                )
-            await conn.execute(_DELETE_UTTERANCES_SQL, job_id)
-            for idx, utt in enumerate(payload.utterances):
-                await conn.execute(
-                    _INSERT_UTTERANCE_SQL,
-                    job_id,
-                    utt.utterance_id,
-                    utt.kind,
-                    utt.text,
-                    utt.author,
-                    utt.timestamp,
-                    utt.parent_id,
-                    idx,
-                    payload.page_title,
-                    payload.page_kind.value,
-                )
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(_SELECT_ATTEMPT_FOR_UPDATE_SQL, job_id)
+        if row is None:
+            raise UtterancePersistenceSuperseded(
+                f"persist_utterances: job {job_id} not found"
+            )
+        if row["attempt_id"] != expected_attempt:
+            raise UtterancePersistenceSuperseded(
+                f"persist_utterances: attempt drift for job {job_id} "
+                f"(expected={expected_attempt}, actual={row['attempt_id']})"
+            )
+        await conn.execute(_DELETE_UTTERANCES_SQL, job_id)
+        for idx, utt in enumerate(payload.utterances):
+            await conn.execute(
+                _INSERT_UTTERANCE_SQL,
+                job_id,
+                utt.utterance_id,
+                utt.kind,
+                utt.text,
+                utt.author,
+                utt.timestamp,
+                utt.parent_id,
+                idx,
+                payload.page_title,
+                payload.page_kind.value,
+            )
