@@ -261,7 +261,7 @@ describe("Sidebar", () => {
     render(() => <Sidebar sections={{}} />);
 
     const aside = screen.getByTestId("analysis-sidebar");
-    expect(aside.getAttribute("aria-live")).toBe("polite");
+    expect(aside.getAttribute("aria-live")).toBeNull();
 
     const counters = screen.getAllByTestId("section-group-counter");
     expect(counters).toHaveLength(4);
@@ -271,6 +271,20 @@ describe("Sidebar", () => {
     expect(texts.some((t) => t.startsWith("Tone/dynamics"))).toBe(true);
     expect(texts.some((t) => t.startsWith("Facts/claims"))).toBe(true);
     expect(texts.some((t) => t.startsWith("Opinions/sentiments"))).toBe(true);
+  });
+
+  it("places aria-live on per-section status nodes only (not on the aside)", () => {
+    render(() => <Sidebar sections={{}} />);
+
+    const aside = screen.getByTestId("analysis-sidebar");
+    expect(aside.getAttribute("aria-live")).toBeNull();
+
+    const liveRegions = aside.querySelectorAll('[aria-live="polite"]');
+    expect(liveRegions.length).toBe(4);
+    for (const node of liveRegions) {
+      expect(node.getAttribute("role")).toBe("status");
+      expect(node.classList.contains("sr-only")).toBe(true);
+    }
   });
 
   it("uses middot separator and integer N/M in counter labels", () => {
@@ -295,10 +309,22 @@ describe("Sidebar", () => {
       "2/2",
     );
 
-    expect(screen.queryByTestId("skeleton-safety__moderation")).toBeNull();
-    expect(
-      screen.queryByTestId("skeleton-tone_dynamics__flashpoint"),
-    ).toBeNull();
+    const ALL_SLUGS = [
+      "safety__moderation",
+      "tone_dynamics__flashpoint",
+      "tone_dynamics__scd",
+      "facts_claims__dedup",
+      "facts_claims__known_misinfo",
+      "opinions_sentiments__sentiment",
+      "opinions_sentiments__subjective",
+    ] as const;
+
+    for (const slug of ALL_SLUGS) {
+      expect(screen.getByTestId(`slot-${slug}`).getAttribute("data-slot-state")).toBe(
+        "done",
+      );
+      expect(screen.queryByTestId(`skeleton-${slug}`)).toBeNull();
+    }
   });
 
   it("omits left-stripe border classes anywhere in the rendered sidebar", () => {

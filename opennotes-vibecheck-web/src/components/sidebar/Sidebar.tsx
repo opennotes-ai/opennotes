@@ -189,7 +189,6 @@ export default function Sidebar(props: SidebarProps) {
   return (
     <aside
       aria-label="Analysis sidebar"
-      aria-live="polite"
       data-testid="analysis-sidebar"
       class="flex w-full flex-col gap-4"
     >

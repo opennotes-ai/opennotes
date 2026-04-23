@@ -46,6 +46,7 @@ export function createPollingResource(
   let consecutiveErrors = 0;
   let stopped = false;
   let currentJobId: string | null = null;
+  let inFlightController: AbortController | null = null;
 
   const clearTimer = () => {
     if (timerId !== null) {
@@ -54,12 +55,27 @@ export function createPollingResource(
     }
   };
 
+  const abortInFlight = () => {
+    if (inFlightController !== null) {
+      inFlightController.abort();
+      inFlightController = null;
+    }
+  };
+
   const tick = async (gen: number) => {
     if (gen !== generation || stopped || currentJobId === null) return;
     const idAtStart = currentJobId;
+    const controller = new AbortController();
+    inFlightController = controller;
     try {
       const result = await pollJobState(idAtStart);
-      if (gen !== generation || stopped) return;
+      if (
+        gen !== generation ||
+        stopped ||
+        controller.signal.aborted
+      )
+        return;
+      inFlightController = null;
       consecutiveErrors = 0;
       setError(null);
       setState(result);
@@ -75,7 +91,13 @@ export function createPollingResource(
         void tick(gen);
       }, interval);
     } catch (err: unknown) {
-      if (gen !== generation || stopped) return;
+      if (
+        gen !== generation ||
+        stopped ||
+        controller.signal.aborted
+      )
+        return;
+      inFlightController = null;
       const normalized =
         err instanceof Error ? err : new Error(String(err));
       if (is404Error(err)) {
@@ -108,6 +130,7 @@ export function createPollingResource(
     stopped = false;
     currentJobId = id;
     clearTimer();
+    abortInFlight();
     setError(null);
     setState(null);
     const gen = generation;
@@ -121,6 +144,7 @@ export function createPollingResource(
       stopped = true;
       currentJobId = null;
       clearTimer();
+      abortInFlight();
       setState(null);
       setError(null);
       return;
@@ -133,16 +157,18 @@ export function createPollingResource(
     stopped = true;
     currentJobId = null;
     clearTimer();
+    abortInFlight();
   });
 
   const refetch = () => {
-    const id = currentJobId ?? jobId();
+    const id = jobId() || currentJobId;
     if (!id) return;
     generation += 1;
     consecutiveErrors = 0;
     stopped = false;
     currentJobId = id;
     clearTimer();
+    abortInFlight();
     const gen = generation;
     void tick(gen);
   };

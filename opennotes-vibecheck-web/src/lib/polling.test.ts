@@ -468,6 +468,81 @@ describe("createPollingResource", () => {
     expect(b).toEqual(second);
   });
 
+  it("a deferred poll resolved after dispose does not mutate state or schedule another timer", async () => {
+    let resolveFirst!: (value: JobState) => void;
+    const firstPromise = new Promise<JobState>((resolve) => {
+      resolveFirst = resolve;
+    });
+    mockPollJob.mockReturnValueOnce(firstPromise);
+
+    const { createPollingResource } = await import("./polling");
+
+    const handle = await new Promise<{
+      dispose: () => void;
+      state: () => JobState | null;
+      error: () => Error | null;
+    }>((resolve) => {
+      createRoot((dispose) => {
+        const { state, error } = createPollingResource(() => "job-defer-dispose");
+        resolve({ dispose, state, error });
+      });
+    });
+
+    await flushMicrotasks();
+    expect(mockPollJob).toHaveBeenCalledTimes(1);
+
+    handle.dispose();
+
+    resolveFirst(makeJobState({ status: "analyzing", next_poll_ms: 500 }));
+    await flushMicrotasks();
+
+    expect(handle.state()).toBeNull();
+    expect(handle.error()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flushMicrotasks();
+    expect(mockPollJob).toHaveBeenCalledTimes(1);
+  });
+
+  it("a deferred poll resolved after jobId changes does not mutate state for the new job", async () => {
+    let resolveFirst!: (value: JobState) => void;
+    const firstPromise = new Promise<JobState>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const secondState = makeJobState({
+      job_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      status: "analyzing",
+      next_poll_ms: 500,
+    });
+    mockPollJob
+      .mockReturnValueOnce(firstPromise)
+      .mockResolvedValueOnce(secondState);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const [id, setId] = createSignal("job-old");
+      const { state } = createPollingResource(id);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(1);
+
+      setId("job-new");
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenLastCalledWith("job-new");
+      expect(state()?.job_id).toBe(secondState.job_id);
+
+      const stale = makeJobState({
+        job_id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        status: "done",
+      });
+      resolveFirst(stale);
+      await flushMicrotasks();
+
+      expect(state()?.job_id).toBe(secondState.job_id);
+      dispose();
+    });
+  });
+
   it("refetch() after the 3-error terminal clears the error and resumes polling", async () => {
     const ok = makeJobState({ status: "pending", next_poll_ms: 1500 });
     mockPollJob
