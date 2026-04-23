@@ -99,6 +99,10 @@ CREATE INDEX IF NOT EXISTS vibecheck_jobs_status_created_at_idx
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_heartbeat_idx
     ON vibecheck_jobs(heartbeat_at)
     WHERE status IN ('extracting', 'analyzing');
+CREATE UNIQUE INDEX IF NOT EXISTS
+    vibecheck_jobs_unique_done_cached_normalized_url
+    ON vibecheck_jobs(normalized_url)
+    WHERE status = 'done' AND cached = true;
 
 CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

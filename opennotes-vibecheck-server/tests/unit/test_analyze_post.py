@@ -65,6 +65,10 @@ CREATE TABLE vibecheck_jobs (
 CREATE INDEX vibecheck_jobs_normalized_url_idx
     ON vibecheck_jobs(normalized_url);
 
+CREATE UNIQUE INDEX vibecheck_jobs_unique_done_cached_normalized_url
+    ON vibecheck_jobs(normalized_url)
+    WHERE status = 'done' AND cached = true;
+
 CREATE TABLE vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     normalized_url TEXT NOT NULL UNIQUE,

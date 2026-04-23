@@ -251,13 +251,24 @@ async def _insert_cached_done_job(
     host: str,
     sidebar_payload: dict[str, Any],
 ) -> UUID:
-    """Insert a `status=done` job row populated from the cache."""
+    """Insert a `status=done` job row populated from the cache.
+
+    Cooperates with the partial UNIQUE index
+    `vibecheck_jobs_unique_done_cached_normalized_url` (TASK-1473.46) so
+    two concurrent submitters losing the advisory lock can both fall into
+    the contended cache-hit branch without producing duplicate cached
+    done-job rows. The second INSERT hits ON CONFLICT DO NOTHING and the
+    caller re-fetches the surviving row by normalized_url.
+    """
     job_id = await conn.fetchval(
         """
         INSERT INTO vibecheck_jobs (
             url, normalized_url, host, status, sidebar_payload, cached, finished_at
         )
         VALUES ($1, $2, $3, 'done', $4::jsonb, true, now())
+        ON CONFLICT (normalized_url)
+            WHERE status = 'done' AND cached = true
+            DO NOTHING
         RETURNING job_id
         """,
         url,
@@ -265,6 +276,19 @@ async def _insert_cached_done_job(
         host,
         json.dumps(sidebar_payload),
     )
+    if job_id is None:
+        # Concurrent submitter beat us to the insert. Re-fetch the
+        # surviving cached done row so the response carries a real job_id.
+        job_id = await conn.fetchval(
+            """
+            SELECT job_id FROM vibecheck_jobs
+            WHERE normalized_url = $1
+              AND status = 'done'
+              AND cached = true
+            LIMIT 1
+            """,
+            normalized_url,
+        )
     assert isinstance(job_id, UUID)
     return job_id
 

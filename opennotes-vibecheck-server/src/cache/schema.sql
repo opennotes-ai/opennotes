@@ -112,6 +112,20 @@ CREATE INDEX IF NOT EXISTS vibecheck_jobs_finished_at_idx
     ON vibecheck_jobs(finished_at)
     WHERE finished_at IS NOT NULL;
 
+-- TASK-1473.46: cache-hit dedup invariant. The advisory lock in
+-- `POST /api/analyze` serializes most concurrent submits, but two
+-- contended submitters that lose the lock both fall into the contended
+-- branch and can each call `_insert_cached_done_job` for the same
+-- normalized_url, producing two duplicate cached done-job rows. The
+-- vibecheck_analyses cache row stays single (source of truth) but the
+-- job-row dedup invariant breaks for the cache-hit path. A partial
+-- UNIQUE index lets the second insert ON CONFLICT DO NOTHING and the
+-- caller re-fetch the surviving row.
+CREATE UNIQUE INDEX IF NOT EXISTS
+    vibecheck_jobs_unique_done_cached_normalized_url
+    ON vibecheck_jobs(normalized_url)
+    WHERE status = 'done' AND cached = true;
+
 -- =========================================================================
 -- vibecheck_scrapes (persisted scrape bundles for retry resumption)
 -- =========================================================================
