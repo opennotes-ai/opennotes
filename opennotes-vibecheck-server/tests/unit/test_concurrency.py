@@ -35,6 +35,7 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from src.analyses.schemas import SectionSlot, SectionSlug, SectionState
+from src.config import Settings
 from src.jobs.orchestrator import _run_section
 from src.jobs.slots import claim_slot, mark_slot_done, write_slot
 
@@ -147,10 +148,7 @@ async def test_concurrent_run_section_across_all_slugs_lands_every_slot(
     task_attempt = uuid4()
     job_id = await _insert_active_job(db_pool, task_attempt)
 
-    async def _settings_stub() -> Any:
-        return None
-
-    settings = await _settings_stub()
+    settings = Settings()
     payload = object()
 
     await asyncio.gather(
