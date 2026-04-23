@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -55,7 +56,6 @@ from src.analyses.schemas import (
     SafetySection,
     SectionSlot,
     SectionSlug,
-    SectionState,
     SidebarPayload,
     ToneDynamicsSection,
     WebRiskSection,
@@ -732,8 +732,6 @@ async def _poll_rate_check(request: Request) -> None:
     `Retry-After: 0`; cap at the limit's window size so clock skew can't
     return a hostile value.
     """
-    import time
-
     key = _ip_and_job_id_key(request)
     for limit_str in (_poll_burst_limit_str(), _poll_sustained_limit_str()):
         item = _parse_limit(limit_str)
