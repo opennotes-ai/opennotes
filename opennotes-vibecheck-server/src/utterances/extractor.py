@@ -196,14 +196,14 @@ async def _get_screenshot_impl(deps: ExtractorDeps) -> ImageUrl | None:
     return ImageUrl(url=signed)
 
 
-def _register_tools(agent: Agent) -> None:
+def _register_tools(agent: Agent[None, UtterancesPayload]) -> None:
     """Attach `get_html` and `get_screenshot` tools to a built agent.
 
     Uses `agent.tool` decorator at construction time; tests swap in a fake
-    agent that mirrors the decorator surface. `build_agent` returns the
-    untyped `Agent` helper alias, so the decorator sees `RunContext[None]`
-    at the type level — the per-run `deps=` kwarg injects the real
-    `ExtractorDeps` instance at call time.
+    agent that mirrors the decorator surface. The agent is typed with
+    `AgentDepsT=None`, so the decorator sees `RunContext[None]` at the type
+    level — the per-run `deps=` kwarg injects the real `ExtractorDeps`
+    instance at call time.
     """
 
     @agent.tool  # pyright: ignore[reportArgumentType]
