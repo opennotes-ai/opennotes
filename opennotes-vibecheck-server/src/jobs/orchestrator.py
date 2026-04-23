@@ -65,6 +65,10 @@ from src.monitoring_metrics import (
     SECTION_FAILURES,
     classify_error,
 )
+from src.jobs.utterance_writes import (
+    UtterancePersistenceSuperseded,
+    persist_utterances,
+)
 from src.utils.url_security import InvalidURL, revalidate_redirect_target
 from src.utterances.extractor import extract_utterances
 
@@ -609,6 +613,15 @@ async def _run_pipeline(
         raise TerminalError(
             ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
         ) from exc
+
+    try:
+        await persist_utterances(pool, job_id, task_attempt, payload)
+    except UtterancePersistenceSuperseded as exc:
+        logger.info(
+            "pipeline: utterance persistence superseded for job %s: %s",
+            job_id, exc,
+        )
+        raise HandlerSuperseded() from exc
 
     # Flip status to analyzing before fan-out so the poll endpoint
     # returns the right cadence hint.
