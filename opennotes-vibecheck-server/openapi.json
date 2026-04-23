@@ -1318,9 +1318,12 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1.0
                 },
-                "type": "array"
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
               },
               {
                 "type": "null"

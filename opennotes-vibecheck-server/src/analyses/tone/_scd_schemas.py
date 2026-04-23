@@ -5,6 +5,8 @@ module can own its own schemas without touching `src/analyses/tone/__init__.py`.
 """
 from __future__ import annotations
 
+from typing import Annotated
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -32,8 +34,10 @@ class SpeakerArc(BaseModel):
             "tone, intent, or stance evolves across the conversation."
         ),
     )
-    utterance_id_range: list[int] | None = Field(
+    utterance_id_range: list[Annotated[int, Field(ge=1)]] | None = Field(
         default=None,
+        min_length=2,
+        max_length=2,
         description=(
             "Inclusive [start, end] 1-indexed utterance index range that this "
             "arc covers, for timeline-viz alignment. Exactly two integers "

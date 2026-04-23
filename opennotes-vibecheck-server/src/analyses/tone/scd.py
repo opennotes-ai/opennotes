@@ -39,6 +39,16 @@ def _load_scd_prompt() -> str:
     return _PROMPT_PATH.read_text(encoding="utf-8")
 
 
+def _normalize_utterance_text(text: str) -> str:
+    """Collapse internal whitespace to spaces so each utterance is exactly one line.
+
+    The SCD prompt asks the LLM to localize per-speaker arcs by 1-indexed
+    `[N]` markers; embedded newlines or tabs in `utterance.text` would split a
+    single utterance across multiple lines and break that contract.
+    """
+    return " ".join(text.split())
+
+
 def _format_utterances(utterances: list[Utterance]) -> str:
     """Render utterances as `[id] author: text` lines joined by newlines.
 
@@ -46,7 +56,9 @@ def _format_utterances(utterances: list[Utterance]) -> str:
     the LLM to localize per-speaker arcs to a contiguous `utterance_id_range`
     span. Authors are normalized to a stable `Speaker<N>` label when missing
     so downstream prompts never see `None: ...` (this keeps the style close to
-    the original ConvoKit example: `Speaker1`, `Speaker2`, ...).
+    the original ConvoKit example: `Speaker1`, `Speaker2`, ...). Utterance
+    text is normalized via `_normalize_utterance_text` so each line is exactly
+    one line — this keeps `[N]` span localization reliable.
     """
     lines: list[str] = []
     anon_index = 0
@@ -55,7 +67,7 @@ def _format_utterances(utterances: list[Utterance]) -> str:
         if not author:
             anon_index += 1
             author = f"Speaker{anon_index}"
-        lines.append(f"[{idx}] {author}: {utterance.text}")
+        lines.append(f"[{idx}] {author}: {_normalize_utterance_text(utterance.text)}")
     return "\n".join(lines)
 
 
