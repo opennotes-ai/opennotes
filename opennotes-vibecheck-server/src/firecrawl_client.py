@@ -55,6 +55,20 @@ def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
     return walk(schema)
 
 
+def _format_to_object(fmt: str) -> dict[str, Any]:
+    """Translate a legacy string format into Firecrawl v2's object form.
+
+    Firecrawl's current /v2/scrape validator rejects bare-string formats
+    with `invalid_union` on path ["type"] — each format must be an object
+    with a `type` field. The `screenshot@fullPage` shorthand is how our
+    callers historically requested a full-page screenshot; map it to the
+    documented `{"type": "screenshot", "fullPage": true}` shape.
+    """
+    if fmt == "screenshot@fullPage":
+        return {"type": "screenshot", "fullPage": True}
+    return {"type": fmt}
+
+
 class ScrapeMetadata(BaseModel):
     # `validation_alias=AliasChoices(snake_case, camelCase)` lets Pydantic
     # accept either shape on the way *in* (wire JSON uses `sourceURL`;
@@ -237,7 +251,10 @@ class FirecrawlClient:
         Fields on the returned `ScrapeResult` are all optional: only the
         formats you requested are populated (Firecrawl omits the rest).
         """
-        body: dict[str, Any] = {"url": url, "formats": formats}
+        body: dict[str, Any] = {
+            "url": url,
+            "formats": [_format_to_object(fmt) for fmt in formats],
+        }
         if only_main_content:
             body["onlyMainContent"] = True
         envelope = await self._post_json("/v2/scrape", body)

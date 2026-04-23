@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from pytest_httpx import HTTPXMock
 
@@ -145,3 +147,37 @@ def test_scrape_result_empty_construction_is_valid() -> None:
     result = ScrapeResult()
     assert result.raw_html is None
     assert result.metadata is None
+
+
+async def test_scrape_request_body_wraps_formats_as_objects(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """TASK-1479: /v2/scrape rejects bare-string formats with invalid_union.
+
+    The request body must wrap each format into `{"type": "<fmt>"}`, and
+    the `screenshot@fullPage` shorthand must expand to the documented
+    `{"type": "screenshot", "fullPage": true}` object. This test pins the
+    exact wire shape so Firecrawl-side schema regressions break tests
+    instead of production.
+    """
+    httpx_mock.add_response(url=SCRAPE_URL, method="POST", json={"success": True, "data": {}})
+
+    await client.scrape(
+        TARGET_URL,
+        formats=["markdown", "html", "screenshot@fullPage"],
+        only_main_content=True,
+    )
+
+    request = httpx_mock.get_request(url=SCRAPE_URL, method="POST")
+    assert request is not None
+    body = json.loads(request.content)
+    assert body == {
+        "url": TARGET_URL,
+        "formats": [
+            {"type": "markdown"},
+            {"type": "html"},
+            {"type": "screenshot", "fullPage": True},
+        ],
+        "onlyMainContent": True,
+    }
