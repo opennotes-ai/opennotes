@@ -5,7 +5,7 @@ module can own its own schemas without touching `src/analyses/tone/__init__.py`.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SpeakerArc(BaseModel):
@@ -32,14 +32,35 @@ class SpeakerArc(BaseModel):
             "tone, intent, or stance evolves across the conversation."
         ),
     )
-    utterance_id_range: tuple[int, int] | None = Field(
+    utterance_id_range: list[int] | None = Field(
         default=None,
         description=(
-            "Inclusive (start, end) utterance index range that this arc "
-            "covers, for timeline-viz alignment. `None` when the LLM cannot "
-            "localize the arc to a contiguous span."
+            "Inclusive [start, end] 1-indexed utterance index range that this "
+            "arc covers, for timeline-viz alignment. Exactly two integers "
+            "with start <= end and start >= 1. `None` when the LLM cannot "
+            "localize the arc to a contiguous span. Modeled as a list (not a "
+            "tuple) so the generated OpenAPI schema produces a plain integer "
+            "array rather than a fixed-length prefixItems tuple, which "
+            "openapi-fetch widens to `number[]` and would otherwise cause a "
+            "TS2719 mismatch with the named JobState response type."
         ),
     )
+
+    @field_validator("utterance_id_range", mode="after")
+    @classmethod
+    def _validate_utterance_id_range(cls, v: list[int] | None) -> list[int] | None:
+        if v is None:
+            return v
+        if len(v) != 2:
+            raise ValueError(
+                "utterance_id_range must have exactly 2 elements (start, end)"
+            )
+        start, end = v[0], v[1]
+        if start > end:
+            raise ValueError("utterance_id_range start must be <= end")
+        if start < 1:
+            raise ValueError("utterance_id_range indices must be 1-indexed (>= 1)")
+        return v
 
 
 class SCDReport(BaseModel):

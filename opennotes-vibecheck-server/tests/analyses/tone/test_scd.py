@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import pytest
+from pydantic import ValidationError
 
 from src.analyses.tone import scd as scd_mod
 from src.analyses.tone._scd_schemas import SCDReport, SpeakerArc
@@ -300,11 +301,11 @@ class TestPromptVendored:
 
 class TestSCDReportSchemaShape:
     def test_speaker_arc_with_range(self):
-        arc = SpeakerArc(speaker="alice", note="x", utterance_id_range=(3, 7))
+        arc = SpeakerArc(speaker="alice", note="x", utterance_id_range=[3, 7])
         round_tripped = SpeakerArc.model_validate(arc.model_dump())
         assert round_tripped.speaker == "alice"
         assert round_tripped.note == "x"
-        assert round_tripped.utterance_id_range == (3, 7)
+        assert round_tripped.utterance_id_range == [3, 7]
 
     def test_speaker_arc_without_range_defaults_to_none(self):
         arc = SpeakerArc(speaker="alice", note="x")
@@ -314,3 +315,15 @@ class TestSCDReportSchemaShape:
         report = SCDReport(summary="placeholder", insufficient_conversation=True)
         assert report.narrative == ""
         assert report.speaker_arcs == []
+
+    def test_speaker_arc_rejects_wrong_length(self):
+        with pytest.raises(ValidationError):
+            SpeakerArc(speaker="x", note="y", utterance_id_range=[3])
+
+    def test_speaker_arc_rejects_start_after_end(self):
+        with pytest.raises(ValidationError):
+            SpeakerArc(speaker="x", note="y", utterance_id_range=[7, 3])
+
+    def test_speaker_arc_rejects_zero_or_negative_index(self):
+        with pytest.raises(ValidationError):
+            SpeakerArc(speaker="x", note="y", utterance_id_range=[0, 5])
