@@ -15,6 +15,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from prometheus_client import REGISTRY
 
 from src.analyses.schemas import ErrorCode, SectionSlug
 from src.jobs.orchestrator import TerminalError, TransientError
@@ -159,33 +160,45 @@ class TestSanitizeFilterRedactsSignedUrls:
 
 class TestPrometheusCounters:
     def test_section_failures_increments_with_bounded_labels(self) -> None:
-        before = SECTION_FAILURES.labels(
-            slug="facts_claims__dedup", error_type="timeout"
-        )._value.get()  # type: ignore[attr-defined]
-        SECTION_FAILURES.labels(
-            slug="facts_claims__dedup", error_type="timeout"
-        ).inc()
-        after = SECTION_FAILURES.labels(
-            slug="facts_claims__dedup", error_type="timeout"
-        )._value.get()  # type: ignore[attr-defined]
+        labels = {"slug": "facts_claims__dedup", "error_type": "timeout"}
+        before = REGISTRY.get_sample_value(
+            "vibecheck_section_failures_total", labels=labels
+        ) or 0.0
+        SECTION_FAILURES.labels(**labels).inc()
+        after = REGISTRY.get_sample_value(
+            "vibecheck_section_failures_total", labels=labels
+        )
         assert after == before + 1
 
     def test_cache_hits_increments_per_tier(self) -> None:
-        before = CACHE_HITS.labels(tier="analysis")._value.get()  # type: ignore[attr-defined]
-        CACHE_HITS.labels(tier="analysis").inc()
-        after = CACHE_HITS.labels(tier="analysis")._value.get()  # type: ignore[attr-defined]
+        labels = {"tier": "analysis"}
+        before = REGISTRY.get_sample_value(
+            "vibecheck_cache_hits_total", labels=labels
+        ) or 0.0
+        CACHE_HITS.labels(**labels).inc()
+        after = REGISTRY.get_sample_value(
+            "vibecheck_cache_hits_total", labels=labels
+        )
         assert after == before + 1
 
     def test_cloud_tasks_redeliveries_is_unlabeled(self) -> None:
-        before = CLOUD_TASKS_REDELIVERIES._value.get()  # type: ignore[attr-defined]
+        before = REGISTRY.get_sample_value(
+            "vibecheck_cloud_tasks_redeliveries_total"
+        ) or 0.0
         CLOUD_TASKS_REDELIVERIES.inc()
-        after = CLOUD_TASKS_REDELIVERIES._value.get()  # type: ignore[attr-defined]
+        after = REGISTRY.get_sample_value(
+            "vibecheck_cloud_tasks_redeliveries_total"
+        )
         assert after == before + 1
 
     def test_single_flight_lock_waits_increments(self) -> None:
-        before = SINGLE_FLIGHT_LOCK_WAITS._value.get()  # type: ignore[attr-defined]
+        before = REGISTRY.get_sample_value(
+            "vibecheck_single_flight_lock_waits_total"
+        ) or 0.0
         SINGLE_FLIGHT_LOCK_WAITS.inc()
-        after = SINGLE_FLIGHT_LOCK_WAITS._value.get()  # type: ignore[attr-defined]
+        after = REGISTRY.get_sample_value(
+            "vibecheck_single_flight_lock_waits_total"
+        )
         assert after == before + 1
 
 
