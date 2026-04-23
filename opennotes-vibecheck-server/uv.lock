@@ -2375,6 +2375,7 @@ name = "opennotes-vibecheck-server"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "asyncpg" },
     { name = "beautifulsoup4" },
     { name = "dspy-ai" },
     { name = "fastapi" },
@@ -2394,7 +2395,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "asyncpg" },
     { name = "basedpyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -2405,7 +2405,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncpg", marker = "extra == 'dev'", specifier = ">=0.29.0" },
+    { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.17.0" },
     { name = "beautifulsoup4", specifier = ">=4.12.0" },
     { name = "dspy-ai", specifier = ">=2.5.0" },
