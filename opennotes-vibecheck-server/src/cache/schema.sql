@@ -286,25 +286,24 @@ REVOKE ALL ON vibecheck_web_risk_lookups FROM anon, authenticated;
 -- Extend vibecheck_jobs_error_code_check to include 'unsafe_url'
 -- (TASK-1474.03)
 -- =========================================================================
--- ALTER TABLE ... DROP CONSTRAINT + ADD CONSTRAINT is not idempotent via
--- IF NOT EXISTS, so use a DO block that conditionally drops before re-adding.
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.table_constraints
-             WHERE constraint_name = 'vibecheck_jobs_error_code_check') THEN
-    ALTER TABLE vibecheck_jobs DROP CONSTRAINT vibecheck_jobs_error_code_check;
-  END IF;
-  ALTER TABLE vibecheck_jobs ADD CONSTRAINT vibecheck_jobs_error_code_check
-    CHECK (
-      error_code IS NULL
-      OR error_code IN (
-        'invalid_url', 'unsupported_site', 'upstream_error',
-        'extraction_failed', 'timeout', 'rate_limited', 'internal',
-        'unsafe_url'
-      )
-    );
-END
-$$;
+-- Use ALTER ... DROP CONSTRAINT IF EXISTS + ADD inline instead of a DO-block
+-- information_schema probe: the probe has a TOCTOU window where a concurrent
+-- schema apply can drop the constraint between the EXISTS check and the
+-- subsequent DROP, producing a "constraint does not exist" error (codex P2.5).
+-- DROP ... IF EXISTS collapses both steps into one atomic, idempotent call.
+ALTER TABLE vibecheck_jobs
+  DROP CONSTRAINT IF EXISTS vibecheck_jobs_error_code_check;
+
+ALTER TABLE vibecheck_jobs
+  ADD CONSTRAINT vibecheck_jobs_error_code_check
+  CHECK (
+    error_code IS NULL
+    OR error_code IN (
+      'invalid_url', 'unsupported_site', 'upstream_error',
+      'extraction_failed', 'timeout', 'rate_limited', 'internal',
+      'unsafe_url'
+    )
+  );
 
 -- =========================================================================
 -- pg_cron schedules (idempotent)

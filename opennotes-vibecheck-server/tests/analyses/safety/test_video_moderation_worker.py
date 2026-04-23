@@ -139,8 +139,9 @@ async def test_sampler_error_emits_empty_frame_findings_match_and_continues():
     bad_match = result["matches"][0]
     assert bad_match["video_url"] == "https://example.com/bad.mp4"
     assert bad_match["frame_findings"] == []
-    assert bad_match["flagged"] is False
-    assert bad_match["max_likelihood"] == 0.0
+    # Sampling failure is indeterminate; conservatively flagged (codex P1.3).
+    assert bad_match["flagged"] is True
+    assert bad_match["max_likelihood"] == 1.0
 
     ok_match = result["matches"][1]
     assert ok_match["video_url"] == "https://example.com/ok.mp4"

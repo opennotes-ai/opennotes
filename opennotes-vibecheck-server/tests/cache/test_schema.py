@@ -263,11 +263,19 @@ class TestUnsafeUrlErrorCode:
     def test_error_code_check_includes_unsafe_url(self, schema_sql: str) -> None:
         assert "'unsafe_url'" in schema_sql
 
-    def test_error_code_do_block_conditionally_drops_constraint(
+    def test_error_code_drop_if_exists_and_add_is_idempotent(
         self, schema_sql: str
     ) -> None:
         assert "vibecheck_jobs_error_code_check" in schema_sql
-        assert "DROP CONSTRAINT vibecheck_jobs_error_code_check" in schema_sql
+        # TOCTOU-safe idempotent apply: DROP ... IF EXISTS + ADD inline,
+        # not a DO-block information_schema probe (codex P2.5).
+        assert (
+            "DROP CONSTRAINT IF EXISTS vibecheck_jobs_error_code_check"
+            in schema_sql
+        )
+        assert (
+            "ADD CONSTRAINT vibecheck_jobs_error_code_check" in schema_sql
+        )
 
     def test_error_code_check_lists_all_eight_codes(self, schema_sql: str) -> None:
         for code in (

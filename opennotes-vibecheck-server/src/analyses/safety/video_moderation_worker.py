@@ -45,10 +45,13 @@ async def run_video_moderation(
             try:
                 frames = await sample_video(vurl)
             except VideoSamplingError as exc:
+                # Sampling failures are indeterminate, not "clean". We flag
+                # conservatively so the sidebar surfaces an inconclusive video
+                # rather than silently presenting it as safe (codex P1.3).
                 logger.warning("video sampling failed for %s: %s", vurl, exc)
                 matches.append(VideoModerationMatch(
                     utterance_id=uid, video_url=vurl,
-                    frame_findings=[], flagged=False, max_likelihood=0.0,
+                    frame_findings=[], flagged=True, max_likelihood=1.0,
                 ))
                 continue
             frame_findings = await _annotate_frames(frames, hx, token)

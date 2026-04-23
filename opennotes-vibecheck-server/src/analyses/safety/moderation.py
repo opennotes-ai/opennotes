@@ -16,6 +16,15 @@ from src.utterances.schema import Utterance
 logger = get_logger(__name__)
 
 
+class OpenAIModerationTransientError(Exception):
+    """Raised when the OpenAI moderation API call fails.
+
+    The slot-level orchestrator (`moderation_slot.run_safety_moderation`) treats
+    this as a provider failure and combines it with the parallel GCP NL result
+    — matching the .08 GCP transient-error pattern (codex P1.5).
+    """
+
+
 async def check_content_moderation(
     utterance: Utterance,
     moderation_service: OpenAIModerationService | None,
@@ -34,6 +43,11 @@ async def check_content_moderation_bulk(
     OpenAI's moderation API accepts an array input and returns one result per
     input in order. Index-aligned output; `None` in slot i means unflagged (or
     that utterance lacked text / id).
+
+    Raises `OpenAIModerationTransientError` when the moderation API call fails
+    so the slot orchestrator can decide how to combine with the parallel GCP
+    result (previously this swallowed and returned all-Nones, which made
+    "both providers failed" undetectable).
     """
     out: list[HarmfulContentMatch | None] = [None for _ in utterances]
     if not utterances:
@@ -56,7 +70,7 @@ async def check_content_moderation_bulk(
             "Error in bulk content moderation",
             extra={"error": str(e), "batch_size": len(texts)},
         )
-        return out
+        raise OpenAIModerationTransientError(str(e)) from e
 
     for (orig_idx, utterance), result in zip(scanable, results, strict=False):
         if result.flagged:
@@ -71,4 +85,8 @@ async def check_content_moderation_bulk(
     return out
 
 
-__all__ = ["check_content_moderation", "check_content_moderation_bulk"]
+__all__ = [
+    "OpenAIModerationTransientError",
+    "check_content_moderation",
+    "check_content_moderation_bulk",
+]

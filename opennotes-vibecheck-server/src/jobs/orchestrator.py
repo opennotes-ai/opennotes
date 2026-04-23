@@ -386,6 +386,8 @@ async def _run_section(
     """
     slot_attempt = uuid4()
     handler = _SECTION_HANDLERS.get(slug)
+    slot_state = SectionState.DONE
+    slot_error: str | None = None
     if handler is not None:
         try:
             data = await handler(pool, job_id, task_attempt, payload, settings)
@@ -394,36 +396,27 @@ async def _run_section(
                 "section %s handler failed for job %s: %s",
                 slug.value, job_id, exc,
             )
-            await mark_slot_failed(
-                pool,
-                job_id,
-                slug,
-                slot_attempt,
-                error=str(exc),
-                expected_task_attempt=task_attempt,
-            )
-            return
+            slot_state = SectionState.FAILED
+            slot_error = str(exc)
+            data = {}
     else:
         data = _empty_section_data(slug)
 
+    # write_slot (not mark_slot_failed) works for the terminal write here
+    # because its CAS only checks job.attempt_id — no pre-existing slot row
+    # required. mark_slot_failed requires slot.state='running' in the DB,
+    # which _run_section never sets (it writes the terminal state directly).
     slot = SectionSlot(
-        state=SectionState.DONE,
+        state=slot_state,
         attempt_id=slot_attempt,
-        data=data,
+        data=data if slot_state == SectionState.DONE else None,
+        error=slot_error,
     )
     try:
         await write_slot(pool, job_id, task_attempt, slug, slot)
     except Exception as exc:
         logger.exception(
-            "section %s failed for job %s: %s", slug.value, job_id, exc
-        )
-        await mark_slot_failed(
-            pool,
-            job_id,
-            slug,
-            slot_attempt,
-            error=str(exc),
-            expected_task_attempt=task_attempt,
+            "section %s persist failed for job %s: %s", slug.value, job_id, exc
         )
 
 

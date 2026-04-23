@@ -57,7 +57,6 @@ class TestLegacyDictRehydration:
 
     def test_finalize_safety_guard_handles_legacy_dict(self):
         """Verify that the guard in finalize._assemble_payload defaults source to openai."""
-        import json
         from src.jobs import finalize as finalize_mod
 
         source = finalize_mod.__file__
@@ -68,3 +67,123 @@ class TestLegacyDictRehydration:
             "finalize.py must contain the legacy-dict guard: "
             "if isinstance(m, dict) and 'source' not in m: m = {**m, 'source': 'openai'}"
         )
+
+
+class TestAssemblePayloadWiresNewSafetySections:
+    """Codex P0.3 regression: the finalize step MUST copy web_risk / image_mod /
+    video_mod slot data into the SidebarPayload. Before this fix, those slots
+    were silently dropped and never reached the rendered sidebar.
+    """
+
+    def _sections_with_new_safety(self) -> dict:
+        from uuid import uuid4
+
+        from src.analyses.schemas import (
+            SectionSlot,
+            SectionSlug,
+            SectionState,
+        )
+
+        def slot(data):
+            return SectionSlot(state=SectionState.DONE, attempt_id=uuid4(), data=data)
+
+        return {
+            SectionSlug.SAFETY_MODERATION: slot({"harmful_content_matches": []}),
+            SectionSlug.SAFETY_WEB_RISK: slot({
+                "findings": [
+                    {"url": "https://example.com/bad", "threat_types": ["MALWARE"]}
+                ]
+            }),
+            SectionSlug.SAFETY_IMAGE_MODERATION: slot({
+                "matches": [
+                    {
+                        "utterance_id": "u1",
+                        "image_url": "https://example.com/img.jpg",
+                        "adult": 1.0, "violence": 0.0, "racy": 0.0,
+                        "medical": 0.0, "spoof": 0.0,
+                        "flagged": True, "max_likelihood": 1.0,
+                    }
+                ]
+            }),
+            SectionSlug.SAFETY_VIDEO_MODERATION: slot({
+                "matches": [
+                    {
+                        "utterance_id": "u2",
+                        "video_url": "https://example.com/vid.mp4",
+                        "frame_findings": [],
+                        "flagged": True, "max_likelihood": 1.0,
+                    }
+                ]
+            }),
+            SectionSlug.TONE_DYNAMICS_FLASHPOINT: slot({"flashpoint_matches": []}),
+            SectionSlug.TONE_DYNAMICS_SCD: slot({
+                "scd": {
+                    "summary": "",
+                    "tone_labels": [],
+                    "per_speaker_notes": {},
+                    "insufficient_conversation": True,
+                }
+            }),
+            SectionSlug.FACTS_CLAIMS_DEDUP: slot({
+                "claims_report": {
+                    "deduped_claims": [],
+                    "total_claims": 0,
+                    "total_unique": 0,
+                }
+            }),
+            SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: slot({"known_misinformation": []}),
+            SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: slot({
+                "sentiment_stats": {
+                    "per_utterance": [],
+                    "positive_pct": 0.0,
+                    "negative_pct": 0.0,
+                    "neutral_pct": 0.0,
+                    "mean_valence": 0.0,
+                }
+            }),
+            SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: slot({"subjective_claims": []}),
+        }
+
+    def test_web_risk_findings_flow_through_to_sidebar_payload(self):
+        from src.jobs.finalize import _assemble_payload
+
+        sidebar = _assemble_payload("https://test", self._sections_with_new_safety())
+        assert len(sidebar.web_risk.findings) == 1
+        assert sidebar.web_risk.findings[0].threat_types == ["MALWARE"]
+
+    def test_image_moderation_matches_flow_through_to_sidebar_payload(self):
+        from src.jobs.finalize import _assemble_payload
+
+        sidebar = _assemble_payload("https://test", self._sections_with_new_safety())
+        assert len(sidebar.image_moderation.matches) == 1
+        assert sidebar.image_moderation.matches[0].flagged is True
+
+    def test_video_moderation_matches_flow_through_to_sidebar_payload(self):
+        from src.jobs.finalize import _assemble_payload
+
+        sidebar = _assemble_payload("https://test", self._sections_with_new_safety())
+        assert len(sidebar.video_moderation.matches) == 1
+        assert sidebar.video_moderation.matches[0].flagged is True
+
+    def test_all_new_sections_empty_by_default(self):
+        """Empty slot data → default-empty sections (no spurious findings)."""
+        from uuid import uuid4
+
+        from src.analyses.schemas import SectionSlot, SectionSlug, SectionState
+        from src.jobs.finalize import _assemble_payload
+
+        empty = self._sections_with_new_safety()
+        # Overwrite the three new sections with empty lists
+        for slug, empty_data in [
+            (SectionSlug.SAFETY_WEB_RISK, {"findings": []}),
+            (SectionSlug.SAFETY_IMAGE_MODERATION, {"matches": []}),
+            (SectionSlug.SAFETY_VIDEO_MODERATION, {"matches": []}),
+        ]:
+            empty[slug] = SectionSlot(
+                state=SectionState.DONE, attempt_id=uuid4(), data=empty_data
+            )
+
+        sidebar = _assemble_payload("https://test", empty)
+        assert sidebar.web_risk.findings == []
+        assert sidebar.image_moderation.matches == []
+        assert sidebar.video_moderation.matches == []

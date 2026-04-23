@@ -19,9 +19,15 @@ from uuid import UUID
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.opinions._schemas import OpinionsReport
-from src.analyses.safety._schemas import HarmfulContentMatch
+from src.analyses.safety._schemas import (
+    HarmfulContentMatch,
+    ImageModerationMatch,
+    VideoModerationMatch,
+    WebRiskFinding,
+)
 from src.analyses.schemas import (
     FactsClaimsSection,
+    ImageModerationSection,
     OpinionsSection,
     PageKind,
     SafetySection,
@@ -30,6 +36,8 @@ from src.analyses.schemas import (
     SectionState,
     SidebarPayload,
     ToneDynamicsSection,
+    VideoModerationSection,
+    WebRiskSection,
 )
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
@@ -96,6 +104,33 @@ def _assemble_payload(
         validated_matches.append(HarmfulContentMatch.model_validate(m))
     safety = SafetySection(harmful_content_matches=validated_matches)
 
+    # TASK-1474: three new safety sections carry their own shape into the
+    # sidebar. Any slug not registered with a handler still returns the
+    # default-empty stub (from _empty_section_data), which shapes validate.
+    web_risk_data = sections.get(SectionSlug.SAFETY_WEB_RISK)
+    web_risk_findings = (
+        (web_risk_data.data or {}).get("findings", []) if web_risk_data else []
+    )
+    web_risk = WebRiskSection(
+        findings=[WebRiskFinding.model_validate(f) for f in web_risk_findings]
+    )
+
+    image_mod_data = sections.get(SectionSlug.SAFETY_IMAGE_MODERATION)
+    image_mod_matches = (
+        (image_mod_data.data or {}).get("matches", []) if image_mod_data else []
+    )
+    image_moderation = ImageModerationSection(
+        matches=[ImageModerationMatch.model_validate(m) for m in image_mod_matches]
+    )
+
+    video_mod_data = sections.get(SectionSlug.SAFETY_VIDEO_MODERATION)
+    video_mod_matches = (
+        (video_mod_data.data or {}).get("matches", []) if video_mod_data else []
+    )
+    video_moderation = VideoModerationSection(
+        matches=[VideoModerationMatch.model_validate(m) for m in video_mod_matches]
+    )
+
     flashpoint_data = sections[SectionSlug.TONE_DYNAMICS_FLASHPOINT].data or {}
     scd_data = sections[SectionSlug.TONE_DYNAMICS_SCD].data or {}
     tone = ToneDynamicsSection(
@@ -132,6 +167,9 @@ def _assemble_payload(
         scraped_at=datetime.now(UTC),
         cached=False,
         safety=safety,
+        web_risk=web_risk,
+        image_moderation=image_moderation,
+        video_moderation=video_moderation,
         tone_dynamics=tone,
         facts_claims=facts,
         opinions_sentiments=opinions,

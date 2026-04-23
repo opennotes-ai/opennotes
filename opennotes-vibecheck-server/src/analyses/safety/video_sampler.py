@@ -7,6 +7,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.utils.url_security import InvalidURL, validate_public_http_url
+
 _logger = logging.getLogger(__name__)
 
 
@@ -30,10 +32,18 @@ async def sample_video(
 ) -> list[FrameBytes]:
     if frame_count < 1:
         raise ValueError("frame_count must be >= 1")
+    # SSRF guard: validate the video URL before handing it to yt-dlp. Without
+    # this, a page-supplied URL pointing at an internal host (localhost,
+    # RFC1918, metadata endpoint) would be fetched by the server. `yt-dlp`
+    # does its own scheme/host handling but does NOT filter private ranges.
+    try:
+        safe_url = validate_public_http_url(url)
+    except InvalidURL as exc:
+        raise VideoSamplingError(f"url rejected: {exc.reason}") from exc
     with tempfile.TemporaryDirectory(prefix="vibecheck-video-") as tmp:
         tmp_path = Path(tmp)
         video_path, duration_ms = await _download(
-            url,
+            safe_url,
             tmp_path,
             max_bytes=max_bytes,
             timeout_s=download_timeout_s,
@@ -49,7 +59,12 @@ async def sample_video(
 def _offsets(duration_ms: int, frame_count: int) -> list[int]:
     if frame_count == 1 or duration_ms <= 0:
         return [0]
-    step = duration_ms / (frame_count - 1)
+    # The last sample point pulls back 100ms from the true duration because
+    # ffmpeg often returns no frame when -ss lands at exact EOF on keyframe-
+    # sparse containers (codex P2.1). The usable window is [0, duration - tail].
+    tail_ms = 100 if duration_ms > 100 else 0
+    usable_ms = duration_ms - tail_ms
+    step = usable_ms / (frame_count - 1)
     return [round(i * step) for i in range(frame_count)]
 
 

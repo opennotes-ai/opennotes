@@ -93,13 +93,24 @@ async def test_run_section_invokes_registered_handler_and_persists_result(
 
 
 @pytest.mark.asyncio
-async def test_run_section_marks_failed_when_handler_raises(
+async def test_run_section_writes_failed_slot_when_handler_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """On handler exception, write_slot persists state=FAILED with the error.
+
+    Uses write_slot (not mark_slot_failed) because _run_section writes the
+    terminal state directly without a preceding RUNNING transition — and
+    mark_slot_failed's CAS requires state='running' in the DB (codex P1.1).
+    """
+    from src.analyses.schemas import SectionState
     from src.jobs import orchestrator
 
-    mark_failed_mock = AsyncMock()
-    write_mock = AsyncMock()
+    captured: dict[str, object] = {}
+
+    async def fake_write_slot(pool, job_id, task_attempt, slug, slot):
+        captured["slot_state"] = slot.state
+        captured["slot_error"] = slot.error
+        captured["slot_data"] = slot.data
 
     async def raising_handler(*args, **kwargs):
         raise RuntimeError("upstream 503")
@@ -107,8 +118,7 @@ async def test_run_section_marks_failed_when_handler_raises(
     monkeypatch.setitem(
         orchestrator._SECTION_HANDLERS, SectionSlug.SAFETY_WEB_RISK, raising_handler
     )
-    monkeypatch.setattr(orchestrator, "write_slot", write_mock)
-    monkeypatch.setattr(orchestrator, "mark_slot_failed", mark_failed_mock)
+    monkeypatch.setattr(orchestrator, "write_slot", fake_write_slot)
 
     await orchestrator._run_section(
         pool=object(),
@@ -119,10 +129,9 @@ async def test_run_section_marks_failed_when_handler_raises(
         settings=object(),
     )
 
-    mark_failed_mock.assert_awaited_once()
-    _, kwargs = mark_failed_mock.call_args
-    assert "upstream 503" in kwargs.get("error", "")
-    write_mock.assert_not_awaited()
+    assert captured["slot_state"] == SectionState.FAILED
+    assert captured["slot_data"] is None
+    assert "upstream 503" in str(captured["slot_error"])
 
 
 @pytest.mark.asyncio

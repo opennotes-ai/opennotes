@@ -57,10 +57,16 @@ class TestOffsets:
         assert _offsets(30000, 1) == [0]
 
     def test_offsets_three_frames_over_30_seconds(self):
-        assert _offsets(30000, 3) == [0, 15000, 30000]
+        # Last sample pulls back 100ms to avoid ffmpeg empty-frame at exact EOF.
+        assert _offsets(30000, 3) == [0, 14950, 29900]
 
     def test_offsets_five_frames_over_10_seconds(self):
-        assert _offsets(10000, 5) == [0, 2500, 5000, 7500, 10000]
+        # 100ms tail trim → usable window 9900ms, step 2475ms.
+        assert _offsets(10000, 5) == [0, 2475, 4950, 7425, 9900]
+
+    def test_offsets_short_video_below_tail_skips_trim(self):
+        # Duration too short to afford the 100ms tail — degenerate case.
+        assert _offsets(50, 2) == [0, 50]
 
 
 class TestSuccessfulSample:
@@ -96,8 +102,10 @@ class TestSuccessfulSample:
 
         assert len(frames) == 3
         assert frames[0].frame_offset_ms == 0
-        assert frames[1].frame_offset_ms == 15000
-        assert frames[2].frame_offset_ms == 30000
+        # Mid and tail offsets are computed from (duration - 100ms tail) to
+        # avoid ffmpeg producing an empty frame at exact EOF (codex P2.1).
+        assert frames[1].frame_offset_ms == 14950
+        assert frames[2].frame_offset_ms == 29900
         for frame in frames:
             assert isinstance(frame, FrameBytes)
             assert frame.png_bytes == FAKE_PNG
@@ -284,3 +292,59 @@ class TestTempDirCleanup:
         assert len(created_dirs) >= 1
         for tmp_dir in created_dirs:
             assert not Path(tmp_dir).exists(), f"Temp dir {tmp_dir!r} was not cleaned up"
+
+
+class TestSsrfGuard:
+    """Codex P0.2 regression: internal URLs must never reach yt-dlp."""
+
+    @pytest.mark.asyncio
+    async def test_internal_ipv4_raises_without_spawning_subprocess(self):
+        calls: list[tuple] = []
+
+        async def fail_exec(*args, **kwargs):
+            calls.append(args)
+            raise AssertionError("yt-dlp should never spawn for SSRF URL")
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):
+            with pytest.raises(VideoSamplingError):
+                await sample_video("http://127.0.0.1:8080/secret.mp4")
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_private_rfc1918_host_raises_without_spawning_subprocess(self):
+        calls: list[tuple] = []
+
+        async def fail_exec(*args, **kwargs):
+            calls.append(args)
+            raise AssertionError("yt-dlp should never spawn for SSRF URL")
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):
+            with pytest.raises(VideoSamplingError):
+                await sample_video("http://10.0.0.5/secret.mp4")
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_metadata_service_host_raises_without_spawning_subprocess(self):
+        calls: list[tuple] = []
+
+        async def fail_exec(*args, **kwargs):
+            calls.append(args)
+            raise AssertionError("yt-dlp should never spawn for SSRF URL")
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):
+            with pytest.raises(VideoSamplingError):
+                await sample_video("http://169.254.169.254/latest/meta-data/")
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_non_http_scheme_raises_without_spawning_subprocess(self):
+        calls: list[tuple] = []
+
+        async def fail_exec(*args, **kwargs):
+            calls.append(args)
+            raise AssertionError("yt-dlp should never spawn for file:// scheme")
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):
+            with pytest.raises(VideoSamplingError):
+                await sample_video("file:///etc/passwd")
+        assert calls == []

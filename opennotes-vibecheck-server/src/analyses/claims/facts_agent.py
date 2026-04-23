@@ -48,13 +48,18 @@ async def run_facts_claims_known_misinfo(
 ) -> dict[str, Any]:
     """Slot worker: look up known misinformation for deduped claims.
 
-    Pulls ``claims_report.deduped_claims`` from *payload*.  Returns early with
-    an empty list when no claims are present so the agent is not invoked
-    unnecessarily.
-
-    Returns ``{"known_misinformation": [<FactCheckMatch.model_dump()>, ...]}``.
+    Claim source (codex P1.6):
+      1. If *payload* carries a ``claims_report``, use that directly.
+      2. Else, read the FACTS_CLAIMS_DEDUP slot from the job's sections
+         JSONB (the orchestrator passes the raw ``UtterancesPayload`` to
+         every slot, so the dedup output only lives in the DB at this point).
+      3. Else, return empty. Empty is treated as "no claims worth checking"
+         rather than an error so a missing-dedup race yields no-op instead
+         of poisoning the slot with a false failure.
     """
     deduped_claims = _extract_deduped_claims(payload)
+    if not deduped_claims:
+        deduped_claims = await _load_deduped_claims_from_dedup_slot(pool, job_id)
     if not deduped_claims:
         return {"known_misinformation": []}
 
@@ -99,3 +104,36 @@ def _extract_deduped_claims(payload: Any) -> list[Any]:
     if claims_report is None:
         return []
     return list(getattr(claims_report, "deduped_claims", []) or [])
+
+
+async def _load_deduped_claims_from_dedup_slot(
+    pool: Any, job_id: UUID
+) -> list[Any]:
+    """Read FACTS_CLAIMS_DEDUP slot data from the job's sections JSONB.
+
+    The orchestrator runs all slots in parallel with the same ``UtterancesPayload``
+    input, so the dedup step's output (a ClaimsReport) lives only in the
+    ``vibecheck_jobs.sections`` column until finalize stitches the sidebar.
+    Return an empty list if the slot is absent, not yet done, or malformed —
+    the caller treats that as "no claims to check".
+    """
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT sections -> $2 AS dedup FROM vibecheck_jobs WHERE job_id = $1",
+                job_id,
+                "facts_claims__dedup",
+            )
+    except Exception as exc:
+        logger.warning("facts_agent: failed to read dedup slot: %s", exc)
+        return []
+    if row is None or row["dedup"] is None:
+        return []
+    raw = row["dedup"]
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    data = raw.get("data") if isinstance(raw, dict) else None
+    claims_report = data.get("claims_report") if isinstance(data, dict) else None
+    if not isinstance(claims_report, dict):
+        return []
+    return list(claims_report.get("deduped_claims") or [])

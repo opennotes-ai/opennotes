@@ -9,6 +9,7 @@ import httpx
 
 from src.analyses.safety._vision_likelihood import likelihood_to_score
 from src.services.gcp_adc import CLOUD_PLATFORM_SCOPE, get_access_token
+from src.utils.url_security import InvalidURL, validate_public_http_url
 
 ANNOTATE_URL = "https://vision.googleapis.com/v1/images:annotate"
 MAX_PER_BATCH = 16
@@ -112,8 +113,18 @@ async def _retry_with_inline_bytes(
     threshold: float,
     max_bytes: int,
 ) -> SafeSearchResult | None:
+    # SSRF guard: the inline-bytes fallback fetches the image URL server-side.
+    # Without this check, a page-supplied URL pointing at a private/internal
+    # host (metadata service, localhost, RFC1918) would be fetched and forwarded
+    # to Google. The primary imageUri path delegates fetch to Google so this
+    # fallback is the only server-side network call that needs validation.
     try:
-        async with httpx_client.stream("GET", url, timeout=15.0) as r:
+        safe_url = validate_public_http_url(url)
+    except InvalidURL:
+        return None
+
+    try:
+        async with httpx_client.stream("GET", safe_url, timeout=15.0) as r:
             if r.status_code >= 400:
                 return None
             chunks: list[bytes] = []

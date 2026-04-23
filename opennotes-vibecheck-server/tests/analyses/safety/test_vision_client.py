@@ -287,3 +287,37 @@ async def test_missing_token_raises_transient_error(no_token):
     async with httpx.AsyncClient() as client:
         with pytest.raises(VisionTransientError, match="ADC token unavailable"):
             await annotate_images([url], httpx_client=client)
+
+
+@pytest.mark.asyncio
+async def test_inline_fallback_ssrf_guard_rejects_internal_url(mock_token):
+    """Codex P0.1 regression: internal URL must not be fetched server-side.
+
+    Primary annotate reports `error` for this image (simulating Vision's own
+    fetch failure); the fallback would normally GET the URL itself. With the
+    SSRF guard, validate_public_http_url rejects the private host and the
+    fallback returns None without making any outbound request.
+    """
+    url = "http://127.0.0.1:8080/secret.png"
+
+    posts: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and str(request.url) == ANNOTATE_URL:
+            posts.append({})
+            return httpx.Response(
+                200,
+                json={"responses": [{"error": {"code": 400, "message": "fetch failed"}}]},
+            )
+        # Any attempted GET to the image URL would indicate a bypass.
+        raise AssertionError(
+            f"SSRF guard bypassed: unexpected request {request.method} {request.url}"
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        out = await annotate_images([url], httpx_client=client)
+
+    assert out == {url: None}
+    # Primary annotate fires; inline fallback short-circuits with no second POST.
+    assert len(posts) == 1
