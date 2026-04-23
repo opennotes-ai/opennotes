@@ -610,7 +610,7 @@ describe("createPollingResource", () => {
     });
   });
 
-  it("passes a live AbortSignal to pollJobState on every tick", async () => {
+  it("calls pollJobState with only serializable arguments on every tick", async () => {
     const ok = makeJobState({ status: "pending", next_poll_ms: 500 });
     mockPollJob.mockResolvedValue(ok);
 
@@ -620,78 +620,13 @@ describe("createPollingResource", () => {
       createPollingResource(() => "job-signal");
       await flushMicrotasks();
       expect(mockPollJobSignals).toHaveLength(1);
-      expect(mockPollJobSignals[0]).toBeInstanceOf(AbortSignal);
-      expect(mockPollJobSignals[0]?.aborted).toBe(false);
+      expect(mockPollJobSignals[0]).toBeUndefined();
 
       await vi.advanceTimersByTimeAsync(500);
       await flushMicrotasks();
       expect(mockPollJobSignals).toHaveLength(2);
-      expect(mockPollJobSignals[1]).toBeInstanceOf(AbortSignal);
+      expect(mockPollJobSignals[1]).toBeUndefined();
 
-      dispose();
-    });
-  });
-
-  it("aborts the in-flight signal observed by the underlying fetch when disposed mid-flight", async () => {
-    let resolveFirst!: (value: JobState) => void;
-    const firstPromise = new Promise<JobState>((resolve) => {
-      resolveFirst = resolve;
-    });
-    mockPollJob.mockReturnValueOnce(firstPromise);
-
-    const { createPollingResource } = await import("./polling");
-
-    const handle = await new Promise<{ dispose: () => void }>((resolve) => {
-      createRoot((dispose) => {
-        createPollingResource(() => "job-abort");
-        resolve({ dispose });
-      });
-    });
-
-    await flushMicrotasks();
-    expect(mockPollJobSignals).toHaveLength(1);
-    const signal = mockPollJobSignals[0]!;
-    expect(signal.aborted).toBe(false);
-
-    handle.dispose();
-
-    expect(signal.aborted).toBe(true);
-
-    resolveFirst(makeJobState({ status: "analyzing", next_poll_ms: 500 }));
-    await flushMicrotasks();
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(mockPollJob).toHaveBeenCalledTimes(1);
-  });
-
-  it("aborts the in-flight signal when jobId changes", async () => {
-    let resolveFirst!: (value: JobState) => void;
-    const firstPromise = new Promise<JobState>((resolve) => {
-      resolveFirst = resolve;
-    });
-    const secondState = makeJobState({
-      job_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-      status: "analyzing",
-      next_poll_ms: 500,
-    });
-    mockPollJob
-      .mockReturnValueOnce(firstPromise)
-      .mockResolvedValueOnce(secondState);
-
-    const { createPollingResource } = await import("./polling");
-
-    await createRoot(async (dispose) => {
-      const [id, setId] = createSignal("job-old");
-      createPollingResource(id);
-      await flushMicrotasks();
-      const firstSignal = mockPollJobSignals[0]!;
-      expect(firstSignal.aborted).toBe(false);
-
-      setId("job-new");
-      await flushMicrotasks();
-      expect(firstSignal.aborted).toBe(true);
-
-      resolveFirst(makeJobState({ status: "done" }));
-      await flushMicrotasks();
       dispose();
     });
   });
