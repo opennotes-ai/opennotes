@@ -174,6 +174,41 @@ async def test_post_then_internal_run_then_poll_to_done(
     assert fake_firecrawl.calls == [target_url]
 
 
+async def test_url_persistence_keeps_user_form_and_normalized_form_distinct(
+    http_client: httpx.AsyncClient,
+    db_pool: Any,
+    install_oidc_mock: Any,
+) -> None:
+    """`url` keeps the original user-submitted form; `normalized_url` strips tracking.
+
+    The schema has both columns precisely so the audit trail keeps the
+    original form (with utm tracking, trailing slashes, etc.) while
+    dedup/cache lookups happen on the canonicalized form. Pre-TASK-1473.44
+    the contended-branch and locked-branch insert paths both passed
+    `url=normalized_url`, so the original form was lost.
+    """
+    submitted_url = "https://example.com/?utm_source=foo"
+    expected_normalized = "https://example.com/"
+
+    resp = await http_client.post("/api/analyze", json={"url": submitted_url})
+    assert resp.status_code == 202, resp.text
+    job_id = UUID(json.loads(resp.text)["job_id"])
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT url, normalized_url FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+    assert row is not None
+    assert row["url"] == submitted_url, (
+        f"audit-trail `url` was overwritten with the canonical form: "
+        f"got {row['url']!r}, expected {submitted_url!r}"
+    )
+    assert row["normalized_url"] == expected_normalized, (
+        f"`normalized_url` was not canonicalized: got {row['normalized_url']!r}"
+    )
+
+
 async def test_write_slot_cas_miss_propagates_503_for_redelivery(
     http_client: httpx.AsyncClient,
     db_pool: Any,

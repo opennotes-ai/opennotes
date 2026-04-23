@@ -530,7 +530,7 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
                 if cached_payload is not None:
                     cached_job_id = await _insert_cached_done_job(
                         conn,
-                        url=normalized_url,
+                        url=body.url,
                         normalized_url=normalized_url,
                         host=host,
                         sidebar_payload=cached_payload,
@@ -560,7 +560,7 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
                 return None, None, False
             response, attempt = await _handle_locked_submit(
                 conn,
-                url=normalized_url,
+                url=body.url,
                 normalized_url=normalized_url,
                 host=host,
             )
