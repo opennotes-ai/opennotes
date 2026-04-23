@@ -446,25 +446,26 @@ async def _run_section(
             SECTION_FAILURES.labels(
                 slug=slug.value, error_type=classify_error(exc)
             ).inc()
-            failed_rowcount = await mark_slot_failed(
-                pool,
-                job_id,
-                slug,
-                slot_attempt,
-                error=str(exc),
-                expected_task_attempt=task_attempt,
-            )
-            # rowcount == 0 here is benign: mark_slot_failed CAS expects
-            # state='running' which _run_section never sets, so a fresh
-            # slot with no prior 'running' row legitimately matches zero.
-            # The failure is already logged above; no further action.
-            del failed_rowcount
+            try:
+                failed_rowcount = await mark_slot_failed(
+                    pool,
+                    job_id,
+                    slug,
+                    slot_attempt,
+                    error=str(exc),
+                    expected_task_attempt=task_attempt,
+                )
+                del failed_rowcount
+            except Exception as mark_exc:
+                logger.exception(
+                    "section %s: mark_slot_failed also failed for job %s: %s",
+                    slug.value, job_id, mark_exc,
+                )
+            raise TransientError(
+                f"write_slot failed for job={job_id} slug={slug.value}: {exc}"
+            ) from exc
         else:
             if rowcount == 0:
-                # CAS missed for a non-stale-attempt reason (e.g. job row
-                # deleted, status moved to terminal). The orchestrator
-                # cannot finalize a slot it couldn't write, so escalate to
-                # TransientError — Cloud Tasks redelivers per queue config.
                 raise TransientError(
                     f"write_slot CAS returned rowcount=0 for job={job_id} slug={slug.value}"
                 )
