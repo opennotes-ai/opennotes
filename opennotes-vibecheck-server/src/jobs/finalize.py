@@ -49,7 +49,7 @@ _CACHE_TTL = timedelta(hours=72)
 # We fetch `attempt_id` and `status` so the caller can verify neither has
 # drifted from the worker's expected envelope before assembling + UPSERTing.
 _LOAD_SQL = """
-SELECT url, sections, attempt_id, status,
+SELECT url, normalized_url, sections, attempt_id, status,
        sidebar_payload IS NOT NULL AS already_finalized
 FROM vibecheck_jobs
 WHERE job_id = $1
@@ -257,7 +257,7 @@ async def maybe_finalize_job(
         expires_at = datetime.now(UTC) + _CACHE_TTL
         await conn.execute(
             _UPSERT_CACHE_SQL,
-            row["url"],
+            row["normalized_url"],
             payload_json,
             expires_at,
         )

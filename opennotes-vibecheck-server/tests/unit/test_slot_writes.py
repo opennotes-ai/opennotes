@@ -107,7 +107,12 @@ async def db_pool(_postgres_container) -> Any:
         await pool.close()
 
 
-async def _insert_job(pool: Any, attempt_id: UUID, url: str = "https://example.com/a") -> UUID:
+async def _insert_job(
+    pool: Any,
+    attempt_id: UUID,
+    url: str = "https://example.com/a",
+    normalized_url: str | None = None,
+) -> UUID:
     async with pool.acquire() as conn:
         job_id = await conn.fetchval(
             """
@@ -116,7 +121,7 @@ async def _insert_job(pool: Any, attempt_id: UUID, url: str = "https://example.c
             RETURNING job_id
             """,
             url,
-            url,
+            normalized_url if normalized_url is not None else url,
             "example.com",
             attempt_id,
         )
@@ -937,3 +942,47 @@ async def test_finalize_upsert_races_are_serialized(db_pool) -> None:
             "SELECT COUNT(*) FROM vibecheck_analyses WHERE url = $1", url
         )
     assert rowcount == 1
+
+
+async def test_finalize_upserts_cache_keyed_by_normalized_url_not_original(
+    db_pool,
+) -> None:
+    """Regression guard for TASK-1473.58.
+
+    vibecheck_analyses.url must be keyed by vibecheck_jobs.normalized_url so
+    subsequent submits of the same URL with different tracking params hit the
+    72h cache. Before the fix, row["url"] (original) was used as the cache key,
+    causing a cache miss on resubmit with different query params.
+    """
+    original_url = "https://example.com/page?utm_source=foo"
+    normalized = "https://example.com/page"
+    task_attempt = uuid4()
+    job_id = await _insert_job(
+        db_pool, task_attempt, url=original_url, normalized_url=normalized
+    )
+    await _seed_slots(db_pool, job_id, task_attempt, _ALL_SLUGS)
+
+    finalized = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=task_attempt
+    )
+    assert finalized is True
+
+    async with db_pool.acquire() as conn:
+        cached = await conn.fetchrow(
+            "SELECT url, sidebar_payload FROM vibecheck_analyses WHERE url = $1",
+            normalized,
+        )
+        assert cached is not None
+        assert cached["url"] == normalized
+
+        sidebar = (
+            json.loads(cached["sidebar_payload"])
+            if isinstance(cached["sidebar_payload"], str)
+            else dict(cached["sidebar_payload"])
+        )
+        assert sidebar["source_url"] == original_url
+
+        cached_by_original = await conn.fetchrow(
+            "SELECT url FROM vibecheck_analyses WHERE url = $1", original_url
+        )
+        assert cached_by_original is None
