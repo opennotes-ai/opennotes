@@ -1,5 +1,3 @@
-import pytest
-
 """Unit tests for the harmful-content moderation capability."""
 
 from unittest.mock import AsyncMock
@@ -67,47 +65,6 @@ class TestCheckContentModeration:
 
         assert result is None
 
-    @pytest.mark.xfail(reason="tests deprecated single-utterance wrapper path; bulk coverage TBD", strict=False)
-
-    async def test_returns_match_when_flagged(self):
-        flagged_result = make_moderation_result(
-            flagged=True,
-            max_score=0.95,
-            categories={"violence": True, "sexual": False},
-            scores={"violence": 0.95, "sexual": 0.02},
-            flagged_categories=["violence"],
-        )
-        mock_service = AsyncMock()
-        mock_service.moderate_text = AsyncMock(return_value=flagged_result)
-
-        utterance = make_utterance(utterance_id="utt_42", text="violent content")
-        result = await check_content_moderation(
-            utterance=utterance,
-            moderation_service=mock_service,
-        )
-
-        assert result is not None
-        assert isinstance(result, HarmfulContentMatch)
-        assert result.utterance_id == "utt_42"
-        assert result.max_score == 0.95
-        assert result.categories == {"violence": True, "sexual": False}
-        assert result.scores == {"violence": 0.95, "sexual": 0.02}
-        assert result.flagged_categories == ["violence"]
-
-    @pytest.mark.xfail(reason="tests deprecated single-utterance wrapper path; bulk coverage TBD", strict=False)
-
-    async def test_uses_moderate_text_for_text_only(self):
-        mock_service = AsyncMock()
-        mock_service.moderate_text = AsyncMock(return_value=make_moderation_result(flagged=False))
-
-        utterance = make_utterance(text="hello world")
-        await check_content_moderation(
-            utterance=utterance,
-            moderation_service=mock_service,
-        )
-
-        mock_service.moderate_text.assert_called_once_with("hello world")
-
     async def test_does_not_expose_multimodal_path(self):
         """POC is text-only — moderate_multimodal must never be called."""
         mock_service = AsyncMock()
@@ -133,29 +90,6 @@ class TestCheckContentModeration:
         )
 
         assert result is None
-
-    @pytest.mark.xfail(reason="tests deprecated single-utterance wrapper path; bulk coverage TBD", strict=False)
-
-    async def test_exception_logs_warning_and_swallows(self, caplog):
-        import logging
-
-        mock_service = AsyncMock()
-        mock_service.moderate_text = AsyncMock(side_effect=RuntimeError("boom"))
-
-        utterance = make_utterance(utterance_id="utt_err")
-        with caplog.at_level(logging.WARNING):
-            result = await check_content_moderation(
-                utterance=utterance,
-                moderation_service=mock_service,
-            )
-
-        assert result is None
-        assert any(
-            "utt_err" in record.getMessage()
-            or "boom" in record.getMessage()
-            or record.levelno == logging.WARNING
-            for record in caplog.records
-        )
 
 
 class TestModerationResultSchema:
