@@ -6,8 +6,12 @@
  * `<ScdReport />`, and writes the rendered text content to disk so the eval
  * markdown can show what the user actually sees in the sidebar slot.
  *
- * Not part of normal CI — run explicitly:
- *   pnpm exec vitest run tests/eval/scd-render-dump.eval.test.tsx
+ * EXPLICIT INVOCATION ONLY. `vitest.config.ts` excludes `**\/*.eval.test.{ts,tsx}`
+ * from the default run because this suite writes side-effect fixture files
+ * (rendered.md) to disk. The exclude is gated on `RUN_EVAL_TESTS`.
+ *
+ * Run explicitly with:
+ *   RUN_EVAL_TESTS=1 pnpm exec vitest run tests/eval/scd-render-dump.eval.test.tsx
  */
 import { describe, it, afterEach, expect } from "vitest";
 import { render, cleanup } from "@solidjs/testing-library";
