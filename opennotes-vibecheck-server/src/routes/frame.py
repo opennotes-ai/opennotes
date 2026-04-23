@@ -19,6 +19,23 @@ _SCREENSHOT_TIMEOUT_SECONDS = 30.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
 
+# Map machine-readable `InvalidURL.reason` slugs back to the human-readable
+# 400-detail strings the frame routes returned before the SSRF refactor
+# (TASK-1473.11). Frontend clients assert on these exact strings; changing
+# them would silently break callers. Any new reason added to
+# `src.utils.url_security` must be added here too — the fallback in
+# `_validate_http_url` keeps the route from raising 500 if that slips, but
+# clients pinning the older copy would still drift.
+_REASON_TO_HUMAN_DETAIL: dict[str, str] = {
+    "scheme_not_allowed": "URL must be an http(s) URL",
+    "missing_host": "URL must include a host",
+    "invalid_host": "URL host is invalid",
+    "host_blocked": "URL host is not allowed",
+    "private_ip": "URL points to a private network address",
+    "resolved_private_ip": "URL points to a private network address",
+    "unresolvable_host": "URL host could not be resolved",
+}
+
 
 def _validate_http_url(url: str) -> None:
     """Delegate SSRF validation to the shared guard and raise HTTP 400 on failure.
@@ -27,11 +44,16 @@ def _validate_http_url(url: str) -> None:
     plus the redirect-follower) retain their original shape — the guard itself
     lives in `src.utils.url_security` and is reused by the async analyze
     pipeline (TASK-1473.11/.12).
+
+    The 400 `detail` body preserves the prior human-readable strings (mapped
+    from `InvalidURL.reason`) so frontend clients pinning copy like
+    `"URL must be an http(s) URL"` keep working across the SSRF refactor.
     """
     try:
         validate_public_http_url(url)
     except InvalidURL as exc:
-        raise HTTPException(status_code=400, detail=f"URL rejected: {exc.reason}") from exc
+        detail = _REASON_TO_HUMAN_DETAIL.get(exc.reason, "URL is not allowed")
+        raise HTTPException(status_code=400, detail=detail) from exc
 
 
 def _frame_ancestors_blocks(csp_value: str) -> tuple[bool, str | None]:

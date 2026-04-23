@@ -117,6 +117,29 @@ class TestFrameCompat:
         resp = client.get("/api/frame-compat", params={"url": "not-a-url"})
         assert resp.status_code == 400
 
+    def test_scheme_not_allowed_preserves_human_readable_detail(
+        self, client: TestClient
+    ) -> None:
+        # Pre-SSRF-refactor (pre-TASK-1473.11) the 400 body for a
+        # non-http(s) URL was the literal string below. Frontend clients may
+        # assert on this exact copy — the route now maps
+        # `InvalidURL(reason='scheme_not_allowed')` back to it instead of
+        # leaking the machine-readable slug into the response.
+        resp = client.get(
+            "/api/frame-compat", params={"url": "javascript:alert(1)"}
+        )
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "URL must be an http(s) URL"}
+
+    def test_blocked_host_returns_human_readable_detail(self, client: TestClient) -> None:
+        # `localhost` triggers `InvalidURL(reason='host_blocked')`. The 400
+        # body must surface a human-readable string, not the slug.
+        resp = client.get(
+            "/api/frame-compat", params={"url": "http://localhost/"}
+        )
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "URL host is not allowed"}
+
 
 class TestScreenshot:
     def test_returns_screenshot_url(self, client: TestClient) -> None:
@@ -177,6 +200,10 @@ class TestScreenshot:
     def test_invalid_url_returns_400(self, client: TestClient) -> None:
         resp = client.get("/api/screenshot", params={"url": "javascript:alert(1)"})
         assert resp.status_code == 400
+        # Same human-readable detail as /api/frame-compat — the SSRF guard is
+        # shared, so the screenshot route must surface the same copy clients
+        # have been pinning since before the SSRF refactor.
+        assert resp.json() == {"detail": "URL must be an http(s) URL"}
 
 
 class TestSSRFValidation:
