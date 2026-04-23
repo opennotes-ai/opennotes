@@ -555,39 +555,95 @@ def _done_slot(data: dict[str, Any]) -> SectionSlot:
 def _minimal_slot_payloads() -> dict[SectionSlug, dict[str, Any]]:
     # Each payload matches the slot-level contract `maybe_finalize_job` expects:
     # slot.data is the fragment that contributes to its destination section in
-    # `SidebarPayload`.
+    # `SidebarPayload`. Every slot below carries at least one slot-unique
+    # sentinel value so the reassembly tests can prove that finalize routes
+    # each fragment to its correct nested location in `SidebarPayload`
+    # (and never leaks one slot's content into another section).
     return {
-        SectionSlug.SAFETY_MODERATION: {"harmful_content_matches": []},
+        SectionSlug.SAFETY_MODERATION: {
+            "harmful_content_matches": [
+                {
+                    "utterance_id": "utt-safety-001",
+                    "max_score": 0.91,
+                    "categories": {"hate": True, "violence": False},
+                    "scores": {"hate": 0.91, "violence": 0.04},
+                    "flagged_categories": ["sentinel-safety-flag"],
+                }
+            ]
+        },
         SectionSlug.SAFETY_WEB_RISK: {"findings": []},
         SectionSlug.SAFETY_IMAGE_MODERATION: {"matches": []},
         SectionSlug.SAFETY_VIDEO_MODERATION: {"matches": []},
-        SectionSlug.TONE_DYNAMICS_FLASHPOINT: {"flashpoint_matches": []},
+        SectionSlug.TONE_DYNAMICS_FLASHPOINT: {
+            "flashpoint_matches": [
+                {
+                    "scan_type": "conversation_flashpoint",
+                    "utterance_id": "utt-flashpoint-007",
+                    "derailment_score": 73,
+                    "risk_level": "Heated",
+                    "reasoning": "sentinel-flashpoint-reasoning",
+                    "context_messages": 4,
+                }
+            ]
+        },
         SectionSlug.TONE_DYNAMICS_SCD: {
             "scd": {
-                "summary": "A neutral exchange.",
-                "tone_labels": [],
-                "per_speaker_notes": {},
-                "insufficient_conversation": True,
+                "summary": "sentinel-scd-summary-narrative",
+                "tone_labels": ["sentinel-tone-label", "combative"],
+                "per_speaker_notes": {"alice": "sentinel-speaker-note-alice"},
+                "insufficient_conversation": False,
             }
         },
         SectionSlug.FACTS_CLAIMS_DEDUP: {
             "claims_report": {
-                "deduped_claims": [],
-                "total_claims": 0,
-                "total_unique": 0,
+                "deduped_claims": [
+                    {
+                        "canonical_text": "sentinel-claim-canonical",
+                        "occurrence_count": 3,
+                        "author_count": 2,
+                        "utterance_ids": ["utt-claim-101", "utt-claim-102"],
+                        "representative_authors": ["sentinel-author-bob"],
+                    }
+                ],
+                "total_claims": 5,
+                "total_unique": 1,
             }
         },
-        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: {"known_misinformation": []},
+        SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: {
+            "known_misinformation": [
+                {
+                    "claim_text": "sentinel-misinfo-claim",
+                    "publisher": "sentinel-publisher",
+                    "review_title": "sentinel-review-title",
+                    "review_url": "https://example.org/factcheck/sentinel",
+                    "textual_rating": "False",
+                }
+            ]
+        },
         SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: {
             "sentiment_stats": {
-                "per_utterance": [],
-                "positive_pct": 0.0,
-                "negative_pct": 0.0,
-                "neutral_pct": 100.0,
-                "mean_valence": 0.0,
+                "per_utterance": [
+                    {
+                        "utterance_id": "utt-sentiment-002",
+                        "label": "negative",
+                        "valence": -0.42,
+                    }
+                ],
+                "positive_pct": 10.0,
+                "negative_pct": 60.0,
+                "neutral_pct": 30.0,
+                "mean_valence": -0.21,
             }
         },
-        SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: {"subjective_claims": []},
+        SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: {
+            "subjective_claims": [
+                {
+                    "claim_text": "sentinel-subjective-claim",
+                    "utterance_id": "utt-subjective-003",
+                    "stance": "opposes",
+                }
+            ]
+        },
     }
 
 
@@ -646,6 +702,64 @@ async def test_maybe_finalize_job_upserts_cache_when_all_slots_done(db_pool) -> 
     assert "tone_dynamics" in payload
     assert "facts_claims" in payload
     assert "opinions_sentiments" in payload
+
+    # Reassembly correctness: each slot's distinctive sentinel must land in
+    # exactly one nested location in the assembled SidebarPayload, proving
+    # `_assemble_payload` routes fragments to the correct destination
+    # section without cross-contamination.
+    safety_matches = payload["safety"]["harmful_content_matches"]
+    assert len(safety_matches) == 1
+    assert safety_matches[0]["utterance_id"] == "utt-safety-001"
+    assert safety_matches[0]["flagged_categories"] == ["sentinel-safety-flag"]
+
+    tone = payload["tone_dynamics"]
+    assert tone["scd"]["summary"] == "sentinel-scd-summary-narrative"
+    assert "sentinel-tone-label" in tone["scd"]["tone_labels"]
+    assert tone["scd"]["per_speaker_notes"] == {
+        "alice": "sentinel-speaker-note-alice"
+    }
+    assert tone["scd"]["insufficient_conversation"] is False
+    assert len(tone["flashpoint_matches"]) == 1
+    assert tone["flashpoint_matches"][0]["utterance_id"] == "utt-flashpoint-007"
+    assert tone["flashpoint_matches"][0]["reasoning"] == "sentinel-flashpoint-reasoning"
+    assert tone["flashpoint_matches"][0]["risk_level"] == "Heated"
+
+    facts = payload["facts_claims"]
+    assert facts["claims_report"]["total_claims"] == 5
+    assert facts["claims_report"]["total_unique"] == 1
+    deduped = facts["claims_report"]["deduped_claims"]
+    assert len(deduped) == 1
+    assert deduped[0]["canonical_text"] == "sentinel-claim-canonical"
+    assert deduped[0]["utterance_ids"] == ["utt-claim-101", "utt-claim-102"]
+    assert len(facts["known_misinformation"]) == 1
+    assert facts["known_misinformation"][0]["publisher"] == "sentinel-publisher"
+    assert facts["known_misinformation"][0]["review_title"] == "sentinel-review-title"
+
+    opinions = payload["opinions_sentiments"]["opinions_report"]
+    assert opinions["sentiment_stats"]["per_utterance"][0]["utterance_id"] == (
+        "utt-sentiment-002"
+    )
+    assert opinions["sentiment_stats"]["per_utterance"][0]["valence"] == -0.42
+    assert opinions["sentiment_stats"]["mean_valence"] == -0.21
+    assert len(opinions["subjective_claims"]) == 1
+    assert opinions["subjective_claims"][0]["claim_text"] == "sentinel-subjective-claim"
+    assert opinions["subjective_claims"][0]["stance"] == "opposes"
+
+    # Cross-contamination guard: each per-slot sentinel string must appear
+    # in exactly one section's serialized form, never bleed into a sibling.
+    serialized = json.dumps(payload)
+    for sentinel in (
+        "sentinel-safety-flag",
+        "sentinel-flashpoint-reasoning",
+        "sentinel-scd-summary-narrative",
+        "sentinel-claim-canonical",
+        "sentinel-publisher",
+        "sentinel-subjective-claim",
+    ):
+        assert serialized.count(sentinel) == 1, (
+            f"sentinel {sentinel!r} appeared "
+            f"{serialized.count(sentinel)} times — expected exactly 1"
+        )
 
 
 async def test_maybe_finalize_job_is_idempotent_on_repeat_call(db_pool) -> None:
