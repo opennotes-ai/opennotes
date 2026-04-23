@@ -26,6 +26,7 @@ type ClaimsReport = components["schemas"]["ClaimsReport"];
 export interface SidebarProps {
   sections?: JobState["sections"];
   payload?: SidebarPayload | null;
+  jobId?: string;
   onRetry?: (slug: SectionSlug) => void;
 }
 
@@ -214,6 +215,7 @@ export default function Sidebar(props: SidebarProps) {
         slugs={SAFETY_SLUGS}
         sections={effectiveSections()}
         render={SAFETY_RENDER}
+        jobId={props.jobId}
         onRetry={props.onRetry}
       />
       <SectionGroup
@@ -221,6 +223,7 @@ export default function Sidebar(props: SidebarProps) {
         slugs={TONE_SLUGS}
         sections={effectiveSections()}
         render={TONE_RENDER}
+        jobId={props.jobId}
         onRetry={props.onRetry}
       />
       <SectionGroup
@@ -228,6 +231,7 @@ export default function Sidebar(props: SidebarProps) {
         slugs={FACTS_SLUGS}
         sections={effectiveSections()}
         render={FACTS_RENDER}
+        jobId={props.jobId}
         onRetry={props.onRetry}
       />
       <SectionGroup
@@ -235,6 +239,7 @@ export default function Sidebar(props: SidebarProps) {
         slugs={OPINIONS_SLUGS}
         sections={effectiveSections()}
         render={OPINIONS_RENDER}
+        jobId={props.jobId}
         onRetry={props.onRetry}
       />
     </aside>

@@ -7,33 +7,29 @@ afterEach(() => {
 });
 
 describe("<CachedBadge />", () => {
-  it("renders the badge when cached=true", () => {
-    render(() => <CachedBadge cached={true} />);
-    const badge = screen.queryByTestId("cached-badge");
-    expect(badge).not.toBeNull();
-    expect(badge?.textContent?.toLowerCase()).toContain("cached");
-  });
-
-  it("renders nothing when cached=false", () => {
-    render(() => <CachedBadge cached={false} />);
+  it("renders nothing when cachedAt is null", () => {
+    render(() => <CachedBadge cachedAt={null} />);
     expect(screen.queryByTestId("cached-badge")).toBeNull();
   });
 
-  it("renders without a relative timestamp when cachedAt is missing", () => {
-    render(() => <CachedBadge cached={true} cachedAt={null} />);
+  it("renders the badge with no timestamp when cachedAt is a recent ISO string", () => {
+    // A cachedAt less than 1 minute old should render the badge but show no "Nm ago" marker.
+    const justNow = new Date(Date.now() - 5_000).toISOString();
+    render(() => <CachedBadge cachedAt={justNow} />);
     const badge = screen.getByTestId("cached-badge");
-    expect(badge.textContent?.toLowerCase()).not.toMatch(/\d+\s*(m|h|d)\s*ago/i);
+    expect(badge.textContent?.toLowerCase()).toContain("cached");
+    expect(badge.textContent?.toLowerCase()).toMatch(/just now/);
   });
 
-  it("includes a relative timestamp when cachedAt is recent", () => {
+  it("includes a relative timestamp when cachedAt is a few hours ago", () => {
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    render(() => <CachedBadge cached={true} cachedAt={twoHoursAgo} />);
+    render(() => <CachedBadge cachedAt={twoHoursAgo} />);
     const badge = screen.getByTestId("cached-badge");
     expect(badge.textContent).toMatch(/2h ago/);
   });
 
-  it("ignores malformed cachedAt", () => {
-    render(() => <CachedBadge cached={true} cachedAt="not-a-date" />);
+  it("renders the badge without a relative timestamp when cachedAt is malformed", () => {
+    render(() => <CachedBadge cachedAt="not-a-date" />);
     const badge = screen.getByTestId("cached-badge");
     expect(badge.textContent?.toLowerCase()).toContain("cached");
     expect(badge.textContent?.toLowerCase()).not.toMatch(/ago/);

@@ -2,8 +2,7 @@ import { Show } from "solid-js";
 import { Badge } from "@opennotes/ui/components/ui/badge";
 
 export interface CachedBadgeProps {
-  cached: boolean;
-  cachedAt?: string | null;
+  cachedAt: string | null;
 }
 
 function formatRelative(iso: string | null | undefined): string | null {
@@ -23,7 +22,7 @@ function formatRelative(iso: string | null | undefined): string | null {
 
 export default function CachedBadge(props: CachedBadgeProps) {
   return (
-    <Show when={props.cached}>
+    <Show when={props.cachedAt !== null && props.cachedAt !== undefined}>
       <Badge
         variant="muted"
         data-testid="cached-badge"

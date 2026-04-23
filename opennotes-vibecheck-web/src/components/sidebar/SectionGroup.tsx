@@ -1,6 +1,7 @@
 import { For, Match, Show, Switch, createMemo, type JSX } from "solid-js";
 import type { SectionSlot, SectionSlug } from "~/lib/api-client.server";
 import { SKELETONS } from "./skeletons";
+import RetryButton from "./RetryButton";
 
 export type SlugToSlots = Partial<Record<SectionSlug, SectionSlot>>;
 
@@ -9,6 +10,7 @@ export interface SectionGroupProps {
   slugs: SectionSlug[];
   sections: SlugToSlots;
   render: Partial<Record<SectionSlug, (data: unknown) => JSX.Element>>;
+  jobId?: string;
   onRetry?: (slug: SectionSlug) => void;
 }
 
@@ -107,14 +109,28 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                   <Match when={slot().state === "failed"}>
                     <div class="flex flex-col gap-1 text-xs text-muted-foreground">
                       <p>Couldn't run this analysis.</p>
-                      <button
-                        type="button"
-                        data-testid={`retry-${slug}`}
-                        onClick={() => props.onRetry?.(slug)}
-                        class="self-start text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+                      <Show
+                        when={props.jobId}
+                        fallback={
+                          <button
+                            type="button"
+                            data-testid={`retry-${slug}`}
+                            onClick={() => props.onRetry?.(slug)}
+                            class="self-start text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+                          >
+                            Retry
+                          </button>
+                        }
                       >
-                        Retry
-                      </button>
+                        {(jobId) => (
+                          <RetryButton
+                            jobId={jobId()}
+                            slug={slug}
+                            slotState={slot().state}
+                            onSuccess={() => props.onRetry?.(slug)}
+                          />
+                        )}
+                      </Show>
                     </div>
                   </Match>
                 </Switch>
