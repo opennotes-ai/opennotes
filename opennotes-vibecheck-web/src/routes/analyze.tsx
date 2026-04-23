@@ -54,12 +54,19 @@ export default function AnalyzePage() {
 
   const jobState = () => polling.state();
   const jobStatus = () => jobState()?.status;
-  const jobUrl = () => jobState()?.url ?? pendingUrl();
+  const jobUrl = createMemo(() => jobState()?.url ?? pendingUrl());
 
   const frameCompat = createAsync(async () => {
     const url = jobUrl();
     if (!url) return null;
     return getFrameCompat(url);
+  });
+
+  const compat = createMemo(() => {
+    const fc = frameCompat();
+    return fc && fc.ok
+      ? fc.frameCompat
+      : { canIframe: true, blockingHeader: null, screenshotUrl: null };
   });
 
   const transportError = () => polling.error();
@@ -166,24 +173,11 @@ export default function AnalyzePage() {
                           </div>
                         }
                       >
-                        {(() => {
-                          const fc = frameCompat();
-                          const compat =
-                            fc && fc.ok
-                              ? fc.frameCompat
-                              : {
-                                  canIframe: true,
-                                  blockingHeader: null,
-                                  screenshotUrl: null,
-                                };
-                          return (
-                            <PageFrame
-                              url={url()}
-                              canIframe={compat.canIframe}
-                              screenshotUrl={compat.screenshotUrl}
-                            />
-                          );
-                        })()}
+                        <PageFrame
+                          url={url()}
+                          canIframe={compat().canIframe}
+                          screenshotUrl={compat().screenshotUrl}
+                        />
                       </Suspense>
                     )}
                   </Show>
