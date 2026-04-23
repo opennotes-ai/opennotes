@@ -179,6 +179,36 @@ class TestHarmfulContentMatchSchema:
             categories={"hate": False},
             scores={"hate": 0.5},
             flagged_categories=[],
+            source="openai",
         )
         assert match.utterance_id == "utt_1"
         assert match.max_score == 0.5
+
+
+class TestOpenAIProducerSourceField:
+    async def test_openai_producer_emits_match_with_source_openai(self):
+        from unittest.mock import AsyncMock
+
+        from src.analyses.safety.moderation import check_content_moderation_bulk
+        from src.services.openai_moderation import ModerationResult
+
+        mock_service = AsyncMock()
+        mock_service.moderate_texts = AsyncMock(
+            return_value=[
+                ModerationResult(
+                    flagged=True,
+                    categories={"violence": True},
+                    scores={"violence": 0.95},
+                    max_score=0.95,
+                    flagged_categories=["violence"],
+                )
+            ]
+        )
+        utterance = make_utterance(utterance_id="utt_src_test", text="harmful text")
+        results = await check_content_moderation_bulk([utterance], mock_service)
+
+        assert len(results) == 1
+        match = results[0]
+        assert match is not None
+        assert isinstance(match, HarmfulContentMatch)
+        assert match.source == "openai"

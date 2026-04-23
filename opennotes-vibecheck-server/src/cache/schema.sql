@@ -258,11 +258,52 @@ BEGIN
     DELETE FROM public.vibecheck_analyses
     WHERE expires_at < now();
 
+    DELETE FROM public.vibecheck_web_risk_lookups WHERE expires_at < now();
+
     RETURN purged;
 END;
 $$;
 ALTER FUNCTION vibecheck_purge_terminal_jobs() OWNER TO postgres;
 REVOKE ALL ON FUNCTION vibecheck_purge_terminal_jobs() FROM PUBLIC, anon, authenticated;
+
+-- =========================================================================
+-- vibecheck_web_risk_lookups (TASK-1474.03 — Google Web Risk cache)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS vibecheck_web_risk_lookups (
+    url TEXT PRIMARY KEY,
+    finding_payload JSONB NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS vibecheck_web_risk_lookups_expires_at_idx
+    ON vibecheck_web_risk_lookups (expires_at);
+ALTER TABLE vibecheck_web_risk_lookups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vibecheck_web_risk_lookups FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON vibecheck_web_risk_lookups FROM anon, authenticated;
+
+-- =========================================================================
+-- Extend vibecheck_jobs_error_code_check to include 'unsafe_url'
+-- (TASK-1474.03)
+-- =========================================================================
+-- Use ALTER ... DROP CONSTRAINT IF EXISTS + ADD inline instead of a DO-block
+-- information_schema probe: the probe has a TOCTOU window where a concurrent
+-- schema apply can drop the constraint between the EXISTS check and the
+-- subsequent DROP, producing a "constraint does not exist" error (codex P2.5).
+-- DROP ... IF EXISTS collapses both steps into one atomic, idempotent call.
+ALTER TABLE vibecheck_jobs
+  DROP CONSTRAINT IF EXISTS vibecheck_jobs_error_code_check;
+
+ALTER TABLE vibecheck_jobs
+  ADD CONSTRAINT vibecheck_jobs_error_code_check
+  CHECK (
+    error_code IS NULL
+    OR error_code IN (
+      'invalid_url', 'unsupported_site', 'upstream_error',
+      'extraction_failed', 'timeout', 'rate_limited', 'internal',
+      'unsafe_url'
+    )
+  );
 
 -- =========================================================================
 -- pg_cron schedules (idempotent)

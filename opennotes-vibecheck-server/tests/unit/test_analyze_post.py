@@ -78,6 +78,13 @@ CREATE TABLE vibecheck_scrapes (
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
 );
+
+CREATE TABLE vibecheck_web_risk_lookups (
+    url TEXT PRIMARY KEY,
+    finding_payload JSONB NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
 """
 
 
@@ -86,6 +93,16 @@ def _restore_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     # conftest.py's autouse `_stub_dns` pins every lookup to 8.8.8.8, which
     # testcontainers can't use to reach the Postgres it just booted.
     monkeypatch.setattr(socket, "getaddrinfo", _REAL_GETADDRINFO)
+
+
+@pytest.fixture(autouse=True)
+def _mock_check_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import AsyncMock as _AsyncMock
+    monkeypatch.setattr(
+        analyze_route,
+        "check_urls",
+        _AsyncMock(return_value={}),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -102,6 +119,7 @@ async def db_pool(_postgres_container: PostgresContainer) -> AsyncIterator[Any]:
     assert pool is not None
     async with pool.acquire() as conn:
         await conn.execute(
+            "DROP TABLE IF EXISTS vibecheck_web_risk_lookups CASCADE;"
             "DROP TABLE IF EXISTS vibecheck_scrapes CASCADE;"
             "DROP TABLE IF EXISTS vibecheck_analyses CASCADE;"
             "DROP TABLE IF EXISTS vibecheck_jobs CASCADE;"

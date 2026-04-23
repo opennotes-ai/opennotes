@@ -558,6 +558,9 @@ def _minimal_slot_payloads() -> dict[SectionSlug, dict[str, Any]]:
     # `SidebarPayload`.
     return {
         SectionSlug.SAFETY_MODERATION: {"harmful_content_matches": []},
+        SectionSlug.SAFETY_WEB_RISK: {"findings": []},
+        SectionSlug.SAFETY_IMAGE_MODERATION: {"matches": []},
+        SectionSlug.SAFETY_VIDEO_MODERATION: {"matches": []},
         SectionSlug.TONE_DYNAMICS_FLASHPOINT: {"flashpoint_matches": []},
         SectionSlug.TONE_DYNAMICS_SCD: {
             "scd": {

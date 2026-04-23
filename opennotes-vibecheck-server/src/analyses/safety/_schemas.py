@@ -7,14 +7,68 @@ these sub-schemas into the final `SidebarPayload`.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
 class HarmfulContentMatch(BaseModel):
-    """A single flagged utterance from the OpenAI moderation API."""
+    """A single flagged utterance from a content moderation API."""
 
     utterance_id: str
     max_score: float
     categories: dict[str, bool]
     scores: dict[str, float]
     flagged_categories: list[str] = Field(default_factory=list)
+    source: Literal["openai", "gcp"]
+
+
+class WebRiskFinding(BaseModel):
+    """A URL flagged by GCP Web Risk."""
+
+    url: str
+    threat_types: list[
+        Literal[
+            "MALWARE",
+            "SOCIAL_ENGINEERING",
+            "UNWANTED_SOFTWARE",
+            "POTENTIALLY_HARMFUL_APPLICATION",
+        ]
+    ]
+
+
+class FrameFinding(BaseModel):
+    """SafeSearch scores for a single video frame."""
+
+    frame_offset_ms: int
+    adult: float
+    violence: float
+    racy: float
+    medical: float
+    spoof: float
+    flagged: bool
+    max_likelihood: float
+
+
+class ImageModerationMatch(BaseModel):
+    """GCP Vision SafeSearch result for a single image."""
+
+    utterance_id: str
+    image_url: str
+    adult: float
+    violence: float
+    racy: float
+    medical: float
+    spoof: float
+    flagged: bool
+    max_likelihood: float
+
+
+class VideoModerationMatch(BaseModel):
+    """GCP Video Intelligence SafeSearch result for a single video."""
+
+    utterance_id: str
+    video_url: str
+    frame_findings: list[FrameFinding]
+    flagged: bool
+    max_likelihood: float

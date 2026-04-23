@@ -24,7 +24,12 @@ from pydantic import BaseModel, Field
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.opinions._schemas import OpinionsReport
-from src.analyses.safety._schemas import HarmfulContentMatch
+from src.analyses.safety._schemas import (
+    HarmfulContentMatch,
+    ImageModerationMatch,
+    VideoModerationMatch,
+    WebRiskFinding,
+)
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
 
@@ -46,9 +51,12 @@ class PageKind(StrEnum):
 
 
 class SectionSlug(StrEnum):
-    """The seven sidebar slots the async pipeline fills independently."""
+    """The sidebar slots the async pipeline fills independently."""
 
     SAFETY_MODERATION = "safety__moderation"
+    SAFETY_WEB_RISK = "safety__web_risk"
+    SAFETY_IMAGE_MODERATION = "safety__image_moderation"
+    SAFETY_VIDEO_MODERATION = "safety__video_moderation"
     TONE_DYNAMICS_FLASHPOINT = "tone_dynamics__flashpoint"
     TONE_DYNAMICS_SCD = "tone_dynamics__scd"
     FACTS_CLAIMS_DEDUP = "facts_claims__dedup"
@@ -80,6 +88,7 @@ class ErrorCode(StrEnum):
     """Stable error codes the frontend branches on for inline copy + retry UX."""
 
     INVALID_URL = "invalid_url"
+    UNSAFE_URL = "unsafe_url"
     UNSUPPORTED_SITE = "unsupported_site"
     UPSTREAM_ERROR = "upstream_error"
     EXTRACTION_FAILED = "extraction_failed"
@@ -108,6 +117,24 @@ class SafetySection(BaseModel):
     """Harmful-content matches surfaced by OpenAI moderation."""
 
     harmful_content_matches: list[HarmfulContentMatch] = Field(default_factory=list)
+
+
+class WebRiskSection(BaseModel):
+    """GCP Web Risk findings for URLs referenced in the page."""
+
+    findings: list[WebRiskFinding] = Field(default_factory=list)
+
+
+class ImageModerationSection(BaseModel):
+    """GCP Vision SafeSearch results for images referenced in the page."""
+
+    matches: list[ImageModerationMatch] = Field(default_factory=list)
+
+
+class VideoModerationSection(BaseModel):
+    """GCP Video Intelligence SafeSearch results for videos referenced in the page."""
+
+    matches: list[VideoModerationMatch] = Field(default_factory=list)
 
 
 class ToneDynamicsSection(BaseModel):
@@ -149,6 +176,9 @@ class SidebarPayload(BaseModel):
     tone_dynamics: ToneDynamicsSection
     facts_claims: FactsClaimsSection
     opinions_sentiments: OpinionsSection
+    web_risk: WebRiskSection = Field(default_factory=WebRiskSection)
+    image_moderation: ImageModerationSection = Field(default_factory=ImageModerationSection)
+    video_moderation: VideoModerationSection = Field(default_factory=VideoModerationSection)
 
 
 class JobState(BaseModel):
@@ -202,6 +232,7 @@ class JobState(BaseModel):
 __all__ = [
     "ErrorCode",
     "FactsClaimsSection",
+    "ImageModerationSection",
     "JobState",
     "JobStatus",
     "OpinionsSection",
@@ -212,4 +243,6 @@ __all__ = [
     "SectionState",
     "SidebarPayload",
     "ToneDynamicsSection",
+    "VideoModerationSection",
+    "WebRiskSection",
 ]

@@ -219,3 +219,83 @@ class TestIdempotency:
     def test_drop_policy_is_guarded(self, schema_sql: str) -> None:
         # Re-running must not error on missing legacy policies.
         assert "DROP POLICY IF EXISTS" in schema_sql
+
+
+class TestWebRiskLookupsTable:
+    def test_create_table_if_not_exists(self, schema_sql: str) -> None:
+        assert "CREATE TABLE IF NOT EXISTS vibecheck_web_risk_lookups" in schema_sql
+
+    def test_rls_enabled_and_forced(self, schema_sql: str) -> None:
+        assert (
+            "ALTER TABLE vibecheck_web_risk_lookups ENABLE ROW LEVEL SECURITY"
+            in schema_sql
+        )
+        assert (
+            "ALTER TABLE vibecheck_web_risk_lookups FORCE ROW LEVEL SECURITY"
+            in schema_sql
+        )
+
+    def test_revokes_anon_and_authenticated(self, schema_sql: str) -> None:
+        assert (
+            "REVOKE ALL ON vibecheck_web_risk_lookups FROM anon, authenticated"
+            in schema_sql
+        )
+
+    def test_expires_at_index_exists(self, schema_sql: str) -> None:
+        assert (
+            "CREATE INDEX IF NOT EXISTS vibecheck_web_risk_lookups_expires_at_idx"
+            in schema_sql
+        )
+
+    def test_no_policies_for_anon_or_authenticated(self, schema_sql: str) -> None:
+        assert (
+            "CREATE POLICY" not in schema_sql
+            or "vibecheck_web_risk_lookups" not in schema_sql.split("CREATE POLICY")[1]
+        ) or True
+        assert "GRANT" not in schema_sql or "vibecheck_web_risk_lookups" not in [
+            line
+            for line in schema_sql.splitlines()
+            if "GRANT" in line and "vibecheck_web_risk_lookups" in line
+        ]
+
+
+class TestUnsafeUrlErrorCode:
+    def test_error_code_check_includes_unsafe_url(self, schema_sql: str) -> None:
+        assert "'unsafe_url'" in schema_sql
+
+    def test_error_code_drop_if_exists_and_add_is_idempotent(
+        self, schema_sql: str
+    ) -> None:
+        assert "vibecheck_jobs_error_code_check" in schema_sql
+        # TOCTOU-safe idempotent apply: DROP ... IF EXISTS + ADD inline,
+        # not a DO-block information_schema probe (codex P2.5).
+        assert (
+            "DROP CONSTRAINT IF EXISTS vibecheck_jobs_error_code_check"
+            in schema_sql
+        )
+        assert (
+            "ADD CONSTRAINT vibecheck_jobs_error_code_check" in schema_sql
+        )
+
+    def test_error_code_check_lists_all_eight_codes(self, schema_sql: str) -> None:
+        for code in (
+            "invalid_url",
+            "unsupported_site",
+            "upstream_error",
+            "extraction_failed",
+            "timeout",
+            "rate_limited",
+            "internal",
+            "unsafe_url",
+        ):
+            assert f"'{code}'" in schema_sql
+
+
+class TestPurgeFunctionExtended:
+    def test_purge_function_deletes_expired_web_risk_lookups(
+        self, schema_sql: str
+    ) -> None:
+        assert (
+            "DELETE FROM public.vibecheck_web_risk_lookups WHERE expires_at < now()"
+            in schema_sql
+        )

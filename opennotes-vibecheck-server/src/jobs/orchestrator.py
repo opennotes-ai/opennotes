@@ -44,6 +44,11 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
+from src.analyses.claims.facts_agent import run_facts_claims_known_misinfo
+from src.analyses.safety.image_moderation_worker import run_image_moderation
+from src.analyses.safety.moderation_slot import run_safety_moderation
+from src.analyses.safety.video_moderation_worker import run_video_moderation
+from src.analyses.safety.web_risk_worker import run_web_risk
 from src.analyses.schemas import ErrorCode, SectionSlot, SectionSlug, SectionState
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings
@@ -370,11 +375,9 @@ async def _run_section(
 ) -> None:
     """Run a single analysis slot and persist its output.
 
-    TASK-1473.13 will plumb the real analysis services (moderation,
-    flashpoint, SCD, dedup, known-misinfo, sentiment, subjective). This
-    ticket lands the orchestrator wiring; sections emit an empty-success
-    slot so the pipeline completes and the section-retry ticket can
-    deepen each handler without touching orchestration code.
+    Slugs registered in `_SECTION_HANDLERS` invoke the real analyzer and
+    persist its returned payload. Unregistered slugs fall back to the
+    TASK-1473.13 empty-success stub until their handler lands.
 
     A slot failure is NOT a job failure: we call `mark_slot_failed` and
     return normally. `maybe_finalize_job` notices the failed slot later
@@ -382,29 +385,55 @@ async def _run_section(
     when every slot is done.
     """
     slot_attempt = uuid4()
+    handler = _SECTION_HANDLERS.get(slug)
+    slot_state = SectionState.DONE
+    slot_error: str | None = None
+    if handler is not None:
+        try:
+            data = await handler(pool, job_id, task_attempt, payload, settings)
+        except Exception as exc:
+            logger.exception(
+                "section %s handler failed for job %s: %s",
+                slug.value, job_id, exc,
+            )
+            slot_state = SectionState.FAILED
+            slot_error = str(exc)
+            data = {}
+    else:
+        data = _empty_section_data(slug)
+
+    # write_slot (not mark_slot_failed) works for the terminal write here
+    # because its CAS only checks job.attempt_id — no pre-existing slot row
+    # required. mark_slot_failed requires slot.state='running' in the DB,
+    # which _run_section never sets (it writes the terminal state directly).
     slot = SectionSlot(
-        state=SectionState.DONE,
+        state=slot_state,
         attempt_id=slot_attempt,
-        data=_empty_section_data(slug),
+        data=data if slot_state == SectionState.DONE else None,
+        error=slot_error,
     )
     try:
         await write_slot(pool, job_id, task_attempt, slug, slot)
     except Exception as exc:
         logger.exception(
-            "section %s failed for job %s: %s", slug.value, job_id, exc
+            "section %s persist failed for job %s: %s", slug.value, job_id, exc
         )
-        await mark_slot_failed(
-            pool,
-            job_id,
-            slug,
-            slot_attempt,
-            error=str(exc),
-            expected_task_attempt=task_attempt,
-        )
+
+
+_SECTION_HANDLERS: dict[SectionSlug, Any] = {
+    SectionSlug.SAFETY_MODERATION: run_safety_moderation,
+    SectionSlug.SAFETY_WEB_RISK: run_web_risk,
+    SectionSlug.SAFETY_IMAGE_MODERATION: run_image_moderation,
+    SectionSlug.SAFETY_VIDEO_MODERATION: run_video_moderation,
+    SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: run_facts_claims_known_misinfo,
+}
 
 
 _EMPTY_SECTION_DATA: dict[SectionSlug, dict[str, Any]] = {
     SectionSlug.SAFETY_MODERATION: {"harmful_content_matches": []},
+    SectionSlug.SAFETY_WEB_RISK: {"findings": []},
+    SectionSlug.SAFETY_IMAGE_MODERATION: {"matches": []},
+    SectionSlug.SAFETY_VIDEO_MODERATION: {"matches": []},
     SectionSlug.TONE_DYNAMICS_FLASHPOINT: {"flashpoint_matches": []},
     SectionSlug.TONE_DYNAMICS_SCD: {
         "scd": {

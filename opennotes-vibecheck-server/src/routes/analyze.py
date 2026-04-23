@@ -36,21 +36,31 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from src.analyses.claims._claims_schemas import ClaimsReport
+from src.analyses.opinions._schemas import OpinionsReport, SentimentStatsReport
+from src.analyses.safety.web_risk import WebRiskTransientError, check_urls
 from src.analyses.schemas import (
+    FactsClaimsSection,
     JobState,
     JobStatus,
+    OpinionsSection,
     PageKind,
+    SafetySection,
     SectionSlot,
     SectionSlug,
     SectionState,
     SidebarPayload,
+    ToneDynamicsSection,
+    WebRiskSection,
 )
+from src.analyses.tone._scd_schemas import SCDReport
 from src.cache.scrape_cache import canonical_cache_key
 from src.config import get_settings
 from src.jobs.enqueue import enqueue_job, enqueue_section_retry
@@ -227,6 +237,81 @@ async def _insert_cached_done_job(
     return job_id
 
 
+def _empty_safety_section() -> SafetySection:
+    return SafetySection()
+
+
+def _empty_tone_dynamics_section() -> ToneDynamicsSection:
+    return ToneDynamicsSection(
+        scd=SCDReport(summary="", insufficient_conversation=True),
+        flashpoint_matches=[],
+    )
+
+
+def _empty_facts_claims_section() -> FactsClaimsSection:
+    return FactsClaimsSection(
+        claims_report=ClaimsReport(deduped_claims=[], total_claims=0, total_unique=0),
+        known_misinformation=[],
+    )
+
+
+def _empty_opinions_section() -> OpinionsSection:
+    return OpinionsSection(
+        opinions_report=OpinionsReport(
+            sentiment_stats=SentimentStatsReport(
+                per_utterance=[],
+                positive_pct=0.0,
+                negative_pct=0.0,
+                neutral_pct=0.0,
+                mean_valence=0.0,
+            ),
+            subjective_claims=[],
+        )
+    )
+
+
+async def _insert_unsafe_url_job(
+    conn: Any,
+    *,
+    url: str,
+    normalized_url: str,
+    host: str,
+    finding: Any,
+) -> UUID:
+    job_id = uuid4()
+    sidebar = SidebarPayload(
+        source_url=url,
+        scraped_at=datetime.now(UTC),
+        safety=_empty_safety_section(),
+        tone_dynamics=_empty_tone_dynamics_section(),
+        facts_claims=_empty_facts_claims_section(),
+        opinions_sentiments=_empty_opinions_section(),
+        web_risk=WebRiskSection(findings=[finding]),
+    )
+    await conn.execute(
+        """
+        INSERT INTO vibecheck_jobs (
+            job_id, url, normalized_url, host, status, attempt_id,
+            error_code, error_message, sections, sidebar_payload,
+            cached, created_at, updated_at, finished_at
+        )
+        VALUES (
+            $1, $2, $3, $4, 'failed', $5,
+            'unsafe_url', $6, '{}'::jsonb, $7::jsonb,
+            false, now(), now(), now()
+        )
+        """,
+        job_id,
+        url,
+        normalized_url,
+        host,
+        uuid4(),
+        f"page URL flagged by Web Risk: {', '.join(finding.threat_types)}",
+        json.dumps(sidebar.model_dump(mode="json")),
+    )
+    return job_id
+
+
 async def _insert_pending_job(
     conn: Any,
     *,
@@ -359,7 +444,35 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
     host = _host_of(normalized_url)
     pool = _get_db_pool(request)
 
-    # 2. Locked DB transaction: cache-check -> dedup-check -> INSERT pending.
+    # 2. Web Risk page-URL gate.
+    async with httpx.AsyncClient(timeout=10.0) as hx:
+        try:
+            gate_findings = await check_urls(
+                [normalized_url],
+                pool=pool,
+                httpx_client=hx,
+                ttl_hours=settings.WEB_RISK_CACHE_TTL_HOURS,
+            )
+        except WebRiskTransientError:
+            return _error_response(
+                503,
+                "rate_limited",
+                "web risk scan temporarily unavailable",
+                headers={"Retry-After": "5"},
+            )
+    page_finding = gate_findings.get(normalized_url)
+    if page_finding is not None and page_finding.threat_types:
+        async with pool.acquire() as conn:
+            job_id = await _insert_unsafe_url_job(
+                conn,
+                url=body.url,
+                normalized_url=normalized_url,
+                host=host,
+                finding=page_finding,
+            )
+        return AnalyzeResponse(job_id=job_id, status=JobStatus.FAILED, cached=False)
+
+    # 3. Locked DB transaction: cache-check -> dedup-check -> INSERT pending.
     async def run_locked() -> tuple[AnalyzeResponse | None, UUID | None, bool]:
         """Returns (response_or_None, attempt_to_enqueue, lock_acquired).
 

@@ -32,6 +32,13 @@ COPY --from=app-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/pyth
 COPY --from=app-deps /usr/local/bin /usr/local/bin
 COPY --from=app-deps /app/src /app/src
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system "yt-dlp==2026.3.17"
+
 ARG VCS_REF=""
 ARG BUILD_DATE=""
 ARG VERSION=""
