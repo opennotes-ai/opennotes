@@ -31,7 +31,6 @@ proceed from markdown alone.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
@@ -44,6 +43,7 @@ from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings, get_settings
 from src.firecrawl_client import FirecrawlClient, ScrapeResult
 from src.services.gemini_agent import build_agent
+from src.utils.html_sanitize import strip_noise
 
 from .schema import UtterancesPayload
 
@@ -156,17 +156,9 @@ async def extract_utterances(
     return payload
 
 
-_SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE | re.DOTALL)
-_STYLE_RE = re.compile(r"<style\b[^>]*>.*?</style\s*>", re.IGNORECASE | re.DOTALL)
-_LINK_RE = re.compile(r"<link\b[^>]*/?>", re.IGNORECASE)
-_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-
-
 def _sanitize_html(html: str) -> str:
-    cleaned = _SCRIPT_RE.sub("", html)
-    cleaned = _STYLE_RE.sub("", cleaned)
-    cleaned = _LINK_RE.sub("", cleaned)
-    return _COMMENT_RE.sub("", cleaned)
+    cleaned = strip_noise(html)
+    return cleaned or ""
 
 
 def _get_html_impl(deps: ExtractorDeps) -> str:

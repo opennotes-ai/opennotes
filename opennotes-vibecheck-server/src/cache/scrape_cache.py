@@ -36,7 +36,6 @@ Race / orphan notes:
 from __future__ import annotations
 
 import hashlib
-import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
@@ -88,10 +87,7 @@ _SELECTED_COLUMNS = (
     "screenshot_storage_key, scraped_at, expires_at"
 )
 
-_SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE | re.DOTALL)
-_STYLE_RE = re.compile(r"<style\b[^>]*>.*?</style\s*>", re.IGNORECASE | re.DOTALL)
-_LINK_RE = re.compile(r"<link\b[^>]*/?>", re.IGNORECASE)
-_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+from src.utils.html_sanitize import strip_noise
 
 
 class CachedScrape(ScrapeResult):
@@ -110,12 +106,7 @@ class CachedScrape(ScrapeResult):
 
 
 def _sanitize_html(html: str | None) -> str | None:
-    if html is None:
-        return None
-    cleaned = _SCRIPT_RE.sub("", html)
-    cleaned = _STYLE_RE.sub("", cleaned)
-    cleaned = _LINK_RE.sub("", cleaned)
-    return _COMMENT_RE.sub("", cleaned)
+    return strip_noise(html)
 
 
 def _storage_key_for(url: str) -> str:

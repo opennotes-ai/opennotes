@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -692,7 +693,9 @@ class TestCanonicalCacheKey:
     def test_lowercases_scheme_and_host(self) -> None:
         key = canonical_cache_key("HTTPS://Example.COM/path")
 
-        assert key.startswith("https://example.com")
+        parsed = urlparse(key)
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "example.com"
 
     def test_drops_fragment(self) -> None:
         key = canonical_cache_key("https://example.com/a#frag")
