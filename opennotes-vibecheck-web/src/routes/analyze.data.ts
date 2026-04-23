@@ -1,5 +1,5 @@
 import { action, query, redirect } from "@solidjs/router";
-import type { SectionSlug } from "~/lib/api-client.server";
+import type { JobState, SectionSlug } from "~/lib/api-client.server";
 
 interface FrameCompatResponse {
   can_iframe: boolean;
@@ -133,6 +133,15 @@ export const analyzeAction = action(async (formData: FormData) => {
   "use server";
   await resolveAnalyzeRedirect(formData);
 }, "vibecheck-analyze");
+
+export const pollJobState = query(
+  async (jobId: string): Promise<JobState> => {
+    "use server";
+    const { pollJob } = await import("~/lib/api-client.server");
+    return pollJob(jobId);
+  },
+  "vibecheck-poll-job",
+);
 
 export const retrySectionAction = action(
   async (formData: FormData) => {

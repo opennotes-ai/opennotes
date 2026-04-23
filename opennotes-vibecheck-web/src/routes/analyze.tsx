@@ -1,159 +1,13 @@
-import {
-  Show,
-  Suspense,
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  type Accessor,
-} from "solid-js";
-import { useSearchParams, A, createAsync, query } from "@solidjs/router";
+import { Show, Suspense, createMemo } from "solid-js";
+import { useSearchParams, A, createAsync } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import CachedBadge from "~/components/CachedBadge";
 import JobFailureCard from "~/components/JobFailureCard";
 import PageFrame from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
-import type {
-  ErrorCode,
-  JobState,
-  SectionSlug,
-} from "~/lib/api-client.server";
+import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
+import { createPollingResource } from "~/lib/polling";
 import { getFrameCompat } from "./analyze.data";
-
-// pollJob lives in api-client.server (Node-only Google auth deps). We wrap it
-// in a SolidStart server query so the client bundle gets a thin RPC proxy
-// instead of the full Google auth stack. This is the same lift pattern
-// analyze.data.ts uses for analyzeUrl/retrySection.
-//
-// The polling loop itself runs in the browser (setTimeout + reactive signals)
-// and mirrors createPollingResource from src/lib/polling.ts; we do not import
-// polling.ts directly because it statically pulls api-client.server into the
-// client bundle.
-const pollJobQuery = query(async (jobId: string): Promise<JobState> => {
-  "use server";
-  const { pollJob } = await import("~/lib/api-client.server");
-  return pollJob(jobId);
-}, "vibecheck-poll-job");
-
-const MIN_INTERVAL_MS = 500;
-const MAX_INTERVAL_MS = 5000;
-const DEFAULT_INTERVAL_MS = 1500;
-const MAX_CONSECUTIVE_ERRORS = 3;
-
-function clampInterval(nextPollMs: number | null | undefined): number {
-  if (typeof nextPollMs !== "number" || !Number.isFinite(nextPollMs)) {
-    return DEFAULT_INTERVAL_MS;
-  }
-  return Math.min(MAX_INTERVAL_MS, Math.max(MIN_INTERVAL_MS, nextPollMs));
-}
-
-function isTerminalStatus(status: JobState["status"] | undefined): boolean {
-  return status === "done" || status === "failed";
-}
-
-interface PollingHandle {
-  state: Accessor<JobState | null>;
-  error: Accessor<Error | null>;
-  refetch: () => void;
-}
-
-function createJobPolling(jobId: Accessor<string>): PollingHandle {
-  const [state, setState] = createSignal<JobState | null>(null);
-  const [error, setError] = createSignal<Error | null>(null);
-
-  let timerId: ReturnType<typeof setTimeout> | null = null;
-  let generation = 0;
-  let consecutiveErrors = 0;
-  let stopped = false;
-  let currentJobId: string | null = null;
-
-  const clearTimer = () => {
-    if (timerId !== null) {
-      clearTimeout(timerId);
-      timerId = null;
-    }
-  };
-
-  const tick = async (gen: number) => {
-    if (gen !== generation || stopped || currentJobId === null) return;
-    const idAtStart = currentJobId;
-    try {
-      const result = await pollJobQuery(idAtStart);
-      if (gen !== generation || stopped) return;
-      consecutiveErrors = 0;
-      setError(null);
-      setState(result);
-      if (isTerminalStatus(result.status)) {
-        stopped = true;
-        clearTimer();
-        return;
-      }
-      const interval = clampInterval(result.next_poll_ms);
-      clearTimer();
-      timerId = setTimeout(() => {
-        timerId = null;
-        void tick(gen);
-      }, interval);
-    } catch (err: unknown) {
-      if (gen !== generation || stopped) return;
-      const normalized = err instanceof Error ? err : new Error(String(err));
-      consecutiveErrors += 1;
-      console.error("analyze: poll failed", normalized);
-      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-        stopped = true;
-        clearTimer();
-        setError(normalized);
-        return;
-      }
-      const latest = state();
-      const interval = clampInterval(latest?.next_poll_ms);
-      clearTimer();
-      timerId = setTimeout(() => {
-        timerId = null;
-        void tick(gen);
-      }, interval);
-    }
-  };
-
-  const start = (id: string) => {
-    generation += 1;
-    consecutiveErrors = 0;
-    stopped = false;
-    currentJobId = id;
-    clearTimer();
-    setError(null);
-    setState(null);
-    const gen = generation;
-    void tick(gen);
-  };
-
-  createEffect(() => {
-    const id = jobId();
-    if (!id) {
-      generation += 1;
-      stopped = true;
-      currentJobId = null;
-      clearTimer();
-      return;
-    }
-    start(id);
-  });
-
-  onCleanup(() => {
-    generation += 1;
-    stopped = true;
-    currentJobId = null;
-    clearTimer();
-  });
-
-  const refetch = () => {
-    const id = currentJobId ?? jobId();
-    if (!id) return;
-    start(id);
-  };
-
-  return { state, error, refetch };
-}
 
 const ALL_ERROR_CODES: readonly ErrorCode[] = [
   "invalid_url",
@@ -188,7 +42,7 @@ export default function AnalyzePage() {
   const pendingHost = () =>
     typeof searchParams.host === "string" ? searchParams.host : "";
 
-  const polling = createJobPolling(jobId);
+  const polling = createPollingResource(jobId);
 
   const jobState = () => polling.state();
   const jobStatus = () => jobState()?.status;

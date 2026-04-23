@@ -4,11 +4,8 @@ import {
   onCleanup,
   type Accessor,
 } from "solid-js";
-import {
-  pollJob,
-  VibecheckApiError,
-  type JobState,
-} from "~/lib/api-client.server";
+import type { JobState } from "~/lib/api-client.server";
+import { pollJobState } from "~/routes/analyze.data";
 
 export interface PollingResource {
   state: Accessor<JobState | null>;
@@ -30,6 +27,12 @@ function clampInterval(nextPollMs: number | null | undefined): number {
 
 function isTerminalStatus(status: JobState["status"] | undefined): boolean {
   return status === "done" || status === "failed";
+}
+
+function is404Error(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const candidate = err as { statusCode?: unknown };
+  return candidate.statusCode === 404;
 }
 
 export function createPollingResource(
@@ -55,7 +58,7 @@ export function createPollingResource(
     if (gen !== generation || stopped || currentJobId === null) return;
     const idAtStart = currentJobId;
     try {
-      const result = await pollJob(idAtStart);
+      const result = await pollJobState(idAtStart);
       if (gen !== generation || stopped) return;
       consecutiveErrors = 0;
       setError(null);
@@ -75,10 +78,7 @@ export function createPollingResource(
       if (gen !== generation || stopped) return;
       const normalized =
         err instanceof Error ? err : new Error(String(err));
-      if (
-        err instanceof VibecheckApiError &&
-        err.statusCode === 404
-      ) {
+      if (is404Error(err)) {
         stopped = true;
         clearTimer();
         setError(normalized);
@@ -121,6 +121,8 @@ export function createPollingResource(
       stopped = true;
       currentJobId = null;
       clearTimer();
+      setState(null);
+      setError(null);
       return;
     }
     start(id);

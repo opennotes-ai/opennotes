@@ -1,5 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { cleanup, render, screen, fireEvent } from "@solidjs/testing-library";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
 import Sidebar from "./Sidebar";
 import type { SectionSlug, SidebarPayload } from "~/lib/api-client.server";
@@ -323,5 +325,250 @@ describe("Sidebar", () => {
     const html = container.innerHTML;
     expect(html).not.toMatch(/\bborder-l\b/);
     expect(html).not.toMatch(/\bborder-l-2\b/);
+  });
+});
+
+describe("Sidebar (done slots, per-slug reports)", () => {
+  function doneSections(): SlugToSlots {
+    return {
+      safety__moderation: {
+        state: "done",
+        attempt_id: "s-safety",
+        data: {
+          harmful_content_matches: [
+            {
+              utterance_id: "u-safety",
+              max_score: 0.91,
+              flagged_categories: ["harassment"],
+              scores: {},
+            },
+          ],
+        },
+      },
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "s-flash",
+        data: {
+          flashpoint_matches: [
+            {
+              utterance_id: "u-flash",
+              risk_level: "medium",
+              derailment_score: 55,
+              reasoning: "tone shifts sharply",
+            },
+          ],
+        },
+      },
+      tone_dynamics__scd: {
+        state: "done",
+        attempt_id: "s-scd",
+        data: {
+          scd: {
+            summary: "scd summary text",
+            tone_labels: ["curious"],
+            per_speaker_notes: { Alice: "opens with evidence" },
+            insufficient_conversation: false,
+          },
+        },
+      },
+      facts_claims__dedup: {
+        state: "done",
+        attempt_id: "s-dedup",
+        data: {
+          claims_report: {
+            deduped_claims: [
+              {
+                canonical_text: "canonical claim text",
+                occurrence_count: 3,
+                author_count: 2,
+                utterance_ids: ["u-1"],
+              },
+            ],
+            total_claims: 3,
+            total_unique: 1,
+          },
+        },
+      },
+      facts_claims__known_misinfo: {
+        state: "done",
+        attempt_id: "s-known",
+        data: {
+          known_misinformation: [
+            {
+              claim_text: "known-misinfo-claim",
+              textual_rating: "False",
+              publisher: "factcheckers",
+              review_url: "https://example.com/r",
+            },
+          ],
+        },
+      },
+      opinions_sentiments__sentiment: {
+        state: "done",
+        attempt_id: "s-sent",
+        data: {
+          sentiment_stats: {
+            per_utterance: [],
+            positive_pct: 40,
+            negative_pct: 10,
+            neutral_pct: 50,
+            mean_valence: 0.25,
+          },
+        },
+      },
+      opinions_sentiments__subjective: {
+        state: "done",
+        attempt_id: "s-subj",
+        data: {
+          subjective_claims: [
+            { claim_text: "subjective-claim-one", stance: "positive" },
+          ],
+        },
+      },
+    };
+  }
+
+  it("renders each slug's own report and none of its siblings' content", () => {
+    render(() => <Sidebar sections={doneSections()} />);
+
+    expect(
+      screen.getByTestId("report-safety__moderation"),
+    ).toBeDefined();
+    expect(
+      screen.getByTestId("report-tone_dynamics__flashpoint"),
+    ).toBeDefined();
+    expect(screen.getByTestId("report-tone_dynamics__scd")).toBeDefined();
+    expect(
+      screen.getByTestId("report-facts_claims__dedup"),
+    ).toBeDefined();
+    expect(
+      screen.getByTestId("report-facts_claims__known_misinfo"),
+    ).toBeDefined();
+    expect(
+      screen.getByTestId("report-opinions_sentiments__sentiment"),
+    ).toBeDefined();
+    expect(
+      screen.getByTestId("report-opinions_sentiments__subjective"),
+    ).toBeDefined();
+
+    const flashReport = screen.getByTestId(
+      "report-tone_dynamics__flashpoint",
+    );
+    expect(flashReport.textContent).not.toContain("scd summary text");
+    const scdReport = screen.getByTestId("report-tone_dynamics__scd");
+    expect(scdReport.textContent).not.toContain("tone shifts sharply");
+
+    const dedupReport = screen.getByTestId("report-facts_claims__dedup");
+    expect(dedupReport.textContent).not.toContain("known-misinfo-claim");
+    const knownReport = screen.getByTestId(
+      "report-facts_claims__known_misinfo",
+    );
+    expect(knownReport.textContent).not.toContain("canonical claim text");
+
+    const sentimentReport = screen.getByTestId(
+      "report-opinions_sentiments__sentiment",
+    );
+    expect(sentimentReport.textContent).not.toContain(
+      "subjective-claim-one",
+    );
+    const subjectiveReport = screen.getByTestId(
+      "report-opinions_sentiments__subjective",
+    );
+    expect(subjectiveReport.textContent).not.toContain(
+      "mean valence",
+    );
+  });
+
+  it("renders done slots without any left-stripe border classes", () => {
+    const { container } = render(() => <Sidebar sections={doneSections()} />);
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/\bborder-l\b/);
+    expect(html).not.toMatch(/\bborder-l-2\b/);
+  });
+
+  it("synthesizes identical report test ids when driven by payload only", () => {
+    const payload: SidebarPayload = {
+      source_url: "https://example.com/post",
+      page_title: "Example",
+      page_kind: "other",
+      scraped_at: "2026-04-22T00:00:00Z",
+      cached: false,
+      cached_at: null,
+      safety: {
+        harmful_content_matches: [
+          {
+            utterance_id: "u-p-safety",
+            max_score: 0.5,
+            flagged_categories: ["toxicity"],
+            categories: { toxicity: true },
+            scores: {},
+          },
+        ],
+      },
+      tone_dynamics: {
+        scd: {
+          summary: "payload summary",
+          tone_labels: [],
+          per_speaker_notes: {},
+          insufficient_conversation: false,
+        },
+        flashpoint_matches: [],
+      },
+      facts_claims: {
+        claims_report: {
+          deduped_claims: [],
+          total_claims: 0,
+          total_unique: 0,
+        },
+        known_misinformation: [],
+      },
+      opinions_sentiments: {
+        opinions_report: {
+          sentiment_stats: {
+            per_utterance: [],
+            positive_pct: 10,
+            negative_pct: 10,
+            neutral_pct: 80,
+            mean_valence: 0,
+          },
+          subjective_claims: [],
+        },
+      },
+    };
+    const { container } = render(() => <Sidebar payload={payload} />);
+    expect(
+      screen.getByTestId("report-safety__moderation"),
+    ).toBeDefined();
+    expect(
+      screen.getByTestId("report-tone_dynamics__flashpoint"),
+    ).toBeDefined();
+    expect(screen.getByTestId("report-tone_dynamics__scd")).toBeDefined();
+    expect(
+      screen.getByTestId("report-facts_claims__dedup"),
+    ).toBeDefined();
+    expect(
+      screen.getByTestId("report-facts_claims__known_misinfo"),
+    ).toBeDefined();
+    expect(
+      screen.getByTestId("report-opinions_sentiments__sentiment"),
+    ).toBeDefined();
+    expect(
+      screen.getByTestId("report-opinions_sentiments__subjective"),
+    ).toBeDefined();
+
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/\bborder-l\b/);
+    expect(html).not.toMatch(/\bborder-l-2\b/);
+  });
+});
+
+describe("app.css motion rules", () => {
+  it("defines .skeleton-pulse and .section-reveal keyframes", () => {
+    const appCssPath = resolve(process.cwd(), "src/app.css");
+    const appCss = readFileSync(appCssPath, "utf8");
+    expect(appCss).toMatch(/\.skeleton-pulse\b/);
+    expect(appCss).toMatch(/\.section-reveal\b/);
+    expect(appCss).toMatch(/@keyframes\s+skeleton-pulse-kf\b/);
+    expect(appCss).toMatch(/@keyframes\s+section-reveal-kf\b/);
   });
 });

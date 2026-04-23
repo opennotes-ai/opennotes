@@ -7,17 +7,19 @@ import type {
 } from "~/lib/api-client.server";
 import type { components } from "~/lib/generated-types";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
-import SafetySection from "./SafetySection";
-import ToneDynamicsSection from "./ToneDynamicsSection";
-import FactsClaimsSection from "./FactsClaimsSection";
-import OpinionsSection from "./OpinionsSection";
+import {
+  SafetyModerationReport,
+  FlashpointReport,
+  ScdReport,
+  ClaimsDedupReport,
+  KnownMisinfoReport,
+  SentimentReport,
+  SubjectiveReport,
+} from "./reports";
 
-type SafetyPayload = components["schemas"]["SafetySection"];
-type ToneDynamicsPayload = components["schemas"]["ToneDynamicsSection"];
-type FactsClaimsPayload = components["schemas"]["FactsClaimsSection"];
-type OpinionsPayload = components["schemas"]["OpinionsSection"];
-type SCDReport = components["schemas"]["SCDReport"];
+type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
 type FlashpointMatch = components["schemas"]["FlashpointMatch"];
+type SCDReport = components["schemas"]["SCDReport"];
 type FactCheckMatch = components["schemas"]["FactCheckMatch"];
 type SentimentStats = components["schemas"]["SentimentStatsReport"];
 type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
@@ -52,74 +54,12 @@ function doneSlot(attemptId: string, data: unknown): SectionSlot {
   };
 }
 
-function synthesizeSectionsFromPayload(
-  payload: SidebarPayload,
-): SlugToSlots {
-  const attemptId = "payload";
-  const flashpointData = {
-    flashpoint_matches: payload.tone_dynamics.flashpoint_matches ?? [],
-  };
-  const scdData = payload.tone_dynamics.scd;
-  const dedupData = {
-    claims_report: payload.facts_claims.claims_report,
-  };
-  const knownMisinfoData = {
-    known_misinformation: payload.facts_claims.known_misinformation ?? [],
-  };
-  const sentimentData = {
-    sentiment_stats: payload.opinions_sentiments.opinions_report.sentiment_stats,
-  };
-  const subjectiveData = {
-    subjective_claims:
-      payload.opinions_sentiments.opinions_report.subjective_claims,
-  };
-  return {
-    safety__moderation: doneSlot(attemptId, payload.safety),
-    tone_dynamics__flashpoint: doneSlot(attemptId, flashpointData),
-    tone_dynamics__scd: doneSlot(attemptId, scdData),
-    facts_claims__dedup: doneSlot(attemptId, dedupData),
-    facts_claims__known_misinfo: doneSlot(attemptId, knownMisinfoData),
-    opinions_sentiments__sentiment: doneSlot(attemptId, sentimentData),
-    opinions_sentiments__subjective: doneSlot(attemptId, subjectiveData),
-  };
-}
-
-function asRecord(data: unknown): Record<string, unknown> {
-  return (data ?? {}) as Record<string, unknown>;
-}
-
-function renderSafetyModeration(data: unknown): JSX.Element {
-  const safety = (data ?? { harmful_content_matches: [] }) as SafetyPayload;
-  return <SafetySection safety={safety} />;
-}
-
-function renderFlashpoint(data: unknown): JSX.Element {
-  const matches = (asRecord(data).flashpoint_matches ?? []) as FlashpointMatch[];
-  const toneDynamics: ToneDynamicsPayload = {
-    scd: {
-      summary: "",
-      tone_labels: [],
-      per_speaker_notes: {},
-      insufficient_conversation: true,
-    },
-    flashpoint_matches: matches,
-  };
-  return <ToneDynamicsSection toneDynamics={toneDynamics} />;
-}
-
-function renderScd(data: unknown): JSX.Element {
-  const scd = (data ?? {
-    summary: "",
-    tone_labels: [],
-    per_speaker_notes: {},
-    insufficient_conversation: true,
-  }) as SCDReport;
-  const toneDynamics: ToneDynamicsPayload = {
-    scd,
-    flashpoint_matches: [],
-  };
-  return <ToneDynamicsSection toneDynamics={toneDynamics} />;
-}
+const EMPTY_SCD: SCDReport = {
+  summary: "",
+  tone_labels: [],
+  per_speaker_notes: {},
+  insufficient_conversation: true,
+};
 
 const EMPTY_CLAIMS_REPORT: ClaimsReport = {
   deduped_claims: [],
@@ -135,65 +75,111 @@ const EMPTY_SENTIMENT_STATS: SentimentStats = {
   mean_valence: 0,
 };
 
-function renderClaimsDedup(data: unknown): JSX.Element {
-  const claimsReport = (asRecord(data).claims_report ?? EMPTY_CLAIMS_REPORT) as ClaimsReport;
-  const factsClaims: FactsClaimsPayload = {
-    claims_report: claimsReport,
-    known_misinformation: [],
+function synthesizeSectionsFromPayload(
+  payload: SidebarPayload,
+): SlugToSlots {
+  const attemptId = "payload";
+  const safetyData = {
+    harmful_content_matches:
+      payload.safety?.harmful_content_matches ?? [],
   };
-  return <FactsClaimsSection factsClaims={factsClaims} />;
+  const flashpointData = {
+    flashpoint_matches: payload.tone_dynamics?.flashpoint_matches ?? [],
+  };
+  const scdData = {
+    scd: payload.tone_dynamics?.scd ?? EMPTY_SCD,
+  };
+  const claimsDedupData = {
+    claims_report:
+      payload.facts_claims?.claims_report ?? EMPTY_CLAIMS_REPORT,
+  };
+  const knownMisinfoData = {
+    known_misinformation:
+      payload.facts_claims?.known_misinformation ?? [],
+  };
+  const sentimentData = {
+    sentiment_stats:
+      payload.opinions_sentiments?.opinions_report?.sentiment_stats ??
+      EMPTY_SENTIMENT_STATS,
+  };
+  const subjectiveData = {
+    subjective_claims:
+      payload.opinions_sentiments?.opinions_report?.subjective_claims ?? [],
+  };
+  return {
+    safety__moderation: doneSlot(attemptId, safetyData),
+    tone_dynamics__flashpoint: doneSlot(attemptId, flashpointData),
+    tone_dynamics__scd: doneSlot(attemptId, scdData),
+    facts_claims__dedup: doneSlot(attemptId, claimsDedupData),
+    facts_claims__known_misinfo: doneSlot(attemptId, knownMisinfoData),
+    opinions_sentiments__sentiment: doneSlot(attemptId, sentimentData),
+    opinions_sentiments__subjective: doneSlot(attemptId, subjectiveData),
+  };
 }
 
-function renderKnownMisinfo(data: unknown): JSX.Element {
-  const matches = (asRecord(data).known_misinformation ?? []) as FactCheckMatch[];
-  const factsClaims: FactsClaimsPayload = {
-    claims_report: EMPTY_CLAIMS_REPORT,
-    known_misinformation: matches,
-  };
-  return <FactsClaimsSection factsClaims={factsClaims} />;
+function asRecord(data: unknown): Record<string, unknown> {
+  return (data ?? {}) as Record<string, unknown>;
 }
 
-function renderSentiment(data: unknown): JSX.Element {
-  const stats = (asRecord(data).sentiment_stats ?? EMPTY_SENTIMENT_STATS) as SentimentStats;
-  const opinions: OpinionsPayload = {
-    opinions_report: {
-      sentiment_stats: stats,
-      subjective_claims: [],
-    },
-  };
-  return <OpinionsSection opinions={opinions} />;
+function extractHarmfulContentMatches(data: unknown): HarmfulContentMatch[] {
+  return (asRecord(data).harmful_content_matches ?? []) as HarmfulContentMatch[];
 }
 
-function renderSubjective(data: unknown): JSX.Element {
-  const claims = (asRecord(data).subjective_claims ?? []) as SubjectiveClaim[];
-  const opinions: OpinionsPayload = {
-    opinions_report: {
-      sentiment_stats: EMPTY_SENTIMENT_STATS,
-      subjective_claims: claims,
-    },
-  };
-  return <OpinionsSection opinions={opinions} />;
+function extractFlashpointMatches(data: unknown): FlashpointMatch[] {
+  return (asRecord(data).flashpoint_matches ?? []) as FlashpointMatch[];
+}
+
+function extractScd(data: unknown): SCDReport {
+  return (asRecord(data).scd ?? EMPTY_SCD) as SCDReport;
+}
+
+function extractClaimsReport(data: unknown): ClaimsReport {
+  return (asRecord(data).claims_report ?? EMPTY_CLAIMS_REPORT) as ClaimsReport;
+}
+
+function extractKnownMisinfo(data: unknown): FactCheckMatch[] {
+  return (asRecord(data).known_misinformation ?? []) as FactCheckMatch[];
+}
+
+function extractSentimentStats(data: unknown): SentimentStats {
+  return (asRecord(data).sentiment_stats ?? EMPTY_SENTIMENT_STATS) as SentimentStats;
+}
+
+function extractSubjectiveClaims(data: unknown): SubjectiveClaim[] {
+  return (asRecord(data).subjective_claims ?? []) as SubjectiveClaim[];
 }
 
 const SAFETY_RENDER: Partial<Record<SectionSlug, (data: unknown) => JSX.Element>> = {
-  safety__moderation: renderSafetyModeration,
+  safety__moderation: (data) => (
+    <SafetyModerationReport matches={extractHarmfulContentMatches(data)} />
+  ),
 };
 
 const TONE_RENDER: Partial<Record<SectionSlug, (data: unknown) => JSX.Element>> = {
-  tone_dynamics__flashpoint: renderFlashpoint,
-  tone_dynamics__scd: renderScd,
+  tone_dynamics__flashpoint: (data) => (
+    <FlashpointReport matches={extractFlashpointMatches(data)} />
+  ),
+  tone_dynamics__scd: (data) => <ScdReport scd={extractScd(data)} />,
 };
 
 const FACTS_RENDER: Partial<Record<SectionSlug, (data: unknown) => JSX.Element>> = {
-  facts_claims__dedup: renderClaimsDedup,
-  facts_claims__known_misinfo: renderKnownMisinfo,
+  facts_claims__dedup: (data) => (
+    <ClaimsDedupReport claimsReport={extractClaimsReport(data)} />
+  ),
+  facts_claims__known_misinfo: (data) => (
+    <KnownMisinfoReport matches={extractKnownMisinfo(data)} />
+  ),
 };
 
 const OPINIONS_RENDER: Partial<
   Record<SectionSlug, (data: unknown) => JSX.Element>
 > = {
-  opinions_sentiments__sentiment: renderSentiment,
-  opinions_sentiments__subjective: renderSubjective,
+  opinions_sentiments__sentiment: (data) => (
+    <SentimentReport stats={extractSentimentStats(data)} />
+  ),
+  opinions_sentiments__subjective: (data) => (
+    <SubjectiveReport claims={extractSubjectiveClaims(data)} />
+  ),
 };
 
 export default function Sidebar(props: SidebarProps) {

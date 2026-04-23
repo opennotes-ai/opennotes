@@ -24,9 +24,8 @@ class MockVibecheckApiError extends Error {
   }
 }
 
-vi.mock("~/lib/api-client.server", () => ({
-  pollJob: (jobId: string) => mockPollJob(jobId),
-  VibecheckApiError: MockVibecheckApiError,
+vi.mock("~/routes/analyze.data", () => ({
+  pollJobState: (jobId: string) => mockPollJob(jobId),
 }));
 
 function makeJobState(overrides: Partial<JobState> = {}): JobState {
@@ -193,20 +192,22 @@ describe("createPollingResource", () => {
     });
   });
 
-  it("stops polling when status transitions to 'failed'", async () => {
+  it("stops polling when status transitions to 'failed' and does not fire error()", async () => {
     const failed = makeJobState({ status: "failed", next_poll_ms: 500 });
     mockPollJob.mockResolvedValueOnce(failed);
 
     const { createPollingResource } = await import("./polling");
 
     await createRoot(async (dispose) => {
-      const { state } = createPollingResource(() => "job-failed");
+      const { state, error } = createPollingResource(() => "job-failed");
       await flushMicrotasks();
       expect(state()?.status).toBe("failed");
+      expect(error()).toBeNull();
 
       await vi.advanceTimersByTimeAsync(10_000);
       await flushMicrotasks();
       expect(mockPollJob).toHaveBeenCalledTimes(1);
+      expect(error()).toBeNull();
 
       dispose();
     });
@@ -357,6 +358,32 @@ describe("createPollingResource", () => {
       await flushMicrotasks();
       expect(mockPollJob).toHaveBeenLastCalledWith("job-B");
       expect(state()?.job_id).toBe(firstB.job_id);
+
+      dispose();
+    });
+  });
+
+  it("clears state() and error() when jobId becomes empty", async () => {
+    const first = makeJobState({ status: "pending", next_poll_ms: 500 });
+    mockPollJob.mockResolvedValueOnce(first);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const [id, setId] = createSignal("job-X");
+      const { state, error } = createPollingResource(id);
+      await flushMicrotasks();
+      expect(state()).not.toBeNull();
+      expect(error()).toBeNull();
+
+      setId("");
+      await flushMicrotasks();
+      expect(state()).toBeNull();
+      expect(error()).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(1);
 
       dispose();
     });
