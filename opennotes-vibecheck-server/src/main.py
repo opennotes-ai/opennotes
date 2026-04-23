@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from prometheus_client import make_asgi_app
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -17,6 +18,7 @@ app.include_router(frame.router)
 app.include_router(analyze.router)
 app.include_router(internal_jobs.router)
 app.include_router(_schema_anchor.router)
+app.mount("/metrics", make_asgi_app())
 
 
 @app.get("/")

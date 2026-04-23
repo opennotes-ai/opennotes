@@ -37,7 +37,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
@@ -66,6 +66,7 @@ from src.config import get_settings
 from src.jobs.enqueue import enqueue_job, enqueue_section_retry
 from src.jobs.slots import retry_claim_slot
 from src.monitoring import get_logger
+from src.monitoring_metrics import CACHE_HITS, SINGLE_FLIGHT_LOCK_WAITS
 from src.utils.url_security import InvalidURL
 
 logger = get_logger(__name__)
@@ -376,6 +377,7 @@ async def _handle_locked_submit(
             host=host,
             sidebar_payload=cached_payload,
         )
+        CACHE_HITS.labels(tier="analysis").inc()
         return (
             AnalyzeResponse(job_id=job_id, status=JobStatus.DONE, cached=True),
             None,
@@ -482,6 +484,7 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
         async with pool.acquire() as conn, conn.transaction():
             got_lock = await _try_advisory_lock(conn, normalized_url)
             if not got_lock:
+                SINGLE_FLIGHT_LOCK_WAITS.inc()
                 # Contended branch: another submitter holds the lock. Do a
                 # non-locking cache check BEFORE falling back to in-flight
                 # lookup — a fresh `vibecheck_analyses` row must still win
@@ -498,6 +501,7 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
                         host=host,
                         sidebar_payload=cached_payload,
                     )
+                    CACHE_HITS.labels(tier="analysis").inc()
                     return (
                         AnalyzeResponse(
                             job_id=cached_job_id,
@@ -555,7 +559,11 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
             await _mark_job_failed_enqueue(pool, response.job_id)
             return _error_response(500, "internal", "enqueue failed")
 
-    return response
+    return JSONResponse(
+        status_code=202,
+        content=response.model_dump(mode="json"),
+        headers={"X-Vibecheck-Job-Id": str(response.job_id)},
+    )
 
 
 # =========================================================================
@@ -796,7 +804,7 @@ def _row_to_job_state(row: Any) -> JobState:
     response_model=JobState,
     summary="Poll an async vibecheck job",
 )
-async def poll(job_id: UUID, request: Request) -> JobState:
+async def poll(job_id: UUID, request: Request, response: Response) -> JobState:
     """Read-only polling endpoint.
 
     Returns the current `JobState` including the `sections` dict (per-slot
@@ -815,6 +823,7 @@ async def poll(job_id: UUID, request: Request) -> JobState:
             status_code=404,
             detail={"error_code": "not_found", "message": "job not found"},
         )
+    response.headers["X-Vibecheck-Job-Id"] = str(job_id)
     return _row_to_job_state(row)
 
 

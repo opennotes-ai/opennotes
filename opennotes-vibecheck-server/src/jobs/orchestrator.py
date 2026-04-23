@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
@@ -55,7 +56,15 @@ from src.config import Settings
 from src.firecrawl_client import FirecrawlClient
 from src.jobs.finalize import maybe_finalize_job
 from src.jobs.slots import mark_slot_done, mark_slot_failed, write_slot
-from src.monitoring import get_logger
+from src.monitoring import bind_contextvars, clear_contextvars, get_logger
+from src.monitoring_metrics import (
+    ACTIVE_JOBS,
+    CLOUD_TASKS_REDELIVERIES,
+    JOB_DURATION,
+    SECTION_DURATION,
+    SECTION_FAILURES,
+    classify_error,
+)
 from src.utils.url_security import InvalidURL, revalidate_redirect_target
 from src.utterances.extractor import extract_utterances
 
@@ -412,12 +421,32 @@ async def _run_section(
         data=data if slot_state == SectionState.DONE else None,
         error=slot_error,
     )
+    section_tokens = bind_contextvars(slug=slug)
+    started = time.monotonic()
     try:
-        await write_slot(pool, job_id, task_attempt, slug, slot)
-    except Exception as exc:
-        logger.exception(
-            "section %s persist failed for job %s: %s", slug.value, job_id, exc
-        )
+        try:
+            await write_slot(pool, job_id, task_attempt, slug, slot)
+        except Exception as exc:
+            logger.exception(
+                "section %s failed for job %s: %s", slug.value, job_id, exc
+            )
+            SECTION_FAILURES.labels(
+                slug=slug.value, error_type=classify_error(exc)
+            ).inc()
+            await mark_slot_failed(
+                pool,
+                job_id,
+                slug,
+                slot_attempt,
+                error=str(exc),
+                expected_task_attempt=task_attempt,
+            )
+        finally:
+            SECTION_DURATION.labels(slug=slug.value).observe(
+                time.monotonic() - started
+            )
+    finally:
+        clear_contextvars(section_tokens)
 
 
 _SECTION_HANDLERS: dict[SectionSlug, Any] = {
@@ -583,24 +612,36 @@ async def run_job(
         # Stale redelivery — the job has already been picked up by a
         # fresher attempt, or the status moved on. 200 so Cloud Tasks
         # doesn't retry.
-        logger.info(
-            "worker: stale claim for job %s expected_attempt=%s — no-op",
-            job_id,
-            expected_attempt_id,
+        CLOUD_TASKS_REDELIVERIES.inc()
+        job_tokens = bind_contextvars(
+            job_id=job_id, attempt_id=expected_attempt_id
         )
+        try:
+            logger.info(
+                "worker: stale claim for job %s expected_attempt=%s — no-op",
+                job_id,
+                expected_attempt_id,
+            )
+        finally:
+            clear_contextvars(job_tokens)
         return RunResult(status_code=200)
 
     task_attempt, url = claim
+    job_tokens = bind_contextvars(job_id=job_id, attempt_id=task_attempt)
     heartbeat = asyncio.create_task(
         _heartbeat_loop(
             pool, job_id, task_attempt, interval_sec=HEARTBEAT_INTERVAL_SEC
         )
     )
+    ACTIVE_JOBS.inc()
+    started = time.monotonic()
+    terminal_status = "done"
 
     try:
         try:
             await _run_pipeline(pool, job_id, task_attempt, url, settings)
         except TransientError as exc:
+            terminal_status = "pending"
             logger.warning(
                 "worker: transient failure for job %s: %s", job_id, exc
             )
@@ -612,6 +653,7 @@ async def run_job(
             )
             return RunResult(status_code=503)
         except TerminalError as exc:
+            terminal_status = "failed"
             logger.warning(
                 "worker: terminal failure for job %s: error_code=%s detail=%s",
                 job_id,
@@ -629,11 +671,13 @@ async def run_job(
         except HandlerSuperseded:
             # A mid-pipeline step detected the attempt rotated; nothing
             # else to do — the newer worker owns the row.
+            terminal_status = "superseded"
             logger.info("worker: handler superseded for job %s", job_id)
             return RunResult(status_code=200)
         except Exception:
             # Unclassified — log with traceback so operators can see the
             # underlying bug, but treat as transient (reset + 503).
+            terminal_status = "pending"
             logger.log(
                 logging.ERROR,
                 "worker: unclassified failure for job %s",
@@ -650,6 +694,10 @@ async def run_job(
 
         return RunResult(status_code=200)
     finally:
+        ACTIVE_JOBS.dec()
+        JOB_DURATION.labels(status=terminal_status).observe(
+            time.monotonic() - started
+        )
         heartbeat.cancel()
         try:
             await heartbeat
@@ -657,6 +705,7 @@ async def run_job(
             pass
         except Exception as exc:
             logger.warning("heartbeat cancellation raised: %s", exc)
+        clear_contextvars(job_tokens)
 
 
 # ---------------------------------------------------------------------------
@@ -728,80 +777,96 @@ async def run_section_retry(
       6. Unclassified exceptions are treated as transient: write a failed
          slot (best-effort) and return 503 so Cloud Tasks retries.
     """
-    loaded = await _load_job_attempt_and_slot(pool, job_id, slug)
-    if loaded is None:
-        logger.info(
-            "section-retry: job or slot missing for job=%s slug=%s — no-op",
-            job_id,
-            slug.value,
-        )
-        return RunResult(status_code=200)
-    task_attempt, slot = loaded
-
-    slot_state = slot.get("state")
-    slot_attempt_str = str(slot.get("attempt_id") or "")
-    if slot_state != "running" or slot_attempt_str != str(expected_slot_attempt_id):
-        logger.info(
-            "section-retry: stale slot for job=%s slug=%s expected=%s "
-            "current=%s state=%s — no-op",
-            job_id,
-            slug.value,
-            expected_slot_attempt_id,
-            slot_attempt_str,
-            slot_state,
-        )
-        return RunResult(status_code=200)
-
+    retry_tokens = bind_contextvars(job_id=job_id, slug=slug)
     try:
-        data = _empty_section_data(slug)
-        rows = await mark_slot_done(
-            pool,
-            job_id,
-            slug,
-            expected_slot_attempt_id,
-            data,
-            expected_task_attempt=task_attempt,
-        )
-        if rows == 0:
-            # The slot's write-envelope guard (job.attempt_id, job.status,
-            # or slot.state) failed. Treat as stale: the sweeper or a
-            # fresher attempt owns the row now.
+        loaded = await _load_job_attempt_and_slot(pool, job_id, slug)
+        if loaded is None:
+            CLOUD_TASKS_REDELIVERIES.inc()
             logger.info(
-                "section-retry: mark_slot_done CAS failed for job=%s slug=%s — no-op",
+                "section-retry: job or slot missing for job=%s slug=%s — no-op",
                 job_id,
                 slug.value,
             )
             return RunResult(status_code=200)
+        task_attempt, slot = loaded
+        attempt_tokens = bind_contextvars(attempt_id=task_attempt)
 
-        await maybe_finalize_job(
-            pool, job_id, expected_task_attempt=task_attempt
-        )
-        return RunResult(status_code=200)
-    except Exception as exc:
-        logger.log(
-            logging.ERROR,
-            "section-retry: unclassified failure for job=%s slug=%s",
-            job_id,
-            slug.value,
-            exc_info=True,
-        )
         try:
-            await mark_slot_failed(
-                pool,
-                job_id,
-                slug,
-                expected_slot_attempt_id,
-                error=str(exc),
-                expected_task_attempt=task_attempt,
-            )
-        except Exception as inner:  # noqa: BLE001 — best-effort cleanup
-            logger.warning(
-                "section-retry: mark_slot_failed also raised for job=%s slug=%s: %s",
-                job_id,
-                slug.value,
-                inner,
-            )
-        return RunResult(status_code=503)
+            slot_state = slot.get("state")
+            slot_attempt_str = str(slot.get("attempt_id") or "")
+            if slot_state != "running" or slot_attempt_str != str(expected_slot_attempt_id):
+                CLOUD_TASKS_REDELIVERIES.inc()
+                logger.info(
+                    "section-retry: stale slot for job=%s slug=%s expected=%s "
+                    "current=%s state=%s — no-op",
+                    job_id,
+                    slug.value,
+                    expected_slot_attempt_id,
+                    slot_attempt_str,
+                    slot_state,
+                )
+                return RunResult(status_code=200)
+
+            section_started = time.monotonic()
+            try:
+                data = _empty_section_data(slug)
+                rows = await mark_slot_done(
+                    pool,
+                    job_id,
+                    slug,
+                    expected_slot_attempt_id,
+                    data,
+                    expected_task_attempt=task_attempt,
+                )
+                if rows == 0:
+                    CLOUD_TASKS_REDELIVERIES.inc()
+                    logger.info(
+                        "section-retry: mark_slot_done CAS failed for job=%s slug=%s — no-op",
+                        job_id,
+                        slug.value,
+                    )
+                    return RunResult(status_code=200)
+
+                await maybe_finalize_job(
+                    pool, job_id, expected_task_attempt=task_attempt
+                )
+                return RunResult(status_code=200)
+            except Exception as exc:
+                SECTION_FAILURES.labels(
+                    slug=slug.value, error_type=classify_error(exc)
+                ).inc()
+                logger.log(
+                    logging.ERROR,
+                    "section-retry: unclassified failure for job=%s slug=%s",
+                    job_id,
+                    slug.value,
+                    exc_info=True,
+                )
+                try:
+                    await mark_slot_failed(
+                        pool,
+                        job_id,
+                        slug,
+                        expected_slot_attempt_id,
+                        error=str(exc),
+                        expected_task_attempt=task_attempt,
+                    )
+                except Exception as inner:  # noqa: BLE001 — best-effort cleanup
+                    logger.warning(
+                        "section-retry: mark_slot_failed also raised for job=%s slug=%s: %s",
+                        job_id,
+                        slug.value,
+                        inner,
+                    )
+                return RunResult(status_code=503)
+            finally:
+                SECTION_DURATION.labels(slug=slug.value).observe(
+                    time.monotonic() - section_started
+                )
+        finally:
+            clear_contextvars(attempt_tokens)
+    finally:
+        clear_contextvars(retry_tokens)
 
 
 __all__ = [
