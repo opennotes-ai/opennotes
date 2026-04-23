@@ -42,6 +42,12 @@ function slugHeadingLabel(slug: SectionSlugLiteral): string {
   switch (slug) {
     case "safety__moderation":
       return "Moderation";
+    case "safety__web_risk":
+      return "Web Risk";
+    case "safety__image_moderation":
+      return "Images";
+    case "safety__video_moderation":
+      return "Videos";
     case "tone_dynamics__flashpoint":
       return "Flashpoint";
     case "tone_dynamics__scd":

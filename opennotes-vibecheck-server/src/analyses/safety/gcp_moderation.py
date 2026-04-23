@@ -72,6 +72,7 @@ async def moderate_texts_gcp(
             return HarmfulContentMatch(
                 source="gcp",
                 utterance_id=utt.utterance_id or "",
+                utterance_text=utt.text or "",
                 max_score=max_score,
                 categories=categories,
                 scores=scores,

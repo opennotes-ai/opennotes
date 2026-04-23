@@ -432,6 +432,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
           harmful_content_matches: [
             {
               utterance_id: "u-safety",
+              utterance_text: "This is the exact harmful sentence.",
               max_score: 0.91,
               flagged_categories: ["harassment"],
               scores: {},
@@ -538,6 +539,12 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(scdReport.textContent).toContain("scd summary text");
     expect(scdReport.textContent).not.toContain("tone shifts sharply");
 
+    const safetyReport = screen.getByTestId("report-safety__moderation");
+    expect(safetyReport.textContent).toContain(
+      "This is the exact harmful sentence.",
+    );
+    expect(safetyReport.textContent).not.toContain("u-safety");
+
     const dedupReport = screen.getByTestId("report-facts_claims__dedup");
     expect(dedupReport.textContent).toContain("canonical claim text");
     expect(dedupReport.textContent).not.toContain("known-misinfo-claim");
@@ -580,13 +587,15 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       cached_at: null,
       safety: {
         harmful_content_matches: [
-          {
-            utterance_id: "u-p-safety",
-            max_score: 0.5,
-            flagged_categories: ["toxicity"],
-            categories: { toxicity: true },
-            scores: {},
-          },
+            {
+              utterance_id: "u-p-safety",
+              utterance_text: "Payload harmful sentence.",
+              max_score: 0.5,
+              flagged_categories: ["toxicity"],
+              categories: { toxicity: true },
+              scores: {},
+              source: "openai",
+            },
         ],
       },
       tone_dynamics: {

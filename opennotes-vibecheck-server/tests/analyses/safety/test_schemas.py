@@ -42,6 +42,7 @@ class TestHarmfulContentMatch:
         with pytest.raises(ValidationError):
             HarmfulContentMatch(
                 utterance_id="utt_1",
+                utterance_text="some text",
                 max_score=0.5,
                 categories={"hate": False},
                 scores={"hate": 0.5},
@@ -52,6 +53,7 @@ class TestHarmfulContentMatch:
         with pytest.raises(ValidationError):
             HarmfulContentMatch(
                 utterance_id="utt_1",
+                utterance_text="some text",
                 max_score=0.5,
                 categories={"hate": False},
                 scores={"hate": 0.5},
@@ -62,6 +64,7 @@ class TestHarmfulContentMatch:
     def test_harmful_content_match_accepts_openai_source(self) -> None:
         match = HarmfulContentMatch(
             utterance_id="utt_1",
+            utterance_text="some text",
             max_score=0.5,
             categories={"hate": False},
             scores={"hate": 0.5},
@@ -73,6 +76,7 @@ class TestHarmfulContentMatch:
     def test_harmful_content_match_accepts_gcp_source(self) -> None:
         match = HarmfulContentMatch(
             utterance_id="utt_1",
+            utterance_text="some text",
             max_score=0.5,
             categories={"hate": False},
             scores={"hate": 0.5},

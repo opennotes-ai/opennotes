@@ -16,6 +16,7 @@ class HarmfulContentMatch(BaseModel):
     """A single flagged utterance from a content moderation API."""
 
     utterance_id: str
+    utterance_text: str
     max_score: float
     categories: dict[str, bool]
     scores: dict[str, float]

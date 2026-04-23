@@ -31,14 +31,16 @@ describe("<SafetyModerationReport />", () => {
     expect(container.innerHTML).not.toMatch(/\bborder-l-2\b/);
   });
 
-  it("lists categories and utterance ids for each match", () => {
+  it("lists categories and utterance text for each match", () => {
     const matches: HarmfulContentMatch[] = [
       {
         utterance_id: "utt-1",
+        utterance_text: "This is the exact harmful sentence.",
         max_score: 0.82,
         flagged_categories: ["harassment", "toxicity"],
         categories: { harassment: true, toxicity: true },
         scores: {},
+        source: "openai",
       },
     ];
     render(() => <SafetyModerationReport matches={matches} />);
@@ -48,7 +50,7 @@ describe("<SafetyModerationReport />", () => {
       "toxicity",
     ]);
     expect(screen.getByTestId("safety-max-score").textContent).toBe("82%");
-    expect(screen.getByText(/utterance utt-1/)).toBeDefined();
+    expect(screen.getByText("This is the exact harmful sentence.")).toBeDefined();
   });
 });
 

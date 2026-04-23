@@ -68,9 +68,23 @@ export default function SafetyModerationReport(
                     {formatScore(match.max_score)}
                   </span>
                 </div>
-                <p class="mt-2 font-mono text-[11px] text-muted-foreground">
-                  utterance {match.utterance_id}
-                </p>
+                <Show
+                  when={match.utterance_text?.trim()}
+                  fallback={
+                    <p class="mt-2 font-mono text-[11px] text-muted-foreground">
+                      utterance {match.utterance_id}
+                    </p>
+                  }
+                >
+                  {(utteranceText) => (
+                    <p
+                      data-testid="safety-utterance-text"
+                      class="mt-2 text-xs leading-relaxed text-foreground"
+                    >
+                      {utteranceText()}
+                    </p>
+                  )}
+                </Show>
               </li>
             )}
           </For>

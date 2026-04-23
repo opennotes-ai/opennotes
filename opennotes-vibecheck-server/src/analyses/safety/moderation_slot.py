@@ -16,7 +16,7 @@ from uuid import UUID
 import httpx
 from openai import AsyncOpenAI
 
-from src.analyses.safety.gcp_moderation import GcpModerationTransientError, moderate_texts_gcp
+from src.analyses.safety.gcp_moderation import moderate_texts_gcp
 from src.analyses.safety.moderation import check_content_moderation_bulk
 from src.config import Settings
 from src.services.openai_moderation import OpenAIModerationService
@@ -36,6 +36,12 @@ async def run_safety_moderation(
     settings: Settings | None,
 ) -> dict[str, Any]:
     utterances = list(getattr(payload, "utterances", []) or [])
+    utterance_text_by_id = {
+        str(getattr(utterance, "utterance_id", "") or ""): (
+            getattr(utterance, "text", "") or ""
+        )
+        for utterance in utterances
+    }
 
     moderation_service: OpenAIModerationService | None = None
     if settings is not None and getattr(settings, "OPENAI_API_KEY", ""):
@@ -56,13 +62,21 @@ async def run_safety_moderation(
     else:
         for m in openai_res:
             if m is not None:
-                matches.append(m.model_dump())
+                match = m.model_dump()
+                match["utterance_text"] = utterance_text_by_id.get(
+                    str(match.get("utterance_id", ""))
+                ) or match.get("utterance_text", "")
+                matches.append(match)
     if isinstance(gcp_res, BaseException):
         logger.warning("gcp moderation failed: %s", gcp_res)
     else:
         for m in gcp_res:
             if m is not None:
-                matches.append(m.model_dump())
+                match = m.model_dump()
+                match["utterance_text"] = utterance_text_by_id.get(
+                    str(match.get("utterance_id", ""))
+                ) or match.get("utterance_text", "")
+                matches.append(match)
 
     if isinstance(openai_res, BaseException) and isinstance(gcp_res, BaseException):
         raise ModerationSlotError(

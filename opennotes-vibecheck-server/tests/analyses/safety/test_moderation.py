@@ -116,6 +116,7 @@ class TestHarmfulContentMatchSchema:
     def test_required_fields(self):
         match = HarmfulContentMatch(
             utterance_id="utt_1",
+            utterance_text="some text",
             max_score=0.5,
             categories={"hate": False},
             scores={"hate": 0.5},
