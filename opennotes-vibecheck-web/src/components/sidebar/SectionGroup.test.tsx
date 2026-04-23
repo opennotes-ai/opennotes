@@ -1,0 +1,327 @@
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { cleanup, render, screen, fireEvent } from "@solidjs/testing-library";
+import SectionGroup, { type SlugToSlots } from "./SectionGroup";
+import Sidebar from "./Sidebar";
+import type { SectionSlug, SidebarPayload } from "~/lib/api-client.server";
+
+const TONE_SLUGS: SectionSlug[] = [
+  "tone_dynamics__flashpoint",
+  "tone_dynamics__scd",
+];
+
+const FACTS_SLUGS: SectionSlug[] = [
+  "facts_claims__dedup",
+  "facts_claims__known_misinfo",
+];
+
+function makeTonePayload(): SidebarPayload {
+  return {
+    source_url: "https://example.com/post",
+    page_title: "Example",
+    page_kind: "other",
+    scraped_at: "2026-04-22T00:00:00Z",
+    cached: false,
+    cached_at: null,
+    safety: { harmful_content_matches: [] },
+    tone_dynamics: {
+      scd: {
+        summary: "",
+        tone_labels: [],
+        per_speaker_notes: {},
+        insufficient_conversation: true,
+      },
+      flashpoint_matches: [],
+    },
+    facts_claims: {
+      claims_report: {
+        deduped_claims: [],
+        total_claims: 0,
+        total_unique: 0,
+      },
+      known_misinformation: [],
+    },
+    opinions_sentiments: {
+      opinions_report: {
+        sentiment_stats: {
+          per_utterance: [],
+          positive_pct: 0,
+          negative_pct: 0,
+          neutral_pct: 100,
+          mean_valence: 0,
+        },
+        subjective_claims: [],
+      },
+    },
+  };
+}
+
+afterEach(() => {
+  cleanup();
+});
+
+describe("SectionGroup", () => {
+  it("renders a 0/N counter with dim labels when all slots are pending", () => {
+    const sections: SlugToSlots = {};
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={sections}
+        render={{}}
+      />
+    ));
+
+    const counter = screen.getByTestId("section-group-counter");
+    expect(counter.textContent).toContain("Tone/dynamics");
+    expect(counter.textContent).toContain("0/2");
+
+    for (const slug of TONE_SLUGS) {
+      const label = screen.getByTestId(`slot-label-${slug}`);
+      expect(label.getAttribute("data-dimmed")).toBe("true");
+      expect(screen.queryByTestId(`skeleton-${slug}`)).toBeNull();
+    }
+  });
+
+  it("renders a slug's content-shape skeleton when that slot is running", () => {
+    const sections: SlugToSlots = {
+      tone_dynamics__flashpoint: { state: "running", attempt_id: "a1" },
+    };
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={sections}
+        render={{}}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("skeleton-tone_dynamics__flashpoint"),
+    ).toBeDefined();
+    expect(screen.queryByTestId("skeleton-tone_dynamics__scd")).toBeNull();
+
+    const flashLabel = screen.getByTestId("slot-label-tone_dynamics__flashpoint");
+    const scdLabel = screen.getByTestId("slot-label-tone_dynamics__scd");
+    expect(flashLabel.getAttribute("data-dimmed")).toBe("false");
+    expect(scdLabel.getAttribute("data-dimmed")).toBe("true");
+  });
+
+  it("shows 1/2 counter with done + failed, and renders Retry for the failed slot", () => {
+    const onRetry = vi.fn();
+    const sections: SlugToSlots = {
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "a1",
+        data: { flashpoint_matches: [] },
+      },
+      tone_dynamics__scd: {
+        state: "failed",
+        attempt_id: "a2",
+        error: "boom",
+      },
+    };
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={sections}
+        render={{
+          tone_dynamics__flashpoint: () => <div data-testid="fp-rendered" />,
+        }}
+        onRetry={onRetry}
+      />
+    ));
+
+    expect(screen.getByTestId("section-group-counter").textContent).toContain(
+      "1/2",
+    );
+    expect(screen.getByTestId("fp-rendered")).toBeDefined();
+
+    const retry = screen.getByTestId("retry-tone_dynamics__scd");
+    expect(retry).toBeDefined();
+    expect(
+      screen.getByText(/Couldn't run this analysis/i),
+    ).toBeDefined();
+  });
+
+  it("invokes onRetry with the slug when Retry is clicked", async () => {
+    const onRetry = vi.fn();
+    const sections: SlugToSlots = {
+      facts_claims__dedup: {
+        state: "failed",
+        attempt_id: "a1",
+        error: "boom",
+      },
+      facts_claims__known_misinfo: { state: "pending", attempt_id: "" },
+    };
+    render(() => (
+      <SectionGroup
+        label="Facts/claims"
+        slugs={FACTS_SLUGS}
+        sections={sections}
+        render={{}}
+        onRetry={onRetry}
+      />
+    ));
+
+    await fireEvent.click(screen.getByTestId("retry-facts_claims__dedup"));
+    expect(onRetry).toHaveBeenCalledWith("facts_claims__dedup");
+  });
+
+  it("shows full counter and no skeletons when every slot is done", () => {
+    const sections: SlugToSlots = {
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "a1",
+        data: { flashpoint_matches: [] },
+      },
+      tone_dynamics__scd: {
+        state: "done",
+        attempt_id: "a2",
+        data: {
+          summary: "done",
+          tone_labels: [],
+          per_speaker_notes: {},
+          insufficient_conversation: false,
+        },
+      },
+    };
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={sections}
+        render={{
+          tone_dynamics__flashpoint: () => <div data-testid="fp-rendered" />,
+          tone_dynamics__scd: () => <div data-testid="scd-rendered" />,
+        }}
+      />
+    ));
+
+    expect(screen.getByTestId("section-group-counter").textContent).toContain(
+      "2/2",
+    );
+    expect(
+      screen.queryByTestId("skeleton-tone_dynamics__flashpoint"),
+    ).toBeNull();
+    expect(screen.queryByTestId("skeleton-tone_dynamics__scd")).toBeNull();
+    expect(screen.getByTestId("fp-rendered")).toBeDefined();
+    expect(screen.getByTestId("scd-rendered")).toBeDefined();
+  });
+
+  it("wraps done content in a reveal wrapper carrying the slot attempt id", () => {
+    const sections: SlugToSlots = {
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "attempt-xyz",
+        data: { flashpoint_matches: [] },
+      },
+      tone_dynamics__scd: { state: "pending", attempt_id: "" },
+    };
+    const { container } = render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={sections}
+        render={{
+          tone_dynamics__flashpoint: () => (
+            <div data-testid="fp-rendered">flash</div>
+          ),
+        }}
+      />
+    ));
+
+    const reveal = container.querySelector<HTMLDivElement>(".section-reveal");
+    expect(reveal).not.toBeNull();
+    expect(reveal?.getAttribute("data-slot-attempt-id")).toBe("attempt-xyz");
+  });
+
+  it("does not introduce left-stripe borders on cluster containers", () => {
+    const sections: SlugToSlots = {
+      tone_dynamics__flashpoint: { state: "running", attempt_id: "a1" },
+      tone_dynamics__scd: { state: "running", attempt_id: "a2" },
+    };
+    const { container } = render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={sections}
+        render={{}}
+      />
+    ));
+
+    const group = container.querySelector(
+      '[data-testid="section-group-Tone/dynamics"]',
+    );
+    expect(group).not.toBeNull();
+    const html = group?.outerHTML ?? "";
+    expect(html).not.toMatch(/\bborder-l\b/);
+    expect(html).not.toMatch(/\bborder-l-2\b/);
+  });
+});
+
+describe("Sidebar", () => {
+  it("renders all four named clusters with counters when sections is empty", () => {
+    render(() => <Sidebar sections={{}} />);
+
+    const aside = screen.getByTestId("analysis-sidebar");
+    expect(aside.getAttribute("aria-live")).toBe("polite");
+
+    const counters = screen.getAllByTestId("section-group-counter");
+    expect(counters).toHaveLength(4);
+
+    const texts = counters.map((n) => n.textContent ?? "");
+    expect(texts.some((t) => t.startsWith("Safety"))).toBe(true);
+    expect(texts.some((t) => t.startsWith("Tone/dynamics"))).toBe(true);
+    expect(texts.some((t) => t.startsWith("Facts/claims"))).toBe(true);
+    expect(texts.some((t) => t.startsWith("Opinions/sentiments"))).toBe(true);
+  });
+
+  it("uses middot separator and integer N/M in counter labels", () => {
+    render(() => <Sidebar sections={{}} />);
+    const counters = screen.getAllByTestId("section-group-counter");
+    for (const c of counters) {
+      const text = c.textContent ?? "";
+      expect(text).toMatch(/\s·\s\d+\/\d+/);
+    }
+  });
+
+  it("synthesizes a fully-done sections map from payload when sections is absent", () => {
+    const payload = makeTonePayload();
+    render(() => <Sidebar payload={payload} />);
+
+    const counters = screen.getAllByTestId("section-group-counter");
+    const texts = counters.map((n) => n.textContent ?? "");
+    expect(texts.find((t) => t.startsWith("Safety"))).toContain("1/1");
+    expect(texts.find((t) => t.startsWith("Tone/dynamics"))).toContain("2/2");
+    expect(texts.find((t) => t.startsWith("Facts/claims"))).toContain("2/2");
+    expect(texts.find((t) => t.startsWith("Opinions/sentiments"))).toContain(
+      "2/2",
+    );
+
+    expect(screen.queryByTestId("skeleton-safety__moderation")).toBeNull();
+    expect(
+      screen.queryByTestId("skeleton-tone_dynamics__flashpoint"),
+    ).toBeNull();
+  });
+
+  it("omits left-stripe border classes anywhere in the rendered sidebar", () => {
+    const { container } = render(() => (
+      <Sidebar
+        sections={{
+          safety__moderation: { state: "running", attempt_id: "a1" },
+          tone_dynamics__flashpoint: { state: "running", attempt_id: "a2" },
+          tone_dynamics__scd: { state: "running", attempt_id: "a3" },
+          facts_claims__dedup: { state: "running", attempt_id: "a4" },
+          facts_claims__known_misinfo: { state: "running", attempt_id: "a5" },
+          opinions_sentiments__sentiment: { state: "running", attempt_id: "a6" },
+          opinions_sentiments__subjective: { state: "running", attempt_id: "a7" },
+        }}
+      />
+    ));
+
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/\bborder-l\b/);
+    expect(html).not.toMatch(/\bborder-l-2\b/);
+  });
+});
