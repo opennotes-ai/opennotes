@@ -492,7 +492,40 @@ async def test_retry_after_reflects_minute_bucket_reset_not_hardcoded(
     assert retry_after_raw is not None
     retry_after = int(retry_after_raw)
     # Must be strictly greater than the old hardcoded `1` and bounded by
-    # the window size (60s).
+    # the window size (60s) — pin the upper bound at the per-minute
+    # window so a regression that re-introduces a tuple-shaped
+    # GRANULARITY would surface here too (TASK-1473.51).
     assert 1 < retry_after <= 60
+
+    get_settings.cache_clear()
+
+
+async def test_retry_after_per_second_bucket_caps_at_one_second(
+    client: httpx.AsyncClient, db_pool: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The per-second burst cap pins Retry-After to exactly 1s (TASK-1473.51).
+
+    With burst=1/s and sustained=1000/min, the second poll within the
+    same second trips the burst bucket. The window is 1 second, so
+    Retry-After must be exactly 1.
+    """
+    monkeypatch.setenv("RATE_LIMIT_POLL_BURST", "1")
+    monkeypatch.setenv("RATE_LIMIT_POLL_SUSTAINED", "1000")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    analyze_route.limiter.reset()
+    analyze_route.poll_rate_reset()
+
+    job_id = await _insert_job(db_pool, status="pending")
+
+    ok = await client.get(f"/api/analyze/{job_id}")
+    assert ok.status_code == 200
+    rejected = await client.get(f"/api/analyze/{job_id}")
+    assert rejected.status_code == 429
+    header_names_lower = {k.lower(): v for k, v in rejected.headers.items()}
+    retry_after_raw = header_names_lower.get("retry-after")
+    assert retry_after_raw is not None
+    assert int(retry_after_raw) == 1
 
     get_settings.cache_clear()

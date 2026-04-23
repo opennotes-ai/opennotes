@@ -714,7 +714,12 @@ async def _poll_rate_check(request: Request) -> None:
                 reset_in = int(stats.reset_time - time.time()) + 1
             except Exception:  # noqa: BLE001 — defensive: never fail the header
                 reset_in = 1
-            window_seconds = int(item.GRANULARITY.seconds)
+            # Window length = `multiples * granularity_seconds`. Computing
+            # via `multiples` makes the cap correct for `300/minute` (60s
+            # cap), `5/minute` (60s cap), or `2/30 second` (60s cap)
+            # without relying on the parser surface that used to vary
+            # across `limits` versions (TASK-1473.51).
+            window_seconds = int(item.multiples) * int(item.GRANULARITY.seconds)
             reset_in = max(1, min(reset_in, window_seconds))
             raise _AnalyzeRouteError(
                 429,
