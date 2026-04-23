@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
@@ -50,6 +50,13 @@ async function waitForHttpOk(url: string, timeoutMs = 60_000): Promise<void> {
       lastError instanceof Error ? lastError.message : String(lastError)
     }\n${webLogs}`,
   );
+}
+
+async function readServerPostTimes(page: Page): Promise<number[]> {
+  return page.evaluate(() => {
+    const win = window as Window & { __vibecheckServerPosts?: number[] };
+    return win.__vibecheckServerPosts ?? [];
+  });
 }
 
 function completedJobState() {
@@ -202,6 +209,26 @@ test.afterAll(async () => {
 test("completed analyze URL polls immediately and stays populated after refresh", async ({
   page,
 }) => {
+  await page.addInitScript(() => {
+    const win = window as Window & { __vibecheckServerPosts?: number[] };
+    win.__vibecheckServerPosts = [];
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof Request
+            ? input.url
+            : String(input);
+      const method =
+        input instanceof Request ? input.method : (init?.method ?? "GET");
+      if (method.toUpperCase() === "POST" && url.includes("/_server")) {
+        win.__vibecheckServerPosts?.push(performance.now());
+      }
+      return originalFetch(input, init);
+    };
+  });
+
   const initialServerRequest = page.waitForRequest(
     (request) =>
       request.method() === "POST" && request.url().includes("/_server"),
@@ -210,6 +237,8 @@ test("completed analyze URL polls immediately and stays populated after refresh"
 
   await page.goto(`${webBaseUrl}/analyze?job=${JOB_ID}`);
   await initialServerRequest;
+  const initialServerPostTimes = await readServerPostTimes(page);
+  expect(initialServerPostTimes[0]).toBeLessThan(1000);
 
   for (const slug of ALL_SECTION_SLUGS) {
     await expect(page.locator(`[data-testid="slot-${slug}"]`)).toHaveAttribute(
@@ -229,6 +258,8 @@ test("completed analyze URL polls immediately and stays populated after refresh"
   );
   await page.reload();
   await refreshServerRequest;
+  const refreshServerPostTimes = await readServerPostTimes(page);
+  expect(refreshServerPostTimes[0]).toBeLessThan(1000);
 
   for (const slug of ALL_SECTION_SLUGS) {
     await expect(page.locator(`[data-testid="slot-${slug}"]`)).toHaveAttribute(
