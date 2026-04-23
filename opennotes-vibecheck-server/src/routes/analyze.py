@@ -37,7 +37,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
@@ -115,6 +115,40 @@ def _error_response(
     )
 
 
+class _AnalyzeRouteError(Exception):
+    """Carrier for `_error_response` payloads raised from helpers.
+
+    Helpers like `_get_db_pool` and `_poll_rate_check` cannot return a
+    JSONResponse to a route that promises a typed pydantic model, so they
+    raise this exception and the route layer translates it back to the
+    documented `{error_code, message}` body via `_error_response`. Direct
+    `HTTPException` would wrap the payload as `{"detail": {...}}` which
+    breaks the frontend's parseErrorBody contract (TASK-1473.38).
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        error_code: str,
+        message: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(f"{status_code} {error_code}: {message}")
+        self.status_code = status_code
+        self.error_code = error_code
+        self.message = message
+        self.headers = headers
+
+    def to_response(self) -> JSONResponse:
+        return _error_response(
+            self.status_code,
+            self.error_code,
+            self.message,
+            headers=self.headers,
+        )
+
+
 def _host_of(normalized_url: str) -> str:
     """Extract host from the already-validated normalized URL.
 
@@ -139,14 +173,11 @@ def _host_of(normalized_url: str) -> str:
 def _get_db_pool(request: Request) -> Any:
     pool = getattr(request.app.state, "db_pool", None)
     if pool is None:
-        # The handler's early-return path surfaces this as a 503 with the
-        # `internal` slug — missing pool is a deploy-time misconfiguration.
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error_code": "internal",
-                "message": "database pool not initialized",
-            },
+        # Missing pool is a deploy-time misconfiguration — surface as 503
+        # with the same `{error_code, message}` body shape clients see for
+        # all other errors (TASK-1473.38).
+        raise _AnalyzeRouteError(
+            503, "internal", "database pool not initialized"
         )
     return pool
 
@@ -444,7 +475,10 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
         )
 
     host = _host_of(normalized_url)
-    pool = _get_db_pool(request)
+    try:
+        pool = _get_db_pool(request)
+    except _AnalyzeRouteError as exc:
+        return exc.to_response()
 
     # 2. Web Risk page-URL gate.
     async with httpx.AsyncClient(timeout=10.0) as hx:
@@ -658,9 +692,10 @@ async def _poll_rate_check(request: Request) -> None:
                 reset_in = 1
             window_seconds = int(item.GRANULARITY.seconds)
             reset_in = max(1, min(reset_in, window_seconds))
-            raise HTTPException(
-                status_code=429,
-                detail={"error_code": "rate_limited", "message": "poll rate exceeded"},
+            raise _AnalyzeRouteError(
+                429,
+                "rate_limited",
+                "poll rate exceeded",
                 headers={"Retry-After": str(reset_in)},
             )
 
@@ -804,7 +839,9 @@ def _row_to_job_state(row: Any) -> JobState:
     response_model=JobState,
     summary="Poll an async vibecheck job",
 )
-async def poll(job_id: UUID, request: Request, response: Response) -> JobState:
+async def poll(
+    job_id: UUID, request: Request, response: Response
+) -> JobState | JSONResponse:
     """Read-only polling endpoint.
 
     Returns the current `JobState` including the `sections` dict (per-slot
@@ -813,16 +850,21 @@ async def poll(job_id: UUID, request: Request, response: Response) -> JobState:
     `RATE_LIMIT_POLL_BURST` req/s + `RATE_LIMIT_POLL_SUSTAINED` req/min
     per `(ip, job_id)` tuple — exceeding either returns 429 with a
     `Retry-After` header.
+
+    The return type is `JobState | JSONResponse` because the 404 / 429 /
+    503 error paths emit `_error_response(...)` whose body is the
+    documented `{error_code, message}` shape rather than the FastAPI
+    default `{"detail": ...}` (TASK-1473.38).
     """
-    await _poll_rate_check(request)
-    pool = _get_db_pool(request)
+    try:
+        await _poll_rate_check(request)
+        pool = _get_db_pool(request)
+    except _AnalyzeRouteError as exc:
+        return exc.to_response()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(_SELECT_JOB_SQL, job_id)
     if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"error_code": "not_found", "message": "job not found"},
-        )
+        return _error_response(404, "not_found", "job not found")
     response.headers["X-Vibecheck-Job-Id"] = str(job_id)
     return _row_to_job_state(row)
 
@@ -940,7 +982,10 @@ async def retry_section(
          flip the job back to `failed/internal` — the user sees a stable
          error card instead of a phantom `analyzing` state.
     """
-    pool = _get_db_pool(request)
+    try:
+        pool = _get_db_pool(request)
+    except _AnalyzeRouteError as exc:
+        return exc.to_response()
     settings = get_settings()
 
     async with pool.acquire() as conn:
