@@ -105,6 +105,9 @@ async def test_post_then_internal_run_then_poll_to_done(
     job_id = UUID(body["job_id"])
     assert body["status"] == "pending"
     assert body["cached"] is False
+    # AC #5 / TASK-1473.49: the response carries X-Vibecheck-Job-Id so
+    # operators can correlate POST → log → poll without parsing the body.
+    assert resp.headers.get("X-Vibecheck-Job-Id") == str(job_id)
 
     # 3. Look up the attempt_id we'll pass to the worker — the route
     #    inserted the row with a freshly-minted attempt_id we don't see in
@@ -163,6 +166,8 @@ async def test_post_then_internal_run_then_poll_to_done(
     # 7. GET /api/analyze/{id} returns the populated state.
     poll_resp = await http_client.get(f"/api/analyze/{job_id}")
     assert poll_resp.status_code == 200, poll_resp.text
+    # AC #5 / TASK-1473.49: GET echoes the same X-Vibecheck-Job-Id.
+    assert poll_resp.headers.get("X-Vibecheck-Job-Id") == str(job_id)
     poll_body = json.loads(poll_resp.text)
     assert poll_body["job_id"] == str(job_id)
     # All per-slot results must be present in the polled snapshot.
