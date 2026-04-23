@@ -699,3 +699,64 @@ async def test_signed_url_is_re_minted_on_each_screenshot_tool_call() -> None:
     await _get_screenshot_impl(deps)
 
     assert len(cache.signed_url_calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# Media attribution integration (TASK-1474.05)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_populates_media_from_html(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """HTML with inline images + links populates utterance media lists."""
+    post_text = "The post body content here."
+    html = (
+        "<div>"
+        f"<p>{post_text}</p>"
+        '<img src="https://example.com/post.png">'
+        '<a href="https://example.com/link1">read more</a>'
+        "</div>"
+    )
+    fresh = _scrape(markdown=f"# Post\n\n{post_text}", html=html)
+    client = _FakeFirecrawlClient(result=fresh)
+    cache = _FakeScrapeCache()
+    _stub_agent(
+        monkeypatch,
+        _payload(
+            page_kind=PageKind.BLOG_POST,
+            utterances=[Utterance(utterance_id=None, kind="post", text=post_text)],
+        ),
+    )
+
+    payload = await _call(TARGET_URL, client, cache, settings)
+
+    post_utterance = payload.utterances[0]
+    assert "https://example.com/post.png" in post_utterance.mentioned_images
+    assert "https://example.com/link1" in post_utterance.mentioned_urls
+
+
+@pytest.mark.asyncio
+async def test_extract_utterances_media_empty_when_no_html(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """When html is empty string, all utterance media lists stay empty."""
+    post_text = "The post body content here."
+    fresh = _scrape(markdown=f"# Post\n\n{post_text}", html="")
+    client = _FakeFirecrawlClient(result=fresh)
+    cache = _FakeScrapeCache()
+    _stub_agent(
+        monkeypatch,
+        _payload(
+            page_kind=PageKind.ARTICLE,
+            utterances=[Utterance(utterance_id=None, kind="post", text=post_text)],
+        ),
+    )
+
+    payload = await _call(TARGET_URL, client, cache, settings)
+
+    post_utterance = payload.utterances[0]
+    assert post_utterance.mentioned_images == []
+    assert post_utterance.mentioned_urls == []
+    assert post_utterance.mentioned_videos == []

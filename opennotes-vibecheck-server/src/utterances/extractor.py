@@ -45,6 +45,7 @@ from src.firecrawl_client import FirecrawlClient, ScrapeResult
 from src.services.gemini_agent import build_agent
 from src.utils.html_sanitize import strip_noise
 
+from .media_extraction import attribute_media
 from .schema import UtterancesPayload
 
 EXTRACTOR_SYSTEM_PROMPT = f"""\
@@ -153,6 +154,8 @@ async def extract_utterances(
     payload.source_url = url
     payload.scraped_at = datetime.now(UTC)
     _assign_stable_ids(payload)
+    sanitized_html = _sanitize_html(scrape.html or "")
+    attribute_media(sanitized_html, payload.utterances)
     return payload
 
 
