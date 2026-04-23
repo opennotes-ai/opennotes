@@ -26,6 +26,29 @@ vi.mock("openapi-fetch", () => ({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(config?.body ?? {}),
+          signal: config?.signal,
+        });
+        const response = await capturedFetch(request);
+        const bodyText = await response.text();
+        const parsed = bodyText ? JSON.parse(bodyText) : null;
+        if (!response.ok) {
+          return { data: null, error: parsed ?? {}, response };
+        }
+        return { data: parsed, error: null, response };
+      }),
+      GET: vi.fn().mockImplementation(async (path: string, config?: any) => {
+        let resolved = path;
+        const pathParams = config?.params?.path as
+          | Record<string, string>
+          | undefined;
+        if (pathParams) {
+          for (const [k, v] of Object.entries(pathParams)) {
+            resolved = resolved.replace(`{${k}}`, v);
+          }
+        }
+        const request = new Request(`${opts.baseUrl}${resolved}`, {
+          method: "GET",
+          signal: config?.signal,
         });
         const response = await capturedFetch(request);
         const bodyText = await response.text();
@@ -533,6 +556,316 @@ describe("analyzeUrl", () => {
     expect(apiErr.errorBody?.error_code).toBe("upstream_error");
     expect(apiErr.errorBody?.message).toMatch(/network broken/);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("normalizeHeaders (TASK-1473.43 — getRequestHeaders Record path)", () => {
+  it("works when the IdTokenClient returns a plain Record<string, string>", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.VIBECHECK_SERVER_URL = "https://server.run.app";
+
+    mockGetRequestHeaders.mockResolvedValue({
+      Authorization: "Bearer record-token-xyz",
+    });
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const token = await getAuthorizationHeader("https://server.run.app");
+    expect(token).toBe("Bearer record-token-xyz");
+  });
+
+  it("works when the IdTokenClient returns a Record<string, string[]> (multi-valued)", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.VIBECHECK_SERVER_URL = "https://server.run.app";
+
+    mockGetRequestHeaders.mockResolvedValue({
+      Authorization: ["Bearer multi-token"],
+    });
+    mockGetIdTokenClient.mockResolvedValue({
+      getRequestHeaders: mockGetRequestHeaders,
+    });
+
+    const { getAuthorizationHeader } = await import("./api-client.server");
+    const token = await getAuthorizationHeader("https://server.run.app");
+    expect(token).toBe("Bearer multi-token");
+  });
+
+  it("normalizeHeaders preserves Headers instances and skips undefined", async () => {
+    const { normalizeHeaders } = await import("./api-client.server");
+    const original = new Headers({ Authorization: "Bearer x" });
+    expect(normalizeHeaders(original)).toBe(original);
+    expect(normalizeHeaders(null).get("anything")).toBeNull();
+    expect(normalizeHeaders(undefined).get("anything")).toBeNull();
+    const skipped = normalizeHeaders({ "X-Defined": "1", "X-Undef": undefined });
+    expect(skipped.get("X-Defined")).toBe("1");
+    expect(skipped.get("X-Undef")).toBeNull();
+  });
+});
+
+describe("fetchWithRetry timeout behavior (TASK-1473.42)", () => {
+  it("does NOT retry an AbortError thrown by the underlying fetch", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    const abortError = new Error("aborted");
+    abortError.name = "AbortError";
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => {
+        throw abortError;
+      });
+
+    const { analyzeUrl, VibecheckApiError } = await import(
+      "./api-client.server"
+    );
+
+    let caught: unknown = null;
+    try {
+      await analyzeUrl("https://news.example.com/a");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(caught).toBeInstanceOf(VibecheckApiError);
+    fetchSpy.mockRestore();
+  });
+
+  it("does NOT retry a TimeoutError thrown by AbortSignal.timeout", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    const timeoutError = new Error("timed out");
+    timeoutError.name = "TimeoutError";
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => {
+        throw timeoutError;
+      });
+
+    const { analyzeUrl } = await import("./api-client.server");
+
+    try {
+      await analyzeUrl("https://news.example.com/a");
+    } catch {
+      /* swallowed */
+    }
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockRestore();
+  });
+
+  it("the GET poll route uses a 60s timeout, not the legacy 540s", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    let observedTimeoutMs: number | null = null;
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((ms: number) => {
+        if (observedTimeoutMs === null) observedTimeoutMs = ms;
+        return realTimeout(1_000_000);
+      });
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              job_id: "00000000-0000-0000-0000-000000000001",
+              url: "https://news.example.com/a",
+              status: "pending",
+              attempt_id: "00000000-0000-0000-0000-0000000000aa",
+              created_at: "2026-04-22T00:00:00Z",
+              updated_at: "2026-04-22T00:00:00Z",
+              cached: false,
+              next_poll_ms: 1500,
+              utterance_count: 0,
+            }),
+            { status: 200 },
+          ),
+      );
+
+    const { pollJob } = await import("./api-client.server");
+    await pollJob("00000000-0000-0000-0000-000000000001");
+
+    expect(observedTimeoutMs).toBe(60_000);
+    expect(observedTimeoutMs).toBeLessThan(540_000);
+    fetchSpy.mockRestore();
+    timeoutSpy.mockRestore();
+  });
+
+  it("the POST /api/analyze route uses the longer 300s submit timeout", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    let observedTimeoutMs: number | null = null;
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((ms: number) => {
+        if (observedTimeoutMs === null) observedTimeoutMs = ms;
+        return realTimeout(1_000_000);
+      });
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              job_id: "00000000-0000-0000-0000-000000000001",
+              status: "pending",
+              cached: false,
+            }),
+            { status: 202 },
+          ),
+      );
+
+    const { analyzeUrl } = await import("./api-client.server");
+    await analyzeUrl("https://news.example.com/a");
+
+    expect(observedTimeoutMs).toBe(300_000);
+    expect(observedTimeoutMs).toBeLessThan(540_000);
+    fetchSpy.mockRestore();
+    timeoutSpy.mockRestore();
+  });
+
+  it("the worst-case wall time for an AbortError is bounded — no 540s × 2 cascade", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    const abortError = new Error("aborted");
+    abortError.name = "AbortError";
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => {
+        throw abortError;
+      });
+
+    const { analyzeUrl } = await import("./api-client.server");
+    const start = Date.now();
+    try {
+      await analyzeUrl("https://news.example.com/a");
+    } catch {
+      /* expected */
+    }
+    const elapsed = Date.now() - start;
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(elapsed).toBeLessThan(1_000);
+    fetchSpy.mockRestore();
+  });
+
+  it("retries once on a non-Abort transport error then surfaces the wrapped failure", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => {
+        throw new TypeError("flaky network");
+      });
+
+    const { analyzeUrl, VibecheckApiError } = await import(
+      "./api-client.server"
+    );
+    let caught: unknown = null;
+    try {
+      await analyzeUrl("https://news.example.com/a");
+    } catch (err) {
+      caught = err;
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(caught).toBeInstanceOf(VibecheckApiError);
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("VibecheckApiError.headers (TASK-1473.39 carry-through)", () => {
+  it("preserves the Retry-After header on a 429 GET response", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({ error_code: "rate_limited", message: "slow down" }),
+            {
+              status: 429,
+              headers: { "Retry-After": "7" },
+            },
+          ),
+      );
+
+    const { pollJob, VibecheckApiError } = await import("./api-client.server");
+    let caught: unknown = null;
+    try {
+      await pollJob("00000000-0000-0000-0000-000000000001");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(VibecheckApiError);
+    const apiErr = caught as InstanceType<typeof VibecheckApiError>;
+    expect(apiErr.statusCode).toBe(429);
+    expect(apiErr.headers.get("Retry-After")).toBe("7");
+    fetchSpy.mockRestore();
+  });
+
+  it("constructs without headers and exposes an empty Headers", async () => {
+    const { VibecheckApiError } = await import("./api-client.server");
+    const err = new VibecheckApiError("oops", 500);
+    expect(err.headers).toBeInstanceOf(Headers);
+    expect(err.headers.get("Retry-After")).toBeNull();
+  });
+
+  it("normalizes a Record<string, string> headers argument to a Headers instance", async () => {
+    const { VibecheckApiError } = await import("./api-client.server");
+    const err = new VibecheckApiError("rl", 429, null, { "Retry-After": "3" });
+    expect(err.headers).toBeInstanceOf(Headers);
+    expect(err.headers.get("Retry-After")).toBe("3");
+  });
+});
+
+describe("pollJob signal threading (TASK-1473.40)", () => {
+  it("aborts the underlying fetch when the caller's AbortController fires", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.VIBECHECK_SERVER_URL = "http://localhost:8000";
+
+    const observedAborts: boolean[] = [];
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (req) => {
+        const r = req as Request;
+        return await new Promise<Response>((_resolve, reject) => {
+          r.signal.addEventListener("abort", () => {
+            observedAborts.push(true);
+            const e = new Error("aborted");
+            e.name = "AbortError";
+            reject(e);
+          });
+        });
+      });
+
+    const { pollJob } = await import("./api-client.server");
+    const controller = new AbortController();
+    const promise = pollJob("00000000-0000-0000-0000-000000000001", {
+      signal: controller.signal,
+    }).catch((err) => err);
+
+    controller.abort();
+    const result = await promise;
+    expect(observedAborts).toContain(true);
+    expect((result as Error).name).toMatch(/AbortError|VibecheckApiError/);
     fetchSpy.mockRestore();
   });
 });

@@ -36,12 +36,27 @@ export function clampErrorCode(raw: unknown): ErrorCode | undefined {
     : undefined;
 }
 
-const FETCH_TIMEOUT_MS = 540_000;
+const ANALYZE_SUBMIT_TIMEOUT_MS = 300_000;
+const POLL_FETCH_TIMEOUT_MS = 60_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 60_000;
 const FETCH_MAX_ATTEMPTS = 2;
 const FETCH_RETRY_BASE_DELAY_MS = 250;
 const IDENTITY_TOKEN_MAX_RETRIES = 3;
 const TOKEN_FETCH_TIMEOUT_MS = 5_000;
 const DEFAULT_DEV_BASE_URL = "http://localhost:8000";
+
+function timeoutForRequest(request: Request): number {
+  let pathname: string;
+  try {
+    pathname = new URL(request.url).pathname;
+  } catch {
+    return DEFAULT_FETCH_TIMEOUT_MS;
+  }
+  if (request.method === "POST" && pathname === "/api/analyze") {
+    return ANALYZE_SUBMIT_TIMEOUT_MS;
+  }
+  return POLL_FETCH_TIMEOUT_MS;
+}
 
 export class VibecheckApiError extends Error {
   public errorBody: ApiErrorBody | null;
@@ -74,6 +89,23 @@ function getAuthInstance(): GoogleAuth {
   return authInstance;
 }
 
+export function normalizeHeaders(
+  raw: Headers | Record<string, string | string[] | undefined> | null | undefined,
+): Headers {
+  if (!raw) return new Headers();
+  if (raw instanceof Headers) return raw;
+  const out = new Headers();
+  for (const [key, value] of Object.entries(raw)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      for (const v of value) out.append(key, v);
+    } else {
+      out.set(key, value);
+    }
+  }
+  return out;
+}
+
 export async function getAuthorizationHeader(
   targetAudience: string,
 ): Promise<string | null> {
@@ -97,7 +129,8 @@ export async function getAuthorizationHeader(
             client = await auth.getIdTokenClient(targetAudience);
             idTokenClientCache.set(targetAudience, client);
           }
-          const headers = await client.getRequestHeaders();
+          const rawHeaders = await client.getRequestHeaders();
+          const headers = normalizeHeaders(rawHeaders);
           return headers.get("Authorization") || null;
         } catch (error) {
           if (attempt === IDENTITY_TOKEN_MAX_RETRIES - 1) throw error;
@@ -137,20 +170,51 @@ function resolveBaseUrl(): string {
   return DEFAULT_DEV_BASE_URL;
 }
 
+function isAbortError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const name = (error as { name?: unknown }).name;
+  return name === "AbortError" || name === "TimeoutError";
+}
+
+function combineSignals(
+  upstream: AbortSignal | null,
+  timeoutMs: number,
+): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  if (!upstream) return timeoutSignal;
+  if (typeof (AbortSignal as unknown as { any?: unknown }).any === "function") {
+    return (
+      AbortSignal as unknown as {
+        any: (signals: AbortSignal[]) => AbortSignal;
+      }
+    ).any([upstream, timeoutSignal]);
+  }
+  const controller = new AbortController();
+  const onAbort = (reason: unknown) => controller.abort(reason);
+  if (upstream.aborted) controller.abort(upstream.reason);
+  else upstream.addEventListener("abort", () => onAbort(upstream.reason));
+  if (timeoutSignal.aborted) controller.abort(timeoutSignal.reason);
+  else
+    timeoutSignal.addEventListener("abort", () => onAbort(timeoutSignal.reason));
+  return controller.signal;
+}
+
 async function fetchWithRetry(
   request: Request,
   attempts = FETCH_MAX_ATTEMPTS,
 ): Promise<Response> {
+  const timeoutMs = timeoutForRequest(request);
   let lastError: unknown = null;
   for (let attempt = 0; attempt < attempts; attempt++) {
     const perAttempt = request.clone();
     try {
       return await fetch(
         new Request(perAttempt, {
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          signal: combineSignals(request.signal, timeoutMs),
         }),
       );
     } catch (error) {
+      if (isAbortError(error)) throw error;
       lastError = error;
       if (attempt === attempts - 1) break;
       const delay = FETCH_RETRY_BASE_DELAY_MS * 2 ** attempt;
