@@ -1,28 +1,40 @@
-"""End-to-end async-pipeline integration test (TASK-1473.22 AC#1).
+"""Integration coverage for the async-pipeline orchestration surface (TASK-1473.22 AC#1).
 
-Walks the public API + internal worker through one job lifetime:
+Walks the public API + internal worker through one job lifetime so the
+route → orchestrator → finalize wiring is exercised end-to-end:
 
     POST /api/analyze              -> 202 + job_id, status=pending
     POST /_internal/jobs/{id}/run  -> orchestrator runs the (stubbed) pipeline
                                       and finalizes when every slot is done
     GET  /api/analyze/{id}         -> 200 + status=done + sidebar_payload
 
-Firecrawl is stubbed with `RecordingFirecrawlClient`; Gemini extraction is
-stubbed by patching `src.jobs.orchestrator.extract_utterances`. The
-section-fan-out path is left intact: `_run_section` already writes the
-`_empty_section_data` payload that `maybe_finalize_job` accepts, so the
-test exercises the full slot-write + finalize stack without touching any
-LLM.
+What this file actually verifies (re-scoped per TASK-1473.53):
 
-What this test proves end-to-end:
-  * The advisory-lock + dedup flow at `POST /api/analyze` returns a fresh
-    job_id.
-  * The orchestrator's `_claim_job` flips status pending → extracting,
-    extracts utterances (stubbed), flips to analyzing, fans out the seven
-    slots, and finalizes via `maybe_finalize_job`.
-  * `vibecheck_analyses` ends up with one row whose `sidebar_payload` has
-    every section structurally present.
-  * The poll endpoint returns `status=done` + `sidebar_payload` populated.
+  * Route enqueue path — POST /api/analyze takes the advisory lock,
+    inserts a pending job row, and returns 202 + X-Vibecheck-Job-Id.
+  * OIDC auth on the internal worker — /_internal/jobs/{id}/run
+    rejects unsigned callers; the test bears a mocked verifier.
+  * Slot CAS contract — _claim_job flips status pending→extracting and
+    every per-section _run_section writes its slot inside the
+    expected_task_attempt envelope.
+  * Finalize assembly — maybe_finalize_job UPSERTs vibecheck_analyses
+    with the assembled SidebarPayload and (TASK-1473.34) flips
+    vibecheck_jobs.status to done so the poll returns done.
+  * URL audit trail — body.url is preserved on the row while
+    normalized_url carries the canonical form (TASK-1473.44).
+  * Worker integrity — write_slot rowcount=0 propagates as 503 so
+    Cloud Tasks redelivers (TASK-1473.41).
+
+Out of scope (covered by per-component suites):
+
+  * Real Firecrawl scrape (RecordingFirecrawlClient stands in).
+  * Real Gemini extraction (extract_utterances is monkeypatched).
+  * Per-section analyzer logic — _run_section walks _empty_section_data
+    for unregistered slugs and the registered safety/web-risk handlers
+    early-return on the empty-utterance payload, so this file does NOT
+    prove the analyzers extract real signal. Per-handler suites in
+    tests/analyses/ + the dedicated section worker tests (test_worker,
+    test_retry, test_slot_writes) own that contract.
 """
 from __future__ import annotations
 
