@@ -126,17 +126,16 @@ async def test_post_then_internal_run_then_poll_to_done(
 
     # 5. Every per-section slot must be `done` and the assembled
     #    SidebarPayload must have UPSERTed into `vibecheck_analyses`.
-    #    Note: as of this commit `maybe_finalize_job` does not flip
-    #    `vibecheck_jobs.status` to `done` (only inserts the analyses row),
-    #    so the job row's status stays at `analyzing` after a successful
-    #    finalize — see TASK-1473 follow-up tracking the missing transition.
+    #    `maybe_finalize_job` also flips `vibecheck_jobs.status` to `done`
+    #    after the cache write (TASK-1473.34) so the polled job no longer
+    #    appears stuck in `analyzing`.
     sections = await read_sections(db_pool, job_id)
     for slug in SectionSlug:
         assert slug.value in sections, f"missing slot {slug.value}"
         assert sections[slug.value]["state"] == "done"
 
     final = await read_job(db_pool, job_id)
-    assert final["status"] in ("analyzing", "done"), (
+    assert final["status"] == "done", (
         f"job ended in unexpected status {final['status']!r}: "
         f"error_code={final.get('error_code')!r} "
         f"message={final.get('error_message')!r}"

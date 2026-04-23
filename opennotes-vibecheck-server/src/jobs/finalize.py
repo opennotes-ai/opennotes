@@ -64,6 +64,24 @@ SET sidebar_payload = EXCLUDED.sidebar_payload,
     expires_at = EXCLUDED.expires_at
 """
 
+# After UPSERT into the legacy 72h cache, flip the job row itself to
+# `done`. Without this transition the poll endpoint would surface the
+# job as `analyzing` indefinitely even though every slot completed and
+# `vibecheck_analyses` already carries the assembled SidebarPayload
+# (TASK-1473.34). Guarded on attempt_id and the same non-terminal status
+# set the rest of finalize trusts so a concurrent retry rotation cannot
+# clobber a job we no longer own.
+_MARK_JOB_DONE_SQL = """
+UPDATE vibecheck_jobs
+SET status = 'done',
+    sidebar_payload = $2::jsonb,
+    finished_at = now(),
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $3
+  AND status IN ('pending', 'extracting', 'analyzing')
+"""
+
 _NON_TERMINAL_STATUSES = frozenset({"pending", "extracting", "analyzing"})
 
 
@@ -210,8 +228,11 @@ async def maybe_finalize_job(
     forgot to pass it, defeating the slot-write contract. If a retry
     rotated the job's `attempt_id` after this worker launched the
     finalizer, the stale finalize aborts without touching the cache.
-    Similarly, a job whose status already moved to `done`/`failed` returns
-    False — the error path or sweeper owns those rows.
+    A job whose status moved to `failed` returns False — the error path or
+    sweeper owns those rows. A job that is already `done` (because finalize
+    already ran successfully) is treated as an idempotent re-finalize and
+    returns True without re-touching either the cache or the job row
+    (TASK-1473.34).
     """
     async with db.acquire() as conn, conn.transaction():
         row = await conn.fetchrow(_LOAD_SQL, job_id)
@@ -220,6 +241,8 @@ async def maybe_finalize_job(
 
         if row["attempt_id"] != expected_task_attempt:
             return False
+        if row["status"] == "done" and row["already_finalized"]:
+            return True
         if row["status"] not in _NON_TERMINAL_STATUSES:
             return False
 
@@ -237,6 +260,12 @@ async def maybe_finalize_job(
             row["url"],
             payload_json,
             expires_at,
+        )
+        await conn.execute(
+            _MARK_JOB_DONE_SQL,
+            job_id,
+            payload_json,
+            expected_task_attempt,
         )
         return True
 

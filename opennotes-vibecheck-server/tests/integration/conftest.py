@@ -114,6 +114,15 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '72 hours')
 );
 
+CREATE TABLE IF NOT EXISTS vibecheck_web_risk_lookups (
+    url TEXT PRIMARY KEY,
+    finding_payload JSONB NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS vibecheck_web_risk_lookups_expires_at_idx
+    ON vibecheck_web_risk_lookups (expires_at);
+
 CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
     utterance_pk UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     job_id UUID NOT NULL REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
@@ -195,6 +204,7 @@ async def db_pool(
             "DROP TABLE IF EXISTS vibecheck_job_utterances CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_scrapes CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_analyses CASCADE; "
+            "DROP TABLE IF EXISTS vibecheck_web_risk_lookups CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_jobs CASCADE;"
         )
         await conn.execute(INTEGRATION_DDL)
@@ -427,6 +437,22 @@ async def http_client(
     original = analyze_route.enqueue_job
     analyze_route.enqueue_job = enqueue_mock  # type: ignore[assignment]
 
+    # Page-URL Web Risk gate would otherwise hit the real Google API — stub
+    # both the route's binding and the underlying function (used by the
+    # orchestrator's `run_web_risk` worker) to "no findings" so submissions
+    # of test URLs aren't rejected as `unsafe_url`. Tests that exercise the
+    # unsafe-url branch override this.
+    from src.analyses.safety import web_risk as web_risk_module
+    from src.analyses.safety import web_risk_worker as web_risk_worker_module
+
+    original_check_urls = analyze_route.check_urls
+    original_check_urls_module = web_risk_module.check_urls
+    original_check_urls_worker = web_risk_worker_module.check_urls
+    no_findings = AsyncMock(return_value={})
+    analyze_route.check_urls = no_findings  # type: ignore[assignment]
+    web_risk_module.check_urls = no_findings  # type: ignore[assignment]
+    web_risk_worker_module.check_urls = no_findings  # type: ignore[assignment]
+
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport, base_url="http://test"
@@ -435,6 +461,9 @@ async def http_client(
     app.state.db_pool = None
     analyze_route.limiter.reset()
     analyze_route.enqueue_job = original  # type: ignore[assignment]
+    analyze_route.check_urls = original_check_urls  # type: ignore[assignment]
+    web_risk_module.check_urls = original_check_urls_module  # type: ignore[assignment]
+    web_risk_worker_module.check_urls = original_check_urls_worker  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
