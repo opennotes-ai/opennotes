@@ -6,6 +6,13 @@ structlog `(logger, method_name, event_dict)` signature — here we also
 install a stdlib `logging.Filter` that runs the same `_sanitize` function on
 every record's final message.
 
+Async pipeline observability (TASK-1473.15) is layered on top via
+`contextvars.ContextVar` + a `logging.Filter` (`_ContextFilter`) that copies
+the current `job_id`, `attempt_id`, and `slug` onto every `LogRecord`. The
+formatter then renders them as bracketed prefixes so Cloud Logging can pivot
+on any of the three. `bind_contextvars` / `clear_contextvars` are the
+caller-side helpers (used by `src.jobs.orchestrator`).
+
 Logfire redaction is configured lazily on first call to `configure_logfire()`
 so that unit tests and local runs that skip Logfire don't pay the cost. We
 register a `ScrubbingOptions` callback because upstream Logfire does not ship
@@ -16,14 +23,81 @@ from __future__ import annotations
 
 import logging
 import sys
+from contextvars import ContextVar, Token
 from typing import Any
 
 from src.utils.error_sanitizer import _sanitize, sanitize_processor
 
-__all__ = ["get_logger", "sanitize_processor", "configure_logfire"]
+__all__ = [
+    "bind_contextvars",
+    "clear_contextvars",
+    "configure_logfire",
+    "get_logger",
+    "sanitize_processor",
+]
 
-_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+_LOG_FORMAT = (
+    "%(asctime)s %(levelname)s %(name)s "
+    "[job_id=%(job_id)s attempt_id=%(attempt_id)s slug=%(slug)s] %(message)s"
+)
 _DATE_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
+
+
+_job_id_var: ContextVar[str] = ContextVar("vibecheck_job_id", default="-")
+_attempt_id_var: ContextVar[str] = ContextVar("vibecheck_attempt_id", default="-")
+_slug_var: ContextVar[str] = ContextVar("vibecheck_slug", default="-")
+
+
+def bind_contextvars(
+    *,
+    job_id: Any = None,
+    attempt_id: Any = None,
+    slug: Any = None,
+) -> dict[str, Token[str]]:
+    """Bind any subset of `job_id`, `attempt_id`, `slug` to the current context.
+
+    Returns a dict of reset tokens the caller MUST hand to
+    `clear_contextvars` in a `finally` block — otherwise the bindings leak
+    to the next coroutine that runs on this event loop slot.
+
+    Values are coerced via `str(...)` so UUID/Enum inputs serialize cleanly.
+    Passing `None` skips that variable (so partial bindings — e.g., only
+    `slug` from `_run_section` — don't clobber an outer `job_id`).
+    """
+    tokens: dict[str, Token[str]] = {}
+    if job_id is not None:
+        tokens["job_id"] = _job_id_var.set(str(job_id))
+    if attempt_id is not None:
+        tokens["attempt_id"] = _attempt_id_var.set(str(attempt_id))
+    if slug is not None:
+        slug_value = slug.value if hasattr(slug, "value") else slug
+        tokens["slug"] = _slug_var.set(str(slug_value))
+    return tokens
+
+
+def clear_contextvars(tokens: dict[str, Token[str]]) -> None:
+    """Reset any tokens previously returned by `bind_contextvars`."""
+    if "job_id" in tokens:
+        _job_id_var.reset(tokens["job_id"])
+    if "attempt_id" in tokens:
+        _attempt_id_var.reset(tokens["attempt_id"])
+    if "slug" in tokens:
+        _slug_var.reset(tokens["slug"])
+
+
+class _ContextFilter(logging.Filter):
+    """Inject `job_id`, `attempt_id`, `slug` from contextvars onto each record.
+
+    Runs before `_SanitizeFilter` so the formatter's `%(job_id)s` placeholders
+    always resolve — without this, `logging.Formatter` raises KeyError on
+    records emitted outside an active orchestration context.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.job_id = _job_id_var.get()
+        record.attempt_id = _attempt_id_var.get()
+        record.slug = _slug_var.get()
+        return True
 
 
 class _SanitizeFilter(logging.Filter):
@@ -57,6 +131,7 @@ def _ensure_root_configured() -> None:
         return
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter(fmt=_LOG_FORMAT, datefmt=_DATE_FORMAT))
+    handler.addFilter(_ContextFilter())
     handler.addFilter(_SanitizeFilter())
     setattr(handler, "_vibecheck_default", True)  # noqa: B010
     root.addHandler(handler)

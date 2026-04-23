@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     RATE_LIMIT_POLL_BURST: int = 10
     RATE_LIMIT_POLL_SUSTAINED: int = 300
 
+    # TASK-1473.35: when set + the public POST carries
+    # `X-Vibecheck-Test-Fail-Slug: <slug>`, the orchestrator forces a
+    # synthetic failure for the named slot so the e2e section-retry
+    # Playwright spec can drive a real round-trip retry. Default False
+    # so the header is always ignored in production envs.
+    VIBECHECK_ALLOW_TEST_FAIL_HEADER: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -86,3 +86,36 @@ def test_configure_logfire_installs_extra_patterns(_reset_logfire_flag: None) ->
     assert any("sig=" in p for p in pattern_strs), (
         "extra_patterns must include a literal 'sig=' token"
     )
+
+
+def test_metrics_endpoint_rejects_unauthenticated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unauthenticated GET /metrics must 401 (TASK-1473.37).
+
+    Pre-fix the bare `app.mount("/metrics", make_asgi_app())` exposed
+    operational signals to anyone reaching the Cloud Run revision when
+    `--allow-unauthenticated` was set. The endpoint now requires the
+    same OIDC dependency the internal worker uses.
+    """
+    from src.config import get_settings
+    from src.main import app
+
+    monkeypatch.setenv("VIBECHECK_SERVER_URL", "https://vibecheck.test")
+    monkeypatch.setenv(
+        "VIBECHECK_TASKS_ENQUEUER_SA",
+        "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
+    )
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        resp = client.get("/metrics")
+    assert resp.status_code == 401
+    body = resp.json()
+    # The OIDC dependency raises HTTPException(detail={...}); the body is
+    # FastAPI's default `{"detail": {...}}` shape there. We assert the
+    # error code surfaces somewhere so the gate can't be misinterpreted
+    # as a 200 with empty payload.
+    assert "unauthorized" in str(body)
+
+    get_settings.cache_clear()

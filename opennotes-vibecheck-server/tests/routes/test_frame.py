@@ -117,6 +117,77 @@ class TestFrameCompat:
         resp = client.get("/api/frame-compat", params={"url": "not-a-url"})
         assert resp.status_code == 400
 
+    @pytest.mark.parametrize(
+        ("trigger_url", "monkeypatch_dns", "expected_detail"),
+        [
+            # scheme_not_allowed
+            ("javascript:alert(1)", None, "URL must be an http(s) URL"),
+            # missing_host — bare scheme with no netloc.
+            ("http:///path", None, "URL must include a host"),
+            # invalid_host — IDNA-illegal host (consecutive dots / label > 63).
+            (
+                "https://" + "a" * 64 + ".example.com/",
+                None,
+                "URL host is invalid",
+            ),
+            # host_blocked — localhost is on the static allowlist deny.
+            ("http://localhost/", None, "URL host is not allowed"),
+            # private_ip — RFC1918 IP literal.
+            ("http://10.0.0.1/admin", None, "URL points to a private network address"),
+            # resolved_private_ip — public-looking host that resolves to RFC1918.
+            (
+                "http://evil.example.com/",
+                "private",
+                "URL points to a private network address",
+            ),
+            # unresolvable_host — getaddrinfo raises socket.gaierror.
+            (
+                "http://this-host-must-not-exist.example.invalid/",
+                "unresolvable",
+                "URL host could not be resolved",
+            ),
+        ],
+    )
+    def test_invalid_url_reason_maps_to_human_readable_detail(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        trigger_url: str,
+        monkeypatch_dns: str | None,
+        expected_detail: str,
+    ) -> None:
+        """Each `InvalidURL.reason` slug must map to its pinned human-readable copy.
+
+        The mapping in `routes/frame.py:_REASON_TO_HUMAN_DETAIL` exists so
+        frontend clients pinning the older copy don't break across the
+        SSRF refactor. TASK-1473.50: parametrize over every reason the
+        SSRF guard can raise so any new reason added without a mapping
+        falls through to the catch-all `"URL is not allowed"` and this
+        test fails loudly instead of silently drifting.
+        """
+        import socket
+
+        if monkeypatch_dns == "private":
+            def _resolve_to_private(
+                *_args: object, **_kwargs: object
+            ) -> list[tuple[int, int, int, str, tuple[str, int]]]:
+                return [
+                    (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.5", 0))
+                ]
+
+            monkeypatch.setattr(socket, "getaddrinfo", _resolve_to_private)
+        elif monkeypatch_dns == "unresolvable":
+            def _gaierror(
+                *_args: object, **_kwargs: object
+            ) -> list[tuple[int, int, int, str, tuple[str, int]]]:
+                raise socket.gaierror("no such host")
+
+            monkeypatch.setattr(socket, "getaddrinfo", _gaierror)
+
+        resp = client.get("/api/frame-compat", params={"url": trigger_url})
+        assert resp.status_code == 400, resp.text
+        assert resp.json() == {"detail": expected_detail}
+
 
 class TestScreenshot:
     def test_returns_screenshot_url(self, client: TestClient) -> None:
@@ -177,6 +248,10 @@ class TestScreenshot:
     def test_invalid_url_returns_400(self, client: TestClient) -> None:
         resp = client.get("/api/screenshot", params={"url": "javascript:alert(1)"})
         assert resp.status_code == 400
+        # Same human-readable detail as /api/frame-compat — the SSRF guard is
+        # shared, so the screenshot route must surface the same copy clients
+        # have been pinning since before the SSRF refactor.
+        assert resp.json() == {"detail": "URL must be an http(s) URL"}
 
 
 class TestSSRFValidation:

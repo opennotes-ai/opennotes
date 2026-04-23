@@ -23,7 +23,7 @@ function formatValence(value: number): string {
 export default function SentimentReport(props: SentimentReportProps) {
   const positive = () => clampPct(props.stats.positive_pct);
   const negative = () => clampPct(props.stats.negative_pct);
-  const neutral = () => Math.max(0, 100 - positive() - negative());
+  const neutral = () => clampPct(props.stats.neutral_pct);
 
   return (
     <div

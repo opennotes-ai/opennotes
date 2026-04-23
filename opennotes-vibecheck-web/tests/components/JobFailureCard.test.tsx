@@ -9,6 +9,7 @@ vi.mock("../../src/routes/analyze.data", () => {
     base: "/__mock_analyze_action",
     url: "/__mock_analyze_action",
     with: () => stub,
+    toString: () => "/__mock_analyze_action",
   });
   return {
     analyzeAction: stub,
@@ -46,61 +47,67 @@ describe("<JobFailureCard />", () => {
     expect(screen.getByTestId("job-failure-url").textContent).toBe(URL);
   });
 
-  it("uses 'couldn't be parsed' copy for invalid_url", async () => {
+  it("uses exact 'That URL couldn't be parsed.' copy for invalid_url", async () => {
     renderCard({ url: URL, errorCode: "invalid_url" });
     const copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toMatch(/couldn't be parsed/i);
+    expect(copy.textContent).toBe("That URL couldn't be parsed.");
   });
 
-  it("uses host-specific copy for unsupported_site when errorHost is provided", async () => {
+  it("uses exact host-specific copy for unsupported_site when errorHost is provided", async () => {
     renderCard({
       url: URL,
       errorCode: "unsupported_site",
       errorHost: "linkedin.com",
     });
     const copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toMatch(/can't analyze linkedin\.com/i);
+    expect(copy.textContent).toBe("We can't analyze linkedin.com yet.");
   });
 
-  it("falls back to generic site copy for unsupported_site with no host", async () => {
+  it("uses exact generic site copy for unsupported_site with no host", async () => {
     renderCard({ url: URL, errorCode: "unsupported_site" });
     const copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toMatch(/can't analyze that site/i);
+    expect(copy.textContent).toBe("We can't analyze that site yet.");
   });
 
-  it("uses 'couldn't reach' copy for upstream_error", async () => {
+  it("uses exact 'The analyzer couldn't reach that page.' copy for upstream_error", async () => {
     renderCard({ url: URL, errorCode: "upstream_error" });
     const copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toMatch(/couldn't reach that page/i);
+    expect(copy.textContent).toBe("The analyzer couldn't reach that page.");
   });
 
-  it("uses extraction-failed copy for extraction_failed", async () => {
+  it("uses exact extraction_failed copy", async () => {
     renderCard({ url: URL, errorCode: "extraction_failed" });
     const copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toMatch(/couldn't extract content/i);
+    expect(copy.textContent).toBe(
+      "We couldn't extract content from that page.",
+    );
   });
 
-  it("uses timeout copy for timeout", async () => {
+  it("uses exact timeout copy", async () => {
     renderCard({ url: URL, errorCode: "timeout" });
     const copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toMatch(/took too long/i);
+    expect(copy.textContent).toBe(
+      "The analysis took too long and was cancelled.",
+    );
   });
 
-  it("uses rate-limit copy for rate_limited", async () => {
+  it("uses exact rate_limited copy", async () => {
     renderCard({ url: URL, errorCode: "rate_limited" });
     const copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toMatch(/too many recent requests/i);
+    expect(copy.textContent).toBe(
+      "Too many recent requests. Try again in a moment.",
+    );
   });
 
-  it("uses generic copy for internal and null", async () => {
+  it("uses exact generic copy for internal and null", async () => {
     renderCard({ url: URL, errorCode: "internal" });
     let copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toMatch(/something went wrong/i);
+    expect(copy.textContent).toBe("Something went wrong. Please try again.");
     cleanup();
 
     renderCard({ url: URL, errorCode: null as unknown as ErrorCode });
     copy = await screen.findByTestId("job-failure-copy");
-    expect(copy.textContent).toMatch(/something went wrong/i);
+    expect(copy.textContent).toBe("Something went wrong. Please try again.");
   });
 
   it("Try-again form posts 'url' to analyzeAction", async () => {
@@ -118,6 +125,17 @@ describe("<JobFailureCard />", () => {
       'button[type="submit"]',
     ) as HTMLButtonElement | null;
     expect(submitBtn?.textContent).toMatch(/try again/i);
+  });
+
+  it("Try-again form action resolves to the analyzeAction stub URL", async () => {
+    renderCard({ url: URL, errorCode: "upstream_error" });
+    const form = (await screen.findByTestId(
+      "job-failure-try-again-form",
+    )) as HTMLFormElement;
+    const resolved =
+      form.getAttribute("action") ??
+      (typeof form.action === "string" ? form.action : "");
+    expect(resolved).toContain("/__mock_analyze_action");
   });
 
   it("invokes onTryAgain when the Try-again form is submitted", async () => {

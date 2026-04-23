@@ -1,11 +1,40 @@
-import { afterEach, describe, it, expect, vi } from "vitest";
-import { cleanup, render, screen, fireEvent } from "@solidjs/testing-library";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@solidjs/testing-library";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
 import Sidebar from "./Sidebar";
 import type { SectionSlug, SidebarPayload } from "~/lib/api-client.server";
 import { makeEmptyScd } from "~/lib/sidebar-defaults";
+
+const { retrySectionActionMock } = vi.hoisted(() => ({
+  retrySectionActionMock: vi.fn(),
+}));
+
+vi.mock("~/routes/analyze.data", () => {
+  const stub = Object.assign(vi.fn(), {
+    base: "/__mock_retry_action",
+    url: "/__mock_retry_action",
+    with: () => stub,
+  });
+  return { retrySectionAction: stub };
+});
+
+vi.mock("@solidjs/router", async () => {
+  const actual = await vi.importActual<typeof import("@solidjs/router")>(
+    "@solidjs/router",
+  );
+  return {
+    ...actual,
+    useAction: () => retrySectionActionMock,
+  };
+});
 
 const TONE_SLUGS: SectionSlug[] = [
   "tone_dynamics__flashpoint",
@@ -55,6 +84,10 @@ function makeTonePayload(): SidebarPayload {
 
 afterEach(() => {
   cleanup();
+});
+
+beforeEach(() => {
+  retrySectionActionMock.mockReset();
 });
 
 describe("SectionGroup", () => {
@@ -232,6 +265,47 @@ describe("SectionGroup", () => {
     expect(reveal?.getAttribute("data-slot-attempt-id")).toBe("attempt-xyz");
   });
 
+  it("renders the production RetryButton (not the legacy fallback) when jobId is set", async () => {
+    retrySectionActionMock.mockResolvedValue({ ok: true });
+    const onRetry = vi.fn();
+    const sections: SlugToSlots = {
+      facts_claims__dedup: {
+        state: "failed",
+        attempt_id: "a1",
+        error: "boom",
+      },
+      facts_claims__known_misinfo: { state: "pending", attempt_id: "" },
+    };
+    render(() => (
+      <SectionGroup
+        label="Facts/claims"
+        slugs={FACTS_SLUGS}
+        sections={sections}
+        render={{}}
+        jobId="job-real"
+        onRetry={onRetry}
+      />
+    ));
+
+    const btn = screen.getByTestId(
+      "retry-facts_claims__dedup",
+    ) as HTMLButtonElement;
+    expect(btn.getAttribute("data-in-flight")).toBe("false");
+    expect(btn.getAttribute("aria-label")).toMatch(/^Retry /);
+
+    fireEvent.click(btn);
+
+    await waitFor(() => {
+      expect(retrySectionActionMock).toHaveBeenCalledTimes(1);
+    });
+    const fd = retrySectionActionMock.mock.calls[0][0] as FormData;
+    expect(fd.get("job_id")).toBe("job-real");
+    expect(fd.get("slug")).toBe("facts_claims__dedup");
+    await waitFor(() => {
+      expect(onRetry).toHaveBeenCalledWith("facts_claims__dedup");
+    });
+  });
+
   it("does not introduce left-stripe borders on cluster containers", () => {
     const sections: SlugToSlots = {
       tone_dynamics__flashpoint: { state: "running", attempt_id: "a1" },
@@ -261,7 +335,7 @@ describe("Sidebar", () => {
     render(() => <Sidebar sections={{}} />);
 
     const aside = screen.getByTestId("analysis-sidebar");
-    expect(aside.getAttribute("aria-live")).toBe("polite");
+    expect(aside.getAttribute("aria-live")).toBeNull();
 
     const counters = screen.getAllByTestId("section-group-counter");
     expect(counters).toHaveLength(4);
@@ -271,6 +345,20 @@ describe("Sidebar", () => {
     expect(texts.some((t) => t.startsWith("Tone/dynamics"))).toBe(true);
     expect(texts.some((t) => t.startsWith("Facts/claims"))).toBe(true);
     expect(texts.some((t) => t.startsWith("Opinions/sentiments"))).toBe(true);
+  });
+
+  it("places aria-live on per-section status nodes only (not on the aside)", () => {
+    render(() => <Sidebar sections={{}} />);
+
+    const aside = screen.getByTestId("analysis-sidebar");
+    expect(aside.getAttribute("aria-live")).toBeNull();
+
+    const liveRegions = aside.querySelectorAll('[aria-live="polite"]');
+    expect(liveRegions.length).toBe(4);
+    for (const node of liveRegions) {
+      expect(node.getAttribute("role")).toBe("status");
+      expect(node.classList.contains("sr-only")).toBe(true);
+    }
   });
 
   it("uses middot separator and integer N/M in counter labels", () => {
@@ -295,10 +383,22 @@ describe("Sidebar", () => {
       "2/2",
     );
 
-    expect(screen.queryByTestId("skeleton-safety__moderation")).toBeNull();
-    expect(
-      screen.queryByTestId("skeleton-tone_dynamics__flashpoint"),
-    ).toBeNull();
+    const ALL_SLUGS = [
+      "safety__moderation",
+      "tone_dynamics__flashpoint",
+      "tone_dynamics__scd",
+      "facts_claims__dedup",
+      "facts_claims__known_misinfo",
+      "opinions_sentiments__sentiment",
+      "opinions_sentiments__subjective",
+    ] as const;
+
+    for (const slug of ALL_SLUGS) {
+      expect(screen.getByTestId(`slot-${slug}`).getAttribute("data-slot-state")).toBe(
+        "done",
+      );
+      expect(screen.queryByTestId(`skeleton-${slug}`)).toBeNull();
+    }
   });
 
   it("omits left-stripe border classes anywhere in the rendered sidebar", () => {
@@ -425,52 +525,42 @@ describe("Sidebar (done slots, per-slug reports)", () => {
   it("renders each slug's own report and none of its siblings' content", () => {
     render(() => <Sidebar sections={doneSections()} />);
 
-    expect(
-      screen.getByTestId("report-safety__moderation"),
-    ).toBeDefined();
-    expect(
-      screen.getByTestId("report-tone_dynamics__flashpoint"),
-    ).toBeDefined();
-    expect(screen.getByTestId("report-tone_dynamics__scd")).toBeDefined();
-    expect(
-      screen.getByTestId("report-facts_claims__dedup"),
-    ).toBeDefined();
-    expect(
-      screen.getByTestId("report-facts_claims__known_misinfo"),
-    ).toBeDefined();
-    expect(
-      screen.getByTestId("report-opinions_sentiments__sentiment"),
-    ).toBeDefined();
-    expect(
-      screen.getByTestId("report-opinions_sentiments__subjective"),
-    ).toBeDefined();
+    const safetyReport = screen.getByTestId("report-safety__moderation");
+    expect(safetyReport.textContent).toContain("u-safety");
 
     const flashReport = screen.getByTestId(
       "report-tone_dynamics__flashpoint",
     );
+    expect(flashReport.textContent).toContain("tone shifts sharply");
     expect(flashReport.textContent).not.toContain("scd summary text");
+
     const scdReport = screen.getByTestId("report-tone_dynamics__scd");
+    expect(scdReport.textContent).toContain("scd summary text");
     expect(scdReport.textContent).not.toContain("tone shifts sharply");
 
     const dedupReport = screen.getByTestId("report-facts_claims__dedup");
+    expect(dedupReport.textContent).toContain("canonical claim text");
     expect(dedupReport.textContent).not.toContain("known-misinfo-claim");
+
     const knownReport = screen.getByTestId(
       "report-facts_claims__known_misinfo",
     );
+    expect(knownReport.textContent).toContain("known-misinfo-claim");
     expect(knownReport.textContent).not.toContain("canonical claim text");
 
     const sentimentReport = screen.getByTestId(
       "report-opinions_sentiments__sentiment",
     );
+    expect(sentimentReport.textContent).toContain("mean valence");
     expect(sentimentReport.textContent).not.toContain(
       "subjective-claim-one",
     );
+
     const subjectiveReport = screen.getByTestId(
       "report-opinions_sentiments__subjective",
     );
-    expect(subjectiveReport.textContent).not.toContain(
-      "mean valence",
-    );
+    expect(subjectiveReport.textContent).toContain("subjective-claim-one");
+    expect(subjectiveReport.textContent).not.toContain("mean valence");
   });
 
   it("renders done slots without any left-stripe border classes", () => {

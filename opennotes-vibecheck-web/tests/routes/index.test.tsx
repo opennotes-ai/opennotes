@@ -73,4 +73,22 @@ describe("HomePage (landing route)", () => {
     await screen.findByRole("heading", { name: /vibecheck/i });
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it("surfaces host-specific copy for unsupported_site when host is in the query string", async () => {
+    renderAt("/?error=unsupported_site&host=linkedin.com");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/can't analyze linkedin\.com/i);
+  });
+
+  it("surfaces generic unsupported_site copy when host is omitted", async () => {
+    renderAt("/?error=unsupported_site");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/can't analyze that site/i);
+  });
+
+  it("ignores unknown error codes by showing the generic fallback", async () => {
+    renderAt("/?error=mystery_code");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/something went wrong/i);
+  });
 });

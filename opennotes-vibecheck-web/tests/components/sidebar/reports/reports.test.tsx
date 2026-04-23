@@ -566,6 +566,34 @@ describe("<SentimentReport />", () => {
     ).toContain("width: 0%");
     expect(screen.getByTestId("sentiment-mean-valence").textContent).toBe("—");
   });
+
+  it("honors backend neutral_pct as authoritative (does not derive from positive+negative)", () => {
+    const stats: SentimentStats = {
+      per_utterance: [],
+      positive_pct: 30,
+      negative_pct: 20,
+      neutral_pct: 10,
+      mean_valence: 0,
+    };
+    render(() => <SentimentReport stats={stats} />);
+    expect(
+      screen.getByTestId("sentiment-neutral").getAttribute("style"),
+    ).toContain("width: 10%");
+  });
+
+  it("clamps neutral_pct to [0, 100]", () => {
+    const stats: SentimentStats = {
+      per_utterance: [],
+      positive_pct: 0,
+      negative_pct: 0,
+      neutral_pct: 250,
+      mean_valence: 0,
+    };
+    render(() => <SentimentReport stats={stats} />);
+    expect(
+      screen.getByTestId("sentiment-neutral").getAttribute("style"),
+    ).toContain("width: 100%");
+  });
 });
 
 describe("<SubjectiveReport />", () => {

@@ -32,12 +32,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
@@ -55,7 +56,6 @@ from src.analyses.schemas import (
     SafetySection,
     SectionSlot,
     SectionSlug,
-    SectionState,
     SidebarPayload,
     ToneDynamicsSection,
     WebRiskSection,
@@ -66,6 +66,7 @@ from src.config import get_settings
 from src.jobs.enqueue import enqueue_job, enqueue_section_retry
 from src.jobs.slots import retry_claim_slot
 from src.monitoring import get_logger
+from src.monitoring_metrics import CACHE_HITS, SINGLE_FLIGHT_LOCK_WAITS
 from src.utils.url_security import InvalidURL
 
 logger = get_logger(__name__)
@@ -114,6 +115,40 @@ def _error_response(
     )
 
 
+class _AnalyzeRouteError(Exception):
+    """Carrier for `_error_response` payloads raised from helpers.
+
+    Helpers like `_get_db_pool` and `_poll_rate_check` cannot return a
+    JSONResponse to a route that promises a typed pydantic model, so they
+    raise this exception and the route layer translates it back to the
+    documented `{error_code, message}` body via `_error_response`. Direct
+    `HTTPException` would wrap the payload as `{"detail": {...}}` which
+    breaks the frontend's parseErrorBody contract (TASK-1473.38).
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        error_code: str,
+        message: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(f"{status_code} {error_code}: {message}")
+        self.status_code = status_code
+        self.error_code = error_code
+        self.message = message
+        self.headers = headers
+
+    def to_response(self) -> JSONResponse:
+        return _error_response(
+            self.status_code,
+            self.error_code,
+            self.message,
+            headers=self.headers,
+        )
+
+
 def _host_of(normalized_url: str) -> str:
     """Extract host from the already-validated normalized URL.
 
@@ -138,14 +173,11 @@ def _host_of(normalized_url: str) -> str:
 def _get_db_pool(request: Request) -> Any:
     pool = getattr(request.app.state, "db_pool", None)
     if pool is None:
-        # The handler's early-return path surfaces this as a 503 with the
-        # `internal` slug — missing pool is a deploy-time misconfiguration.
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error_code": "internal",
-                "message": "database pool not initialized",
-            },
+        # Missing pool is a deploy-time misconfiguration — surface as 503
+        # with the same `{error_code, message}` body shape clients see for
+        # all other errors (TASK-1473.38).
+        raise _AnalyzeRouteError(
+            503, "internal", "database pool not initialized"
         )
     return pool
 
@@ -219,13 +251,24 @@ async def _insert_cached_done_job(
     host: str,
     sidebar_payload: dict[str, Any],
 ) -> UUID:
-    """Insert a `status=done` job row populated from the cache."""
+    """Insert a `status=done` job row populated from the cache.
+
+    Cooperates with the partial UNIQUE index
+    `vibecheck_jobs_unique_done_cached_normalized_url` (TASK-1473.46) so
+    two concurrent submitters losing the advisory lock can both fall into
+    the contended cache-hit branch without producing duplicate cached
+    done-job rows. The second INSERT hits ON CONFLICT DO NOTHING and the
+    caller re-fetches the surviving row by normalized_url.
+    """
     job_id = await conn.fetchval(
         """
         INSERT INTO vibecheck_jobs (
             url, normalized_url, host, status, sidebar_payload, cached, finished_at
         )
         VALUES ($1, $2, $3, 'done', $4::jsonb, true, now())
+        ON CONFLICT (normalized_url)
+            WHERE status = 'done' AND cached = true
+            DO NOTHING
         RETURNING job_id
         """,
         url,
@@ -233,6 +276,19 @@ async def _insert_cached_done_job(
         host,
         json.dumps(sidebar_payload),
     )
+    if job_id is None:
+        # Concurrent submitter beat us to the insert. Re-fetch the
+        # surviving cached done row so the response carries a real job_id.
+        job_id = await conn.fetchval(
+            """
+            SELECT job_id FROM vibecheck_jobs
+            WHERE normalized_url = $1
+              AND status = 'done'
+              AND cached = true
+            LIMIT 1
+            """,
+            normalized_url,
+        )
     assert isinstance(job_id, UUID)
     return job_id
 
@@ -318,21 +374,29 @@ async def _insert_pending_job(
     url: str,
     normalized_url: str,
     host: str,
+    test_fail_slug: str | None = None,
 ) -> tuple[UUID, UUID]:
-    """Insert a `status=pending` row and return `(job_id, attempt_id)`."""
+    """Insert a `status=pending` row and return `(job_id, attempt_id)`.
+
+    `test_fail_slug` is the orchestrator-side test hook for the
+    Playwright section-retry spec (TASK-1473.35). Production submits
+    leave it None — the route only persists a non-None value when the
+    server is started with `VIBECHECK_ALLOW_TEST_FAIL_HEADER=1`.
+    """
     attempt_id = uuid4()
     job_id = await conn.fetchval(
         """
         INSERT INTO vibecheck_jobs (
-            url, normalized_url, host, status, attempt_id
+            url, normalized_url, host, status, attempt_id, test_fail_slug
         )
-        VALUES ($1, $2, $3, 'pending', $4)
+        VALUES ($1, $2, $3, 'pending', $4, $5)
         RETURNING job_id
         """,
         url,
         normalized_url,
         host,
         attempt_id,
+        test_fail_slug,
     )
     assert isinstance(job_id, UUID)
     return job_id, attempt_id
@@ -361,6 +425,7 @@ async def _handle_locked_submit(
     url: str,
     normalized_url: str,
     host: str,
+    test_fail_slug: str | None = None,
 ) -> tuple[AnalyzeResponse, UUID | None]:
     """Run the inside-lock branch logic. Returns `(response, attempt_to_enqueue)`.
 
@@ -376,6 +441,7 @@ async def _handle_locked_submit(
             host=host,
             sidebar_payload=cached_payload,
         )
+        CACHE_HITS.labels(tier="analysis").inc()
         return (
             AnalyzeResponse(job_id=job_id, status=JobStatus.DONE, cached=True),
             None,
@@ -394,7 +460,11 @@ async def _handle_locked_submit(
         )
 
     job_id, attempt_id = await _insert_pending_job(
-        conn, url=url, normalized_url=normalized_url, host=host
+        conn,
+        url=url,
+        normalized_url=normalized_url,
+        host=host,
+        test_fail_slug=test_fail_slug,
     )
     return (
         AnalyzeResponse(
@@ -423,6 +493,24 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
     """
     settings = get_settings()
 
+    # TASK-1473.35: e2e test hook. When the env flag is set the route
+    # extracts X-Vibecheck-Test-Fail-Slug from the request and persists
+    # it on the job row; the orchestrator's _run_section turns it into
+    # a synthetic failure so Playwright can drive a real round-trip
+    # retry. Default-off in production.
+    test_fail_slug: str | None = None
+    if settings.VIBECHECK_ALLOW_TEST_FAIL_HEADER:
+        candidate = request.headers.get("X-Vibecheck-Test-Fail-Slug")
+        if candidate:
+            valid_slugs = {s.value for s in SectionSlug}
+            if candidate in valid_slugs:
+                test_fail_slug = candidate
+            else:
+                logger.info(
+                    "ignoring X-Vibecheck-Test-Fail-Slug=%s (unknown slug)",
+                    candidate,
+                )
+
     # 1. SSRF guard + canonical normalization.
     # `canonical_cache_key` funnels `validate_public_http_url` (SSRF + public
     # host form) and then `normalize_url` (strip tracking params + trailing
@@ -442,7 +530,10 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
         )
 
     host = _host_of(normalized_url)
-    pool = _get_db_pool(request)
+    try:
+        pool = _get_db_pool(request)
+    except _AnalyzeRouteError as exc:
+        return exc.to_response()
 
     # 2. Web Risk page-URL gate.
     async with httpx.AsyncClient(timeout=10.0) as hx:
@@ -482,6 +573,7 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
         async with pool.acquire() as conn, conn.transaction():
             got_lock = await _try_advisory_lock(conn, normalized_url)
             if not got_lock:
+                SINGLE_FLIGHT_LOCK_WAITS.inc()
                 # Contended branch: another submitter holds the lock. Do a
                 # non-locking cache check BEFORE falling back to in-flight
                 # lookup — a fresh `vibecheck_analyses` row must still win
@@ -493,11 +585,12 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
                 if cached_payload is not None:
                     cached_job_id = await _insert_cached_done_job(
                         conn,
-                        url=normalized_url,
+                        url=body.url,
                         normalized_url=normalized_url,
                         host=host,
                         sidebar_payload=cached_payload,
                     )
+                    CACHE_HITS.labels(tier="analysis").inc()
                     return (
                         AnalyzeResponse(
                             job_id=cached_job_id,
@@ -522,9 +615,10 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
                 return None, None, False
             response, attempt = await _handle_locked_submit(
                 conn,
-                url=normalized_url,
+                url=body.url,
                 normalized_url=normalized_url,
                 host=host,
+                test_fail_slug=test_fail_slug,
             )
             return response, attempt, True
 
@@ -555,7 +649,11 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
             await _mark_job_failed_enqueue(pool, response.job_id)
             return _error_response(500, "internal", "enqueue failed")
 
-    return response
+    return JSONResponse(
+        status_code=202,
+        content=response.model_dump(mode="json"),
+        headers={"X-Vibecheck-Job-Id": str(response.job_id)},
+    )
 
 
 # =========================================================================
@@ -634,8 +732,6 @@ async def _poll_rate_check(request: Request) -> None:
     `Retry-After: 0`; cap at the limit's window size so clock skew can't
     return a hostile value.
     """
-    import time
-
     key = _ip_and_job_id_key(request)
     for limit_str in (_poll_burst_limit_str(), _poll_sustained_limit_str()):
         item = _parse_limit(limit_str)
@@ -646,13 +742,19 @@ async def _poll_rate_check(request: Request) -> None:
                 # `+1` so a fractional-sub-second remainder (reset 0.3s away)
                 # rounds up to a Retry-After of at least 1s.
                 reset_in = int(stats.reset_time - time.time()) + 1
-            except Exception:  # noqa: BLE001 — defensive: never fail the header
+            except Exception:
                 reset_in = 1
-            window_seconds = int(item.GRANULARITY.seconds)
+            # Window length = `multiples * granularity_seconds`. Computing
+            # via `multiples` makes the cap correct for `300/minute` (60s
+            # cap), `5/minute` (60s cap), or `2/30 second` (60s cap)
+            # without relying on the parser surface that used to vary
+            # across `limits` versions (TASK-1473.51).
+            window_seconds = int(item.multiples) * int(item.GRANULARITY.seconds)
             reset_in = max(1, min(reset_in, window_seconds))
-            raise HTTPException(
-                status_code=429,
-                detail={"error_code": "rate_limited", "message": "poll rate exceeded"},
+            raise _AnalyzeRouteError(
+                429,
+                "rate_limited",
+                "poll rate exceeded",
                 headers={"Retry-After": str(reset_in)},
             )
 
@@ -687,11 +789,17 @@ _POLL_DELAY_BY_STATUS: dict[JobStatus, int] = {
 # the GET endpoint must pick exact columns so adding a new column to
 # vibecheck_jobs doesn't silently widen the response and leak fields.
 #
-# Page metadata (page_title, page_kind, utterance_count) comes from
-# `vibecheck_job_utterances` via two correlated subqueries. A LEFT JOIN
-# would multiply the job row by the number of utterances (the join table
-# is row-per-utterance); subqueries keep the projection one-row-per-job
-# and aggregate utterance_count in the same query. Codex W4 P2-2.
+# Page metadata (page_title, page_kind) comes from vibecheck_job_utterances
+# via a LEFT JOIN LATERAL ordered by position so both fields always come from
+# the SAME utterance row. TASK-1473.60: the prior two unordered correlated
+# subqueries could mix title from row A and kind from row B; after
+# persist_utterances (1473.57) every row carries identical metadata so
+# grabbing position-0 deterministically returns the payload's metadata.
+# A job with zero utterance rows gets meta.page_title=NULL, meta.page_kind=NULL
+# via the LEFT JOIN — the poll response treats both fields as absent.
+# utterance_count remains a separate scalar subquery to avoid a GROUP BY.
+# Codex W4 P2-2; defensive row.keys() checks in _row_to_job_state are now
+# no-ops (LATERAL always projects the alias) but retained for safety.
 _SELECT_JOB_SQL = """
 SELECT
     j.job_id,
@@ -706,26 +814,21 @@ SELECT
     j.cached,
     j.created_at,
     j.updated_at,
-    (
-        SELECT u.page_title
-        FROM vibecheck_job_utterances u
-        WHERE u.job_id = j.job_id
-          AND u.page_title IS NOT NULL
-        LIMIT 1
-    ) AS page_title,
-    (
-        SELECT u.page_kind
-        FROM vibecheck_job_utterances u
-        WHERE u.job_id = j.job_id
-          AND u.page_kind IS NOT NULL
-        LIMIT 1
-    ) AS page_kind,
+    meta.page_title,
+    meta.page_kind,
     (
         SELECT COUNT(*)
         FROM vibecheck_job_utterances u
         WHERE u.job_id = j.job_id
     ) AS utterance_count
 FROM vibecheck_jobs j
+LEFT JOIN LATERAL (
+    SELECT u.page_title, u.page_kind
+    FROM vibecheck_job_utterances u
+    WHERE u.job_id = j.job_id
+    ORDER BY u.position
+    LIMIT 1
+) AS meta ON TRUE
 WHERE j.job_id = $1
 """
 
@@ -796,7 +899,9 @@ def _row_to_job_state(row: Any) -> JobState:
     response_model=JobState,
     summary="Poll an async vibecheck job",
 )
-async def poll(job_id: UUID, request: Request) -> JobState:
+async def poll(
+    job_id: UUID, request: Request, response: Response
+) -> JobState | JSONResponse:
     """Read-only polling endpoint.
 
     Returns the current `JobState` including the `sections` dict (per-slot
@@ -805,16 +910,22 @@ async def poll(job_id: UUID, request: Request) -> JobState:
     `RATE_LIMIT_POLL_BURST` req/s + `RATE_LIMIT_POLL_SUSTAINED` req/min
     per `(ip, job_id)` tuple — exceeding either returns 429 with a
     `Retry-After` header.
+
+    The return type is `JobState | JSONResponse` because the 404 / 429 /
+    503 error paths emit `_error_response(...)` whose body is the
+    documented `{error_code, message}` shape rather than the FastAPI
+    default `{"detail": ...}` (TASK-1473.38).
     """
-    await _poll_rate_check(request)
-    pool = _get_db_pool(request)
+    try:
+        await _poll_rate_check(request)
+        pool = _get_db_pool(request)
+    except _AnalyzeRouteError as exc:
+        return exc.to_response()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(_SELECT_JOB_SQL, job_id)
     if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"error_code": "not_found", "message": "job not found"},
-        )
+        return _error_response(404, "not_found", "job not found")
+    response.headers["X-Vibecheck-Job-Id"] = str(job_id)
     return _row_to_job_state(row)
 
 
@@ -864,46 +975,44 @@ WHERE j.job_id = $1
 """
 
 
-async def _mark_slot_failed_internal(
+async def _revert_slot_after_enqueue_failure(
     pool: Any,
     job_id: UUID,
     slug: SectionSlug,
-    slot_attempt: UUID,
-    *,
-    error_code: str,
-    error: str,
+    new_slot_attempt: UUID,
+    prior_slot: dict[str, Any],
 ) -> None:
-    """Revert a just-claimed retry slot to `failed` after an enqueue failure.
+    """Restore a just-claimed retry slot to its prior failed snapshot.
 
-    The retry handler's CAS already made this worker the sole owner of the
-    slot; we can UPDATE without re-checking attempt_id. We DO restore the
-    job's status to `failed` so the poll endpoint doesn't appear to hang
-    in `analyzing` forever while no Cloud Task was published.
+    Narrowed from the previous `_mark_slot_failed_internal` (TASK-1473.47):
+    that helper unconditionally flipped the entire job to
+    `status=failed/error_code=internal/error_message='enqueue failed'`,
+    wiping prior error context, prematurely declaring the job terminal,
+    and (worst) clobbering a concurrent retry of a sibling slot that had
+    already moved the job back to `analyzing`.
+
+    The new contract: only the slot rotation is reverted, CAS-keyed on
+    the new slot attempt_id so a concurrent worker that already advanced
+    the slot is left alone. Job-level fields (`status`, `error_code`,
+    `error_message`, `error_host`, `finished_at`) stay as `retry_claim_slot`
+    set them. The orphan sweeper reclaims the job if no worker ever picks
+    it up; sibling-slot retries continue to drive the job forward.
     """
-    now = datetime.now(UTC)
-    slot = SectionSlot(
-        state=SectionState.FAILED,
-        attempt_id=slot_attempt,
-        error=error,
-        finished_at=now,
-    )
     async with pool.acquire() as conn:
         await conn.execute(
             """
             UPDATE vibecheck_jobs
             SET sections = sections || jsonb_build_object($2::text, $3::jsonb),
-                status = 'failed',
-                error_code = $4,
-                error_message = $5,
-                finished_at = now(),
                 updated_at = now()
             WHERE job_id = $1
+              AND sections ? $2::text
+              AND sections -> $2::text ->> 'attempt_id' = $4::text
+              AND status NOT IN ('done', 'failed')
             """,
             job_id,
             slug.value,
-            json.dumps(slot.model_dump(mode="json")),
-            error_code,
-            error,
+            json.dumps(prior_slot),
+            str(new_slot_attempt),
         )
 
 
@@ -931,7 +1040,10 @@ async def retry_section(
          flip the job back to `failed/internal` — the user sees a stable
          error card instead of a phantom `analyzing` state.
     """
-    pool = _get_db_pool(request)
+    try:
+        pool = _get_db_pool(request)
+    except _AnalyzeRouteError as exc:
+        return exc.to_response()
     settings = get_settings()
 
     async with pool.acquire() as conn:
@@ -996,13 +1108,12 @@ async def retry_section(
             slug.value,
             exc,
         )
-        await _mark_slot_failed_internal(
+        await _revert_slot_after_enqueue_failure(
             pool,
             job_id,
             slug,
             new_slot_attempt,
-            error_code="internal",
-            error="enqueue failed",
+            prior_slot=slot_data,
         )
         return _error_response(500, "internal", "enqueue failed")
 

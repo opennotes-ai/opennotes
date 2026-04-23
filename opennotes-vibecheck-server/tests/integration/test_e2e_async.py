@@ -1,0 +1,294 @@
+"""Integration coverage for the async-pipeline orchestration surface (TASK-1473.22 AC#1).
+
+Walks the public API + internal worker through one job lifetime so the
+route → orchestrator → finalize wiring is exercised end-to-end:
+
+    POST /api/analyze              -> 202 + job_id, status=pending
+    POST /_internal/jobs/{id}/run  -> orchestrator runs the (stubbed) pipeline
+                                      and finalizes when every slot is done
+    GET  /api/analyze/{id}         -> 200 + status=done + sidebar_payload
+
+What this file actually verifies (re-scoped per TASK-1473.53):
+
+  * Route enqueue path — POST /api/analyze takes the advisory lock,
+    inserts a pending job row, and returns 202 + X-Vibecheck-Job-Id.
+  * OIDC auth on the internal worker — /_internal/jobs/{id}/run
+    rejects unsigned callers; the test bears a mocked verifier.
+  * Slot CAS contract — _claim_job flips status pending→extracting and
+    every per-section _run_section writes its slot inside the
+    expected_task_attempt envelope.
+  * Finalize assembly — maybe_finalize_job UPSERTs vibecheck_analyses
+    with the assembled SidebarPayload and (TASK-1473.34) flips
+    vibecheck_jobs.status to done so the poll returns done.
+  * URL audit trail — body.url is preserved on the row while
+    normalized_url carries the canonical form (TASK-1473.44).
+  * Worker integrity — write_slot rowcount=0 propagates as 503 so
+    Cloud Tasks redelivers (TASK-1473.41).
+
+Out of scope (covered by per-component suites):
+
+  * Real Firecrawl scrape (RecordingFirecrawlClient stands in).
+  * Real Gemini extraction (extract_utterances is monkeypatched).
+  * Per-section analyzer logic — _run_section walks _empty_section_data
+    for unregistered slugs and the registered safety/web-risk handlers
+    early-return on the empty-utterance payload, so this file does NOT
+    prove the analyzers extract real signal. Per-handler suites in
+    tests/analyses/ + the dedicated section worker tests (test_worker,
+    test_retry, test_slot_writes) own that contract.
+"""
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from typing import Any
+from uuid import UUID
+
+import httpx
+import pytest
+
+from src.analyses.schemas import PageKind, SectionSlug
+from src.utterances.schema import UtterancesPayload
+
+from .conftest import RecordingFirecrawlClient, read_job, read_sections
+
+
+@pytest.fixture
+def fake_firecrawl() -> RecordingFirecrawlClient:
+    return RecordingFirecrawlClient()
+
+
+async def _make_utterances_payload(
+    url: str, *, n: int = 3
+) -> UtterancesPayload:
+    return UtterancesPayload.model_validate(
+        {
+            "source_url": url,
+            "scraped_at": datetime.now(UTC).isoformat(),
+            "page_title": "Test Page",
+            "page_kind": PageKind.ARTICLE.value,
+            "utterances": [
+                {
+                    "utterance_id": f"u-{i}",
+                    "kind": "post" if i == 0 else "comment",
+                    "text": f"utterance body {i}",
+                    "author": f"author-{i}",
+                }
+                for i in range(n)
+            ],
+        }
+    )
+
+
+async def test_post_then_internal_run_then_poll_to_done(
+    http_client: httpx.AsyncClient,
+    db_pool: Any,
+    install_oidc_mock: Any,
+    oidc_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    fake_firecrawl: RecordingFirecrawlClient,
+    scrape_cache: Any,
+) -> None:
+    # 1. Wire orchestrator factory seams to the integration fakes/cache.
+    from src.jobs import orchestrator
+
+    monkeypatch.setattr(
+        orchestrator, "_build_scrape_cache", lambda _settings: scrape_cache
+    )
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_client", lambda _settings: fake_firecrawl
+    )
+
+    target_url = "https://example.com/e2e-job"
+    payload = await _make_utterances_payload(target_url)
+
+    async def _stub_extract(
+        url: str, client: Any, cache: Any, *, settings: Any = None
+    ) -> UtterancesPayload:
+        return payload
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", _stub_extract)
+
+    # 2. POST /api/analyze — fresh submit returns 202 + new job_id.
+    resp = await http_client.post(
+        "/api/analyze", json={"url": target_url}
+    )
+    assert resp.status_code == 202, resp.text
+    body = json.loads(resp.text)
+    job_id = UUID(body["job_id"])
+    assert body["status"] == "pending"
+    assert body["cached"] is False
+    # AC #5 / TASK-1473.49: the response carries X-Vibecheck-Job-Id so
+    # operators can correlate POST → log → poll without parsing the body.
+    assert resp.headers.get("X-Vibecheck-Job-Id") == str(job_id)
+
+    # 3. Look up the attempt_id we'll pass to the worker — the route
+    #    inserted the row with a freshly-minted attempt_id we don't see in
+    #    the response, so read it back from the DB.
+    job_row = await read_job(db_pool, job_id)
+    expected_attempt_id = job_row["attempt_id"]
+    assert isinstance(expected_attempt_id, UUID)
+
+    # 4. POST /_internal/jobs/{id}/run — drives the orchestrator pipeline.
+    worker_resp = await http_client.post(
+        f"/_internal/jobs/{job_id}/run",
+        json={
+            "job_id": str(job_id),
+            "expected_attempt_id": str(expected_attempt_id),
+        },
+        headers=oidc_headers,
+    )
+    assert worker_resp.status_code == 200, worker_resp.text
+
+    # 5. Every per-section slot must be `done` and the assembled
+    #    SidebarPayload must have UPSERTed into `vibecheck_analyses`.
+    #    `maybe_finalize_job` also flips `vibecheck_jobs.status` to `done`
+    #    after the cache write (TASK-1473.34) so the polled job no longer
+    #    appears stuck in `analyzing`.
+    sections = await read_sections(db_pool, job_id)
+    for slug in SectionSlug:
+        assert slug.value in sections, f"missing slot {slug.value}"
+        assert sections[slug.value]["state"] == "done"
+
+    final = await read_job(db_pool, job_id)
+    assert final["status"] == "done", (
+        f"job ended in unexpected status {final['status']!r}: "
+        f"error_code={final.get('error_code')!r} "
+        f"message={final.get('error_message')!r}"
+    )
+
+    # 6. vibecheck_analyses cache row exists with assembled SidebarPayload.
+    async with db_pool.acquire() as conn:
+        analyses_row = await conn.fetchrow(
+            "SELECT url, sidebar_payload FROM vibecheck_analyses WHERE url = $1",
+            target_url,
+        )
+    assert analyses_row is not None, (
+        "no vibecheck_analyses row written — finalize did not run or rolled back"
+    )
+    sidebar_raw = analyses_row["sidebar_payload"]
+    sidebar = (
+        json.loads(sidebar_raw) if isinstance(sidebar_raw, str) else dict(sidebar_raw)
+    )
+    assert sidebar["source_url"] == target_url
+    assert "safety" in sidebar
+    assert "tone_dynamics" in sidebar
+    assert "facts_claims" in sidebar
+    assert "opinions_sentiments" in sidebar
+
+    # 7. GET /api/analyze/{id} returns the populated state.
+    poll_resp = await http_client.get(f"/api/analyze/{job_id}")
+    assert poll_resp.status_code == 200, poll_resp.text
+    # AC #5 / TASK-1473.49: GET echoes the same X-Vibecheck-Job-Id.
+    assert poll_resp.headers.get("X-Vibecheck-Job-Id") == str(job_id)
+    poll_body = json.loads(poll_resp.text)
+    assert poll_body["job_id"] == str(job_id)
+    # All per-slot results must be present in the polled snapshot.
+    for slug in SectionSlug:
+        assert slug.value in poll_body["sections"]
+        assert poll_body["sections"][slug.value]["state"] == "done"
+
+    # 8. Firecrawl was hit exactly once for this URL.
+    assert fake_firecrawl.calls == [target_url]
+
+
+async def test_url_persistence_keeps_user_form_and_normalized_form_distinct(
+    http_client: httpx.AsyncClient,
+    db_pool: Any,
+    install_oidc_mock: Any,
+) -> None:
+    """`url` keeps the original user-submitted form; `normalized_url` strips tracking.
+
+    The schema has both columns precisely so the audit trail keeps the
+    original form (with utm tracking, trailing slashes, etc.) while
+    dedup/cache lookups happen on the canonicalized form. Pre-TASK-1473.44
+    the contended-branch and locked-branch insert paths both passed
+    `url=normalized_url`, so the original form was lost.
+    """
+    submitted_url = "https://example.com/?utm_source=foo"
+    expected_normalized = "https://example.com/"
+
+    resp = await http_client.post("/api/analyze", json={"url": submitted_url})
+    assert resp.status_code == 202, resp.text
+    job_id = UUID(json.loads(resp.text)["job_id"])
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT url, normalized_url FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+    assert row is not None
+    assert row["url"] == submitted_url, (
+        f"audit-trail `url` was overwritten with the canonical form: "
+        f"got {row['url']!r}, expected {submitted_url!r}"
+    )
+    assert row["normalized_url"] == expected_normalized, (
+        f"`normalized_url` was not canonicalized: got {row['normalized_url']!r}"
+    )
+
+
+async def test_write_slot_cas_miss_propagates_503_for_redelivery(
+    http_client: httpx.AsyncClient,
+    db_pool: Any,
+    install_oidc_mock: Any,
+    oidc_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    fake_firecrawl: RecordingFirecrawlClient,
+    scrape_cache: Any,
+) -> None:
+    """write_slot rowcount=0 must surface as 503, not silent 200.
+
+    Pre-TASK-1473.41 `_run_section` ignored write_slot's rowcount and
+    `_run_all_sections` swallowed exceptions via `return_exceptions=True`.
+    A CAS miss (e.g. job row deleted out from under us, status flipped
+    terminal by the sweeper) silently produced an empty slot and the
+    worker returned 200 — Cloud Tasks would never redeliver. Now write
+    rowcount=0 raises TransientError inside `_run_section`, the gather
+    propagates, run_job classifies it as transient, and Cloud Tasks
+    retries via 503.
+    """
+    from src.jobs import orchestrator
+
+    monkeypatch.setattr(
+        orchestrator, "_build_scrape_cache", lambda _settings: scrape_cache
+    )
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_client", lambda _settings: fake_firecrawl
+    )
+
+    target_url = "https://example.com/slot-cas-miss"
+    payload = await _make_utterances_payload(target_url)
+
+    async def _stub_extract(
+        url: str, client: Any, cache: Any, *, settings: Any = None
+    ) -> UtterancesPayload:
+        return payload
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", _stub_extract)
+
+    async def _zero_write_slot(*_args: Any, **_kwargs: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(orchestrator, "write_slot", _zero_write_slot)
+
+    resp = await http_client.post("/api/analyze", json={"url": target_url})
+    assert resp.status_code == 202, resp.text
+    job_id = UUID(json.loads(resp.text)["job_id"])
+
+    job_row = await read_job(db_pool, job_id)
+    expected_attempt_id = job_row["attempt_id"]
+
+    worker_resp = await http_client.post(
+        f"/_internal/jobs/{job_id}/run",
+        json={
+            "job_id": str(job_id),
+            "expected_attempt_id": str(expected_attempt_id),
+        },
+        headers=oidc_headers,
+    )
+    assert worker_resp.status_code == 503, worker_resp.text
+    final = await read_job(db_pool, job_id)
+    # The TransientError reset path puts the job back to pending so the
+    # next Cloud Tasks delivery can re-claim cleanly.
+    assert final["status"] == "pending", (
+        f"job did not reset to pending after TransientError: {final['status']!r}"
+    )

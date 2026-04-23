@@ -69,7 +69,8 @@ CREATE TABLE vibecheck_jobs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     heartbeat_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ
+    finished_at TIMESTAMPTZ,
+    test_fail_slug TEXT
 );
 
 CREATE INDEX vibecheck_jobs_normalized_url_idx
@@ -86,7 +87,7 @@ CREATE TABLE vibecheck_job_utterances (
     parent_id TEXT,
     position INT NOT NULL DEFAULT 0,
     page_title TEXT,
-    page_kind TEXT,
+    page_kind TEXT NOT NULL DEFAULT 'other',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """

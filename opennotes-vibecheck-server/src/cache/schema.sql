@@ -112,6 +112,29 @@ CREATE INDEX IF NOT EXISTS vibecheck_jobs_finished_at_idx
     ON vibecheck_jobs(finished_at)
     WHERE finished_at IS NOT NULL;
 
+-- TASK-1473.46: cache-hit dedup invariant. The advisory lock in
+-- `POST /api/analyze` serializes most concurrent submits, but two
+-- contended submitters that lose the lock both fall into the contended
+-- branch and can each call `_insert_cached_done_job` for the same
+-- normalized_url, producing two duplicate cached done-job rows. The
+-- vibecheck_analyses cache row stays single (source of truth) but the
+-- job-row dedup invariant breaks for the cache-hit path. A partial
+-- UNIQUE index lets the second insert ON CONFLICT DO NOTHING and the
+-- caller re-fetch the surviving row.
+CREATE UNIQUE INDEX IF NOT EXISTS
+    vibecheck_jobs_unique_done_cached_normalized_url
+    ON vibecheck_jobs(normalized_url)
+    WHERE status = 'done' AND cached = true;
+
+-- TASK-1473.35: e2e test hook for the section-retry Playwright spec.
+-- When VIBECHECK_ALLOW_TEST_FAIL_HEADER=1 and the public POST carries
+-- X-Vibecheck-Test-Fail-Slug: <slug>, the slug name is recorded here
+-- and the orchestrator's `_run_section` forces a synthetic failure for
+-- that slug. Always-null in production (the env flag defaults to off
+-- so the route ignores the header).
+ALTER TABLE vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS test_fail_slug TEXT;
+
 -- =========================================================================
 -- vibecheck_scrapes (persisted scrape bundles for retry resumption)
 -- =========================================================================
@@ -160,6 +183,31 @@ CREATE TABLE IF NOT EXISTS vibecheck_job_utterances (
     CONSTRAINT vibecheck_job_utterances_kind_check
         CHECK (kind IN ('post', 'comment', 'reply'))
 );
+
+-- TASK-1473.36 (PR #407 BLOCKER): the GET /api/analyze/{job_id} poll
+-- selector reads `u.page_title` / `u.page_kind` via correlated subqueries
+-- to populate JobState (codex W4 P2-2). The columns lived only on
+-- `vibecheck_scrapes` originally, so a fresh non-cached job's poll raised
+-- asyncpg UndefinedColumn in production. Add as nullable text columns
+-- with `page_kind` defaulting to the same `'other'` sentinel the scrape
+-- bundle uses; existing rows backfill to `(NULL, 'other')` which the
+-- selector's `IS NOT NULL` predicate already filters out.
+ALTER TABLE vibecheck_job_utterances
+    ADD COLUMN IF NOT EXISTS page_title TEXT;
+ALTER TABLE vibecheck_job_utterances
+    ADD COLUMN IF NOT EXISTS page_kind TEXT NOT NULL DEFAULT 'other';
+
+-- TASK-1473.60: the NOT NULL DEFAULT 'other' from 1473.36 made every
+-- backfilled row look "populated" to the IS NOT NULL poll selector.
+-- Going forward, page_kind is only set when real extraction writes
+-- utterances via persist_utterances (TASK-1473.57), so the column is
+-- nullable and the default is dropped. Existing rows with
+-- page_kind='other' (from the prior default) remain valid but are
+-- distinguishable from NULL by the new selector.
+ALTER TABLE vibecheck_job_utterances
+    ALTER COLUMN page_kind DROP DEFAULT;
+ALTER TABLE vibecheck_job_utterances
+    ALTER COLUMN page_kind DROP NOT NULL;
 
 ALTER TABLE vibecheck_job_utterances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vibecheck_job_utterances FORCE ROW LEVEL SECURITY;

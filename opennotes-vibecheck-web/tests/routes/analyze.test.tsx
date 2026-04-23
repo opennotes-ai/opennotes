@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@solidjs/testing-library";
+import {
+  render,
+  screen,
+  cleanup,
+  fireEvent,
+  waitFor,
+} from "@solidjs/testing-library";
 import { MetaProvider } from "@solidjs/meta";
 import {
   MemoryRouter,
@@ -15,12 +21,13 @@ type PollingHandle = {
   refetch: () => void;
 };
 
-const { pollingHandles } = vi.hoisted(() => ({
+const { pollingHandles, refetchSpy } = vi.hoisted(() => ({
   pollingHandles: [] as Array<{
     setState: (v: JobState | null) => void;
     setError: (v: Error | null) => void;
     handle: PollingHandle;
   }>,
+  refetchSpy: { current: vi.fn() },
 }));
 
 vi.mock("~/lib/polling", () => {
@@ -31,10 +38,27 @@ vi.mock("~/lib/polling", () => {
       const handle: PollingHandle = {
         state,
         error,
-        refetch: () => {},
+        refetch: () => refetchSpy.current(),
       };
       pollingHandles.push({ setState, setError, handle });
       return handle;
+    },
+  };
+});
+
+const { retrySectionActionMock } = vi.hoisted(() => ({
+  retrySectionActionMock: vi.fn(),
+}));
+
+vi.mock("@solidjs/router", async () => {
+  const actual = await vi.importActual<typeof import("@solidjs/router")>(
+    "@solidjs/router",
+  );
+  return {
+    ...actual,
+    useAction: (action: unknown) => {
+      void action;
+      return retrySectionActionMock;
     },
   };
 });
@@ -78,6 +102,8 @@ import AnalyzePage from "../../src/routes/analyze";
 afterEach(() => {
   cleanup();
   pollingHandles.length = 0;
+  refetchSpy.current.mockReset();
+  retrySectionActionMock.mockReset();
 });
 
 function setPolledJobState(value: JobState | null) {
@@ -237,6 +263,96 @@ describe("AnalyzePage route", () => {
     expect(badge.textContent?.toLowerCase()).toContain("cached");
     expect(badge.textContent?.toLowerCase()).not.toMatch(/ago/);
     expect(badge.textContent?.toLowerCase()).not.toMatch(/just now/);
+  });
+
+  it("redirects /analyze?pending_error=invalid_url (no ?job) home and unmounts the analyze layout/failure card", async () => {
+    const history = createMemoryHistory();
+    history.set({
+      value: "/analyze?pending_error=invalid_url",
+      scroll: false,
+      replace: true,
+    });
+    render(() => (
+      <MetaProvider>
+        <MemoryRouter history={history}>
+          <Route path="/analyze" component={AnalyzePage} />
+          <Route
+            path="/"
+            component={() => <div data-testid="home-stub" />}
+          />
+        </MemoryRouter>
+      </MetaProvider>
+    ));
+    await waitFor(() => {
+      expect(screen.queryByTestId("home-stub")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("analyze-layout")).toBeNull();
+    expect(screen.queryByTestId("job-failure-card")).toBeNull();
+  });
+
+  it("retry wiring: clicking the production RetryButton on a failed slot triggers refetch and the done slot stays visible", async () => {
+    retrySectionActionMock.mockResolvedValue({ ok: true });
+
+    renderAt("/analyze?job=job-retry&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    const sections = {
+      facts_claims__dedup: {
+        state: "done",
+        attempt_id: "attempt-done",
+        data: {
+          claims_report: {
+            deduped_claims: [],
+            total_claims: 0,
+            total_unique: 0,
+          },
+        },
+      },
+      facts_claims__known_misinfo: {
+        state: "failed",
+        attempt_id: "attempt-failed",
+        error: "boom",
+      },
+    };
+
+    setPolledJobState(
+      makeJobState({
+        status: "analyzing",
+        sections: sections as unknown as JobState["sections"],
+      }),
+    );
+
+    const retryBtn = await screen.findByTestId(
+      "retry-facts_claims__known_misinfo",
+    );
+    expect(screen.queryByTestId("slot-facts_claims__dedup")).not.toBeNull();
+    expect(
+      screen
+        .getByTestId("slot-facts_claims__dedup")
+        .getAttribute("data-slot-state"),
+    ).toBe("done");
+
+    fireEvent.click(retryBtn);
+
+    await waitFor(() => {
+      expect(retrySectionActionMock).toHaveBeenCalledTimes(1);
+    });
+    const fd = retrySectionActionMock.mock.calls[0][0] as FormData;
+    expect(fd.get("job_id")).toBe("job-retry");
+    expect(fd.get("slug")).toBe("facts_claims__known_misinfo");
+
+    await waitFor(() => {
+      expect(refetchSpy.current).toHaveBeenCalledTimes(1);
+    });
+
+    expect(
+      screen
+        .getByTestId("slot-facts_claims__dedup")
+        .getAttribute("data-slot-state"),
+    ).toBe("done");
   });
 
   it("does not render CachedBadge when JobState.cached=false", async () => {

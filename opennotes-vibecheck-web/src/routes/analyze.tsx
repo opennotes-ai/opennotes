@@ -1,5 +1,5 @@
-import { Show, Suspense, createMemo } from "solid-js";
-import { useSearchParams, A, createAsync } from "@solidjs/router";
+import { Show, Suspense, createEffect, createMemo } from "solid-js";
+import { useSearchParams, A, createAsync, useNavigate } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import CachedBadge from "~/components/CachedBadge";
 import JobFailureCard from "~/components/JobFailureCard";
@@ -28,6 +28,7 @@ function asErrorCode(raw: string | undefined): ErrorCode | null {
 
 export default function AnalyzePage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const jobId = () =>
     typeof searchParams.job === "string" ? searchParams.job : "";
   const pendingErrorRaw = () =>
@@ -42,6 +43,12 @@ export default function AnalyzePage() {
   const pendingHost = () =>
     typeof searchParams.host === "string" ? searchParams.host : "";
   const cachedHint = () => searchParams.c === "1";
+
+  createEffect(() => {
+    if (!jobId() && pendingError() === "invalid_url") {
+      navigate("/?error=invalid_url", { replace: true });
+    }
+  });
 
   const polling = createPollingResource(jobId);
 

@@ -56,7 +56,8 @@ CREATE TABLE vibecheck_jobs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     heartbeat_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ
+    finished_at TIMESTAMPTZ,
+    test_fail_slug TEXT
 );
 
 CREATE INDEX vibecheck_jobs_normalized_url_idx
@@ -79,6 +80,9 @@ CREATE TABLE vibecheck_scrapes (
 CREATE TABLE vibecheck_job_utterances (
     utterance_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     job_id UUID NOT NULL REFERENCES vibecheck_jobs(job_id),
+    kind TEXT NOT NULL DEFAULT 'post',
+    text TEXT NOT NULL DEFAULT '',
+    position INT NOT NULL DEFAULT 0,
     page_title TEXT,
     page_kind TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()

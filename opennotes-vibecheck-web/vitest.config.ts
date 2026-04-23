@@ -18,7 +18,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["@testing-library/jest-dom/vitest"],
     exclude: includeEvalTests
-      ? configDefaults.exclude
-      : [...configDefaults.exclude, "**/*.eval.test.{ts,tsx}"],
+      ? [...configDefaults.exclude, "tests/e2e/**"]
+      : [...configDefaults.exclude, "tests/e2e/**", "**/*.eval.test.{ts,tsx}"],
   },
 });

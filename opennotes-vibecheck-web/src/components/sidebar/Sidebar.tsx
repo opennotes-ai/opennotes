@@ -2,11 +2,14 @@ import { createMemo, type JSX } from "solid-js";
 import type {
   JobState,
   SectionSlot,
-  SectionSlug,
   SidebarPayload,
 } from "~/lib/api-client.server";
 import type { components } from "~/lib/generated-types";
 import { makeEmptyScd } from "~/lib/sidebar-defaults";
+import {
+  asStrictSectionSlots,
+  type SectionSlugLiteral,
+} from "~/lib/section-slots";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
 import {
   SafetyModerationReport,
@@ -30,20 +33,20 @@ export interface SidebarProps {
   sections?: JobState["sections"];
   payload?: SidebarPayload | null;
   jobId?: string;
-  onRetry?: (slug: SectionSlug) => void;
+  onRetry?: (slug: SectionSlugLiteral) => void;
   cachedHint?: boolean;
 }
 
-const SAFETY_SLUGS: SectionSlug[] = ["safety__moderation"];
-const TONE_SLUGS: SectionSlug[] = [
+const SAFETY_SLUGS: SectionSlugLiteral[] = ["safety__moderation"];
+const TONE_SLUGS: SectionSlugLiteral[] = [
   "tone_dynamics__flashpoint",
   "tone_dynamics__scd",
 ];
-const FACTS_SLUGS: SectionSlug[] = [
+const FACTS_SLUGS: SectionSlugLiteral[] = [
   "facts_claims__dedup",
   "facts_claims__known_misinfo",
 ];
-const OPINIONS_SLUGS: SectionSlug[] = [
+const OPINIONS_SLUGS: SectionSlugLiteral[] = [
   "opinions_sentiments__sentiment",
   "opinions_sentiments__subjective",
 ];
@@ -144,20 +147,26 @@ function extractSubjectiveClaims(data: unknown): SubjectiveClaim[] {
   return (asRecord(data).subjective_claims ?? []) as SubjectiveClaim[];
 }
 
-const SAFETY_RENDER: Partial<Record<SectionSlug, (data: unknown) => JSX.Element>> = {
+const SAFETY_RENDER: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
+> = {
   safety__moderation: (data) => (
     <SafetyModerationReport matches={extractHarmfulContentMatches(data)} />
   ),
 };
 
-const TONE_RENDER: Partial<Record<SectionSlug, (data: unknown) => JSX.Element>> = {
+const TONE_RENDER: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
+> = {
   tone_dynamics__flashpoint: (data) => (
     <FlashpointReport matches={extractFlashpointMatches(data)} />
   ),
   tone_dynamics__scd: (data) => <ScdReport scd={extractScd(data)} />,
 };
 
-const FACTS_RENDER: Partial<Record<SectionSlug, (data: unknown) => JSX.Element>> = {
+const FACTS_RENDER: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
+> = {
   facts_claims__dedup: (data) => (
     <ClaimsDedupReport claimsReport={extractClaimsReport(data)} />
   ),
@@ -167,7 +176,7 @@ const FACTS_RENDER: Partial<Record<SectionSlug, (data: unknown) => JSX.Element>>
 };
 
 const OPINIONS_RENDER: Partial<
-  Record<SectionSlug, (data: unknown) => JSX.Element>
+  Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
 > = {
   opinions_sentiments__sentiment: (data) => (
     <SentimentReport stats={extractSentimentStats(data)} />
@@ -181,7 +190,7 @@ export default function Sidebar(props: SidebarProps) {
   const effectiveSections = createMemo<SlugToSlots>(() => {
     const raw = props.sections;
     const hasSlots = raw !== undefined && Object.keys(raw).length > 0;
-    if (hasSlots) return raw as SlugToSlots;
+    if (hasSlots) return asStrictSectionSlots(raw);
     if (props.payload) return synthesizeSectionsFromPayload(props.payload);
     return {};
   });
@@ -189,7 +198,6 @@ export default function Sidebar(props: SidebarProps) {
   return (
     <aside
       aria-label="Analysis sidebar"
-      aria-live="polite"
       data-testid="analysis-sidebar"
       class="flex w-full flex-col gap-4"
     >

@@ -20,6 +20,7 @@ dependencies = [
     "google-cloud-tasks>=2.16.0",
     "google-auth>=2.0.0",
     "beautifulsoup4>=4.12.0",
+    "prometheus-client>=0.20.0",
 ]
 
 [project.optional-dependencies]
