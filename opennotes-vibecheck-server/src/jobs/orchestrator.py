@@ -1,0 +1,786 @@
+"""Orchestrator for the async job pipeline (TASK-1473.12).
+
+Called from the internal worker endpoint
+(`POST /_internal/jobs/{job_id}/run`) once the OIDC dependency has accepted
+the caller. The orchestrator is the single place that owns the pipeline
+lifecycle:
+
+    1. CAS-claim the job row by rotating `attempt_id` from pending->extracting.
+       Stale redeliveries (whose `expected_attempt_id` no longer matches the
+       row) are dropped silently — Cloud Tasks will not retry a 200 response.
+    2. Spawn a heartbeat task that bumps `vibecheck_jobs.heartbeat_at` every
+       `HEARTBEAT_INTERVAL_SEC` seconds while the pipeline runs. The sweeper
+       watches heartbeat_at to reclaim orphaned jobs (.18 ticket).
+    3. Scrape via Firecrawl (or hit the cache), revalidate the final URL via
+       the SSRF guard (catching redirects into private space), extract
+       utterances, then fan out to the seven per-section analysis slots via
+       `asyncio.gather`.
+    4. Finalize: `maybe_finalize_job` UPSERTs the `vibecheck_analyses` cache
+       and flips the job status.
+
+Error handling ladder (CTU + Cloud Tasks retry contract):
+
+    TransientError        -> reset attempt_id + status=pending, return 503
+                             (Cloud Tasks re-enqueues within retry config)
+    TerminalError         -> status=failed + error_code/error_message, 200
+                             (Cloud Tasks does NOT retry)
+    any other Exception   -> log with exc_info, treat as transient (reset + 503)
+
+`run_job` is the synchronous entrypoint the route handler awaits. The
+route itself never sees exceptions — `run_job` returns a `RunResult` with
+the HTTP status to emit. The heartbeat task is cancelled in every exit
+path via try/finally so no background coroutine outlives the request.
+
+Module-level constants (HEARTBEAT_INTERVAL_SEC) and factory hooks
+(_build_scrape_cache, _build_firecrawl_client, _run_all_sections,
+_run_pipeline) are the monkeypatch seams unit tests use; production code
+paths call them directly.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from dataclasses import dataclass
+from typing import Any
+from uuid import UUID, uuid4
+
+from src.analyses.schemas import ErrorCode, SectionSlot, SectionSlug, SectionState
+from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
+from src.config import Settings
+from src.firecrawl_client import FirecrawlClient
+from src.jobs.finalize import maybe_finalize_job
+from src.jobs.slots import mark_slot_done, mark_slot_failed, write_slot
+from src.monitoring import get_logger
+from src.utils.url_security import InvalidURL, revalidate_redirect_target
+from src.utterances.extractor import extract_utterances
+
+logger = get_logger(__name__)
+
+
+HEARTBEAT_INTERVAL_SEC: float = 5.0
+"""Heartbeat bump cadence. Tests override to a shorter interval."""
+
+
+class TransientError(Exception):
+    """Retryable error — the handler resets the job row and returns 503."""
+
+
+class TerminalError(Exception):
+    """Non-retryable error with a classified `error_code`.
+
+    The handler writes `status=failed`, `error_code`, and
+    `error_message` to the job row and returns 200 so Cloud Tasks does
+    not retry. Callers pass the stable `ErrorCode` enum; the message is
+    free-form prose for log surfacing.
+    """
+
+    def __init__(self, error_code: ErrorCode, error_detail: str) -> None:
+        super().__init__(error_detail)
+        self.error_code = error_code
+        self.error_detail = error_detail
+
+
+class HandlerSuperseded(Exception):  # noqa: N818 — matches spec terminology; not raised as an "Error"
+    """Raised when a mid-pipeline CAS guard detects the attempt rotated
+    out from under us. The handler returns 200 and lets the newer worker
+    own the job."""
+
+
+@dataclass
+class RunResult:
+    """What the route handler emits after orchestration completes."""
+
+    status_code: int
+    """200 for success / terminal / superseded, 503 for transient."""
+
+
+# ---------------------------------------------------------------------------
+# Claim + reset helpers (CAS on `attempt_id`).
+# ---------------------------------------------------------------------------
+
+_CLAIM_SQL = """
+UPDATE vibecheck_jobs
+SET status = 'extracting',
+    attempt_id = $2,
+    heartbeat_at = now(),
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $3
+  AND status = 'pending'
+RETURNING attempt_id, url
+"""
+
+_RESET_SQL = """
+UPDATE vibecheck_jobs
+SET status = 'pending',
+    attempt_id = $2,
+    heartbeat_at = now(),
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $3
+"""
+
+_MARK_FAILED_SQL = """
+UPDATE vibecheck_jobs
+SET status = 'failed',
+    error_code = $2,
+    error_message = $3,
+    finished_at = now(),
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $4
+"""
+
+_SET_ANALYZING_SQL = """
+UPDATE vibecheck_jobs
+SET status = 'analyzing',
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $2
+"""
+
+_HEARTBEAT_SQL = """
+UPDATE vibecheck_jobs
+SET heartbeat_at = now()
+WHERE job_id = $1
+  AND attempt_id = $2
+"""
+
+
+async def _claim_job(
+    pool: Any,
+    job_id: UUID,
+    expected_attempt_id: UUID,
+) -> tuple[UUID, str] | None:
+    """Atomically rotate attempt_id and set status=extracting.
+
+    Returns (new_attempt_id, url) on success, None when the CAS fails
+    (stale expected_attempt_id or status already moved). Cloud Tasks
+    redeliveries of a superseded enqueue fall into the None branch; the
+    caller returns 200 no-op.
+    """
+    new_attempt = uuid4()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            _CLAIM_SQL, job_id, new_attempt, expected_attempt_id
+        )
+    if row is None:
+        return None
+    return row["attempt_id"], row["url"]
+
+
+async def _reset_for_retry(
+    pool: Any,
+    job_id: UUID,
+    *,
+    task_attempt: UUID,
+    expected_attempt_id: UUID,
+) -> None:
+    """Revert status to pending and restore the caller's envelope attempt_id.
+
+    Cloud Tasks will retry with the *same* body payload (same
+    expected_attempt_id), so the reset puts that value back in the row —
+    the next delivery can re-claim cleanly.
+    """
+    async with pool.acquire() as conn:
+        await conn.execute(
+            _RESET_SQL, job_id, expected_attempt_id, task_attempt
+        )
+
+
+async def _mark_failed(
+    pool: Any,
+    job_id: UUID,
+    *,
+    task_attempt: UUID,
+    error_code: ErrorCode,
+    error_message: str,
+) -> None:
+    """Flip the job row to status=failed with the classified error_code."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            _MARK_FAILED_SQL,
+            job_id,
+            error_code.value,
+            error_message,
+            task_attempt,
+        )
+
+
+async def _set_analyzing(pool: Any, job_id: UUID, task_attempt: UUID) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(_SET_ANALYZING_SQL, job_id, task_attempt)
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat loop.
+# ---------------------------------------------------------------------------
+
+
+async def _heartbeat_loop(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    *,
+    interval_sec: float,
+) -> None:
+    """Periodically bump `heartbeat_at` while the pipeline runs.
+
+    The loop exits via CancelledError when the pipeline returns. Each
+    bump CAS-guards on `attempt_id = task_attempt` so a heartbeat from a
+    stale worker cannot keep a reclaimed job's row looking fresh.
+    """
+    try:
+        while True:
+            await asyncio.sleep(interval_sec)
+            try:
+                async with pool.acquire() as conn:
+                    await conn.execute(_HEARTBEAT_SQL, job_id, task_attempt)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # A heartbeat that can't reach the DB shouldn't tear
+                # down the pipeline — the sweeper will reclaim if
+                # needed. Log and continue.
+                logger.warning(
+                    "heartbeat update failed for job %s: %s", job_id, exc
+                )
+    except asyncio.CancelledError:
+        return
+
+
+# ---------------------------------------------------------------------------
+# Scrape + revalidate + extract.
+# ---------------------------------------------------------------------------
+
+
+def _build_scrape_cache(settings: Settings) -> SupabaseScrapeCache:
+    """Factory seam so tests can inject a fake cache.
+
+    In production this wires a real Supabase client against the configured
+    URL/anon key. The vibecheck-server lifespan already carries a
+    SupabaseCache on `app.state.cache`, but the scrape cache is a
+    different table + bucket pair so we construct it here rather than
+    threading through app.state — keeps the orchestrator's dependency
+    surface small and unit-testable.
+    """
+    from supabase import create_client  # noqa: PLC0415
+
+    client = create_client(
+        settings.VIBECHECK_SUPABASE_URL,
+        settings.VIBECHECK_SUPABASE_ANON_KEY,
+    )
+    return SupabaseScrapeCache(client, ttl_hours=settings.CACHE_TTL_HOURS)
+
+
+def _build_firecrawl_client(settings: Settings) -> FirecrawlClient:
+    """Factory seam mirroring `_build_scrape_cache` above."""
+    return FirecrawlClient(api_key=settings.FIRECRAWL_API_KEY)
+
+
+async def _scrape_step(
+    url: str,
+    client: FirecrawlClient,
+    scrape_cache: SupabaseScrapeCache,
+) -> CachedScrape:
+    """Cache-hit → return; miss → fetch + put.
+
+    Returns the `CachedScrape` the caller will hand to `extract_utterances`.
+    A failure in Firecrawl itself is TransientError (try again); a scrape
+    that returns no markdown is TerminalError extraction_failed (the
+    content is unparseable no matter how many times we retry).
+    """
+    cached = await scrape_cache.get(url)
+    if cached is not None:
+        return cached
+
+    try:
+        fresh = await client.scrape(
+            url,
+            formats=["markdown", "html", "screenshot@fullPage"],
+            only_main_content=True,
+        )
+    except Exception as exc:
+        raise TransientError(f"firecrawl scrape failed: {exc}") from exc
+
+    try:
+        return await scrape_cache.put(url, fresh)
+    except Exception as exc:
+        # DB upsert failed but we still have the fresh bundle. Fall back
+        # to a keyless CachedScrape so the extractor's downstream reads
+        # have usable markdown/html; next retry will re-upload.
+        logger.warning("scrape cache put failed for %s: %s", url, exc)
+        return CachedScrape(
+            markdown=fresh.markdown,
+            html=fresh.html,
+            raw_html=fresh.raw_html,
+            screenshot=fresh.screenshot,
+            links=fresh.links,
+            metadata=fresh.metadata,
+            warning=fresh.warning,
+            storage_key=None,
+        )
+
+
+async def _revalidate_final_url(
+    scrape: CachedScrape,
+    *,
+    url: str,
+    scrape_cache: SupabaseScrapeCache,
+) -> None:
+    """Post-scrape SSRF re-check (codex P1-3).
+
+    Firecrawl follows redirects transparently, so `metadata.source_url` may
+    point at a host we would never have accepted on the POST. Re-run the
+    validator; on rejection, evict the cached scrape so a subsequent retry
+    fetches fresh input rather than replaying the poisoned entry, then
+    raise TerminalError invalid_url.
+    """
+    final = scrape.metadata.source_url if scrape.metadata else None
+    if not final:
+        return
+    try:
+        revalidate_redirect_target(final)
+    except InvalidURL:
+        try:
+            await scrape_cache.evict(url)
+        except Exception as exc:
+            logger.warning(
+                "scrape cache evict failed after redirect-block for %s: %s",
+                url,
+                exc,
+            )
+        raise TerminalError(
+            ErrorCode.INVALID_URL, "redirect to private host"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Section fan-out stub.
+# ---------------------------------------------------------------------------
+
+
+async def _run_section(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    slug: SectionSlug,
+    payload: Any,
+    settings: Settings,
+) -> None:
+    """Run a single analysis slot and persist its output.
+
+    TASK-1473.13 will plumb the real analysis services (moderation,
+    flashpoint, SCD, dedup, known-misinfo, sentiment, subjective). This
+    ticket lands the orchestrator wiring; sections emit an empty-success
+    slot so the pipeline completes and the section-retry ticket can
+    deepen each handler without touching orchestration code.
+
+    A slot failure is NOT a job failure: we call `mark_slot_failed` and
+    return normally. `maybe_finalize_job` notices the failed slot later
+    and waits (or the sweeper does) — terminal assembly happens only
+    when every slot is done.
+    """
+    slot_attempt = uuid4()
+    slot = SectionSlot(
+        state=SectionState.DONE,
+        attempt_id=slot_attempt,
+        data=_empty_section_data(slug),
+    )
+    try:
+        await write_slot(pool, job_id, task_attempt, slug, slot)
+    except Exception as exc:
+        logger.exception(
+            "section %s failed for job %s: %s", slug.value, job_id, exc
+        )
+        await mark_slot_failed(
+            pool,
+            job_id,
+            slug,
+            slot_attempt,
+            error=str(exc),
+            expected_task_attempt=task_attempt,
+        )
+
+
+_EMPTY_SECTION_DATA: dict[SectionSlug, dict[str, Any]] = {
+    SectionSlug.SAFETY_MODERATION: {"harmful_content_matches": []},
+    SectionSlug.TONE_DYNAMICS_FLASHPOINT: {"flashpoint_matches": []},
+    SectionSlug.TONE_DYNAMICS_SCD: {
+        "scd": {
+            "summary": "",
+            "tone_labels": [],
+            "per_speaker_notes": {},
+            "insufficient_conversation": True,
+        }
+    },
+    SectionSlug.FACTS_CLAIMS_DEDUP: {
+        "claims_report": {
+            "deduped_claims": [],
+            "total_claims": 0,
+            "total_unique": 0,
+        }
+    },
+    SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: {"known_misinformation": []},
+    SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: {
+        "sentiment_stats": {
+            "per_utterance": [],
+            "positive_pct": 0.0,
+            "negative_pct": 0.0,
+            "neutral_pct": 0.0,
+            "mean_valence": 0.0,
+        }
+    },
+    SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: {"subjective_claims": []},
+}
+
+
+def _empty_section_data(slug: SectionSlug) -> dict[str, Any]:
+    """Empty/neutral payload per slug shape.
+
+    Matches the shapes `finalize._assemble_payload` expects so the job can
+    still transition to done even before TASK-1473.13 wires real analysis.
+    Each shape is the bare-minimum structure that survives pydantic
+    validation in `maybe_finalize_job`.
+    """
+    return _EMPTY_SECTION_DATA.get(slug, {})
+
+
+async def _run_all_sections(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    payload: Any,
+    settings: Settings,
+) -> None:
+    """Fan out every section in parallel; aggregate via `asyncio.gather`.
+
+    `return_exceptions=True` keeps a single-slot failure from aborting the
+    job — each section handler already writes a failed slot + continues.
+    Only orchestrator-level errors (DB down, pool exhausted) surface here,
+    and we let those propagate to the TransientError path.
+    """
+    await asyncio.gather(
+        *[
+            _run_section(pool, job_id, task_attempt, slug, payload, settings)
+            for slug in SectionSlug
+        ],
+        return_exceptions=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pipeline body.
+# ---------------------------------------------------------------------------
+
+
+async def _run_pipeline(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    url: str,
+    settings: Settings,
+) -> None:
+    """The scrape->extract->analyze sequence, error-classified.
+
+    Isolated from the top-level `run_job` so unit tests can substitute an
+    `AsyncMock` on this function to exercise the handler's error-handling
+    without booting Firecrawl/Gemini/OpenAI.
+    """
+    scrape_cache = _build_scrape_cache(settings)
+    client = _build_firecrawl_client(settings)
+
+    # Scrape (cache or fresh).
+    try:
+        scrape = await _scrape_step(url, client, scrape_cache)
+    except TransientError:
+        raise
+    except Exception as exc:
+        raise TransientError(f"scrape step failed: {exc}") from exc
+
+    # Post-scrape revalidate: reject redirects into private space.
+    await _revalidate_final_url(scrape, url=url, scrape_cache=scrape_cache)
+
+    # Extract utterances from the scrape bundle.
+    try:
+        payload = await extract_utterances(
+            url, client, scrape_cache, settings=settings
+        )
+    except Exception as exc:
+        # Extraction is a modeling failure, not a flake — don't retry
+        # forever. Terminal so the UI surfaces a clear "we couldn't read
+        # this page" error.
+        raise TerminalError(
+            ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
+        ) from exc
+
+    # Flip status to analyzing before fan-out so the poll endpoint
+    # returns the right cadence hint.
+    await _set_analyzing(pool, job_id, task_attempt)
+
+    # Fan out per-section analysis. Slot-level failures are written by
+    # `_run_section` itself; this await only raises on orchestrator
+    # infrastructure errors.
+    await _run_all_sections(pool, job_id, task_attempt, payload, settings)
+
+    # Finalize: UPSERT the sidebar_payload cache if every slot is done.
+    await maybe_finalize_job(
+        pool, job_id, expected_task_attempt=task_attempt
+    )
+
+
+# ---------------------------------------------------------------------------
+# Top-level entrypoint.
+# ---------------------------------------------------------------------------
+
+
+async def run_job(
+    pool: Any,
+    job_id: UUID,
+    expected_attempt_id: UUID,
+    settings: Settings,
+) -> RunResult:
+    """Drive one Cloud Tasks delivery through the pipeline.
+
+    Returns a `RunResult` with the HTTP status the caller should emit:
+    200 on success, stale-claim (no-op), or TerminalError (failed),
+    503 on TransientError or any unclassified Exception.
+
+    The heartbeat task is spawned after the claim and cancelled in
+    `finally` so no background work outlives the handler's response.
+    """
+    claim = await _claim_job(pool, job_id, expected_attempt_id)
+    if claim is None:
+        # Stale redelivery — the job has already been picked up by a
+        # fresher attempt, or the status moved on. 200 so Cloud Tasks
+        # doesn't retry.
+        logger.info(
+            "worker: stale claim for job %s expected_attempt=%s — no-op",
+            job_id,
+            expected_attempt_id,
+        )
+        return RunResult(status_code=200)
+
+    task_attempt, url = claim
+    heartbeat = asyncio.create_task(
+        _heartbeat_loop(
+            pool, job_id, task_attempt, interval_sec=HEARTBEAT_INTERVAL_SEC
+        )
+    )
+
+    try:
+        try:
+            await _run_pipeline(pool, job_id, task_attempt, url, settings)
+        except TransientError as exc:
+            logger.warning(
+                "worker: transient failure for job %s: %s", job_id, exc
+            )
+            await _reset_for_retry(
+                pool,
+                job_id,
+                task_attempt=task_attempt,
+                expected_attempt_id=expected_attempt_id,
+            )
+            return RunResult(status_code=503)
+        except TerminalError as exc:
+            logger.warning(
+                "worker: terminal failure for job %s: error_code=%s detail=%s",
+                job_id,
+                exc.error_code.value,
+                exc.error_detail,
+            )
+            await _mark_failed(
+                pool,
+                job_id,
+                task_attempt=task_attempt,
+                error_code=exc.error_code,
+                error_message=exc.error_detail,
+            )
+            return RunResult(status_code=200)
+        except HandlerSuperseded:
+            # A mid-pipeline step detected the attempt rotated; nothing
+            # else to do — the newer worker owns the row.
+            logger.info("worker: handler superseded for job %s", job_id)
+            return RunResult(status_code=200)
+        except Exception:
+            # Unclassified — log with traceback so operators can see the
+            # underlying bug, but treat as transient (reset + 503).
+            logger.log(
+                logging.ERROR,
+                "worker: unclassified failure for job %s",
+                job_id,
+                exc_info=True,
+            )
+            await _reset_for_retry(
+                pool,
+                job_id,
+                task_attempt=task_attempt,
+                expected_attempt_id=expected_attempt_id,
+            )
+            return RunResult(status_code=503)
+
+        return RunResult(status_code=200)
+    finally:
+        heartbeat.cancel()
+        try:
+            await heartbeat
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.warning("heartbeat cancellation raised: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Section-retry entrypoint (TASK-1473.13).
+# ---------------------------------------------------------------------------
+
+
+_LOAD_JOB_ATTEMPT_SQL = """
+SELECT attempt_id, sections -> $2::text AS slot
+FROM vibecheck_jobs
+WHERE job_id = $1
+"""
+
+
+async def _load_job_attempt_and_slot(
+    pool: Any,
+    job_id: UUID,
+    slug: SectionSlug,
+) -> tuple[UUID, dict[str, Any]] | None:
+    """Read the job's current `attempt_id` and the target slot JSON.
+
+    Returns None when the job row is missing or the slot isn't present —
+    the caller treats that as a stale redelivery and returns 200 no-op.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(_LOAD_JOB_ATTEMPT_SQL, job_id, slug.value)
+    if row is None:
+        return None
+    slot_raw = row["slot"]
+    if slot_raw is None:
+        return None
+    import json as _json  # noqa: PLC0415
+
+    slot = (
+        _json.loads(slot_raw)
+        if isinstance(slot_raw, str)
+        else dict(slot_raw)
+    )
+    if not isinstance(row["attempt_id"], UUID):
+        return None
+    return row["attempt_id"], slot
+
+
+async def run_section_retry(
+    pool: Any,
+    job_id: UUID,
+    slug: SectionSlug,
+    expected_slot_attempt_id: UUID,
+    settings: Settings,
+) -> RunResult:
+    """Drive one section-retry Cloud Tasks delivery.
+
+    Semantics:
+      1. Load `(job.attempt_id, slot)`. Missing job or missing slot → 200
+         idempotent no-op (a prune or re-submit happened after enqueue).
+      2. If the slot's current attempt_id no longer matches
+         `expected_slot_attempt_id`, or the slot is no longer `running`,
+         a newer retry already claimed the slot. Return 200 no-op.
+      3. Run the per-slug analysis. For this ticket the analysis stubs
+         out to `_empty_section_data` (same shape the orchestrator's
+         original fan-out uses) so `maybe_finalize_job` can assemble a
+         valid SidebarPayload. TASK-1473.13 follow-up wires real services.
+      4. `mark_slot_done` with `expected_task_attempt=job.attempt_id`.
+         If the CAS fails (stale job attempt, or job moved terminal out
+         from under us), we return 200 no-op — the newer owner will
+         handle finalization.
+      5. `maybe_finalize_job(expected_task_attempt=job.attempt_id)`. If
+         every slot is now `done`, the sidebar_payload cache is UPSERTed.
+      6. Unclassified exceptions are treated as transient: write a failed
+         slot (best-effort) and return 503 so Cloud Tasks retries.
+    """
+    loaded = await _load_job_attempt_and_slot(pool, job_id, slug)
+    if loaded is None:
+        logger.info(
+            "section-retry: job or slot missing for job=%s slug=%s — no-op",
+            job_id,
+            slug.value,
+        )
+        return RunResult(status_code=200)
+    task_attempt, slot = loaded
+
+    slot_state = slot.get("state")
+    slot_attempt_str = str(slot.get("attempt_id") or "")
+    if slot_state != "running" or slot_attempt_str != str(expected_slot_attempt_id):
+        logger.info(
+            "section-retry: stale slot for job=%s slug=%s expected=%s "
+            "current=%s state=%s — no-op",
+            job_id,
+            slug.value,
+            expected_slot_attempt_id,
+            slot_attempt_str,
+            slot_state,
+        )
+        return RunResult(status_code=200)
+
+    try:
+        data = _empty_section_data(slug)
+        rows = await mark_slot_done(
+            pool,
+            job_id,
+            slug,
+            expected_slot_attempt_id,
+            data,
+            expected_task_attempt=task_attempt,
+        )
+        if rows == 0:
+            # The slot's write-envelope guard (job.attempt_id, job.status,
+            # or slot.state) failed. Treat as stale: the sweeper or a
+            # fresher attempt owns the row now.
+            logger.info(
+                "section-retry: mark_slot_done CAS failed for job=%s slug=%s — no-op",
+                job_id,
+                slug.value,
+            )
+            return RunResult(status_code=200)
+
+        await maybe_finalize_job(
+            pool, job_id, expected_task_attempt=task_attempt
+        )
+        return RunResult(status_code=200)
+    except Exception as exc:
+        logger.log(
+            logging.ERROR,
+            "section-retry: unclassified failure for job=%s slug=%s",
+            job_id,
+            slug.value,
+            exc_info=True,
+        )
+        try:
+            await mark_slot_failed(
+                pool,
+                job_id,
+                slug,
+                expected_slot_attempt_id,
+                error=str(exc),
+                expected_task_attempt=task_attempt,
+            )
+        except Exception as inner:  # noqa: BLE001 — best-effort cleanup
+            logger.warning(
+                "section-retry: mark_slot_failed also raised for job=%s slug=%s: %s",
+                job_id,
+                slug.value,
+                inner,
+            )
+        return RunResult(status_code=503)
+
+
+__all__ = [
+    "HEARTBEAT_INTERVAL_SEC",
+    "HandlerSuperseded",
+    "RunResult",
+    "TerminalError",
+    "TransientError",
+    "run_job",
+    "run_section_retry",
+]

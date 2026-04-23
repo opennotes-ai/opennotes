@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 import httpx
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -53,6 +53,41 @@ def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
         return node
 
     return walk(schema)
+
+
+class ScrapeMetadata(BaseModel):
+    # `validation_alias=AliasChoices(snake_case, camelCase)` lets Pydantic
+    # accept either shape on the way *in* (wire JSON uses `sourceURL`;
+    # Python call sites use `source_url`) while keeping the Python field
+    # name as the primary parameter so basedpyright doesn't treat the
+    # alias as a required-by-keyword argument. `default=None` is explicit
+    # so every field is optional — required for `ScrapeMetadata(...)` to
+    # type-check with any subset of kwargs.
+    title: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    language: str | None = Field(default=None)
+    source_url: str | None = Field(
+        default=None, validation_alias=AliasChoices("source_url", "sourceURL")
+    )
+    status_code: int | None = Field(
+        default=None, validation_alias=AliasChoices("status_code", "statusCode")
+    )
+    error: str | None = Field(default=None)
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
+class ScrapeResult(BaseModel):
+    # See ScrapeMetadata comment — same rationale for `validation_alias`.
+    markdown: str | None = Field(default=None)
+    html: str | None = Field(default=None)
+    raw_html: str | None = Field(
+        default=None, validation_alias=AliasChoices("raw_html", "rawHtml")
+    )
+    screenshot: str | None = Field(default=None)
+    links: list[str] | None = Field(default=None)
+    metadata: ScrapeMetadata | None = Field(default=None)
+    warning: str | None = Field(default=None)
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class FirecrawlError(Exception):
@@ -192,12 +227,15 @@ class FirecrawlClient:
         formats: list[str],
         *,
         only_main_content: bool = False,
-    ) -> dict[str, Any]:
-        """Call Firecrawl /v2/scrape and return the `data` sub-object.
+    ) -> ScrapeResult:
+        """Call Firecrawl /v2/scrape and return a typed `ScrapeResult`.
 
         `formats` accepts values like ["markdown", "screenshot", "screenshot@fullPage"].
         `only_main_content=True` strips nav/footer/aside from the markdown,
         which gives much cleaner content for downstream parsing.
+
+        Fields on the returned `ScrapeResult` are all optional: only the
+        formats you requested are populated (Firecrawl omits the rest).
         """
         body: dict[str, Any] = {"url": url, "formats": formats}
         if only_main_content:
@@ -210,4 +248,4 @@ class FirecrawlClient:
         data = envelope.get("data")
         if not isinstance(data, dict):
             raise FirecrawlError("firecrawl /v2/scrape returned no data object")
-        return data
+        return ScrapeResult.model_validate(data)

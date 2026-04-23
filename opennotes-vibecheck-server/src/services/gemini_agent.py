@@ -9,7 +9,7 @@ Agents bound to Vertex AI Gemini 3.1 Pro Preview. Mirrors opennotes-server's pat
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TypeVar
+from typing import Any, TypeVar, overload
 
 from pydantic import BaseModel
 from pydantic_ai import Agent
@@ -38,12 +38,30 @@ def _model_from_settings(settings: Settings) -> GoogleModel:
     return _build_google_vertex_model(name, settings.VERTEXAI_PROJECT, settings.VERTEXAI_LOCATION)
 
 
+@overload
+def build_agent(
+    settings: Settings,
+    *,
+    output_type: type[T],
+    system_prompt: str | None = None,
+) -> Agent[None, T]: ...
+
+
+@overload
+def build_agent(
+    settings: Settings,
+    *,
+    output_type: None = None,
+    system_prompt: str | None = None,
+) -> Agent[None, str]: ...
+
+
 def build_agent(
     settings: Settings,
     *,
     output_type: type[T] | None = None,
     system_prompt: str | None = None,
-) -> Agent:
+) -> Agent[None, T] | Agent[None, str]:
     """Construct a pydantic-ai Agent bound to Vertex Gemini.
 
     Usage:
@@ -52,7 +70,7 @@ def build_agent(
         parsed: MySchema = result.output
     """
     model = _model_from_settings(settings)
-    kwargs: dict = {}
+    kwargs: dict[str, Any] = {}
     if system_prompt is not None:
         kwargs["system_prompt"] = system_prompt
     if output_type is not None:

@@ -179,6 +179,24 @@ class JobState(BaseModel):
         default=1500,
         description="Server-suggested delay until the client should re-poll. Clients use this to implement adaptive cadence (typically 500ms early, 1500ms+ near completion).",
     )
+    # Page metadata extracted from vibecheck_job_utterances (codex W4 P2-2).
+    # Null / 0 before the extractor writes utterance rows; populated once at
+    # least one utterance exists for the job. Keeping these top-level on
+    # JobState (rather than nested inside sidebar_payload) lets the client
+    # render the page header as soon as extraction finishes without waiting
+    # for every slot to complete.
+    page_title: str | None = Field(
+        default=None,
+        description="Extracted page title, sourced from vibecheck_job_utterances. Null until the extractor runs.",
+    )
+    page_kind: PageKind | None = Field(
+        default=None,
+        description="Extracted page shape, sourced from vibecheck_job_utterances. Null until the extractor runs.",
+    )
+    utterance_count: int = Field(
+        default=0,
+        description="Number of utterances extracted for this job. 0 until the extractor writes any rows.",
+    )
 
 
 __all__ = [

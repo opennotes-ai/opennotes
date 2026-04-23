@@ -9,7 +9,7 @@ from supabase import Client, create_client
 
 from src.cache.supabase_cache import SupabaseCache
 from src.config import get_settings
-from src.monitoring import get_logger
+from src.monitoring import configure_logfire, get_logger
 
 logger = get_logger(__name__)
 
@@ -36,6 +36,11 @@ def _apply_schema(client: Client) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Install Logfire span scrubbing before any route handler (and therefore
+    # any pydantic-ai agent invocation) can emit spans. `configure_logfire`
+    # is idempotent and swallows ImportError if the logfire package is
+    # unavailable in a given environment (e.g. stripped-down unit runs).
+    configure_logfire()
     settings = get_settings()
     if settings.VIBECHECK_SUPABASE_URL and settings.VIBECHECK_SUPABASE_ANON_KEY:
         client = _build_supabase_client(

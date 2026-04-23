@@ -2,32 +2,19 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from supabase import Client
 
+from src.cache.normalize import normalize_url
 from src.monitoring import get_logger
+
+# Re-exported for backwards compatibility with callers that imported
+# `normalize_url` from this module before the split to `src.cache.normalize`.
+__all__ = ["SupabaseCache", "normalize_url"]
 
 logger = get_logger(__name__)
 
 _TABLE_NAME = "vibecheck_analyses"
-_TRACKING_PARAMS = {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-                    "fbclid", "gclid", "mc_cid", "mc_eid"}
-
-
-def normalize_url(url: str) -> str:
-    parsed = urlparse(url)
-    scheme = parsed.scheme.lower()
-    netloc = parsed.netloc.lower()
-    path = parsed.path
-    if len(path) > 1 and path.endswith("/"):
-        path = path.rstrip("/")
-    query_pairs = [
-        (k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
-        if k.lower() not in _TRACKING_PARAMS
-    ]
-    query = urlencode(query_pairs)
-    return urlunparse((scheme, netloc, path, parsed.params, query, ""))
 
 
 class SupabaseCache:
