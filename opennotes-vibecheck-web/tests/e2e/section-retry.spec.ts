@@ -11,7 +11,8 @@ import {
  * Spec note: vibecheck-server has no first-class "inject failure" test
  * hook today. TASK-1473.35 tracks adding an `X-Vibecheck-Test-Fail-Slug`
  * request header that the orchestrator can honor server-side. Once that
- * lands, this proxy can be deleted in favor of:
+ * lands AND VIBECHECK_ALLOW_TEST_FAIL_HEADER=1 is confirmed in the e2e
+ * env, this proxy can be deleted in favor of:
  *
  *   await page.context().setExtraHTTPHeaders({
  *     "X-Vibecheck-Test-Fail-Slug": TARGET_SLUG,
@@ -142,11 +143,6 @@ test("AC4: section-level Retry recovers a failed slot to done", async ({
     page.locator('[data-testid="analyze-layout"]'),
   ).toBeVisible({ timeout: 30_000 });
 
-  // Confirm the proxy is actually observing JobState payloads BEFORE we
-  // wait for `failed` state. If isJobStateShape() ever silently rejects
-  // a renamed payload (e.g. job_id → jobId), waitForSectionState would
-  // simply time out 180s later with no hint of why. Polling rewriteCount
-  // surfaces the shape break directly with an actionable error.
   const injectionDeadline = Date.now() + 60_000;
   while (rewriteCount === 0 && Date.now() < injectionDeadline) {
     await page.waitForTimeout(250);
@@ -159,10 +155,6 @@ test("AC4: section-level Retry recovers a failed slot to done", async ({
       "to the X-Vibecheck-Test-Fail-Slug header from TASK-1473.35.",
   ).toBeGreaterThan(0);
 
-  // Wait until the polling response carries a `failed` state for the
-  // injected slug. We rely on the DOM rather than network introspection
-  // because the SectionGroup re-renders as soon as the response is
-  // applied.
   await waitForSectionState(page, TARGET_SLUG, "failed", {
     timeoutMs: 180_000,
   });
@@ -173,15 +165,25 @@ test("AC4: section-level Retry recovers a failed slot to done", async ({
   });
   await expect(retryButton).toBeEnabled();
 
-  // Stop injecting on the next polling response so when the polling
-  // resource refetches after a successful retry, the natural
-  // (`running` → `done`) state shines through.
-  injectFailure = false;
+  // Wait for the retry POST response BEFORE disabling the proxy. This
+  // prevents a vacuous pass: if the retry POST returns 500/404, the
+  // expect below fails immediately rather than letting the natural
+  // pipeline produce a `done` state and hide the broken retry endpoint.
+  const retryResponsePromise = page.waitForResponse(
+    (r) =>
+      r.url().includes("/api/analyze/") &&
+      r.url().includes("/retry/") &&
+      r.request().method() === "POST",
+    { timeout: 30_000 },
+  );
   await retryButton.click();
+  const retryResponse = await retryResponsePromise;
+  expect(retryResponse.status()).toBe(202);
 
-  // Recovery: the slot should leave the `failed` state. We allow
-  // either `running` or `done` as the next observable state — the
-  // pipeline can complete fast enough that we never see `running`.
+  // Now that the retry POST is confirmed 202, disable the proxy so the
+  // subsequent poll sees the natural (`running` → `done`) pipeline state.
+  injectFailure = false;
+
   const recovered = await Promise.race([
     waitForSectionState(page, TARGET_SLUG, "done", { timeoutMs: 180_000 }).then(
       () => "done" as const,
@@ -197,8 +199,6 @@ test("AC4: section-level Retry recovers a failed slot to done", async ({
     });
   }
 
-  // Final assertion — slot is done and Retry button is gone (since
-  // RetryButton only renders inside the `failed` Match arm).
   await expect(
     page.locator(`[data-testid="retry-${TARGET_SLUG}"]`),
   ).toHaveCount(0);
