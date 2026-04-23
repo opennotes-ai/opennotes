@@ -425,7 +425,7 @@ async def _run_section(
     started = time.monotonic()
     try:
         try:
-            await write_slot(pool, job_id, task_attempt, slug, slot)
+            rowcount = await write_slot(pool, job_id, task_attempt, slug, slot)
         except Exception as exc:
             logger.exception(
                 "section %s failed for job %s: %s", slug.value, job_id, exc
@@ -433,7 +433,7 @@ async def _run_section(
             SECTION_FAILURES.labels(
                 slug=slug.value, error_type=classify_error(exc)
             ).inc()
-            await mark_slot_failed(
+            failed_rowcount = await mark_slot_failed(
                 pool,
                 job_id,
                 slug,
@@ -441,6 +441,20 @@ async def _run_section(
                 error=str(exc),
                 expected_task_attempt=task_attempt,
             )
+            # rowcount == 0 here is benign: mark_slot_failed CAS expects
+            # state='running' which _run_section never sets, so a fresh
+            # slot with no prior 'running' row legitimately matches zero.
+            # The failure is already logged above; no further action.
+            del failed_rowcount
+        else:
+            if rowcount == 0:
+                # CAS missed for a non-stale-attempt reason (e.g. job row
+                # deleted, status moved to terminal). The orchestrator
+                # cannot finalize a slot it couldn't write, so escalate to
+                # TransientError — Cloud Tasks redelivers per queue config.
+                raise TransientError(
+                    f"write_slot CAS returned rowcount=0 for job={job_id} slug={slug.value}"
+                )
         finally:
             SECTION_DURATION.labels(slug=slug.value).observe(
                 time.monotonic() - started
@@ -513,17 +527,20 @@ async def _run_all_sections(
 ) -> None:
     """Fan out every section in parallel; aggregate via `asyncio.gather`.
 
-    `return_exceptions=True` keeps a single-slot failure from aborting the
-    job — each section handler already writes a failed slot + continues.
-    Only orchestrator-level errors (DB down, pool exhausted) surface here,
-    and we let those propagate to the TransientError path.
+    Per-section handler failures are caught inside `_run_section` and
+    persisted as a failed slot, so handler exceptions don't surface here.
+    Anything that DOES surface — `TransientError` from a CAS-missed slot
+    write, a DB pool exhaustion, etc. — must propagate so `run_job` can
+    classify it (TransientError → 503 → Cloud Tasks redeliver). Previous
+    `return_exceptions=True` discarded these silently and led to jobs
+    that 200'd back to Cloud Tasks while leaving slots unwritten
+    (TASK-1473.41).
     """
     await asyncio.gather(
         *[
             _run_section(pool, job_id, task_attempt, slug, payload, settings)
             for slug in SectionSlug
         ],
-        return_exceptions=True,
     )
 
 
@@ -582,9 +599,23 @@ async def _run_pipeline(
     await _run_all_sections(pool, job_id, task_attempt, payload, settings)
 
     # Finalize: UPSERT the sidebar_payload cache if every slot is done.
-    await maybe_finalize_job(
+    # When finalize returns False the job is intentionally NOT cached yet
+    # (e.g. a slot is still in pending/running, attempt_id rotated, or the
+    # job already moved to a terminal status owned by the error path).
+    # Log so operators can correlate stuck jobs with the upstream cause —
+    # the worker still returns 200 so Cloud Tasks doesn't redeliver
+    # (TASK-1473.41).
+    finalized = await maybe_finalize_job(
         pool, job_id, expected_task_attempt=task_attempt
     )
+    if not finalized:
+        logger.info(
+            "maybe_finalize_job returned False after _run_all_sections "
+            "for job %s (attempt %s) — slots not yet all done or attempt "
+            "was rotated",
+            job_id,
+            task_attempt,
+        )
 
 
 # ---------------------------------------------------------------------------

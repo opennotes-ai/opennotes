@@ -172,3 +172,71 @@ async def test_post_then_internal_run_then_poll_to_done(
 
     # 8. Firecrawl was hit exactly once for this URL.
     assert fake_firecrawl.calls == [target_url]
+
+
+async def test_write_slot_cas_miss_propagates_503_for_redelivery(
+    http_client: httpx.AsyncClient,
+    db_pool: Any,
+    install_oidc_mock: Any,
+    oidc_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    fake_firecrawl: RecordingFirecrawlClient,
+    scrape_cache: Any,
+) -> None:
+    """write_slot rowcount=0 must surface as 503, not silent 200.
+
+    Pre-TASK-1473.41 `_run_section` ignored write_slot's rowcount and
+    `_run_all_sections` swallowed exceptions via `return_exceptions=True`.
+    A CAS miss (e.g. job row deleted out from under us, status flipped
+    terminal by the sweeper) silently produced an empty slot and the
+    worker returned 200 — Cloud Tasks would never redeliver. Now write
+    rowcount=0 raises TransientError inside `_run_section`, the gather
+    propagates, run_job classifies it as transient, and Cloud Tasks
+    retries via 503.
+    """
+    from src.jobs import orchestrator
+
+    monkeypatch.setattr(
+        orchestrator, "_build_scrape_cache", lambda _settings: scrape_cache
+    )
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_client", lambda _settings: fake_firecrawl
+    )
+
+    target_url = "https://example.com/slot-cas-miss"
+    payload = await _make_utterances_payload(target_url)
+
+    async def _stub_extract(
+        url: str, client: Any, cache: Any, *, settings: Any = None
+    ) -> UtterancesPayload:
+        return payload
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", _stub_extract)
+
+    async def _zero_write_slot(*_args: Any, **_kwargs: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(orchestrator, "write_slot", _zero_write_slot)
+
+    resp = await http_client.post("/api/analyze", json={"url": target_url})
+    assert resp.status_code == 202, resp.text
+    job_id = UUID(json.loads(resp.text)["job_id"])
+
+    job_row = await read_job(db_pool, job_id)
+    expected_attempt_id = job_row["attempt_id"]
+
+    worker_resp = await http_client.post(
+        f"/_internal/jobs/{job_id}/run",
+        json={
+            "job_id": str(job_id),
+            "expected_attempt_id": str(expected_attempt_id),
+        },
+        headers=oidc_headers,
+    )
+    assert worker_resp.status_code == 503, worker_resp.text
+    final = await read_job(db_pool, job_id)
+    # The TransientError reset path puts the job back to pending so the
+    # next Cloud Tasks delivery can re-claim cleanly.
+    assert final["status"] == "pending", (
+        f"job did not reset to pending after TransientError: {final['status']!r}"
+    )
