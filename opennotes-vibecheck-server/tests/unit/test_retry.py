@@ -631,6 +631,7 @@ async def test_section_retry_worker_runs_analysis_and_finalizes(
         payload: Any,
         settings: Any,
     ) -> dict[str, Any]:
+        assert payload is None
         return {
             "sentiment_stats": {
                 "per_utterance": [
@@ -648,6 +649,13 @@ async def test_section_retry_worker_runs_analysis_and_finalizes(
         }
 
     monkeypatch.setitem(orchestrator._SECTION_HANDLERS, target_slug, _retry_handler)
+
+    async def _fail_if_loaded(*args: Any, **kwargs: Any) -> object:
+        pytest.fail("section retry should not eagerly load utterances")
+
+    monkeypatch.setattr(
+        orchestrator, "load_job_utterances", _fail_if_loaded, raising=False
+    )
 
     resp = await _post_section_run(
         client,

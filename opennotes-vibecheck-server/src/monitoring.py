@@ -23,15 +23,30 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
+from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
+import httpx
+
+from src.monitoring_metrics import (
+    EXTERNAL_API_CALLS,
+    EXTERNAL_API_ERRORS,
+    EXTERNAL_API_FLAGGED,
+    EXTERNAL_API_LATENCY,
+    ExternalAPI,
+    ExternalAPIErrorCategory,
+)
 from src.utils.error_sanitizer import _sanitize, sanitize_processor
 
 __all__ = [
     "bind_contextvars",
     "clear_contextvars",
     "configure_logfire",
+    "external_api_span",
     "get_logger",
     "sanitize_processor",
 ]
@@ -144,6 +159,100 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
+def _error_category_from_exception(exc: BaseException) -> ExternalAPIErrorCategory:
+    if isinstance(exc, TimeoutError | httpx.TimeoutException):
+        return "timeout"
+    if isinstance(exc, httpx.HTTPError | ConnectionError | OSError):
+        return "network"
+    if isinstance(exc, ValueError):
+        return "invalid_response"
+    return "internal"
+
+
+@dataclass
+class ExternalAPIObservation:
+    api: ExternalAPI
+    span: Any
+    started_at: float
+    operation: str
+    response_status: int | str | None = None
+    error_category: ExternalAPIErrorCategory = "none"
+    flagged_count: int = 0
+
+    def set_response_status(self, status: int | str | None) -> None:
+        self.response_status = status
+
+    def set_error_category(self, category: ExternalAPIErrorCategory) -> None:
+        self.error_category = category
+
+    def add_flagged(self, count: int) -> None:
+        if count > 0:
+            self.flagged_count += count
+
+    def finish(self) -> None:
+        latency_s = max(perf_counter() - self.started_at, 0.0)
+        latency_ms = round(latency_s * 1000, 3)
+        response_status = self.response_status
+        if response_status is None:
+            response_status = "none"
+        try:
+            self.span.set_attributes(
+                {
+                    "api": self.api,
+                    "operation": self.operation,
+                    "latency_ms": latency_ms,
+                    "response_status": response_status,
+                    "error_category": self.error_category,
+                    "flagged_count": self.flagged_count,
+                }
+            )
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "failed to set external API span attributes",
+                exc_info=True,
+            )
+        EXTERNAL_API_CALLS.labels(api=self.api).inc()
+        EXTERNAL_API_LATENCY.labels(api=self.api).observe(latency_s)
+        if self.error_category != "none":
+            EXTERNAL_API_ERRORS.labels(
+                api=self.api,
+                error_category=self.error_category,
+            ).inc()
+        if self.flagged_count > 0:
+            EXTERNAL_API_FLAGGED.labels(api=self.api).inc(self.flagged_count)
+
+
+@contextmanager
+def external_api_span(
+    api: ExternalAPI,
+    operation: str,
+    **attributes: Any,
+) -> Iterator[ExternalAPIObservation]:
+    """Wrap one external provider call with Logfire span + Prometheus metrics."""
+    import logfire  # noqa: PLC0415
+
+    with logfire.span(
+        "vibecheck.external_api",
+        api=api,
+        operation=operation,
+        **attributes,
+    ) as span:
+        observation = ExternalAPIObservation(
+            api=api,
+            span=span,
+            started_at=perf_counter(),
+            operation=operation,
+        )
+        try:
+            yield observation
+        except BaseException as exc:
+            if observation.error_category == "none":
+                observation.error_category = _error_category_from_exception(exc)
+            raise
+        finally:
+            observation.finish()
+
+
 _logfire_configured = False
 
 # Supabase signed URLs and upstream signed-URL formats carry these
@@ -184,12 +293,13 @@ def configure_logfire(**configure_kwargs: Any) -> None:
     each matching value through `_sanitize` to preserve debugging context
     without leaking the credential.
     """
-    global _logfire_configured
+    global _logfire_configured  # noqa: PLW0603
     if _logfire_configured:
         return
     try:
-        import logfire
-        from src.utils.error_sanitizer import logfire_scrub_callback
+        import logfire  # noqa: PLC0415
+
+        from src.utils.error_sanitizer import logfire_scrub_callback  # noqa: PLC0415
     except Exception as exc:
         logging.getLogger(__name__).warning("logfire unavailable, skipping configure: %s", exc)
         return

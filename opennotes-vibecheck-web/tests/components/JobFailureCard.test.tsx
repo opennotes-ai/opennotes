@@ -53,6 +53,31 @@ describe("<JobFailureCard />", () => {
     expect(copy.textContent).toBe("That URL couldn't be parsed.");
   });
 
+  it("renders unsafe_url copy and Web Risk threat details", async () => {
+    renderCard({
+      url: "https://phishing.example.test/login",
+      errorCode: "unsafe_url",
+      webRiskFindings: [
+        {
+          url: "https://phishing.example.test/login",
+          threat_types: ["MALWARE", "SOCIAL_ENGINEERING"],
+        },
+      ],
+    });
+
+    const copy = await screen.findByTestId("job-failure-copy");
+    expect(copy.textContent).toBe(
+      "Web Risk flagged this URL before analysis.",
+    );
+    expect(screen.getByTestId("unsafe-url-finding").textContent).toContain(
+      "https://phishing.example.test/login",
+    );
+    const threats = screen
+      .getAllByTestId("unsafe-url-threat")
+      .map((node) => node.textContent);
+    expect(threats).toEqual(["malware", "social engineering"]);
+  });
+
   it("uses exact host-specific copy for unsupported_site when errorHost is provided", async () => {
     renderCard({
       url: URL,

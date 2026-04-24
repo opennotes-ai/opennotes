@@ -15,7 +15,7 @@ from src.config import Settings
 
 
 def _make_settings(**overrides: Any) -> Settings:
-    base = {
+    base: dict[str, Any] = {
         "MAX_IMAGES_MODERATED": 30,
         "MAX_VIDEOS_MODERATED": 5,
     }
@@ -80,7 +80,7 @@ def _adult_frame_finding() -> FrameFinding:
 async def test_empty_videos_returns_empty_matches_no_http():
     payload = _Payload([])
     settings = _make_settings()
-    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=FAKE_TOKEN):
+    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=FAKE_TOKEN):  # noqa: SIM117
         with patch("src.analyses.safety.video_moderation_worker.sample_video") as mock_sample:
             with patch("src.analyses.safety.video_moderation_worker._annotate_frames") as mock_annotate:
                 result = await run_video_moderation(None, uuid4(), uuid4(), payload, settings)
@@ -101,7 +101,7 @@ async def test_flattens_per_utterance_videos_and_caps(caplog):
         processed.append(url)
         return _fake_frames(1)
 
-    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=FAKE_TOKEN):
+    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=FAKE_TOKEN):  # noqa: SIM117
         with patch("src.analyses.safety.video_moderation_worker.sample_video", new=fake_sample):
             with patch(
                 "src.analyses.safety.video_moderation_worker._annotate_frames",
@@ -127,7 +127,7 @@ async def test_sampler_error_emits_empty_frame_findings_match_and_continues():
             raise VideoSamplingError("yt-dlp exit 1: error")
         return _fake_frames(1)
 
-    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=FAKE_TOKEN):
+    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=FAKE_TOKEN):  # noqa: SIM117
         with patch("src.analyses.safety.video_moderation_worker.sample_video", new=fake_sample):
             with patch(
                 "src.analyses.safety.video_moderation_worker._annotate_frames",
@@ -155,7 +155,7 @@ async def test_vision_transient_error_raises():
     ])
     settings = _make_settings()
 
-    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=FAKE_TOKEN):
+    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=FAKE_TOKEN):  # noqa: SIM117
         with patch(
             "src.analyses.safety.video_moderation_worker.sample_video",
             new=AsyncMock(return_value=_fake_frames(1)),
@@ -177,7 +177,7 @@ async def test_aggregate_max_likelihood_and_flagged_across_frames():
 
     mixed_findings = [_clean_frame_findings(1)[0], _adult_frame_finding()]
 
-    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=FAKE_TOKEN):
+    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=FAKE_TOKEN):  # noqa: SIM117
         with patch(
             "src.analyses.safety.video_moderation_worker.sample_video",
             new=AsyncMock(return_value=_fake_frames(2)),
@@ -204,6 +204,6 @@ async def test_missing_adc_token_raises_transient_error():
         _Utterance("utt-1", ["https://example.com/vid.mp4"]),
     ])
     settings = _make_settings()
-    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=None):
+    with patch("src.analyses.safety.video_moderation_worker.get_access_token", return_value=None):  # noqa: SIM117
         with pytest.raises(VisionTransientError, match="ADC token unavailable"):
             await run_video_moderation(None, uuid4(), uuid4(), payload, settings)

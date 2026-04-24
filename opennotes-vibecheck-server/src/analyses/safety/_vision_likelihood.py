@@ -5,7 +5,7 @@ VisionLikelihood = Literal[
 ]
 
 _SCORE_MAP: dict[str, float] = {
-    "UNKNOWN": 0.0,
+    "UNKNOWN": 0.5,
     "VERY_UNLIKELY": 0.0,
     "UNLIKELY": 0.25,
     "POSSIBLE": 0.5,

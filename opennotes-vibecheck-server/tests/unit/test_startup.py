@@ -32,10 +32,9 @@ def test_lifespan_calls_configure_logfire(_reset_logfire_flag: None) -> None:
     """FastAPI startup must invoke configure_logfire so span-level redaction is active."""
     from src.main import app
 
-    with patch("src.startup.configure_logfire") as mock_configure:
-        with TestClient(app) as client:
-            resp = client.get("/health")
-            assert resp.status_code == 200
+    with patch("src.startup.configure_logfire") as mock_configure, TestClient(app) as client:
+        resp = client.get("/health")
+        assert resp.status_code == 200
 
     assert mock_configure.called, (
         "configure_logfire must be invoked during app lifespan init"

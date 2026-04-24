@@ -6,16 +6,17 @@ from TASK-1474.08.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping, Sequence
 from unittest.mock import patch
 
 import httpx
 import pytest
 
+from src.analyses.safety._schemas import HarmfulContentMatch
 from src.analyses.safety.gcp_moderation import (
     GcpModerationTransientError,
     moderate_texts_gcp,
 )
-from src.analyses.safety._schemas import HarmfulContentMatch
 from src.utterances.schema import Utterance
 
 
@@ -31,7 +32,7 @@ def make_utterance(
     )
 
 
-def make_moderation_response(categories: list[dict]) -> httpx.Response:
+def make_moderation_response(categories: Sequence[Mapping[str, object]]) -> httpx.Response:
     """Build a mock GCP moderateText response."""
     import json
 
@@ -203,8 +204,7 @@ class TestConcurrency:
             nonlocal max_concurrent, current_concurrent
             async with lock:
                 current_concurrent += 1
-                if current_concurrent > max_concurrent:
-                    max_concurrent = current_concurrent
+                max_concurrent = max(max_concurrent, current_concurrent)
             await asyncio.sleep(0.01)
             async with lock:
                 current_concurrent -= 1

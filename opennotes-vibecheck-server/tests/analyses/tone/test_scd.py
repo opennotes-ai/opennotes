@@ -180,8 +180,10 @@ class TestAnalyzeScdMultiSpeaker:
 
         assert report.speaker_arcs
         for arc in report.speaker_arcs:
-            assert isinstance(arc.speaker, str) and arc.speaker
-            assert isinstance(arc.note, str) and arc.note
+            assert isinstance(arc.speaker, str)
+            assert arc.speaker
+            assert isinstance(arc.note, str)
+            assert arc.note
             if arc.utterance_id_range is not None:
                 assert isinstance(arc.utterance_id_range, list)
                 assert len(arc.utterance_id_range) == 2

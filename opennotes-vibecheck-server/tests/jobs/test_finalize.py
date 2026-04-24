@@ -6,7 +6,11 @@ source to "openai".
 """
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
 import pytest
+from pydantic import ValidationError
 
 from src.analyses.safety._schemas import HarmfulContentMatch
 
@@ -15,18 +19,20 @@ class TestLegacyDictRehydration:
     def test_harmful_content_match_rehydrates_legacy_dict_without_source_field(self):
         legacy_dict = {
             "utterance_id": "utt_legacy",
+            "utterance_text": "legacy text",
             "max_score": 0.8,
             "categories": {"violence": True},
             "scores": {"violence": 0.8},
             "flagged_categories": ["violence"],
         }
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError, match="source"):
             HarmfulContentMatch.model_validate(legacy_dict)
 
     def test_harmful_content_match_with_source_injected_validates_as_openai(self):
         legacy_dict = {
             "utterance_id": "utt_legacy",
+            "utterance_text": "legacy text",
             "max_score": 0.8,
             "categories": {"violence": True},
             "scores": {"violence": 0.8},
@@ -43,6 +49,7 @@ class TestLegacyDictRehydration:
     def test_harmful_content_match_with_explicit_source_gcp_preserved(self):
         modern_dict = {
             "utterance_id": "utt_modern",
+            "utterance_text": "modern text",
             "max_score": 0.7,
             "categories": {"hate": True},
             "scores": {"hate": 0.7},
@@ -59,13 +66,14 @@ class TestLegacyDictRehydration:
         """Verify that the guard in finalize._assemble_payload defaults source to openai."""
         from src.jobs import finalize as finalize_mod
 
-        source = finalize_mod.__file__
-        with open(source) as f:
+        source = Path(finalize_mod.__file__)
+        with source.open() as f:
             content = f.read()
 
-        assert '"source" not in m' in content or "'source' not in m" in content, (
+        assert '"source" not in raw_match' in content or "'source' not in raw_match" in content, (
             "finalize.py must contain the legacy-dict guard: "
-            "if isinstance(m, dict) and 'source' not in m: m = {**m, 'source': 'openai'}"
+            "if isinstance(raw_match, dict) and 'source' not in raw_match: "
+            "match_data = {**raw_match, 'source': 'openai'}"
         )
 
 
@@ -75,7 +83,7 @@ class TestAssemblePayloadWiresNewSafetySections:
     were silently dropped and never reached the rendered sidebar.
     """
 
-    def _sections_with_new_safety(self) -> dict:
+    def _sections_with_new_safety(self) -> dict[Any, Any]:
         from uuid import uuid4
 
         from src.analyses.schemas import (

@@ -22,6 +22,7 @@ from src.jobs.orchestrator import TerminalError, TransientError
 from src.monitoring import (
     bind_contextvars,
     clear_contextvars,
+    external_api_span,
     get_logger,
 )
 from src.monitoring_metrics import (
@@ -200,6 +201,95 @@ class TestPrometheusCounters:
             "vibecheck_single_flight_lock_waits_total"
         )
         assert after == before + 1
+
+    def test_external_api_span_sets_attrs_and_metrics(self, monkeypatch) -> None:
+        class FakeSpan:
+            def __init__(self) -> None:
+                self.attrs: dict[str, object] = {}
+
+            def __enter__(self) -> FakeSpan:
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def set_attributes(self, attrs: dict[str, object]) -> None:
+                self.attrs.update(attrs)
+
+        fake_span = FakeSpan()
+        monkeypatch.setattr(
+            "logfire.span",
+            lambda *args, **kwargs: fake_span,
+        )
+        labels = {"api": "webrisk"}
+        calls_before = REGISTRY.get_sample_value(
+            "vibecheck_external_api_calls_total",
+            labels=labels,
+        ) or 0.0
+        flagged_before = REGISTRY.get_sample_value(
+            "vibecheck_external_api_flagged_total",
+            labels=labels,
+        ) or 0.0
+
+        with external_api_span("webrisk", "uris.search") as obs:
+            obs.set_response_status(200)
+            obs.add_flagged(2)
+
+        assert fake_span.attrs["api"] == "webrisk"
+        assert fake_span.attrs["operation"] == "uris.search"
+        assert fake_span.attrs["response_status"] == 200
+        assert fake_span.attrs["error_category"] == "none"
+        assert fake_span.attrs["flagged_count"] == 2
+        assert REGISTRY.get_sample_value(
+            "vibecheck_external_api_calls_total",
+            labels=labels,
+        ) == calls_before + 1
+        assert REGISTRY.get_sample_value(
+            "vibecheck_external_api_flagged_total",
+            labels=labels,
+        ) == flagged_before + 2
+
+    def test_external_api_span_records_error_category(self, monkeypatch) -> None:
+        class FakeSpan:
+            def __init__(self) -> None:
+                self.attrs: dict[str, object] = {}
+
+            def __enter__(self) -> FakeSpan:
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def set_attributes(self, attrs: dict[str, object]) -> None:
+                self.attrs.update(attrs)
+
+        fake_span = FakeSpan()
+        monkeypatch.setattr(
+            "logfire.span",
+            lambda *args, **kwargs: fake_span,
+        )
+        labels = {"api": "vision", "error_category": "rate_limited"}
+        before = REGISTRY.get_sample_value(
+            "vibecheck_external_api_errors_total",
+            labels=labels,
+        ) or 0.0
+
+        def raise_observed_error() -> None:
+            with external_api_span("vision", "images.annotate") as obs:
+                obs.set_response_status(429)
+                obs.set_error_category("rate_limited")
+                raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            raise_observed_error()
+
+        assert fake_span.attrs["api"] == "vision"
+        assert fake_span.attrs["response_status"] == 429
+        assert fake_span.attrs["error_category"] == "rate_limited"
+        assert REGISTRY.get_sample_value(
+            "vibecheck_external_api_errors_total",
+            labels=labels,
+        ) == before + 1
 
 
 class TestClassifyError:

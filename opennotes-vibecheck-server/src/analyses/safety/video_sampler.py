@@ -6,6 +6,9 @@ import logging
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
+
+import logfire
 
 from src.utils.url_security import InvalidURL, validate_public_http_url
 
@@ -32,6 +35,12 @@ async def sample_video(
 ) -> list[FrameBytes]:
     if frame_count < 1:
         raise ValueError("frame_count must be >= 1")
+    started_at = perf_counter()
+    sampler_stats: dict[str, int | str | None] = {
+        "yt_dlp_exit_code": None,
+        "ffmpeg_exit_code": None,
+    }
+    frames: list[FrameBytes] = []
     # SSRF guard: validate the video URL before handing it to yt-dlp. Without
     # this, a page-supplied URL pointing at an internal host (localhost,
     # RFC1918, metadata endpoint) would be fetched by the server. `yt-dlp`
@@ -40,20 +49,41 @@ async def sample_video(
         safe_url = validate_public_http_url(url)
     except InvalidURL as exc:
         raise VideoSamplingError(f"url rejected: {exc.reason}") from exc
-    with tempfile.TemporaryDirectory(prefix="vibecheck-video-") as tmp:
-        tmp_path = Path(tmp)
-        video_path, duration_ms = await _download(
-            safe_url,
-            tmp_path,
-            max_bytes=max_bytes,
-            timeout_s=download_timeout_s,
-        )
-        offsets = _offsets(duration_ms, frame_count)
-        frames: list[FrameBytes] = []
-        for offset in offsets:
-            png = await _extract_frame(video_path, offset, timeout_s=extract_timeout_s)
-            frames.append(FrameBytes(frame_offset_ms=offset, png_bytes=png))
-    return frames
+    with logfire.span(
+        "vibecheck.video_sampler",
+        frame_count_requested=frame_count,
+        frame_count_emitted=0,
+    ) as span:
+        try:
+            with tempfile.TemporaryDirectory(prefix="vibecheck-video-") as tmp:
+                tmp_path = Path(tmp)
+                video_path, duration_ms = await _download(
+                    safe_url,
+                    tmp_path,
+                    max_bytes=max_bytes,
+                    timeout_s=download_timeout_s,
+                    stats=sampler_stats,
+                )
+                offsets = _offsets(duration_ms, frame_count)
+                for offset in offsets:
+                    png = await _extract_frame(
+                        video_path,
+                        offset,
+                        timeout_s=extract_timeout_s,
+                        stats=sampler_stats,
+                    )
+                    frames.append(FrameBytes(frame_offset_ms=offset, png_bytes=png))
+            return frames
+        finally:
+            span.set_attributes(
+                {
+                    "yt_dlp_exit_code": sampler_stats["yt_dlp_exit_code"],
+                    "ffmpeg_exit_code": sampler_stats["ffmpeg_exit_code"],
+                    "duration_ms": round((perf_counter() - started_at) * 1000, 3),
+                    "frame_count_requested": frame_count,
+                    "frame_count_emitted": len(frames),
+                }
+            )
 
 
 def _offsets(duration_ms: int, frame_count: int) -> list[int]:
@@ -68,7 +98,14 @@ def _offsets(duration_ms: int, frame_count: int) -> list[int]:
     return [round(i * step) for i in range(frame_count)]
 
 
-async def _download(url: str, tmp_path: Path, *, max_bytes: int, timeout_s: int) -> tuple[Path, int]:
+async def _download(
+    url: str,
+    tmp_path: Path,
+    *,
+    max_bytes: int,
+    timeout_s: int,
+    stats: dict[str, int | str | None],
+) -> tuple[Path, int]:
     out_template = str(tmp_path / "video.%(ext)s")
     cmd = [
         "yt-dlp",
@@ -87,25 +124,61 @@ async def _download(url: str, tmp_path: Path, *, max_bytes: int, timeout_s: int)
     )
     try:
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         await _kill(proc)
+        stats["yt_dlp_exit_code"] = proc.returncode if proc.returncode is not None else "timeout"
         raise VideoSamplingError(f"yt-dlp timeout after {timeout_s}s") from exc
+    stats["yt_dlp_exit_code"] = proc.returncode
     if proc.returncode != 0:
         raise VideoSamplingError(f"yt-dlp exit {proc.returncode}: {stderr.decode(errors='replace')[:200]}")
 
-    videos = [p for p in tmp_path.iterdir() if p.suffix not in {".json", ".part"}]
+    videos = [
+        p
+        for p in tmp_path.iterdir()
+        if p.is_file() and p.name != "video.info.json" and p.suffix not in {".json", ".part"}
+    ]
     if not videos:
         raise VideoSamplingError("yt-dlp produced no video file")
-    video_path = videos[0]
-    info_jsons = list(tmp_path.glob("*.info.json"))
-    if not info_jsons:
+    info_path = tmp_path / "video.info.json"
+    if not info_path.exists():
         raise VideoSamplingError("yt-dlp info.json missing")
-    info = json.loads(info_jsons[0].read_text())
+    info = json.loads(info_path.read_text())
+    video_path = _downloaded_video_path(info, videos)
+    if video_path is None:
+        raise VideoSamplingError("yt-dlp produced no video file")
     duration_s = info.get("duration") or 0
     return video_path, int(float(duration_s) * 1000)
 
 
-async def _extract_frame(video_path: Path, offset_ms: int, *, timeout_s: int) -> bytes:
+def _downloaded_video_path(info: dict[str, object], videos: list[Path]) -> Path | None:
+    """Resolve the media file paired with the known info.json."""
+    requested_downloads = info.get("requested_downloads")
+    if isinstance(requested_downloads, list):
+        for item in requested_downloads:
+            if not isinstance(item, dict):
+                continue
+            filepath = item.get("filepath")
+            if isinstance(filepath, str):
+                candidate = Path(filepath)
+                if candidate.exists():
+                    return candidate
+    for key in ("filepath", "_filename", "filename"):
+        value = info.get(key)
+        if isinstance(value, str):
+            candidate = Path(value)
+            if candidate.exists():
+                return candidate
+
+    return videos[0] if videos else None
+
+
+async def _extract_frame(
+    video_path: Path,
+    offset_ms: int,
+    *,
+    timeout_s: int,
+    stats: dict[str, int | str | None],
+) -> bytes:
     offset_s = offset_ms / 1000
     cmd = [
         "ffmpeg",
@@ -124,9 +197,11 @@ async def _extract_frame(video_path: Path, offset_ms: int, *, timeout_s: int) ->
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         await _kill(proc)
+        stats["ffmpeg_exit_code"] = proc.returncode if proc.returncode is not None else "timeout"
         raise VideoSamplingError(f"ffmpeg timeout at offset={offset_ms}ms") from exc
+    stats["ffmpeg_exit_code"] = proc.returncode
     if proc.returncode != 0:
         raise VideoSamplingError(f"ffmpeg exit {proc.returncode}: {stderr.decode(errors='replace')[:200]}")
     if not stdout:
@@ -139,7 +214,7 @@ async def _kill(proc) -> None:
         proc.terminate()
         try:
             await asyncio.wait_for(proc.wait(), timeout=2.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.wait()
     except ProcessLookupError:

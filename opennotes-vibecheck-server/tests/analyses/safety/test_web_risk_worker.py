@@ -4,6 +4,7 @@ Monkeypatches `check_urls` — no real HTTP calls.
 """
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 from uuid import UUID
 
@@ -22,11 +23,11 @@ def _make_payload(
     source_url: str = "",
     utterances: list[Utterance] | None = None,
 ) -> UtterancesPayload:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     return UtterancesPayload(
         source_url=source_url,
-        scraped_at=datetime.now(timezone.utc),
+        scraped_at=datetime.now(UTC),
         utterances=utterances or [],
     )
 
@@ -88,6 +89,7 @@ async def test_unifies_page_url_and_utterance_media_into_pool(
     monkeypatch.setattr("src.analyses.safety.web_risk_worker.check_urls", fake_check_urls)
 
     from importlib import reload
+
     import src.analyses.safety.web_risk_worker as mod
     reload(mod)
 

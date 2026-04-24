@@ -2,6 +2,9 @@ import type { SectionSlug } from "~/lib/api-client.server";
 
 export const SECTION_DISPLAY_NAMES: Record<SectionSlug, string> = {
   safety__moderation: "Safety",
+  safety__web_risk: "Web Risk",
+  safety__image_moderation: "Image safety",
+  safety__video_moderation: "Video safety",
   tone_dynamics__flashpoint: "Flashpoint",
   tone_dynamics__scd: "SCD",
   facts_claims__dedup: "Claims",

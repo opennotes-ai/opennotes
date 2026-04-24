@@ -2,6 +2,9 @@ import type { JobState, SectionSlot, SectionSlug } from "./api-client.server";
 
 export const SECTION_SLUGS = [
   "safety__moderation",
+  "safety__web_risk",
+  "safety__image_moderation",
+  "safety__video_moderation",
   "tone_dynamics__flashpoint",
   "tone_dynamics__scd",
   "facts_claims__dedup",

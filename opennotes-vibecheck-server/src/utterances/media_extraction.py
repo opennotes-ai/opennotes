@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup, Tag
+
+from src.cache.normalize import normalize_url
 
 from .schema import Utterance
 
@@ -67,6 +69,10 @@ def _append_unique(lst: list[str], value: str) -> None:
         lst.append(value)
 
 
+def _canonical_media_url(value: str) -> str:
+    return normalize_url(value.strip())
+
+
 def _is_video_iframe(src: str) -> bool:
     try:
         host = urlparse(src).hostname or ""
@@ -75,7 +81,7 @@ def _is_video_iframe(src: str) -> bool:
     return host in YT_DLP_IFRAME_HOSTS
 
 
-def attribute_media(
+def attribute_media(  # noqa: PLR0912
     html: str,
     utterances: list[Utterance],
 ) -> None:
@@ -167,7 +173,7 @@ def page_level_media(utterances: list[Utterance]) -> dict[str, list[str]]:
     sorted, deduplicated lists for "urls", "images", and "videos".
     """
     return {
-        "urls": sorted({u for utt in utterances for u in utt.mentioned_urls}),
-        "images": sorted({u for utt in utterances for u in utt.mentioned_images}),
-        "videos": sorted({u for utt in utterances for u in utt.mentioned_videos}),
+        "urls": sorted({_canonical_media_url(u) for utt in utterances for u in utt.mentioned_urls}),
+        "images": sorted({_canonical_media_url(u) for utt in utterances for u in utt.mentioned_images}),
+        "videos": sorted({_canonical_media_url(u) for utt in utterances for u in utt.mentioned_videos}),
     }

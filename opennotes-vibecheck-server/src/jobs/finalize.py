@@ -116,10 +116,13 @@ def _assemble_payload(
     safety_data = sections[SectionSlug.SAFETY_MODERATION].data or {}
     raw_matches = safety_data.get("harmful_content_matches", [])
     validated_matches: list[HarmfulContentMatch] = []
-    for m in raw_matches:
-        if isinstance(m, dict) and "source" not in m:
-            m = {**m, "source": "openai"}
-        validated_matches.append(HarmfulContentMatch.model_validate(m))
+    for raw_match in raw_matches:
+        match_data = (
+            {**raw_match, "source": "openai"}
+            if isinstance(raw_match, dict) and "source" not in raw_match
+            else raw_match
+        )
+        validated_matches.append(HarmfulContentMatch.model_validate(match_data))
     safety = SafetySection(harmful_content_matches=validated_matches)
 
     # TASK-1474: three new safety sections carry their own shape into the
@@ -194,7 +197,7 @@ def _assemble_payload(
     )
 
 
-async def maybe_finalize_job(
+async def maybe_finalize_job(  # noqa: PLR0911
     db: Any,
     job_id: UUID,
     *,

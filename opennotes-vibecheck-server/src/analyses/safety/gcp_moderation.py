@@ -14,6 +14,7 @@ import asyncio
 import httpx
 
 from src.analyses.safety._schemas import HarmfulContentMatch
+from src.monitoring import external_api_span
 from src.services.gcp_adc import CLOUD_PLATFORM_SCOPE, get_access_token
 from src.utterances.schema import Utterance
 
@@ -41,41 +42,53 @@ async def moderate_texts_gcp(
         if not (utt.text or "").strip():
             return None
         async with sem:
-            r = await httpx_client.post(
-                MODERATE_TEXT_URL,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                },
-                json={"document": {"type": "PLAIN_TEXT", "content": utt.text}},
-                timeout=10.0,
-            )
-            if r.status_code == 429 or r.status_code >= 500:
-                raise GcpModerationTransientError(f"gcp-moderation {r.status_code}")
-            r.raise_for_status()
-            payload = r.json()
-            cats = payload.get("moderationCategories") or []
-            if not cats:
-                return None
-            scores: dict[str, float] = {
-                str(c.get("name", "")): float(c.get("confidence", 0.0))
-                for c in cats
-                if isinstance(c, dict)
-            }
-            if not scores:
-                return None
-            max_score = max(scores.values())
-            if max_score <= threshold:
-                return None
-            categories = {name: score > threshold for name, score in scores.items()}
-            flagged = [name for name, hit in categories.items() if hit]
-            return HarmfulContentMatch(
-                source="gcp",
-                utterance_id=utt.utterance_id or "",
-                max_score=max_score,
-                categories=categories,
-                scores=scores,
-                flagged_categories=flagged,
-            )
+            with external_api_span("gcp_nl", "documents.moderate_text") as obs:
+                try:
+                    r = await httpx_client.post(
+                        MODERATE_TEXT_URL,
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Content-Type": "application/json",
+                        },
+                        json={"document": {"type": "PLAIN_TEXT", "content": utt.text}},
+                        timeout=10.0,
+                    )
+                except httpx.HTTPError as exc:
+                    obs.set_error_category("network")
+                    raise GcpModerationTransientError("gcp-moderation network") from exc
+                obs.set_response_status(r.status_code)
+                if r.status_code == 429:
+                    obs.set_error_category("rate_limited")
+                    raise GcpModerationTransientError(f"gcp-moderation {r.status_code}")
+                if r.status_code >= 500:
+                    obs.set_error_category("upstream")
+                    raise GcpModerationTransientError(f"gcp-moderation {r.status_code}")
+                r.raise_for_status()
+                payload = r.json()
+                cats = payload.get("moderationCategories") or []
+                if not cats:
+                    return None
+                scores: dict[str, float] = {
+                    str(c.get("name", "")): float(c.get("confidence", 0.0))
+                    for c in cats
+                    if isinstance(c, dict)
+                }
+                if not scores:
+                    return None
+                max_score = max(scores.values())
+                if max_score <= threshold:
+                    return None
+                categories = {name: score > threshold for name, score in scores.items()}
+                flagged = [name for name, hit in categories.items() if hit]
+                obs.add_flagged(1)
+                return HarmfulContentMatch(
+                    source="gcp",
+                    utterance_id=utt.utterance_id or "",
+                    utterance_text=utt.text or "",
+                    max_score=max_score,
+                    categories=categories,
+                    scores=scores,
+                    flagged_categories=flagged,
+                )
 
     return list(await asyncio.gather(*(one(u) for u in utterances)))

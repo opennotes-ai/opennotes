@@ -1,6 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@solidjs/testing-library";
 import SafetyModerationReport from "../../../../src/components/sidebar/reports/SafetyModerationReport";
+import WebRiskReport from "../../../../src/components/sidebar/reports/WebRiskReport";
+import ImageModerationReport from "../../../../src/components/sidebar/reports/ImageModerationReport";
+import VideoModerationReport from "../../../../src/components/sidebar/reports/VideoModerationReport";
 import FlashpointReport from "../../../../src/components/sidebar/reports/FlashpointReport";
 import ScdReport from "../../../../src/components/sidebar/reports/ScdReport";
 import ClaimsDedupReport from "../../../../src/components/sidebar/reports/ClaimsDedupReport";
@@ -10,6 +13,9 @@ import SubjectiveReport from "../../../../src/components/sidebar/reports/Subject
 import type { components } from "../../../../src/lib/generated-types";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
+type WebRiskFinding = components["schemas"]["WebRiskFinding"];
+type ImageModerationMatch = components["schemas"]["ImageModerationMatch"];
+type VideoModerationMatch = components["schemas"]["VideoModerationMatch"];
 type FlashpointMatch = components["schemas"]["FlashpointMatch"];
 type SCDReport = components["schemas"]["SCDReport"];
 type ClaimsReport = components["schemas"]["ClaimsReport"];
@@ -31,14 +37,16 @@ describe("<SafetyModerationReport />", () => {
     expect(container.innerHTML).not.toMatch(/\bborder-l-2\b/);
   });
 
-  it("lists categories and utterance ids for each match", () => {
+  it("lists categories and utterance text for each match", () => {
     const matches: HarmfulContentMatch[] = [
       {
         utterance_id: "utt-1",
+        utterance_text: "This is the exact harmful sentence.",
         max_score: 0.82,
         flagged_categories: ["harassment", "toxicity"],
         categories: { harassment: true, toxicity: true },
         scores: {},
+        source: "openai",
       },
     ];
     render(() => <SafetyModerationReport matches={matches} />);
@@ -48,7 +56,160 @@ describe("<SafetyModerationReport />", () => {
       "toxicity",
     ]);
     expect(screen.getByTestId("safety-max-score").textContent).toBe("82%");
-    expect(screen.getByText(/utterance utt-1/)).toBeDefined();
+    expect(screen.getByText("This is the exact harmful sentence.")).toBeDefined();
+  });
+
+  it("groups matches by provider with visible labels", () => {
+    const matches: HarmfulContentMatch[] = [
+      {
+        utterance_id: "utt-1",
+        utterance_text: "OpenAI provider sentence.",
+        max_score: 0.82,
+        flagged_categories: ["harassment"],
+        categories: { harassment: true },
+        scores: {},
+        source: "openai",
+      },
+      {
+        utterance_id: "utt-2",
+        utterance_text: "GCP provider sentence.",
+        max_score: 0.76,
+        flagged_categories: ["toxicity"],
+        categories: { toxicity: true },
+        scores: {},
+        source: "gcp",
+      },
+    ];
+
+    render(() => <SafetyModerationReport matches={matches} />);
+
+    const labels = screen
+      .getAllByTestId("safety-provider-label")
+      .map((node) => node.textContent);
+    expect(labels).toEqual(["OpenAI moderation", "Google Natural Language"]);
+    expect(screen.getByText("OpenAI provider sentence.")).toBeDefined();
+    expect(screen.getByText("GCP provider sentence.")).toBeDefined();
+  });
+});
+
+describe("<WebRiskReport />", () => {
+  it("renders empty-state copy when no findings are supplied", () => {
+    render(() => <WebRiskReport findings={[]} />);
+    expect(screen.getByTestId("web-risk-empty").textContent).toMatch(
+      /No Web Risk findings/,
+    );
+  });
+
+  it("lists URLs and threat type badges", () => {
+    const findings: WebRiskFinding[] = [
+      {
+        url: "https://phishing.example.test/login",
+        threat_types: ["MALWARE", "SOCIAL_ENGINEERING"],
+      },
+    ];
+
+    render(() => <WebRiskReport findings={findings} />);
+
+    expect(screen.getByTestId("web-risk-finding").textContent).toContain(
+      "https://phishing.example.test/login",
+    );
+    const threats = screen
+      .getAllByTestId("web-risk-threat")
+      .map((node) => node.textContent);
+    expect(threats).toEqual(["malware", "social engineering"]);
+  });
+});
+
+describe("<ImageModerationReport />", () => {
+  it("renders empty-state copy when no image matches are supplied", () => {
+    render(() => <ImageModerationReport matches={[]} />);
+    expect(screen.getByTestId("image-moderation-empty").textContent).toMatch(
+      /No image safety matches/,
+    );
+  });
+
+  it("renders a thumbnail, flagged state, categories, and max likelihood", () => {
+    const matches: ImageModerationMatch[] = [
+      {
+        utterance_id: "utt-1",
+        image_url: "https://cdn.example.test/image.jpg",
+        adult: 0.8,
+        violence: 0.2,
+        racy: 0.1,
+        medical: 0,
+        spoof: 0,
+        flagged: true,
+        max_likelihood: 0.8,
+      },
+    ];
+
+    render(() => <ImageModerationReport matches={matches} />);
+
+    const item = screen.getByTestId("image-moderation-match");
+    expect(item.getAttribute("data-flagged")).toBe("true");
+    expect(item.querySelector("img")?.getAttribute("src")).toBe(
+      "https://cdn.example.test/image.jpg",
+    );
+    expect(screen.getByTestId("image-moderation-category").textContent).toBe(
+      "adult",
+    );
+    expect(screen.getByTestId("image-moderation-max").textContent).toBe("80%");
+  });
+});
+
+describe("<VideoModerationReport />", () => {
+  it("renders empty-state copy when no video matches are supplied", () => {
+    render(() => <VideoModerationReport matches={[]} />);
+    expect(screen.getByTestId("video-moderation-empty").textContent).toMatch(
+      /No video safety matches/,
+    );
+  });
+
+  it("renders video findings with per-frame offsets and flagged badges", () => {
+    const matches: VideoModerationMatch[] = [
+      {
+        utterance_id: "utt-1",
+        video_url: "https://video.example.test/watch.mp4",
+        flagged: true,
+        max_likelihood: 1,
+        frame_findings: [
+          {
+            frame_offset_ms: 0,
+            adult: 0,
+            violence: 0,
+            racy: 0,
+            medical: 0,
+            spoof: 0,
+            flagged: false,
+            max_likelihood: 0,
+          },
+          {
+            frame_offset_ms: 1250,
+            adult: 0,
+            violence: 1,
+            racy: 0,
+            medical: 0,
+            spoof: 0,
+            flagged: true,
+            max_likelihood: 1,
+          },
+        ],
+      },
+    ];
+
+    render(() => <VideoModerationReport matches={matches} />);
+
+    expect(screen.getByTestId("video-moderation-match").textContent).toContain(
+      "https://video.example.test/watch.mp4",
+    );
+    const frames = screen.getAllByTestId("video-frame-finding");
+    expect(frames).toHaveLength(2);
+    expect(frames[0]?.textContent).toContain("0.0s");
+    expect(frames[1]?.textContent).toContain("1.3s");
+    expect(frames[1]?.getAttribute("data-flagged")).toBe("true");
+    expect(screen.getByTestId("video-frame-category").textContent).toBe(
+      "violence",
+    );
   });
 });
 

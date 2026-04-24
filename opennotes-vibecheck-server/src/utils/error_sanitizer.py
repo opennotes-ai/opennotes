@@ -47,8 +47,7 @@ def _sanitize(value: str | Exception | Any) -> str:
     text = _USER_HOME_RE.sub(_REDACTED, text)
     text = _LINUX_HOME_RE.sub(_REDACTED, text)
     text = _GCP_PROJECT_RE.sub(_REDACTED, text)
-    text = _SIGNED_QUERY_RE.sub(lambda m: f"{m.group('prefix')}{_REDACTED}", text)
-    return text
+    return _SIGNED_QUERY_RE.sub(lambda m: f"{m.group('prefix')}{_REDACTED}", text)
 
 
 def sanitize_processor(

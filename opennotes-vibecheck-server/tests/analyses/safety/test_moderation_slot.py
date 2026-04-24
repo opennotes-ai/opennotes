@@ -5,6 +5,7 @@ both-fail raises ModerationSlotError).
 """
 from __future__ import annotations
 
+from typing import Literal
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -18,14 +19,18 @@ def make_utterance(utterance_id: str = "utt_1", text: str = "some text") -> Utte
     return Utterance(utterance_id=utterance_id, kind="post", text=text, author="alice")
 
 
-def make_match(utterance_id: str = "utt_1", source: str = "openai") -> HarmfulContentMatch:
+def make_match(
+    utterance_id: str = "utt_1",
+    source: Literal["openai", "gcp"] = "openai",
+) -> HarmfulContentMatch:
     return HarmfulContentMatch(
         utterance_id=utterance_id,
+        utterance_text="some text",
         max_score=0.9,
         categories={"violence": True},
         scores={"violence": 0.9},
         flagged_categories=["violence"],
-        source=source,  # type: ignore[arg-type]
+        source=source,
     )
 
 
@@ -60,6 +65,53 @@ class TestBothProvidersSucceed:
         assert len(matches) == 2
         sources = {m["source"] for m in matches}
         assert sources == {"openai", "gcp"}
+
+    async def test_matches_include_the_flagged_utterance_text(self):
+        from src.analyses.safety.moderation_slot import run_safety_moderation
+
+        openai_match = make_match(utterance_id="utt_1", source="openai")
+        payload = type(
+            "Payload",
+            (),
+            {
+                "utterances": [
+                    make_utterance(
+                        utterance_id="utt_1",
+                        text="This is the exact harmful sentence.",
+                    )
+                ]
+            },
+        )()
+
+        with (
+            patch(
+                "src.analyses.safety.moderation_slot.check_content_moderation_bulk",
+                new=AsyncMock(return_value=[openai_match]),
+            ),
+            patch(
+                "src.analyses.safety.moderation_slot.moderate_texts_gcp",
+                new=AsyncMock(return_value=[]),
+            ),
+        ):
+            result = await run_safety_moderation(
+                pool=None,
+                job_id=uuid4(),
+                task_attempt=uuid4(),
+                payload=payload,
+                settings=None,
+            )
+
+        assert result["harmful_content_matches"] == [
+            {
+                "utterance_id": "utt_1",
+                "utterance_text": "This is the exact harmful sentence.",
+                "max_score": 0.9,
+                "categories": {"violence": True},
+                "scores": {"violence": 0.9},
+                "flagged_categories": ["violence"],
+                "source": "openai",
+            }
+        ]
 
 
 class TestOnlyOpenAISucceeds:
@@ -142,15 +194,15 @@ class TestBothProvidersFail:
                 "src.analyses.safety.moderation_slot.moderate_texts_gcp",
                 new=AsyncMock(side_effect=RuntimeError("gcp down")),
             ),
+            pytest.raises(ModerationSlotError) as exc_info,
         ):
-            with pytest.raises(ModerationSlotError) as exc_info:
-                await run_safety_moderation(
-                    pool=None,
-                    job_id=uuid4(),
-                    task_attempt=uuid4(),
-                    payload=payload,
-                    settings=None,
-                )
+            await run_safety_moderation(
+                pool=None,
+                job_id=uuid4(),
+                task_attempt=uuid4(),
+                payload=payload,
+                settings=None,
+            )
 
         msg = str(exc_info.value)
         assert "openai down" in msg

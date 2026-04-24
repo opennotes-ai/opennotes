@@ -77,6 +77,7 @@ async def check_content_moderation_bulk(
             out[orig_idx] = HarmfulContentMatch(
                 source="openai",
                 utterance_id=utterance.utterance_id or "",
+                utterance_text=utterance.text or "",
                 max_score=result.max_score,
                 categories=result.categories,
                 scores=result.scores,

@@ -32,8 +32,8 @@ def get_access_token(scope: str = CLOUD_PLATFORM_SCOPE) -> str | None:
     """
     scope_key: tuple[str, ...] = (scope,)
     try:
-        from google.auth import default as google_auth_default
-        from google.auth.transport.requests import Request as GoogleAuthRequest
+        from google.auth import default as google_auth_default  # noqa: PLC0415
+        from google.auth.transport.requests import Request as GoogleAuthRequest  # noqa: PLC0415
     except ImportError:
         _logger.warning("google-auth not installed; cannot fetch ADC token")
         return None

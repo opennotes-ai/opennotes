@@ -10,11 +10,11 @@ import {
  * AC1 — Golden path
  *
  * Submit a Quizlet URL → land on /analyze?job=<id> → verify each of the
- * 7 subsections transitions running → done. Allow up to 180s for the
+ * 10 subsections transitions running → done. Allow up to 180s for the
  * whole pipeline. Poll the DOM rather than asserting on intermediate
  * timing — only the terminal state is load-bearing.
  */
-test("AC1: golden-path Quizlet URL completes all 7 sections within 180s", async ({
+test("AC1: golden-path Quizlet URL completes all 10 sections within 180s", async ({
   page,
 }) => {
   test.setTimeout(200_000);
@@ -43,7 +43,7 @@ test("AC1: golden-path Quizlet URL completes all 7 sections within 180s", async 
 
   expect(
     doneCount,
-    `All 7 sections must reach 'done' (got ${doneCount}: ${JSON.stringify(finalStates)})`,
+    `All 10 sections must reach 'done' (got ${doneCount}: ${JSON.stringify(finalStates)})`,
   ).toBe(ALL_SECTION_SLUGS.length);
 
   await expect(

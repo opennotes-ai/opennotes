@@ -20,6 +20,8 @@ from typing import Any
 
 import httpx
 
+from src.monitoring import external_api_span
+
 from ._factcheck_schemas import FactCheckMatch
 
 FACT_CHECK_API_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
@@ -40,8 +42,10 @@ def _get_access_token() -> str | None:
     """
     global _cached_credentials  # noqa: PLW0603
     try:
-        from google.auth import default as google_auth_default
-        from google.auth.transport.requests import Request as GoogleAuthRequest
+        from google.auth import default as google_auth_default  # noqa: PLC0415
+        from google.auth.transport.requests import (  # noqa: PLC0415
+            Request as GoogleAuthRequest,
+        )
     except ImportError:
         _logger.warning("google-auth not installed; cannot reach Fact Check API")
         return None
@@ -119,7 +123,7 @@ def _extract_matches(
     return matches
 
 
-async def check_known_misinformation(
+async def check_known_misinformation(  # noqa: PLR0911
     claim_text: str,
     *,
     httpx_client: httpx.AsyncClient,
@@ -151,47 +155,57 @@ async def check_known_misinformation(
     }
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    try:
-        response = await httpx_client.get(
-            FACT_CHECK_API_URL,
-            params=params,
-            headers=headers,
-            timeout=timeout,
-        )
-    except httpx.HTTPError as exc:
-        _logger.warning(
-            "Google Fact Check API request failed for claim %r: %s",
-            claim_text[:80],
-            exc,
-        )
-        return []
-
-    if response.status_code >= 400:
-        if response.status_code == 429:
-            _logger.warning(
-                "Google Fact Check API rate-limited (429) for claim %r; returning no matches",
-                claim_text[:80],
+    with external_api_span("factcheck", "claims.search", page_size=MAX_RESULTS_PER_CLAIM) as obs:
+        try:
+            response = await httpx_client.get(
+                FACT_CHECK_API_URL,
+                params=params,
+                headers=headers,
+                timeout=timeout,
             )
-        else:
+        except httpx.HTTPError as exc:
+            obs.set_error_category("network")
             _logger.warning(
-                "Google Fact Check API returned HTTP %s for claim %r: %s",
-                response.status_code,
+                "Google Fact Check API request failed for claim %r: %s",
                 claim_text[:80],
-                response.text[:200],
+                exc,
             )
-        return []
+            return []
 
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        _logger.warning(
-            "Google Fact Check API returned non-JSON body for claim %r: %s",
-            claim_text[:80],
-            exc,
-        )
-        return []
+        obs.set_response_status(response.status_code)
+        if response.status_code >= 400:
+            if response.status_code == 429:
+                obs.set_error_category("rate_limited")
+                _logger.warning(
+                    "Google Fact Check API rate-limited (429) for claim %r; "
+                    "returning no matches",
+                    claim_text[:80],
+                )
+            else:
+                obs.set_error_category("upstream")
+                _logger.warning(
+                    "Google Fact Check API returned HTTP %s for claim %r: %s",
+                    response.status_code,
+                    claim_text[:80],
+                    response.text[:200],
+                )
+            return []
 
-    if not isinstance(payload, dict):
-        return []
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            obs.set_error_category("invalid_response")
+            _logger.warning(
+                "Google Fact Check API returned non-JSON body for claim %r: %s",
+                claim_text[:80],
+                exc,
+            )
+            return []
 
-    return _extract_matches(claim_text, payload)
+        if not isinstance(payload, dict):
+            obs.set_error_category("invalid_response")
+            return []
+
+        matches = _extract_matches(claim_text, payload)
+        obs.add_flagged(len(matches))
+        return matches

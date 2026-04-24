@@ -20,6 +20,9 @@ export {
 
 export const SKELETONS: Record<SectionSlug, () => JSX.Element> = {
   safety__moderation: SafetyModerationSkeleton,
+  safety__web_risk: SafetyModerationSkeleton,
+  safety__image_moderation: SafetyModerationSkeleton,
+  safety__video_moderation: SafetyModerationSkeleton,
   tone_dynamics__flashpoint: FlashpointSkeleton,
   tone_dynamics__scd: ScdSkeleton,
   facts_claims__dedup: ClaimsDedupSkeleton,

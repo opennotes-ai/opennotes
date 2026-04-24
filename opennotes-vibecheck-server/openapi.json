@@ -742,6 +742,10 @@
             "type": "string",
             "title": "Utterance Id"
           },
+          "utterance_text": {
+            "type": "string",
+            "title": "Utterance Text"
+          },
           "max_score": {
             "type": "number",
             "title": "Max Score"
@@ -779,6 +783,7 @@
         "type": "object",
         "required": [
           "utterance_id",
+          "utterance_text",
           "max_score",
           "categories",
           "scores",

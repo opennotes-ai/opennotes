@@ -1,4 +1,7 @@
 export { default as SafetyModerationReport } from "./SafetyModerationReport";
+export { default as WebRiskReport } from "./WebRiskReport";
+export { default as ImageModerationReport } from "./ImageModerationReport";
+export { default as VideoModerationReport } from "./VideoModerationReport";
 export { default as FlashpointReport } from "./FlashpointReport";
 export { default as ScdReport } from "./ScdReport";
 export { default as ClaimsDedupReport } from "./ClaimsDedupReport";

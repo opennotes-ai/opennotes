@@ -322,7 +322,7 @@ export interface components {
          * @description Stable error codes the frontend branches on for inline copy + retry UX.
          * @enum {string}
          */
-        ErrorCode: "invalid_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "timeout" | "rate_limited" | "internal";
+        ErrorCode: "invalid_url" | "unsafe_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "timeout" | "rate_limited" | "internal";
         /**
          * FactCheckMatch
          * @description A single fact-check article surfaced by the Google Fact Check Tools API.
@@ -393,6 +393,28 @@ export interface components {
              */
             context_messages: number;
         };
+        /**
+         * FrameFinding
+         * @description SafeSearch scores for a single video frame.
+         */
+        FrameFinding: {
+            /** Frame Offset Ms */
+            frame_offset_ms: number;
+            /** Adult */
+            adult: number;
+            /** Violence */
+            violence: number;
+            /** Racy */
+            racy: number;
+            /** Medical */
+            medical: number;
+            /** Spoof */
+            spoof: number;
+            /** Flagged */
+            flagged: boolean;
+            /** Max Likelihood */
+            max_likelihood: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -400,11 +422,13 @@ export interface components {
         };
         /**
          * HarmfulContentMatch
-         * @description A single flagged utterance from the OpenAI moderation API.
+         * @description A single flagged utterance from a content moderation API.
          */
         HarmfulContentMatch: {
             /** Utterance Id */
             utterance_id: string;
+            /** Utterance Text */
+            utterance_text: string;
             /** Max Score */
             max_score: number;
             /** Categories */
@@ -417,6 +441,43 @@ export interface components {
             };
             /** Flagged Categories */
             flagged_categories?: string[];
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "openai" | "gcp";
+        };
+        /**
+         * ImageModerationMatch
+         * @description GCP Vision SafeSearch result for a single image.
+         */
+        ImageModerationMatch: {
+            /** Utterance Id */
+            utterance_id: string;
+            /** Image Url */
+            image_url: string;
+            /** Adult */
+            adult: number;
+            /** Violence */
+            violence: number;
+            /** Racy */
+            racy: number;
+            /** Medical */
+            medical: number;
+            /** Spoof */
+            spoof: number;
+            /** Flagged */
+            flagged: boolean;
+            /** Max Likelihood */
+            max_likelihood: number;
+        };
+        /**
+         * ImageModerationSection
+         * @description GCP Vision SafeSearch results for images referenced in the page.
+         */
+        ImageModerationSection: {
+            /** Matches */
+            matches?: components["schemas"]["ImageModerationMatch"][];
         };
         /**
          * JobState
@@ -659,10 +720,10 @@ export interface components {
         };
         /**
          * SectionSlug
-         * @description The seven sidebar slots the async pipeline fills independently.
+         * @description The sidebar slots the async pipeline fills independently.
          * @enum {string}
          */
-        SectionSlug: "safety__moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective";
+        SectionSlug: "safety__moderation" | "safety__web_risk" | "safety__image_moderation" | "safety__video_moderation" | "tone_dynamics__flashpoint" | "tone_dynamics__scd" | "facts_claims__dedup" | "facts_claims__known_misinfo" | "opinions_sentiments__sentiment" | "opinions_sentiments__subjective";
         /**
          * SectionState
          * @description Lifecycle of a single sidebar slot during a job.
@@ -726,6 +787,9 @@ export interface components {
             tone_dynamics: components["schemas"]["ToneDynamicsSection"];
             facts_claims: components["schemas"]["FactsClaimsSection"];
             opinions_sentiments: components["schemas"]["OpinionsSection"];
+            web_risk?: components["schemas"]["WebRiskSection"];
+            image_moderation?: components["schemas"]["ImageModerationSection"];
+            video_moderation?: components["schemas"]["VideoModerationSection"];
         };
         /**
          * SpeakerArc
@@ -787,6 +851,48 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * VideoModerationMatch
+         * @description GCP Video Intelligence SafeSearch result for a single video.
+         */
+        VideoModerationMatch: {
+            /** Utterance Id */
+            utterance_id: string;
+            /** Video Url */
+            video_url: string;
+            /** Frame Findings */
+            frame_findings: components["schemas"]["FrameFinding"][];
+            /** Flagged */
+            flagged: boolean;
+            /** Max Likelihood */
+            max_likelihood: number;
+        };
+        /**
+         * VideoModerationSection
+         * @description GCP Video Intelligence SafeSearch results for videos referenced in the page.
+         */
+        VideoModerationSection: {
+            /** Matches */
+            matches?: components["schemas"]["VideoModerationMatch"][];
+        };
+        /**
+         * WebRiskFinding
+         * @description A URL flagged by GCP Web Risk.
+         */
+        WebRiskFinding: {
+            /** Url */
+            url: string;
+            /** Threat Types */
+            threat_types: ("MALWARE" | "SOCIAL_ENGINEERING" | "UNWANTED_SOFTWARE" | "POTENTIALLY_HARMFUL_APPLICATION")[];
+        };
+        /**
+         * WebRiskSection
+         * @description GCP Web Risk findings for URLs referenced in the page.
+         */
+        WebRiskSection: {
+            /** Findings */
+            findings?: components["schemas"]["WebRiskFinding"][];
         };
     };
     responses: never;

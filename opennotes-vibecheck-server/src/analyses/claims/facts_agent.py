@@ -13,11 +13,11 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import httpx
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import RunContext
 
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.claims.known_misinfo import check_known_misinformation
@@ -63,10 +63,13 @@ async def run_facts_claims_known_misinfo(
     if not deduped_claims:
         return {"known_misinformation": []}
 
-    agent = build_agent(
-        settings,
-        output_type=list[FactCheckMatch],
-        system_prompt=FACTS_AGENT_SYSTEM_PROMPT,
+    agent = cast(
+        Any,
+        build_agent(
+            settings,
+            output_type=cast(Any, list[FactCheckMatch]),
+            system_prompt=FACTS_AGENT_SYSTEM_PROMPT,
+        ),
     )
 
     @agent.tool
@@ -82,12 +85,15 @@ async def run_facts_claims_known_misinfo(
             return []
 
     async with httpx.AsyncClient(timeout=15.0) as hx:
-        user_prompt = json.dumps(
-            [
-                c if isinstance(c, str) else getattr(c, "model_dump", lambda: c)()
-                for c in deduped_claims
-            ]
-        )
+        serializable_claims: list[Any] = []
+        for claim in deduped_claims:
+            if isinstance(claim, str):
+                serializable_claims.append(claim)
+            elif hasattr(claim, "model_dump"):
+                serializable_claims.append(claim.model_dump())
+            else:
+                serializable_claims.append(claim)
+        user_prompt = json.dumps(serializable_claims)
         result = await agent.run(user_prompt, deps=FactsAgentDeps(httpx_client=hx))
 
     matches = list(result.output or [])

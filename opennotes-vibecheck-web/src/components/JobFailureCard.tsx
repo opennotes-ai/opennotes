@@ -1,14 +1,18 @@
-import { Show, type JSX } from "solid-js";
+import { For, Show, type JSX } from "solid-js";
 import { A } from "@solidjs/router";
 import { Button } from "@opennotes/ui/components/ui/button";
 import type { ErrorCode } from "~/lib/api-client.server";
+import type { components } from "~/lib/generated-types";
 import { analyzeAction } from "~/routes/analyze.data";
+
+type WebRiskFinding = components["schemas"]["WebRiskFinding"];
 
 export interface JobFailureCardProps {
   url: string;
   errorCode: ErrorCode | null;
   errorMessage?: string | null;
   errorHost?: string | null;
+  webRiskFindings?: WebRiskFinding[];
   onTryAgain?: () => void;
 }
 
@@ -19,6 +23,8 @@ function copyFor(
   switch (code) {
     case "invalid_url":
       return "That URL couldn't be parsed.";
+    case "unsafe_url":
+      return "Web Risk flagged this URL before analysis.";
     case "unsupported_site":
       return `We can't analyze ${errorHost ?? "that site"} yet.`;
     case "upstream_error":
@@ -36,8 +42,13 @@ function copyFor(
   }
 }
 
+function threatLabel(threat: WebRiskFinding["threat_types"][number]): string {
+  return threat.replaceAll("_", " ").toLowerCase();
+}
+
 export default function JobFailureCard(props: JobFailureCardProps): JSX.Element {
   const copy = () => copyFor(props.errorCode, props.errorHost);
+  const webRiskFindings = (): WebRiskFinding[] => props.webRiskFindings ?? [];
 
   return (
     <section
@@ -58,6 +69,35 @@ export default function JobFailureCard(props: JobFailureCardProps): JSX.Element 
       <p class="text-sm text-foreground" data-testid="job-failure-copy">
         {copy()}
       </p>
+
+      <Show when={props.errorCode === "unsafe_url" && webRiskFindings().length > 0}>
+        <ul class="space-y-2">
+          <For each={webRiskFindings()}>
+            {(finding) => (
+              <li
+                data-testid="unsafe-url-finding"
+                class="rounded-md border border-destructive/30 bg-background p-3 text-xs"
+              >
+                <p class="break-all font-medium text-foreground">
+                  {finding.url}
+                </p>
+                <div class="mt-2 flex flex-wrap gap-1">
+                  <For each={finding.threat_types}>
+                    {(threat) => (
+                      <span
+                        data-testid="unsafe-url-threat"
+                        class="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive"
+                      >
+                        {threatLabel(threat)}
+                      </span>
+                    )}
+                  </For>
+                </div>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
 
       <Show when={props.errorMessage}>
         {(msg) => (

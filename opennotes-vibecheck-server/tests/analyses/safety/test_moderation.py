@@ -116,6 +116,7 @@ class TestHarmfulContentMatchSchema:
     def test_required_fields(self):
         match = HarmfulContentMatch(
             utterance_id="utt_1",
+            utterance_text="some text",
             max_score=0.5,
             categories={"hate": False},
             scores={"hate": 0.5},
@@ -216,7 +217,7 @@ class TestBulkModeration:
             make_utterance(utterance_id="utt_y", text="more text"),
         ]
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING):  # noqa: SIM117
             with pytest.raises(OpenAIModerationTransientError) as exc_info:
                 await check_content_moderation_bulk(utterances, mock_service)
 

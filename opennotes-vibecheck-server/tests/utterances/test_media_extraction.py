@@ -5,8 +5,6 @@ helper) from `src.utterances.media_extraction`.
 """
 from __future__ import annotations
 
-import pytest
-
 from src.utterances.media_extraction import attribute_media, page_level_media
 from src.utterances.schema import Utterance
 
@@ -225,6 +223,28 @@ def test_page_level_media_dedup_across_utterances() -> None:
 
     assert result["urls"] == sorted({"https://a.com", "https://b.com", "https://c.com"})
     assert result["images"] == sorted({"https://img1.com/a.png", "https://img2.com/b.png"})
+    assert result["videos"] == ["https://www.youtube.com/embed/xyz"]
+
+
+def test_page_level_media_canonicalizes_before_deduping() -> None:
+    post = _utterance(kind="post", text="Post text.")
+    post.mentioned_urls = [
+        "https://example.com/path/#one",
+        "https://example.com/path?utm_source=x#two",
+    ]
+    post.mentioned_images = [
+        "https://cdn.example.com/img.png#one",
+        "https://cdn.example.com/img.png/#two",
+    ]
+    post.mentioned_videos = [
+        "https://www.youtube.com/embed/xyz#t=1",
+        "https://www.youtube.com/embed/xyz/",
+    ]
+
+    result = page_level_media([post])
+
+    assert result["urls"] == ["https://example.com/path"]
+    assert result["images"] == ["https://cdn.example.com/img.png"]
     assert result["videos"] == ["https://www.youtube.com/embed/xyz"]
 
 
