@@ -44,6 +44,36 @@ describe("<PageFrame />", () => {
     );
   });
 
+  it("does not inspect the iframe document when a blocking hint already selects the screenshot", async () => {
+    render(() => (
+      <PageFrame
+        url="https://blocked.example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        screenshotUrl="https://cdn.example.com/blocked.png"
+      />
+    ));
+
+    let inspectedIframeDocument = false;
+    const iframe = screen.getByTestId(
+      "page-frame-iframe",
+    ) as HTMLIFrameElement;
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      get: () => {
+        inspectedIframeDocument = true;
+        throw new DOMException("Sandbox access violation", "SecurityError");
+      },
+    });
+
+    iframe.dispatchEvent(new Event("load"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("page-frame-screenshot")).not.toBeNull();
+    });
+    expect(inspectedIframeDocument).toBe(false);
+  });
+
   it("swaps to the screenshot when the iframe errors", async () => {
     render(() => (
       <PageFrame
@@ -65,32 +95,24 @@ describe("<PageFrame />", () => {
     expect(screen.queryByTestId("page-frame-iframe")).toBeNull();
   });
 
-  it("swaps to the screenshot when iframe load produces a blocked blank document", async () => {
+  it("keeps the iframe on load when there is no backend blocking hint", async () => {
     render(() => (
       <PageFrame
-        url="https://blocked.example.com/article"
+        url="https://maybe-open.example.com/article"
         canIframe={true}
-        screenshotUrl="https://cdn.example.com/blocked.png"
+        screenshotUrl="https://cdn.example.com/fallback.png"
       />
     ));
 
     const iframe = screen.getByTestId(
       "page-frame-iframe",
     ) as HTMLIFrameElement;
-    Object.defineProperty(iframe, "contentDocument", {
-      configurable: true,
-      value: {
-        location: { href: "about:blank" },
-        body: { children: [], textContent: "" },
-        title: "",
-      },
-    });
     iframe.dispatchEvent(new Event("load"));
 
-    const img = (await screen.findByTestId(
-      "page-frame-screenshot",
-    )) as HTMLImageElement;
-    expect(img.getAttribute("src")).toBe("https://cdn.example.com/blocked.png");
+    await waitFor(() => {
+      expect(screen.getByTestId("page-frame-iframe")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
   it("keeps the iframe when cross-origin access throws after load", async () => {
