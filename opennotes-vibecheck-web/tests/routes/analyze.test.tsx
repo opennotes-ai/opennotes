@@ -54,6 +54,7 @@ const { getFrameCompatMock, retrySectionActionMock } = vi.hoisted(() => ({
       blockingHeader: null,
       cspFrameAncestors: null,
       screenshotUrl: null,
+      archivedPreviewUrl: null,
     },
   })),
   retrySectionActionMock: vi.fn(),
@@ -119,13 +120,14 @@ beforeEach(() => {
   getFrameCompatMock.mockReset();
   getFrameCompatMock.mockImplementation(async () => ({
     ok: true,
-    frameCompat: {
-      canIframe: true,
-      blockingHeader: null,
-      cspFrameAncestors: null,
-      screenshotUrl: null,
-    },
-  }));
+      frameCompat: {
+        canIframe: true,
+        blockingHeader: null,
+        cspFrameAncestors: null,
+        screenshotUrl: null,
+        archivedPreviewUrl: null,
+      },
+    }));
 });
 
 afterEach(() => {
@@ -492,6 +494,55 @@ describe("AnalyzePage route", () => {
     expect(layout.getAttribute("data-preview-size")).toBe("max");
     expect(layout.getAttribute("class")).toContain("lg:grid-cols-1");
     expect(screen.getByTestId("analysis-sidebar")).not.toBeNull();
+  });
+
+  it("renders preview mode selector alongside the width selector", async () => {
+    renderAt("/analyze?job=job-preview-modes&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("analyze-layout")).not.toBeNull();
+    });
+
+    expect(screen.getByTestId("preview-mode-selector")).not.toBeNull();
+    expect(screen.getByTestId("preview-size-selector")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Original" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Archived" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Screenshot" })).not.toBeNull();
+  });
+
+  it("manual preview mode selection is session-scoped and resets for a new job", async () => {
+    getFrameCompatMock.mockResolvedValue({
+      ok: true,
+      frameCompat: {
+        canIframe: true,
+        blockingHeader: null,
+        cspFrameAncestors: null,
+        screenshotUrl: "https://cdn.example.com/shot.png",
+        archivedPreviewUrl: "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa",
+      },
+    } as never);
+
+    renderAt("/analyze?job=job-preview-a&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("analyze-layout")).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Screenshot" }));
+    expect(screen.getByRole("button", { name: "Screenshot" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(window.localStorage.getItem("vibecheck:preview-mode")).toBeNull();
+
+    cleanup();
+    pollingHandles.length = 0;
+    renderAt("/analyze?job=job-preview-b&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Original" }).getAttribute("aria-pressed")).toBe(
+        "true",
+      );
+    });
   });
 
   it("persists the preview size selection across analyze page remounts", async () => {

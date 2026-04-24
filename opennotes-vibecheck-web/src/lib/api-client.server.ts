@@ -161,7 +161,7 @@ export async function getAuthorizationHeader(
   });
 }
 
-function resolveBaseUrl(): string {
+export function resolveBaseUrl(): string {
   const env = process.env.VIBECHECK_SERVER_URL?.trim();
   if (env) return env;
   if (process.env.NODE_ENV === "production") {

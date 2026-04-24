@@ -5,6 +5,7 @@ interface FrameCompatResponse {
   can_iframe: boolean;
   blocking_header: string | null;
   csp_frame_ancestors?: string | null;
+  has_archive?: boolean;
 }
 
 interface ScreenshotResponse {
@@ -16,6 +17,7 @@ export interface FrameCompatResult {
   blockingHeader: string | null;
   cspFrameAncestors: string | null;
   screenshotUrl: string | null;
+  archivedPreviewUrl: string | null;
 }
 
 export type FrameCompatQueryResult =
@@ -86,6 +88,9 @@ export const getFrameCompat = query(
         blockingHeader: frameProbe.blocking_header,
         cspFrameAncestors: frameProbe.csp_frame_ancestors ?? null,
         screenshotUrl,
+        archivedPreviewUrl: frameProbe.has_archive
+          ? `/api/archive-preview?url=${encodeURIComponent(targetUrl)}`
+          : null,
       },
     };
   },

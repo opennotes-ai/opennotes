@@ -10,7 +10,8 @@ import {
 import { fileURLToPath } from "node:url";
 
 const PERMISSIVE_JOB_ID = "66666666-6666-7666-8666-666666666666";
-const BLOCKED_JOB_ID = "77777777-7777-7777-8777-777777777777";
+const BLOCKED_WITH_ARCHIVE_JOB_ID = "77777777-7777-7777-8777-777777777777";
+const BLOCKED_WITHOUT_ARCHIVE_JOB_ID = "99999999-9999-7999-8999-999999999999";
 const ATTEMPT_ID = "88888888-8888-7888-8888-888888888888";
 const SCREENSHOT_URL =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='640'%3E%3Crect width='960' height='640' fill='%23f8fafc'/%3E%3Ctext x='48' y='96' font-family='Arial' font-size='48' fill='%230f172a'%3EPreview fallback%3C/text%3E%3C/svg%3E";
@@ -67,10 +68,18 @@ function writeJson(
 }
 
 function jobState(jobId: string) {
-  const blocked = jobId === BLOCKED_JOB_ID;
+  const blocked =
+    jobId === BLOCKED_WITH_ARCHIVE_JOB_ID ||
+    jobId === BLOCKED_WITHOUT_ARCHIVE_JOB_ID;
   return {
     job_id: jobId,
-    url: `${apiBaseUrl}/${blocked ? "blocked-page" : "permissive-page"}`,
+    url: `${apiBaseUrl}/${
+      blocked
+        ? jobId === BLOCKED_WITH_ARCHIVE_JOB_ID
+          ? "blocked-page"
+          : "blocked-no-archive-page"
+        : "permissive-page"
+    }`,
     status: "done",
     attempt_id: ATTEMPT_ID,
     created_at: "2026-04-24T18:00:00Z",
@@ -103,9 +112,16 @@ test.beforeAll(async () => {
     }
     if (
       request.method === "GET" &&
-      requestUrl.pathname === `/api/analyze/${BLOCKED_JOB_ID}`
+      requestUrl.pathname === `/api/analyze/${BLOCKED_WITH_ARCHIVE_JOB_ID}`
     ) {
-      writeJson(response, 200, jobState(BLOCKED_JOB_ID));
+      writeJson(response, 200, jobState(BLOCKED_WITH_ARCHIVE_JOB_ID));
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      requestUrl.pathname === `/api/analyze/${BLOCKED_WITHOUT_ARCHIVE_JOB_ID}`
+    ) {
+      writeJson(response, 200, jobState(BLOCKED_WITHOUT_ARCHIVE_JOB_ID));
       return;
     }
     if (
@@ -113,14 +129,36 @@ test.beforeAll(async () => {
       requestUrl.pathname === "/api/frame-compat"
     ) {
       const targetUrl = requestUrl.searchParams.get("url") ?? "";
-      const blocked = targetUrl.includes("/blocked-page");
+      const blocked =
+        targetUrl.includes("/blocked-page") ||
+        targetUrl.includes("/blocked-no-archive-page");
+      const hasArchive = targetUrl.includes("/blocked-page");
       writeJson(response, 200, {
         can_iframe: !blocked,
         blocking_header: blocked
           ? "content-security-policy: frame-ancestors 'none'"
           : null,
         csp_frame_ancestors: blocked ? "frame-ancestors 'none'" : null,
+        has_archive: hasArchive,
       });
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      requestUrl.pathname === "/api/archive-preview"
+    ) {
+      const targetUrl = requestUrl.searchParams.get("url") ?? "";
+      if (targetUrl.includes("/blocked-page")) {
+        response.writeHead(200, {
+          "cache-control": "no-store, private",
+          "content-security-policy":
+            "default-src 'none'; img-src https: data:; style-src 'unsafe-inline' https:; font-src https: data:; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'",
+          "content-type": "text/html; charset=utf-8",
+        });
+        response.end("<!doctype html><h1>Archived preview fixture</h1>");
+        return;
+      }
+      writeJson(response, 404, { detail: "Archive unavailable" });
       return;
     }
     if (
@@ -141,6 +179,17 @@ test.beforeAll(async () => {
         "content-type": "text/html",
       });
       response.end("<!doctype html><h1>Blocked frame fixture</h1>");
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      requestUrl.pathname === "/blocked-no-archive-page"
+    ) {
+      response.writeHead(200, {
+        "content-security-policy": "frame-ancestors 'none'",
+        "content-type": "text/html",
+      });
+      response.end("<!doctype html><h1>Blocked no archive fixture</h1>");
       return;
     }
     writeJson(response, 404, { error_code: "not_found" });
@@ -217,10 +266,40 @@ test("preview size presets resize the frame and persist across reload", async ({
   expect(sidebarBox.y).toBeGreaterThan(previewBox.y + previewBox.height - 1);
 });
 
-test("CSP frame-ancestors blocks swap to screenshot within one second", async ({
+test("permissive page keeps the original iframe by default", async ({
   page,
 }) => {
-  await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_JOB_ID}`);
+  await page.goto(`${webBaseUrl}/analyze?job=${PERMISSIVE_JOB_ID}`);
+  await expect(page.locator('[data-testid="page-frame-iframe"]')).toBeVisible();
+  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toHaveCount(0);
+});
+
+test("CSP frame-ancestors blocks swap to archived preview within one second", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITH_ARCHIVE_JOB_ID}`);
+  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toBeVisible({
+    timeout: 1000,
+  });
+  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toHaveAttribute(
+    "sandbox",
+    "allow-same-origin",
+  );
+  const archivedText = page
+    .frameLocator('[data-testid="page-frame-archived-iframe"]')
+    .locator("h1");
+  await expect(archivedText).toHaveText("Archived preview fixture");
+  await expect(page.locator('[data-testid="page-frame-iframe"]')).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
+});
+
+test("CSP frame-ancestors without archive swaps to screenshot within one second", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITHOUT_ARCHIVE_JOB_ID}`);
   await expect(page.locator('[data-testid="page-frame-screenshot"]')).toBeVisible({
     timeout: 1000,
   });
@@ -228,4 +307,27 @@ test("CSP frame-ancestors blocks swap to screenshot within one second", async ({
     "aria-hidden",
     "true",
   );
+});
+
+test("manual preview mode clicks switch visible previews without breaking width presets", async ({
+  page,
+}) => {
+  await page.goto(`${webBaseUrl}/analyze?job=${BLOCKED_WITH_ARCHIVE_JOB_ID}`);
+  await expect(page.getByTestId("preview-mode-selector")).toBeVisible();
+  await expect(page.getByTestId("preview-size-selector")).toBeVisible();
+
+  await page.getByRole("button", { name: "Screenshot" }).click();
+  await expect(page.locator('[data-testid="page-frame-screenshot"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Archived" }).click();
+  await expect(page.locator('[data-testid="page-frame-archived-iframe"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Original" }).click();
+  await expect(page.locator('[data-testid="page-frame-iframe"]')).toBeVisible();
+
+  const regularWidth = await previewWidth(page);
+  await page.getByRole("button", { name: "Large" }).click();
+  await expect
+    .poll(async () => previewWidth(page))
+    .toBeGreaterThan(regularWidth + 40);
 });

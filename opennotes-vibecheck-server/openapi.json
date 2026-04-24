@@ -47,6 +47,56 @@
         }
       }
     },
+    "/api/archive-preview": {
+      "get": {
+        "tags": [
+          "frame"
+        ],
+        "summary": "Archive Preview",
+        "operationId": "archive_preview_api_archive_preview_get",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url"
+            }
+          },
+          {
+            "name": "generate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Generate"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/screenshot": {
       "get": {
         "tags": [
@@ -717,6 +767,11 @@
               }
             ],
             "title": "Csp Frame Ancestors"
+          },
+          "has_archive": {
+            "type": "boolean",
+            "title": "Has Archive",
+            "default": false
           }
         },
         "type": "object",
