@@ -148,6 +148,36 @@ class TestCacheMissCallsApiAndUpsertsNegativeCache:
         assert payload["threat_types"] == []
 
 
+class TestUnsupportedSchemesSkipped:
+    async def test_non_http_urls_are_not_queried_or_cached(
+        self, db_pool: asyncpg.Pool
+    ) -> None:
+        captured_uris: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured_uris.append(request.url.params["uri"])
+            return httpx.Response(200, json={})
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with patch("src.analyses.safety.web_risk.get_access_token", return_value="tok"):
+                result = await check_urls(
+                    ["mailto:foo@bar.com", "https://example.com/"],
+                    pool=db_pool,
+                    httpx_client=client,
+                )
+
+        assert captured_uris == ["https://example.com/"]
+        assert set(result) == {"https://example.com/"}
+
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT finding_payload FROM vibecheck_web_risk_lookups WHERE url = $1",
+                "mailto:foo@bar.com",
+            )
+        assert row is None
+
+
 class TestCacheMissParsesSingleThreatType:
     async def test_cache_miss_parses_single_threat_type(
         self, db_pool: asyncpg.Pool
