@@ -43,18 +43,34 @@ class TestWebRiskFinding:
 
 
 class TestHarmfulContentMatch:
-    def test_harmful_content_match_requires_source(self) -> None:
-        with pytest.raises(ValidationError):
-            HarmfulContentMatch.model_validate(
-                {
-                    "utterance_id": "utt_1",
-                    "utterance_text": "some text",
-                    "max_score": 0.5,
-                    "categories": {"hate": False},
-                    "scores": {"hate": 0.5},
-                    "flagged_categories": [],
-                }
-            )
+    def test_harmful_content_match_backfills_missing_source_to_openai(self) -> None:
+        # Pre PR #411 payloads did not carry `source`. Reading them back
+        # via `SidebarPayload.model_validate` on the poll endpoint must
+        # not raise — default to "openai" so the job stays viewable.
+        match = HarmfulContentMatch.model_validate(
+            {
+                "utterance_id": "utt_1",
+                "utterance_text": "some text",
+                "max_score": 0.5,
+                "categories": {"hate": False},
+                "scores": {"hate": 0.5},
+                "flagged_categories": [],
+            }
+        )
+        assert match.source == "openai"
+
+    def test_harmful_content_match_backfills_missing_utterance_text(self) -> None:
+        # Pre PR #411 payloads also predated the `utterance_text` column.
+        match = HarmfulContentMatch.model_validate(
+            {
+                "utterance_id": "utt_1",
+                "max_score": 0.5,
+                "categories": {"hate": False},
+                "scores": {"hate": 0.5},
+            }
+        )
+        assert match.utterance_text == ""
+        assert match.source == "openai"
 
     def test_harmful_content_match_rejects_invalid_source(self) -> None:
         with pytest.raises(ValidationError):

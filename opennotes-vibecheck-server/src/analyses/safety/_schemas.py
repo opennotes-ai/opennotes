@@ -13,15 +13,21 @@ from pydantic import BaseModel, Field
 
 
 class HarmfulContentMatch(BaseModel):
-    """A single flagged utterance from a content moderation API."""
+    """A single flagged utterance from a content moderation API.
+
+    `utterance_text` and `source` default so `sidebar_payload` blobs
+    written before these fields existed (pre PR #411) still deserialize
+    when `GET /api/analyze/{job_id}` reads them. New writes always
+    populate both (see `jobs/finalize.py` and `moderation_slot.py`).
+    """
 
     utterance_id: str
-    utterance_text: str
+    utterance_text: str = ""
     max_score: float
     categories: dict[str, bool]
     scores: dict[str, float]
     flagged_categories: list[str] = Field(default_factory=list)
-    source: Literal["openai", "gcp"]
+    source: Literal["openai", "gcp"] = "openai"
 
 
 class WebRiskFinding(BaseModel):
