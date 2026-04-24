@@ -28,13 +28,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM python:3.11-slim AS runtime
 WORKDIR /app
 COPY --from=uv-source /usr/local/bin/uv /usr/local/bin/uv
-COPY --from=app-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=app-deps /usr/local/bin /usr/local/bin
-COPY --from=app-deps /app/src /app/src
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
   && rm -rf /var/lib/apt/lists/*
+
+COPY --from=app-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=app-deps /usr/local/bin /usr/local/bin
+COPY --from=app-deps /app/src /app/src
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system "yt-dlp==2026.3.17"
