@@ -22,7 +22,7 @@ from typing import Any
 import httpx
 import pytest
 
-from src.analyses.schemas import PageKind
+from src.analyses.schemas import PageKind, SectionSlug
 from src.utterances.schema import UtterancesPayload
 
 from .conftest import (
@@ -73,6 +73,19 @@ async def test_second_submit_within_ttl_reuses_scrape_cache(
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda _settings: fake_firecrawl
     )
+    for slug in SectionSlug:
+        async def _empty_handler(
+            pool: Any,
+            job_id: Any,
+            task_attempt: Any,
+            payload: Any,
+            settings: Any,
+            *,
+            _slug: SectionSlug = slug,
+        ) -> dict[str, Any]:
+            return orchestrator._empty_section_data(_slug)
+
+        monkeypatch.setitem(orchestrator._SECTION_HANDLERS, slug, _empty_handler)
 
     target_url = "https://example.com/cache-rescue"
 
