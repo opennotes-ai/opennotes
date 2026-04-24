@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import {
   render,
   screen,
@@ -46,7 +46,16 @@ vi.mock("~/lib/polling", () => {
   };
 });
 
-const { retrySectionActionMock } = vi.hoisted(() => ({
+const { getFrameCompatMock, retrySectionActionMock } = vi.hoisted(() => ({
+  getFrameCompatMock: vi.fn(async () => ({
+    ok: true,
+    frameCompat: {
+      canIframe: true,
+      blockingHeader: null,
+      cspFrameAncestors: null,
+      screenshotUrl: null,
+    },
+  })),
   retrySectionActionMock: vi.fn(),
 }));
 
@@ -64,21 +73,10 @@ vi.mock("@solidjs/router", async () => {
 });
 
 vi.mock("~/routes/analyze.data", () => {
-  const getFrameCompatStub = Object.assign(
-    vi.fn(async () => ({
-      ok: true,
-      frameCompat: {
-        canIframe: true,
-        blockingHeader: null,
-        cspFrameAncestors: null,
-        screenshotUrl: null,
-      },
-    })),
-    {
-      keyFor: () => "vibecheck-frame-compat",
-      key: "vibecheck-frame-compat",
-    },
-  );
+  const getFrameCompatStub = Object.assign(getFrameCompatMock, {
+    keyFor: () => "vibecheck-frame-compat",
+    key: "vibecheck-frame-compat",
+  });
   const analyzeActionStub = Object.assign(vi.fn(), {
     base: "/__mock_analyze_action",
     url: "/__mock_analyze_action",
@@ -116,6 +114,19 @@ Object.defineProperty(window, "localStorage", {
 });
 
 import AnalyzePage from "../../src/routes/analyze";
+
+beforeEach(() => {
+  getFrameCompatMock.mockReset();
+  getFrameCompatMock.mockImplementation(async () => ({
+    ok: true,
+    frameCompat: {
+      canIframe: true,
+      blockingHeader: null,
+      cspFrameAncestors: null,
+      screenshotUrl: null,
+    },
+  }));
+});
 
 afterEach(() => {
   cleanup();
@@ -172,6 +183,24 @@ describe("AnalyzePage route", () => {
       expect(screen.queryByTestId("analyze-layout")).not.toBeNull();
     });
     expect(screen.queryByTestId("job-failure-card")).toBeNull();
+  });
+
+  it("keeps the analyze layout mounted when the frame compatibility probe fails", async () => {
+    getFrameCompatMock.mockRejectedValueOnce(new Error("frame probe down"));
+
+    renderAt("/analyze?job=job-probe&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(makeJobState({ status: "extracting" }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("analyze-layout")).not.toBeNull();
+    });
+    expect(screen.queryByTestId("job-failure-card")).toBeNull();
+    expect(screen.queryByTestId("page-frame-iframe")).not.toBeNull();
   });
 
   it("when ?job is present and job transitions to failed, renders the job-state failure (not pending_error)", async () => {

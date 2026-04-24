@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
@@ -71,6 +71,14 @@ async function waitForHttpOk(url: string, timeoutMs = 60_000): Promise<void> {
       lastError instanceof Error ? lastError.message : String(lastError)
     }\n${webLogs}`,
   );
+}
+
+async function expectAppToStayMounted(page: Page) {
+  await expect
+    .poll(async () =>
+      page.locator("#app").evaluate((node) => node.innerHTML.length),
+    )
+    .toBeGreaterThan(100);
 }
 
 function sectionDataFor(slug: string): Record<string, unknown> {
@@ -299,6 +307,7 @@ test("AC5: extracting indicator is visible during extracting and disappears on d
   // The indicator must be visible while the job is in the extracting phase.
   await expect(indicator).toBeVisible({ timeout: 10_000 });
   await expect(sidebar).toHaveAttribute("data-job-status", "extracting");
+  await expectAppToStayMounted(page);
 
   // Per AC1: every section slot must be in `running` state during extracting
   // so that the per-slug content-shape skeleton renders. This is what
@@ -323,6 +332,7 @@ test("AC5: extracting indicator is visible during extracting and disappears on d
     timeout: 10_000,
   });
   await expect(indicator).toHaveCount(0);
+  await expectAppToStayMounted(page);
 
   // The per-slot skeletons should still be mounted during analyzing —
   // proves continuity of the visual feedback across the handoff.
@@ -339,6 +349,7 @@ test("AC5: extracting indicator is visible during extracting and disappears on d
     timeout: 15_000,
   });
   await expect(indicator).toHaveCount(0);
+  await expectAppToStayMounted(page);
   for (const slug of ALL_SECTION_SLUGS) {
     await expect(page.locator(`[data-testid="slot-${slug}"]`)).toHaveAttribute(
       "data-slot-state",
@@ -346,6 +357,30 @@ test("AC5: extracting indicator is visible during extracting and disappears on d
       { timeout: 15_000 },
     );
   }
+});
+
+test("TASK-1474.24: analyze DOM stays mounted when the URL is available before the first poll", async ({
+  page,
+}) => {
+  await page.goto(
+    `${webBaseUrl}/analyze?job=${JOB_ID}&url=${encodeURIComponent(SOURCE_URL)}`,
+  );
+
+  const sidebar = page.locator('[data-testid="analysis-sidebar"]');
+  await expect(sidebar).toHaveAttribute("data-job-status", "extracting", {
+    timeout: 10_000,
+  });
+  await expectAppToStayMounted(page);
+
+  await expect(sidebar).toHaveAttribute("data-job-status", "analyzing", {
+    timeout: 10_000,
+  });
+  await expectAppToStayMounted(page);
+
+  await expect(sidebar).toHaveAttribute("data-job-status", "done", {
+    timeout: 15_000,
+  });
+  await expectAppToStayMounted(page);
 });
 
 test("AC4 negative: failed-job path shows the failure card and never the extracting indicator", async ({
