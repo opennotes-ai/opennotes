@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+from inspect import isawaitable
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
+from supabase import create_client
 
+from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
+from src.cache.screenshot_store import GCSScreenshotStore, InMemoryScreenshotStore, ScreenshotStore
 from src.config import get_settings
 from src.firecrawl_client import FirecrawlClient, ScrapeResult
 from src.monitoring import get_logger
+from src.utils.html_sanitize import strip_noise
 from src.utils.url_security import InvalidURL, validate_public_http_url
 
 logger = get_logger(__name__)
@@ -19,8 +24,14 @@ router = APIRouter(prefix="/api", tags=["frame"])
 _HEAD_TIMEOUT_SECONDS = 5.0
 _SCREENSHOT_TIMEOUT_SECONDS = 60.0
 _SCREENSHOT_REQUEST_BUDGET_SECONDS = 90.0
+_ARCHIVE_REQUEST_BUDGET_SECONDS = 8.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
+_ARCHIVE_CSP = (
+    "default-src 'none'; img-src https: data:; style-src 'unsafe-inline' https:; "
+    "font-src https: data:; frame-src 'none'; form-action 'none'; base-uri 'none'; "
+    "frame-ancestors 'self'"
+)
 
 # Map machine-readable `InvalidURL.reason` slugs back to the human-readable
 # 400-detail strings the frame routes returned before the SSRF refactor
@@ -44,6 +55,7 @@ class FrameCompatResponse(BaseModel):
     can_iframe: bool
     blocking_header: str | None
     csp_frame_ancestors: str | None = None
+    has_archive: bool = False
 
 
 def _validate_http_url(url: str) -> None:
@@ -142,12 +154,13 @@ async def _request_with_validated_redirects(
 @router.get("/frame-compat", response_model=FrameCompatResponse)
 async def frame_compat(url: str = Query(...)) -> FrameCompatResponse:
     _validate_http_url(url)
-    headers = await _probe_target(url)
+    headers, has_archive = await asyncio.gather(_probe_target(url), _has_cached_archive(url))
     can_iframe, blocking_header, csp_frame_ancestors = _evaluate_headers(headers)
     return FrameCompatResponse(
         can_iframe=can_iframe,
         blocking_header=blocking_header,
         csp_frame_ancestors=csp_frame_ancestors,
+        has_archive=has_archive,
     )
 
 
@@ -157,6 +170,105 @@ def get_firecrawl_client() -> FirecrawlClient:
         api_key=settings.FIRECRAWL_API_KEY,
         timeout=_SCREENSHOT_TIMEOUT_SECONDS,
     )
+
+
+def get_scrape_cache() -> SupabaseScrapeCache:
+    settings = get_settings()
+    key = (
+        settings.VIBECHECK_SUPABASE_SERVICE_ROLE_KEY
+        or settings.VIBECHECK_SUPABASE_ANON_KEY
+    )
+    if not settings.VIBECHECK_SUPABASE_URL or not key:
+        raise RuntimeError("scrape cache is not configured")
+    client = create_client(settings.VIBECHECK_SUPABASE_URL, key)
+    store: ScreenshotStore
+    if settings.VIBECHECK_GCS_SCREENSHOT_BUCKET:
+        store = GCSScreenshotStore(settings.VIBECHECK_GCS_SCREENSHOT_BUCKET)
+    else:
+        store = InMemoryScreenshotStore()
+    return SupabaseScrapeCache(client, store, ttl_hours=settings.CACHE_TTL_HOURS)
+
+
+async def _has_cached_archive(url: str) -> bool:
+    try:
+        cached = await get_scrape_cache().get(url)
+    except Exception as exc:
+        logger.info("archive cache lookup failed for %s: %s", url, exc)
+        return False
+    return bool(cached and cached.html)
+
+
+async def _revalidate_archive_final_url(
+    scrape: CachedScrape,
+    *,
+    original_url: str,
+    scrape_cache: Any,
+) -> None:
+    final = scrape.metadata.source_url if scrape.metadata else None
+    if not final:
+        return
+    try:
+        _validate_http_url(final)
+    except HTTPException:
+        evict = getattr(scrape_cache, "evict", None)
+        if callable(evict):
+            try:
+                result = evict(original_url)
+                if isawaitable(result):
+                    await result
+            except Exception as exc:
+                logger.warning("archive cache evict failed for %s: %s", original_url, exc)
+        raise
+
+
+def _archive_response(html: str) -> Response:
+    return Response(
+        content=html,
+        headers={
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-store, private",
+            "content-security-policy": _ARCHIVE_CSP,
+        },
+    )
+
+
+@router.get("/archive-preview")
+async def archive_preview(
+    url: str = Query(...),
+    generate: bool = Query(False),
+) -> Response:
+    _validate_http_url(url)
+    scrape_cache = get_scrape_cache()
+    cached = await scrape_cache.get(url)
+    if cached and cached.html:
+        # TODO: If Firecrawl exposes a hosted archive URL in CachedScrape metadata,
+        # return a redirect to that URL instead of serving cached sanitized HTML.
+        await _revalidate_archive_final_url(
+            cached, original_url=url, scrape_cache=scrape_cache
+        )
+        return _archive_response(cached.html)
+
+    if not generate:
+        raise HTTPException(status_code=404, detail="Archive unavailable")
+
+    fc = get_firecrawl_client()
+    try:
+        fresh = await asyncio.wait_for(
+            fc.scrape(url, formats=["html"], only_main_content=True),
+            timeout=_ARCHIVE_REQUEST_BUDGET_SECONDS,
+        )
+        stored = await scrape_cache.put(url, fresh)
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Archive unavailable")
+    except Exception as exc:
+        logger.warning("archive preview scrape failed for %s: %s", url, exc)
+        raise HTTPException(status_code=502, detail="Archive unavailable") from exc
+
+    await _revalidate_archive_final_url(stored, original_url=url, scrape_cache=scrape_cache)
+    html = strip_noise(stored.html) if stored.html else None
+    if not html:
+        raise HTTPException(status_code=502, detail="Archive unavailable")
+    return _archive_response(html)
 
 
 def _extract_screenshot_url(result: ScrapeResult | Any) -> str | None:

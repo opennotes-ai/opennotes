@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/archive-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Archive Preview */
+        get: operations["archive_preview_api_archive_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/screenshot": {
         parameters: {
             query?: never;
@@ -433,6 +450,11 @@ export interface components {
             blocking_header: string | null;
             /** Csp Frame Ancestors */
             csp_frame_ancestors?: string | null;
+            /**
+             * Has Archive
+             * @default false
+             */
+            has_archive: boolean;
         };
         /**
          * FrameFinding
@@ -971,6 +993,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FrameCompatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_preview_api_archive_preview_get: {
+        parameters: {
+            query: {
+                url: string;
+                generate?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

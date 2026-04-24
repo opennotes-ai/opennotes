@@ -1,39 +1,60 @@
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 
+export type PreviewMode = "original" | "archived" | "screenshot";
+
 export interface PageFrameProps {
   url: string;
   canIframe: boolean;
   blockingHeader?: string | null;
   cspFrameAncestors?: string | null;
+  archivedPreviewUrl?: string | null;
   screenshotUrl: string | null;
+  previewMode?: PreviewMode;
 }
 
-// Iframe gets a generous window to load before we decide it's broken — many
-// sites take 10+ seconds to hydrate. The screenshot is prefetched in parallel
-// server-side, so swapping to it on failure is instant.
 const IFRAME_LOAD_TIMEOUT_MS = 20_000;
+const ARCHIVE_LOAD_TIMEOUT_MS = 3_000;
 
 export default function PageFrame(props: PageFrameProps) {
-  // The backend probe is a hint: it can detect common XFO/CSP blocks quickly,
-  // but bot-protected sites can serve different headers to the server and the
-  // browser. A blocking hint starts screenshot-first, while a hidden iframe
-  // still verifies whether the browser can render the real page.
   const [iframeFailed, setIframeFailed] = createSignal(false);
   const [iframeLoaded, setIframeLoaded] = createSignal(false);
   const [iframeVerifiedRenderable, setIframeVerifiedRenderable] =
     createSignal(false);
+  const [archivedFailed, setArchivedFailed] = createSignal(false);
+  const [archivedLoaded, setArchivedLoaded] = createSignal(false);
+
   const hasBlockingHint = () =>
     !props.canIframe || !!props.blockingHeader || !!props.cspFrameAncestors;
-  const [preferScreenshot, setPreferScreenshot] = createSignal(false);
+  const requestedMode = () => props.previewMode ?? "original";
+  const hasArchive = () => !!props.archivedPreviewUrl && !archivedFailed();
+
+  const activePreview = (): PreviewMode | "unavailable" => {
+    if (requestedMode() === "screenshot") {
+      return props.screenshotUrl ? "screenshot" : "unavailable";
+    }
+    if (requestedMode() === "archived") {
+      if (hasArchive()) return "archived";
+      return props.screenshotUrl ? "screenshot" : "unavailable";
+    }
+    if (iframeVerifiedRenderable() || (!hasBlockingHint() && !iframeFailed())) {
+      return "original";
+    }
+    if (hasArchive()) return "archived";
+    if (props.screenshotUrl) return "screenshot";
+    return iframeFailed() ? "unavailable" : "original";
+  };
 
   const showIframe = () => !iframeFailed();
-
-  const showScreenshot = () =>
-    (iframeFailed() || preferScreenshot()) && !!props.screenshotUrl;
+  const showOriginalVisible = () => activePreview() === "original";
+  const showArchived = () => activePreview() === "archived";
+  const showScreenshot = () => activePreview() === "screenshot";
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let archiveTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let iframeRef: HTMLIFrameElement | undefined;
+  let archivedIframeRef: HTMLIFrameElement | undefined;
   let currentUrl = props.url;
+  let currentArchiveUrl = props.archivedPreviewUrl ?? null;
 
   const clearLoadTimeout = () => {
     if (timeoutId) {
@@ -51,31 +72,47 @@ export default function PageFrame(props: PageFrameProps) {
     }, IFRAME_LOAD_TIMEOUT_MS);
   };
 
+  const clearArchiveTimeout = () => {
+    if (archiveTimeoutId) {
+      clearTimeout(archiveTimeoutId);
+      archiveTimeoutId = null;
+    }
+  };
+
   onMount(() => {
     startLoadTimeout();
   });
 
   onCleanup(() => {
     clearLoadTimeout();
+    clearArchiveTimeout();
   });
 
   createEffect(() => {
-    if (props.url !== currentUrl) {
+    const archiveUrl = props.archivedPreviewUrl ?? null;
+    if (props.url !== currentUrl || archiveUrl !== currentArchiveUrl) {
       currentUrl = props.url;
+      currentArchiveUrl = archiveUrl;
       setIframeFailed(false);
       setIframeLoaded(false);
       setIframeVerifiedRenderable(false);
-      setPreferScreenshot(false);
+      setArchivedFailed(false);
+      setArchivedLoaded(false);
       startLoadTimeout();
     }
-    if (
-      hasBlockingHint() &&
-      props.screenshotUrl &&
-      !iframeVerifiedRenderable() &&
-      !iframeFailed()
-    ) {
-      setPreferScreenshot(true);
+  });
+
+  createEffect(() => {
+    if (showArchived() && !archivedLoaded()) {
+      clearArchiveTimeout();
+      archiveTimeoutId = setTimeout(() => {
+        if (!archivedLoaded()) {
+          setArchivedFailed(true);
+        }
+      }, ARCHIVE_LOAD_TIMEOUT_MS);
+      return;
     }
+    clearArchiveTimeout();
   });
 
   const classifyLoadedIframe = (): "blocked" | "rendered" | "unknown" => {
@@ -107,20 +144,40 @@ export default function PageFrame(props: PageFrameProps) {
     clearLoadTimeout();
     const loadState = classifyLoadedIframe();
     if (loadState === "blocked") {
-      setPreferScreenshot(false);
       setIframeFailed(true);
       return;
     }
     if (loadState === "rendered") {
       setIframeVerifiedRenderable(true);
-      setPreferScreenshot(false);
     }
   };
 
   const handleIframeError = () => {
-    setPreferScreenshot(false);
     setIframeFailed(true);
     clearLoadTimeout();
+  };
+
+  const handleArchivedLoad = () => {
+    try {
+      const doc = archivedIframeRef?.contentDocument;
+      const bodyText = doc?.body?.textContent?.trim() ?? "";
+      const childCount = doc?.body?.children?.length ?? 0;
+      const title = doc?.title?.trim() ?? "";
+      if (!bodyText && childCount === 0 && !title) {
+        setArchivedFailed(true);
+        clearArchiveTimeout();
+        return;
+      }
+    } catch {
+      // If the browser denies inspection, keep the loaded archive visible.
+    }
+    setArchivedLoaded(true);
+    clearArchiveTimeout();
+  };
+
+  const handleArchivedError = () => {
+    setArchivedFailed(true);
+    clearArchiveTimeout();
   };
 
   return (
@@ -137,14 +194,29 @@ export default function PageFrame(props: PageFrameProps) {
           referrerpolicy="no-referrer"
           loading="lazy"
           ref={iframeRef}
-          aria-hidden={preferScreenshot() ? "true" : undefined}
+          aria-hidden={showOriginalVisible() ? undefined : "true"}
           onLoad={handleIframeLoad}
           onError={handleIframeError}
           class={
-            preferScreenshot()
-              ? "pointer-events-none absolute inset-0 h-full min-h-[60vh] w-full flex-1 border-0 bg-background opacity-0"
-              : "h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
+            showOriginalVisible()
+              ? "h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
+              : "pointer-events-none absolute inset-0 h-full min-h-[60vh] w-full flex-1 border-0 bg-background opacity-0"
           }
+        />
+      </Show>
+
+      <Show when={showArchived()}>
+        <iframe
+          data-testid="page-frame-archived-iframe"
+          src={props.archivedPreviewUrl ?? ""}
+          title="Archived page"
+          sandbox="allow-same-origin"
+          referrerpolicy="no-referrer"
+          loading="lazy"
+          ref={archivedIframeRef}
+          onLoad={handleArchivedLoad}
+          onError={handleArchivedError}
+          class="h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
         />
       </Show>
 
@@ -157,7 +229,7 @@ export default function PageFrame(props: PageFrameProps) {
         />
       </Show>
 
-      <Show when={!showIframe() && !showScreenshot()}>
+      <Show when={activePreview() === "unavailable"}>
         <div
           data-testid="page-frame-unavailable"
           class="flex flex-1 items-center justify-center p-8 text-center"

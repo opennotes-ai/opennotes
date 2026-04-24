@@ -26,6 +26,7 @@ class TestFrameCompat:
         body = resp.json()
         assert body["can_iframe"] is False
         assert body["blocking_header"] == "x-frame-options: DENY"
+        assert body["has_archive"] is False
 
     def test_xfo_sameorigin_returns_cannot_iframe(
         self, client: TestClient, httpx_mock: HTTPXMock
@@ -54,6 +55,31 @@ class TestFrameCompat:
         body = resp.json()
         assert body["can_iframe"] is True
         assert body["blocking_header"] is None
+        assert body["has_archive"] is False
+
+    def test_has_archive_is_true_when_cached_html_exists(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(self, url: str) -> CachedScrape:
+                assert url == "https://archived.example.com/"
+                return CachedScrape(html="<main>Archived</main>")
+
+        httpx_mock.add_response(
+            method="HEAD",
+            url="https://archived.example.com/",
+            headers={"x-frame-options": "DENY"},
+        )
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/frame-compat", params={"url": "https://archived.example.com/"}
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["can_iframe"] is False
+        assert body["has_archive"] is True
 
     def test_csp_frame_ancestors_none_blocks(
         self, client: TestClient, httpx_mock: HTTPXMock
@@ -273,6 +299,122 @@ class TestScreenshot:
         # Same human-readable detail as /api/frame-compat — the SSRF guard is
         # shared, so the screenshot route must surface the same copy clients
         # have been pinning since before the SSRF refactor.
+        assert resp.json() == {"detail": "URL must be an http(s) URL"}
+
+
+class TestArchivePreview:
+    def test_returns_cached_sanitized_html_with_restrictive_headers(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+
+        class StubCache:
+            async def get(self, url: str) -> CachedScrape:
+                assert url == "https://example.com/article"
+                return CachedScrape(
+                    html="<main><h1>Archived preview</h1></main>",
+                    raw_html="<script>alert(1)</script>",
+                )
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/article"},
+            )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "text/html; charset=utf-8"
+        assert resp.headers["cache-control"] == "no-store, private"
+        assert resp.headers["content-security-policy"] == (
+            "default-src 'none'; img-src https: data:; "
+            "style-src 'unsafe-inline' https:; font-src https: data:; "
+            "frame-src 'none'; form-action 'none'; base-uri 'none'; "
+            "frame-ancestors 'self'"
+        )
+        assert "Archived preview" in resp.text
+        assert "alert(1)" not in resp.text
+
+    def test_cache_miss_without_generate_returns_archive_unavailable(
+        self, client: TestClient
+    ) -> None:
+        class StubCache:
+            async def get(self, url: str) -> None:
+                assert url == "https://example.com/miss"
+
+        with patch("src.routes.frame.get_scrape_cache", return_value=StubCache()):
+            resp = client.get(
+                "/api/archive-preview", params={"url": "https://example.com/miss"}
+            )
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "Archive unavailable"}
+
+    def test_generate_scrapes_with_short_budget_and_stores_html(
+        self, client: TestClient
+    ) -> None:
+        from src.cache.scrape_cache import CachedScrape
+        from src.firecrawl_client import ScrapeResult
+
+        class StubCache:
+            def __init__(self) -> None:
+                self.put_url: str | None = None
+
+            async def get(self, url: str) -> None:
+                assert url == "https://example.com/fresh"
+
+            async def put(self, url: str, scrape: ScrapeResult) -> CachedScrape:
+                self.put_url = url
+                return CachedScrape(html=scrape.html, metadata=scrape.metadata)
+
+        class StubClient:
+            async def scrape(
+                self, url: str, formats: list[str], *, only_main_content: bool = False
+            ) -> ScrapeResult:
+                assert url == "https://example.com/fresh"
+                assert formats == ["html"]
+                assert only_main_content is True
+                return ScrapeResult(html="<article>Fresh archive</article>")
+
+        cache = StubCache()
+        with (
+            patch("src.routes.frame.get_scrape_cache", return_value=cache),
+            patch("src.routes.frame.get_firecrawl_client", return_value=StubClient()),
+        ):
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/fresh", "generate": "1"},
+            )
+        assert resp.status_code == 200
+        assert resp.text == "<article>Fresh archive</article>"
+        assert cache.put_url == "https://example.com/fresh"
+
+    def test_generate_timeout_returns_archive_unavailable_quickly(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class StubCache:
+            async def get(self, url: str) -> None:
+                return None
+
+        class SlowClient:
+            async def scrape(self, url: str, formats: list[str], **kwargs: object) -> object:
+                await asyncio.sleep(0.2)
+                return object()
+
+        monkeypatch.setattr("src.routes.frame._ARCHIVE_REQUEST_BUDGET_SECONDS", 0.01, raising=False)
+        with (
+            patch("src.routes.frame.get_scrape_cache", return_value=StubCache()),
+            patch("src.routes.frame.get_firecrawl_client", return_value=SlowClient()),
+        ):
+            started = time.monotonic()
+            resp = client.get(
+                "/api/archive-preview",
+                params={"url": "https://example.com/slow", "generate": "1"},
+            )
+        assert time.monotonic() - started < 0.15
+        assert resp.status_code == 504
+        assert resp.json() == {"detail": "Archive unavailable"}
+
+    def test_invalid_url_returns_400(self, client: TestClient) -> None:
+        resp = client.get("/api/archive-preview", params={"url": "file:///etc/passwd"})
+        assert resp.status_code == 400
         assert resp.json() == {"detail": "URL must be an http(s) URL"}
 
 

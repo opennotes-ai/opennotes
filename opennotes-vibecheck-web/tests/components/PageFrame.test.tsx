@@ -44,6 +44,99 @@ describe("<PageFrame />", () => {
     );
   });
 
+  it("shows the archived iframe first when a blocking hint has an archive URL", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl="https://cdn.example.com/shot.png"
+      />
+    ));
+
+    const archived = screen.getByTestId(
+      "page-frame-archived-iframe",
+    ) as HTMLIFrameElement;
+    expect(archived.getAttribute("src")).toBe(
+      "/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle",
+    );
+    expect(archived.getAttribute("sandbox")).toBe("allow-same-origin");
+    expect(screen.getByTestId("page-frame-iframe").getAttribute("aria-hidden")).toBe(
+      "true",
+    );
+    expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
+  });
+
+  it("falls from archived iframe to screenshot when archived errors", async () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl="https://cdn.example.com/shot.png"
+      />
+    ));
+
+    const archived = screen.getByTestId(
+      "page-frame-archived-iframe",
+    ) as HTMLIFrameElement;
+    archived.dispatchEvent(new Event("error"));
+
+    const img = (await screen.findByTestId(
+      "page-frame-screenshot",
+    )) as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("https://cdn.example.com/shot.png");
+    expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+  });
+
+  it("falls from archived iframe to screenshot when archived loads blank", async () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl="https://cdn.example.com/shot.png"
+      />
+    ));
+
+    const archived = screen.getByTestId(
+      "page-frame-archived-iframe",
+    ) as HTMLIFrameElement;
+    Object.defineProperty(archived, "contentDocument", {
+      configurable: true,
+      value: {
+        body: { children: [], textContent: "" },
+        title: "",
+      },
+    });
+    archived.dispatchEvent(new Event("load"));
+
+    const img = (await screen.findByTestId(
+      "page-frame-screenshot",
+    )) as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("https://cdn.example.com/shot.png");
+    expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+  });
+
+  it("manual screenshot mode renders the screenshot immediately", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        previewMode="screenshot"
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl="https://cdn.example.com/shot.png"
+      />
+    ));
+
+    expect(screen.getByTestId("page-frame-screenshot")).not.toBeNull();
+    expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+    expect(screen.getByTestId("page-frame-iframe").getAttribute("aria-hidden")).toBe(
+      "true",
+    );
+  });
+
   it("swaps to the screenshot when the iframe errors", async () => {
     render(() => (
       <PageFrame

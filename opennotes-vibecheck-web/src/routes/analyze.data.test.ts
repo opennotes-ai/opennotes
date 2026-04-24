@@ -1,8 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const { analyzeUrlMock, retrySectionMock } = vi.hoisted(() => ({
+const { analyzeUrlMock, retrySectionMock, clientGetMock } = vi.hoisted(() => ({
   analyzeUrlMock: vi.fn(),
   retrySectionMock: vi.fn(),
+  clientGetMock: vi.fn(),
 }));
 
 vi.mock("~/lib/api-client.server", async () => {
@@ -13,7 +14,7 @@ vi.mock("~/lib/api-client.server", async () => {
     ...actual,
     analyzeUrl: analyzeUrlMock,
     retrySection: retrySectionMock,
-    getClient: () => ({ GET: vi.fn(), POST: vi.fn() }),
+    getClient: () => ({ GET: clientGetMock, POST: vi.fn() }),
   };
 });
 
@@ -34,6 +35,7 @@ describe("analyzeAction", () => {
   beforeEach(() => {
     analyzeUrlMock.mockReset();
     retrySectionMock.mockReset();
+    clientGetMock.mockReset();
     vi.resetModules();
   });
 
@@ -203,5 +205,91 @@ describe("analyzeAction", () => {
     const location = response.headers.get("Location") ?? "";
     expect(location).toContain("pending_error=rate_limited");
     expect(location).toContain(`url=${encodeURIComponent(url)}`);
+  });
+});
+
+describe("getFrameCompat", () => {
+  beforeEach(() => {
+    analyzeUrlMock.mockReset();
+    retrySectionMock.mockReset();
+    clientGetMock.mockReset();
+    vi.resetModules();
+  });
+
+  it("returns archivedPreviewUrl only when the backend reports has_archive=true", async () => {
+    clientGetMock.mockImplementation(async (path: string) => {
+      if (path === "/api/frame-compat") {
+        return {
+          data: {
+            can_iframe: false,
+            blocking_header: "content-security-policy: frame-ancestors 'none'",
+            csp_frame_ancestors: "frame-ancestors 'none'",
+            has_archive: true,
+          },
+          error: null,
+        };
+      }
+      if (path === "/api/screenshot") {
+        return {
+          data: { screenshot_url: "https://cdn.example.com/shot.png" },
+          error: null,
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { getFrameCompat } = await import("./analyze.data");
+    const result = await getFrameCompat("https://news.example.com/a?x=1");
+
+    expect(result).toEqual({
+      ok: true,
+      frameCompat: {
+        canIframe: false,
+        blockingHeader: "content-security-policy: frame-ancestors 'none'",
+        cspFrameAncestors: "frame-ancestors 'none'",
+        screenshotUrl: "https://cdn.example.com/shot.png",
+        archivedPreviewUrl:
+          "/api/archive-preview?url=https%3A%2F%2Fnews.example.com%2Fa%3Fx%3D1",
+      },
+    });
+  });
+
+  it("returns null archivedPreviewUrl when has_archive=false", async () => {
+    clientGetMock.mockImplementation(async (path: string) => {
+      if (path === "/api/frame-compat") {
+        return {
+          data: {
+            can_iframe: false,
+            blocking_header: "x-frame-options: DENY",
+            csp_frame_ancestors: null,
+            has_archive: false,
+          },
+          error: null,
+        };
+      }
+      if (path === "/api/screenshot") {
+        return {
+          data: { screenshot_url: "https://cdn.example.com/shot.png" },
+          error: null,
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { getFrameCompat } = await import("./analyze.data");
+    const result = await getFrameCompat("https://news.example.com/no-archive");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.frameCompat.archivedPreviewUrl).toBeNull();
+    }
+  });
+
+  it("does not expose an archive URL for invalid target URLs", async () => {
+    const { getFrameCompat } = await import("./analyze.data");
+    const result = await getFrameCompat("javascript:alert(1)");
+
+    expect(result).toEqual({ ok: false, message: "invalid url" });
+    expect(clientGetMock).not.toHaveBeenCalled();
   });
 });

@@ -12,6 +12,7 @@ import { Title } from "@solidjs/meta";
 import CachedBadge from "~/components/CachedBadge";
 import JobFailureCard from "~/components/JobFailureCard";
 import PageFrame from "~/components/PageFrame";
+import type { PreviewMode } from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
 import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
@@ -32,6 +33,14 @@ const ALL_ERROR_CODES: readonly ErrorCode[] = [
 type PreviewSize = "regular" | "large" | "max";
 
 const PREVIEW_SIZE_KEY = "vibecheck:preview-size";
+const PREVIEW_MODE_OPTIONS: ReadonlyArray<{
+  value: PreviewMode;
+  label: string;
+}> = [
+  { value: "original", label: "Original" },
+  { value: "archived", label: "Archived" },
+  { value: "screenshot", label: "Screenshot" },
+];
 const PREVIEW_SIZE_OPTIONS: ReadonlyArray<{
   value: PreviewSize;
   label: string;
@@ -46,6 +55,7 @@ const DEFAULT_FRAME_COMPAT: FrameCompatResult = {
   blockingHeader: null,
   cspFrameAncestors: null,
   screenshotUrl: null,
+  archivedPreviewUrl: null,
 };
 
 function asErrorCode(raw: string | undefined): ErrorCode | null {
@@ -72,7 +82,9 @@ export default function AnalyzePage() {
   const pendingHost = () =>
     typeof searchParams.host === "string" ? searchParams.host : "";
   const cachedHint = () => searchParams.c === "1";
+  const [previewMode, setPreviewMode] = createSignal<PreviewMode>("original");
   const [previewSize, setPreviewSize] = createSignal<PreviewSize>("regular");
+  let previewModeJobId = jobId();
 
   onMount(() => {
     try {
@@ -82,6 +94,14 @@ export default function AnalyzePage() {
       }
     } catch {
       // localStorage is optional in private/locked-down browser contexts.
+    }
+  });
+
+  createEffect(() => {
+    const currentJobId = jobId();
+    if (currentJobId !== previewModeJobId) {
+      previewModeJobId = currentJobId;
+      setPreviewMode("original");
     }
   });
 
@@ -208,6 +228,11 @@ export default function AnalyzePage() {
       ? "rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background"
       : "rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground";
 
+  const previewModeButtonClass = (mode: PreviewMode) =>
+    previewMode() === mode
+      ? "rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background"
+      : "rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground";
+
   return (
     <>
       <Title>vibecheck — analyzing</Title>
@@ -251,25 +276,48 @@ export default function AnalyzePage() {
                 class={layoutClass()}
               >
                 <div class="flex min-h-[60vh] flex-col gap-4">
-                  <div
-                    data-testid="preview-size-selector"
-                    class="hidden lg:flex items-center justify-end"
-                    role="group"
-                    aria-label="Preview size"
-                  >
-                    <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
-                      <For each={PREVIEW_SIZE_OPTIONS}>
-                        {(option) => (
-                          <button
-                            type="button"
-                            class={previewButtonClass(option.value)}
-                            aria-pressed={previewSize() === option.value}
-                            onClick={() => selectPreviewSize(option.value)}
-                          >
-                            {option.label}
-                          </button>
-                        )}
-                      </For>
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div
+                      data-testid="preview-mode-selector"
+                      class="flex items-center"
+                      role="group"
+                      aria-label="Preview mode"
+                    >
+                      <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
+                        <For each={PREVIEW_MODE_OPTIONS}>
+                          {(option) => (
+                            <button
+                              type="button"
+                              class={previewModeButtonClass(option.value)}
+                              aria-pressed={previewMode() === option.value}
+                              onClick={() => setPreviewMode(option.value)}
+                            >
+                              {option.label}
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </div>
+                    <div
+                      data-testid="preview-size-selector"
+                      class="hidden lg:flex items-center justify-end"
+                      role="group"
+                      aria-label="Preview size"
+                    >
+                      <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
+                        <For each={PREVIEW_SIZE_OPTIONS}>
+                          {(option) => (
+                            <button
+                              type="button"
+                              class={previewButtonClass(option.value)}
+                              aria-pressed={previewSize() === option.value}
+                              onClick={() => selectPreviewSize(option.value)}
+                            >
+                              {option.label}
+                            </button>
+                          )}
+                        </For>
+                      </div>
                     </div>
                   </div>
                   <Show
@@ -287,7 +335,9 @@ export default function AnalyzePage() {
                           canIframe={frameCompat().canIframe}
                           blockingHeader={frameCompat().blockingHeader}
                           cspFrameAncestors={frameCompat().cspFrameAncestors}
+                          archivedPreviewUrl={frameCompat().archivedPreviewUrl}
                           screenshotUrl={frameCompat().screenshotUrl}
+                          previewMode={previewMode()}
                         />
                         <Show when={frameCompatError()}>
                           {(message) => (
