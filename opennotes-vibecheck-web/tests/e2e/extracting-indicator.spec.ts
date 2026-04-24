@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
@@ -25,6 +25,7 @@ import { ALL_SECTION_SLUGS } from "./fixtures/quizlet";
  */
 
 const JOB_ID = "11111111-1111-7111-8111-111111111111";
+const URL_READY_JOB_ID = "44444444-4444-7444-8444-444444444444";
 const FAILED_JOB_ID = "22222222-2222-7222-8222-222222222222";
 const CACHED_JOB_ID = "33333333-3333-7333-8333-333333333333";
 const ATTEMPT_ID = "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa";
@@ -35,7 +36,7 @@ let apiBaseUrl = "";
 let webBaseUrl = "";
 let webProcess: ChildProcess | null = null;
 let webLogs = "";
-let pollCount = 0;
+let pollCounts = new Map<string, number>();
 
 async function listenOnRandomPort(server: Server): Promise<number> {
   server.listen(0, "127.0.0.1");
@@ -71,6 +72,14 @@ async function waitForHttpOk(url: string, timeoutMs = 60_000): Promise<void> {
       lastError instanceof Error ? lastError.message : String(lastError)
     }\n${webLogs}`,
   );
+}
+
+async function expectAppToStayMounted(page: Page) {
+  await expect
+    .poll(async () =>
+      page.locator("#app").evaluate((node) => node.innerHTML.length),
+    )
+    .toBeGreaterThan(100);
 }
 
 function sectionDataFor(slug: string): Record<string, unknown> {
@@ -157,7 +166,7 @@ function allDoneSections(): Record<string, unknown> {
   );
 }
 
-function jobStateForCount(count: number): Record<string, unknown> {
+function jobStateForCount(jobId: string, count: number): Record<string, unknown> {
   // Drive a deterministic state machine from the polling cadence so the
   // assertions below can rely on observable, ordered transitions.
   //   poll 1            → extracting (sections: {})
@@ -166,7 +175,7 @@ function jobStateForCount(count: number): Record<string, unknown> {
   //   poll 3            → analyzing (every slot seeded as `running`)
   //   poll 4 and after  → done (every slot done)
   if (count <= 2) {
-    return jobState({ status: "extracting" });
+    return jobState({ jobId, status: "extracting" });
   }
   if (count === 3) {
     const runningSections = Object.fromEntries(
@@ -175,9 +184,15 @@ function jobStateForCount(count: number): Record<string, unknown> {
         { state: "running", attempt_id: ATTEMPT_ID },
       ]),
     );
-    return jobState({ status: "analyzing", sections: runningSections });
+    return jobState({ jobId, status: "analyzing", sections: runningSections });
   }
-  return jobState({ status: "done", sections: allDoneSections() });
+  return jobState({ jobId, status: "done", sections: allDoneSections() });
+}
+
+function nextJobState(jobId: string): Record<string, unknown> {
+  const count = (pollCounts.get(jobId) ?? 0) + 1;
+  pollCounts.set(jobId, count);
+  return jobStateForCount(jobId, count);
 }
 
 test.beforeAll(async () => {
@@ -185,11 +200,12 @@ test.beforeAll(async () => {
     const requestUrl = new URL(request.url ?? "/", apiBaseUrl || "http://x");
     if (
       request.method === "GET" &&
-      requestUrl.pathname === `/api/analyze/${JOB_ID}`
+      (requestUrl.pathname === `/api/analyze/${JOB_ID}` ||
+        requestUrl.pathname === `/api/analyze/${URL_READY_JOB_ID}`)
     ) {
-      pollCount += 1;
+      const jobId = requestUrl.pathname.split("/").at(-1) ?? JOB_ID;
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify(jobStateForCount(pollCount)));
+      response.end(JSON.stringify(nextJobState(jobId)));
       return;
     }
     if (
@@ -285,7 +301,7 @@ test.afterAll(async () => {
 });
 
 test.beforeEach(() => {
-  pollCount = 0;
+  pollCounts = new Map<string, number>();
 });
 
 test("AC5: extracting indicator is visible during extracting and disappears on done", async ({
@@ -299,6 +315,7 @@ test("AC5: extracting indicator is visible during extracting and disappears on d
   // The indicator must be visible while the job is in the extracting phase.
   await expect(indicator).toBeVisible({ timeout: 10_000 });
   await expect(sidebar).toHaveAttribute("data-job-status", "extracting");
+  await expectAppToStayMounted(page);
 
   // Per AC1: every section slot must be in `running` state during extracting
   // so that the per-slug content-shape skeleton renders. This is what
@@ -323,6 +340,7 @@ test("AC5: extracting indicator is visible during extracting and disappears on d
     timeout: 10_000,
   });
   await expect(indicator).toHaveCount(0);
+  await expectAppToStayMounted(page);
 
   // The per-slot skeletons should still be mounted during analyzing —
   // proves continuity of the visual feedback across the handoff.
@@ -339,6 +357,7 @@ test("AC5: extracting indicator is visible during extracting and disappears on d
     timeout: 15_000,
   });
   await expect(indicator).toHaveCount(0);
+  await expectAppToStayMounted(page);
   for (const slug of ALL_SECTION_SLUGS) {
     await expect(page.locator(`[data-testid="slot-${slug}"]`)).toHaveAttribute(
       "data-slot-state",
@@ -346,6 +365,25 @@ test("AC5: extracting indicator is visible during extracting and disappears on d
       { timeout: 15_000 },
     );
   }
+});
+
+test("TASK-1474.24: analyze DOM stays mounted when the URL is available before the first poll", async ({
+  page,
+}) => {
+  await page.goto(
+    `${webBaseUrl}/analyze?job=${URL_READY_JOB_ID}&url=${encodeURIComponent(
+      SOURCE_URL,
+    )}`,
+  );
+
+  const sidebar = page.locator('[data-testid="analysis-sidebar"]');
+  await expect(sidebar).toBeVisible({ timeout: 10_000 });
+  await expectAppToStayMounted(page);
+
+  await expect(sidebar).toHaveAttribute("data-job-status", "done", {
+    timeout: 15_000,
+  });
+  await expectAppToStayMounted(page);
 });
 
 test("AC4 negative: failed-job path shows the failure card and never the extracting indicator", async ({

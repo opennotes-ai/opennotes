@@ -1,13 +1,13 @@
 import {
   For,
   Show,
-  Suspense,
   createEffect,
   createMemo,
   createSignal,
+  onCleanup,
   onMount,
 } from "solid-js";
-import { useSearchParams, A, createAsync, useNavigate } from "@solidjs/router";
+import { useSearchParams, A, useNavigate } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import CachedBadge from "~/components/CachedBadge";
 import JobFailureCard from "~/components/JobFailureCard";
@@ -15,7 +15,7 @@ import PageFrame from "~/components/PageFrame";
 import Sidebar from "~/components/sidebar/Sidebar";
 import type { ErrorCode, SectionSlug } from "~/lib/api-client.server";
 import { createPollingResource } from "~/lib/polling";
-import { getFrameCompat } from "./analyze.data";
+import { getFrameCompat, type FrameCompatResult } from "./analyze.data";
 
 const ALL_ERROR_CODES: readonly ErrorCode[] = [
   "invalid_url",
@@ -40,6 +40,13 @@ const PREVIEW_SIZE_OPTIONS: ReadonlyArray<{
   { value: "large", label: "Large" },
   { value: "max", label: "Max width" },
 ];
+
+const DEFAULT_FRAME_COMPAT: FrameCompatResult = {
+  canIframe: true,
+  blockingHeader: null,
+  cspFrameAncestors: null,
+  screenshotUrl: null,
+};
 
 function asErrorCode(raw: string | undefined): ErrorCode | null {
   if (!raw) return null;
@@ -89,23 +96,37 @@ export default function AnalyzePage() {
   const jobState = () => polling.state();
   const jobStatus = () => jobState()?.status;
   const jobUrl = createMemo(() => jobState()?.url ?? pendingUrl());
+  const [frameCompat, setFrameCompat] =
+    createSignal<FrameCompatResult>(DEFAULT_FRAME_COMPAT);
+  const [frameCompatError, setFrameCompatError] = createSignal<string | null>(
+    null,
+  );
 
-  const frameCompat = createAsync(async () => {
+  let frameCompatRequest = 0;
+  createEffect(() => {
     const url = jobUrl();
-    if (!url) return null;
-    return getFrameCompat(url);
-  });
+    const request = ++frameCompatRequest;
+    setFrameCompat(DEFAULT_FRAME_COMPAT);
+    setFrameCompatError(null);
+    if (!url) return;
 
-  const compat = createMemo(() => {
-    const fc = frameCompat();
-    return fc && fc.ok
-      ? fc.frameCompat
-      : {
-          canIframe: true,
-          blockingHeader: null,
-          cspFrameAncestors: null,
-          screenshotUrl: null,
-        };
+    void getFrameCompat(url)
+      .then((result) => {
+        if (request !== frameCompatRequest) return;
+        if (result.ok) {
+          setFrameCompat(result.frameCompat);
+          return;
+        }
+        setFrameCompatError(result.message);
+      })
+      .catch(() => {
+        if (request !== frameCompatRequest) return;
+        setFrameCompat(DEFAULT_FRAME_COMPAT);
+        setFrameCompatError("Preview checks unavailable.");
+      });
+  });
+  onCleanup(() => {
+    frameCompatRequest += 1;
   });
 
   const transportError = () => polling.error();
@@ -260,21 +281,25 @@ export default function AnalyzePage() {
                     }
                   >
                     {(url) => (
-                      <Suspense
-                        fallback={
-                          <div class="flex min-h-[60vh] flex-1 items-center justify-center rounded-lg border border-border bg-card text-sm text-muted-foreground">
-                            Loading preview&hellip;
-                          </div>
-                        }
-                      >
+                      <>
                         <PageFrame
                           url={url()}
-                          canIframe={compat().canIframe}
-                          blockingHeader={compat().blockingHeader}
-                          cspFrameAncestors={compat().cspFrameAncestors}
-                          screenshotUrl={compat().screenshotUrl}
+                          canIframe={frameCompat().canIframe}
+                          blockingHeader={frameCompat().blockingHeader}
+                          cspFrameAncestors={frameCompat().cspFrameAncestors}
+                          screenshotUrl={frameCompat().screenshotUrl}
                         />
-                      </Suspense>
+                        <Show when={frameCompatError()}>
+                          {(message) => (
+                            <p
+                              data-testid="frame-compat-warning"
+                              class="text-xs text-muted-foreground"
+                            >
+                              {message()} Showing the page directly.
+                            </p>
+                          )}
+                        </Show>
+                      </>
                     )}
                   </Show>
                   <Show when={jobStatus() && jobStatus() !== "done"}>
