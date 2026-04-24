@@ -83,6 +83,11 @@ export interface paths {
          *     `RATE_LIMIT_POLL_BURST` req/s + `RATE_LIMIT_POLL_SUSTAINED` req/min
          *     per `(ip, job_id)` tuple — exceeding either returns 429 with a
          *     `Retry-After` header.
+         *
+         *     The return type is `JobState | JSONResponse` because the 404 / 429 /
+         *     503 error paths emit `_error_response(...)` whose body is the
+         *     documented `{error_code, message}` shape rather than the FastAPI
+         *     default `{"detail": ...}` (TASK-1473.38).
          */
         get: operations["poll_api_analyze__job_id__get"];
         put?: never;
@@ -110,7 +115,7 @@ export interface paths {
          *       1. Job must exist (404 otherwise).
          *       2. Utterances must have been extracted (409 otherwise — retry is
          *          meaningless if extraction itself failed; the user should resubmit).
-         *       3. Job status must be terminal (`done`/`failed`) — running phases
+         *       3. Job status must be terminal (`done`/`partial`/`failed`) — running phases
          *          get 409 `cannot_retry_while_running`.
          *       4. The requested slot must exist and be in `failed` state.
          *       5. CAS on the slot's prior attempt_id; a concurrent click loses
@@ -198,6 +203,33 @@ export interface paths {
          * @description Forces JobState into the OpenAPI schema until the real GET /api/analyze/{job_id} endpoint lands. Always returns 410 Gone.
          */
         get: operations["schema_anchor_api__internal__schema_anchor_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Metrics
+         * @description Prometheus scrape target gated behind OIDC (TASK-1473.37).
+         *
+         *     The previous `app.mount("/metrics", make_asgi_app())` exposed job
+         *     throughput, error counts by host, single-flight contention, and
+         *     other operational signals to anyone on the internet whenever Cloud
+         *     Run was configured with `--allow-unauthenticated`. We share the
+         *     same OIDC dependency the internal worker uses so a misconfigured
+         *     Cloud Run revision still rejects unsigned scrape attempts.
+         */
+        get: operations["metrics_metrics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -322,7 +354,7 @@ export interface components {
          * @description Stable error codes the frontend branches on for inline copy + retry UX.
          * @enum {string}
          */
-        ErrorCode: "invalid_url" | "unsafe_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "timeout" | "rate_limited" | "internal";
+        ErrorCode: "invalid_url" | "unsafe_url" | "unsupported_site" | "upstream_error" | "extraction_failed" | "section_failure" | "timeout" | "rate_limited" | "internal";
         /**
          * FactCheckMatch
          * @description A single fact-check article surfaced by the Google Fact Check Tools API.
@@ -423,11 +455,19 @@ export interface components {
         /**
          * HarmfulContentMatch
          * @description A single flagged utterance from a content moderation API.
+         *
+         *     `utterance_text` and `source` default so `sidebar_payload` blobs
+         *     written before these fields existed (pre PR #411) still deserialize
+         *     when `GET /api/analyze/{job_id}` reads them. New writes always
+         *     populate both (see `jobs/finalize.py` and `moderation_slot.py`).
          */
         HarmfulContentMatch: {
             /** Utterance Id */
             utterance_id: string;
-            /** Utterance Text */
+            /**
+             * Utterance Text
+             * @default
+             */
             utterance_text: string;
             /** Max Score */
             max_score: number;
@@ -443,6 +483,7 @@ export interface components {
             flagged_categories?: string[];
             /**
              * Source
+             * @default openai
              * @enum {string}
              */
             source: "openai" | "gcp";
@@ -555,7 +596,7 @@ export interface components {
          * @description Lifecycle of a vibecheck job from POST to terminal state.
          * @enum {string}
          */
-        JobStatus: "pending" | "extracting" | "analyzing" | "done" | "failed";
+        JobStatus: "pending" | "extracting" | "analyzing" | "done" | "partial" | "failed";
         /** OpinionsReport */
         OpinionsReport: {
             sentiment_stats: components["schemas"]["SentimentStatsReport"];
@@ -1160,6 +1201,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    metrics_metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
         };
     };

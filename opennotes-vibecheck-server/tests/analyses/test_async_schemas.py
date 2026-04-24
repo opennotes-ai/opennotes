@@ -96,17 +96,19 @@ class TestErrorCode:
             "extraction_failed",
             "timeout",
             "rate_limited",
+            "section_failure",
             "internal",
         }
 
 
 class TestJobStatus:
-    def test_covers_five_lifecycle_states(self) -> None:
+    def test_covers_lifecycle_states(self) -> None:
         assert {status.value for status in JobStatus} == {
             "pending",
             "extracting",
             "analyzing",
             "done",
+            "partial",
             "failed",
         }
 
@@ -193,6 +195,23 @@ class TestJobState:
         )
         assert job.error_code is ErrorCode.UNSUPPORTED_SITE
         assert job.error_host == "forbidden.example.com"
+
+    def test_partial_job_carries_section_failure_and_sidebar_payload(self) -> None:
+        sidebar = _empty_sidebar_payload(self._now())
+        job = JobState(
+            job_id=uuid4(),
+            url="https://example.com",
+            status=JobStatus.PARTIAL,
+            attempt_id=uuid4(),
+            error_code=ErrorCode.SECTION_FAILURE,
+            error_message="Sections failed: safety__web_risk",
+            created_at=self._now(),
+            updated_at=self._now(),
+            sidebar_payload=sidebar,
+        )
+        assert job.status is JobStatus.PARTIAL
+        assert job.error_code is ErrorCode.SECTION_FAILURE
+        assert job.sidebar_payload is not None
 
     def test_done_job_carries_sidebar_payload_and_section_map(self) -> None:
         slot = SectionSlot(state=SectionState.DONE, attempt_id=uuid4())

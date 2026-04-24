@@ -225,6 +225,29 @@ describe("createPollingResource", () => {
     });
   });
 
+  it("stops polling when status transitions to 'partial' and keeps the partial state", async () => {
+    const partial = makeJobState({
+      status: "partial" as JobState["status"],
+      next_poll_ms: 500,
+    });
+    mockPollJob.mockResolvedValueOnce(partial);
+
+    const { createPollingResource } = await import("./polling");
+
+    await createRoot(async (dispose) => {
+      const { state, error } = createPollingResource(() => "job-partial");
+      await flushMicrotasks();
+      expect(state()?.status).toBe("partial");
+      expect(error()).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flushMicrotasks();
+      expect(mockPollJob).toHaveBeenCalledTimes(1);
+
+      dispose();
+    });
+  });
+
   it("sets error signal and stops after 3 consecutive fetch errors", async () => {
     mockPollJob
       .mockRejectedValueOnce(new MockVibecheckApiError("boom", 500))

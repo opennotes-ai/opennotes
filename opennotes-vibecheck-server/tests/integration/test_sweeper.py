@@ -152,13 +152,22 @@ async def test_sweeper_does_not_touch_terminal_jobs(db_pool: Any) -> None:
         created_at=old,
         finished_at=old,
     )
+    partial_id = await _insert_job(
+        db_pool,
+        url="https://example.com/partial",
+        status="partial",
+        created_at=old,
+        finished_at=old,
+    )
 
     await _run_sweeper(db_pool)
 
     done_final = await _read_status(db_pool, done_id)
     failed_final = await _read_status(db_pool, failed_id)
+    partial_final = await _read_status(db_pool, partial_id)
     assert done_final["status"] == "done"
     assert failed_final["status"] == "failed"
+    assert partial_final["status"] == "partial"
 
 
 async def test_sweeper_with_no_orphans_returns_zero(db_pool: Any) -> None:

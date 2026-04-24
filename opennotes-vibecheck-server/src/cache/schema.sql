@@ -73,19 +73,20 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     heartbeat_at TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
     CONSTRAINT vibecheck_jobs_status_check
-        CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'failed')),
+        CHECK (status IN ('pending', 'extracting', 'analyzing', 'done', 'partial', 'failed')),
     CONSTRAINT vibecheck_jobs_error_code_check
         CHECK (
             error_code IS NULL
             OR error_code IN (
-                'invalid_url', 'unsupported_site', 'upstream_error',
-                'extraction_failed', 'timeout', 'rate_limited', 'internal'
+                'invalid_url', 'unsafe_url', 'unsupported_site', 'upstream_error',
+                'extraction_failed', 'section_failure', 'timeout',
+                'rate_limited', 'internal'
             )
         ),
     CONSTRAINT vibecheck_jobs_terminal_finished_at
         CHECK (
-            (status NOT IN ('done', 'failed') AND finished_at IS NULL)
-            OR (status IN ('done', 'failed') AND finished_at IS NOT NULL)
+            (status NOT IN ('done', 'partial', 'failed') AND finished_at IS NULL)
+            OR (status IN ('done', 'partial', 'failed') AND finished_at IS NOT NULL)
         )
 );
 
@@ -100,7 +101,7 @@ CREATE INDEX IF NOT EXISTS vibecheck_jobs_normalized_url_idx
 -- Sweeper hot path: scan only non-terminal rows by status + age.
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_status_created_at_idx
     ON vibecheck_jobs(status, created_at)
-    WHERE status NOT IN ('done', 'failed');
+    WHERE status NOT IN ('done', 'partial', 'failed');
 
 -- Heartbeat sweeper: stale heartbeats while in extracting/analyzing.
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_heartbeat_idx
@@ -262,7 +263,7 @@ BEGIN
         updated_at    = now(),
         finished_at   = now()
     WHERE
-        status NOT IN ('done', 'failed')
+        status NOT IN ('done', 'partial', 'failed')
         AND (
             -- Tier 1: pending jobs older than 240s never reached a worker.
             (status = 'pending' AND (now() - created_at) > INTERVAL '240 seconds')
@@ -295,7 +296,7 @@ DECLARE
     purged INT;
 BEGIN
     DELETE FROM public.vibecheck_jobs
-    WHERE status IN ('done', 'failed')
+    WHERE status IN ('done', 'partial', 'failed')
       AND finished_at IS NOT NULL
       AND finished_at < (now() - INTERVAL '7 days');
     GET DIAGNOSTICS purged = ROW_COUNT;
@@ -349,7 +350,7 @@ ALTER TABLE vibecheck_jobs
     OR error_code IN (
       'invalid_url', 'unsupported_site', 'upstream_error',
       'extraction_failed', 'timeout', 'rate_limited', 'internal',
-      'unsafe_url'
+      'unsafe_url', 'section_failure'
     )
   );
 

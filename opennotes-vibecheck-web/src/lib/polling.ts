@@ -26,7 +26,7 @@ function clampInterval(nextPollMs: number | null | undefined): number {
 }
 
 function isTerminalStatus(status: JobState["status"] | undefined): boolean {
-  return status === "done" || status === "failed";
+  return status === "done" || status === "partial" || status === "failed";
 }
 
 function is404Error(err: unknown): boolean {

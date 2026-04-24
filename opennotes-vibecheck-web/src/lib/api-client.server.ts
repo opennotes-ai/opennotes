@@ -21,9 +21,11 @@ export interface ApiErrorBody {
 
 export const PUBLIC_ERROR_CODES: readonly ErrorCode[] = [
   "invalid_url",
+  "unsafe_url",
   "unsupported_site",
   "upstream_error",
   "extraction_failed",
+  "section_failure",
   "timeout",
   "rate_limited",
   "internal",

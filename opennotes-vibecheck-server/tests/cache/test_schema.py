@@ -68,20 +68,22 @@ class TestRowLevelSecurityLockdown:
 
 
 class TestStatusCheckConstraint:
-    def test_jobs_status_check_lists_all_five_states(self, schema_sql: str) -> None:
-        for status in ("pending", "extracting", "analyzing", "done", "failed"):
+    def test_jobs_status_check_lists_all_states(self, schema_sql: str) -> None:
+        for status in ("pending", "extracting", "analyzing", "done", "partial", "failed"):
             assert f"'{status}'" in schema_sql
 
-    def test_jobs_error_code_check_lists_all_seven_codes(
+    def test_jobs_error_code_check_lists_all_codes(
         self, schema_sql: str
     ) -> None:
         for code in (
             "invalid_url",
+            "unsafe_url",
             "unsupported_site",
             "upstream_error",
             "extraction_failed",
             "timeout",
             "rate_limited",
+            "section_failure",
             "internal",
         ):
             assert f"'{code}'" in schema_sql
@@ -145,6 +147,12 @@ class TestSweeperFunctions:
             "status = 'pending' AND (now() - created_at) > INTERVAL '240 seconds'"
             in schema_sql
         )
+
+    def test_orphan_sweeper_treats_partial_as_terminal(self, schema_sql: str) -> None:
+        assert "status NOT IN ('done', 'partial', 'failed')" in schema_sql
+
+    def test_purge_sweeper_treats_partial_as_terminal(self, schema_sql: str) -> None:
+        assert "status IN ('done', 'partial', 'failed')" in schema_sql
 
     def test_orphan_sweeper_heartbeat_tier_uses_coalesce_grace(
         self, schema_sql: str

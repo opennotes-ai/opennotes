@@ -14,6 +14,7 @@ import {
 } from "~/lib/section-slots";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
 import ExtractingIndicator from "./ExtractingIndicator";
+import { sectionDisplayName } from "./display";
 import {
   SafetyModerationReport,
   WebRiskReport,
@@ -265,6 +266,13 @@ export default function Sidebar(props: SidebarProps) {
     }
     return baseline;
   });
+  const partialFailedSlugs = createMemo(() =>
+    props.jobStatus === "partial"
+      ? SECTION_SLUGS.filter(
+          (slug) => effectiveSections()[slug]?.state === "failed",
+        )
+      : [],
+  );
 
   return (
     <aside
@@ -275,6 +283,15 @@ export default function Sidebar(props: SidebarProps) {
     >
       <Show when={props.jobStatus === "extracting"}>
         <ExtractingIndicator />
+      </Show>
+      <Show when={partialFailedSlugs().length > 0}>
+        <div
+          data-testid="partial-failure-banner"
+          class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          Some sections could not run:{" "}
+          {partialFailedSlugs().map(sectionDisplayName).join(", ")}
+        </div>
       </Show>
       <SectionGroup
         label="Safety"

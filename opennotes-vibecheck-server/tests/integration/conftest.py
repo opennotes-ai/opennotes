@@ -96,7 +96,7 @@ CREATE INDEX IF NOT EXISTS vibecheck_jobs_normalized_url_idx
     ON vibecheck_jobs(normalized_url);
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_status_created_at_idx
     ON vibecheck_jobs(status, created_at)
-    WHERE status NOT IN ('done', 'failed');
+    WHERE status NOT IN ('done', 'partial', 'failed');
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_heartbeat_idx
     ON vibecheck_jobs(heartbeat_at)
     WHERE status IN ('extracting', 'analyzing');
@@ -167,7 +167,7 @@ BEGIN
         updated_at    = now(),
         finished_at   = now()
     WHERE
-        status NOT IN ('done', 'failed')
+        status NOT IN ('done', 'partial', 'failed')
         AND (
             (status = 'pending' AND (now() - created_at) > INTERVAL '240 seconds')
             OR (

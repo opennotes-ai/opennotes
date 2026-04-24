@@ -60,6 +60,7 @@ from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings
 from src.firecrawl_client import FirecrawlClient
 from src.jobs.finalize import maybe_finalize_job
+from src.jobs.section_defaults import empty_section_data as _empty_section_data
 from src.jobs.slots import mark_slot_done, mark_slot_failed, write_slot
 from src.jobs.utterance_writes import (
     UtterancePersistenceSuperseded,
@@ -513,52 +514,6 @@ _SECTION_HANDLERS: dict[SectionSlug, Any] = {
     SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: run_sentiment,
     SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: run_subjective,
 }
-
-
-_EMPTY_SECTION_DATA: dict[SectionSlug, dict[str, Any]] = {
-    SectionSlug.SAFETY_MODERATION: {"harmful_content_matches": []},
-    SectionSlug.SAFETY_WEB_RISK: {"findings": []},
-    SectionSlug.SAFETY_IMAGE_MODERATION: {"matches": []},
-    SectionSlug.SAFETY_VIDEO_MODERATION: {"matches": []},
-    SectionSlug.TONE_DYNAMICS_FLASHPOINT: {"flashpoint_matches": []},
-    SectionSlug.TONE_DYNAMICS_SCD: {
-        "scd": {
-            "summary": "",
-            "tone_labels": [],
-            "per_speaker_notes": {},
-            "insufficient_conversation": True,
-        }
-    },
-    SectionSlug.FACTS_CLAIMS_DEDUP: {
-        "claims_report": {
-            "deduped_claims": [],
-            "total_claims": 0,
-            "total_unique": 0,
-        }
-    },
-    SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO: {"known_misinformation": []},
-    SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT: {
-        "sentiment_stats": {
-            "per_utterance": [],
-            "positive_pct": 0.0,
-            "negative_pct": 0.0,
-            "neutral_pct": 0.0,
-            "mean_valence": 0.0,
-        }
-    },
-    SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE: {"subjective_claims": []},
-}
-
-
-def _empty_section_data(slug: SectionSlug) -> dict[str, Any]:
-    """Empty/neutral payload per slug shape.
-
-    Matches the shapes `finalize._assemble_payload` expects so the job can
-    still transition to done even before TASK-1473.13 wires real analysis.
-    Each shape is the bare-minimum structure that survives pydantic
-    validation in `maybe_finalize_job`.
-    """
-    return _EMPTY_SECTION_DATA.get(slug, {})
 
 
 async def _run_all_sections(

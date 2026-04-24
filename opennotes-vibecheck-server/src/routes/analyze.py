@@ -818,12 +818,14 @@ def poll_rate_reset() -> None:
 #   extracting-> 500   (keep cadence tight during the short extract phase)
 #   analyzing -> 1500  (long phase; back off to reduce DB load)
 #   done      -> 0     (terminal — client stops polling)
+#   partial   -> 0     (terminal — client stops polling)
 #   failed    -> 0     (terminal — client stops polling)
 _POLL_DELAY_BY_STATUS: dict[JobStatus, int] = {
     JobStatus.PENDING: 500,
     JobStatus.EXTRACTING: 500,
     JobStatus.ANALYZING: 1500,
     JobStatus.DONE: 0,
+    JobStatus.PARTIAL: 0,
     JobStatus.FAILED: 0,
 }
 
@@ -1049,7 +1051,7 @@ async def _revert_slot_after_enqueue_failure(
             WHERE job_id = $1
               AND sections ? $2::text
               AND sections -> $2::text ->> 'attempt_id' = $4::text
-              AND status NOT IN ('done', 'failed')
+              AND status NOT IN ('done', 'partial', 'failed')
             """,
             job_id,
             slug.value,
@@ -1073,7 +1075,7 @@ async def retry_section(  # noqa: PLR0911
       1. Job must exist (404 otherwise).
       2. Utterances must have been extracted (409 otherwise — retry is
          meaningless if extraction itself failed; the user should resubmit).
-      3. Job status must be terminal (`done`/`failed`) — running phases
+      3. Job status must be terminal (`done`/`partial`/`failed`) — running phases
          get 409 `cannot_retry_while_running`.
       4. The requested slot must exist and be in `failed` state.
       5. CAS on the slot's prior attempt_id; a concurrent click loses
@@ -1103,11 +1105,11 @@ async def retry_section(  # noqa: PLR0911
         )
 
     status_raw = row["status"]
-    if status_raw not in ("done", "failed"):
+    if status_raw not in ("done", "partial", "failed"):
         return _error_response(
             409,
             "cannot_retry_while_running",
-            f"job status={status_raw}; retry only after done/failed",
+            f"job status={status_raw}; retry only after done/partial/failed",
         )
 
     slot_raw = row["slot"]
