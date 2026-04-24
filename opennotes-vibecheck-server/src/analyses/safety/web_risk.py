@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from urllib.parse import urlparse
 
 import asyncpg
 import httpx
@@ -16,6 +17,7 @@ THREAT_TYPES = (
     "SOCIAL_ENGINEERING",
     "UNWANTED_SOFTWARE",
 )
+SUPPORTED_URI_SCHEMES = {"http", "https"}
 
 
 class WebRiskTransientError(Exception):
@@ -32,10 +34,13 @@ async def check_urls(
 ) -> dict[str, WebRiskFinding]:
     if not urls:
         return {}
-    cached = await fetch_cached(pool, urls)
-    missing = [u for u in urls if u not in cached]
+    urls_to_check = [u for u in urls if urlparse(u).scheme in SUPPORTED_URI_SCHEMES]
+    if not urls_to_check:
+        return {}
+    cached = await fetch_cached(pool, urls_to_check)
+    missing = [u for u in urls_to_check if u not in cached]
     if stats is not None:
-        stats["cache_hit_rate"] = len(cached) / len(urls)
+        stats["cache_hit_rate"] = len(cached) / len(urls_to_check)
         stats["cache_hit_count"] = float(len(cached))
     if not missing:
         return cached
