@@ -20,6 +20,8 @@ export default function PageFrame(props: PageFrameProps) {
   // still verifies whether the browser can render the real page.
   const [iframeFailed, setIframeFailed] = createSignal(false);
   const [iframeLoaded, setIframeLoaded] = createSignal(false);
+  const [iframeVerifiedRenderable, setIframeVerifiedRenderable] =
+    createSignal(false);
   const hasBlockingHint = () =>
     !props.canIframe || !!props.blockingHeader || !!props.cspFrameAncestors;
   const [preferScreenshot, setPreferScreenshot] = createSignal(false);
@@ -30,6 +32,7 @@ export default function PageFrame(props: PageFrameProps) {
     (iframeFailed() || preferScreenshot()) && !!props.screenshotUrl;
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let iframeRef: HTMLIFrameElement | undefined;
   let currentUrl = props.url;
 
   const clearLoadTimeout = () => {
@@ -61,17 +64,57 @@ export default function PageFrame(props: PageFrameProps) {
       currentUrl = props.url;
       setIframeFailed(false);
       setIframeLoaded(false);
+      setIframeVerifiedRenderable(false);
       setPreferScreenshot(false);
       startLoadTimeout();
     }
-    setPreferScreenshot(
-      hasBlockingHint() && !!props.screenshotUrl && !iframeFailed(),
-    );
+    if (
+      hasBlockingHint() &&
+      props.screenshotUrl &&
+      !iframeVerifiedRenderable() &&
+      !iframeFailed()
+    ) {
+      setPreferScreenshot(true);
+    }
   });
+
+  const classifyLoadedIframe = (): "blocked" | "rendered" | "unknown" => {
+    if (!iframeRef) return "unknown";
+    try {
+      const doc = iframeRef.contentDocument;
+      if (!doc) return "unknown";
+      const href = doc.location?.href ?? "";
+      const body = doc.body;
+      const childCount = body?.children?.length ?? 0;
+      const bodyText = body?.textContent?.trim() ?? "";
+      const title = doc.title?.trim() ?? "";
+      if (
+        (href === "" || href === "about:blank") &&
+        childCount === 0 &&
+        !bodyText &&
+        !title
+      ) {
+        return "blocked";
+      }
+      return "rendered";
+    } catch {
+      return "rendered";
+    }
+  };
 
   const handleIframeLoad = () => {
     setIframeLoaded(true);
     clearLoadTimeout();
+    const loadState = classifyLoadedIframe();
+    if (loadState === "blocked") {
+      setPreferScreenshot(false);
+      setIframeFailed(true);
+      return;
+    }
+    if (loadState === "rendered") {
+      setIframeVerifiedRenderable(true);
+      setPreferScreenshot(false);
+    }
   };
 
   const handleIframeError = () => {
@@ -93,6 +136,7 @@ export default function PageFrame(props: PageFrameProps) {
           sandbox="allow-same-origin allow-scripts"
           referrerpolicy="no-referrer"
           loading="lazy"
+          ref={iframeRef}
           aria-hidden={preferScreenshot() ? "true" : undefined}
           onLoad={handleIframeLoad}
           onError={handleIframeError}
