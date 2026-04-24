@@ -901,6 +901,19 @@ async def run_section_retry(
                 )
                 return RunResult(status_code=200)
 
+            # TASK-1474.27: doubled per-section timeouts (e.g. video sampler
+            # 60s download + 30s extract per video, x N videos) push a single
+            # section retry well past the sweeper's 30s heartbeat window.
+            # Mirror run_job's heartbeat lifecycle so the retry cannot be
+            # marked stale mid-flight.
+            heartbeat = asyncio.create_task(
+                _heartbeat_loop(
+                    pool,
+                    job_id,
+                    task_attempt,
+                    interval_sec=HEARTBEAT_INTERVAL_SEC,
+                )
+            )
             section_started = time.monotonic()
             try:
                 handler = _SECTION_HANDLERS.get(slug)
@@ -961,6 +974,15 @@ async def run_section_retry(
                 SECTION_DURATION.labels(slug=slug.value).observe(
                     time.monotonic() - section_started
                 )
+                heartbeat.cancel()
+                try:
+                    await heartbeat
+                except asyncio.CancelledError:
+                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "section-retry: heartbeat cancellation raised: %s", exc
+                    )
         finally:
             clear_contextvars(attempt_tokens)
     finally:
