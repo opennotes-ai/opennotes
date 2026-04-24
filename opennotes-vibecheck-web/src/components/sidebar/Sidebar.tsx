@@ -1,16 +1,19 @@
-import { createMemo, type JSX } from "solid-js";
+import { Show, createMemo, type JSX } from "solid-js";
 import type {
   JobState,
+  JobStatus,
   SectionSlot,
   SidebarPayload,
 } from "~/lib/api-client.server";
 import type { components } from "~/lib/generated-types";
 import { makeEmptyScd } from "~/lib/sidebar-defaults";
 import {
+  SECTION_SLUGS,
   asStrictSectionSlots,
   type SectionSlugLiteral,
 } from "~/lib/section-slots";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
+import ExtractingIndicator from "./ExtractingIndicator";
 import {
   SafetyModerationReport,
   WebRiskReport,
@@ -39,6 +42,7 @@ export interface SidebarProps {
   sections?: JobState["sections"];
   payload?: SidebarPayload | null;
   jobId?: string;
+  jobStatus?: JobStatus;
   onRetry?: (slug: SectionSlugLiteral) => void;
   cachedHint?: boolean;
 }
@@ -230,21 +234,48 @@ const OPINIONS_RENDER: Partial<
   ),
 };
 
+function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
+  // During the `extracting` phase the orchestrator hasn't seeded any
+  // sections yet, so `base` is typically `{}`. We synthesize a `running`
+  // slot for every known slug so the existing per-slug Skeleton renders
+  // immediately. Once `analyzing` starts and the server populates a slot
+  // (with state `pending` / `running` / `done`), we honor that slot —
+  // the synthesized one is replaced in-place, and because the same
+  // skeleton stays mounted for `running`, the visual handoff is seamless.
+  const out: SlugToSlots = { ...base };
+  for (const slug of SECTION_SLUGS) {
+    if (!out[slug]) {
+      out[slug] = { state: "running", attempt_id: "extracting" };
+    }
+  }
+  return out;
+}
+
 export default function Sidebar(props: SidebarProps) {
   const effectiveSections = createMemo<SlugToSlots>(() => {
     const raw = props.sections;
     const hasSlots = raw !== undefined && Object.keys(raw).length > 0;
-    if (hasSlots) return asStrictSectionSlots(raw);
-    if (props.payload) return synthesizeSectionsFromPayload(props.payload);
-    return {};
+    const baseline = hasSlots
+      ? asStrictSectionSlots(raw)
+      : props.payload
+        ? synthesizeSectionsFromPayload(props.payload)
+        : {};
+    if (props.jobStatus === "extracting") {
+      return fillMissingSlotsAsRunning(baseline);
+    }
+    return baseline;
   });
 
   return (
     <aside
       aria-label="Analysis sidebar"
       data-testid="analysis-sidebar"
+      data-job-status={props.jobStatus ?? ""}
       class="flex w-full flex-col gap-4"
     >
+      <Show when={props.jobStatus === "extracting"}>
+        <ExtractingIndicator />
+      </Show>
       <SectionGroup
         label="Safety"
         slugs={SAFETY_SLUGS}

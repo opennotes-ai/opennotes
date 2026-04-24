@@ -810,3 +810,105 @@ describe("app.css motion rules", () => {
     expect(appCss).toMatch(/@keyframes\s+section-reveal-kf\b/);
   });
 });
+
+describe("Sidebar (extracting-phase indicator)", () => {
+  const ALL_SLUGS = [
+    "safety__moderation",
+    "safety__web_risk",
+    "safety__image_moderation",
+    "safety__video_moderation",
+    "tone_dynamics__flashpoint",
+    "tone_dynamics__scd",
+    "facts_claims__dedup",
+    "facts_claims__known_misinfo",
+    "opinions_sentiments__sentiment",
+    "opinions_sentiments__subjective",
+  ] as const;
+
+  it("renders the extracting indicator and per-slug skeletons when jobStatus is extracting and sections is empty", () => {
+    render(() => <Sidebar sections={{}} jobStatus="extracting" />);
+
+    const indicator = screen.getByTestId("extracting-indicator");
+    expect(indicator).toBeDefined();
+    expect(indicator.getAttribute("role")).toBe("status");
+    expect(indicator.textContent ?? "").toMatch(/extracting/i);
+
+    // Every slot should be in `running` state so its content-shape skeleton renders.
+    for (const slug of ALL_SLUGS) {
+      const slot = screen.getByTestId(`slot-${slug}`);
+      expect(slot.getAttribute("data-slot-state")).toBe("running");
+    }
+
+    // At least one skeleton per group is present (proves the per-slug
+    // skeleton path is what's rendering, not a generic placeholder).
+    // Note: the four safety slugs all reuse SafetyModerationSkeleton, so
+    // its testid appears multiple times — getAllByTestId asserts presence
+    // without imposing uniqueness.
+    expect(
+      screen.getAllByTestId("skeleton-safety__moderation").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByTestId("skeleton-tone_dynamics__flashpoint")).toBeDefined();
+    expect(screen.getByTestId("skeleton-facts_claims__dedup")).toBeDefined();
+    expect(
+      screen.getByTestId("skeleton-opinions_sentiments__sentiment"),
+    ).toBeDefined();
+  });
+
+  it("does not render the extracting indicator when jobStatus is done (cached-hit path)", () => {
+    const payload = makeTonePayload();
+    render(() => <Sidebar payload={payload} jobStatus="done" />);
+
+    expect(screen.queryByTestId("extracting-indicator")).toBeNull();
+    // And no per-slot skeletons should render — the payload-synthesized
+    // sections are all `done`. Use queryAllByTestId because some slugs
+    // share a skeleton component (and thus a testid).
+    for (const slug of ALL_SLUGS) {
+      expect(screen.queryAllByTestId(`skeleton-${slug}`)).toHaveLength(0);
+    }
+  });
+
+  it("does not render the extracting indicator when jobStatus is omitted", () => {
+    render(() => <Sidebar sections={{}} />);
+    expect(screen.queryByTestId("extracting-indicator")).toBeNull();
+  });
+
+  it("does not render the extracting indicator when jobStatus is failed", () => {
+    render(() => <Sidebar sections={{}} jobStatus="failed" />);
+    expect(screen.queryByTestId("extracting-indicator")).toBeNull();
+  });
+
+  it("preserves real slot states once analyzing starts (server-seeded slots win)", () => {
+    // The server may already have promoted one slot to running and another
+    // to done in the same poll where status flips to analyzing. Make sure
+    // we don't clobber those with synthesized running slots.
+    render(() => (
+      <Sidebar
+        jobStatus="analyzing"
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "a1",
+            data: { flashpoint_matches: [] },
+          },
+          tone_dynamics__scd: { state: "running", attempt_id: "a2" },
+        }}
+      />
+    ));
+
+    expect(screen.queryByTestId("extracting-indicator")).toBeNull();
+    expect(
+      screen
+        .getByTestId("slot-tone_dynamics__flashpoint")
+        .getAttribute("data-slot-state"),
+    ).toBe("done");
+    expect(
+      screen
+        .getByTestId("slot-tone_dynamics__scd")
+        .getAttribute("data-slot-state"),
+    ).toBe("running");
+    // Slots the server hasn't seeded yet stay pending (no synthesis in analyzing).
+    expect(
+      screen.getByTestId("slot-safety__moderation").getAttribute("data-slot-state"),
+    ).toBe("pending");
+  });
+});
