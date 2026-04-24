@@ -11,6 +11,7 @@ import { getFrameCompat } from "./analyze.data";
 
 const ALL_ERROR_CODES: readonly ErrorCode[] = [
   "invalid_url",
+  "unsafe_url",
   "unsupported_site",
   "upstream_error",
   "extraction_failed",
@@ -80,6 +81,7 @@ export default function AnalyzePage() {
           errorCode: (s.error_code ?? null) as ErrorCode | null,
           errorHost: s.error_host ?? null,
           errorMessage: s.error_message ?? null,
+          webRiskFindings: s.sidebar_payload?.web_risk?.findings ?? [],
         };
       }
       if (transportError()) {
@@ -88,6 +90,7 @@ export default function AnalyzePage() {
           errorCode: "internal" as ErrorCode,
           errorHost: null,
           errorMessage: null as string | null,
+          webRiskFindings: [],
         };
       }
       return null;
@@ -98,6 +101,7 @@ export default function AnalyzePage() {
         errorCode: pendingError(),
         errorHost: pendingHost() || null,
         errorMessage: null as string | null,
+        webRiskFindings: [],
       };
     }
     return null;
@@ -208,6 +212,7 @@ export default function AnalyzePage() {
                   errorCode={f.errorCode}
                   errorHost={f.errorHost}
                   errorMessage={f.errorMessage}
+                  webRiskFindings={f.webRiskFindings}
                 />
               );
             }}

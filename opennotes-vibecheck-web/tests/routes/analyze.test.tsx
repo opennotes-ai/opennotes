@@ -176,6 +176,41 @@ describe("AnalyzePage route", () => {
     expect(failureCard.getAttribute("data-error-code")).toBe("upstream_error");
   });
 
+  it("passes unsafe_url Web Risk findings from JobState sidebar_payload into the failure card", async () => {
+    renderAt("/analyze?job=job-unsafe&url=https://phishing.example.test");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "failed",
+        error_code: "unsafe_url",
+        url: "https://phishing.example.test",
+        sidebar_payload: {
+          web_risk: {
+            findings: [
+              {
+                url: "https://phishing.example.test",
+                threat_types: ["SOCIAL_ENGINEERING"],
+              },
+            ],
+          },
+        },
+      } as unknown as Partial<JobState>),
+    );
+
+    const failureCard = await screen.findByTestId("job-failure-card");
+    expect(failureCard.getAttribute("data-error-code")).toBe("unsafe_url");
+    expect(screen.getByTestId("unsafe-url-finding").textContent).toContain(
+      "https://phishing.example.test",
+    );
+    expect(screen.getByTestId("unsafe-url-threat").textContent).toBe(
+      "social engineering",
+    );
+  });
+
   it("when no ?job is present, falls back to the pending_error URL param", async () => {
     renderAt(
       "/analyze?pending_error=unsupported_site&url=https://blocked.example.com&host=blocked.example.com",

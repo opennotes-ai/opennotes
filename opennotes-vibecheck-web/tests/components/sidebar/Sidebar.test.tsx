@@ -10,6 +10,9 @@ afterEach(() => {
 
 const SECTION_SLUGS = [
   "safety__moderation",
+  "safety__web_risk",
+  "safety__image_moderation",
+  "safety__video_moderation",
   "tone_dynamics__flashpoint",
   "tone_dynamics__scd",
   "facts_claims__dedup",
@@ -27,6 +30,9 @@ function makePayload(overrides: Partial<SidebarPayload> = {}): SidebarPayload {
     cached: false,
     cached_at: null,
     safety: { harmful_content_matches: [] },
+    web_risk: { findings: [] },
+    image_moderation: { matches: [] },
+    video_moderation: { matches: [] },
     tone_dynamics: {
       scd: makeEmptyScd(),
       flashpoint_matches: [],
@@ -100,5 +106,70 @@ describe("<Sidebar /> payload synthesis fallback", () => {
     expect(getSlotState("safety__moderation")).toBe("running");
     // Other slots remain pending because they weren't in `sections`.
     expect(getSlotState("tone_dynamics__scd")).toBe("pending");
+  });
+
+  it("renders populated payload data for the new safety slots", () => {
+    render(() => (
+      <Sidebar
+        sections={undefined}
+        payload={makePayload({
+          web_risk: {
+            findings: [
+              {
+                url: "https://phishing.example.test",
+                threat_types: ["SOCIAL_ENGINEERING"],
+              },
+            ],
+          },
+          image_moderation: {
+            matches: [
+              {
+                utterance_id: "utt-image",
+                image_url: "https://cdn.example.test/image.jpg",
+                adult: 0.8,
+                violence: 0,
+                racy: 0,
+                medical: 0,
+                spoof: 0,
+                flagged: true,
+                max_likelihood: 0.8,
+              },
+            ],
+          },
+          video_moderation: {
+            matches: [
+              {
+                utterance_id: "utt-video",
+                video_url: "https://video.example.test/watch.mp4",
+                flagged: true,
+                max_likelihood: 1,
+                frame_findings: [
+                  {
+                    frame_offset_ms: 1000,
+                    adult: 0,
+                    violence: 1,
+                    racy: 0,
+                    medical: 0,
+                    spoof: 0,
+                    flagged: true,
+                    max_likelihood: 1,
+                  },
+                ],
+              },
+            ],
+          },
+        })}
+      />
+    ));
+
+    expect(screen.getByTestId("report-safety__web_risk").textContent).toContain(
+      "https://phishing.example.test",
+    );
+    expect(
+      screen.getByTestId("report-safety__image_moderation").textContent,
+    ).toContain("80%");
+    expect(
+      screen.getByTestId("report-safety__video_moderation").textContent,
+    ).toContain("1.0s");
   });
 });

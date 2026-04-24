@@ -13,6 +13,9 @@ import {
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
 import {
   SafetyModerationReport,
+  WebRiskReport,
+  ImageModerationReport,
+  VideoModerationReport,
   FlashpointReport,
   ScdReport,
   ClaimsDedupReport,
@@ -22,6 +25,9 @@ import {
 } from "./reports";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
+type WebRiskFinding = components["schemas"]["WebRiskFinding"];
+type ImageModerationMatch = components["schemas"]["ImageModerationMatch"];
+type VideoModerationMatch = components["schemas"]["VideoModerationMatch"];
 type FlashpointMatch = components["schemas"]["FlashpointMatch"];
 type SCDReport = components["schemas"]["SCDReport"];
 type FactCheckMatch = components["schemas"]["FactCheckMatch"];
@@ -37,7 +43,12 @@ export interface SidebarProps {
   cachedHint?: boolean;
 }
 
-const SAFETY_SLUGS: SectionSlugLiteral[] = ["safety__moderation"];
+const SAFETY_SLUGS: SectionSlugLiteral[] = [
+  "safety__moderation",
+  "safety__web_risk",
+  "safety__image_moderation",
+  "safety__video_moderation",
+];
 const TONE_SLUGS: SectionSlugLiteral[] = [
   "tone_dynamics__flashpoint",
   "tone_dynamics__scd",
@@ -81,6 +92,15 @@ function synthesizeSectionsFromPayload(
     harmful_content_matches:
       payload.safety?.harmful_content_matches ?? [],
   };
+  const webRiskData = {
+    findings: payload.web_risk?.findings ?? [],
+  };
+  const imageModerationData = {
+    matches: payload.image_moderation?.matches ?? [],
+  };
+  const videoModerationData = {
+    matches: payload.video_moderation?.matches ?? [],
+  };
   const flashpointData = {
     flashpoint_matches: payload.tone_dynamics?.flashpoint_matches ?? [],
   };
@@ -106,6 +126,9 @@ function synthesizeSectionsFromPayload(
   };
   return {
     safety__moderation: doneSlot(attemptId, safetyData),
+    safety__web_risk: doneSlot(attemptId, webRiskData),
+    safety__image_moderation: doneSlot(attemptId, imageModerationData),
+    safety__video_moderation: doneSlot(attemptId, videoModerationData),
     tone_dynamics__flashpoint: doneSlot(attemptId, flashpointData),
     tone_dynamics__scd: doneSlot(attemptId, scdData),
     facts_claims__dedup: doneSlot(attemptId, claimsDedupData),
@@ -121,6 +144,18 @@ function asRecord(data: unknown): Record<string, unknown> {
 
 function extractHarmfulContentMatches(data: unknown): HarmfulContentMatch[] {
   return (asRecord(data).harmful_content_matches ?? []) as HarmfulContentMatch[];
+}
+
+function extractWebRiskFindings(data: unknown): WebRiskFinding[] {
+  return (asRecord(data).findings ?? []) as WebRiskFinding[];
+}
+
+function extractImageModerationMatches(data: unknown): ImageModerationMatch[] {
+  return (asRecord(data).matches ?? []) as ImageModerationMatch[];
+}
+
+function extractVideoModerationMatches(data: unknown): VideoModerationMatch[] {
+  return (asRecord(data).matches ?? []) as VideoModerationMatch[];
 }
 
 function extractFlashpointMatches(data: unknown): FlashpointMatch[] {
@@ -152,6 +187,15 @@ const SAFETY_RENDER: Partial<
 > = {
   safety__moderation: (data) => (
     <SafetyModerationReport matches={extractHarmfulContentMatches(data)} />
+  ),
+  safety__web_risk: (data) => (
+    <WebRiskReport findings={extractWebRiskFindings(data)} />
+  ),
+  safety__image_moderation: (data) => (
+    <ImageModerationReport matches={extractImageModerationMatches(data)} />
+  ),
+  safety__video_moderation: (data) => (
+    <VideoModerationReport matches={extractVideoModerationMatches(data)} />
   ),
 };
 

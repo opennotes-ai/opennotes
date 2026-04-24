@@ -376,7 +376,7 @@ describe("Sidebar", () => {
 
     const counters = screen.getAllByTestId("section-group-counter");
     const texts = counters.map((n) => n.textContent ?? "");
-    expect(texts.find((t) => t.startsWith("Safety"))).toContain("1/1");
+    expect(texts.find((t) => t.startsWith("Safety"))).toContain("4/4");
     expect(texts.find((t) => t.startsWith("Tone/dynamics"))).toContain("2/2");
     expect(texts.find((t) => t.startsWith("Facts/claims"))).toContain("2/2");
     expect(texts.find((t) => t.startsWith("Opinions/sentiments"))).toContain(
@@ -385,6 +385,9 @@ describe("Sidebar", () => {
 
     const ALL_SLUGS = [
       "safety__moderation",
+      "safety__web_risk",
+      "safety__image_moderation",
+      "safety__video_moderation",
       "tone_dynamics__flashpoint",
       "tone_dynamics__scd",
       "facts_claims__dedup",
@@ -436,6 +439,65 @@ describe("Sidebar (done slots, per-slug reports)", () => {
               max_score: 0.91,
               flagged_categories: ["harassment"],
               scores: {},
+              categories: { harassment: true },
+              source: "openai",
+            },
+          ],
+        },
+      },
+      safety__web_risk: {
+        state: "done",
+        attempt_id: "s-web-risk",
+        data: {
+          findings: [
+            {
+              url: "https://phishing.example.test",
+              threat_types: ["SOCIAL_ENGINEERING"],
+            },
+          ],
+        },
+      },
+      safety__image_moderation: {
+        state: "done",
+        attempt_id: "s-image",
+        data: {
+          matches: [
+            {
+              utterance_id: "u-image",
+              image_url: "https://cdn.example.test/image.jpg",
+              adult: 0.8,
+              violence: 0,
+              racy: 0,
+              medical: 0,
+              spoof: 0,
+              flagged: true,
+              max_likelihood: 0.8,
+            },
+          ],
+        },
+      },
+      safety__video_moderation: {
+        state: "done",
+        attempt_id: "s-video",
+        data: {
+          matches: [
+            {
+              utterance_id: "u-video",
+              video_url: "https://video.example.test/watch.mp4",
+              flagged: true,
+              max_likelihood: 1,
+              frame_findings: [
+                {
+                  frame_offset_ms: 1000,
+                  adult: 0,
+                  violence: 1,
+                  racy: 0,
+                  medical: 0,
+                  spoof: 0,
+                  flagged: true,
+                  max_likelihood: 1,
+                },
+              ],
             },
           ],
         },
@@ -526,9 +588,6 @@ describe("Sidebar (done slots, per-slug reports)", () => {
   it("renders each slug's own report and none of its siblings' content", () => {
     render(() => <Sidebar sections={doneSections()} />);
 
-    const safetyReport = screen.getByTestId("report-safety__moderation");
-    expect(safetyReport.textContent).toContain("u-safety");
-
     const flashReport = screen.getByTestId(
       "report-tone_dynamics__flashpoint",
     );
@@ -544,6 +603,21 @@ describe("Sidebar (done slots, per-slug reports)", () => {
       "This is the exact harmful sentence.",
     );
     expect(safetyReport.textContent).not.toContain("u-safety");
+
+    const webRiskReport = screen.getByTestId("report-safety__web_risk");
+    expect(webRiskReport.textContent).toContain(
+      "https://phishing.example.test",
+    );
+
+    const imageReport = screen.getByTestId(
+      "report-safety__image_moderation",
+    );
+    expect(imageReport.textContent).toContain("80%");
+
+    const videoReport = screen.getByTestId(
+      "report-safety__video_moderation",
+    );
+    expect(videoReport.textContent).toContain("1.0s");
 
     const dedupReport = screen.getByTestId("report-facts_claims__dedup");
     expect(dedupReport.textContent).toContain("canonical claim text");
