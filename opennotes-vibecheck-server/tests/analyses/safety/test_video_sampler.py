@@ -4,7 +4,7 @@ import asyncio
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -94,8 +94,7 @@ class TestSuccessfulSample:
                     captured_tmp.append(tmp_dir)
                     return _make_yt_dlp_process(tmp_dir, duration=30.0)
                 return FakeProcess(returncode=0)
-            else:
-                return FakeProcess(returncode=0, stdout=FAKE_PNG, stderr=b"")
+            return FakeProcess(returncode=0, stdout=FAKE_PNG, stderr=b"")
 
         with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
             frames = await sample_video("https://example.com/video.mp4", frame_count=3)
@@ -110,12 +109,46 @@ class TestSuccessfulSample:
             assert isinstance(frame, FrameBytes)
             assert frame.png_bytes == FAKE_PNG
 
+    async def test_uses_info_json_filepath_when_extra_outputs_exist(self):
+        call_count = 0
+        ffmpeg_inputs: list[str] = []
+
+        async def fake_exec(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                out_template = args[list(args).index("-o") + 1]
+                tmp_path = Path(out_template).parent
+                target_video = tmp_path / "video.mp4"
+                target_video.write_bytes(b"target video")
+                (tmp_path / "audio.webm").write_bytes(b"audio sidecar")
+                (tmp_path / "video.info.json").write_text(
+                    json.dumps(
+                        {
+                            "duration": 10.0,
+                            "requested_downloads": [
+                                {"filepath": str(target_video)}
+                            ],
+                        }
+                    )
+                )
+                return FakeProcess(returncode=0)
+
+            ffmpeg_inputs.append(args[list(args).index("-i") + 1])
+            return FakeProcess(returncode=0, stdout=FAKE_PNG, stderr=b"")
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
+            await sample_video("https://example.com/video.mp4", frame_count=1)
+
+        assert len(ffmpeg_inputs) == 1
+        assert ffmpeg_inputs[0].endswith("video.mp4")
+
 
 class TestYtDlpTimeout:
     async def test_yt_dlp_timeout_raises_video_sampling_error_and_kills_process(self):
         hanging_proc = FakeProcess(returncode=0, hang=True)
 
-        with patch("asyncio.create_subprocess_exec", return_value=hanging_proc):
+        with patch("asyncio.create_subprocess_exec", return_value=hanging_proc):  # noqa: SIM117
             with pytest.raises(VideoSamplingError, match="timeout"):
                 await sample_video(
                     "https://example.com/video.mp4",
@@ -129,7 +162,7 @@ class TestYtDlpNonzeroExit:
     async def test_yt_dlp_nonzero_exit_raises_video_sampling_error(self):
         proc = FakeProcess(returncode=1, stdout=b"", stderr=b"download failed")
 
-        with patch("asyncio.create_subprocess_exec", return_value=proc):
+        with patch("asyncio.create_subprocess_exec", return_value=proc):  # noqa: SIM117
             with pytest.raises(VideoSamplingError, match="yt-dlp exit 1"):
                 await sample_video("https://example.com/video.mp4")
 
@@ -138,7 +171,7 @@ class TestYtDlpNoOutputFile:
     async def test_yt_dlp_no_output_file_raises(self):
         proc = FakeProcess(returncode=0, stdout=b"", stderr=b"")
 
-        with patch("asyncio.create_subprocess_exec", return_value=proc):
+        with patch("asyncio.create_subprocess_exec", return_value=proc):  # noqa: SIM117
             with pytest.raises(VideoSamplingError, match="no video file"):
                 await sample_video("https://example.com/video.mp4")
 
@@ -161,8 +194,8 @@ class TestMissingInfoJson:
                 return FakeProcess(returncode=0)
             return FakeProcess(returncode=0, stdout=FAKE_PNG, stderr=b"")
 
-        with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
-            with pytest.raises(VideoSamplingError, match="info.json missing"):
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):  # noqa: SIM117
+            with pytest.raises(VideoSamplingError, match=r"info\.json missing"):
                 await sample_video("https://example.com/video.mp4")
 
 
@@ -182,7 +215,7 @@ class TestFfmpegTimeout:
                 return FakeProcess(returncode=0)
             return FakeProcess(returncode=0, hang=True)
 
-        with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):  # noqa: SIM117
             with pytest.raises(VideoSamplingError, match="ffmpeg timeout"):
                 await sample_video(
                     "https://example.com/video.mp4",
@@ -207,7 +240,7 @@ class TestFfmpegNonzeroExit:
                 return FakeProcess(returncode=0)
             return FakeProcess(returncode=1, stdout=b"", stderr=b"codec error")
 
-        with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):  # noqa: SIM117
             with pytest.raises(VideoSamplingError, match="ffmpeg exit 1"):
                 await sample_video(
                     "https://example.com/video.mp4",
@@ -231,7 +264,7 @@ class TestFfmpegEmptyStdout:
                 return FakeProcess(returncode=0)
             return FakeProcess(returncode=0, stdout=b"", stderr=b"")
 
-        with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):  # noqa: SIM117
             with pytest.raises(VideoSamplingError, match="empty frame"):
                 await sample_video(
                     "https://example.com/video.mp4",
@@ -241,7 +274,7 @@ class TestFfmpegEmptyStdout:
 
 class TestUrlNotShellConcatenated:
     async def test_url_never_passed_through_shell(self):
-        captured_calls: list[tuple] = []
+        captured_calls: list[tuple[object, ...]] = []
 
         async def fake_exec(*args, **kwargs):
             captured_calls.append(args)
@@ -284,7 +317,7 @@ class TestTempDirCleanup:
 
         proc = FakeProcess(returncode=1, stdout=b"", stderr=b"download error")
 
-        with patch("asyncio.create_subprocess_exec", return_value=proc):
+        with patch("asyncio.create_subprocess_exec", return_value=proc):  # noqa: SIM117
             with patch("tempfile.TemporaryDirectory", TrackingTempDir):
                 with pytest.raises(VideoSamplingError):
                     await sample_video("https://example.com/video.mp4")
@@ -299,52 +332,52 @@ class TestSsrfGuard:
 
     @pytest.mark.asyncio
     async def test_internal_ipv4_raises_without_spawning_subprocess(self):
-        calls: list[tuple] = []
+        calls: list[tuple[object, ...]] = []
 
         async def fail_exec(*args, **kwargs):
             calls.append(args)
             raise AssertionError("yt-dlp should never spawn for SSRF URL")
 
-        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):
+        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):  # noqa: SIM117
             with pytest.raises(VideoSamplingError):
                 await sample_video("http://127.0.0.1:8080/secret.mp4")
         assert calls == []
 
     @pytest.mark.asyncio
     async def test_private_rfc1918_host_raises_without_spawning_subprocess(self):
-        calls: list[tuple] = []
+        calls: list[tuple[object, ...]] = []
 
         async def fail_exec(*args, **kwargs):
             calls.append(args)
             raise AssertionError("yt-dlp should never spawn for SSRF URL")
 
-        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):
+        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):  # noqa: SIM117
             with pytest.raises(VideoSamplingError):
                 await sample_video("http://10.0.0.5/secret.mp4")
         assert calls == []
 
     @pytest.mark.asyncio
     async def test_metadata_service_host_raises_without_spawning_subprocess(self):
-        calls: list[tuple] = []
+        calls: list[tuple[object, ...]] = []
 
         async def fail_exec(*args, **kwargs):
             calls.append(args)
             raise AssertionError("yt-dlp should never spawn for SSRF URL")
 
-        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):
+        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):  # noqa: SIM117
             with pytest.raises(VideoSamplingError):
                 await sample_video("http://169.254.169.254/latest/meta-data/")
         assert calls == []
 
     @pytest.mark.asyncio
     async def test_non_http_scheme_raises_without_spawning_subprocess(self):
-        calls: list[tuple] = []
+        calls: list[tuple[object, ...]] = []
 
         async def fail_exec(*args, **kwargs):
             calls.append(args)
             raise AssertionError("yt-dlp should never spawn for file:// scheme")
 
-        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):
+        with patch("asyncio.create_subprocess_exec", side_effect=fail_exec):  # noqa: SIM117
             with pytest.raises(VideoSamplingError):
                 await sample_video("file:///etc/passwd")
         assert calls == []

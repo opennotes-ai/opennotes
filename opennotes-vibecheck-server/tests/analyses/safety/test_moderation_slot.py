@@ -5,6 +5,7 @@ both-fail raises ModerationSlotError).
 """
 from __future__ import annotations
 
+from typing import Literal
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -18,7 +19,10 @@ def make_utterance(utterance_id: str = "utt_1", text: str = "some text") -> Utte
     return Utterance(utterance_id=utterance_id, kind="post", text=text, author="alice")
 
 
-def make_match(utterance_id: str = "utt_1", source: str = "openai") -> HarmfulContentMatch:
+def make_match(
+    utterance_id: str = "utt_1",
+    source: Literal["openai", "gcp"] = "openai",
+) -> HarmfulContentMatch:
     return HarmfulContentMatch(
         utterance_id=utterance_id,
         utterance_text="some text",
@@ -26,7 +30,7 @@ def make_match(utterance_id: str = "utt_1", source: str = "openai") -> HarmfulCo
         categories={"violence": True},
         scores={"violence": 0.9},
         flagged_categories=["violence"],
-        source=source,  # type: ignore[arg-type]
+        source=source,
     )
 
 

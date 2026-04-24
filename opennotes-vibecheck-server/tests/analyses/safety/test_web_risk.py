@@ -9,7 +9,6 @@ import asyncio
 import json
 import socket
 from collections.abc import AsyncIterator, Iterator
-from typing import Any
 from unittest.mock import patch
 
 import asyncpg
@@ -82,7 +81,9 @@ async def _seed_cache(
     threat_types: list[str],
     expires_in_seconds: int = 3600,
 ) -> None:
-    finding = WebRiskFinding(url=url, threat_types=threat_types)  # type: ignore[arg-type]
+    finding = WebRiskFinding.model_validate(
+        {"url": url, "threat_types": threat_types}
+    )
     async with pool.acquire() as conn:
         await conn.execute(
             """
@@ -229,8 +230,7 @@ class TestConcurrencyBoundedBySemaphore:
             nonlocal max_concurrent, active
             async with lock:
                 active += 1
-                if active > max_concurrent:
-                    max_concurrent = active
+                max_concurrent = max(max_concurrent, active)
             await asyncio.sleep(0.02)
             async with lock:
                 active -= 1

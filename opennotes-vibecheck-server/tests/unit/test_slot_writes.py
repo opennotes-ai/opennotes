@@ -570,6 +570,7 @@ def _minimal_slot_payloads() -> dict[SectionSlug, dict[str, Any]]:
             "harmful_content_matches": [
                 {
                     "utterance_id": "utt-safety-001",
+                    "utterance_text": "sentinel safety text",
                     "max_score": 0.91,
                     "categories": {"hate": True, "violence": False},
                     "scores": {"hate": 0.91, "violence": 0.04},

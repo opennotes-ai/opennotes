@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -93,7 +92,7 @@ async def annotate_images(
     return results
 
 
-def _build_result(annotation: dict, threshold: float) -> SafeSearchResult:
+def _build_result(annotation: dict[str, object], threshold: float) -> SafeSearchResult:
     scores = {
         k: likelihood_to_score(str(annotation.get(k, "UNKNOWN")))
         for k in ("adult", "violence", "racy", "medical", "spoof")

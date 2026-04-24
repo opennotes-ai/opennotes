@@ -46,6 +46,7 @@ from slowapi.util import get_remote_address
 
 from src.analyses.claims._claims_schemas import ClaimsReport
 from src.analyses.opinions._schemas import OpinionsReport, SentimentStatsReport
+from src.analyses.safety._schemas import WebRiskFinding
 from src.analyses.safety.web_risk import WebRiskTransientError, check_urls
 from src.analyses.schemas import (
     FactsClaimsSection,
@@ -225,6 +226,22 @@ async def _find_inflight_job(
     if not isinstance(job_id, UUID) or not isinstance(status_raw, str):
         return None
     return job_id, JobStatus(status_raw)
+
+
+async def _find_unsafe_url_job(conn: Any, normalized_url: str) -> UUID | None:
+    """Return an existing unsafe_url failure for this URL, if present."""
+    job_id = await conn.fetchval(
+        """
+        SELECT job_id FROM vibecheck_jobs
+        WHERE normalized_url = $1
+          AND status = 'failed'
+          AND error_code = 'unsafe_url'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        normalized_url,
+    )
+    return job_id if isinstance(job_id, UUID) else None
 
 
 async def _lookup_cache(conn: Any, normalized_url: str) -> dict[str, Any] | None:
@@ -425,6 +442,7 @@ async def _handle_locked_submit(
     url: str,
     normalized_url: str,
     host: str,
+    unsafe_finding: WebRiskFinding | None,
     test_fail_slug: str | None = None,
 ) -> tuple[AnalyzeResponse, UUID | None]:
     """Run the inside-lock branch logic. Returns `(response, attempt_to_enqueue)`.
@@ -432,6 +450,27 @@ async def _handle_locked_submit(
     `attempt_to_enqueue` is non-None only for fresh submits — cache hits
     and dedupe returns skip the Cloud Tasks publish.
     """
+    if unsafe_finding is not None and unsafe_finding.threat_types:
+        existing_unsafe = await _find_unsafe_url_job(conn, normalized_url)
+        if existing_unsafe is not None:
+            return (
+                AnalyzeResponse(
+                    job_id=existing_unsafe, status=JobStatus.FAILED, cached=False
+                ),
+                None,
+            )
+        job_id = await _insert_unsafe_url_job(
+            conn,
+            url=url,
+            normalized_url=normalized_url,
+            host=host,
+            finding=unsafe_finding,
+        )
+        return (
+            AnalyzeResponse(job_id=job_id, status=JobStatus.FAILED, cached=False),
+            None,
+        )
+
     cached_payload = await _lookup_cache(conn, normalized_url)
     if cached_payload is not None:
         job_id = await _insert_cached_done_job(
@@ -480,7 +519,7 @@ async def _handle_locked_submit(
     response_model=AnalyzeResponse,
 )
 @limiter.limit(_rate_limit_value)
-async def analyze(request: Request, body: AnalyzeRequest) -> Any:
+async def analyze(request: Request, body: AnalyzeRequest) -> Any:  # noqa: PLR0911
     """Async handoff for `POST /api/analyze`.
 
     Returns `AnalyzeResponse` on the success path. On SSRF-guard failure,
@@ -552,16 +591,6 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
                 headers={"Retry-After": "5"},
             )
     page_finding = gate_findings.get(normalized_url)
-    if page_finding is not None and page_finding.threat_types:
-        async with pool.acquire() as conn:
-            job_id = await _insert_unsafe_url_job(
-                conn,
-                url=body.url,
-                normalized_url=normalized_url,
-                host=host,
-                finding=page_finding,
-            )
-        return AnalyzeResponse(job_id=job_id, status=JobStatus.FAILED, cached=False)
 
     # 3. Locked DB transaction: cache-check -> dedup-check -> INSERT pending.
     async def run_locked() -> tuple[AnalyzeResponse | None, UUID | None, bool]:
@@ -612,12 +641,25 @@ async def analyze(request: Request, body: AnalyzeRequest) -> Any:
                         None,
                         True,
                     )
+                if page_finding is not None and page_finding.threat_types:
+                    existing_unsafe = await _find_unsafe_url_job(conn, normalized_url)
+                    if existing_unsafe is not None:
+                        return (
+                            AnalyzeResponse(
+                                job_id=existing_unsafe,
+                                status=JobStatus.FAILED,
+                                cached=False,
+                            ),
+                            None,
+                            True,
+                        )
                 return None, None, False
             response, attempt = await _handle_locked_submit(
                 conn,
                 url=body.url,
                 normalized_url=normalized_url,
                 host=host,
+                unsafe_finding=page_finding,
                 test_fail_slug=test_fail_slug,
             )
             return response, attempt, True
@@ -869,10 +911,10 @@ def _row_to_job_state(row: Any) -> JobState:
         if sidebar_raw is not None
         else None
     )
-    page_kind_raw = row["page_kind"] if "page_kind" in row.keys() else None
+    page_kind_raw = row.get("page_kind", None)
     page_kind = PageKind(page_kind_raw) if isinstance(page_kind_raw, str) else None
     utterance_count_raw = (
-        row["utterance_count"] if "utterance_count" in row.keys() else 0
+        row.get("utterance_count", 0)
     )
     return JobState(
         job_id=row["job_id"],
@@ -888,7 +930,7 @@ def _row_to_job_state(row: Any) -> JobState:
         sidebar_payload=sidebar_payload,
         cached=bool(row["cached"]),
         next_poll_ms=_POLL_DELAY_BY_STATUS[status],
-        page_title=row["page_title"] if "page_title" in row.keys() else None,
+        page_title=row.get("page_title", None),
         page_kind=page_kind,
         utterance_count=int(utterance_count_raw or 0),
     )
@@ -1022,7 +1064,7 @@ async def _revert_slot_after_enqueue_failure(
     response_model=RetryResponse,
 )
 @limiter.limit(_rate_limit_value, key_func=_ip_and_job_id_key)
-async def retry_section(
+async def retry_section(  # noqa: PLR0911
     request: Request, job_id: UUID, slug: SectionSlug
 ) -> Any:
     """Retry one failed slot of a terminal job.

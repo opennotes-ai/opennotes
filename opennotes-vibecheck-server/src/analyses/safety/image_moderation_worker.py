@@ -1,12 +1,13 @@
 from __future__ import annotations
+
 import logging
 from typing import Any
 from uuid import UUID
 
 import httpx
 
-from src.analyses.safety.vision_client import annotate_images
 from src.analyses.safety._schemas import ImageModerationMatch
+from src.analyses.safety.vision_client import annotate_images
 from src.config import Settings
 
 logger = logging.getLogger(__name__)

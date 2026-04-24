@@ -41,7 +41,7 @@ from pydantic_ai.messages import ImageUrl
 from src.analyses.schemas import PageKind
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
 from src.config import Settings, get_settings
-from src.firecrawl_client import FirecrawlClient, ScrapeResult
+from src.firecrawl_client import FirecrawlClient
 from src.services.gemini_agent import build_agent
 from src.utils.html_sanitize import strip_noise
 

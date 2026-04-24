@@ -9,7 +9,6 @@ import pytest
 
 from src.analyses.safety.vision_client import (
     ANNOTATE_URL,
-    FLAG_THRESHOLD,
     SafeSearchResult,
     VisionTransientError,
     annotate_images,
@@ -34,17 +33,16 @@ ADULT_ANNOTATION = {
 FAKE_TOKEN = "fake-token-xyz"
 
 
-def _vision_response(annotations: list[dict]) -> dict:
+def _vision_response(annotations: list[dict[str, str]]) -> dict[str, object]:
     return {"responses": [{"safeSearchAnnotation": a} for a in annotations]}
 
 
-def _vision_error_response() -> dict:
+def _vision_error_response() -> dict[str, object]:
     return {"responses": [{"error": {"code": 400, "message": "URL fetch failed"}}]}
 
 
-def _make_transport(routes: dict) -> httpx.MockTransport:
+def _make_transport(routes: dict[tuple[str, str], httpx.Response]) -> httpx.MockTransport:
     def handler(request: httpx.Request) -> httpx.Response:
-        key = (request.method, str(request.url))
         for (method, url_prefix), resp in routes.items():
             if request.method == method and str(request.url).startswith(url_prefix):
                 return resp
@@ -53,13 +51,13 @@ def _make_transport(routes: dict) -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_token():
     with patch("src.analyses.safety.vision_client.get_access_token", return_value=FAKE_TOKEN):
         yield
 
 
-@pytest.fixture()
+@pytest.fixture
 def no_token():
     with patch("src.analyses.safety.vision_client.get_access_token", return_value=None):
         yield
@@ -137,15 +135,16 @@ async def test_batch_larger_than_16_splits_into_multiple_requests(mock_token):
     assert call_count == 2
     assert len(results) == 20
     for url in urls:
-        assert results[url] is not None
-        assert results[url].flagged is False
+        result = results[url]
+        assert result is not None
+        assert result.flagged is False
 
 
 @pytest.mark.asyncio
 async def test_url_fetch_failure_triggers_inline_fallback(mock_token):
     url = "https://cdn.example.com/protected.jpg"
     fake_image_bytes = b"FAKE_IMAGE_DATA"
-    b64_encoded = base64.b64encode(fake_image_bytes).decode("ascii")
+    base64.b64encode(fake_image_bytes).decode("ascii")
 
     annotate_call_count = 0
 
@@ -157,8 +156,7 @@ async def test_url_fetch_failure_triggers_inline_fallback(mock_token):
             req = body["requests"][0]
             if "source" in req["image"]:
                 return httpx.Response(200, json=_vision_error_response())
-            else:
-                return httpx.Response(200, json=_vision_response([CLEAN_ANNOTATION]))
+            return httpx.Response(200, json=_vision_response([CLEAN_ANNOTATION]))
         if str(request.url) == url and request.method == "GET":
             return httpx.Response(
                 200,
@@ -300,7 +298,7 @@ async def test_inline_fallback_ssrf_guard_rejects_internal_url(mock_token):
     """
     url = "http://127.0.0.1:8080/secret.png"
 
-    posts: list[dict] = []
+    posts: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "POST" and str(request.url) == ANNOTATE_URL:

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio
+
 import base64
 import logging
 from typing import Any
@@ -7,12 +7,12 @@ from uuid import UUID
 
 import httpx
 
-from src.analyses.safety.vision_client import ANNOTATE_URL, VisionTransientError
-from src.analyses.safety._schemas import VideoModerationMatch, FrameFinding
+from src.analyses.safety._schemas import FrameFinding, VideoModerationMatch
 from src.analyses.safety._vision_likelihood import likelihood_to_score
-from src.analyses.safety.video_sampler import sample_video, VideoSamplingError, FrameBytes
+from src.analyses.safety.video_sampler import FrameBytes, VideoSamplingError, sample_video
+from src.analyses.safety.vision_client import ANNOTATE_URL, VisionTransientError
 from src.config import Settings
-from src.services.gcp_adc import get_access_token, CLOUD_PLATFORM_SCOPE
+from src.services.gcp_adc import CLOUD_PLATFORM_SCOPE, get_access_token
 
 logger = logging.getLogger(__name__)
 

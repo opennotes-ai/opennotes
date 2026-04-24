@@ -266,6 +266,24 @@ async def test_flagged_url_does_not_enqueue_cloud_task(
     assert enqueue_mock.await_count == 0
 
 
+async def test_repeated_flagged_url_returns_existing_unsafe_job(
+    client: httpx.AsyncClient, db_pool: Any, enqueue_mock: AsyncMock
+) -> None:
+    url = "https://example.com/repeated-malware-page"
+    malware_finding = WebRiskFinding(url=url, threat_types=["MALWARE"])
+    with patch.object(
+        analyze_route, "check_urls", new=AsyncMock(return_value={url: malware_finding})
+    ):
+        first = await client.post("/api/analyze", json={"url": url})
+        second = await client.post("/api/analyze", json={"url": url})
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert first.json()["job_id"] == second.json()["job_id"]
+    assert await _count_jobs(db_pool, normalized_url=url) == 1
+    assert enqueue_mock.await_count == 0
+
+
 async def test_web_risk_transient_error_returns_503_with_retry_after(
     client: httpx.AsyncClient, db_pool: Any, enqueue_mock: AsyncMock
 ) -> None:

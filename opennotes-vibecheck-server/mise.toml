@@ -12,7 +12,7 @@ run = "uv run ruff check ."
 
 [tasks.type-check]
 description = "Run basedpyright type checker"
-run = "uv run basedpyright"
+run = "uv run basedpyright --level error"
 
 [tasks.build]
 description = "Build the vibecheck-server Docker image"

@@ -7,14 +7,13 @@ from uuid import uuid4
 
 import pytest
 
-from src.analyses.safety._schemas import ImageModerationMatch
 from src.analyses.safety.image_moderation_worker import run_image_moderation
 from src.analyses.safety.vision_client import SafeSearchResult, VisionTransientError
 from src.config import Settings
 
 
 def _make_settings(**overrides: Any) -> Settings:
-    base = {
+    base: dict[str, Any] = {
         "MAX_IMAGES_MODERATED": 30,
         "MAX_VIDEOS_MODERATED": 5,
     }
@@ -99,7 +98,7 @@ async def test_enforces_max_images_moderated_cap_logs_dropped(caplog):
     payload = _Payload([_Utterance("utt-1", images_per_utt)])
     settings = _make_settings(MAX_IMAGES_MODERATED=30)
 
-    url_to_result = {url: CLEAN_RESULT for url in images_per_utt[:30]}
+    url_to_result = dict.fromkeys(images_per_utt[:30], CLEAN_RESULT)
 
     captured_urls: list[str] = []
 
@@ -107,7 +106,7 @@ async def test_enforces_max_images_moderated_cap_logs_dropped(caplog):
         captured_urls.extend(urls)
         return {u: url_to_result.get(u) for u in urls}
 
-    with caplog.at_level(logging.INFO, logger="src.analyses.safety.image_moderation_worker"):
+    with caplog.at_level(logging.INFO, logger="src.analyses.safety.image_moderation_worker"):  # noqa: SIM117
         with patch(
             "src.analyses.safety.image_moderation_worker.annotate_images",
             new=fake_annotate,
@@ -168,6 +167,5 @@ async def test_propagates_vision_transient_error():
     with patch(
         "src.analyses.safety.image_moderation_worker.annotate_images",
         new=AsyncMock(side_effect=VisionTransientError("vision 503")),
-    ):
-        with pytest.raises(VisionTransientError, match="503"):
-            await run_image_moderation(None, uuid4(), uuid4(), payload, settings)
+    ), pytest.raises(VisionTransientError, match="503"):
+        await run_image_moderation(None, uuid4(), uuid4(), payload, settings)

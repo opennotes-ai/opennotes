@@ -45,7 +45,7 @@ def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
                 key = ref.rsplit("/", 1)[-1]
                 target = defs.get(key)
                 if isinstance(target, dict):
-                    return walk({k: v for k, v in target.items()})
+                    return walk(dict(target))
                 return {}
             return {k: walk(v) for k, v in node.items() if k not in _FIRECRAWL_UNSUPPORTED_KEYS}
         if isinstance(node, list):

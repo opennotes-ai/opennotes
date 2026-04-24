@@ -41,9 +41,13 @@ async def check_urls(
 
     async def one(url: str) -> tuple[str, WebRiskFinding]:
         async with sem:
+            params: dict[str, str | list[str]] = {
+                "uri": url,
+                "threatTypes": list(THREAT_TYPES),
+            }
             r = await httpx_client.get(
                 WEB_RISK_URL,
-                params=[("uri", url)] + [("threatTypes", t) for t in THREAT_TYPES],
+                params=params,
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=10.0,
             )

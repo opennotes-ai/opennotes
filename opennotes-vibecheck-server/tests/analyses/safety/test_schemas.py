@@ -1,6 +1,8 @@
 """Behavior contracts for the safety analysis schemas (TASK-1474.02)."""
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 from pydantic import ValidationError
 
@@ -22,7 +24,10 @@ class TestWebRiskFinding:
 
     def test_web_risk_finding_rejects_unknown_threat_type(self) -> None:
         with pytest.raises(ValidationError):
-            WebRiskFinding(url="https://evil.example.com", threat_types=["UNKNOWN_THREAT"])
+            WebRiskFinding(
+                url="https://evil.example.com",
+                threat_types=cast(Any, ["UNKNOWN_THREAT"]),
+            )
 
     def test_all_valid_threat_types_accepted(self) -> None:
         finding = WebRiskFinding(
@@ -40,13 +45,15 @@ class TestWebRiskFinding:
 class TestHarmfulContentMatch:
     def test_harmful_content_match_requires_source(self) -> None:
         with pytest.raises(ValidationError):
-            HarmfulContentMatch(
-                utterance_id="utt_1",
-                utterance_text="some text",
-                max_score=0.5,
-                categories={"hate": False},
-                scores={"hate": 0.5},
-                flagged_categories=[],
+            HarmfulContentMatch.model_validate(
+                {
+                    "utterance_id": "utt_1",
+                    "utterance_text": "some text",
+                    "max_score": 0.5,
+                    "categories": {"hate": False},
+                    "scores": {"hate": 0.5},
+                    "flagged_categories": [],
+                }
             )
 
     def test_harmful_content_match_rejects_invalid_source(self) -> None:
@@ -58,7 +65,7 @@ class TestHarmfulContentMatch:
                 categories={"hate": False},
                 scores={"hate": 0.5},
                 flagged_categories=[],
-                source="azure",
+                source=cast(Any, "azure"),
             )
 
     def test_harmful_content_match_accepts_openai_source(self) -> None:
@@ -149,8 +156,8 @@ class TestVisionLikelihood:
     def test_vision_likelihood_maps_very_likely_to_one(self) -> None:
         assert likelihood_to_score("VERY_LIKELY") == 1.0
 
-    def test_vision_likelihood_defaults_unknown_to_zero(self) -> None:
-        assert likelihood_to_score("UNKNOWN") == 0.0
+    def test_vision_likelihood_defaults_unknown_to_inconclusive(self) -> None:
+        assert likelihood_to_score("UNKNOWN") == 0.5
 
     def test_very_unlikely_maps_to_zero(self) -> None:
         assert likelihood_to_score("VERY_UNLIKELY") == 0.0

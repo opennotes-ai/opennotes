@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import asyncpg
 
@@ -37,7 +37,7 @@ async def upsert_cached(
 ) -> None:
     if not findings:
         return
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
+    expires_at = datetime.now(UTC) + timedelta(hours=ttl_hours)
     rows = [
         (url, json.dumps(f.model_dump()), expires_at)
         for url, f in findings.items()

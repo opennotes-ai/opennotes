@@ -40,8 +40,10 @@ def _get_access_token() -> str | None:
     """
     global _cached_credentials  # noqa: PLW0603
     try:
-        from google.auth import default as google_auth_default
-        from google.auth.transport.requests import Request as GoogleAuthRequest
+        from google.auth import default as google_auth_default  # noqa: PLC0415
+        from google.auth.transport.requests import (  # noqa: PLC0415
+            Request as GoogleAuthRequest,
+        )
     except ImportError:
         _logger.warning("google-auth not installed; cannot reach Fact Check API")
         return None
@@ -119,7 +121,7 @@ def _extract_matches(
     return matches
 
 
-async def check_known_misinformation(
+async def check_known_misinformation(  # noqa: PLR0911
     claim_text: str,
     *,
     httpx_client: httpx.AsyncClient,

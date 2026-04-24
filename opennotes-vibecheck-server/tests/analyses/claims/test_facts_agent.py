@@ -7,7 +7,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -16,7 +16,6 @@ from src.analyses.claims._claims_schemas import ClaimsReport, DedupedClaim
 from src.analyses.claims._factcheck_schemas import FactCheckMatch
 from src.analyses.claims.known_misinfo import check_known_misinformation
 from src.config import Settings
-
 
 # ---------------------------------------------------------------------------
 # Fake agent infrastructure
@@ -156,7 +155,6 @@ async def test_tool_failure_returns_empty_list_does_not_raise(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AC4: tool errors must not propagate — the tool returns [] on exception."""
-    import httpx
 
     from src.analyses.claims.facts_agent import (
         FactsAgentDeps,
@@ -198,7 +196,7 @@ async def test_tool_failure_returns_empty_list_does_not_raise(
     assert tool_fn is not None, "check_known_misinformation_tool not registered"
 
     class _FakeCtx:
-        deps = FactsAgentDeps(httpx_client=None)  # type: ignore[arg-type]
+        deps = FactsAgentDeps(httpx_client=cast(Any, None))
 
     returned = await tool_fn(_FakeCtx(), "some claim")
     assert returned == []

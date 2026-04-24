@@ -184,12 +184,13 @@ def configure_logfire(**configure_kwargs: Any) -> None:
     each matching value through `_sanitize` to preserve debugging context
     without leaking the credential.
     """
-    global _logfire_configured
+    global _logfire_configured  # noqa: PLW0603
     if _logfire_configured:
         return
     try:
-        import logfire
-        from src.utils.error_sanitizer import logfire_scrub_callback
+        import logfire  # noqa: PLC0415
+
+        from src.utils.error_sanitizer import logfire_scrub_callback  # noqa: PLC0415
     except Exception as exc:
         logging.getLogger(__name__).warning("logfire unavailable, skipping configure: %s", exc)
         return

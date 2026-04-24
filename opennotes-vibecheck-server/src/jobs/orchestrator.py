@@ -42,7 +42,6 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -55,7 +54,6 @@ from src.analyses.safety.moderation_slot import run_safety_moderation
 from src.analyses.safety.video_moderation_worker import run_video_moderation
 from src.analyses.safety.web_risk_worker import run_web_risk
 from src.analyses.schemas import ErrorCode, SectionSlot, SectionSlug, SectionState
-from src.analyses.slot_utterances import load_job_utterances
 from src.analyses.tone.flashpoint_slot import run_flashpoint
 from src.analyses.tone.scd_slot import run_scd
 from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
@@ -862,10 +860,8 @@ async def run_section_retry(
       2. If the slot's current attempt_id no longer matches
          `expected_slot_attempt_id`, or the slot is no longer `running`,
          a newer retry already claimed the slot. Return 200 no-op.
-      3. Run the per-slug analysis. Registered handlers get a payload
-         reconstructed from persisted `vibecheck_job_utterances` so a retry
-         after the original extraction can emit the same data shape as the
-         original fan-out.
+      3. Run the per-slug analysis. Registered handlers reload any persisted
+         inputs they need from `vibecheck_job_utterances`.
       4. `mark_slot_done` with `expected_task_attempt=job.attempt_id`.
          If the CAS fails (stale job attempt, or job moved terminal out
          from under us), we return 200 no-op — the newer owner will
@@ -911,9 +907,7 @@ async def run_section_retry(
                 if handler is None:
                     data = _empty_section_data(slug)
                 else:
-                    utterances = await load_job_utterances(pool, job_id)
-                    payload = SimpleNamespace(utterances=utterances)
-                    data = await handler(pool, job_id, task_attempt, payload, settings)
+                    data = await handler(pool, job_id, task_attempt, None, settings)
                 rows = await mark_slot_done(
                     pool,
                     job_id,
