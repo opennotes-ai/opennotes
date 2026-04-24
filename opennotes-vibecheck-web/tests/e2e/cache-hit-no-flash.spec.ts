@@ -140,6 +140,6 @@ test("AC2: cache-hit second submit shows no skeleton flash and resolves <500ms",
   const elapsedSinceSubmit = Date.now() - t0;
   expect(
     observed,
-    `Cache-hit content must reach 'done' on all 7 slots within 500ms after navigation (elapsed ${elapsedSinceSubmit}ms)`,
+    `Cache-hit content must reach 'done' on all 10 slots within 500ms after navigation (elapsed ${elapsedSinceSubmit}ms)`,
   ).toBe(true);
 });

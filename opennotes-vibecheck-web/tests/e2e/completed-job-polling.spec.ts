@@ -92,6 +92,15 @@ function sectionData(slug: string): Record<string, unknown> {
   if (slug === "safety__moderation") {
     return { harmful_content_matches: [] };
   }
+  if (slug === "safety__web_risk") {
+    return { findings: [] };
+  }
+  if (slug === "safety__image_moderation") {
+    return { matches: [] };
+  }
+  if (slug === "safety__video_moderation") {
+    return { matches: [] };
+  }
   if (slug === "tone_dynamics__flashpoint") {
     return { flashpoint_matches: [] };
   }

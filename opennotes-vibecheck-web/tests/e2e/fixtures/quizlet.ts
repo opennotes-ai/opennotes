@@ -19,6 +19,9 @@ export const LINKEDIN_BLOCKED_URL = "https://linkedin.com/feed/";
 
 export const ALL_SECTION_SLUGS = [
   "safety__moderation",
+  "safety__web_risk",
+  "safety__image_moderation",
+  "safety__video_moderation",
   "tone_dynamics__flashpoint",
   "tone_dynamics__scd",
   "facts_claims__dedup",
