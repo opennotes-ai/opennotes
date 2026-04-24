@@ -49,10 +49,10 @@ export async function GET(event: APIEvent): Promise<Response> {
   }
 
   if (!response.ok) {
-    return Response.json(
-      { detail: "Archive unavailable" },
-      { status: response.status },
-    );
+    return new Response("", {
+      status: response.status,
+      headers: ARCHIVE_HEADERS,
+    });
   }
 
   return new Response(await response.text(), {

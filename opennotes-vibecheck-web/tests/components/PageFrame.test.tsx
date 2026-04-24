@@ -90,6 +90,35 @@ describe("<PageFrame />", () => {
     expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
   });
 
+  it("falls from archived iframe to screenshot when archived loads blank", async () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl="https://cdn.example.com/shot.png"
+      />
+    ));
+
+    const archived = screen.getByTestId(
+      "page-frame-archived-iframe",
+    ) as HTMLIFrameElement;
+    Object.defineProperty(archived, "contentDocument", {
+      configurable: true,
+      value: {
+        body: { children: [], textContent: "" },
+        title: "",
+      },
+    });
+    archived.dispatchEvent(new Event("load"));
+
+    const img = (await screen.findByTestId(
+      "page-frame-screenshot",
+    )) as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("https://cdn.example.com/shot.png");
+    expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+  });
+
   it("manual screenshot mode renders the screenshot immediately", () => {
     render(() => (
       <PageFrame

@@ -52,6 +52,7 @@ export default function PageFrame(props: PageFrameProps) {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let archiveTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let iframeRef: HTMLIFrameElement | undefined;
+  let archivedIframeRef: HTMLIFrameElement | undefined;
   let currentUrl = props.url;
   let currentArchiveUrl = props.archivedPreviewUrl ?? null;
 
@@ -157,6 +158,19 @@ export default function PageFrame(props: PageFrameProps) {
   };
 
   const handleArchivedLoad = () => {
+    try {
+      const doc = archivedIframeRef?.contentDocument;
+      const bodyText = doc?.body?.textContent?.trim() ?? "";
+      const childCount = doc?.body?.children?.length ?? 0;
+      const title = doc?.title?.trim() ?? "";
+      if (!bodyText && childCount === 0 && !title) {
+        setArchivedFailed(true);
+        clearArchiveTimeout();
+        return;
+      }
+    } catch {
+      // If the browser denies inspection, keep the loaded archive visible.
+    }
     setArchivedLoaded(true);
     clearArchiveTimeout();
   };
@@ -199,6 +213,7 @@ export default function PageFrame(props: PageFrameProps) {
           sandbox="allow-same-origin"
           referrerpolicy="no-referrer"
           loading="lazy"
+          ref={archivedIframeRef}
           onLoad={handleArchivedLoad}
           onError={handleArchivedError}
           class="h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
