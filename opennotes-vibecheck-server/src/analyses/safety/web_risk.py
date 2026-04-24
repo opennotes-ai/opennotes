@@ -56,7 +56,7 @@ async def check_urls(
                         WEB_RISK_URL,
                         params=params,
                         headers={"Authorization": f"Bearer {token}"},
-                        timeout=10.0,
+                        timeout=20.0,
                     )
                 except httpx.HTTPError as exc:
                     obs.set_error_category("network")

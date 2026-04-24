@@ -51,7 +51,7 @@ async def moderate_texts_gcp(
                             "Content-Type": "application/json",
                         },
                         json={"document": {"type": "PLAIN_TEXT", "content": utt.text}},
-                        timeout=10.0,
+                        timeout=20.0,
                     )
                 except httpx.HTTPError as exc:
                     obs.set_error_category("network")

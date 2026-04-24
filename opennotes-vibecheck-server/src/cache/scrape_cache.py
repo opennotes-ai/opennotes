@@ -297,7 +297,7 @@ class SupabaseScrapeCache:
 
 async def _fetch_bytes(url: str) -> bytes | None:
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.get(url)
         if response.status_code >= 400:
             logger.warning(

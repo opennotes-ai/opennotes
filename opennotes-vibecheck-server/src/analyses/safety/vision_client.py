@@ -71,7 +71,7 @@ async def annotate_images(
                         "Content-Type": "application/json",
                     },
                     json=payload,
-                    timeout=20.0,
+                    timeout=40.0,
                 )
             except httpx.HTTPError as exc:
                 obs.set_error_category("network")
@@ -138,7 +138,7 @@ async def _retry_with_inline_bytes(
         return None
 
     try:
-        async with httpx_client.stream("GET", safe_url, timeout=15.0) as r:
+        async with httpx_client.stream("GET", safe_url, timeout=30.0) as r:
             if r.status_code >= 400:
                 return None
             chunks: list[bytes] = []
@@ -170,7 +170,7 @@ async def _retry_with_inline_bytes(
                     "Content-Type": "application/json",
                 },
                 json=payload,
-                timeout=20.0,
+                timeout=40.0,
             )
         except httpx.HTTPError as exc:
             obs.set_error_category("network")

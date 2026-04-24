@@ -84,7 +84,7 @@ async def run_facts_claims_known_misinfo(
             logger.warning("fact check tool failed for %r: %s", claim_text, exc)
             return []
 
-    async with httpx.AsyncClient(timeout=15.0) as hx:
+    async with httpx.AsyncClient(timeout=30.0) as hx:
         serializable_claims: list[Any] = []
         for claim in deduped_claims:
             if isinstance(claim, str):
