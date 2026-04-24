@@ -6,6 +6,7 @@ import {
   fireEvent,
   waitFor,
 } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import SectionGroup, { type SlugToSlots } from "./SectionGroup";
@@ -236,6 +237,78 @@ describe("SectionGroup", () => {
     expect(screen.queryByTestId("skeleton-tone_dynamics__scd")).toBeNull();
     expect(screen.getByTestId("fp-rendered")).toBeDefined();
     expect(screen.getByTestId("scd-rendered")).toBeDefined();
+  });
+
+  it("does not remount a done slot's rendered child when polling re-fires sections with the same attempt_id", () => {
+    // Regression: the analyze page polls ~1.5s and hands a freshly-parsed
+    // `sections` object to Sidebar → SectionGroup on every tick. Without
+    // memoization, the done-slot render function re-ran each tick, producing
+    // a new child DOM subtree and visibly flickering <img>/<iframe> children
+    // (mirrors the PageFrame iframe fix in PR #409).
+    const renderCount = vi.fn();
+    const [sections, setSections] = createSignal<SlugToSlots>({
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "attempt-stable",
+        data: { flashpoint_matches: [] },
+      },
+      tone_dynamics__scd: { state: "pending", attempt_id: "" },
+    });
+
+    const { container } = render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={sections()}
+        render={{
+          tone_dynamics__flashpoint: (data) => {
+            renderCount();
+            return (
+              <div data-testid="fp-body">
+                <span data-kind="marker">{String((data as { mark?: string }).mark ?? "")}</span>
+              </div>
+            );
+          },
+        }}
+      />
+    ));
+
+    const firstBody = container.querySelector('[data-testid="fp-body"]');
+    expect(firstBody).not.toBeNull();
+    expect(renderCount).toHaveBeenCalledTimes(1);
+
+    // Simulate a polling tick: brand-new object references, identical content,
+    // same attempt_id. The memo keyed on attempt_id should reuse the rendered
+    // subtree and the DOM node reference must survive.
+    setSections({
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "attempt-stable",
+        data: { flashpoint_matches: [] },
+      },
+      tone_dynamics__scd: { state: "pending", attempt_id: "" },
+    });
+
+    const secondBody = container.querySelector('[data-testid="fp-body"]');
+    expect(secondBody).toBe(firstBody);
+    expect(renderCount).toHaveBeenCalledTimes(1);
+
+    // Retry case: attempt_id changes -> memo should rebuild so new data shows.
+    setSections({
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "attempt-retry",
+        data: { flashpoint_matches: [], mark: "after-retry" },
+      },
+      tone_dynamics__scd: { state: "pending", attempt_id: "" },
+    });
+
+    const thirdBody = container.querySelector('[data-testid="fp-body"]');
+    expect(thirdBody).not.toBe(firstBody);
+    expect(renderCount).toHaveBeenCalledTimes(2);
+    expect(
+      container.querySelector('[data-kind="marker"]')?.textContent,
+    ).toBe("after-retry");
   });
 
   it("wraps done content in a reveal wrapper carrying the slot attempt id", () => {
