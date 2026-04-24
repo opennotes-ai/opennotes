@@ -32,17 +32,36 @@ __all__ = [
     "ACTIVE_JOBS",
     "CACHE_HITS",
     "CLOUD_TASKS_REDELIVERIES",
+    "EXTERNAL_API_CALLS",
+    "EXTERNAL_API_ERRORS",
+    "EXTERNAL_API_FLAGGED",
+    "EXTERNAL_API_LATENCY",
     "JOB_DURATION",
     "ORPHAN_SWEEPS",
     "SECTION_DURATION",
     "SECTION_FAILURES",
+    "SECTION_MEDIA_DROPPED",
     "SINGLE_FLIGHT_LOCK_WAITS",
     "ErrorType",
+    "ExternalAPI",
+    "ExternalAPIErrorCategory",
     "classify_error",
 ]
 
 
 ErrorType = Literal["timeout", "upstream", "extraction", "internal"]
+ExternalAPI = Literal["webrisk", "gcp_nl", "vision", "factcheck"]
+ExternalAPIErrorCategory = Literal[
+    "none",
+    "auth",
+    "timeout",
+    "rate_limited",
+    "upstream",
+    "network",
+    "invalid_response",
+    "extraction",
+    "internal",
+]
 
 
 JOB_DURATION = Histogram(
@@ -89,6 +108,37 @@ ORPHAN_SWEEPS = Counter(
 SINGLE_FLIGHT_LOCK_WAITS = Counter(
     "vibecheck_single_flight_lock_waits_total",
     "Times the POST /api/analyze advisory lock was contended on first attempt.",
+)
+
+EXTERNAL_API_CALLS = Counter(
+    "vibecheck_external_api_calls_total",
+    "External moderation/fact-check API calls by bounded provider name.",
+    labelnames=("api",),
+)
+
+EXTERNAL_API_ERRORS = Counter(
+    "vibecheck_external_api_errors_total",
+    "External API errors by bounded provider and category.",
+    labelnames=("api", "error_category"),
+)
+
+EXTERNAL_API_LATENCY = Histogram(
+    "vibecheck_external_api_latency_seconds",
+    "External API call latency by bounded provider name.",
+    labelnames=("api",),
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0),
+)
+
+EXTERNAL_API_FLAGGED = Counter(
+    "vibecheck_external_api_flagged_total",
+    "Findings flagged by each external moderation/fact-check provider.",
+    labelnames=("api",),
+)
+
+SECTION_MEDIA_DROPPED = Counter(
+    "vibecheck_section_media_dropped_total",
+    "Media URLs dropped by per-section caps.",
+    labelnames=("media_type",),
 )
 
 

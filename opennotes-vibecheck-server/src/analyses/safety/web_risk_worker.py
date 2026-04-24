@@ -4,6 +4,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+import logfire
 
 from src.analyses.safety.web_risk import check_urls
 from src.config import Settings
@@ -28,13 +29,21 @@ async def run_web_risk(
     urls = sorted(pool_urls)
     if not urls:
         return {"findings": []}
-    async with httpx.AsyncClient() as hx:
-        findings = await check_urls(
-            urls,
-            pool=pool,
-            httpx_client=hx,
-            ttl_hours=settings.WEB_RISK_CACHE_TTL_HOURS,
-        )
+    stats: dict[str, float] = {}
+    with logfire.span(
+        "vibecheck.section.web_risk",
+        url_count=len(urls),
+        cache_hit_rate=0.0,
+    ) as span:
+        async with httpx.AsyncClient() as hx:
+            findings = await check_urls(
+                urls,
+                pool=pool,
+                httpx_client=hx,
+                ttl_hours=settings.WEB_RISK_CACHE_TTL_HOURS,
+                stats=stats,
+            )
+        span.set_attribute("cache_hit_rate", stats.get("cache_hit_rate", 0.0))
     return {
         "findings": [
             f.model_dump() for f in findings.values() if f.threat_types

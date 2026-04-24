@@ -5,10 +5,12 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+import logfire
 
 from src.analyses.safety._schemas import ImageModerationMatch
 from src.analyses.safety.vision_client import annotate_images
 from src.config import Settings
+from src.monitoring_metrics import SECTION_MEDIA_DROPPED
 
 logger = logging.getLogger(__name__)
 
@@ -30,26 +32,33 @@ async def run_image_moderation(
         logger.info(
             "image moderation cap: processing=%d dropped=%d", len(capped), dropped
         )
-    if not capped:
-        return {"matches": []}
-    async with httpx.AsyncClient() as hx:
-        url_to_result = await annotate_images(
-            [img for _, img in capped], httpx_client=hx
-        )
-    matches: list[ImageModerationMatch] = []
-    for uid, img in capped:
-        result = url_to_result.get(img)
-        if result is None:
-            continue
-        matches.append(ImageModerationMatch(
-            utterance_id=uid,
-            image_url=img,
-            adult=result.adult,
-            violence=result.violence,
-            racy=result.racy,
-            medical=result.medical,
-            spoof=result.spoof,
-            flagged=result.flagged,
-            max_likelihood=result.max_likelihood,
-        ))
-    return {"matches": [m.model_dump() for m in matches]}
+        SECTION_MEDIA_DROPPED.labels(media_type="image").inc(dropped)
+    with logfire.span(
+        "vibecheck.section.image_moderation",
+        image_count=len(capped),
+        dropped_image_count=dropped,
+    ) as span:
+        if not capped:
+            return {"matches": []}
+        async with httpx.AsyncClient() as hx:
+            url_to_result = await annotate_images(
+                [img for _, img in capped], httpx_client=hx
+            )
+        matches: list[ImageModerationMatch] = []
+        for uid, img in capped:
+            result = url_to_result.get(img)
+            if result is None:
+                continue
+            matches.append(ImageModerationMatch(
+                utterance_id=uid,
+                image_url=img,
+                adult=result.adult,
+                violence=result.violence,
+                racy=result.racy,
+                medical=result.medical,
+                spoof=result.spoof,
+                flagged=result.flagged,
+                max_likelihood=result.max_likelihood,
+            ))
+        span.set_attribute("flagged_count", sum(1 for match in matches if match.flagged))
+        return {"matches": [m.model_dump() for m in matches]}

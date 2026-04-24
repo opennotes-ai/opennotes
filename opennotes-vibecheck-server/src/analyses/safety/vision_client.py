@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import httpx
 
 from src.analyses.safety._vision_likelihood import likelihood_to_score
+from src.monitoring import external_api_span
 from src.services.gcp_adc import CLOUD_PLATFORM_SCOPE, get_access_token
 from src.utils.url_security import InvalidURL, validate_public_http_url
 
@@ -61,28 +62,42 @@ async def annotate_images(
                 for url in batch
             ]
         }
-        r = await httpx_client.post(
-            ANNOTATE_URL,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=20.0,
-        )
-        if r.status_code == 429 or r.status_code >= 500:
-            raise VisionTransientError(f"vision {r.status_code}")
-        r.raise_for_status()
-        responses = r.json().get("responses") or []
-        for url, resp in zip(batch, responses, strict=False):
-            if not isinstance(resp, dict):
-                results[url] = None
-                continue
-            if resp.get("error") is not None:
-                failed_imageuri.append(url)
-                continue
-            annotation = resp.get("safeSearchAnnotation") or {}
-            results[url] = _build_result(annotation, threshold)
+        with external_api_span("vision", "images.annotate", request_count=len(batch)) as obs:
+            try:
+                r = await httpx_client.post(
+                    ANNOTATE_URL,
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=20.0,
+                )
+            except httpx.HTTPError as exc:
+                obs.set_error_category("network")
+                raise VisionTransientError("vision network") from exc
+            obs.set_response_status(r.status_code)
+            if r.status_code == 429:
+                obs.set_error_category("rate_limited")
+                raise VisionTransientError(f"vision {r.status_code}")
+            if r.status_code >= 500:
+                obs.set_error_category("upstream")
+                raise VisionTransientError(f"vision {r.status_code}")
+            r.raise_for_status()
+            responses = r.json().get("responses") or []
+            batch_flagged = 0
+            for url, resp in zip(batch, responses, strict=False):
+                if not isinstance(resp, dict):
+                    results[url] = None
+                    continue
+                if resp.get("error") is not None:
+                    failed_imageuri.append(url)
+                    continue
+                annotation = resp.get("safeSearchAnnotation") or {}
+                result = _build_result(annotation, threshold)
+                results[url] = result
+                batch_flagged += 1 if result.flagged else 0
+            obs.add_flagged(batch_flagged)
 
     for url in failed_imageuri:
         results[url] = await _retry_with_inline_bytes(
@@ -146,20 +161,32 @@ async def _retry_with_inline_bytes(
             }
         ]
     }
-    r = await httpx_client.post(
-        ANNOTATE_URL,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=20.0,
-    )
-    if r.status_code == 429 or r.status_code >= 500:
-        raise VisionTransientError(f"vision-inline {r.status_code}")
-    r.raise_for_status()
-    resp = (r.json().get("responses") or [{}])[0]
-    if resp.get("error") is not None:
-        return None
-    annotation = resp.get("safeSearchAnnotation") or {}
-    return _build_result(annotation, threshold)
+    with external_api_span("vision", "images.annotate_inline", request_count=1) as obs:
+        try:
+            r = await httpx_client.post(
+                ANNOTATE_URL,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=20.0,
+            )
+        except httpx.HTTPError as exc:
+            obs.set_error_category("network")
+            raise VisionTransientError("vision-inline network") from exc
+        obs.set_response_status(r.status_code)
+        if r.status_code == 429:
+            obs.set_error_category("rate_limited")
+            raise VisionTransientError(f"vision-inline {r.status_code}")
+        if r.status_code >= 500:
+            obs.set_error_category("upstream")
+            raise VisionTransientError(f"vision-inline {r.status_code}")
+        r.raise_for_status()
+        resp = (r.json().get("responses") or [{}])[0]
+        if resp.get("error") is not None:
+            return None
+        annotation = resp.get("safeSearchAnnotation") or {}
+        result = _build_result(annotation, threshold)
+        obs.add_flagged(1 if result.flagged else 0)
+        return result
