@@ -390,6 +390,41 @@ describe("AnalyzePage route", () => {
     ).toBe("done");
   });
 
+  it("renders partial jobs like completed analysis with failed-section retry controls", async () => {
+    renderAt("/analyze?job=job-partial&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(pollingHandles.length).toBeGreaterThan(0);
+    });
+
+    setPolledJobState(
+      makeJobState({
+        status: "partial" as JobState["status"],
+        error_code: "section_failure",
+        error_message: "Sections failed: safety__web_risk",
+        sections: {
+          safety__moderation: {
+            state: "done",
+            attempt_id: "done-attempt",
+            data: { harmful_content_matches: [] },
+          },
+          safety__web_risk: {
+            state: "failed",
+            attempt_id: "failed-attempt",
+            error: "Google Web Risk rejected URI mailto:hn@ycombinator.com",
+          },
+        } as unknown as JobState["sections"],
+      } as Partial<JobState>),
+    );
+
+    expect(await screen.findByTestId("analyze-layout")).not.toBeNull();
+    expect(screen.queryByTestId("job-failure-card")).toBeNull();
+    expect(screen.getByTestId("partial-failure-banner").textContent).toContain(
+      "Web Risk",
+    );
+    expect(screen.getByTestId("retry-safety__web_risk")).toBeDefined();
+  });
+
   it("does not render CachedBadge when JobState.cached=false", async () => {
     renderAt("/analyze?job=job-fresh&url=https://news.example.com/a");
 

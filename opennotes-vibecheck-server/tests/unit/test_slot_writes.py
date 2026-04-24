@@ -558,6 +558,16 @@ def _done_slot(data: dict[str, Any]) -> SectionSlot:
     )
 
 
+def _failed_slot(error: str) -> SectionSlot:
+    return SectionSlot(
+        state=SectionState.FAILED,
+        attempt_id=uuid4(),
+        error=error,
+        started_at=datetime(2026, 4, 22, 12, 0, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 4, 22, 12, 0, 1, tzinfo=UTC),
+    )
+
+
 def _minimal_slot_payloads() -> dict[SectionSlug, dict[str, Any]]:
     # Each payload matches the slot-level contract `maybe_finalize_job` expects:
     # slot.data is the fragment that contributes to its destination section in
@@ -987,3 +997,58 @@ async def test_finalize_upserts_cache_keyed_by_normalized_url_not_original(
             "SELECT url FROM vibecheck_analyses WHERE url = $1", original_url
         )
         assert cached_by_original is None
+
+
+async def test_maybe_finalize_job_marks_partial_when_web_risk_slot_failed(
+    db_pool,
+) -> None:
+    task_attempt = uuid4()
+    url = "https://example.com/partial-web-risk"
+    job_id = await _insert_job(db_pool, task_attempt, url=url)
+    done_slugs = [slug for slug in _ALL_SLUGS if slug is not SectionSlug.SAFETY_WEB_RISK]
+    await _seed_slots(db_pool, job_id, task_attempt, done_slugs)
+    rows = await write_slot(
+        db_pool,
+        job_id,
+        task_attempt,
+        SectionSlug.SAFETY_WEB_RISK,
+        _failed_slot("Google Web Risk rejected URI mailto:hn@ycombinator.com"),
+    )
+    assert rows == 1
+
+    finalized = await maybe_finalize_job(
+        db_pool, job_id, expected_task_attempt=task_attempt
+    )
+
+    assert finalized is True
+    async with db_pool.acquire() as conn:
+        job = await conn.fetchrow(
+            """
+            SELECT status, error_code, error_message, sidebar_payload, finished_at
+            FROM vibecheck_jobs
+            WHERE job_id = $1
+            """,
+            job_id,
+        )
+        cached = await conn.fetchrow(
+            "SELECT url, sidebar_payload FROM vibecheck_analyses WHERE url = $1",
+            url,
+        )
+    assert job is not None
+    assert job["status"] == "partial"
+    assert job["error_code"] == "section_failure"
+    assert job["error_message"] == "Sections failed: safety__web_risk"
+    assert job["finished_at"] is not None
+    assert cached is not None
+
+    payload = json.loads(job["sidebar_payload"]) if isinstance(
+        job["sidebar_payload"], str
+    ) else dict(job["sidebar_payload"])
+    assert payload["source_url"] == url
+    assert payload["web_risk"]["findings"] == []
+    assert payload["safety"]["harmful_content_matches"][0]["utterance_id"] == (
+        "utt-safety-001"
+    )
+    assert payload["tone_dynamics"]["scd"]["summary"] == (
+        "sentinel-scd-summary-narrative"
+    )

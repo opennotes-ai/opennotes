@@ -143,7 +143,7 @@
           "analyze"
         ],
         "summary": "Poll an async vibecheck job",
-        "description": "Read-only polling endpoint.\n\nReturns the current `JobState` including the `sections` dict (per-slot\nprogress), `sidebar_payload` once terminal, and a `next_poll_ms` hint.\n404 when `job_id` is not found. Rate-limited to\n`RATE_LIMIT_POLL_BURST` req/s + `RATE_LIMIT_POLL_SUSTAINED` req/min\nper `(ip, job_id)` tuple \u2014 exceeding either returns 429 with a\n`Retry-After` header.",
+        "description": "Read-only polling endpoint.\n\nReturns the current `JobState` including the `sections` dict (per-slot\nprogress), `sidebar_payload` once terminal, and a `next_poll_ms` hint.\n404 when `job_id` is not found. Rate-limited to\n`RATE_LIMIT_POLL_BURST` req/s + `RATE_LIMIT_POLL_SUSTAINED` req/min\nper `(ip, job_id)` tuple \u2014 exceeding either returns 429 with a\n`Retry-After` header.\n\nThe return type is `JobState | JSONResponse` because the 404 / 429 /\n503 error paths emit `_error_response(...)` whose body is the\ndocumented `{error_code, message}` shape rather than the FastAPI\ndefault `{\"detail\": ...}` (TASK-1473.38).",
         "operationId": "poll_api_analyze__job_id__get",
         "parameters": [
           {
@@ -187,7 +187,7 @@
           "analyze"
         ],
         "summary": "Retry Section",
-        "description": "Retry one failed slot of a terminal job.\n\nGate order (strict \u2014 each step assumes the prior one passed):\n  1. Job must exist (404 otherwise).\n  2. Utterances must have been extracted (409 otherwise \u2014 retry is\n     meaningless if extraction itself failed; the user should resubmit).\n  3. Job status must be terminal (`done`/`failed`) \u2014 running phases\n     get 409 `cannot_retry_while_running`.\n  4. The requested slot must exist and be in `failed` state.\n  5. CAS on the slot's prior attempt_id; a concurrent click loses\n     with 409 `concurrent_retry_already_claimed`.\n  6. Post-CAS enqueue. On failure revert the slot to `failed` and\n     flip the job back to `failed/internal` \u2014 the user sees a stable\n     error card instead of a phantom `analyzing` state.",
+        "description": "Retry one failed slot of a terminal job.\n\nGate order (strict \u2014 each step assumes the prior one passed):\n  1. Job must exist (404 otherwise).\n  2. Utterances must have been extracted (409 otherwise \u2014 retry is\n     meaningless if extraction itself failed; the user should resubmit).\n  3. Job status must be terminal (`done`/`partial`/`failed`) \u2014 running phases\n     get 409 `cannot_retry_while_running`.\n  4. The requested slot must exist and be in `failed` state.\n  5. CAS on the slot's prior attempt_id; a concurrent click loses\n     with 409 `concurrent_retry_already_claimed`.\n  6. Post-CAS enqueue. On failure revert the slot to `failed` and\n     flip the job back to `failed/internal` \u2014 the user sees a stable\n     error card instead of a phantom `analyzing` state.",
         "operationId": "retry_section_api_analyze__job_id__retry__slug__post",
         "parameters": [
           {
@@ -366,6 +366,23 @@
           },
           "410": {
             "description": "Always \u2014 this route is a placeholder so openapi-typescript emits matching JobState/SectionSlot/SectionSlug/etc. type aliases. TASK-1473.14 replaces it with the real polling endpoint."
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Metrics",
+        "description": "Prometheus scrape target gated behind OIDC (TASK-1473.37).\n\nThe previous `app.mount(\"/metrics\", make_asgi_app())` exposed job\nthroughput, error counts by host, single-flight contention, and\nother operational signals to anyone on the internet whenever Cloud\nRun was configured with `--allow-unauthenticated`. We share the\nsame OIDC dependency the internal worker uses so a misconfigured\nCloud Run revision still rejects unsigned scrape attempts.",
+        "operationId": "metrics_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
           }
         }
       }
@@ -554,6 +571,7 @@
           "unsupported_site",
           "upstream_error",
           "extraction_failed",
+          "section_failure",
           "timeout",
           "rate_limited",
           "internal"
@@ -744,7 +762,8 @@
           },
           "utterance_text": {
             "type": "string",
-            "title": "Utterance Text"
+            "title": "Utterance Text",
+            "default": ""
           },
           "max_score": {
             "type": "number",
@@ -777,20 +796,19 @@
               "openai",
               "gcp"
             ],
-            "title": "Source"
+            "title": "Source",
+            "default": "openai"
           }
         },
         "type": "object",
         "required": [
           "utterance_id",
-          "utterance_text",
           "max_score",
           "categories",
-          "scores",
-          "source"
+          "scores"
         ],
         "title": "HarmfulContentMatch",
-        "description": "A single flagged utterance from a content moderation API."
+        "description": "A single flagged utterance from a content moderation API.\n\n`utterance_text` and `source` default so `sidebar_payload` blobs\nwritten before these fields existed (pre PR #411) still deserialize\nwhen `GET /api/analyze/{job_id}` reads them. New writes always\npopulate both (see `jobs/finalize.py` and `moderation_slot.py`)."
       },
       "ImageModerationMatch": {
         "properties": {
@@ -1002,6 +1020,7 @@
           "extracting",
           "analyzing",
           "done",
+          "partial",
           "failed"
         ],
         "title": "JobStatus",

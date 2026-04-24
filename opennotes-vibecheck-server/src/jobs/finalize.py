@@ -1,13 +1,14 @@
-"""Job finalization: assemble SidebarPayload once every slot is done.
+"""Job finalization: assemble SidebarPayload once every slot is terminal.
 
 `maybe_finalize_job` is safe to call after any slot write. It takes a
 row-level `SELECT FOR UPDATE` lock on the `vibecheck_jobs` row so that
 concurrent finalizers serialize and slot writers block until finalize
 commits — the previous `pg_advisory_xact_lock` was not held by slot
 writers and therefore could not prevent half-merged snapshots (codex W1
-P1.4). If every slot is `done`, finalize assembles a `SidebarPayload`
-from the slot fragments and UPSERTs into `vibecheck_analyses` (the
-legacy 72h cache).
+P1.4). If every slot is `done` or `failed`, finalize assembles a
+`SidebarPayload` from successful slot fragments, fills failed sections with
+neutral defaults, and UPSERTs into `vibecheck_analyses` (the legacy 72h
+cache).
 """
 from __future__ import annotations
 
@@ -26,8 +27,10 @@ from src.analyses.safety._schemas import (
     WebRiskFinding,
 )
 from src.analyses.schemas import (
+    ErrorCode,
     FactsClaimsSection,
     ImageModerationSection,
+    JobStatus,
     OpinionsSection,
     PageKind,
     SafetySection,
@@ -41,6 +44,7 @@ from src.analyses.schemas import (
 )
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
+from src.jobs.section_defaults import empty_section_data
 
 _CACHE_TTL = timedelta(hours=72)
 
@@ -64,25 +68,30 @@ SET sidebar_payload = EXCLUDED.sidebar_payload,
     expires_at = EXCLUDED.expires_at
 """
 
-# After UPSERT into the legacy 72h cache, flip the job row itself to
-# `done`. Without this transition the poll endpoint would surface the
+# After UPSERT into the legacy 72h cache, flip the job row itself to a
+# terminal status. Without this transition the poll endpoint would surface the
 # job as `analyzing` indefinitely even though every slot completed and
 # `vibecheck_analyses` already carries the assembled SidebarPayload
 # (TASK-1473.34). Guarded on attempt_id and the same non-terminal status
 # set the rest of finalize trusts so a concurrent retry rotation cannot
 # clobber a job we no longer own.
-_MARK_JOB_DONE_SQL = """
+_MARK_JOB_TERMINAL_SQL = """
 UPDATE vibecheck_jobs
-SET status = 'done',
-    sidebar_payload = $2::jsonb,
+SET status = $2::text,
+    sidebar_payload = $3::jsonb,
+    error_code = $4,
+    error_message = $5,
+    error_host = NULL,
     finished_at = now(),
     updated_at = now()
 WHERE job_id = $1
-  AND attempt_id = $3
+  AND attempt_id = $6
   AND status IN ('pending', 'extracting', 'analyzing')
 """
 
 _NON_TERMINAL_STATUSES = frozenset({"pending", "extracting", "analyzing"})
+_TERMINAL_SLOT_STATES = frozenset({SectionState.DONE, SectionState.FAILED})
+_FINALIZED_STATUSES = frozenset({JobStatus.DONE.value, JobStatus.PARTIAL.value})
 
 
 def _load_sections(raw: Any) -> dict[SectionSlug, SectionSlot]:
@@ -113,7 +122,13 @@ def _assemble_payload(
     merge rules here are the only place we reconcile slot-level shapes with
     the section-level schemas that `SidebarPayload` requires.
     """
-    safety_data = sections[SectionSlug.SAFETY_MODERATION].data or {}
+    def data_for(slug: SectionSlug) -> dict[str, Any]:
+        slot = sections.get(slug)
+        if slot is None or slot.state != SectionState.DONE or slot.data is None:
+            return empty_section_data(slug)
+        return slot.data
+
+    safety_data = data_for(SectionSlug.SAFETY_MODERATION)
     raw_matches = safety_data.get("harmful_content_matches", [])
     validated_matches: list[HarmfulContentMatch] = []
     for raw_match in raw_matches:
@@ -127,33 +142,28 @@ def _assemble_payload(
 
     # TASK-1474: three new safety sections carry their own shape into the
     # sidebar. Any slug not registered with a handler still returns the
-    # default-empty stub (from _empty_section_data), which shapes validate.
-    web_risk_data = sections.get(SectionSlug.SAFETY_WEB_RISK)
-    web_risk_findings = (
-        (web_risk_data.data or {}).get("findings", []) if web_risk_data else []
-    )
+    # default-empty stub, which shapes validate.
+    web_risk_findings = data_for(SectionSlug.SAFETY_WEB_RISK).get("findings", [])
     web_risk = WebRiskSection(
         findings=[WebRiskFinding.model_validate(f) for f in web_risk_findings]
     )
 
-    image_mod_data = sections.get(SectionSlug.SAFETY_IMAGE_MODERATION)
-    image_mod_matches = (
-        (image_mod_data.data or {}).get("matches", []) if image_mod_data else []
+    image_mod_matches = data_for(SectionSlug.SAFETY_IMAGE_MODERATION).get(
+        "matches", []
     )
     image_moderation = ImageModerationSection(
         matches=[ImageModerationMatch.model_validate(m) for m in image_mod_matches]
     )
 
-    video_mod_data = sections.get(SectionSlug.SAFETY_VIDEO_MODERATION)
-    video_mod_matches = (
-        (video_mod_data.data or {}).get("matches", []) if video_mod_data else []
+    video_mod_matches = data_for(SectionSlug.SAFETY_VIDEO_MODERATION).get(
+        "matches", []
     )
     video_moderation = VideoModerationSection(
         matches=[VideoModerationMatch.model_validate(m) for m in video_mod_matches]
     )
 
-    flashpoint_data = sections[SectionSlug.TONE_DYNAMICS_FLASHPOINT].data or {}
-    scd_data = sections[SectionSlug.TONE_DYNAMICS_SCD].data or {}
+    flashpoint_data = data_for(SectionSlug.TONE_DYNAMICS_FLASHPOINT)
+    scd_data = data_for(SectionSlug.TONE_DYNAMICS_SCD)
     tone = ToneDynamicsSection(
         scd=SCDReport.model_validate(scd_data["scd"]),
         flashpoint_matches=[
@@ -162,8 +172,8 @@ def _assemble_payload(
         ],
     )
 
-    dedup_data = sections[SectionSlug.FACTS_CLAIMS_DEDUP].data or {}
-    known_data = sections[SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO].data or {}
+    dedup_data = data_for(SectionSlug.FACTS_CLAIMS_DEDUP)
+    known_data = data_for(SectionSlug.FACTS_CLAIMS_KNOWN_MISINFO)
     facts = FactsClaimsSection(
         claims_report=ClaimsReport.model_validate(dedup_data["claims_report"]),
         known_misinformation=[
@@ -172,8 +182,8 @@ def _assemble_payload(
         ],
     )
 
-    sentiment_data = sections[SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT].data or {}
-    subjective_data = sections[SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE].data or {}
+    sentiment_data = data_for(SectionSlug.OPINIONS_SENTIMENTS_SENTIMENT)
+    subjective_data = data_for(SectionSlug.OPINIONS_SENTIMENTS_SUBJECTIVE)
     opinions = OpinionsSection(
         opinions_report=OpinionsReport(
             sentiment_stats=sentiment_data["sentiment_stats"],
@@ -203,14 +213,14 @@ async def maybe_finalize_job(  # noqa: PLR0911
     *,
     expected_task_attempt: UUID,
 ) -> bool:
-    """Finalize the job if every slot is done, serialized with slot writers.
+    """Finalize the job if every slot is terminal, serialized with slot writers.
 
     Returns True iff a SidebarPayload was assembled and upserted into
     `vibecheck_analyses` (also True on an idempotent re-finalize where the
     cache row already existed). Returns False when any slot is still
-    pending/running/failed, when the job's `attempt_id` no longer matches
-    the caller's expected envelope, or when the job has already flipped
-    to a terminal status.
+    pending/running, when the job's `attempt_id` no longer matches the
+    caller's expected envelope, or when the job has already flipped to an
+    unhandled terminal status.
 
     **Locking strategy (spec §"Finalize lock consistency", codex P1.4).**
     The load is `SELECT ... FOR UPDATE`, which takes a row-level lock on
@@ -232,10 +242,10 @@ async def maybe_finalize_job(  # noqa: PLR0911
     rotated the job's `attempt_id` after this worker launched the
     finalizer, the stale finalize aborts without touching the cache.
     A job whose status moved to `failed` returns False — the error path or
-    sweeper owns those rows. A job that is already `done` (because finalize
-    already ran successfully) is treated as an idempotent re-finalize and
-    returns True without re-touching either the cache or the job row
-    (TASK-1473.34).
+    sweeper owns those rows. A job that is already `done` or `partial`
+    (because finalize already ran successfully) is treated as an idempotent
+    re-finalize and returns True without re-touching either the cache or the
+    job row (TASK-1473.34).
     """
     async with db.acquire() as conn, conn.transaction():
         row = await conn.fetchrow(_LOAD_SQL, job_id)
@@ -244,7 +254,7 @@ async def maybe_finalize_job(  # noqa: PLR0911
 
         if row["attempt_id"] != expected_task_attempt:
             return False
-        if row["status"] == "done" and row["already_finalized"]:
+        if row["status"] in _FINALIZED_STATUSES and row["already_finalized"]:
             return True
         if row["status"] not in _NON_TERMINAL_STATUSES:
             return False
@@ -252,8 +262,19 @@ async def maybe_finalize_job(  # noqa: PLR0911
         sections = _load_sections(row["sections"])
         if len(sections) < len(SectionSlug):
             return False
-        if any(s.state != SectionState.DONE for s in sections.values()):
+        if any(s.state not in _TERMINAL_SLOT_STATES for s in sections.values()):
             return False
+
+        failed_slugs = [
+            slug for slug in SectionSlug if sections[slug].state == SectionState.FAILED
+        ]
+        next_status = JobStatus.PARTIAL if failed_slugs else JobStatus.DONE
+        error_code = ErrorCode.SECTION_FAILURE.value if failed_slugs else None
+        error_message = (
+            "Sections failed: " + ", ".join(slug.value for slug in failed_slugs)
+            if failed_slugs
+            else None
+        )
 
         payload = _assemble_payload(row["url"], sections)
         payload_json = json.dumps(payload.model_dump(mode="json"))
@@ -265,9 +286,12 @@ async def maybe_finalize_job(  # noqa: PLR0911
             expires_at,
         )
         await conn.execute(
-            _MARK_JOB_DONE_SQL,
+            _MARK_JOB_TERMINAL_SQL,
             job_id,
+            next_status.value,
             payload_json,
+            error_code,
+            error_message,
             expected_task_attempt,
         )
         return True

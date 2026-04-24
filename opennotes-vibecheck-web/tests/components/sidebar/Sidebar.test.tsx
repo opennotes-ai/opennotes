@@ -172,4 +172,33 @@ describe("<Sidebar /> payload synthesis fallback", () => {
       screen.getByTestId("report-safety__video_moderation").textContent,
     ).toContain("1.0s");
   });
+
+  it("surfaces failed section names on partial jobs while keeping retry controls", () => {
+    const sections = {
+      safety__web_risk: {
+        state: "failed",
+        attempt_id: "failed-attempt",
+        error: "Google Web Risk rejected URI mailto:hn@ycombinator.com",
+      },
+      safety__moderation: {
+        state: "done",
+        attempt_id: "done-attempt",
+        data: { harmful_content_matches: [] },
+      },
+    } as unknown as JobState["sections"];
+
+    render(() => (
+      <Sidebar
+        sections={sections}
+        payload={makePayload()}
+        jobStatus={"partial" as JobState["status"]}
+        onRetry={() => undefined}
+      />
+    ));
+
+    const banner = screen.getByTestId("partial-failure-banner");
+    expect(banner.textContent).toContain("Web Risk");
+    expect(screen.getByTestId("retry-safety__web_risk")).toBeDefined();
+    expect(getSlotState("safety__moderation")).toBe("done");
+  });
 });

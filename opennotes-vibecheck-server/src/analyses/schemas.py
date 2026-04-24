@@ -81,6 +81,7 @@ class JobStatus(StrEnum):
     EXTRACTING = "extracting"
     ANALYZING = "analyzing"
     DONE = "done"
+    PARTIAL = "partial"
     FAILED = "failed"
 
 
@@ -92,6 +93,7 @@ class ErrorCode(StrEnum):
     UNSUPPORTED_SITE = "unsupported_site"
     UPSTREAM_ERROR = "upstream_error"
     EXTRACTION_FAILED = "extraction_failed"
+    SECTION_FAILURE = "section_failure"
     TIMEOUT = "timeout"
     RATE_LIMITED = "rate_limited"
     INTERNAL = "internal"

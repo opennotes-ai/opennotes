@@ -320,6 +320,23 @@ async def test_retry_on_failed_job_with_failed_slot_also_allowed(
     assert enqueue_section_mock.await_count == 1
 
 
+async def test_retry_on_partial_job_with_failed_slot_also_allowed(
+    client: httpx.AsyncClient,
+    db_pool: Any,
+    enqueue_section_mock: AsyncMock,
+) -> None:
+    """A partial job is terminal and can retry its failed section."""
+    slug = SectionSlug.SAFETY_WEB_RISK
+    job_id, _ = await _insert_job_with_slot(
+        db_pool, job_status="partial", slug=slug, slot_state="failed"
+    )
+
+    resp = await client.post(f"/api/analyze/{job_id}/retry/{slug.value}")
+
+    assert resp.status_code == 202, resp.text
+    assert enqueue_section_mock.await_count == 1
+
+
 async def test_retry_on_done_job_refreshes_heartbeat(
     client: httpx.AsyncClient,
     db_pool: Any,

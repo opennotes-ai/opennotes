@@ -520,6 +520,8 @@ describe("analyzeUrl", () => {
     const { clampErrorCode, PUBLIC_ERROR_CODES } = await import(
       "./api-client.server"
     );
+    expect(PUBLIC_ERROR_CODES).toContain("unsafe_url");
+    expect(PUBLIC_ERROR_CODES).toContain("section_failure");
     for (const code of PUBLIC_ERROR_CODES) {
       expect(clampErrorCode(code)).toBe(code);
     }

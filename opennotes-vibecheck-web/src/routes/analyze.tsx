@@ -15,6 +15,7 @@ const ALL_ERROR_CODES: readonly ErrorCode[] = [
   "unsupported_site",
   "upstream_error",
   "extraction_failed",
+  "section_failure",
   "timeout",
   "rate_limited",
   "internal",
