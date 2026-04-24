@@ -167,7 +167,7 @@ describe("<Sidebar /> payload synthesis fallback", () => {
     );
     expect(
       screen.getByTestId("report-safety__image_moderation").textContent,
-    ).toContain("80%");
+    ).not.toContain("80%");
     expect(
       screen.getByTestId("report-safety__video_moderation").textContent,
     ).toContain("1.0s");

@@ -39,6 +39,7 @@ paths call them directly.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -49,8 +50,18 @@ from src.analyses.claims.dedupe_slot import run_claims_dedup
 from src.analyses.claims.facts_agent import run_facts_claims_known_misinfo
 from src.analyses.opinions.sentiment_slot import run_sentiment
 from src.analyses.opinions.subjective_slot import run_subjective
+from src.analyses.safety._schemas import (
+    HarmfulContentMatch,
+    ImageModerationMatch,
+    VideoModerationMatch,
+    WebRiskFinding,
+)
 from src.analyses.safety.image_moderation_worker import run_image_moderation
 from src.analyses.safety.moderation_slot import run_safety_moderation
+from src.analyses.safety.recommendation_agent import (
+    SafetyRecommendationInputs,
+    run_safety_recommendation,
+)
 from src.analyses.safety.video_moderation_worker import run_video_moderation
 from src.analyses.safety.web_risk_worker import run_web_risk
 from src.analyses.schemas import ErrorCode, SectionSlot, SectionSlug, SectionState
@@ -168,6 +179,21 @@ UPDATE vibecheck_jobs
 SET heartbeat_at = now()
 WHERE job_id = $1
   AND attempt_id = $2
+"""
+
+_LOAD_SAFETY_SECTIONS_SQL = """
+SELECT sections
+FROM vibecheck_jobs
+WHERE job_id = $1
+  AND attempt_id = $2
+"""
+
+_WRITE_SAFETY_RECOMMENDATION_SQL = """
+UPDATE vibecheck_jobs
+SET safety_recommendation = $2::jsonb,
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $3
 """
 
 
@@ -547,6 +573,112 @@ async def _run_all_sections(
     )
 
 
+def _parse_sections(raw: Any) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if isinstance(raw, str):
+        return json.loads(raw)
+    return dict(raw)
+
+
+def _done_slot_data(
+    sections: dict[str, Any],
+    slug: SectionSlug,
+    unavailable_inputs: list[str],
+    unavailable_name: str,
+) -> dict[str, Any]:
+    raw = sections.get(slug.value)
+    if raw is None:
+        unavailable_inputs.append(unavailable_name)
+        return {}
+    slot = SectionSlot.model_validate(raw)
+    if slot.state != SectionState.DONE or slot.data is None:
+        unavailable_inputs.append(unavailable_name)
+        return {}
+    return slot.data
+
+
+def _build_safety_recommendation_inputs(
+    sections: dict[str, Any],
+) -> SafetyRecommendationInputs:
+    unavailable_inputs: list[str] = []
+    moderation_data = _done_slot_data(
+        sections,
+        SectionSlug.SAFETY_MODERATION,
+        unavailable_inputs,
+        "moderation",
+    )
+    web_risk_data = _done_slot_data(
+        sections,
+        SectionSlug.SAFETY_WEB_RISK,
+        unavailable_inputs,
+        "web_risk",
+    )
+    image_data = _done_slot_data(
+        sections,
+        SectionSlug.SAFETY_IMAGE_MODERATION,
+        unavailable_inputs,
+        "image_moderation",
+    )
+    video_data = _done_slot_data(
+        sections,
+        SectionSlug.SAFETY_VIDEO_MODERATION,
+        unavailable_inputs,
+        "video_moderation",
+    )
+    return SafetyRecommendationInputs(
+        harmful_content_matches=[
+            HarmfulContentMatch.model_validate(match)
+            for match in moderation_data.get("harmful_content_matches", [])
+        ],
+        web_risk_findings=[
+            WebRiskFinding.model_validate(finding)
+            for finding in web_risk_data.get("findings", [])
+        ],
+        image_moderation_matches=[
+            ImageModerationMatch.model_validate(match)
+            for match in image_data.get("matches", [])
+        ],
+        video_moderation_matches=[
+            VideoModerationMatch.model_validate(match)
+            for match in video_data.get("matches", [])
+        ],
+        unavailable_inputs=unavailable_inputs,
+    )
+
+
+async def _run_safety_recommendation_step(
+    pool: Any,
+    job_id: UUID,
+    task_attempt: UUID,
+    settings: Settings,
+) -> None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(_LOAD_SAFETY_SECTIONS_SQL, job_id, task_attempt)
+    if row is None:
+        return
+
+    try:
+        inputs = _build_safety_recommendation_inputs(_parse_sections(row["sections"]))
+        recommendation = await run_safety_recommendation(inputs, settings)
+    except Exception:
+        logger.exception(
+            "safety recommendation step failed for job %s attempt %s",
+            job_id,
+            task_attempt,
+        )
+        return
+
+    recommendation_json = json.dumps(recommendation.model_dump(mode="json"))
+    async with pool.acquire() as conn:
+        await conn.execute(
+            _WRITE_SAFETY_RECOMMENDATION_SQL,
+            job_id,
+            recommendation_json,
+            task_attempt,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Pipeline body.
 # ---------------------------------------------------------------------------
@@ -614,6 +746,8 @@ async def _run_pipeline(
         pool, job_id, task_attempt, payload, settings,
         test_fail_slug=test_fail_slug,
     )
+
+    await _run_safety_recommendation_step(pool, job_id, task_attempt, settings)
 
     # Finalize: UPSERT the sidebar_payload cache if every slot is done.
     # When finalize returns False the job is intentionally NOT cached yet

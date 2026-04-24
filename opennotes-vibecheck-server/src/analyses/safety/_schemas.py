@@ -7,9 +7,23 @@ these sub-schemas into the final `SidebarPayload`.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+class SafetyLevel(StrEnum):
+    SAFE = "safe"
+    CAUTION = "caution"
+    UNSAFE = "unsafe"
+
+
+class SafetyRecommendation(BaseModel):
+    level: SafetyLevel
+    rationale: str
+    top_signals: list[str] = Field(default_factory=list)
+    unavailable_inputs: list[str] = Field(default_factory=list)
 
 
 class HarmfulContentMatch(BaseModel):

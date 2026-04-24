@@ -59,7 +59,7 @@ describe("<SafetyModerationReport />", () => {
     expect(screen.getByText("This is the exact harmful sentence.")).toBeDefined();
   });
 
-  it("groups matches by provider with visible labels", () => {
+  it("groups matches by neutral moderator labels", () => {
     const matches: HarmfulContentMatch[] = [
       {
         utterance_id: "utt-1",
@@ -86,9 +86,11 @@ describe("<SafetyModerationReport />", () => {
     const labels = screen
       .getAllByTestId("safety-provider-label")
       .map((node) => node.textContent);
-    expect(labels).toEqual(["OpenAI moderation", "Google Natural Language"]);
+    expect(labels).toEqual(["Moderator A", "Moderator B"]);
     expect(screen.getByText("OpenAI provider sentence.")).toBeDefined();
     expect(screen.getByText("GCP provider sentence.")).toBeDefined();
+    expect(screen.getByText("82%")).toBeDefined();
+    expect(screen.queryByText("76%")).toBeNull();
   });
 });
 
@@ -128,7 +130,7 @@ describe("<ImageModerationReport />", () => {
     );
   });
 
-  it("renders a thumbnail, flagged state, categories, and max likelihood", () => {
+  it("renders a thumbnail, flagged state, and categories without max likelihood", () => {
     const matches: ImageModerationMatch[] = [
       {
         utterance_id: "utt-1",
@@ -153,7 +155,10 @@ describe("<ImageModerationReport />", () => {
     expect(screen.getByTestId("image-moderation-category").textContent).toBe(
       "adult",
     );
-    expect(screen.getByTestId("image-moderation-max").textContent).toBe("80%");
+    expect(screen.queryByTestId("image-moderation-max")).toBeNull();
+    expect(screen.getByTestId("report-safety__image_moderation").textContent).not.toContain(
+      "80%",
+    );
   });
 });
 

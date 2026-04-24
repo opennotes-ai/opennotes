@@ -23,6 +23,7 @@ from src.analyses.opinions._schemas import OpinionsReport
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
+    SafetyRecommendation,
     VideoModerationMatch,
     WebRiskFinding,
 )
@@ -54,6 +55,7 @@ _CACHE_TTL = timedelta(hours=72)
 # drifted from the worker's expected envelope before assembling + UPSERTing.
 _LOAD_SQL = """
 SELECT url, normalized_url, sections, attempt_id, status,
+       safety_recommendation,
        sidebar_payload IS NOT NULL AS already_finalized
 FROM vibecheck_jobs
 WHERE job_id = $1
@@ -115,6 +117,7 @@ def _load_sections(raw: Any) -> dict[SectionSlug, SectionSlot]:
 def _assemble_payload(
     url: str,
     sections: dict[SectionSlug, SectionSlot],
+    safety_recommendation: Any | None = None,
 ) -> SidebarPayload:
     """Compose SidebarPayload from slot fragments.
 
@@ -138,7 +141,19 @@ def _assemble_payload(
             else raw_match
         )
         validated_matches.append(HarmfulContentMatch.model_validate(match_data))
-    safety = SafetySection(harmful_content_matches=validated_matches)
+    recommendation = (
+        SafetyRecommendation.model_validate(
+            json.loads(safety_recommendation)
+            if isinstance(safety_recommendation, str)
+            else safety_recommendation
+        )
+        if safety_recommendation is not None
+        else None
+    )
+    safety = SafetySection(
+        harmful_content_matches=validated_matches,
+        recommendation=recommendation,
+    )
 
     # TASK-1474: three new safety sections carry their own shape into the
     # sidebar. Any slug not registered with a handler still returns the
@@ -276,7 +291,11 @@ async def maybe_finalize_job(  # noqa: PLR0911
             else None
         )
 
-        payload = _assemble_payload(row["url"], sections)
+        payload = _assemble_payload(
+            row["url"],
+            sections,
+            row["safety_recommendation"],
+        )
         payload_json = json.dumps(payload.model_dump(mode="json"))
         expires_at = datetime.now(UTC) + _CACHE_TTL
         await conn.execute(

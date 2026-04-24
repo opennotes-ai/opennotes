@@ -401,6 +401,127 @@ describe("SectionGroup", () => {
     expect(html).not.toMatch(/\bborder-l\b/);
     expect(html).not.toMatch(/\bborder-l-2\b/);
   });
+
+  it("collapses pending slots and exposes an accessible toggle", async () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{ tone_dynamics__flashpoint: { state: "pending", attempt_id: "" } }}
+        render={{}}
+      />
+    ));
+
+    const toggle = screen.getByTestId(
+      "slot-toggle-tone_dynamics__flashpoint",
+    );
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    await fireEvent.keyDown(toggle, { key: "Enter" });
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("collapses done slots when their data is empty", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "a1",
+            data: { flashpoint_matches: [] },
+          },
+        }}
+        render={{
+          tone_dynamics__flashpoint: () => <div data-testid="fp-rendered" />,
+        }}
+        emptinessChecks={{
+          tone_dynamics__flashpoint: (data) =>
+            ((data as { flashpoint_matches?: unknown[] }).flashpoint_matches ?? [])
+              .length === 0,
+        }}
+      />
+    ));
+
+    expect(
+      screen
+        .getByTestId("slot-toggle-tone_dynamics__flashpoint")
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(screen.queryByTestId("fp-rendered")).toBeNull();
+  });
+
+  it("opens done slots when their data is non-empty", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "a1",
+            data: { flashpoint_matches: [{ reasoning: "heated exchange" }] },
+          },
+        }}
+        render={{
+          tone_dynamics__flashpoint: () => <div data-testid="fp-rendered" />,
+        }}
+        emptinessChecks={{
+          tone_dynamics__flashpoint: (data) =>
+            ((data as { flashpoint_matches?: unknown[] }).flashpoint_matches ?? [])
+              .length === 0,
+        }}
+      />
+    ));
+
+    expect(
+      screen
+        .getByTestId("slot-toggle-tone_dynamics__flashpoint")
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(screen.getByTestId("fp-rendered")).toBeDefined();
+  });
+
+  it("keeps a user toggle sticky across polling data changes", async () => {
+    const [sections, setSections] = createSignal<SlugToSlots>({
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "a1",
+        data: { flashpoint_matches: [] },
+      },
+    });
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={sections()}
+        render={{
+          tone_dynamics__flashpoint: () => <div data-testid="fp-rendered" />,
+        }}
+        emptinessChecks={{
+          tone_dynamics__flashpoint: (data) =>
+            ((data as { flashpoint_matches?: unknown[] }).flashpoint_matches ?? [])
+              .length === 0,
+        }}
+      />
+    ));
+
+    const toggle = screen.getByTestId("slot-toggle-tone_dynamics__flashpoint");
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    setSections({
+      tone_dynamics__flashpoint: {
+        state: "done",
+        attempt_id: "a1",
+        data: { flashpoint_matches: [] },
+      },
+    });
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
 });
 
 describe("Sidebar", () => {
@@ -685,7 +806,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     const imageReport = screen.getByTestId(
       "report-safety__image_moderation",
     );
-    expect(imageReport.textContent).toContain("80%");
+    expect(imageReport.textContent).not.toContain("80%");
 
     const videoReport = screen.getByTestId(
       "report-safety__video_moderation",
@@ -717,6 +838,81 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(subjectiveReport.textContent).not.toContain("mean valence");
   });
 
+  it("neutralizes safety provider labels and hides non-harm confidence numbers", () => {
+    const sections = doneSections();
+    sections.safety__moderation = {
+      state: "done",
+      attempt_id: "s-safety",
+      data: {
+        harmful_content_matches: [
+          {
+            utterance_id: "u-openai",
+            utterance_text: "OpenAI scored text.",
+            max_score: 0.91,
+            flagged_categories: ["harassment"],
+            scores: {},
+            categories: { harassment: true },
+            source: "openai",
+          },
+          {
+            utterance_id: "u-gcp",
+            utterance_text: "GCP topic-match text.",
+            max_score: 0.72,
+            flagged_categories: ["toxicity"],
+            scores: {},
+            categories: { toxicity: true },
+            source: "gcp",
+          },
+        ],
+      },
+    };
+
+    const { container } = render(() => <Sidebar sections={sections} />);
+
+    const labels = screen
+      .getAllByTestId("safety-provider-label")
+      .map((node) => node.textContent);
+    expect(labels).toEqual(["Moderator A", "Moderator B"]);
+    expect(container.textContent).not.toContain("OpenAI moderation");
+    expect(container.textContent).not.toContain("Google Natural Language");
+    expect(container.textContent).toContain("91%");
+    expect(container.textContent).not.toContain("72%");
+    expect(screen.queryByTestId("image-moderation-max")).toBeNull();
+    expect(screen.queryByTestId("video-moderation-max")).toBeNull();
+  });
+
+  it("renders safety recommendation above safety subsections when present", () => {
+    const payload: SidebarPayload = {
+      ...makeTonePayload(),
+      safety: {
+        harmful_content_matches: [],
+        recommendation: {
+          level: "caution",
+          rationale: "Some safety analyses were unavailable.",
+          top_signals: ["web risk unavailable", "video sampling inconclusive"],
+          unavailable_inputs: ["web_risk", "video_moderation"],
+        },
+      },
+    };
+
+    const { container } = render(() => <Sidebar payload={payload} />);
+
+    const recommendation = screen.getByTestId("safety-recommendation-report");
+    const firstSlot = screen.getByTestId("slot-safety__moderation");
+    expect(recommendation.textContent).toContain("caution");
+    expect(recommendation.textContent).toContain(
+      "Some safety analyses were unavailable.",
+    );
+    expect(recommendation.textContent).toContain("web risk unavailable");
+    expect(recommendation.textContent).toContain("web_risk, video_moderation");
+    expect(
+      (recommendation.compareDocumentPosition(firstSlot) &
+        Node.DOCUMENT_POSITION_FOLLOWING) !==
+        0,
+    ).toBe(true);
+    expect(container.textContent).toContain("caution");
+  });
+
   it("renders done slots without any left-stripe border classes", () => {
     const { container } = render(() => <Sidebar sections={doneSections()} />);
     const html = container.innerHTML;
@@ -724,7 +920,7 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(html).not.toMatch(/\bborder-l-2\b/);
   });
 
-  it("synthesizes identical report test ids when driven by payload only", () => {
+  it("synthesizes identical report test ids when driven by payload only", async () => {
     const payload: SidebarPayload = {
       source_url: "https://example.com/post",
       page_title: "Example",
@@ -777,6 +973,10 @@ describe("Sidebar (done slots, per-slug reports)", () => {
     expect(
       screen.getByTestId("report-safety__moderation"),
     ).toBeDefined();
+    await fireEvent.click(screen.getByTestId("slot-toggle-tone_dynamics__flashpoint"));
+    await fireEvent.click(screen.getByTestId("slot-toggle-facts_claims__dedup"));
+    await fireEvent.click(screen.getByTestId("slot-toggle-facts_claims__known_misinfo"));
+    await fireEvent.click(screen.getByTestId("slot-toggle-opinions_sentiments__subjective"));
     expect(
       screen.getByTestId("report-tone_dynamics__flashpoint"),
     ).toBeDefined();

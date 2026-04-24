@@ -10,10 +10,13 @@ from src.analyses.safety._schemas import (
     FrameFinding,
     HarmfulContentMatch,
     ImageModerationMatch,
+    SafetyLevel,
+    SafetyRecommendation,
     VideoModerationMatch,
     WebRiskFinding,
 )
 from src.analyses.safety._vision_likelihood import likelihood_to_score
+from src.analyses.schemas import SafetySection
 
 
 class TestWebRiskFinding:
@@ -107,6 +110,57 @@ class TestHarmfulContentMatch:
             source="gcp",
         )
         assert match.source == "gcp"
+
+
+class TestSafetyRecommendation:
+    def test_safety_recommendation_accepts_level_rationale_and_signal_lists(self) -> None:
+        recommendation = SafetyRecommendation(
+            level=SafetyLevel.CAUTION,
+            rationale="Some safety signals were inconclusive.",
+            top_signals=["web risk unavailable"],
+            unavailable_inputs=["web_risk"],
+        )
+
+        assert recommendation.level == SafetyLevel.CAUTION
+        assert recommendation.top_signals == ["web risk unavailable"]
+        assert recommendation.unavailable_inputs == ["web_risk"]
+
+    def test_safety_recommendation_rejects_unknown_level(self) -> None:
+        with pytest.raises(ValidationError):
+            SafetyRecommendation(
+                level=cast(Any, "critical"),
+                rationale="unsupported level",
+            )
+
+    def test_safety_recommendation_defaults_lists_to_empty(self) -> None:
+        recommendation = SafetyRecommendation(
+            level=SafetyLevel.SAFE,
+            rationale="No safety issues detected.",
+        )
+
+        assert recommendation.top_signals == []
+        assert recommendation.unavailable_inputs == []
+
+    def test_safety_section_recommendation_defaults_to_none(self) -> None:
+        section = SafetySection.model_validate({"harmful_content_matches": []})
+
+        assert section.recommendation is None
+
+    def test_safety_section_accepts_embedded_recommendation(self) -> None:
+        section = SafetySection.model_validate(
+            {
+                "harmful_content_matches": [],
+                "recommendation": {
+                    "level": "safe",
+                    "rationale": "No safety issues detected.",
+                    "top_signals": [],
+                    "unavailable_inputs": [],
+                },
+            }
+        )
+
+        assert section.recommendation is not None
+        assert section.recommendation.level == SafetyLevel.SAFE
 
 
 class TestImageModerationMatch:

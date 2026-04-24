@@ -25,6 +25,9 @@ export interface SectionGroupProps {
   slugs: SectionSlugLiteral[];
   sections: SlugToSlots;
   render: Partial<Record<SectionSlugLiteral, (data: unknown) => JSX.Element>>;
+  emptinessChecks?: Partial<
+    Record<SectionSlugLiteral, (data: unknown) => boolean>
+  >;
   jobId?: string;
   onRetry?: (slug: SectionSlugLiteral) => void;
   cachedHint?: boolean;
@@ -61,6 +64,21 @@ function slugHeadingLabel(slug: SectionSlugLiteral): string {
       return "Sentiment";
     case "opinions_sentiments__subjective":
       return "Subjective claims";
+  }
+}
+
+function defaultOpenFor(
+  slot: SectionSlot,
+  emptinessCheck: ((data: unknown) => boolean) | undefined,
+): boolean {
+  switch (slot.state) {
+    case "pending":
+      return false;
+    case "running":
+    case "failed":
+      return true;
+    case "done":
+      return emptinessCheck ? !emptinessCheck(slot.data) : true;
   }
 }
 
@@ -121,6 +139,14 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
             const slot = () => slotFor(props.sections, slug);
             const Skeleton = SKELETONS[slug];
             const heading = slugHeadingLabel(slug);
+            const bodyId = `slot-body-${slug}`;
+            const [userOpen, setUserOpen] = createSignal<boolean | null>(null);
+            const isOpen = createMemo(
+              () =>
+                userOpen() ??
+                defaultOpenFor(slot(), props.emptinessChecks?.[slug]),
+            );
+            const toggle = () => setUserOpen((current) => !(current ?? isOpen()));
             return (
               <div
                 data-testid={`slot-${slug}`}
@@ -128,104 +154,105 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                 data-cached-hint={props.cachedHint ? "1" : undefined}
                 class="flex flex-col gap-2"
               >
-                <p
-                  data-testid={`slot-label-${slug}`}
+                <button
+                  type="button"
+                  data-testid={`slot-toggle-${slug}`}
                   data-dimmed={slot().state === "pending" ? "true" : "false"}
+                  aria-expanded={isOpen() ? "true" : "false"}
+                  aria-controls={bodyId}
+                  onClick={toggle}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      toggle();
+                    }
+                  }}
                   class={
                     slot().state === "pending"
-                      ? "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground opacity-60"
-                      : "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                      ? "flex items-center justify-between gap-2 rounded-sm text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground opacity-60 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      : "flex items-center justify-between gap-2 rounded-sm text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   }
                 >
-                  {heading}
-                </p>
-                <Switch>
-                  <Match when={slot().state === "pending"}>
-                    {/* pending: label only, no body */}
-                    <span class="sr-only">pending</span>
-                  </Match>
-                  <Match when={slot().state === "running"}>
-                    <Skeleton />
-                  </Match>
-                  <Match when={slot().state === "done"}>
-                    <Show when={props.render[slug]}>
-                      {(renderFn) => {
-                        // Polling fires `slot()` on every tick (~1.5s) with
-                        // freshly-parsed data objects. Without this memo the
-                        // inline `renderFn()(slot().data)` below re-evaluates
-                        // every tick, producing a brand-new JSX tree and
-                        // unmounting+remounting the report's DOM — which
-                        // flickered <img>/<iframe> children as they reloaded.
-                        // Mirrors the PR #409 fix for PageFrame.
-                        //
-                        // Keyed on `attempt_id`: terminal slots only change
-                        // `data` when a retry lands (new attempt_id), so
-                        // `untrack` around the data read is safe — same
-                        // attempt means the payload is the same byte-wise.
-                        // Two-memo dance:
-                        //
-                        //   `attemptKey` reads slot().state + .attempt_id
-                        //   every polling tick, but returns a *string* —
-                        //   so createMemo's default `===` equality suppresses
-                        //   downstream notifications while the attempt is
-                        //   stable.
-                        //
-                        //   `rendered` tracks only `attemptKey()`, so it
-                        //   rebuilds exclusively when the string flips
-                        //   (state→done or a retry mints a new attempt_id).
-                        //   `untrack` around the data read prevents the
-                        //   per-tick new `data` reference from pulling the
-                        //   memo back into the dependency graph.
-                        const attemptKey = createMemo(() => {
-                          const s = slot();
-                          return s.state === "done" && s.attempt_id
-                            ? s.attempt_id
-                            : null;
-                        });
-                        const rendered = createMemo(() => {
-                          const key = attemptKey();
-                          if (!key) return null;
-                          return untrack(() => renderFn()(slot().data));
-                        });
-                        return (
-                          <div
-                            class="section-reveal"
-                            data-slot-attempt-id={slot().attempt_id}
+                  <span
+                    data-testid={`slot-label-${slug}`}
+                    data-dimmed={slot().state === "pending" ? "true" : "false"}
+                  >
+                    {heading}
+                  </span>
+                  <span aria-hidden="true">{isOpen() ? "-" : "+"}</span>
+                </button>
+                <Show when={isOpen()}>
+                  <div id={bodyId}>
+                    <Switch>
+                      <Match when={slot().state === "pending"}>
+                        {/* pending: label only, no body */}
+                        <span class="sr-only">pending</span>
+                      </Match>
+                      <Match when={slot().state === "running"}>
+                        <Skeleton />
+                      </Match>
+                      <Match when={slot().state === "done"}>
+                        <Show when={props.render[slug]}>
+                          {(renderFn) => {
+                            // Polling fires `slot()` on every tick (~1.5s) with
+                            // freshly-parsed data objects. Without this memo the
+                            // inline `renderFn()(slot().data)` below re-evaluates
+                            // every tick, producing a brand-new JSX tree and
+                            // unmounting+remounting the report's DOM — which
+                            // flickered <img>/<iframe> children as they reloaded.
+                            // Mirrors the PR #409 fix for PageFrame.
+                            const attemptKey = createMemo(() => {
+                              const s = slot();
+                              return s.state === "done" && s.attempt_id
+                                ? s.attempt_id
+                                : null;
+                            });
+                            const rendered = createMemo(() => {
+                              const key = attemptKey();
+                              if (!key) return null;
+                              return untrack(() => renderFn()(slot().data));
+                            });
+                            return (
+                              <div
+                                class="section-reveal"
+                                data-slot-attempt-id={slot().attempt_id}
+                              >
+                                {rendered()}
+                              </div>
+                            );
+                          }}
+                        </Show>
+                      </Match>
+                      <Match when={slot().state === "failed"}>
+                        <div class="flex flex-col gap-1 text-xs text-muted-foreground">
+                          <p>Couldn't run this analysis.</p>
+                          <Show
+                            when={props.jobId}
+                            fallback={
+                              <button
+                                type="button"
+                                data-testid={`retry-${slug}`}
+                                onClick={() => props.onRetry?.(slug)}
+                                class="self-start text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+                              >
+                                Retry
+                              </button>
+                            }
                           >
-                            {rendered()}
-                          </div>
-                        );
-                      }}
-                    </Show>
-                  </Match>
-                  <Match when={slot().state === "failed"}>
-                    <div class="flex flex-col gap-1 text-xs text-muted-foreground">
-                      <p>Couldn't run this analysis.</p>
-                      <Show
-                        when={props.jobId}
-                        fallback={
-                          <button
-                            type="button"
-                            data-testid={`retry-${slug}`}
-                            onClick={() => props.onRetry?.(slug)}
-                            class="self-start text-[11px] font-medium text-primary underline-offset-2 hover:underline"
-                          >
-                            Retry
-                          </button>
-                        }
-                      >
-                        {(jobId) => (
-                          <RetryButton
-                            jobId={jobId()}
-                            slug={slug}
-                            slotState={slot().state}
-                            onSuccess={() => props.onRetry?.(slug)}
-                          />
-                        )}
-                      </Show>
-                    </div>
-                  </Match>
-                </Switch>
+                            {(jobId) => (
+                              <RetryButton
+                                jobId={jobId()}
+                                slug={slug}
+                                slotState={slot().state}
+                                onSuccess={() => props.onRetry?.(slug)}
+                              />
+                            )}
+                          </Show>
+                        </div>
+                      </Match>
+                    </Switch>
+                  </div>
+                </Show>
               </div>
             );
           }}

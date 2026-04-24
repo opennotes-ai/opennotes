@@ -16,11 +16,6 @@ export interface VideoModerationReportProps {
   matches: VideoModerationMatch[];
 }
 
-function formatScore(score: number): string {
-  if (!Number.isFinite(score)) return "—";
-  return `${Math.round(score * 100)}%`;
-}
-
 function formatOffset(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return "0.0s";
   return `${(ms / 1000).toFixed(1)}s`;
@@ -60,16 +55,10 @@ export default function VideoModerationReport(
                     : "rounded-md border border-border bg-background p-3 text-xs"
                 }
               >
-                <div class="flex items-start justify-between gap-2">
+                <div class="flex items-start gap-2">
                   <p class="min-w-0 break-all font-medium text-foreground">
                     {match.video_url}
                   </p>
-                  <span
-                    data-testid="video-moderation-max"
-                    class="shrink-0 font-mono text-[11px] text-muted-foreground"
-                  >
-                    {formatScore(match.max_likelihood)}
-                  </span>
                 </div>
                 <Show
                   when={match.frame_findings.length > 0}

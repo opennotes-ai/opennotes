@@ -6,13 +6,10 @@ source to "openai".
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-import pytest
-from pydantic import ValidationError
-
 from src.analyses.safety._schemas import HarmfulContentMatch
+from src.analyses.schemas import SectionSlug
 
 
 class TestLegacyDictRehydration:
@@ -26,8 +23,9 @@ class TestLegacyDictRehydration:
             "flagged_categories": ["violence"],
         }
 
-        with pytest.raises(ValidationError, match="source"):
-            HarmfulContentMatch.model_validate(legacy_dict)
+        match = HarmfulContentMatch.model_validate(legacy_dict)
+
+        assert match.source == "openai"
 
     def test_harmful_content_match_with_source_injected_validates_as_openai(self):
         legacy_dict = {
@@ -63,18 +61,26 @@ class TestLegacyDictRehydration:
         assert match.source == "gcp"
 
     def test_finalize_safety_guard_handles_legacy_dict(self):
-        """Verify that the guard in finalize._assemble_payload defaults source to openai."""
-        from src.jobs import finalize as finalize_mod
+        """Verify that _assemble_payload defaults legacy safety matches to openai."""
+        from src.jobs.finalize import _assemble_payload
 
-        source = Path(finalize_mod.__file__)
-        with source.open() as f:
-            content = f.read()
+        sections = TestAssemblePayloadWiresNewSafetySections()._sections_with_new_safety()
+        sections[SectionSlug.SAFETY_MODERATION].data = {
+            "harmful_content_matches": [
+                {
+                    "utterance_id": "utt_legacy",
+                    "utterance_text": "legacy text",
+                    "max_score": 0.8,
+                    "categories": {"violence": True},
+                    "scores": {"violence": 0.8},
+                    "flagged_categories": ["violence"],
+                }
+            ]
+        }
 
-        assert '"source" not in raw_match' in content or "'source' not in raw_match" in content, (
-            "finalize.py must contain the legacy-dict guard: "
-            "if isinstance(raw_match, dict) and 'source' not in raw_match: "
-            "match_data = {**raw_match, 'source': 'openai'}"
-        )
+        sidebar = _assemble_payload("https://test", sections)
+
+        assert sidebar.safety.harmful_content_matches[0].source == "openai"
 
 
 class TestAssemblePayloadWiresNewSafetySections:
@@ -195,3 +201,29 @@ class TestAssemblePayloadWiresNewSafetySections:
         assert sidebar.web_risk.findings == []
         assert sidebar.image_moderation.matches == []
         assert sidebar.video_moderation.matches == []
+
+    def test_safety_recommendation_column_flows_into_sidebar_payload(self):
+        from src.analyses.safety._schemas import SafetyLevel
+        from src.jobs.finalize import _assemble_payload
+
+        sidebar = _assemble_payload(
+            "https://test",
+            self._sections_with_new_safety(),
+            {
+                "level": "caution",
+                "rationale": "Some inputs were unavailable.",
+                "top_signals": ["web risk unavailable"],
+                "unavailable_inputs": ["web_risk"],
+            },
+        )
+
+        assert sidebar.safety.recommendation is not None
+        assert sidebar.safety.recommendation.level == SafetyLevel.CAUTION
+        assert sidebar.safety.recommendation.unavailable_inputs == ["web_risk"]
+
+    def test_null_safety_recommendation_stays_none(self):
+        from src.jobs.finalize import _assemble_payload
+
+        sidebar = _assemble_payload("https://test", self._sections_with_new_safety(), None)
+
+        assert sidebar.safety.recommendation is None
