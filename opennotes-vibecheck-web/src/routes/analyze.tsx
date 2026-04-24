@@ -198,6 +198,7 @@ export default function AnalyzePage() {
                   sections={jobState()?.sections}
                   payload={sidebarPayload()}
                   jobId={jobId() || undefined}
+                  jobStatus={jobStatus()}
                   onRetry={handleRetry}
                   cachedHint={cachedHint()}
                 />

@@ -703,6 +703,19 @@ async def test_enqueue_job_publishes_cloud_task_with_oidc() -> None:
         else oidc_token.audience
     )
     assert audience == "https://vibecheck.opennotes.ai"
+    # TASK-1474.27: dispatch_deadline must be set so Cloud Tasks does not
+    # cancel the redelivered request before the Cloud Run timeout fires.
+    deadline = (
+        task["dispatch_deadline"]
+        if isinstance(task, dict)
+        else task.dispatch_deadline
+    )
+    seconds = (
+        deadline["seconds"]
+        if isinstance(deadline, dict)
+        else deadline.seconds
+    )
+    assert seconds == 1200
 
 
 async def test_enqueue_job_raises_when_settings_missing() -> None:

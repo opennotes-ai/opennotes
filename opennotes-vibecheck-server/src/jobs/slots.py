@@ -85,7 +85,8 @@ SET sections = sections || jsonb_build_object($2::text, $3::jsonb),
     error_message = NULL,
     error_host = NULL,
     finished_at = NULL,
-    updated_at = now()
+    updated_at = now(),
+    heartbeat_at = now()
 WHERE job_id = $1
   AND sections ? $2::text
   AND sections -> $2::text ->> 'state' = 'failed'

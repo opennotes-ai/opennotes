@@ -37,6 +37,16 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# Per-task Cloud Tasks dispatch deadline (TASK-1474.27).
+# Must be >= the Cloud Run timeout on vibecheck-server so Cloud Tasks does
+# not cancel a long-running redelivered request before the worker finishes.
+# Cloud Run timeout lives at
+# `infrastructure/environments/production/main.tf::module.vibecheck_server.timeout_seconds`
+# (currently 1200s). Cloud Tasks default is 600s — without this override
+# the queue silently cancels jobs at 10 minutes regardless of the Cloud
+# Run config. Keep these two numbers in sync.
+_DISPATCH_DEADLINE_SECONDS = 1200
+
 
 def build_task_name(job_id: UUID, expected_attempt_id: UUID) -> str:
     """Compose the Cloud Tasks `name` for a (job, attempt) pair.
@@ -147,6 +157,7 @@ async def enqueue_job(
     # classes for test cases that only monkeypatch `_get_async_client`).
     task: dict[str, Any] = {
         "name": fq_name,
+        "dispatch_deadline": {"seconds": _DISPATCH_DEADLINE_SECONDS},
         "http_request": {
             "http_method": "POST",
             "url": target_url,
@@ -236,6 +247,7 @@ async def enqueue_section_retry(
 
     task: dict[str, Any] = {
         "name": fq_name,
+        "dispatch_deadline": {"seconds": _DISPATCH_DEADLINE_SECONDS},
         "http_request": {
             "http_method": "POST",
             "url": target_url,

@@ -95,7 +95,7 @@ async def _annotate_frames(frames: list[FrameBytes], hx: httpx.AsyncClient, toke
                 ANNOTATE_URL,
                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                 json=requests_body,
-                timeout=30.0,
+                timeout=60.0,
             )
         except httpx.HTTPError as exc:
             obs.set_error_category("network")

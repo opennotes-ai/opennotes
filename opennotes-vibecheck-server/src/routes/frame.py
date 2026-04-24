@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api", tags=["frame"])
 
 _HEAD_TIMEOUT_SECONDS = 5.0
-_SCREENSHOT_TIMEOUT_SECONDS = 30.0
+_SCREENSHOT_TIMEOUT_SECONDS = 60.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
 

@@ -13,7 +13,7 @@ from tenacity import (
 )
 
 FIRECRAWL_API_BASE = "https://api.firecrawl.dev"
-DEFAULT_TIMEOUT_SECONDS = 60.0
+DEFAULT_TIMEOUT_SECONDS = 120.0
 _RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
@@ -180,7 +180,7 @@ class FirecrawlClient:
         schema: type[BaseModel],
         *,
         poll_interval: float = 2.0,
-        poll_timeout: float = 120.0,
+        poll_timeout: float = 240.0,
     ) -> BaseModel:
         """Call Firecrawl /v2/extract and poll until the job completes.
 

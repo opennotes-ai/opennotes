@@ -30,8 +30,8 @@ async def sample_video(
     *,
     frame_count: int = 3,
     max_bytes: int = 50_000_000,
-    download_timeout_s: int = 30,
-    extract_timeout_s: int = 15,
+    download_timeout_s: int = 60,
+    extract_timeout_s: int = 30,
 ) -> list[FrameBytes]:
     if frame_count < 1:
         raise ValueError("frame_count must be >= 1")

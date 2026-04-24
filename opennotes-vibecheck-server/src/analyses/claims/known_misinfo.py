@@ -26,7 +26,7 @@ from ._factcheck_schemas import FactCheckMatch
 
 FACT_CHECK_API_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
 FACT_CHECK_OAUTH_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
-DEFAULT_TIMEOUT_SECONDS = 10.0
+DEFAULT_TIMEOUT_SECONDS = 20.0
 MAX_RESULTS_PER_CLAIM = 5
 
 _logger = logging.getLogger(__name__)

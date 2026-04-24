@@ -26,7 +26,7 @@ import asyncio
 import json
 import socket
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
@@ -318,6 +318,45 @@ async def test_retry_on_failed_job_with_failed_slot_also_allowed(
 
     assert resp.status_code == 202, resp.text
     assert enqueue_section_mock.await_count == 1
+
+
+async def test_retry_on_done_job_refreshes_heartbeat(
+    client: httpx.AsyncClient,
+    db_pool: Any,
+    enqueue_section_mock: AsyncMock,
+) -> None:
+    """TASK-1474.27: a job that was previously running (and therefore has
+    a non-null `heartbeat_at`) must have that timestamp refreshed when
+    retry_claim_slot flips it back to `analyzing`. Without this, the
+    sweeper's `COALESCE(heartbeat_at, updated_at, created_at) > 30s`
+    check immediately marks the healthy retry as stale.
+    """
+    slug = SectionSlug.SAFETY_MODERATION
+    job_id, _ = await _insert_job_with_slot(
+        db_pool, job_status="done", slug=slug, slot_state="failed"
+    )
+    # Simulate a stale heartbeat from the original run.
+    stale_heartbeat = datetime.now(UTC) - timedelta(minutes=10)
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE vibecheck_jobs SET heartbeat_at = $1 WHERE job_id = $2",
+            stale_heartbeat,
+            job_id,
+        )
+
+    resp = await client.post(f"/api/analyze/{job_id}/retry/{slug.value}")
+    assert resp.status_code == 202, resp.text
+
+    async with db_pool.acquire() as conn:
+        new_heartbeat = await conn.fetchval(
+            "SELECT heartbeat_at FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+    assert new_heartbeat is not None
+    age = datetime.now(UTC) - new_heartbeat
+    assert age < timedelta(seconds=5), (
+        f"heartbeat_at must be refreshed on retry claim, got age={age}"
+    )
 
 
 # =========================================================================
