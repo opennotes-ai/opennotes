@@ -6,6 +6,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  untrack,
   type JSX,
 } from "solid-js";
 import type { SectionSlot } from "~/lib/api-client.server";
@@ -148,14 +149,53 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                   </Match>
                   <Match when={slot().state === "done"}>
                     <Show when={props.render[slug]}>
-                      {(renderFn) => (
-                        <div
-                          class="section-reveal"
-                          data-slot-attempt-id={slot().attempt_id}
-                        >
-                          {renderFn()(slot().data)}
-                        </div>
-                      )}
+                      {(renderFn) => {
+                        // Polling fires `slot()` on every tick (~1.5s) with
+                        // freshly-parsed data objects. Without this memo the
+                        // inline `renderFn()(slot().data)` below re-evaluates
+                        // every tick, producing a brand-new JSX tree and
+                        // unmounting+remounting the report's DOM — which
+                        // flickered <img>/<iframe> children as they reloaded.
+                        // Mirrors the PR #409 fix for PageFrame.
+                        //
+                        // Keyed on `attempt_id`: terminal slots only change
+                        // `data` when a retry lands (new attempt_id), so
+                        // `untrack` around the data read is safe — same
+                        // attempt means the payload is the same byte-wise.
+                        // Two-memo dance:
+                        //
+                        //   `attemptKey` reads slot().state + .attempt_id
+                        //   every polling tick, but returns a *string* —
+                        //   so createMemo's default `===` equality suppresses
+                        //   downstream notifications while the attempt is
+                        //   stable.
+                        //
+                        //   `rendered` tracks only `attemptKey()`, so it
+                        //   rebuilds exclusively when the string flips
+                        //   (state→done or a retry mints a new attempt_id).
+                        //   `untrack` around the data read prevents the
+                        //   per-tick new `data` reference from pulling the
+                        //   memo back into the dependency graph.
+                        const attemptKey = createMemo(() => {
+                          const s = slot();
+                          return s.state === "done" && s.attempt_id
+                            ? s.attempt_id
+                            : null;
+                        });
+                        const rendered = createMemo(() => {
+                          const key = attemptKey();
+                          if (!key) return null;
+                          return untrack(() => renderFn()(slot().data));
+                        });
+                        return (
+                          <div
+                            class="section-reveal"
+                            data-slot-attempt-id={slot().attempt_id}
+                          >
+                            {rendered()}
+                          </div>
+                        );
+                      }}
                     </Show>
                   </Match>
                   <Match when={slot().state === "failed"}>
