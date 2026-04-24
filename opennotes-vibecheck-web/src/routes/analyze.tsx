@@ -1,4 +1,12 @@
-import { Show, Suspense, createEffect, createMemo } from "solid-js";
+import {
+  For,
+  Show,
+  Suspense,
+  createEffect,
+  createMemo,
+  createSignal,
+  onMount,
+} from "solid-js";
 import { useSearchParams, A, createAsync, useNavigate } from "@solidjs/router";
 import { Title } from "@solidjs/meta";
 import CachedBadge from "~/components/CachedBadge";
@@ -19,6 +27,18 @@ const ALL_ERROR_CODES: readonly ErrorCode[] = [
   "timeout",
   "rate_limited",
   "internal",
+];
+
+type PreviewSize = "regular" | "large" | "max";
+
+const PREVIEW_SIZE_KEY = "vibecheck:preview-size";
+const PREVIEW_SIZE_OPTIONS: ReadonlyArray<{
+  value: PreviewSize;
+  label: string;
+}> = [
+  { value: "regular", label: "Regular" },
+  { value: "large", label: "Large" },
+  { value: "max", label: "Max width" },
 ];
 
 function asErrorCode(raw: string | undefined): ErrorCode | null {
@@ -45,6 +65,18 @@ export default function AnalyzePage() {
   const pendingHost = () =>
     typeof searchParams.host === "string" ? searchParams.host : "";
   const cachedHint = () => searchParams.c === "1";
+  const [previewSize, setPreviewSize] = createSignal<PreviewSize>("regular");
+
+  onMount(() => {
+    try {
+      const saved = window.localStorage.getItem(PREVIEW_SIZE_KEY);
+      if (saved === "regular" || saved === "large" || saved === "max") {
+        setPreviewSize(saved);
+      }
+    } catch {
+      // localStorage is optional in private/locked-down browser contexts.
+    }
+  });
 
   createEffect(() => {
     if (!jobId() && pendingError() === "invalid_url") {
@@ -68,7 +100,12 @@ export default function AnalyzePage() {
     const fc = frameCompat();
     return fc && fc.ok
       ? fc.frameCompat
-      : { canIframe: true, blockingHeader: null, screenshotUrl: null };
+      : {
+          canIframe: true,
+          blockingHeader: null,
+          cspFrameAncestors: null,
+          screenshotUrl: null,
+        };
   });
 
   const transportError = () => polling.error();
@@ -120,10 +157,40 @@ export default function AnalyzePage() {
   const isCached = () => jobState()?.cached === true;
   const cachedAt = () => sidebarPayload()?.cached_at ?? null;
 
+  const selectPreviewSize = (size: PreviewSize) => {
+    setPreviewSize(size);
+    try {
+      window.localStorage.setItem(PREVIEW_SIZE_KEY, size);
+    } catch {
+      // Best effort only.
+    }
+  };
+
+  const mainClass = createMemo(() =>
+    previewSize() === "max"
+      ? "mx-auto flex min-h-screen w-full max-w-[min(100vw-2rem,1600px)] flex-col gap-6 px-4 py-8"
+      : "mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-8",
+  );
+
+  const layoutClass = createMemo(() => {
+    if (previewSize() === "large") {
+      return "flex flex-col gap-6 lg:grid lg:grid-cols-[5fr_2fr] lg:gap-8";
+    }
+    if (previewSize() === "max") {
+      return "flex flex-col gap-6 lg:grid lg:grid-cols-1 lg:gap-6";
+    }
+    return "flex flex-col gap-6 lg:grid lg:grid-cols-[3fr_2fr] lg:gap-8";
+  });
+
+  const previewButtonClass = (size: PreviewSize) =>
+    previewSize() === size
+      ? "rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background"
+      : "rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground";
+
   return (
     <>
       <Title>vibecheck — analyzing</Title>
-      <main class="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-8">
+      <main class={mainClass()}>
         <nav class="flex items-center justify-between">
           <A
             href="/"
@@ -159,9 +226,31 @@ export default function AnalyzePage() {
             fallback={
               <div
                 data-testid="analyze-layout"
-                class="flex flex-col gap-6 lg:grid lg:grid-cols-[3fr_2fr] lg:gap-8"
+                data-preview-size={previewSize()}
+                class={layoutClass()}
               >
                 <div class="flex min-h-[60vh] flex-col gap-4">
+                  <div
+                    data-testid="preview-size-selector"
+                    class="hidden lg:flex items-center justify-end"
+                    role="group"
+                    aria-label="Preview size"
+                  >
+                    <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
+                      <For each={PREVIEW_SIZE_OPTIONS}>
+                        {(option) => (
+                          <button
+                            type="button"
+                            class={previewButtonClass(option.value)}
+                            aria-pressed={previewSize() === option.value}
+                            onClick={() => selectPreviewSize(option.value)}
+                          >
+                            {option.label}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </div>
                   <Show
                     when={jobUrl()}
                     fallback={
@@ -181,6 +270,8 @@ export default function AnalyzePage() {
                         <PageFrame
                           url={url()}
                           canIframe={compat().canIframe}
+                          blockingHeader={compat().blockingHeader}
+                          cspFrameAncestors={compat().cspFrameAncestors}
                           screenshotUrl={compat().screenshotUrl}
                         />
                       </Suspense>

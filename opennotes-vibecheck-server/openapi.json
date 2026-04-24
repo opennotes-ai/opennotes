@@ -29,9 +29,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Frame Compat Api Frame Compat Get"
+                  "$ref": "#/components/schemas/FrameCompatResponse"
                 }
               }
             }
@@ -691,6 +689,42 @@
         ],
         "title": "FlashpointMatch",
         "description": "Match result from flashpoint detection for a single utterance.\n\nPort of ``ConversationFlashpointMatch`` from opennotes-server, adapted\nfor the vibecheck utterance model: ``utterance_id`` replaces Discord\n``message_id``; other fields are unchanged."
+      },
+      "FrameCompatResponse": {
+        "properties": {
+          "can_iframe": {
+            "type": "boolean",
+            "title": "Can Iframe"
+          },
+          "blocking_header": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocking Header"
+          },
+          "csp_frame_ancestors": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csp Frame Ancestors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "can_iframe",
+          "blocking_header"
+        ],
+        "title": "FrameCompatResponse"
       },
       "FrameFinding": {
         "properties": {
