@@ -377,7 +377,14 @@ test("TASK-1474.24: analyze DOM stays mounted when the URL is available before t
   );
 
   const sidebar = page.locator('[data-testid="analysis-sidebar"]');
-  await expect(sidebar).toBeVisible({ timeout: 10_000 });
+  await expect(sidebar).toHaveAttribute("data-job-status", "extracting", {
+    timeout: 10_000,
+  });
+  await expectAppToStayMounted(page);
+
+  await expect(sidebar).toHaveAttribute("data-job-status", "analyzing", {
+    timeout: 10_000,
+  });
   await expectAppToStayMounted(page);
 
   await expect(sidebar).toHaveAttribute("data-job-status", "done", {
