@@ -4,6 +4,7 @@ import type { JobState, SectionSlug } from "~/lib/api-client.server";
 interface FrameCompatResponse {
   can_iframe: boolean;
   blocking_header: string | null;
+  csp_frame_ancestors?: string | null;
 }
 
 interface ScreenshotResponse {
@@ -13,6 +14,7 @@ interface ScreenshotResponse {
 export interface FrameCompatResult {
   canIframe: boolean;
   blockingHeader: string | null;
+  cspFrameAncestors: string | null;
   screenshotUrl: string | null;
 }
 
@@ -42,11 +44,21 @@ export const getFrameCompat = query(
         const { data, error } = await client.GET("/api/frame-compat", {
           params: { query: { url: targetUrl } },
         });
-        if (error || !data) return { can_iframe: true, blocking_header: null };
+        if (error || !data) {
+          return {
+            can_iframe: true,
+            blocking_header: null,
+            csp_frame_ancestors: null,
+          };
+        }
         return data as unknown as FrameCompatResponse;
       } catch (err: unknown) {
         console.warn("vibecheck frame-compat probe failed:", err);
-        return { can_iframe: true, blocking_header: null };
+        return {
+          can_iframe: true,
+          blocking_header: null,
+          csp_frame_ancestors: null,
+        };
       }
     })();
     const screenshotTask = (async (): Promise<string | null> => {
@@ -72,6 +84,7 @@ export const getFrameCompat = query(
       frameCompat: {
         canIframe: frameProbe.can_iframe,
         blockingHeader: frameProbe.blocking_header,
+        cspFrameAncestors: frameProbe.csp_frame_ancestors ?? null,
         screenshotUrl,
       },
     };

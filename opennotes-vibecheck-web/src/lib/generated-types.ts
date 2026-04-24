@@ -425,6 +425,15 @@ export interface components {
              */
             context_messages: number;
         };
+        /** FrameCompatResponse */
+        FrameCompatResponse: {
+            /** Can Iframe */
+            can_iframe: boolean;
+            /** Blocking Header */
+            blocking_header: string | null;
+            /** Csp Frame Ancestors */
+            csp_frame_ancestors?: string | null;
+        };
         /**
          * FrameFinding
          * @description SafeSearch scores for a single video frame.
@@ -961,9 +970,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FrameCompatResponse"];
                 };
             };
             /** @description Validation Error */

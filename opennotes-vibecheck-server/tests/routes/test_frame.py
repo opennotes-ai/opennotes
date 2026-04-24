@@ -1,3 +1,5 @@
+import asyncio
+import time
 from unittest.mock import patch
 
 import pytest
@@ -66,6 +68,7 @@ class TestFrameCompat:
         body = resp.json()
         assert body["can_iframe"] is False
         assert "frame-ancestors" in body["blocking_header"]
+        assert body["csp_frame_ancestors"] == "frame-ancestors 'none'"
 
     def test_csp_frame_ancestors_self_blocks(
         self, client: TestClient, httpx_mock: HTTPXMock
@@ -92,6 +95,7 @@ class TestFrameCompat:
         assert resp.status_code == 200
         body = resp.json()
         assert body["can_iframe"] is True
+        assert body["csp_frame_ancestors"] == "frame-ancestors *"
 
     def test_head_405_falls_back_to_get(self, client: TestClient, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
@@ -244,6 +248,24 @@ class TestScreenshot:
                 "/api/screenshot", params={"url": "https://example.com/article"}
             )
         assert resp.status_code == 502
+
+    def test_screenshot_request_budget_bounds_slow_firecrawl(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class SlowClient:
+            async def scrape(self, url: str, formats: list[str]) -> object:
+                await asyncio.sleep(0.2)
+                return {"screenshot": "https://cdn.firecrawl.dev/shots/late.png"}
+
+        monkeypatch.setattr("src.routes.frame._SCREENSHOT_REQUEST_BUDGET_SECONDS", 0.01, raising=False)
+        with patch("src.routes.frame.get_firecrawl_client", return_value=SlowClient()):
+            started = time.monotonic()
+            resp = client.get(
+                "/api/screenshot", params={"url": "https://example.com/article"}
+            )
+        assert time.monotonic() - started < 0.15
+        assert resp.status_code == 502
+        assert resp.json() == {"detail": "Screenshot service failed"}
 
     def test_invalid_url_returns_400(self, client: TestClient) -> None:
         resp = client.get("/api/screenshot", params={"url": "javascript:alert(1)"})

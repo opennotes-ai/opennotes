@@ -70,6 +70,7 @@ vi.mock("~/routes/analyze.data", () => {
       frameCompat: {
         canIframe: true,
         blockingHeader: null,
+        cspFrameAncestors: null,
         screenshotUrl: null,
       },
     })),
@@ -97,10 +98,28 @@ vi.mock("~/routes/analyze.data", () => {
   };
 });
 
+const localStorageValues = new Map<string, string>();
+Object.defineProperty(window, "localStorage", {
+  configurable: true,
+  value: {
+    getItem: (key: string) => localStorageValues.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      localStorageValues.set(key, value);
+    },
+    removeItem: (key: string) => {
+      localStorageValues.delete(key);
+    },
+    clear: () => {
+      localStorageValues.clear();
+    },
+  },
+});
+
 import AnalyzePage from "../../src/routes/analyze";
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   pollingHandles.length = 0;
   refetchSpy.current.mockReset();
   retrySectionActionMock.mockReset();
@@ -423,6 +442,58 @@ describe("AnalyzePage route", () => {
       "Web Risk",
     );
     expect(screen.getByTestId("retry-safety__web_risk")).toBeDefined();
+  });
+
+  it("changes the desktop analyze layout when preview size presets are selected", async () => {
+    renderAt("/analyze?job=job-layout&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("analyze-layout")).not.toBeNull();
+    });
+
+    const layout = screen.getByTestId("analyze-layout");
+    expect(layout.getAttribute("data-preview-size")).toBe("regular");
+    expect(layout.getAttribute("class")).toContain("lg:grid-cols-[3fr_2fr]");
+
+    fireEvent.click(screen.getByRole("button", { name: "Large" }));
+    expect(layout.getAttribute("data-preview-size")).toBe("large");
+    expect(layout.getAttribute("class")).toContain("lg:grid-cols-[5fr_2fr]");
+
+    fireEvent.click(screen.getByRole("button", { name: "Max width" }));
+    expect(layout.getAttribute("data-preview-size")).toBe("max");
+    expect(layout.getAttribute("class")).toContain("lg:grid-cols-1");
+    expect(screen.getByTestId("analysis-sidebar")).not.toBeNull();
+  });
+
+  it("persists the preview size selection across analyze page remounts", async () => {
+    renderAt("/analyze?job=job-layout&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("analyze-layout")).not.toBeNull();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Large" }));
+    cleanup();
+    pollingHandles.length = 0;
+
+    renderAt("/analyze?job=job-layout&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("analyze-layout").getAttribute("data-preview-size"),
+      ).toBe("large");
+    });
+  });
+
+  it("keeps the preview size selector desktop-only", async () => {
+    renderAt("/analyze?job=job-layout&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-size-selector")).not.toBeNull();
+    });
+
+    expect(
+      screen.getByTestId("preview-size-selector").getAttribute("class"),
+    ).toContain("hidden lg:flex");
   });
 
   it("does not render CachedBadge when JobState.cached=false", async () => {

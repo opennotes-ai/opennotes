@@ -1,8 +1,10 @@
-import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 
 export interface PageFrameProps {
   url: string;
   canIframe: boolean;
+  blockingHeader?: string | null;
+  cspFrameAncestors?: string | null;
   screenshotUrl: string | null;
 }
 
@@ -12,46 +14,113 @@ export interface PageFrameProps {
 const IFRAME_LOAD_TIMEOUT_MS = 20_000;
 
 export default function PageFrame(props: PageFrameProps) {
-  // Always try the iframe first — even when the backend probe said
-  // can_iframe=false. The probe is unreliable against bot-protected sites
-  // (Cloudflare 403's our HEAD with SAMEORIGIN but serves the real page to
-  // real browsers). We only fall back to the screenshot if the iframe actually
-  // fails to load or times out.
+  // The backend probe is a hint: it can detect common XFO/CSP blocks quickly,
+  // but bot-protected sites can serve different headers to the server and the
+  // browser. A blocking hint starts screenshot-first, while a hidden iframe
+  // still verifies whether the browser can render the real page.
   const [iframeFailed, setIframeFailed] = createSignal(false);
   const [iframeLoaded, setIframeLoaded] = createSignal(false);
+  const [iframeVerifiedRenderable, setIframeVerifiedRenderable] =
+    createSignal(false);
+  const hasBlockingHint = () =>
+    !props.canIframe || !!props.blockingHeader || !!props.cspFrameAncestors;
+  const [preferScreenshot, setPreferScreenshot] = createSignal(false);
 
   const showIframe = () => !iframeFailed();
 
-  const showScreenshot = () => iframeFailed() && !!props.screenshotUrl;
+  const showScreenshot = () =>
+    (iframeFailed() || preferScreenshot()) && !!props.screenshotUrl;
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let iframeRef: HTMLIFrameElement | undefined;
+  let currentUrl = props.url;
 
-  onMount(() => {
-    timeoutId = setTimeout(() => {
-      if (!iframeLoaded()) {
-        setIframeFailed(true);
-      }
-    }, IFRAME_LOAD_TIMEOUT_MS);
-  });
-
-  onCleanup(() => {
-    if (timeoutId) clearTimeout(timeoutId);
-  });
-
-  const handleIframeLoad = () => {
-    setIframeLoaded(true);
+  const clearLoadTimeout = () => {
     if (timeoutId) {
       clearTimeout(timeoutId);
       timeoutId = null;
     }
   };
 
-  const handleIframeError = () => {
-    setIframeFailed(true);
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      timeoutId = null;
+  const startLoadTimeout = () => {
+    clearLoadTimeout();
+    timeoutId = setTimeout(() => {
+      if (!iframeLoaded()) {
+        setIframeFailed(true);
+      }
+    }, IFRAME_LOAD_TIMEOUT_MS);
+  };
+
+  onMount(() => {
+    startLoadTimeout();
+  });
+
+  onCleanup(() => {
+    clearLoadTimeout();
+  });
+
+  createEffect(() => {
+    if (props.url !== currentUrl) {
+      currentUrl = props.url;
+      setIframeFailed(false);
+      setIframeLoaded(false);
+      setIframeVerifiedRenderable(false);
+      setPreferScreenshot(false);
+      startLoadTimeout();
     }
+    if (
+      hasBlockingHint() &&
+      props.screenshotUrl &&
+      !iframeVerifiedRenderable() &&
+      !iframeFailed()
+    ) {
+      setPreferScreenshot(true);
+    }
+  });
+
+  const classifyLoadedIframe = (): "blocked" | "rendered" | "unknown" => {
+    if (!iframeRef) return "unknown";
+    try {
+      const doc = iframeRef.contentDocument;
+      if (!doc) return "unknown";
+      const href = doc.location?.href ?? "";
+      const body = doc.body;
+      const childCount = body?.children?.length ?? 0;
+      const bodyText = body?.textContent?.trim() ?? "";
+      const title = doc.title?.trim() ?? "";
+      if (
+        (href === "" || href === "about:blank") &&
+        childCount === 0 &&
+        !bodyText &&
+        !title
+      ) {
+        return "blocked";
+      }
+      return "rendered";
+    } catch {
+      return "rendered";
+    }
+  };
+
+  const handleIframeLoad = () => {
+    setIframeLoaded(true);
+    clearLoadTimeout();
+    const loadState = classifyLoadedIframe();
+    if (loadState === "blocked") {
+      setPreferScreenshot(false);
+      setIframeFailed(true);
+      return;
+    }
+    if (loadState === "rendered") {
+      setIframeVerifiedRenderable(true);
+      setPreferScreenshot(false);
+    }
+  };
+
+  const handleIframeError = () => {
+    setPreferScreenshot(false);
+    setIframeFailed(true);
+    clearLoadTimeout();
   };
 
   return (
@@ -67,9 +136,15 @@ export default function PageFrame(props: PageFrameProps) {
           sandbox="allow-same-origin allow-scripts"
           referrerpolicy="no-referrer"
           loading="lazy"
+          ref={iframeRef}
+          aria-hidden={preferScreenshot() ? "true" : undefined}
           onLoad={handleIframeLoad}
           onError={handleIframeError}
-          class="h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
+          class={
+            preferScreenshot()
+              ? "pointer-events-none absolute inset-0 h-full min-h-[60vh] w-full flex-1 border-0 bg-background opacity-0"
+              : "h-full min-h-[60vh] w-full flex-1 border-0 bg-background"
+          }
         />
       </Show>
 

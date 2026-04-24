@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from src.config import get_settings
 from src.firecrawl_client import FirecrawlClient, ScrapeResult
@@ -16,6 +18,7 @@ router = APIRouter(prefix="/api", tags=["frame"])
 
 _HEAD_TIMEOUT_SECONDS = 5.0
 _SCREENSHOT_TIMEOUT_SECONDS = 60.0
+_SCREENSHOT_REQUEST_BUDGET_SECONDS = 90.0
 _BLOCKING_XFO_VALUES = {"deny", "sameorigin"}
 _PERMISSIVE_FRAME_ANCESTOR_TOKENS = {"*", "https:", "http:", "data:"}
 
@@ -37,6 +40,12 @@ _REASON_TO_HUMAN_DETAIL: dict[str, str] = {
 }
 
 
+class FrameCompatResponse(BaseModel):
+    can_iframe: bool
+    blocking_header: str | None
+    csp_frame_ancestors: str | None = None
+
+
 def _validate_http_url(url: str) -> None:
     """Delegate SSRF validation to the shared guard and raise HTTP 400 on failure.
 
@@ -56,33 +65,40 @@ def _validate_http_url(url: str) -> None:
         raise HTTPException(status_code=400, detail=detail) from exc
 
 
-def _frame_ancestors_blocks(csp_value: str) -> tuple[bool, str | None]:
+def _frame_ancestors_blocks(csp_value: str) -> tuple[bool, str | None, str | None]:
     directives = [d.strip() for d in csp_value.split(";") if d.strip()]
     for directive in directives:
         parts = directive.split()
         if not parts or parts[0].lower() != "frame-ancestors":
             continue
+        frame_ancestors = " ".join(parts)
         tokens = [t.strip().lower().strip("'\"") for t in parts[1:]]
         if not tokens or "none" in tokens:
-            return True, f"content-security-policy: frame-ancestors {' '.join(tokens) or 'none'}"
+            return (
+                True,
+                f"content-security-policy: frame-ancestors {' '.join(tokens) or 'none'}",
+                frame_ancestors,
+            )
         if any(tok in _PERMISSIVE_FRAME_ANCESTOR_TOKENS for tok in tokens):
-            return False, None
-        return True, f"content-security-policy: frame-ancestors {' '.join(tokens)}"
-    return False, None
+            return False, None, frame_ancestors
+        return True, f"content-security-policy: frame-ancestors {' '.join(tokens)}", frame_ancestors
+    return False, None, None
 
 
-def _evaluate_headers(headers: httpx.Headers) -> tuple[bool, str | None]:
+def _evaluate_headers(headers: httpx.Headers) -> tuple[bool, str | None, str | None]:
+    csp_frame_ancestors: str | None = None
+    csp = headers.get("content-security-policy")
+    if csp:
+        blocks, reason, csp_frame_ancestors = _frame_ancestors_blocks(csp)
+        if blocks:
+            return False, reason, csp_frame_ancestors
+
     xfo = headers.get("x-frame-options")
     if xfo:
         normalized = xfo.strip().lower()
         if normalized in _BLOCKING_XFO_VALUES:
-            return False, f"x-frame-options: {xfo.strip()}"
-    csp = headers.get("content-security-policy")
-    if csp:
-        blocks, reason = _frame_ancestors_blocks(csp)
-        if blocks:
-            return False, reason
-    return True, None
+            return False, f"x-frame-options: {xfo.strip()}", csp_frame_ancestors
+    return True, None, csp_frame_ancestors
 
 
 async def _probe_target(url: str) -> httpx.Headers:
@@ -123,12 +139,16 @@ async def _request_with_validated_redirects(
     raise HTTPException(status_code=502, detail="Too many redirects")
 
 
-@router.get("/frame-compat")
-async def frame_compat(url: str = Query(...)) -> dict[str, Any]:
+@router.get("/frame-compat", response_model=FrameCompatResponse)
+async def frame_compat(url: str = Query(...)) -> FrameCompatResponse:
     _validate_http_url(url)
     headers = await _probe_target(url)
-    can_iframe, blocking_header = _evaluate_headers(headers)
-    return {"can_iframe": can_iframe, "blocking_header": blocking_header}
+    can_iframe, blocking_header, csp_frame_ancestors = _evaluate_headers(headers)
+    return FrameCompatResponse(
+        can_iframe=can_iframe,
+        blocking_header=blocking_header,
+        csp_frame_ancestors=csp_frame_ancestors,
+    )
 
 
 def get_firecrawl_client() -> FirecrawlClient:
@@ -165,7 +185,10 @@ async def screenshot(url: str = Query(...)) -> dict[str, str]:
     _validate_http_url(url)
     fc = get_firecrawl_client()
     try:
-        result = await fc.scrape(url, formats=["screenshot"])
+        result = await asyncio.wait_for(
+            fc.scrape(url, formats=["screenshot"]),
+            timeout=_SCREENSHOT_REQUEST_BUDGET_SECONDS,
+        )
     except Exception as exc:
         logger.warning("firecrawl scrape failed for %s: %s", url, exc)
         raise HTTPException(status_code=502, detail="Screenshot service failed") from exc
