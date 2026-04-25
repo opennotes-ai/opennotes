@@ -14,8 +14,8 @@ function formatScore(score: number): string {
 }
 
 const SOURCE_LABELS: Record<HarmfulContentSource, string> = {
-  openai: "OpenAI moderation",
-  gcp: "Google Natural Language",
+  openai: "Moderator A",
+  gcp: "Moderator B",
 };
 
 export default function SafetyModerationReport(
@@ -99,12 +99,14 @@ export default function SafetyModerationReport(
                               </For>
                             </Show>
                           </div>
-                          <span
-                            data-testid="safety-max-score"
-                            class="font-mono text-[11px] text-muted-foreground"
-                          >
-                            {formatScore(match.max_score)}
-                          </span>
+                          <Show when={match.source === "openai"}>
+                            <span
+                              data-testid="safety-max-score"
+                              class="font-mono text-[11px] text-muted-foreground"
+                            >
+                              {formatScore(match.max_score)}
+                            </span>
+                          </Show>
                         </div>
                         <Show
                           when={match.utterance_text?.trim()}

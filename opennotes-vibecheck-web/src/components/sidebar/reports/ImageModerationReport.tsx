@@ -15,11 +15,6 @@ export interface ImageModerationReportProps {
   matches: ImageModerationMatch[];
 }
 
-function formatScore(score: number): string {
-  if (!Number.isFinite(score)) return "—";
-  return `${Math.round(score * 100)}%`;
-}
-
 function flaggedCategories(match: ImageModerationMatch): string[] {
   return SAFESEARCH_FIELDS.filter((field) => match[field] >= 0.75);
 }
@@ -63,7 +58,7 @@ export default function ImageModerationReport(
                   />
                 </div>
                 <div class="space-y-2 p-2">
-                  <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2">
                     <span
                       class={
                         match.flagged
@@ -72,12 +67,6 @@ export default function ImageModerationReport(
                       }
                     >
                       {match.flagged ? "flagged" : "clear"}
-                    </span>
-                    <span
-                      data-testid="image-moderation-max"
-                      class="font-mono text-[11px] text-muted-foreground"
-                    >
-                      {formatScore(match.max_likelihood)}
                     </span>
                   </div>
                   <Show

@@ -228,6 +228,15 @@ class TestIdempotency:
         # Re-running must not error on missing legacy policies.
         assert "DROP POLICY IF EXISTS" in schema_sql
 
+    def test_safety_recommendation_column_is_added_idempotently(
+        self, schema_sql: str
+    ) -> None:
+        assert "safety_recommendation JSONB" in schema_sql
+        assert (
+            "ALTER TABLE vibecheck_jobs\n"
+            "    ADD COLUMN IF NOT EXISTS safety_recommendation JSONB"
+        ) in schema_sql
+
 
 class TestWebRiskLookupsTable:
     def test_create_table_if_not_exists(self, schema_sql: str) -> None:

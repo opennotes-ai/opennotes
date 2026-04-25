@@ -17,6 +17,7 @@ import ExtractingIndicator from "./ExtractingIndicator";
 import { sectionDisplayName } from "./display";
 import {
   SafetyModerationReport,
+  SafetyRecommendationReport,
   WebRiskReport,
   ImageModerationReport,
   VideoModerationReport,
@@ -29,6 +30,7 @@ import {
 } from "./reports";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
+type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 type WebRiskFinding = components["schemas"]["WebRiskFinding"];
 type ImageModerationMatch = components["schemas"]["ImageModerationMatch"];
 type VideoModerationMatch = components["schemas"]["VideoModerationMatch"];
@@ -204,6 +206,17 @@ const SAFETY_RENDER: Partial<
   ),
 };
 
+const SAFETY_EMPTINESS: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => boolean>
+> = {
+  safety__moderation: (data) => extractHarmfulContentMatches(data).length === 0,
+  safety__web_risk: (data) => extractWebRiskFindings(data).length === 0,
+  safety__image_moderation: (data) =>
+    extractImageModerationMatches(data).length === 0,
+  safety__video_moderation: (data) =>
+    extractVideoModerationMatches(data).length === 0,
+};
+
 const TONE_RENDER: Partial<
   Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
 > = {
@@ -211,6 +224,20 @@ const TONE_RENDER: Partial<
     <FlashpointReport matches={extractFlashpointMatches(data)} />
   ),
   tone_dynamics__scd: (data) => <ScdReport scd={extractScd(data)} />,
+};
+
+const TONE_EMPTINESS: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => boolean>
+> = {
+  tone_dynamics__flashpoint: (data) => extractFlashpointMatches(data).length === 0,
+  tone_dynamics__scd: (data) => {
+    const scd = extractScd(data);
+    return (
+      scd.insufficient_conversation &&
+      (scd.tone_labels ?? []).length === 0 &&
+      Object.keys(scd.per_speaker_notes ?? {}).length === 0
+    );
+  },
 };
 
 const FACTS_RENDER: Partial<
@@ -224,6 +251,13 @@ const FACTS_RENDER: Partial<
   ),
 };
 
+const FACTS_EMPTINESS: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => boolean>
+> = {
+  facts_claims__dedup: (data) => extractClaimsReport(data).deduped_claims.length === 0,
+  facts_claims__known_misinfo: (data) => extractKnownMisinfo(data).length === 0,
+};
+
 const OPINIONS_RENDER: Partial<
   Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
 > = {
@@ -233,6 +267,22 @@ const OPINIONS_RENDER: Partial<
   opinions_sentiments__subjective: (data) => (
     <SubjectiveReport claims={extractSubjectiveClaims(data)} />
   ),
+};
+
+const OPINIONS_EMPTINESS: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => boolean>
+> = {
+  opinions_sentiments__sentiment: (data) => {
+    const stats = extractSentimentStats(data);
+    return (
+      stats.per_utterance.length === 0 &&
+      stats.positive_pct === 0 &&
+      stats.negative_pct === 0 &&
+      stats.mean_valence === 0
+    );
+  },
+  opinions_sentiments__subjective: (data) =>
+    extractSubjectiveClaims(data).length === 0,
 };
 
 function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
@@ -273,6 +323,9 @@ export default function Sidebar(props: SidebarProps) {
         )
       : [],
   );
+  const safetyRecommendation = createMemo<SafetyRecommendation | null>(() =>
+    props.payload?.safety?.recommendation ?? null,
+  );
 
   return (
     <aside
@@ -293,20 +346,29 @@ export default function Sidebar(props: SidebarProps) {
           {partialFailedSlugs().map(sectionDisplayName).join(", ")}
         </div>
       </Show>
-      <SectionGroup
-        label="Safety"
-        slugs={SAFETY_SLUGS}
-        sections={effectiveSections()}
-        render={SAFETY_RENDER}
-        jobId={props.jobId}
-        onRetry={props.onRetry}
-        cachedHint={props.cachedHint}
-      />
+      <section class="flex flex-col gap-3">
+        <Show when={safetyRecommendation()}>
+          {(recommendation) => (
+            <SafetyRecommendationReport recommendation={recommendation()} />
+          )}
+        </Show>
+        <SectionGroup
+          label="Safety"
+          slugs={SAFETY_SLUGS}
+          sections={effectiveSections()}
+          render={SAFETY_RENDER}
+          emptinessChecks={SAFETY_EMPTINESS}
+          jobId={props.jobId}
+          onRetry={props.onRetry}
+          cachedHint={props.cachedHint}
+        />
+      </section>
       <SectionGroup
         label="Tone/dynamics"
         slugs={TONE_SLUGS}
         sections={effectiveSections()}
         render={TONE_RENDER}
+        emptinessChecks={TONE_EMPTINESS}
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
@@ -316,6 +378,7 @@ export default function Sidebar(props: SidebarProps) {
         slugs={FACTS_SLUGS}
         sections={effectiveSections()}
         render={FACTS_RENDER}
+        emptinessChecks={FACTS_EMPTINESS}
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
@@ -325,6 +388,7 @@ export default function Sidebar(props: SidebarProps) {
         slugs={OPINIONS_SLUGS}
         sections={effectiveSections()}
         render={OPINIONS_RENDER}
+        emptinessChecks={OPINIONS_EMPTINESS}
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}

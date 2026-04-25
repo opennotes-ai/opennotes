@@ -27,6 +27,7 @@ from src.analyses.opinions._schemas import OpinionsReport
 from src.analyses.safety._schemas import (
     HarmfulContentMatch,
     ImageModerationMatch,
+    SafetyRecommendation,
     VideoModerationMatch,
     WebRiskFinding,
 )
@@ -119,6 +120,7 @@ class SafetySection(BaseModel):
     """Harmful-content matches surfaced by OpenAI moderation."""
 
     harmful_content_matches: list[HarmfulContentMatch] = Field(default_factory=list)
+    recommendation: SafetyRecommendation | None = None
 
 
 class WebRiskSection(BaseModel):
@@ -239,6 +241,7 @@ __all__ = [
     "JobStatus",
     "OpinionsSection",
     "PageKind",
+    "SafetyRecommendation",
     "SafetySection",
     "SectionSlot",
     "SectionSlug",

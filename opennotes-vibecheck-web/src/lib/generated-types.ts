@@ -757,12 +757,28 @@ export interface components {
             insufficient_conversation: boolean;
         };
         /**
+         * SafetyLevel
+         * @enum {string}
+         */
+        SafetyLevel: "safe" | "caution" | "unsafe";
+        /** SafetyRecommendation */
+        SafetyRecommendation: {
+            level: components["schemas"]["SafetyLevel"];
+            /** Rationale */
+            rationale: string;
+            /** Top Signals */
+            top_signals?: string[];
+            /** Unavailable Inputs */
+            unavailable_inputs?: string[];
+        };
+        /**
          * SafetySection
          * @description Harmful-content matches surfaced by OpenAI moderation.
          */
         SafetySection: {
             /** Harmful Content Matches */
             harmful_content_matches?: components["schemas"]["HarmfulContentMatch"][];
+            recommendation?: components["schemas"]["SafetyRecommendation"] | null;
         };
         /**
          * SectionSlot

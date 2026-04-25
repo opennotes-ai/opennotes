@@ -405,7 +405,7 @@ test("1474 moderation sections fill progressively and render provider/source det
 
   await expect(
     page.locator('[data-testid="safety-provider-label"]'),
-  ).toContainText(["OpenAI moderation", "Google Natural Language"]);
+  ).toContainText(["Moderator A", "Moderator B"]);
   await expect(
     page.locator('[data-testid="slot-safety__video_moderation"]'),
   ).toHaveAttribute("data-slot-state", "done", { timeout: 60_000 });
@@ -424,7 +424,7 @@ test("1474 moderation sections fill progressively and render provider/source det
   ).toHaveAttribute("data-flagged", "true");
   await expect(
     page.locator('[data-testid="image-moderation-max"]'),
-  ).toContainText("96%");
+  ).toHaveCount(0);
   await expect(
     page.locator('[data-testid="image-moderation-category"]'),
   ).toContainText(["adult", "racy"]);

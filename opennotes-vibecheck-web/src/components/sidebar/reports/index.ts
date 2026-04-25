@@ -1,4 +1,5 @@
 export { default as SafetyModerationReport } from "./SafetyModerationReport";
+export { default as SafetyRecommendationReport } from "./SafetyRecommendationReport";
 export { default as WebRiskReport } from "./WebRiskReport";
 export { default as ImageModerationReport } from "./ImageModerationReport";
 export { default as VideoModerationReport } from "./VideoModerationReport";

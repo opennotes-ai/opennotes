@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     error_message TEXT,
     error_host TEXT,
     sections JSONB NOT NULL DEFAULT '{}'::jsonb,
+    safety_recommendation JSONB,
     sidebar_payload JSONB,
     cached BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -135,6 +136,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS
 -- so the route ignores the header).
 ALTER TABLE vibecheck_jobs
     ADD COLUMN IF NOT EXISTS test_fail_slug TEXT;
+
+-- TASK-1474.32: aggregate safety recommendation written after the four
+-- safety slots complete. Nullable for old rows and optional-agent failure.
+ALTER TABLE vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS safety_recommendation JSONB;
 
 -- =========================================================================
 -- vibecheck_scrapes (persisted scrape bundles for retry resumption)

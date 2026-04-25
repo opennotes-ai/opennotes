@@ -1295,6 +1295,46 @@
         "title": "SCDReport",
         "description": "Structured output of `analyze_scd`.\n\nMirrors the structural intent of Cornell ConvoKit's SCD trajectory summary,\nbut in a conversational register: a free-form `narrative` describing how\nthe conversation unfolds, and a structured `speaker_arcs` list ready for\ntimeline visualization. Legacy fields (`summary`, `tone_labels`,\n`per_speaker_notes`, `insufficient_conversation`) are retained so existing\nconsumers continue to work while orchestrator slot wiring is migrated.\nFor inputs that lack a real multi-speaker conversation, the model is\nbypassed and `insufficient_conversation=True` is set."
       },
+      "SafetyLevel": {
+        "type": "string",
+        "enum": [
+          "safe",
+          "caution",
+          "unsafe"
+        ],
+        "title": "SafetyLevel"
+      },
+      "SafetyRecommendation": {
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/SafetyLevel"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale"
+          },
+          "top_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Top Signals"
+          },
+          "unavailable_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unavailable Inputs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "level",
+          "rationale"
+        ],
+        "title": "SafetyRecommendation"
+      },
       "SafetySection": {
         "properties": {
           "harmful_content_matches": {
@@ -1303,6 +1343,16 @@
             },
             "type": "array",
             "title": "Harmful Content Matches"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafetyRecommendation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
