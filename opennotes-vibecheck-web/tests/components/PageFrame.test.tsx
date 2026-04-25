@@ -249,6 +249,48 @@ describe("<PageFrame />", () => {
     expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
+  it("renders the screenshot at natural width inside a scrollable wrapper", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        previewMode="screenshot"
+        screenshotUrl="https://cdn.example.com/shot.png"
+      />
+    ));
+
+    const img = screen.getByTestId(
+      "page-frame-screenshot",
+    ) as HTMLImageElement;
+    const imgClass = img.getAttribute("class") ?? "";
+
+    expect(imgClass).not.toContain("object-contain");
+    expect(imgClass).not.toContain("w-full");
+    expect(imgClass).toMatch(/max-w-none/);
+
+    const wrapper = img.parentElement as HTMLElement;
+    expect(wrapper).not.toBeNull();
+    const wrapperClass = wrapper.getAttribute("class") ?? "";
+    expect(wrapperClass).toMatch(/overflow-auto/);
+  });
+
+  it("keeps the bottom 'Open original' bar outside the scrollable screenshot wrapper", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={true}
+        previewMode="screenshot"
+        screenshotUrl="https://cdn.example.com/shot.png"
+      />
+    ));
+
+    const link = screen.getByRole("link", { name: /open original/i });
+    const img = screen.getByTestId("page-frame-screenshot");
+    const wrapper = img.parentElement as HTMLElement;
+
+    expect(wrapper.contains(link)).toBe(false);
+  });
+
   it("always shows an 'Open original' link", () => {
     render(() => (
       <PageFrame

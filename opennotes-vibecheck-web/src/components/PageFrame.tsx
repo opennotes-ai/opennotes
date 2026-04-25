@@ -220,12 +220,14 @@ export default function PageFrame(props: PageFrameProps) {
       </Show>
 
       <Show when={showScreenshot()}>
-        <img
-          data-testid="page-frame-screenshot"
-          src={props.screenshotUrl ?? ""}
-          alt={`Screenshot of ${props.url}`}
-          class="h-full w-full flex-1 bg-background object-contain object-top"
-        />
+        <div class="flex-1 overflow-auto bg-background">
+          <img
+            data-testid="page-frame-screenshot"
+            src={props.screenshotUrl ?? ""}
+            alt={`Screenshot of ${props.url}`}
+            class="block max-w-none"
+          />
+        </div>
       </Show>
 
       <Show when={activePreview() === "unavailable"}>
