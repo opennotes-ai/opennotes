@@ -185,7 +185,7 @@ describe("<UrlInput />", () => {
     expect(button.disabled).toBe(true);
   });
 
-  it("renders the input and submit button at the same height", () => {
+  it("declares the same h-* token on input and submit button", () => {
     render(() => <UrlInput action="/submit" />);
     const input = screen.getByLabelText(
       /url to analyze/i,
