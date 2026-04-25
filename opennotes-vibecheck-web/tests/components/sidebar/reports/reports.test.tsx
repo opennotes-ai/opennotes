@@ -387,7 +387,28 @@ describe("<FlashpointReport />", () => {
     expect(reasoning.textContent).toMatch(
       /sarcasm hardening into outright dismissal/,
     );
-    expect(reasoning.className).toMatch(/line-clamp-2/);
+  });
+
+  it("clamps long reasoning text and exposes it via a popover trigger", () => {
+    const longReasoning =
+      "The exchange begins with mutual probing but rapidly intensifies as one " +
+      "participant introduces sarcasm framed as humor while the other reads it " +
+      "as a personal slight, and the resulting back-and-forth hardens with each " +
+      "turn into a pattern of mutual dismissal that no longer engages the topic.";
+    const matches: FlashpointMatch[] = [
+      {
+        scan_type: "conversation_flashpoint",
+        utterance_id: "12",
+        derailment_score: 60,
+        risk_level: "Heated",
+        reasoning: longReasoning,
+        context_messages: 3,
+      },
+    ];
+    render(() => <FlashpointReport matches={matches} />);
+    const reasoning = screen.getByTestId("flashpoint-reasoning");
+    expect(reasoning.getAttribute("data-truncated")).toBe("true");
+    expect(reasoning.className).toMatch(/line-clamp-/);
   });
 
   it("renders multiple matches in input order", () => {

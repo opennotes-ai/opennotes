@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import ExpandableText from "../ExpandableText";
 
 type ClaimsReport = components["schemas"]["ClaimsReport"];
 type DedupedClaim = components["schemas"]["DedupedClaim"];
@@ -35,7 +36,12 @@ export default function ClaimsDedupReport(props: ClaimsDedupReportProps) {
           <For each={sorted()}>
             {(claim) => (
               <li data-testid="deduped-claim-item" class="text-xs">
-                <p class="text-foreground">{claim.canonical_text}</p>
+                <ExpandableText
+                  text={claim.canonical_text}
+                  lines={2}
+                  testId="deduped-claim-text"
+                  class="text-foreground"
+                />
                 <p class="mt-0.5 text-[11px] text-muted-foreground">
                   <span data-testid="deduped-claim-occurrences">
                     &times;{claim.occurrence_count}

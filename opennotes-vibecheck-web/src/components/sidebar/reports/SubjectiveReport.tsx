@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import ExpandableText from "../ExpandableText";
 
 type SubjectiveClaim = components["schemas"]["SubjectiveClaim"];
 
@@ -31,12 +32,19 @@ export default function SubjectiveReport(props: SubjectiveReportProps) {
             {(claim) => (
               <li
                 data-testid="subjective-claim"
-                class="text-xs text-foreground"
+                class="flex items-start gap-2 text-xs text-foreground"
               >
-                <span class="mr-1 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <span class="shrink-0 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   {claim.stance}
                 </span>
-                {claim.claim_text}
+                <div class="min-w-0 flex-1">
+                  <ExpandableText
+                    text={claim.claim_text}
+                    lines={2}
+                    testId="subjective-claim-text"
+                    class="text-foreground"
+                  />
+                </div>
               </li>
             )}
           </For>

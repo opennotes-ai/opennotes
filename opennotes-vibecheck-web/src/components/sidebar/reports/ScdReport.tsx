@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import ExpandableText from "../ExpandableText";
 
 type SCDReport = components["schemas"]["SCDReport"];
 type SpeakerArc = components["schemas"]["SpeakerArc"];
@@ -41,12 +42,12 @@ export default function ScdReport(props: ScdReportProps): JSX.Element {
         }
       >
         <Show when={narrativeText().length > 0}>
-          <p
-            data-testid="scd-narrative"
+          <ExpandableText
+            text={narrativeText()}
+            lines={3}
+            testId="scd-narrative"
             class="text-xs leading-relaxed text-foreground"
-          >
-            {narrativeText()}
-          </p>
+          />
         </Show>
 
         <Show when={toneLabels().length > 0}>

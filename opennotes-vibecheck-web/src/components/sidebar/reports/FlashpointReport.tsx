@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import ExpandableText from "../ExpandableText";
 
 type FlashpointMatch = components["schemas"]["FlashpointMatch"];
 type RiskLevel = components["schemas"]["RiskLevel"];
@@ -72,12 +73,12 @@ export default function FlashpointReport(
                 >
                   {formatScore(match.derailment_score)}
                 </p>
-                <p
-                  data-testid="flashpoint-reasoning"
-                  class="line-clamp-2 text-xs text-muted-foreground"
-                >
-                  {match.reasoning}
-                </p>
+                <ExpandableText
+                  text={match.reasoning}
+                  lines={2}
+                  testId="flashpoint-reasoning"
+                  class="text-xs text-muted-foreground"
+                />
               </li>
             )}
           </For>

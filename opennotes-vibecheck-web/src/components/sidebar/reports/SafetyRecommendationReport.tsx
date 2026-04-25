@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import ExpandableText from "../ExpandableText";
 
 type SafetyRecommendation = components["schemas"]["SafetyRecommendation"];
 
@@ -36,9 +37,12 @@ export default function SafetyRecommendationReport(
                 {recommendation().level}
               </span>
             </div>
-            <p class="leading-relaxed text-foreground">
-              {recommendation().rationale}
-            </p>
+            <ExpandableText
+              text={recommendation().rationale}
+              lines={3}
+              testId="safety-recommendation-rationale"
+              class="leading-relaxed text-foreground"
+            />
             <Show when={shownSignals().length > 0}>
               <ul class="list-disc space-y-1 pl-4 text-muted-foreground">
                 <For each={shownSignals()}>
