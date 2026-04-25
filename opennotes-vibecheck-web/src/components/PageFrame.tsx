@@ -39,9 +39,8 @@ export default function PageFrame(props: PageFrameProps) {
     if (iframeVerifiedRenderable() || (!hasBlockingHint() && !iframeFailed())) {
       return "original";
     }
-    if (hasArchive()) return "archived";
     if (props.screenshotUrl) return "screenshot";
-    return iframeFailed() ? "unavailable" : "original";
+    return "unavailable";
   };
 
   const showIframe = () => !iframeFailed();

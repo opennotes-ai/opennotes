@@ -44,7 +44,7 @@ describe("<PageFrame />", () => {
     );
   });
 
-  it("shows the archived iframe first when a blocking hint has an archive URL", () => {
+  it("falls back to the screenshot (not the archive) when Original is selected and the iframe is blocked", () => {
     render(() => (
       <PageFrame
         url="https://example.com/article"
@@ -52,6 +52,44 @@ describe("<PageFrame />", () => {
         blockingHeader="content-security-policy: frame-ancestors 'none'"
         archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
         screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode="original"
+      />
+    ));
+
+    const screenshot = screen.getByTestId(
+      "page-frame-screenshot",
+    ) as HTMLImageElement;
+    expect(screenshot.getAttribute("src")).toBe(
+      "https://cdn.example.com/shot.png",
+    );
+    expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+  });
+
+  it("never silently renders the archive when Original is selected, even without a screenshot", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl={null}
+        previewMode="original"
+      />
+    ));
+
+    expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
+    expect(screen.queryByTestId("page-frame-unavailable")).not.toBeNull();
+  });
+
+  it("shows the archived iframe when the user explicitly selects Archived", () => {
+    render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={false}
+        blockingHeader="content-security-policy: frame-ancestors 'none'"
+        archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
+        screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode="archived"
       />
     ));
 
@@ -62,19 +100,17 @@ describe("<PageFrame />", () => {
       "/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle",
     );
     expect(archived.getAttribute("sandbox")).toBe("allow-same-origin");
-    expect(screen.getByTestId("page-frame-iframe").getAttribute("aria-hidden")).toBe(
-      "true",
-    );
     expect(screen.queryByTestId("page-frame-screenshot")).toBeNull();
   });
 
-  it("falls from archived iframe to screenshot when archived errors", async () => {
+  it("falls from archived iframe to screenshot when archived errors and Archived was explicitly selected", async () => {
     render(() => (
       <PageFrame
         url="https://example.com/article"
         canIframe={false}
         archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
         screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode="archived"
       />
     ));
 
@@ -90,13 +126,14 @@ describe("<PageFrame />", () => {
     expect(screen.queryByTestId("page-frame-archived-iframe")).toBeNull();
   });
 
-  it("falls from archived iframe to screenshot when archived loads blank", async () => {
+  it("falls from archived iframe to screenshot when archived loads blank and Archived was explicitly selected", async () => {
     render(() => (
       <PageFrame
         url="https://example.com/article"
         canIframe={false}
         archivedPreviewUrl="/api/archive-preview?url=https%3A%2F%2Fexample.com%2Farticle"
         screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode="archived"
       />
     ));
 

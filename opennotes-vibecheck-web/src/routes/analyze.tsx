@@ -207,11 +207,15 @@ export default function AnalyzePage() {
     }
   };
 
-  const mainClass = createMemo(() =>
-    previewSize() === "max"
-      ? "mx-auto flex min-h-screen w-full max-w-[min(100vw-2rem,1600px)] flex-col gap-6 px-4 py-8"
-      : "mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-8",
-  );
+  const mainClass = createMemo(() => {
+    if (previewSize() === "max") {
+      return "mx-auto flex min-h-screen w-full max-w-[min(100vw-2rem,1600px)] flex-col gap-6 px-4 py-8";
+    }
+    if (previewSize() === "large") {
+      return "mx-auto flex min-h-screen w-full max-w-[min(100vw-2rem,1280px)] flex-col gap-6 px-4 py-8";
+    }
+    return "mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-8";
+  });
 
   const layoutClass = createMemo(() => {
     if (previewSize() === "large") {
@@ -300,7 +304,7 @@ export default function AnalyzePage() {
                     </div>
                     <div
                       data-testid="preview-size-selector"
-                      class="hidden lg:flex items-center justify-end"
+                      class="flex items-center justify-end"
                       role="group"
                       aria-label="Preview size"
                     >
