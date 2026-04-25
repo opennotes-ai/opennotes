@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import PageFrame from "../../src/components/PageFrame";
 
 afterEach(() => {
@@ -13,6 +14,7 @@ describe("<PageFrame />", () => {
         url="https://example.com/article"
         canIframe={true}
         screenshotUrl={null}
+        previewMode="original"
       />
     ));
 
@@ -35,6 +37,7 @@ describe("<PageFrame />", () => {
         canIframe={false}
         blockingHeader="content-security-policy: frame-ancestors 'none'"
         screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode="original"
       />
     ));
 
@@ -180,6 +183,7 @@ describe("<PageFrame />", () => {
         url="https://example.com/article"
         canIframe={true}
         screenshotUrl="https://cdn.example.com/shot.png"
+        previewMode="original"
       />
     ));
 
@@ -201,6 +205,7 @@ describe("<PageFrame />", () => {
         url="https://blocked.example.com/article"
         canIframe={true}
         screenshotUrl="https://cdn.example.com/blocked.png"
+        previewMode="original"
       />
     ));
 
@@ -223,12 +228,52 @@ describe("<PageFrame />", () => {
     expect(img.getAttribute("src")).toBe("https://cdn.example.com/blocked.png");
   });
 
+  it("falls back to the screenshot when blocking evidence arrives after the iframe verified as renderable", async () => {
+    const [canIframe, setCanIframe] = createSignal(true);
+    const [blockingHeader, setBlockingHeader] = createSignal<string | null>(
+      null,
+    );
+
+    const { unmount } = render(() => (
+      <PageFrame
+        url="https://example.com/article"
+        canIframe={canIframe()}
+        blockingHeader={blockingHeader()}
+        screenshotUrl="https://cdn.example.com/late.png"
+        previewMode="original"
+      />
+    ));
+
+    const iframe = screen.getByTestId(
+      "page-frame-iframe",
+    ) as HTMLIFrameElement;
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      value: {
+        location: { href: "https://example.com/article" },
+        body: { children: [{}], textContent: "Hello world" },
+        title: "Example",
+      },
+    });
+    iframe.dispatchEvent(new Event("load"));
+
+    setCanIframe(false);
+    setBlockingHeader("content-security-policy: frame-ancestors 'none'");
+
+    const img = (await screen.findByTestId(
+      "page-frame-screenshot",
+    )) as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("https://cdn.example.com/late.png");
+    unmount();
+  });
+
   it("keeps the iframe when cross-origin access throws after load", async () => {
     render(() => (
       <PageFrame
         url="https://open.example.com/article"
         canIframe={true}
         screenshotUrl="https://cdn.example.com/open.png"
+        previewMode="original"
       />
     ));
 
@@ -297,6 +342,7 @@ describe("<PageFrame />", () => {
         url="https://example.com/article"
         canIframe={true}
         screenshotUrl={null}
+        previewMode="original"
       />
     ));
 
