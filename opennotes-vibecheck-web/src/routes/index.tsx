@@ -61,8 +61,8 @@ export default function HomePage() {
         </Show>
 
         <p class="text-xs text-muted-foreground">
-          Results appear instantly for recently analyzed URLs. New URLs take
-          about 30-60 seconds to analyze.
+          Results appear instantly for recently analyzed URLs. New URLs take a
+          bit longer.
         </p>
       </main>
     </>
