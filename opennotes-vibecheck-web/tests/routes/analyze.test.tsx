@@ -518,6 +518,48 @@ describe("AnalyzePage route", () => {
     expect(maxClass).toMatch(/max-w-\[/);
   });
 
+  it("uses outer-corners-only rounding on segmented controls so selected/hover does not show a half-rounded artifact", async () => {
+    renderAt("/analyze?job=job-segmented&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-mode-selector")).not.toBeNull();
+    });
+
+    const checkSegmentRounding = (groupTestId: string, labels: string[]) => {
+      const buttons = labels.map(
+        (label) => screen.getByRole("button", { name: label }) as HTMLElement,
+      );
+      // Sanity: all buttons live inside the same segmented group.
+      for (const b of buttons) {
+        expect(b.closest(`[data-testid='${groupTestId}']`)).not.toBeNull();
+      }
+      // None of the segment buttons should have plain `rounded-md` — that's the bug.
+      for (const b of buttons) {
+        const cls = b.getAttribute("class") ?? "";
+        expect(cls).not.toMatch(/(?:^|\s)rounded-md(?:\s|$)/);
+      }
+      const first = buttons[0].getAttribute("class") ?? "";
+      const last = buttons[buttons.length - 1].getAttribute("class") ?? "";
+      expect(first).toMatch(/rounded-l-md/);
+      expect(last).toMatch(/rounded-r-md/);
+      for (let i = 1; i < buttons.length - 1; i++) {
+        const mid = buttons[i].getAttribute("class") ?? "";
+        expect(mid).toMatch(/rounded-none/);
+      }
+    };
+
+    checkSegmentRounding("preview-mode-selector", [
+      "Original",
+      "Archived",
+      "Screenshot",
+    ]);
+    checkSegmentRounding("preview-size-selector", [
+      "Regular",
+      "Large",
+      "Max width",
+    ]);
+  });
+
   it("renders preview mode selector alongside the width selector", async () => {
     renderAt("/analyze?job=job-preview-modes&url=https://news.example.com/a");
 

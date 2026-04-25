@@ -227,15 +227,17 @@ export default function AnalyzePage() {
     return "flex flex-col gap-6 lg:grid lg:grid-cols-[3fr_2fr] lg:gap-8";
   });
 
-  const previewButtonClass = (size: PreviewSize) =>
-    previewSize() === size
-      ? "rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background"
-      : "rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground";
+  const segmentCornerClass = (index: number, total: number) => {
+    if (total <= 1) return "rounded-md";
+    if (index === 0) return "rounded-l-md rounded-r-none";
+    if (index === total - 1) return "rounded-r-md rounded-l-none";
+    return "rounded-none";
+  };
 
-  const previewModeButtonClass = (mode: PreviewMode) =>
-    previewMode() === mode
-      ? "rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background"
-      : "rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground";
+  const segmentClass = (isSelected: boolean, corners: string) =>
+    isSelected
+      ? `${corners} bg-foreground px-3 py-1.5 text-xs font-medium text-background`
+      : `${corners} px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground`;
 
   return (
     <>
@@ -289,10 +291,16 @@ export default function AnalyzePage() {
                     >
                       <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
                         <For each={PREVIEW_MODE_OPTIONS}>
-                          {(option) => (
+                          {(option, index) => (
                             <button
                               type="button"
-                              class={previewModeButtonClass(option.value)}
+                              class={segmentClass(
+                                previewMode() === option.value,
+                                segmentCornerClass(
+                                  index(),
+                                  PREVIEW_MODE_OPTIONS.length,
+                                ),
+                              )}
                               aria-pressed={previewMode() === option.value}
                               onClick={() => setPreviewMode(option.value)}
                             >
@@ -310,10 +318,16 @@ export default function AnalyzePage() {
                     >
                       <div class="inline-flex rounded-lg border border-border bg-muted/50 p-1">
                         <For each={PREVIEW_SIZE_OPTIONS}>
-                          {(option) => (
+                          {(option, index) => (
                             <button
                               type="button"
-                              class={previewButtonClass(option.value)}
+                              class={segmentClass(
+                                previewSize() === option.value,
+                                segmentCornerClass(
+                                  index(),
+                                  PREVIEW_SIZE_OPTIONS.length,
+                                ),
+                              )}
                               aria-pressed={previewSize() === option.value}
                               onClick={() => selectPreviewSize(option.value)}
                             >
