@@ -402,6 +402,119 @@ describe("SectionGroup", () => {
     expect(html).not.toMatch(/\bborder-l-2\b/);
   });
 
+  it("renders a chevron icon (not a +/- glyph) on the slot toggle and rotates it when expanded", async () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{ tone_dynamics__flashpoint: { state: "pending", attempt_id: "" } }}
+        render={{}}
+      />
+    ));
+
+    const toggle = screen.getByTestId(
+      "slot-toggle-tone_dynamics__flashpoint",
+    );
+
+    expect(toggle.textContent ?? "").not.toContain("+");
+    expect(toggle.textContent ?? "").not.toContain("-");
+
+    const chevron = toggle.querySelector('[data-testid="slot-chevron"]');
+    expect(chevron).not.toBeNull();
+    expect(chevron?.tagName.toLowerCase()).toBe("svg");
+    expect(chevron?.getAttribute("data-state")).toBe("collapsed");
+
+    await fireEvent.click(toggle);
+    expect(chevron?.getAttribute("data-state")).toBe("expanded");
+  });
+
+  it("renders a result-count badge for done slots", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "a1",
+            data: { flashpoint_matches: [{}, {}, {}] },
+          },
+          tone_dynamics__scd: {
+            state: "done",
+            attempt_id: "a2",
+            data: { scd: makeEmptyScd() },
+          },
+        }}
+        render={{}}
+        counts={{
+          tone_dynamics__flashpoint: (data) =>
+            ((data as { flashpoint_matches?: unknown[] })
+              .flashpoint_matches ?? []).length,
+          tone_dynamics__scd: () => 0,
+        }}
+      />
+    ));
+
+    const flashBadge = screen.getByTestId(
+      "slot-count-tone_dynamics__flashpoint",
+    );
+    expect(flashBadge.textContent).toBe("3 results");
+
+    const scdBadge = screen.getByTestId("slot-count-tone_dynamics__scd");
+    expect(scdBadge.textContent).toBe("no results");
+  });
+
+  it("uses singular 'result' when the count is exactly 1", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{
+          tone_dynamics__flashpoint: {
+            state: "done",
+            attempt_id: "a1",
+            data: { flashpoint_matches: [{}] },
+          },
+        }}
+        render={{}}
+        counts={{
+          tone_dynamics__flashpoint: (data) =>
+            ((data as { flashpoint_matches?: unknown[] })
+              .flashpoint_matches ?? []).length,
+        }}
+      />
+    ));
+
+    expect(
+      screen.getByTestId("slot-count-tone_dynamics__flashpoint").textContent,
+    ).toBe("1 result");
+  });
+
+  it("does not render a count badge while the slot is still pending or running", () => {
+    render(() => (
+      <SectionGroup
+        label="Tone/dynamics"
+        slugs={TONE_SLUGS}
+        sections={{
+          tone_dynamics__flashpoint: { state: "running", attempt_id: "a1" },
+          tone_dynamics__scd: { state: "pending", attempt_id: "" },
+        }}
+        render={{}}
+        counts={{
+          tone_dynamics__flashpoint: () => 5,
+          tone_dynamics__scd: () => 0,
+        }}
+      />
+    ));
+
+    expect(
+      screen.queryByTestId("slot-count-tone_dynamics__flashpoint"),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("slot-count-tone_dynamics__scd"),
+    ).toBeNull();
+  });
+
   it("collapses pending slots and exposes an accessible toggle", async () => {
     render(() => (
       <SectionGroup
