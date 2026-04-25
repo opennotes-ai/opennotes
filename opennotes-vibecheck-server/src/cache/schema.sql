@@ -142,6 +142,14 @@ ALTER TABLE vibecheck_jobs
 ALTER TABLE vibecheck_jobs
     ADD COLUMN IF NOT EXISTS safety_recommendation JSONB;
 
+-- TASK-1474.23.02: post-Gemini stage breadcrumb. The orchestrator updates
+-- `last_stage` synchronously at each stage boundary (persist_utterances,
+-- set_analyzing, run_sections, safety_recommendation, finalize) so a
+-- silent worker death between stages still leaves a DB-visible marker
+-- pinpointing the dying stage. Always-NULL on legacy rows.
+ALTER TABLE vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS last_stage TEXT;
+
 -- =========================================================================
 -- vibecheck_scrapes (persisted scrape bundles for retry resumption)
 -- =========================================================================

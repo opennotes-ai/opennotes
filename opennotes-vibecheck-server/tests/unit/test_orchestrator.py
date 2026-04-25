@@ -6,6 +6,9 @@ without standing up Postgres or the FastAPI app.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+from typing import Any
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -255,3 +258,181 @@ async def test_safety_recommendation_step_noops_when_attempt_rotates(monkeypatch
     )
 
     assert conn.written is None
+
+
+# ---------------------------------------------------------------------------
+# TASK-1474.23.02 — post-Gemini stage tracking, top-level try/except,
+# heartbeat lifecycle logs.
+# ---------------------------------------------------------------------------
+
+
+class _StageRecorderConn:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, ...]] = []
+
+    async def execute(self, *args):
+        self.calls.append(args)
+        return "UPDATE 1"
+
+
+class _ExecuteFailingConn:
+    async def execute(self, *args):
+        raise RuntimeError("db down")
+
+
+async def test_set_last_stage_writes_breadcrumb_with_attempt_cas() -> None:
+    """_set_last_stage writes (last_stage, job_id, attempt_id) via CAS UPDATE."""
+    from src.jobs import orchestrator
+
+    conn = _StageRecorderConn()
+    job_id = uuid4()
+    task_attempt = uuid4()
+
+    await orchestrator._set_last_stage(
+        FakePool(conn), job_id, task_attempt, "persist_utterances"
+    )
+
+    assert len(conn.calls) == 1
+    sql, captured_job_id, captured_stage, captured_attempt = conn.calls[0]
+    assert "last_stage" in sql
+    assert captured_job_id == job_id
+    assert captured_stage == "persist_utterances"
+    assert captured_attempt == task_attempt
+
+
+async def test_set_last_stage_swallows_db_failure(caplog: pytest.LogCaptureFixture) -> None:
+    """A DB failure inside the breadcrumb write must not tear down the pipeline."""
+    from src.jobs import orchestrator
+
+    caplog.set_level(logging.WARNING, logger="src.jobs.orchestrator")
+
+    await orchestrator._set_last_stage(
+        FakePool(_ExecuteFailingConn()),
+        uuid4(),
+        uuid4(),
+        "persist_utterances",
+    )
+
+    assert any("set_last_stage" in r.message for r in caplog.records)
+
+
+def _stub_pre_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Short-circuit the scrape/extract preamble so tests focus on post-Gemini."""
+    from src.jobs import orchestrator
+
+    monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
+    monkeypatch.setattr(orchestrator, "_build_firecrawl_client", lambda s: MagicMock())
+
+    async def stub_scrape_step(*args, **kwargs):
+        return MagicMock(metadata=None)
+
+    async def stub_revalidate(*args, **kwargs):
+        return None
+
+    async def stub_extract(*args, **kwargs):
+        return MagicMock()
+
+    monkeypatch.setattr(orchestrator, "_scrape_step", stub_scrape_step)
+    monkeypatch.setattr(orchestrator, "_revalidate_final_url", stub_revalidate)
+    monkeypatch.setattr(orchestrator, "extract_utterances", stub_extract)
+
+
+async def test_run_pipeline_logs_traceback_on_unclassified_post_gemini_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Repro the silent-death pattern: a non-classified exception that fires
+    after extract_utterances returns must surface as a logged traceback at
+    the orchestrator boundary, not silently propagate without a breadcrumb.
+    """
+    from src.jobs import orchestrator
+
+    _stub_pre_gemini(monkeypatch)
+
+    async def noop_set_last_stage(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(orchestrator, "_set_last_stage", noop_set_last_stage)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("post-gemini handler exploded")
+
+    monkeypatch.setattr(orchestrator, "persist_utterances", boom)
+
+    caplog.set_level(logging.ERROR, logger="src.jobs.orchestrator")
+
+    with pytest.raises(RuntimeError, match="post-gemini handler exploded"):
+        await orchestrator._run_pipeline(
+            MagicMock(), uuid4(), uuid4(), "https://example.com", MagicMock()
+        )
+
+    crash_records = [
+        r for r in caplog.records if "post-gemini handler crashed" in r.message
+    ]
+    assert len(crash_records) == 1, (
+        f"expected exactly one crash log; got {[r.message for r in caplog.records]}"
+    )
+    assert crash_records[0].exc_info is not None
+
+
+async def test_run_pipeline_writes_last_stage_breadcrumb_at_persist_utterances(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The first post-Gemini stage marker is written before persist_utterances
+    runs; if persist_utterances raises, the breadcrumb is still in place so
+    a DB query can pinpoint where the worker died.
+    """
+    from src.jobs import orchestrator
+
+    _stub_pre_gemini(monkeypatch)
+
+    stage_calls: list[str] = []
+
+    async def spy_set_last_stage(pool, job_id, task_attempt, stage):
+        stage_calls.append(stage)
+
+    monkeypatch.setattr(orchestrator, "_set_last_stage", spy_set_last_stage)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("stop here")
+
+    monkeypatch.setattr(orchestrator, "persist_utterances", boom)
+
+    with pytest.raises(RuntimeError):
+        await orchestrator._run_pipeline(
+            MagicMock(), uuid4(), uuid4(), "https://example.com", MagicMock()
+        )
+
+    assert "persist_utterances" in stage_calls
+
+
+async def test_heartbeat_loop_logs_start_and_cancel_lifecycle(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Heartbeat task must log its own start/stop so we can distinguish
+    a heartbeat-task death from a main-handler death (TASK-1474.23.02 AC4)."""
+    from src.jobs import orchestrator
+
+    class HeartbeatConn:
+        async def execute(self, *args, **kwargs):
+            return "UPDATE 1"
+
+    pool = FakePool(HeartbeatConn())
+    job_id = uuid4()
+    task_attempt = uuid4()
+
+    caplog.set_level(logging.INFO, logger="src.jobs.orchestrator")
+
+    task = asyncio.create_task(
+        orchestrator._heartbeat_loop(pool, job_id, task_attempt, interval_sec=0.01)
+    )
+    await asyncio.sleep(0.03)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    info_msgs = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert any("heartbeat: started" in m for m in info_msgs), info_msgs
+    assert any("heartbeat: cancelled" in m for m in info_msgs), info_msgs

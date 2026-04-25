@@ -60,7 +60,9 @@ CREATE TABLE vibecheck_jobs (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     heartbeat_at TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
-    test_fail_slug TEXT
+    test_fail_slug TEXT,
+    safety_recommendation JSONB,
+    last_stage TEXT
 );
 
 CREATE INDEX vibecheck_jobs_normalized_url_idx
