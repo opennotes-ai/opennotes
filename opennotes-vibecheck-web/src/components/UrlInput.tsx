@@ -92,13 +92,12 @@ export default function UrlInput(props: UrlInputProps) {
           }}
           aria-invalid={error() ? "true" : undefined}
           aria-describedby={error() ? "vibecheck-url-error" : undefined}
-          class="flex-1 px-4 py-3 text-base shadow-xs"
+          class="flex-1 h-11 px-4 text-base shadow-xs"
         />
         <Button
           type="submit"
-          size="lg"
           disabled={props.pending}
-          class="px-5 py-3"
+          class="h-11 px-5 text-base"
         >
           {props.pending ? "Analyzing..." : "Analyze"}
         </Button>
