@@ -85,6 +85,7 @@ async def run_safety_recommendation(
             settings,
             output_type=SafetyRecommendation,
             system_prompt=RECOMMENDATION_SYSTEM_PROMPT,
+            name="vibecheck.safety_recommendation",
         ),
     )
     result = await agent.run(_serialize_inputs(inputs))

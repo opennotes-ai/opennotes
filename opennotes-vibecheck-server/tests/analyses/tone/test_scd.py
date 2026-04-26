@@ -59,12 +59,13 @@ class _BuildAgentSpy:
     build_calls: list[dict[str, object]] = field(default_factory=list)
     last_agent: _FakeAgent | None = None
 
-    def __call__(self, settings, *, output_type=None, system_prompt=None):
+    def __call__(self, settings, *, output_type=None, system_prompt=None, name=None):
         self.build_calls.append(
             {
                 "settings": settings,
                 "output_type": output_type,
                 "system_prompt": system_prompt,
+                "name": name,
             }
         )
         agent = _FakeAgent(report=self.report)

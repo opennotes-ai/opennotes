@@ -82,6 +82,7 @@ async def extract_claims_bulk(
         settings,
         output_type=BulkClaimExtractionResponse,
         system_prompt=_BULK_SYSTEM_PROMPT,
+        name="vibecheck.claims_extract",
     )
     prompt = "Utterances:\n" + "\n".join(prompt_lines)
     result = await agent.run(prompt)

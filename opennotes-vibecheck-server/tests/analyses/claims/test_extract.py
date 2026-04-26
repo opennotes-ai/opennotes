@@ -50,7 +50,7 @@ async def test_extract_claims_returns_claims_with_utterance_id(
     )
     fake_agent = _FakeAgent(response)
 
-    def fake_build_agent(_settings, *, output_type=None, system_prompt=None):
+    def fake_build_agent(_settings, *, output_type=None, system_prompt=None, name=None):
         assert output_type is ClaimExtractionResponse
         assert system_prompt is not None
         assert "verifiable" in system_prompt.lower()

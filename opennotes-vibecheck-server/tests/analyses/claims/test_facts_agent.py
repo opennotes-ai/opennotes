@@ -65,7 +65,7 @@ def _make_fake_agent(
     )
     monkeypatch.setattr(
         "src.analyses.claims.facts_agent.build_agent",
-        lambda settings, output_type=None, system_prompt=None: fake,
+        lambda settings, output_type=None, system_prompt=None, name=None: fake,
     )
     return fake
 
@@ -176,7 +176,7 @@ async def test_tool_failure_returns_empty_list_does_not_raise(
     fake = _CapturingFakeAgent(output=[])
     monkeypatch.setattr(
         "src.analyses.claims.facts_agent.build_agent",
-        lambda settings, output_type=None, system_prompt=None: fake,
+        lambda settings, output_type=None, system_prompt=None, name=None: fake,
     )
     monkeypatch.setattr(
         "src.analyses.claims.facts_agent.check_known_misinformation",

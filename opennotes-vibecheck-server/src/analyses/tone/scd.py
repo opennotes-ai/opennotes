@@ -106,7 +106,12 @@ async def analyze_scd(
         return _insufficient_report()
 
     prompt = _load_scd_prompt()
-    agent = build_agent(settings, output_type=SCDReport, system_prompt=prompt)
+    agent = build_agent(
+        settings,
+        output_type=SCDReport,
+        system_prompt=prompt,
+        name="vibecheck.scd",
+    )
     formatted = _format_utterances(utterances)
     result = await agent.run(formatted)
     return result.output
