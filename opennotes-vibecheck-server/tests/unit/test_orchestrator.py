@@ -1257,3 +1257,365 @@ async def test_scrape_step_tier1_generic_firecrawl_error_raises_transient() -> N
         await _call_scrape_step(url, scrape_client, interact_client, cache)
 
     assert len(interact_client.interact_calls) == 0
+
+
+# ---------------------------------------------------------------------------
+# TASK-1488.06 — `force_tier="interact"` bypass + once-only post-Gemini
+# escalation when extract_utterances raises ZeroUtterancesError.
+# ---------------------------------------------------------------------------
+#
+# These tests cover two seams:
+#
+# 1. `_scrape_step(..., force_tier='interact')` skips Tier 1 entirely. Every
+#    Tier 1 side effect (`scrape_client.scrape`, Tier 1 cache reads/writes)
+#    must be absent, while Tier 2 runs unchanged.
+# 2. `_run_pipeline` catches `ZeroUtterancesError` from the extractor exactly
+#    once, re-runs `_scrape_step(force_tier='interact')`, and re-runs
+#    extraction. A second 0-utterance result yields
+#    `TerminalError(EXTRACTION_FAILED)`. Once-only is enforced by an
+#    explicit boolean — there is no recursion or while-loop.
+
+
+async def test_scrape_step_force_tier_interact_skips_tier1_entirely() -> None:
+    """`force_tier='interact'` is the only seam that lets the ladder skip
+    Tier 1. The Tier 1 client must be untouched — no scrape call, no Tier 1
+    cache read — and Tier 2 runs as if Tier 1 had escalated.
+    """
+    from src.jobs import orchestrator
+
+    url = "https://example.com/already-knew-tier1-fails"
+    cache = _FakeScrapeCache()
+
+    def _fail_tier1() -> ScrapeResult:
+        raise AssertionError("scrape must not be called when force_tier='interact'")
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_fail_tier1)
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    result = await orchestrator._scrape_step(
+        url,
+        cast(FirecrawlClient, cast(object, scrape_client)),
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+        force_tier="interact",
+    )
+
+    assert result.markdown is not None
+    assert "Real Article" in result.markdown
+    # Tier 1 client never touched.
+    assert len(scrape_client.scrape_calls) == 0
+    # Tier 1 cache never read either — the bypass is total.
+    assert all(tier == "interact" for _u, tier in cache.gets)
+    # Tier 2 ran and the row was cached under tier='interact'.
+    assert len(interact_client.interact_calls) == 1
+    assert (url, "interact") in cache.store
+
+
+async def test_scrape_step_force_tier_interact_honors_tier2_cache_hit() -> None:
+    """Even with `force_tier='interact'`, an existing Tier 2 cache row
+    short-circuits the /interact call. The bypass changes which tier runs,
+    not whether the cache is consulted.
+    """
+    from src.jobs import orchestrator
+
+    url = "https://example.com/cached-tier2"
+    cache = _FakeScrapeCache()
+    cache.store[(url, "interact")] = CachedScrape(
+        markdown="cached interact body " * 10,
+        html="<article>cached</article>",
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key="t2-precached",
+    )
+
+    def _fail() -> ScrapeResult:
+        raise AssertionError("no firecrawl call expected on Tier 2 cache hit")
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_fail)
+    interact_client = _FakeFirecrawlClient(interact_result=_fail)
+
+    result = await orchestrator._scrape_step(
+        url,
+        cast(FirecrawlClient, cast(object, scrape_client)),
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+        force_tier="interact",
+    )
+
+    assert result.storage_key == "t2-precached"
+    assert len(scrape_client.scrape_calls) == 0
+    assert len(interact_client.interact_calls) == 0
+
+
+async def test_scrape_step_default_call_unchanged_no_force_tier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default behavior (no `force_tier`) stays identical to 1488.05: Tier 1
+    runs, OK classifications return, escalation only fires on the original
+    triggers. This is a regression guard against the 1488.06 kwarg leaking
+    into the default path.
+    """
+    from src.jobs import orchestrator
+
+    url = "https://example.com/default-path"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(scrape_result=_ok_scrape_result())
+    interact_client = _FakeFirecrawlClient(
+        interact_result=lambda: (_ for _ in ()).throw(
+            AssertionError("interact must NOT run on Tier 1 OK in default path")
+        )
+    )
+
+    result = await orchestrator._scrape_step(
+        url,
+        cast(FirecrawlClient, cast(object, scrape_client)),
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+    )
+
+    assert result.markdown is not None
+    assert len(scrape_client.scrape_calls) == 1
+    assert len(interact_client.interact_calls) == 0
+
+
+# Pipeline-level escalation tests. Drive `_run_pipeline` directly with the
+# pre-Gemini stages stubbed so the assertions are about which scrape/extract
+# calls the once-only escalation fires (and how many times).
+
+
+def _stub_post_gemini_for_escalation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Short-circuit everything AFTER extract_utterances so the pipeline
+    finishes cleanly when extraction succeeds. The escalation logic lives
+    BEFORE persist_utterances, so each downstream stage is a no-op here.
+    """
+    from src.jobs import orchestrator
+
+    async def noop_set_last_stage(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    async def noop_persist(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    async def noop_set_analyzing(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    async def noop_run_sections(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    async def noop_safety_rec(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    async def noop_finalize(*args: Any, **kwargs: Any) -> bool:
+        return True
+
+    monkeypatch.setattr(orchestrator, "_set_last_stage", noop_set_last_stage)
+    monkeypatch.setattr(orchestrator, "persist_utterances", noop_persist)
+    monkeypatch.setattr(orchestrator, "_set_analyzing", noop_set_analyzing)
+    monkeypatch.setattr(orchestrator, "_run_all_sections", noop_run_sections)
+    monkeypatch.setattr(
+        orchestrator, "_run_safety_recommendation_step", noop_safety_rec
+    )
+    monkeypatch.setattr(orchestrator, "maybe_finalize_job", noop_finalize)
+
+
+def _stub_scrape_preamble(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Stub `_build_scrape_cache` / clients / `_revalidate_final_url` and
+    return a list that records every `_scrape_step` call (with `force_tier`)
+    so tests can assert call sequences.
+    """
+    from src.jobs import orchestrator
+
+    monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
+    monkeypatch.setattr(orchestrator, "_build_firecrawl_client", lambda s: MagicMock())
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_tier1_client", lambda s: MagicMock()
+    )
+
+    async def noop_revalidate(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(orchestrator, "_revalidate_final_url", noop_revalidate)
+
+    scrape_calls: list[dict[str, Any]] = []
+
+    async def recording_scrape_step(
+        url: str,
+        scrape_client: Any,
+        interact_client: Any,
+        scrape_cache: Any,
+        *,
+        force_tier: Any = None,
+    ) -> Any:
+        scrape_calls.append({"url": url, "force_tier": force_tier})
+        return MagicMock(metadata=None)
+
+    monkeypatch.setattr(orchestrator, "_scrape_step", recording_scrape_step)
+    return scrape_calls
+
+
+async def test_run_pipeline_first_pass_zero_utterances_escalates_to_interact_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First extract_utterances call raises ZeroUtterancesError; the pipeline
+    escalates by re-running `_scrape_step(force_tier='interact')` and a fresh
+    extract_utterances. Second call returns a non-empty payload → success.
+    """
+    from src.jobs import orchestrator
+    from src.utterances.extractor import ZeroUtterancesError
+
+    _stub_post_gemini_for_escalation(monkeypatch)
+    scrape_calls = _stub_scrape_preamble(monkeypatch)
+
+    extract_calls: list[Any] = []
+
+    async def flaky_extract(*args: Any, **kwargs: Any) -> Any:
+        extract_calls.append(args)
+        if len(extract_calls) == 1:
+            raise ZeroUtterancesError("first pass empty")
+        return MagicMock()
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", flaky_extract)
+
+    await orchestrator._run_pipeline(
+        MagicMock(), uuid4(), uuid4(), "https://example.com", MagicMock()
+    )
+
+    assert len(extract_calls) == 2, "extractor must be retried exactly once"
+    assert len(scrape_calls) == 2, "scrape_step must be re-invoked for Tier 2"
+    # First call uses default ladder (no force).
+    assert scrape_calls[0]["force_tier"] is None
+    # Second call MUST force the Tier 2 path.
+    assert scrape_calls[1]["force_tier"] == "interact"
+
+
+async def test_run_pipeline_zero_utterances_twice_raises_terminal_extraction_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the second pass also raises ZeroUtterancesError, the pipeline
+    raises TerminalError(EXTRACTION_FAILED) carrying the "0 utterances after
+    /interact" detail. The orchestrator MUST NOT escalate a third time.
+    """
+    from src.jobs import orchestrator
+    from src.utterances.extractor import ZeroUtterancesError
+
+    _stub_post_gemini_for_escalation(monkeypatch)
+    scrape_calls = _stub_scrape_preamble(monkeypatch)
+
+    extract_calls: list[Any] = []
+
+    async def always_empty(*args: Any, **kwargs: Any) -> Any:
+        extract_calls.append(args)
+        raise ZeroUtterancesError("still empty")
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", always_empty)
+
+    with pytest.raises(TerminalError) as exc_info:
+        await orchestrator._run_pipeline(
+            MagicMock(), uuid4(), uuid4(), "https://example.com", MagicMock()
+        )
+
+    assert exc_info.value.error_code is ErrorCode.EXTRACTION_FAILED
+    assert "0 utterances" in exc_info.value.error_detail
+    assert "interact" in exc_info.value.error_detail
+    assert len(extract_calls) == 2, (
+        "once-only guard: extractor must NOT be called a third time"
+    )
+    assert len(scrape_calls) == 2, (
+        "once-only guard: scrape_step must NOT be re-run a third time"
+    )
+
+
+async def test_run_pipeline_first_pass_success_does_not_escalate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the first extract_utterances call succeeds, no escalation fires:
+    exactly one scrape_step call (default `force_tier=None`) and exactly one
+    extract_utterances call. This guards against the once-only path
+    re-triggering on success.
+    """
+    from src.jobs import orchestrator
+
+    _stub_post_gemini_for_escalation(monkeypatch)
+    scrape_calls = _stub_scrape_preamble(monkeypatch)
+
+    extract_calls: list[Any] = []
+
+    async def good_extract(*args: Any, **kwargs: Any) -> Any:
+        extract_calls.append(args)
+        return MagicMock()
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", good_extract)
+
+    await orchestrator._run_pipeline(
+        MagicMock(), uuid4(), uuid4(), "https://example.com", MagicMock()
+    )
+
+    assert len(extract_calls) == 1
+    assert len(scrape_calls) == 1
+    assert scrape_calls[0]["force_tier"] is None
+
+
+async def test_run_pipeline_zero_utterances_then_success_logs_escalation_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the once-only escalation fires, the second `_scrape_step` call
+    is invoked with `force_tier='interact'` — the explicit signal that
+    Tier 1 should be skipped because Gemini reported 0 utterances on the
+    first pass. This is the operator-visible breadcrumb (combined with the
+    Logfire span attribute set inside `_scrape_step`) that distinguishes
+    "Tier 1 returned empty bundle" from "Tier 1 returned content but Gemini
+    couldn't parse it".
+    """
+    from src.jobs import orchestrator
+    from src.utterances.extractor import ZeroUtterancesError
+
+    _stub_post_gemini_for_escalation(monkeypatch)
+    scrape_calls = _stub_scrape_preamble(monkeypatch)
+
+    extract_count = {"n": 0}
+
+    async def flaky(*args: Any, **kwargs: Any) -> Any:
+        extract_count["n"] += 1
+        if extract_count["n"] == 1:
+            raise ZeroUtterancesError("first pass empty")
+        return MagicMock()
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", flaky)
+
+    await orchestrator._run_pipeline(
+        MagicMock(), uuid4(), uuid4(), "https://example.com", MagicMock()
+    )
+
+    forced_calls = [c for c in scrape_calls if c["force_tier"] == "interact"]
+    assert len(forced_calls) == 1
+
+
+async def test_scrape_step_force_tier_interact_logs_escalation_reason_zero_utterances(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Logfire span on the forced Tier 2 invocation must record
+    `escalation_reason='zero_utterances'`, distinguishing it from the
+    `firecrawl_blocked` / `interstitial` triggers Tier 1 already emits.
+    Operators reading the trace should be able to tell at a glance whether
+    a /interact call happened because Tier 1 refused, classified as
+    interstitial, or because Gemini returned an empty payload.
+    """
+    from src.jobs import orchestrator
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://example.com/forced-interact"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient()  # never called
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    await orchestrator._scrape_step(
+        url,
+        cast(FirecrawlClient, cast(object, scrape_client)),
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+        force_tier="interact",
+    )
+
+    assert span.attrs.get("escalation_reason") == "zero_utterances"
+    # tier_attempted must reflect the bypass: only Tier 2 ran.
+    assert span.attrs.get("tier_attempted") == ["interact"]
+    assert span.attrs.get("tier_success") == "interact"

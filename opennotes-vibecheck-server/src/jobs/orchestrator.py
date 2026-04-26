@@ -59,7 +59,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Literal, NoReturn
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -110,8 +110,10 @@ from src.utils.url_security import InvalidURL, revalidate_redirect_target
 from src.utterances.errors import (
     TransientExtractionError,
     UtteranceExtractionError,
+    ZeroUtterancesError,
 )
 from src.utterances.extractor import extract_utterances
+from src.utterances.schema import UtterancesPayload
 
 logger = get_logger(__name__)
 
@@ -756,6 +758,8 @@ async def _scrape_step(
     scrape_client: FirecrawlClient,
     interact_client: FirecrawlClient,
     scrape_cache: SupabaseScrapeCache,
+    *,
+    force_tier: Literal["scrape", "interact"] | None = None,
 ) -> CachedScrape:
     """Run the tiered scrape ladder for `url` and return a `CachedScrape`.
 
@@ -782,15 +786,27 @@ async def _scrape_step(
         in the message.
       - `OK` → cache as 'interact' and return.
 
+    `force_tier` (TASK-1488.06): when set to `'interact'`, Tier 1 is
+    skipped entirely — neither the Tier 1 cache nor the Tier 1 probe is
+    consulted, and the Tier 2 cache lookup + /interact path runs as if
+    Tier 1 had escalated. This is the seam the once-only post-Gemini
+    escalation uses when `extract_utterances` raises
+    `ZeroUtterancesError` on the first pass: Tier 1 "succeeded" at the
+    classifier but Gemini still couldn't parse a single utterance, so
+    rerunning Tier 1 would just re-feed the same uninterpretable bundle.
+    `force_tier='scrape'` is reserved for symmetry; today no caller uses
+    it. `None` (the default) preserves all 1488.05 behavior. A non-OK
+    Tier 2 outcome under `force_tier` still raises
+    `TerminalError(UNSUPPORTED_SITE)` with `tier 1: skipped (forced)`
+    in the reason so operators can tell the bypass fired.
+
     The whole body is wrapped in a single `logfire.span("vibecheck.scrape_step")`;
     attributes (`tier_attempted`, `tier_success`, `escalation_reason`,
     `final_classification`) are filled in incrementally as the ladder
     progresses so a partial trace still pinpoints where we ended up.
+    Forced bypass sets `escalation_reason='zero_utterances'` so the trace
+    distinguishes it from the `firecrawl_blocked` / `interstitial` paths.
     """
-    # NOTE: TASK-1488.06 is expected to add an optional `force_tier`
-    # kwarg here for the once-only post-Gemini escalation path. The
-    # current signature stays positional-only on the four args so the
-    # follow-up can layer a keyword-only kwarg cleanly.
     tier_attempted: list[str] = []
     tier_success: str | None = None
     escalation_reason: str | None = None
@@ -799,6 +815,25 @@ async def _scrape_step(
     span = logfire.span("vibecheck.scrape_step", url=url)
     with span:
         try:
+            # ----- Forced Tier 2 bypass (TASK-1488.06) ------------------
+            # Skip Tier 1 entirely: no cache read, no /scrape probe. The
+            # caller has already decided Tier 1 cannot help (Gemini
+            # returned 0 utterances on the first pass). Fall straight
+            # through to Tier 2, which still consults its own cache and
+            # records its own classification.
+            if force_tier == "interact":
+                escalation_reason = "zero_utterances"
+                tier_attempted.append("interact")
+                t2 = await _run_tier2(url, interact_client, scrape_cache)
+                final_classification = t2.final_classification
+                if t2.cached is not None:
+                    tier_success = "interact"
+                    return t2.cached
+                raise TerminalError(
+                    ErrorCode.UNSUPPORTED_SITE,
+                    f"tier 1: skipped (forced); tier 2: {t2.tier2_reason}",
+                )
+
             # Tier 1 cache hit: short-circuit before the probe runs.
             cached = await scrape_cache.get(url, tier="scrape")
             if cached is not None:
@@ -1161,43 +1196,52 @@ async def _run_pipeline(
     client = _build_firecrawl_client(settings)
     tier1_client = _build_firecrawl_tier1_client(settings)
 
-    # Scrape (cache or fresh) via the tiered ladder.
-    try:
-        scrape = await _scrape_step(url, tier1_client, client, scrape_cache)
-    except (TransientError, TerminalError):
-        raise
-    except Exception as exc:
-        raise TransientError(f"scrape step failed: {exc}") from exc
+    # Scrape (cache or fresh) via the tiered ladder, then extract.
+    #
+    # Once-only post-Gemini escalation (TASK-1488.06): if the first
+    # extract_utterances call raises `ZeroUtterancesError`, Gemini saw
+    # no parseable utterances despite the pre-Gemini quality classifier
+    # passing — re-fetch via Tier 2 and try the extractor once more. The
+    # `escalated` boolean below is the explicit once-only guard: a second
+    # `ZeroUtterancesError` raises `TerminalError(EXTRACTION_FAILED)`
+    # without re-entering the loop. No recursion, no while-loop.
+    escalated = False
 
-    # Post-scrape revalidate: reject redirects into private space.
-    await _revalidate_final_url(scrape, url=url, scrape_cache=scrape_cache)
+    async def _scrape_and_extract(
+        *, force_tier: Literal["scrape", "interact"] | None,
+    ) -> UtterancesPayload:
+        """Run a single scrape→revalidate→extract cycle. Lets the
+        once-only escalation re-use the same plumbing for both passes —
+        the only difference is the `force_tier` argument threaded into
+        `_scrape_step`.
+        """
+        try:
+            scrape = await _scrape_step(
+                url, tier1_client, client, scrape_cache, force_tier=force_tier
+            )
+        except (TransientError, TerminalError):
+            raise
+        except Exception as exc:
+            raise TransientError(f"scrape step failed: {exc}") from exc
 
-    # Extract utterances from the scrape bundle. Three-arm classification:
-    # (1) TransientExtractionError: upstream flake (Vertex 504/503/429 or
-    #     Firecrawl 5xx). Increment the in-row backstop counter; if we
-    #     have now reached EXTRACT_TRANSIENT_MAX_ATTEMPTS, escalate to
-    #     TerminalError(UPSTREAM_ERROR) so the row flips to failed BEFORE
-    #     Cloud Tasks silently exhausts at max_attempts=3.
-    # (2) UtteranceExtractionError: parse / no-utterances / output-validation.
-    #     Terminal — retrying does nothing for a content-shape problem.
-    # (3) Anything else: defensive catch-all, terminal so we don't loop
-    #     forever on unknown bugs.
-    try:
-        payload = await extract_utterances(
+        # Post-scrape revalidate: reject redirects into private space.
+        await _revalidate_final_url(scrape, url=url, scrape_cache=scrape_cache)
+
+        return await extract_utterances(
             url, client, scrape_cache, settings=settings
         )
-    except TransientExtractionError as exc:
-        # Unexpected failures inside the increment helper would otherwise
-        # escape `_run_pipeline` and land in `run_job`'s unclassified
-        # `except Exception` branch — which RESETS THE JOB AND RETURNS 503
-        # (transient). That's the exact silent-drop pattern this PR is
-        # trying to close: a SQL bug or programming error in the increment
-        # SQL would cause every transient extraction to redeliver
-        # indefinitely, the counter never advances, the backstop never
-        # trips, and Cloud Tasks silently exhausts at max_attempts=3.
-        # Convert any unexpected increment failure to a TerminalError so
-        # the row flips to failed and the bug is visible to operators
-        # instead of looping forever.
+
+    async def _classify_transient_or_raise(
+        exc: TransientExtractionError,
+    ) -> NoReturn:
+        """Run the in-row backstop counter logic for a transient extraction
+        error. Either raises TerminalError(UPSTREAM_ERROR) when the counter
+        exhausts, or TransientError so Cloud Tasks redelivers.
+
+        Unexpected failures inside the increment helper convert to a
+        TerminalError(EXTRACTION_FAILED) so the row flips to failed and the
+        SQL bug becomes visible to operators instead of looping forever.
+        """
         try:
             new_count = await _increment_extract_transient_attempts(
                 pool, job_id, task_attempt=task_attempt
@@ -1229,10 +1273,57 @@ async def _run_pipeline(
             f"(attempt {new_count}, provider={exc.provider}, "
             f"status_code={exc.status_code}): {exc}"
         ) from exc
+
+    # Extract utterances from the scrape bundle. Four-arm classification:
+    # (1) TransientExtractionError: upstream flake (Vertex 504/503/429 or
+    #     Firecrawl 5xx). Bump in-row backstop counter; on exhaustion
+    #     escalate to TerminalError(UPSTREAM_ERROR) so the row flips to
+    #     failed BEFORE Cloud Tasks silently exhausts at max_attempts=3.
+    # (2) UtteranceExtractionError: parse / output-validation. Terminal.
+    # (3) ZeroUtterancesError: pre-Gemini quality classifier said OK but
+    #     Gemini still saw nothing. Once-only Tier 2 escalation.
+    # (4) Anything else: defensive catch-all, terminal so we don't loop
+    #     forever on unknown bugs.
+    try:
+        payload = await _scrape_and_extract(force_tier=None)
+    except TransientExtractionError as exc:
+        await _classify_transient_or_raise(exc)
     except UtteranceExtractionError as exc:
         raise TerminalError(
             ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
         ) from exc
+    except ZeroUtterancesError:
+        # First pass: Gemini couldn't extract from the Tier 1 bundle.
+        # Escalate by forcing Tier 2 once. Toggle the boolean BEFORE the
+        # second attempt so a second-pass success path can't accidentally
+        # leave the guard armed.
+        escalated = True
+        try:
+            payload = await _scrape_and_extract(force_tier="interact")
+        except TransientExtractionError as exc:
+            await _classify_transient_or_raise(exc)
+        except UtteranceExtractionError as exc:
+            raise TerminalError(
+                ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
+            ) from exc
+        except ZeroUtterancesError as exc:
+            # Second pass also empty — terminal. Once-only is enforced
+            # by the absence of any third branch here; the boolean
+            # `escalated` makes the policy explicit even though no
+            # third try could fire from this control flow.
+            assert escalated  # documents the once-only invariant
+            raise TerminalError(
+                ErrorCode.EXTRACTION_FAILED,
+                "0 utterances after /interact",
+            ) from exc
+        except (TransientError, TerminalError):
+            raise
+        except Exception as exc:
+            raise TerminalError(
+                ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
+            ) from exc
+    except (TransientError, TerminalError):
+        raise
     except Exception as exc:
         # Defensive catch-all: anything not yet classified by the typed
         # arms still terminates so we don't loop forever on unknown bugs.

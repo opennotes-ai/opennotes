@@ -49,6 +49,7 @@ from src.utils.html_sanitize import strip_noise
 from src.utterances.errors import (
     TransientExtractionError,
     UtteranceExtractionError,
+    ZeroUtterancesError,
     classify_firecrawl_error,
     classify_pydantic_ai_error,
 )
@@ -175,6 +176,10 @@ async def extract_utterances(
             ) from exc
 
         payload = cast(UtterancesPayload, cast(object, result.output))
+        if not payload.utterances:
+            raise ZeroUtterancesError(
+                "Gemini returned 0 utterances despite passing pre-Gemini quality checks"
+            )
         payload.source_url = url
         payload.scraped_at = datetime.now(UTC)
         _assign_stable_ids(payload)

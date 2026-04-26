@@ -51,6 +51,23 @@ class UtteranceExtractionError(Exception):
     """
 
 
+class ZeroUtterancesError(Exception):
+    """Raised when Gemini returns 0 utterances despite the orchestrator's
+    pre-Gemini quality check passing.
+
+    Distinct from `UtteranceExtractionError` so the orchestrator can
+    layer a once-only Tier 2 escalation on this signal alone — true
+    scrape/agent failures (Firecrawl errors, Gemini exceptions, missing
+    markdown) keep their existing `UtteranceExtractionError` path and
+    do NOT trigger escalation.
+
+    Intentionally NOT a subclass of `UtteranceExtractionError`: a
+    subclass relationship would let `except UtteranceExtractionError`
+    swallow the empty-payload signal at the orchestrator boundary,
+    collapsing the two cases together.
+    """
+
+
 @dataclass
 class TransientExtractionError(Exception):
     """Transient upstream failure during extract_utterances.
