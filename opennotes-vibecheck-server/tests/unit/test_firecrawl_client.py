@@ -7,12 +7,15 @@ from pytest_httpx import HTTPXMock
 
 from src.firecrawl_client import (
     FIRECRAWL_API_BASE,
+    FirecrawlBlocked,
     FirecrawlClient,
+    FirecrawlError,
     ScrapeMetadata,
     ScrapeResult,
 )
 
 SCRAPE_URL = f"{FIRECRAWL_API_BASE}/v2/scrape"
+INTERACT_URL = f"{FIRECRAWL_API_BASE}/v2/interact"
 TARGET_URL = "https://example.com/article"
 
 
@@ -181,3 +184,201 @@ async def test_scrape_request_body_wraps_formats_as_objects(
         ],
         "onlyMainContent": True,
     }
+
+
+# --- TASK-1488.02: FirecrawlBlocked + interact() + single-attempt mode ------
+
+
+def test_firecrawl_blocked_is_subclass_of_firecrawl_error() -> None:
+    """`FirecrawlBlocked` must extend `FirecrawlError` so existing
+    `except FirecrawlError` blocks still catch refusals — but specific
+    refusal-handling code can `except FirecrawlBlocked` first to branch.
+    """
+    assert issubclass(FirecrawlBlocked, FirecrawlError)
+
+
+async def test_scrape_refusal_envelope_raises_firecrawl_blocked(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """An envelope `{success: false, error: "<refusal phrase>"}` must raise
+    the typed `FirecrawlBlocked` so the orchestrator can fast-fail Tier 1
+    instead of treating it as a transient error worth retrying.
+    """
+    envelope = {
+        "success": False,
+        "error": "this website is no longer supported",
+    }
+    httpx_mock.add_response(url=SCRAPE_URL, method="POST", json=envelope)
+
+    with pytest.raises(FirecrawlBlocked):
+        await client.scrape(TARGET_URL, formats=["markdown"])
+
+
+async def test_scrape_generic_failure_still_raises_firecrawl_error_not_blocked(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Refusal markers must be conservative: a generic `success: false`
+    envelope without a documented refusal phrase must raise the base
+    `FirecrawlError`, NOT the more specific `FirecrawlBlocked`. False
+    positives here would terminate legit content paths.
+    """
+    envelope = {
+        "success": False,
+        "error": "internal hiccup, please retry",
+    }
+    httpx_mock.add_response(url=SCRAPE_URL, method="POST", json=envelope)
+
+    with pytest.raises(FirecrawlError) as exc_info:
+        await client.scrape(TARGET_URL, formats=["markdown"])
+    assert not isinstance(exc_info.value, FirecrawlBlocked)
+
+
+async def test_scrape_4xx_with_refusal_marker_raises_firecrawl_blocked(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """A 403/4xx body containing a documented refusal phrase must also
+    surface as `FirecrawlBlocked` — Firecrawl sometimes signals refusals
+    via HTTP status rather than `success: false`.
+    """
+    httpx_mock.add_response(
+        url=SCRAPE_URL,
+        method="POST",
+        status_code=403,
+        json={"error": "Firecrawl does not support this domain"},
+    )
+
+    with pytest.raises(FirecrawlBlocked):
+        await client.scrape(TARGET_URL, formats=["markdown"])
+
+
+async def test_interact_returns_scrape_result_on_success(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """`interact()` posts to /v2/interact and returns a typed `ScrapeResult`
+    mirroring `scrape()`'s shape.
+    """
+    envelope = {
+        "success": True,
+        "data": {
+            "markdown": "# After interaction\n\nRevealed content.",
+            "html": "<h1>After interaction</h1><p>Revealed content.</p>",
+            "screenshot": "https://cdn.firecrawl.dev/shots/interact.png",
+            "metadata": {
+                "title": "Interactive Page",
+                "sourceURL": TARGET_URL,
+                "statusCode": 200,
+            },
+        },
+    }
+    httpx_mock.add_response(url=INTERACT_URL, method="POST", json=envelope)
+
+    result = await client.interact(
+        TARGET_URL,
+        actions=[{"type": "click", "selector": "#load-more"}],
+    )
+
+    assert isinstance(result, ScrapeResult)
+    assert result.markdown == "# After interaction\n\nRevealed content."
+    assert result.html == "<h1>After interaction</h1><p>Revealed content.</p>"
+    assert result.screenshot == "https://cdn.firecrawl.dev/shots/interact.png"
+    assert result.metadata is not None
+    assert result.metadata.source_url == TARGET_URL
+
+
+async def test_interact_request_body_includes_url_actions_and_formats(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """The /v2/interact request body must carry `url`, `actions` (verbatim),
+    and a Firecrawl-shaped `formats` list. Formats default to markdown/html/
+    screenshot@fullPage so callers get the same payload they get from scrape().
+    """
+    httpx_mock.add_response(url=INTERACT_URL, method="POST", json={"success": True, "data": {}})
+
+    actions = [
+        {"type": "click", "selector": "#consent-accept"},
+        {"type": "wait", "milliseconds": 500},
+    ]
+    await client.interact(TARGET_URL, actions=actions)
+
+    request = httpx_mock.get_request(url=INTERACT_URL, method="POST")
+    assert request is not None
+    body = json.loads(request.content)
+    assert body["url"] == TARGET_URL
+    assert body["actions"] == actions
+    assert body["formats"] == [
+        {"type": "markdown"},
+        {"type": "html"},
+        {"type": "screenshot", "fullPage": True},
+    ]
+
+
+async def test_interact_refusal_envelope_raises_firecrawl_blocked(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """`interact()` shares refusal detection with `scrape()` — the same
+    refusal markers that fast-fail Tier 1 must also fast-fail Tier 3.
+    """
+    envelope = {
+        "success": False,
+        "error": "this website is blocked by Firecrawl policy",
+    }
+    httpx_mock.add_response(url=INTERACT_URL, method="POST", json=envelope)
+
+    with pytest.raises(FirecrawlBlocked):
+        await client.interact(TARGET_URL, actions=[{"type": "click", "selector": "#x"}])
+
+
+async def test_max_attempts_one_disables_retry_on_503(
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Tier 1 fail-fast pattern: `FirecrawlClient(max_attempts=1)` must
+    perform exactly ONE HTTP call before surfacing the error, even on
+    normally-retryable 503s. Asserts on real call count via the mock,
+    not on internals.
+    """
+    fast_client = FirecrawlClient(api_key="test-key", max_attempts=1)
+    httpx_mock.add_response(
+        url=SCRAPE_URL,
+        method="POST",
+        status_code=503,
+        text="Service Unavailable",
+    )
+
+    # The retry wrapper re-raises a private retryable-status exception after
+    # the budget is exhausted; this test cares about *call count*, not the
+    # specific exception type. Matching on "503" still validates something
+    # stable about the failure shape.
+    with pytest.raises(Exception, match="503"):
+        await fast_client.scrape(TARGET_URL, formats=["markdown"])
+
+    requests = httpx_mock.get_requests(url=SCRAPE_URL, method="POST")
+    assert len(requests) == 1
+
+
+async def test_default_max_attempts_three_retries_on_503(
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Default `max_attempts=3` (Tier 2 callers) is preserved: a sustained
+    503 must trigger the full retry budget. Pinning this protects Tier 2
+    behavior from accidentally regressing when Tier 1 was added.
+    """
+    default_client = FirecrawlClient(api_key="test-key")
+    for _ in range(3):
+        httpx_mock.add_response(
+            url=SCRAPE_URL,
+            method="POST",
+            status_code=503,
+            text="Service Unavailable",
+        )
+
+    with pytest.raises(Exception, match="503"):
+        await default_client.scrape(TARGET_URL, formats=["markdown"])
+
+    requests = httpx_mock.get_requests(url=SCRAPE_URL, method="POST")
+    assert len(requests) == 3
