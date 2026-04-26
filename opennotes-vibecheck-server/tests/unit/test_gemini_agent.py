@@ -33,7 +33,7 @@ def test_build_agent_propagates_name_to_pydantic_ai_agent(settings: Settings) ->
 
 
 def test_build_agent_omits_name_when_unspecified(settings: Settings) -> None:
-    """Backwards compatible: no `name` arg yields the pydantic-ai default
-    (None until pydantic-ai infers from the variable binding)."""
+    """Backwards compatible: no `name` arg leaves the agent unnamed
+    (pydantic-ai surfaces this as `Agent.name is None` at construction time)."""
     agent = build_agent(settings, output_type=_Out, system_prompt="ignored")
-    assert agent.name is None or isinstance(agent.name, str)
+    assert agent.name is None
