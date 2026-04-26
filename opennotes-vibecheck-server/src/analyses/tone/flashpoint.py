@@ -86,6 +86,7 @@ async def detect_flashpoints_bulk(
         settings,
         output_type=_BulkFlashpointLLM,
         system_prompt=_BULK_SYSTEM_PROMPT,
+        name="vibecheck.flashpoint",
     )
     try:
         result = await agent.run("Conversation:\n" + "\n".join(numbered))

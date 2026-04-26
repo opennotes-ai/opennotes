@@ -87,6 +87,7 @@ async def extract_subjective_claims_bulk(
         settings,
         output_type=_BulkSubjectiveClaimsLLM,
         system_prompt=_BULK_SYSTEM_PROMPT,
+        name="vibecheck.subjective",
     )
     result = await agent.run("Utterances:\n" + "\n".join(prompt_lines))
     parsed: _BulkSubjectiveClaimsLLM = result.output

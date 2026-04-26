@@ -46,6 +46,8 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
+import logfire
+
 from src.analyses.claims.dedupe_slot import run_claims_dedup
 from src.analyses.claims.facts_agent import run_facts_claims_known_misinfo
 from src.analyses.opinions.sentiment_slot import run_sentiment
@@ -196,6 +198,25 @@ WHERE job_id = $1
   AND attempt_id = $3
 """
 
+# TASK-1474.23.02: post-Gemini stage breadcrumb. CAS on attempt_id so a
+# stale worker can't overwrite the marker after a fresh attempt rotated.
+_SET_LAST_STAGE_SQL = """
+UPDATE vibecheck_jobs
+SET last_stage = $2,
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $3
+"""
+
+# Stage names recorded in `vibecheck_jobs.last_stage` and as Logfire span
+# attributes. These are also the names of the Logfire spans wrapped around
+# each step in `_run_pipeline` after `extract_utterances` returns.
+_STAGE_PERSIST_UTTERANCES = "persist_utterances"
+_STAGE_SET_ANALYZING = "set_analyzing"
+_STAGE_RUN_SECTIONS = "run_sections"
+_STAGE_SAFETY_RECOMMENDATION = "safety_recommendation"
+_STAGE_FINALIZE = "finalize"
+
 
 async def _claim_job(
     pool: Any,
@@ -264,6 +285,27 @@ async def _set_analyzing(pool: Any, job_id: UUID, task_attempt: UUID) -> None:
         await conn.execute(_SET_ANALYZING_SQL, job_id, task_attempt)
 
 
+async def _set_last_stage(
+    pool: Any, job_id: UUID, task_attempt: UUID, stage: str
+) -> None:
+    """Write the post-Gemini stage breadcrumb to `vibecheck_jobs.last_stage`.
+
+    CAS-guarded on `attempt_id` so a stale worker can't overwrite the
+    breadcrumb after a fresh attempt rotated. DB write failures are logged
+    and swallowed — instrumentation must never tear down the pipeline.
+    The breadcrumb survives a SIGKILL between stages because each write
+    is a synchronous DB commit, giving operators a DB-visible marker even
+    when no further log lines reach Cloud Logging or Logfire.
+    """
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(_SET_LAST_STAGE_SQL, job_id, stage, task_attempt)
+    except Exception as exc:
+        logger.warning(
+            "set_last_stage(%s) failed for job %s: %s", stage, job_id, exc
+        )
+
+
 # ---------------------------------------------------------------------------
 # Heartbeat loop.
 # ---------------------------------------------------------------------------
@@ -281,7 +323,14 @@ async def _heartbeat_loop(
     The loop exits via CancelledError when the pipeline returns. Each
     bump CAS-guards on `attempt_id = task_attempt` so a heartbeat from a
     stale worker cannot keep a reclaimed job's row looking fresh.
+
+    Lifecycle logs (TASK-1474.23.02 AC4) make it possible to distinguish
+    'heartbeat task died early' from 'main handler died early' when the
+    pipeline silently disappears post-Gemini.
     """
+    logger.info(
+        "heartbeat: started for job %s attempt %s", job_id, task_attempt
+    )
     try:
         while True:
             await asyncio.sleep(interval_sec)
@@ -298,6 +347,9 @@ async def _heartbeat_loop(
                     "heartbeat update failed for job %s: %s", job_id, exc
                 )
     except asyncio.CancelledError:
+        logger.info(
+            "heartbeat: cancelled for job %s attempt %s", job_id, task_attempt
+        )
         return
 
 
@@ -726,47 +778,127 @@ async def _run_pipeline(
             ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
         ) from exc
 
+    # ------------------------------------------------------------------
+    # Post-Gemini path (TASK-1474.23.02 instrumentation).
+    #
+    # Three confirmed silent worker deaths (jobs 541d61e9, 5841a264,
+    # 4374881d) all died somewhere between this point and the next
+    # observable side-effect, leaving zero log lines and no breadcrumb.
+    # Each step below is wrapped in:
+    #   1. A named Logfire span so any partial trace exported to the
+    #      vibecheck Logfire project pinpoints the dying stage.
+    #   2. A `last_stage` DB write that survives even a SIGKILL — a direct
+    #      query on `vibecheck_jobs` yields the breadcrumb when no log
+    #      line ever made it out.
+    # The whole block is guarded by a top-level except that re-raises but
+    # logs with traceback first, defeating any downstream catch-all that
+    # would otherwise swallow the stack trace before it hits Logfire.
+    # ------------------------------------------------------------------
     try:
-        await persist_utterances(pool, job_id, task_attempt, payload)
-    except UtterancePersistenceSuperseded as exc:
-        logger.info(
-            "pipeline: utterance persistence superseded for job %s: %s",
-            job_id, exc,
-        )
-        raise HandlerSuperseded() from exc
+        with logfire.span(
+            "vibecheck.post_gemini",
+            job_id=str(job_id),
+            attempt_id=str(task_attempt),
+        ):
+            with logfire.span(
+                "vibecheck.post_gemini.persist_utterances",
+                job_id=str(job_id),
+                attempt_id=str(task_attempt),
+            ):
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_PERSIST_UTTERANCES
+                )
+                try:
+                    await persist_utterances(
+                        pool, job_id, task_attempt, payload
+                    )
+                except UtterancePersistenceSuperseded as exc:
+                    logger.info(
+                        "pipeline: utterance persistence superseded for job %s: %s",
+                        job_id, exc,
+                    )
+                    raise HandlerSuperseded() from exc
 
-    # Flip status to analyzing before fan-out so the poll endpoint
-    # returns the right cadence hint.
-    await _set_analyzing(pool, job_id, task_attempt)
+            with logfire.span(
+                "vibecheck.post_gemini.set_analyzing",
+                job_id=str(job_id),
+                attempt_id=str(task_attempt),
+            ):
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_SET_ANALYZING
+                )
+                # Flip status to analyzing before fan-out so the poll
+                # endpoint returns the right cadence hint.
+                await _set_analyzing(pool, job_id, task_attempt)
 
-    # Fan out per-section analysis. Slot-level failures are written by
-    # `_run_section` itself; this await only raises on orchestrator
-    # infrastructure errors.
-    await _run_all_sections(
-        pool, job_id, task_attempt, payload, settings,
-        test_fail_slug=test_fail_slug,
-    )
+            with logfire.span(
+                "vibecheck.post_gemini.run_sections",
+                job_id=str(job_id),
+                attempt_id=str(task_attempt),
+            ):
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_RUN_SECTIONS
+                )
+                # Fan out per-section analysis. Slot-level failures are
+                # written by `_run_section` itself; this await only
+                # raises on orchestrator infrastructure errors.
+                await _run_all_sections(
+                    pool, job_id, task_attempt, payload, settings,
+                    test_fail_slug=test_fail_slug,
+                )
 
-    await _run_safety_recommendation_step(pool, job_id, task_attempt, settings)
+            with logfire.span(
+                "vibecheck.post_gemini.safety_recommendation",
+                job_id=str(job_id),
+                attempt_id=str(task_attempt),
+            ):
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_SAFETY_RECOMMENDATION
+                )
+                await _run_safety_recommendation_step(
+                    pool, job_id, task_attempt, settings
+                )
 
-    # Finalize: UPSERT the sidebar_payload cache if every slot is done.
-    # When finalize returns False the job is intentionally NOT cached yet
-    # (e.g. a slot is still in pending/running, attempt_id rotated, or the
-    # job already moved to a terminal status owned by the error path).
-    # Log so operators can correlate stuck jobs with the upstream cause —
-    # the worker still returns 200 so Cloud Tasks doesn't redeliver
-    # (TASK-1473.41).
-    finalized = await maybe_finalize_job(
-        pool, job_id, expected_task_attempt=task_attempt
-    )
-    if not finalized:
-        logger.info(
-            "maybe_finalize_job returned False after _run_all_sections "
-            "for job %s (attempt %s) — slots not yet all done or attempt "
-            "was rotated",
+            with logfire.span(
+                "vibecheck.post_gemini.finalize",
+                job_id=str(job_id),
+                attempt_id=str(task_attempt),
+            ):
+                await _set_last_stage(
+                    pool, job_id, task_attempt, _STAGE_FINALIZE
+                )
+                # Finalize: UPSERT the sidebar_payload cache if every slot
+                # is done. When finalize returns False the job is
+                # intentionally NOT cached yet (e.g. a slot is still in
+                # pending/running, attempt_id rotated, or the job already
+                # moved to a terminal status owned by the error path).
+                finalized = await maybe_finalize_job(
+                    pool, job_id, expected_task_attempt=task_attempt
+                )
+                if not finalized:
+                    logger.info(
+                        "maybe_finalize_job returned False after _run_all_sections "
+                        "for job %s (attempt %s) — slots not yet all done or attempt "
+                        "was rotated",
+                        job_id,
+                        task_attempt,
+                    )
+    except (TransientError, TerminalError, HandlerSuperseded):
+        # Classified errors carry their own logging / outer-handler
+        # behavior; let them flow through unchanged.
+        raise
+    except Exception:
+        # Defensive top-level capture for the post-Gemini path. Logging
+        # here (rather than only at run_job's outer except) guarantees a
+        # traceback even if some downstream catch-all between this scope
+        # and run_job's handler swallows the exception. AC2 of
+        # TASK-1474.23.02.
+        logger.exception(
+            "post-gemini handler crashed for job %s attempt %s",
             job_id,
             task_attempt,
         )
+        raise
 
 
 # ---------------------------------------------------------------------------

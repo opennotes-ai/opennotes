@@ -40,8 +40,8 @@ async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch
     )
     build_calls = []
 
-    def fake_build_agent(settings, *, output_type, system_prompt):
-        build_calls.append((settings, output_type, system_prompt))
+    def fake_build_agent(settings, *, output_type, system_prompt, name=None):
+        build_calls.append((settings, output_type, system_prompt, name))
         return agent
 
     monkeypatch.setattr(
@@ -72,7 +72,9 @@ async def test_run_safety_recommendation_serializes_inputs_for_agent(monkeypatch
     )
 
     assert result.level == SafetyLevel.CAUTION
-    assert build_calls == [(settings, SafetyRecommendation, RECOMMENDATION_SYSTEM_PROMPT)]
+    assert build_calls == [
+        (settings, SafetyRecommendation, RECOMMENDATION_SYSTEM_PROMPT, "vibecheck.safety_recommendation")
+    ]
     payload = json.loads(agent.prompts[0])
     assert payload["harmful_content_matches"][0]["source"] == "gcp"
     assert payload["unavailable_inputs"] == ["web_risk"]

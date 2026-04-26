@@ -69,6 +69,7 @@ async def run_facts_claims_known_misinfo(
             settings,
             output_type=cast(Any, list[FactCheckMatch]),
             system_prompt=FACTS_AGENT_SYSTEM_PROMPT,
+            name="vibecheck.facts",
         ),
     )
 

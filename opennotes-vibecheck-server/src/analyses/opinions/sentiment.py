@@ -78,6 +78,7 @@ async def compute_sentiment_stats(
         settings,
         output_type=_SentimentBatchLLM,
         system_prompt=_SYSTEM_PROMPT,
+        name="vibecheck.sentiment",
     )
 
     indexed: list[tuple[str, Utterance]] = [

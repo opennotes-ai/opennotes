@@ -141,6 +141,7 @@ async def extract_utterances(
         settings,
         output_type=UtterancesPayload,
         system_prompt=EXTRACTOR_SYSTEM_PROMPT,
+        name="vibecheck.utterance_extractor",
     )
     _register_tools(agent)
 

@@ -240,7 +240,7 @@ def _stub_agent(
     fake = _FakeAgent(payload=payload)
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None: fake,
+        lambda settings, output_type=None, system_prompt=None, name=None: fake,
     )
     return fake
 
@@ -383,7 +383,7 @@ async def test_cache_miss_then_get_screenshot_returns_signed_url(
     fake_agent.run = capturing_run  # pyright: ignore[reportAttributeAccessIssue]
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None: fake_agent,
+        lambda settings, output_type=None, system_prompt=None, name=None: fake_agent,
     )
 
     await _call(TARGET_URL, client, cache, settings)
@@ -423,7 +423,7 @@ async def test_cache_hit_preserves_storage_key_through_tool_call(
     fake_agent.run = capturing_run  # pyright: ignore[reportAttributeAccessIssue]
     monkeypatch.setattr(
         "src.utterances.extractor.build_agent",
-        lambda settings, output_type=None, system_prompt=None: fake_agent,
+        lambda settings, output_type=None, system_prompt=None, name=None: fake_agent,
     )
 
     await _call(TARGET_URL, client, cache, settings)

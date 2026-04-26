@@ -44,6 +44,7 @@ def build_agent(
     *,
     output_type: type[T],
     system_prompt: str | None = None,
+    name: str | None = None,
 ) -> Agent[None, T]: ...
 
 
@@ -53,6 +54,7 @@ def build_agent(
     *,
     output_type: None = None,
     system_prompt: str | None = None,
+    name: str | None = None,
 ) -> Agent[None, str]: ...
 
 
@@ -61,13 +63,18 @@ def build_agent(
     *,
     output_type: type[T] | None = None,
     system_prompt: str | None = None,
+    name: str | None = None,
 ) -> Agent[None, T] | Agent[None, str]:
     """Construct a pydantic-ai Agent bound to Vertex Gemini.
 
     Usage:
-        agent = build_agent(settings, output_type=MySchema, system_prompt="...")
+        agent = build_agent(settings, output_type=MySchema, system_prompt="...", name="vibecheck.foo")
         result = await agent.run("prompt text")
         parsed: MySchema = result.output
+
+    `name` is forwarded to pydantic-ai and surfaces as a span attribute in
+    Logfire traces, so each call site appears as a distinct Agent in
+    observability tooling instead of an anonymous "agent run" span.
     """
     model = _model_from_settings(settings)
     kwargs: dict[str, Any] = {}
@@ -75,4 +82,6 @@ def build_agent(
         kwargs["system_prompt"] = system_prompt
     if output_type is not None:
         kwargs["output_type"] = output_type
+    if name is not None:
+        kwargs["name"] = name
     return Agent(model, **kwargs)
