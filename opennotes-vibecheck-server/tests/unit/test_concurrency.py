@@ -38,11 +38,13 @@ from src.analyses.schemas import SectionSlot, SectionSlug, SectionState
 from src.config import Settings
 from src.jobs.orchestrator import _run_section
 from src.jobs.slots import claim_slot, mark_slot_done, write_slot
+from tests.conftest import VIBECHECK_JOBS_DDL
 
 _REAL_GETADDRINFO = socket.getaddrinfo
 
 
-_MINIMAL_DDL = """
+_MINIMAL_DDL = (
+    """
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE vibecheck_analyses (
@@ -51,29 +53,9 @@ CREATE TABLE vibecheck_analyses (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL
 );
-
-CREATE TABLE vibecheck_jobs (
-    job_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    url TEXT NOT NULL,
-    normalized_url TEXT NOT NULL,
-    host TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    attempt_id UUID NOT NULL DEFAULT uuid_generate_v4(),
-    error_code TEXT,
-    error_message TEXT,
-    error_host TEXT,
-    sections JSONB NOT NULL DEFAULT '{}'::jsonb,
-    sidebar_payload JSONB,
-    cached BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    heartbeat_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ,
-    test_fail_slug TEXT,
-    safety_recommendation JSONB,
-    last_stage TEXT
-);
 """
+    + VIBECHECK_JOBS_DDL
+)
 
 
 @pytest.fixture(autouse=True)
