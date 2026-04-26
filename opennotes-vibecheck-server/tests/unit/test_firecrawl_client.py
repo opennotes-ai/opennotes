@@ -15,7 +15,6 @@ from src.firecrawl_client import (
 )
 
 SCRAPE_URL = f"{FIRECRAWL_API_BASE}/v2/scrape"
-INTERACT_URL = f"{FIRECRAWL_API_BASE}/v2/interact"
 TARGET_URL = "https://example.com/article"
 
 
@@ -258,8 +257,13 @@ async def test_interact_returns_scrape_result_on_success(
     client: FirecrawlClient,
     httpx_mock: HTTPXMock,
 ) -> None:
-    """`interact()` posts to /v2/interact and returns a typed `ScrapeResult`
-    mirroring `scrape()`'s shape.
+    """`interact()` posts to /v2/scrape (with `actions`) and returns a typed
+    `ScrapeResult` mirroring `scrape()`'s shape.
+
+    TASK-1488.08: Firecrawl v2 has no /v2/interact endpoint — browser actions
+    are run by /v2/scrape via the `actions` field. The public method name
+    `interact()` is preserved so the orchestrator's Tier 2 wiring still calls
+    `client.interact(...)`, but the request goes to /v2/scrape under the hood.
     """
     envelope = {
         "success": True,
@@ -274,7 +278,7 @@ async def test_interact_returns_scrape_result_on_success(
             },
         },
     }
-    httpx_mock.add_response(url=INTERACT_URL, method="POST", json=envelope)
+    httpx_mock.add_response(url=SCRAPE_URL, method="POST", json=envelope)
 
     result = await client.interact(
         TARGET_URL,
@@ -289,15 +293,18 @@ async def test_interact_returns_scrape_result_on_success(
     assert result.metadata.source_url == TARGET_URL
 
 
-async def test_interact_request_body_includes_url_actions_and_formats(
+async def test_interact_routes_to_scrape_endpoint_with_actions_field(
     client: FirecrawlClient,
     httpx_mock: HTTPXMock,
 ) -> None:
-    """The /v2/interact request body must carry `url`, `actions` (verbatim),
-    and a Firecrawl-shaped `formats` list. Formats default to markdown/html/
-    screenshot@fullPage so callers get the same payload they get from scrape().
+    """TASK-1488.08 AC #1: interact() must POST to /v2/scrape, not /v2/interact.
+
+    Live calls against api.firecrawl.dev/v2/interact return 404 Cannot POST.
+    Per Firecrawl v2 docs, browser actions are part of /v2/scrape via the
+    `actions` field. Pin the URL so a regression to /v2/interact breaks tests
+    instead of production.
     """
-    httpx_mock.add_response(url=INTERACT_URL, method="POST", json={"success": True, "data": {}})
+    httpx_mock.add_response(url=SCRAPE_URL, method="POST", json={"success": True, "data": {}})
 
     actions = [
         {"type": "click", "selector": "#consent-accept"},
@@ -305,8 +312,9 @@ async def test_interact_request_body_includes_url_actions_and_formats(
     ]
     await client.interact(TARGET_URL, actions=actions)
 
-    request = httpx_mock.get_request(url=INTERACT_URL, method="POST")
+    request = httpx_mock.get_request(url=SCRAPE_URL, method="POST")
     assert request is not None
+    assert str(request.url) == SCRAPE_URL
     body = json.loads(request.content)
     assert body["url"] == TARGET_URL
     assert body["actions"] == actions
@@ -322,13 +330,14 @@ async def test_interact_refusal_envelope_raises_firecrawl_blocked(
     httpx_mock: HTTPXMock,
 ) -> None:
     """`interact()` shares refusal detection with `scrape()` — the same
-    refusal markers that fast-fail Tier 1 must also fast-fail Tier 3.
+    refusal markers that fast-fail Tier 1 must also fast-fail Tier 2.
+    Now that interact routes through /v2/scrape, the mock URL is the same.
     """
     envelope = {
         "success": False,
         "error": "this website is blocked by Firecrawl policy",
     }
-    httpx_mock.add_response(url=INTERACT_URL, method="POST", json=envelope)
+    httpx_mock.add_response(url=SCRAPE_URL, method="POST", json=envelope)
 
     with pytest.raises(FirecrawlBlocked):
         await client.interact(TARGET_URL, actions=[{"type": "click", "selector": "#x"}])
@@ -382,3 +391,119 @@ async def test_default_max_attempts_three_retries_on_503(
 
     requests = httpx_mock.get_requests(url=SCRAPE_URL, method="POST")
     assert len(requests) == 3
+
+
+# --- TASK-1488.09: real-world refusal envelope ----------------------------
+
+
+async def test_scrape_real_unsupported_site_envelope_raises_firecrawl_blocked(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """TASK-1488.09 AC #4: real Firecrawl refusal body for LinkedIn/Reddit.
+
+    Live verification (TASK-1488.07) captured the real refusal envelope:
+    `{"success":false,"error":"We apologize for the inconvenience but we do
+    not support this site. If you are part of an enterprise..."}`. The
+    previous marker list ("no longer supported", "firecrawl does not
+    support", "this website is blocked") did NOT match this phrasing,
+    causing legit refusals to be classified as TransientError and triggering
+    infinite Cloud Tasks retries. This test pins the real wire phrase so a
+    marker regression breaks the suite.
+    """
+    envelope = {
+        "success": False,
+        "error": (
+            "We apologize for the inconvenience but we do not support this site. "
+            "If you are part of an enterprise, please reach out to support@firecrawl.dev"
+        ),
+    }
+    httpx_mock.add_response(url=SCRAPE_URL, method="POST", json=envelope)
+
+    with pytest.raises(FirecrawlBlocked):
+        await client.scrape(TARGET_URL, formats=["markdown"])
+
+
+async def test_refusal_marker_matches_case_insensitively(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Case-insensitive match still works for the new marker. The orchestrator
+    only differentiates `FirecrawlBlocked` from `FirecrawlError`; if Firecrawl
+    ever returns the phrase in mixed case, we must still classify as a refusal.
+    """
+    envelope = {
+        "success": False,
+        "error": "WE DO NOT SUPPORT THIS SITE for legal reasons",
+    }
+    httpx_mock.add_response(url=SCRAPE_URL, method="POST", json=envelope)
+
+    with pytest.raises(FirecrawlBlocked):
+        await client.scrape(TARGET_URL, formats=["markdown"])
+
+
+# --- TASK-1488.10: language as list[str] ----------------------------------
+
+
+def test_scrape_metadata_accepts_language_as_list() -> None:
+    """TASK-1488.10 AC #1+#3: Cloudflare's blog returns
+    `metadata.language=["en-us", "en"]` on real responses. The previous
+    `str | None` annotation rejected this with a pydantic validation error,
+    which the orchestrator caught as `FirecrawlError` -> `TransientError` ->
+    infinite retry on a 200-OK page. Coerce list[str] to its first element
+    so the model still validates.
+    """
+    meta = ScrapeMetadata.model_validate(
+        {
+            "title": "Page",
+            "language": ["en-us", "en"],
+            "sourceURL": "https://blog.cloudflare.com/page-rules-deprecation/",
+            "statusCode": 200,
+        }
+    )
+    assert meta.language == "en-us"
+
+
+def test_scrape_metadata_accepts_language_as_string_unchanged() -> None:
+    """Single-language string responses (the common case) keep working
+    after the list-coercion validator is added. Regression guard for
+    happy-path callers.
+    """
+    meta = ScrapeMetadata.model_validate({"language": "en"})
+    assert meta.language == "en"
+
+
+def test_scrape_metadata_accepts_empty_language_list() -> None:
+    """Defensive: an empty list shouldn't blow up, just coerce to None."""
+    meta = ScrapeMetadata.model_validate({"language": []})
+    assert meta.language is None
+
+
+async def test_scrape_full_envelope_with_language_list_succeeds(
+    client: FirecrawlClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """End-to-end through `scrape()`: a real-shaped envelope with
+    `metadata.language=["en-us", "en"]` must validate successfully and
+    return a populated `ScrapeResult`. This is the path that was blowing
+    up in production for blog.cloudflare.com.
+    """
+    envelope = {
+        "success": True,
+        "data": {
+            "markdown": "# Page rules deprecation",
+            "metadata": {
+                "title": "Page rules deprecation",
+                "language": ["en-us", "en"],
+                "sourceURL": "https://blog.cloudflare.com/page-rules-deprecation/",
+                "statusCode": 200,
+            },
+        },
+    }
+    httpx_mock.add_response(url=SCRAPE_URL, method="POST", json=envelope)
+
+    result = await client.scrape(TARGET_URL, formats=["markdown"])
+
+    assert result.markdown == "# Page rules deprecation"
+    assert result.metadata is not None
+    assert result.metadata.language == "en-us"

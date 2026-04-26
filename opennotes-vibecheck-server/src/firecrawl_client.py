@@ -3,7 +3,13 @@
 Endpoints exposed:
 - ``extract()``  -> /v2/extract  (poll-and-wait async job)
 - ``scrape()``   -> /v2/scrape   (single-shot HTML/markdown/screenshot)
-- ``interact()`` -> /v2/interact (scrape + scripted browser actions)
+- ``interact()`` -> /v2/scrape with ``actions`` field (scrape + scripted browser actions)
+
+Why ``interact()`` posts to /v2/scrape: Firecrawl v2 has no ``/v2/interact``
+endpoint — live calls return ``404 Cannot POST /v2/interact``. Per the
+official v2 docs, browser actions are part of /v2/scrape via the ``actions``
+array. The public method name is preserved so the orchestrator's tier wiring
+keeps calling ``client.interact(...)``, but the request goes to /v2/scrape.
 
 Retry/attempt model (TASK-1488 ladder integration)
 --------------------------------------------------
@@ -37,7 +43,7 @@ import asyncio
 from typing import Any
 
 import httpx
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -55,6 +61,12 @@ _REFUSAL_MARKERS: tuple[str, ...] = (
     "no longer supported",
     "firecrawl does not support",
     "this website is blocked",
+    # TASK-1488.09: real Firecrawl refusal envelope captured in 1488.07 live
+    # verification: `{"success":false,"error":"We apologize for the
+    # inconvenience but we do not support this site..."}`. Without this
+    # marker LinkedIn/Reddit refusals were classified as TransientError,
+    # triggering infinite Cloud Tasks retries on a stable refusal.
+    "we do not support this site",
 )
 
 
@@ -143,6 +155,28 @@ class ScrapeMetadata(BaseModel):
     )
     error: str | None = Field(default=None)
     model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def _coerce_language_list(cls, value: Any) -> Any:
+        """Accept ``language`` as either ``str`` or ``list[str]``.
+
+        TASK-1488.10: live verification (1488.07) found that some pages —
+        e.g., ``blog.cloudflare.com`` — return ``metadata.language=
+        ["en-us", "en"]``. The previous ``str | None`` annotation rejected
+        this with a pydantic validation error, which the orchestrator
+        caught as ``FirecrawlError`` -> ``TransientError`` -> infinite
+        Cloud Tasks retry on a 200-OK page. We don't use ``language`` for
+        anything semantically meaningful right now, so coerce list -> first
+        non-empty string and keep the field annotated as ``str | None`` for
+        downstream simplicity.
+        """
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item:
+                    return item
+            return None
+        return value
 
 
 class ScrapeResult(BaseModel):
@@ -359,13 +393,21 @@ class FirecrawlClient:
         formats: list[str] | None = None,
         only_main_content: bool = False,
     ) -> ScrapeResult:
-        """Call Firecrawl /v2/interact and return a typed `ScrapeResult`.
+        """Call Firecrawl /v2/scrape with a scripted ``actions`` list and
+        return a typed `ScrapeResult`.
 
-        `/v2/interact` is the scriptable cousin of `/v2/scrape`: callers pass
-        a list of ``actions`` (clicks, scrolls, waits, form fills) that run
-        before content is captured. Used as the Tier 3 fallback in the
-        vibecheck extractor ladder for sites that gate content behind
-        consent banners, anti-bot walls, or login flows.
+        TASK-1488.08: Firecrawl v2 has no ``/v2/interact`` endpoint —
+        live calls return ``404 Cannot POST /v2/interact``. Per the
+        official v2 docs (https://docs.firecrawl.dev), browser actions are
+        run by /v2/scrape via the ``actions`` array. This method routes
+        through /v2/scrape under the hood while preserving its own name so
+        the vibecheck orchestrator's Tier 2 wiring (``client.interact(url,
+        actions=_TIER2_DEFAULT_ACTIONS)``) doesn't need to change.
+
+        Used as the Tier 2 fallback in the vibecheck extractor ladder for
+        sites that gate content behind consent banners, anti-bot walls, or
+        login flows. Callers pass a list of ``actions`` (clicks, scrolls,
+        waits, form fills) that run before content is captured.
 
         ``actions`` follows Firecrawl's documented action schema (each item
         is a dict with a ``type`` and type-specific keys); we pass them
@@ -377,7 +419,7 @@ class FirecrawlClient:
         explicitly to narrow it.
 
         Refusal detection and the constructor's retry budget apply to this
-        endpoint identically to ``scrape()``.
+        call identically to ``scrape()``.
         """
         chosen_formats = list(formats) if formats is not None else list(_DEFAULT_INTERACT_FORMATS)
         body: dict[str, Any] = {
@@ -387,9 +429,9 @@ class FirecrawlClient:
         }
         if only_main_content:
             body["onlyMainContent"] = True
-        envelope = await self._post_json("/v2/interact", body)
-        self._raise_for_envelope_failure(envelope, "/v2/interact")
+        envelope = await self._post_json("/v2/scrape", body)
+        self._raise_for_envelope_failure(envelope, "/v2/scrape")
         data = envelope.get("data")
         if not isinstance(data, dict):
-            raise FirecrawlError("firecrawl /v2/interact returned no data object")
+            raise FirecrawlError("firecrawl /v2/scrape (interact) returned no data object")
         return ScrapeResult.model_validate(data)
