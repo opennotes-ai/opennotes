@@ -32,7 +32,7 @@ import json
 import socket
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -270,6 +270,219 @@ async def test_run_job_redelivery_returns_no_op_after_first_run(
     assert second.status_code == 200
     # Pipeline executed exactly once — second call hit the stale-claim path.
     assert len(pipeline_runs) == 1
+
+
+# ===========================================================================
+# TASK-1474.23.03.04 — extract transient backstop counter end-to-end.
+#
+# These tests drive the full ASGI -> /_internal/jobs/{id}/run ->
+# orchestrator -> Postgres chain. extract_utterances is the only seam that
+# is monkeypatched (raising the typed exceptions from .03); everything
+# else (CAS claim, heartbeat lifecycle, _reset_for_retry, _mark_failed,
+# the new _increment_extract_transient_attempts CAS) is the real code
+# running against testcontainers Postgres.
+# ===========================================================================
+
+
+@pytest.fixture
+def _verify_oidc_mock(monkeypatch: pytest.MonkeyPatch) -> Iterator[MagicMock]:
+    """OIDC verifier stub for /_internal/* routes.
+
+    Mirrors the fixture in tests/unit/test_worker.py — the verifier itself
+    is mocked; the bearer string is opaque since only the header shape
+    matters once the verifier returns a happy-path payload.
+    """
+    from src.auth import cloud_tasks_oidc
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("VIBECHECK_SERVER_URL", "https://vibecheck.test")
+    monkeypatch.setenv(
+        "VIBECHECK_TASKS_ENQUEUER_SA",
+        "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
+    )
+    get_settings.cache_clear()
+
+    mock = MagicMock(
+        return_value={
+            "iss": "https://accounts.google.com",
+            "aud": "https://vibecheck.test",
+            "email": "vibecheck-tasks@open-notes-core.iam.gserviceaccount.com",
+            "email_verified": True,
+        }
+    )
+    monkeypatch.setattr(cloud_tasks_oidc, "_verify_oauth2_token", mock)
+    yield mock
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+async def worker_client(
+    db_pool: Any, _verify_oidc_mock: MagicMock
+) -> AsyncIterator[httpx.AsyncClient]:
+    """ASGI client wired against the real /_internal worker route."""
+    app.state.cache = None
+    app.state.db_pool = db_pool
+    analyze_route.limiter.reset()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as c:
+        yield c
+    app.state.db_pool = None
+    analyze_route.limiter.reset()
+
+
+_OIDC_HEADERS = {"Authorization": "Bearer fake.jwt.token"}
+
+
+async def test_extract_transient_backstop_first_delivery_increments_counter_and_redelivers(
+    worker_client: httpx.AsyncClient,
+    db_pool: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First Cloud Tasks delivery raising TransientExtractionError must:
+
+    - return HTTP 503 so Cloud Tasks redelivers,
+    - reset the row to status='pending' (the existing TransientError arm),
+    - bump extract_transient_attempts from 0 to 1 atomically alongside
+      the reset.
+
+    Drives the full ASGI -> orchestrator -> Postgres chain with only
+    extract_utterances monkeypatched to raise the typed exception.
+    """
+    from src.jobs import orchestrator
+    from src.utterances.errors import TransientExtractionError
+
+    # Short-circuit the scrape preamble so the test focuses on the
+    # extract-arm classification (which is what the backstop guards).
+    monkeypatch.setattr(
+        orchestrator, "_build_scrape_cache", lambda s: MagicMock()
+    )
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_client", lambda s: MagicMock()
+    )
+
+    async def _stub_scrape(*args: Any, **kwargs: Any) -> Any:
+        return MagicMock(metadata=None)
+
+    async def _stub_revalidate(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    async def _raise_transient(*args: Any, **kwargs: Any) -> Any:
+        raise TransientExtractionError(
+            provider="vertex",
+            status_code=504,
+            status="DEADLINE_EXCEEDED",
+            fallback_message="Vertex 504",
+        )
+
+    monkeypatch.setattr(orchestrator, "_scrape_step", _stub_scrape)
+    monkeypatch.setattr(orchestrator, "_revalidate_final_url", _stub_revalidate)
+    monkeypatch.setattr(orchestrator, "extract_utterances", _raise_transient)
+    monkeypatch.setattr(orchestrator, "HEARTBEAT_INTERVAL_SEC", 60.0)
+
+    initial = uuid4()
+    job_id = await _insert_pending(db_pool, initial)
+
+    resp = await worker_client.post(
+        f"/_internal/jobs/{job_id}/run",
+        json={"job_id": str(job_id), "expected_attempt_id": str(initial)},
+        headers=_OIDC_HEADERS,
+    )
+    assert resp.status_code == 503, resp.text
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT status, attempt_id, extract_transient_attempts "
+            "FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+    assert row["status"] == "pending"
+    assert row["attempt_id"] == initial
+    assert row["extract_transient_attempts"] == 1
+
+
+async def test_extract_transient_backstop_second_delivery_escalates_to_terminal(
+    worker_client: httpx.AsyncClient,
+    db_pool: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two consecutive Cloud Tasks deliveries that each raise
+    TransientExtractionError: the SECOND one (counter goes 1 -> 2 ==
+    EXTRACT_TRANSIENT_MAX_ATTEMPTS) must escalate to
+    TerminalError(UPSTREAM_ERROR) so the row flips to failed BEFORE
+    Cloud Tasks silently exhausts at max_attempts=3.
+    """
+    from src.jobs import orchestrator
+    from src.utterances.errors import TransientExtractionError
+
+    monkeypatch.setattr(
+        orchestrator, "_build_scrape_cache", lambda s: MagicMock()
+    )
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_client", lambda s: MagicMock()
+    )
+
+    async def _stub_scrape(*args: Any, **kwargs: Any) -> Any:
+        return MagicMock(metadata=None)
+
+    async def _stub_revalidate(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    async def _raise_transient(*args: Any, **kwargs: Any) -> Any:
+        raise TransientExtractionError(
+            provider="vertex",
+            status_code=504,
+            status="DEADLINE_EXCEEDED",
+            fallback_message="Vertex 504",
+        )
+
+    monkeypatch.setattr(orchestrator, "_scrape_step", _stub_scrape)
+    monkeypatch.setattr(orchestrator, "_revalidate_final_url", _stub_revalidate)
+    monkeypatch.setattr(orchestrator, "extract_utterances", _raise_transient)
+    monkeypatch.setattr(orchestrator, "HEARTBEAT_INTERVAL_SEC", 60.0)
+
+    initial = uuid4()
+    job_id = await _insert_pending(db_pool, initial)
+
+    # Delivery 1: bumps counter 0 -> 1, returns 503 (transient).
+    first = await worker_client.post(
+        f"/_internal/jobs/{job_id}/run",
+        json={"job_id": str(job_id), "expected_attempt_id": str(initial)},
+        headers=_OIDC_HEADERS,
+    )
+    assert first.status_code == 503, first.text
+    async with db_pool.acquire() as conn:
+        row1 = await conn.fetchrow(
+            "SELECT status, attempt_id, extract_transient_attempts "
+            "FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+    assert row1["status"] == "pending"
+    assert row1["extract_transient_attempts"] == 1
+
+    # Delivery 2: bumps counter 1 -> 2 == EXTRACT_TRANSIENT_MAX_ATTEMPTS,
+    # escalates to TerminalError(UPSTREAM_ERROR) -> 200 + status='failed'.
+    # Cloud Tasks redelivers with the SAME body payload (same expected
+    # attempt_id) — the reset put the original attempt back on the row.
+    second = await worker_client.post(
+        f"/_internal/jobs/{job_id}/run",
+        json={"job_id": str(job_id), "expected_attempt_id": str(initial)},
+        headers=_OIDC_HEADERS,
+    )
+    assert second.status_code == 200, second.text
+    async with db_pool.acquire() as conn:
+        row2 = await conn.fetchrow(
+            "SELECT status, error_code, error_message, "
+            "extract_transient_attempts "
+            "FROM vibecheck_jobs WHERE job_id = $1",
+            job_id,
+        )
+    assert row2["status"] == "failed"
+    assert row2["error_code"] == "upstream_error"
+    assert "504" in (row2["error_message"] or "")
+    assert row2["extract_transient_attempts"] == 2
 
 
 # ===========================================================================

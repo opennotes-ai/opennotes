@@ -43,9 +43,10 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 from uuid import UUID, uuid4
 
+import asyncpg
 import logfire
 
 from src.analyses.claims.dedupe_slot import run_claims_dedup
@@ -89,6 +90,10 @@ from src.monitoring_metrics import (
     classify_error,
 )
 from src.utils.url_security import InvalidURL, revalidate_redirect_target
+from src.utterances.errors import (
+    TransientExtractionError,
+    UtteranceExtractionError,
+)
 from src.utterances.extractor import extract_utterances
 
 logger = get_logger(__name__)
@@ -96,6 +101,14 @@ logger = get_logger(__name__)
 
 HEARTBEAT_INTERVAL_SEC: float = 5.0
 """Heartbeat bump cadence. Tests override to a shorter interval."""
+
+
+EXTRACT_TRANSIENT_MAX_ATTEMPTS: Final[int] = 2
+"""Cloud Tasks max_attempts is 3 (cloud_tasks.tf line 33). On the 2nd
+transient extraction failure, flip the row to TerminalError(UPSTREAM_ERROR)
+so the user sees a stable error instead of waiting on a silently-dropped 3rd
+delivery. Subtract 1 to keep the terminal flip strictly before exhaustion.
+"""
 
 
 class TransientError(Exception):
@@ -208,6 +221,19 @@ WHERE job_id = $1
   AND attempt_id = $3
 """
 
+# TASK-1474.23.03.04: in-row backstop counter for transient extraction
+# errors. CAS on attempt_id so a stale worker cannot double-increment the
+# counter after a fresh attempt has rotated. RETURNING the new value lets
+# the caller decide whether to escalate to TerminalError(UPSTREAM_ERROR).
+_INCREMENT_EXTRACT_TRANSIENT_SQL = """
+UPDATE vibecheck_jobs
+SET extract_transient_attempts = extract_transient_attempts + 1,
+    updated_at = now()
+WHERE job_id = $1
+  AND attempt_id = $2
+RETURNING extract_transient_attempts
+"""
+
 # Stage names recorded in `vibecheck_jobs.last_stage` and as Logfire span
 # attributes. These are also the names of the Logfire spans wrapped around
 # each step in `_run_pipeline` after `extract_utterances` returns.
@@ -283,6 +309,53 @@ async def _mark_failed(
 async def _set_analyzing(pool: Any, job_id: UUID, task_attempt: UUID) -> None:
     async with pool.acquire() as conn:
         await conn.execute(_SET_ANALYZING_SQL, job_id, task_attempt)
+
+
+async def _increment_extract_transient_attempts(
+    pool: Any,
+    job_id: UUID,
+    *,
+    task_attempt: UUID,
+) -> int | None:
+    """CAS-increment the per-row backstop counter. Returns the new value,
+    or None when the CAS missed (stale attempt — caller should not act on
+    the backstop), the column is missing on an un-migrated DB, or the DB
+    write itself failed.
+
+    Behavioral contract for the caller:
+    - new_count is None: best-effort fallback — classify as TransientError
+      so Cloud Tasks redelivers (we'd rather over-retry than silently
+      flip terminal on a transient DB or schema problem).
+    - new_count >= EXTRACT_TRANSIENT_MAX_ATTEMPTS: escalate to
+      TerminalError(UPSTREAM_ERROR) so the row flips to failed BEFORE
+      Cloud Tasks max_attempts=3 silently exhausts and leaves the row
+      pending forever.
+
+    The asyncpg.UndefinedColumnError catch is the deploy-time backstop:
+    if the schema migration hasn't propagated yet, the worker keeps
+    behaving exactly like the pre-counter system (transient → 503 →
+    redelivery → eventual silent drop) instead of crashing on every
+    transient flake.
+    """
+    try:
+        async with pool.acquire() as conn:
+            return await conn.fetchval(
+                _INCREMENT_EXTRACT_TRANSIENT_SQL, job_id, task_attempt
+            )
+    except asyncpg.UndefinedColumnError:
+        logger.warning(
+            "extract_transient_attempts column missing on job %s; backstop "
+            "disabled until schema migration is applied",
+            job_id,
+        )
+        return None
+    except Exception as exc:
+        logger.warning(
+            "extract_transient_attempts increment failed for job %s: %s",
+            job_id,
+            exc,
+        )
+        return None
 
 
 async def _set_last_stage(
@@ -765,15 +838,46 @@ async def _run_pipeline(
     # Post-scrape revalidate: reject redirects into private space.
     await _revalidate_final_url(scrape, url=url, scrape_cache=scrape_cache)
 
-    # Extract utterances from the scrape bundle.
+    # Extract utterances from the scrape bundle. Three-arm classification:
+    # (1) TransientExtractionError: upstream flake (Vertex 504/503/429 or
+    #     Firecrawl 5xx). Increment the in-row backstop counter; if we
+    #     have now reached EXTRACT_TRANSIENT_MAX_ATTEMPTS, escalate to
+    #     TerminalError(UPSTREAM_ERROR) so the row flips to failed BEFORE
+    #     Cloud Tasks silently exhausts at max_attempts=3.
+    # (2) UtteranceExtractionError: parse / no-utterances / output-validation.
+    #     Terminal — retrying does nothing for a content-shape problem.
+    # (3) Anything else: defensive catch-all, terminal so we don't loop
+    #     forever on unknown bugs.
     try:
         payload = await extract_utterances(
             url, client, scrape_cache, settings=settings
         )
+    except TransientExtractionError as exc:
+        new_count = await _increment_extract_transient_attempts(
+            pool, job_id, task_attempt=task_attempt
+        )
+        if (
+            new_count is not None
+            and new_count >= EXTRACT_TRANSIENT_MAX_ATTEMPTS
+        ):
+            raise TerminalError(
+                ErrorCode.UPSTREAM_ERROR,
+                f"upstream extraction error after {new_count} transient "
+                f"attempts: provider={exc.provider} "
+                f"status_code={exc.status_code} status={exc.status}: {exc}",
+            ) from exc
+        raise TransientError(
+            f"transient extraction error "
+            f"(attempt {new_count}, provider={exc.provider}, "
+            f"status_code={exc.status_code}): {exc}"
+        ) from exc
+    except UtteranceExtractionError as exc:
+        raise TerminalError(
+            ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
+        ) from exc
     except Exception as exc:
-        # Extraction is a modeling failure, not a flake — don't retry
-        # forever. Terminal so the UI surfaces a clear "we couldn't read
-        # this page" error.
+        # Defensive catch-all: anything not yet classified by the typed
+        # arms still terminates so we don't loop forever on unknown bugs.
         raise TerminalError(
             ErrorCode.EXTRACTION_FAILED, f"extraction failed: {exc}"
         ) from exc

@@ -12,6 +12,7 @@ from typing import Any
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+import asyncpg
 import pytest
 
 from src.analyses.safety._schemas import SafetyLevel, SafetyRecommendation
@@ -436,3 +437,303 @@ async def test_heartbeat_loop_logs_start_and_cancel_lifecycle(
     info_msgs = [r.message for r in caplog.records if r.levelno == logging.INFO]
     assert any("heartbeat: started" in m for m in info_msgs), info_msgs
     assert any("heartbeat: cancelled" in m for m in info_msgs), info_msgs
+
+
+# ---------------------------------------------------------------------------
+# TASK-1474.23.03.04 — three-arm classification of extract_utterances
+# errors + in-row backstop counter (CAS on attempt_id with RETURNING).
+# ---------------------------------------------------------------------------
+
+
+def _stub_extract_arm_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Short-circuit scrape/build/revalidate so the test focuses on the
+    extract arm's three-way classification. extract_utterances itself is
+    NOT stubbed here — the test sets that per-case to raise the specific
+    exception type under test.
+    """
+    from src.jobs import orchestrator
+
+    monkeypatch.setattr(orchestrator, "_build_scrape_cache", lambda s: MagicMock())
+    monkeypatch.setattr(
+        orchestrator, "_build_firecrawl_client", lambda s: MagicMock()
+    )
+
+    async def stub_scrape_step(*args, **kwargs):
+        return MagicMock(metadata=None)
+
+    async def stub_revalidate(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(orchestrator, "_scrape_step", stub_scrape_step)
+    monkeypatch.setattr(orchestrator, "_revalidate_final_url", stub_revalidate)
+
+
+class _IncrementCounterConn:
+    """Stand-in connection that emulates _INCREMENT_EXTRACT_TRANSIENT_SQL.
+
+    Tracks every fetchval invocation and bumps an internal counter by 1
+    each time, returning the new value (matching RETURNING semantics).
+    Tests set the starting value via `seed`.
+    """
+
+    def __init__(self, *, seed: int = 0) -> None:
+        self.value = seed
+        self.calls: list[tuple[Any, ...]] = []
+
+    async def fetchval(self, sql: str, *args: Any) -> int:
+        self.calls.append((sql, *args))
+        self.value += 1
+        return self.value
+
+
+async def test_run_pipeline_translates_transient_extraction_error_to_transient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First TransientExtractionError increments the in-row counter to 1
+    (below EXTRACT_TRANSIENT_MAX_ATTEMPTS=2) and surfaces as TransientError
+    so run_job's outer arm resets the row to pending and returns 503.
+    """
+    from src.jobs import orchestrator
+    from src.utterances.errors import TransientExtractionError
+
+    _stub_extract_arm_only(monkeypatch)
+
+    async def raise_transient(*args, **kwargs):
+        raise TransientExtractionError(
+            provider="vertex",
+            status_code=504,
+            status="DEADLINE_EXCEEDED",
+            fallback_message="Vertex 504",
+        )
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", raise_transient)
+
+    counter = _IncrementCounterConn(seed=0)
+    pool = FakePool(counter)
+    job_id = uuid4()
+    task_attempt = uuid4()
+
+    with pytest.raises(orchestrator.TransientError) as info:
+        await orchestrator._run_pipeline(
+            pool, job_id, task_attempt, "https://example.com", MagicMock()
+        )
+
+    # Counter went from 0 -> 1 (single increment).
+    assert counter.value == 1
+    assert len(counter.calls) == 1
+    # The TransientError message carries the new attempt count + provider
+    # info so operators can correlate retries.
+    assert "attempt 1" in str(info.value)
+    assert "vertex" in str(info.value)
+    assert "504" in str(info.value)
+
+
+async def test_run_pipeline_backstop_escalates_to_terminal_after_max_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the in-row counter is already at MAX-1, the next
+    TransientExtractionError pushes it to MAX and escalates to
+    TerminalError(UPSTREAM_ERROR). Cloud Tasks would otherwise silently
+    exhaust at max_attempts=3 and leave the row stuck pending.
+    """
+    from src.analyses.schemas import ErrorCode
+    from src.jobs import orchestrator
+    from src.utterances.errors import TransientExtractionError
+
+    _stub_extract_arm_only(monkeypatch)
+
+    async def raise_transient(*args, **kwargs):
+        raise TransientExtractionError(
+            provider="vertex",
+            status_code=429,
+            status="RESOURCE_EXHAUSTED",
+            fallback_message="Vertex 429",
+        )
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", raise_transient)
+
+    # Counter pre-loaded to (MAX - 1); next increment hits MAX.
+    counter = _IncrementCounterConn(
+        seed=orchestrator.EXTRACT_TRANSIENT_MAX_ATTEMPTS - 1
+    )
+    pool = FakePool(counter)
+    job_id = uuid4()
+    task_attempt = uuid4()
+
+    with pytest.raises(orchestrator.TerminalError) as info:
+        await orchestrator._run_pipeline(
+            pool, job_id, task_attempt, "https://example.com", MagicMock()
+        )
+
+    assert info.value.error_code == ErrorCode.UPSTREAM_ERROR
+    # Status code from the original TransientExtractionError is preserved
+    # in the terminal message so operators can distinguish 504-exhaustion
+    # from 429-exhaustion (AC#3 for TASK-1474.23.03.04).
+    assert "429" in info.value.error_detail
+    assert "vertex" in info.value.error_detail
+    assert (
+        f"after {orchestrator.EXTRACT_TRANSIENT_MAX_ATTEMPTS} transient"
+        in info.value.error_detail
+    )
+    # Counter was incremented exactly once (not twice).
+    assert counter.value == orchestrator.EXTRACT_TRANSIENT_MAX_ATTEMPTS
+
+
+async def test_run_pipeline_treats_utterance_extraction_error_as_terminal_extraction_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parse / no-utterances / output-validation failures classify as
+    TerminalError(EXTRACTION_FAILED), NOT UPSTREAM_ERROR, and do NOT
+    increment the transient backstop counter (it's a content-shape
+    problem, not an upstream flake).
+    """
+    from src.analyses.schemas import ErrorCode
+    from src.jobs import orchestrator
+    from src.utterances.errors import UtteranceExtractionError
+
+    _stub_extract_arm_only(monkeypatch)
+
+    async def raise_terminal(*args, **kwargs):
+        raise UtteranceExtractionError("agent returned empty utterances")
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", raise_terminal)
+
+    counter = _IncrementCounterConn(seed=0)
+    pool = FakePool(counter)
+    job_id = uuid4()
+    task_attempt = uuid4()
+
+    with pytest.raises(orchestrator.TerminalError) as info:
+        await orchestrator._run_pipeline(
+            pool, job_id, task_attempt, "https://example.com", MagicMock()
+        )
+
+    assert info.value.error_code == ErrorCode.EXTRACTION_FAILED
+    assert "agent returned empty utterances" in info.value.error_detail
+    # Counter was NOT touched — this is a parse failure, not an upstream
+    # flake.
+    assert counter.value == 0
+    assert counter.calls == []
+
+
+async def test_run_pipeline_unexpected_exception_falls_through_to_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defensive catch: anything not classified by the typed arms is
+    still terminal (EXTRACTION_FAILED) so the worker can never loop
+    forever on an unknown bug. Counter is NOT incremented.
+    """
+    from src.analyses.schemas import ErrorCode
+    from src.jobs import orchestrator
+
+    _stub_extract_arm_only(monkeypatch)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("kaboom unknown bug")
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", boom)
+
+    counter = _IncrementCounterConn(seed=0)
+    pool = FakePool(counter)
+    job_id = uuid4()
+    task_attempt = uuid4()
+
+    with pytest.raises(orchestrator.TerminalError) as info:
+        await orchestrator._run_pipeline(
+            pool, job_id, task_attempt, "https://example.com", MagicMock()
+        )
+
+    assert info.value.error_code == ErrorCode.EXTRACTION_FAILED
+    assert "kaboom unknown bug" in info.value.error_detail
+    assert counter.value == 0
+    assert counter.calls == []
+
+
+async def test_run_pipeline_falls_back_to_transient_when_column_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Backward-compat: if the extract_transient_attempts column is missing
+    (deploy where the schema migration hasn't run yet), the
+    UndefinedColumnError is caught and behavior degrades gracefully to
+    TransientError. Cloud Tasks redelivers, and the system behaves
+    exactly like it did before the backstop existed — no crash, no
+    spurious terminal flips.
+    """
+    from src.jobs import orchestrator
+    from src.utterances.errors import TransientExtractionError
+
+    _stub_extract_arm_only(monkeypatch)
+
+    async def raise_transient(*args, **kwargs):
+        raise TransientExtractionError(
+            provider="vertex",
+            status_code=503,
+            status="UNAVAILABLE",
+            fallback_message="Vertex 503",
+        )
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", raise_transient)
+
+    class _MissingColumnConn:
+        async def fetchval(self, sql: str, *args: Any) -> int:
+            raise asyncpg.UndefinedColumnError(
+                'column "extract_transient_attempts" does not exist'
+            )
+
+    pool = FakePool(_MissingColumnConn())
+    caplog.set_level(logging.WARNING, logger="src.jobs.orchestrator")
+
+    with pytest.raises(orchestrator.TransientError):
+        await orchestrator._run_pipeline(
+            pool, uuid4(), uuid4(), "https://example.com", MagicMock()
+        )
+
+    # Warning surfaced so operators know the migration hasn't propagated.
+    assert any(
+        "extract_transient_attempts column missing" in r.message
+        for r in caplog.records
+    ), [r.message for r in caplog.records]
+
+
+async def test_run_pipeline_falls_back_to_transient_when_increment_db_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """If the increment SQL itself fails (DB down, connection blip), the
+    helper returns None and the orchestrator classifies as TransientError
+    rather than terminal. Best-effort: prefer redelivery > silent loss.
+    AC#4 for TASK-1474.23.03.04.
+    """
+    from src.jobs import orchestrator
+    from src.utterances.errors import TransientExtractionError
+
+    _stub_extract_arm_only(monkeypatch)
+
+    async def raise_transient(*args, **kwargs):
+        raise TransientExtractionError(
+            provider="firecrawl",
+            status_code=502,
+            status="HTTP_502",
+            fallback_message="Firecrawl 502",
+        )
+
+    monkeypatch.setattr(orchestrator, "extract_utterances", raise_transient)
+
+    class _DbDownConn:
+        async def fetchval(self, sql: str, *args: Any) -> int:
+            raise RuntimeError("connection refused")
+
+    pool = FakePool(_DbDownConn())
+    caplog.set_level(logging.WARNING, logger="src.jobs.orchestrator")
+
+    with pytest.raises(orchestrator.TransientError):
+        await orchestrator._run_pipeline(
+            pool, uuid4(), uuid4(), "https://example.com", MagicMock()
+        )
+
+    # Warning surfaced so operators see the failure (AC#4 visibility).
+    assert any(
+        "extract_transient_attempts increment failed" in r.message
+        for r in caplog.records
+    ), [r.message for r in caplog.records]
