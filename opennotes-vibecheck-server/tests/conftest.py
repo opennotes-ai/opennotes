@@ -5,6 +5,15 @@
   SSRF validator added to `src.routes.frame`. Production still does real DNS;
   the stub lives only in the test process.
 
+- `VIBECHECK_JOBS_DDL` (module-level constant): the canonical CREATE TABLE
+  block for `vibecheck_jobs` reused by every testcontainer-Postgres unit /
+  jobs / routes test. If you add a column to `src/cache/schema.sql`
+  `vibecheck_jobs`, update this constant in ONE place and every test picks
+  it up. The integration suite has its own copy in
+  `tests/integration/conftest.py` (it embeds the sweeper function and
+  `IF NOT EXISTS` guards, which is a different shape) — keep both in sync
+  by hand when columns change.
+
 - Cross-cutting helpers used by `tests/unit/test_concurrency.py`,
   `tests/unit/test_integration_surface.py`, and `tests/integration/`:
     * `fake_firecrawl_client`: a dependency-free stand-in for
@@ -35,6 +44,48 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.firecrawl_client import ScrapeMetadata, ScrapeResult
+
+# ---------------------------------------------------------------------------
+# Shared DDL constants for testcontainer-Postgres tests.
+# ---------------------------------------------------------------------------
+
+# Canonical `vibecheck_jobs` shape. Keep aligned with `src/cache/schema.sql`'s
+# CREATE TABLE block + every ALTER TABLE ADD COLUMN that follows it. Tests
+# compose their per-suite `_MINIMAL_DDL` by concatenating this constant with
+# the surrounding companion-table DDL they need.
+VIBECHECK_JOBS_DDL = """
+CREATE TABLE vibecheck_jobs (
+    job_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    url TEXT NOT NULL,
+    normalized_url TEXT NOT NULL,
+    host TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempt_id UUID NOT NULL DEFAULT uuid_generate_v4(),
+    error_code TEXT,
+    error_message TEXT,
+    error_host TEXT,
+    sections JSONB NOT NULL DEFAULT '{}'::jsonb,
+    sidebar_payload JSONB,
+    cached BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    heartbeat_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    test_fail_slug TEXT,
+    safety_recommendation JSONB,
+    last_stage TEXT,
+    preview_description TEXT,
+    extract_transient_attempts INT NOT NULL DEFAULT 0
+);
+"""
+
+# NOTE: the production schema (src/cache/schema.sql:77-92) carries three
+# CHECK constraints (vibecheck_jobs_status_check, vibecheck_jobs_error_code_check,
+# vibecheck_jobs_terminal_finished_at) that are intentionally OMITTED here.
+# Several tests insert rows in shapes the production constraints would reject
+# (e.g. status='failed' with finished_at=NULL for retry-flow assertions);
+# tightening the test DDL to match production needs each of those tests to
+# stop bypassing the invariant first. Tracked as TASK-1474.23.03.10.
 
 
 @pytest.fixture(autouse=True)

@@ -26,6 +26,7 @@ from src.jobs.slots import (
     mark_slot_failed,
     write_slot,
 )
+from tests.conftest import VIBECHECK_JOBS_DDL
 
 # Capture the real resolver before the suite-wide autouse `_stub_dns` fixture
 # in tests/conftest.py patches it at test setup time.
@@ -36,8 +37,10 @@ _REAL_GETADDRINFO = socket.getaddrinfo
 
 # src/cache/schema.sql depends on pg_cron / uuid-ossp which aren't both
 # present in vanilla Postgres images. For unit tests we install just the core
-# DDL we exercise. If new columns land in schema.sql, mirror them here.
-_MINIMAL_DDL = """
+# DDL we exercise. The `vibecheck_jobs` block lives in tests/conftest.py as
+# `VIBECHECK_JOBS_DDL` so column additions stay a one-line change.
+_MINIMAL_DDL = (
+    """
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE vibecheck_analyses (
@@ -46,30 +49,9 @@ CREATE TABLE vibecheck_analyses (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL
 );
-
-CREATE TABLE vibecheck_jobs (
-    job_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    url TEXT NOT NULL,
-    normalized_url TEXT NOT NULL,
-    host TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    attempt_id UUID NOT NULL DEFAULT uuid_generate_v4(),
-    error_code TEXT,
-    error_message TEXT,
-    error_host TEXT,
-    sections JSONB NOT NULL DEFAULT '{}'::jsonb,
-    sidebar_payload JSONB,
-    cached BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    heartbeat_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ,
-    test_fail_slug TEXT,
-    safety_recommendation JSONB,
-    last_stage TEXT,
-    preview_description TEXT
-);
-
+"""
+    + VIBECHECK_JOBS_DDL
+    + """
 CREATE TABLE vibecheck_job_utterances (
     utterance_pk UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     job_id UUID NOT NULL REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
@@ -85,6 +67,7 @@ CREATE TABLE vibecheck_job_utterances (
     page_kind TEXT
 );
 """
+)
 
 
 @pytest.fixture(autouse=True)

@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
+import logfire
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ImageUrl
 
@@ -44,6 +45,12 @@ from src.config import Settings, get_settings
 from src.firecrawl_client import FirecrawlClient
 from src.services.gemini_agent import build_agent
 from src.utils.html_sanitize import strip_noise
+from src.utterances.errors import (
+    TransientExtractionError,
+    UtteranceExtractionError,
+    classify_firecrawl_error,
+    classify_pydantic_ai_error,
+)
 
 from .media_extraction import attribute_media
 from .schema import UtterancesPayload
@@ -97,10 +104,6 @@ Tool usage (markdown-first):
 """
 
 
-class UtteranceExtractionError(Exception):
-    """Raised when scrape-based utterance extraction fails."""
-
-
 @dataclass
 class ExtractorDeps:
     """Dependencies passed to the pydantic-ai agent via `RunContext.deps`.
@@ -129,35 +132,77 @@ async def extract_utterances(
 
     Returns a fully validated `UtterancesPayload` with freshly-assigned
     `source_url`, `scraped_at = now(UTC)`, and deduplicated `utterance_id`s.
+
+    Wrapped in a `vibecheck.extract_utterances` Logfire span. Transient
+    upstream failures (Vertex 429/503/504, Firecrawl 429/5xx, network
+    timeouts/transport errors) at either call site surface as
+    `TransientExtractionError` with neutral `upstream_*` span attrs (plus
+    Vertex-arm legacy `vertex_*` attrs for backward-compat); non-transient
+    failures surface as the terminal `UtteranceExtractionError`.
     """
     settings = settings or get_settings()
 
-    scrape = await _get_or_scrape(url, client, scrape_cache)
-    markdown = scrape.markdown
-    if not markdown or not markdown.strip():
-        raise UtteranceExtractionError("firecrawl scrape returned no markdown")
+    with logfire.span("vibecheck.extract_utterances", url=url) as span:
+        scrape = await _get_or_scrape(url, client, scrape_cache, span=span)
+        markdown = scrape.markdown
+        if not markdown or not markdown.strip():
+            raise UtteranceExtractionError("firecrawl scrape returned no markdown")
 
-    agent = build_agent(
-        settings,
-        output_type=UtterancesPayload,
-        system_prompt=EXTRACTOR_SYSTEM_PROMPT,
-        name="vibecheck.utterance_extractor",
-    )
-    _register_tools(agent)
+        agent = build_agent(
+            settings,
+            output_type=UtterancesPayload,
+            system_prompt=EXTRACTOR_SYSTEM_PROMPT,
+            name="vibecheck.utterance_extractor",
+        )
+        _register_tools(agent)
+        deps = ExtractorDeps(scrape=scrape, scrape_cache=scrape_cache)
 
-    deps = ExtractorDeps(scrape=scrape, scrape_cache=scrape_cache)
-    try:
-        result = await agent.run(markdown, deps=deps)  # pyright: ignore[reportArgumentType]
-    except Exception as exc:
-        raise UtteranceExtractionError(f"Gemini extraction failed: {exc}") from exc
+        # Strip the `google-vertex:` prefix `build_agent` strips before
+        # constructing GoogleModel so the span attr matches the
+        # ModelHTTPError.model_name that pydantic-ai surfaces from the
+        # provider — keeps Logfire saved searches consistent.
+        model_name = settings.VERTEXAI_MODEL.removeprefix("google-vertex:")
+        try:
+            result = await agent.run(markdown, deps=deps)  # pyright: ignore[reportArgumentType]
+        except Exception as exc:
+            transient = classify_pydantic_ai_error(exc, model_name=model_name)
+            if transient is not None:
+                _set_upstream_span_attrs(span, transient)
+                raise transient from exc
+            raise UtteranceExtractionError(
+                f"Gemini extraction failed: {exc}"
+            ) from exc
 
-    payload = cast(UtterancesPayload, cast(object, result.output))
-    payload.source_url = url
-    payload.scraped_at = datetime.now(UTC)
-    _assign_stable_ids(payload)
-    sanitized_html = _sanitize_html(scrape.html or "")
-    attribute_media(sanitized_html, payload.utterances)
-    return payload
+        payload = cast(UtterancesPayload, cast(object, result.output))
+        payload.source_url = url
+        payload.scraped_at = datetime.now(UTC)
+        _assign_stable_ids(payload)
+        sanitized_html = _sanitize_html(scrape.html or "")
+        attribute_media(sanitized_html, payload.utterances)
+        return payload
+
+
+def _set_upstream_span_attrs(
+    span: logfire.LogfireSpan, transient: TransientExtractionError
+) -> None:
+    """Set neutral `upstream_*` attrs plus Vertex-arm legacy attrs.
+
+    Saved Logfire searches keyed on `vertex_status_code` / `vertex_status`
+    (from the original Vertex-only span shape) keep working for the Vertex
+    arm; the Firecrawl arm only carries the neutral `upstream_*` keys.
+    """
+    span.set_attribute("upstream_provider", transient.provider)
+    if transient.status_code is not None:
+        span.set_attribute("upstream_status_code", transient.status_code)
+    if transient.status is not None:
+        span.set_attribute("upstream_status", transient.status)
+    if transient.model_name is not None:
+        span.set_attribute("model_name", transient.model_name)
+    if transient.provider == "vertex":
+        if transient.status_code is not None:
+            span.set_attribute("vertex_status_code", transient.status_code)
+        if transient.status is not None:
+            span.set_attribute("vertex_status", transient.status)
 
 
 def _sanitize_html(html: str) -> str:
@@ -219,6 +264,8 @@ async def _get_or_scrape(
     url: str,
     client: FirecrawlClient,
     scrape_cache: SupabaseScrapeCache,
+    *,
+    span: logfire.LogfireSpan | None = None,
 ) -> CachedScrape:
     """Cache-hit → return cached. Miss → Firecrawl multi-format + persist.
 
@@ -229,6 +276,11 @@ async def _get_or_scrape(
     keyless `CachedScrape` wrapper over the fresh `ScrapeResult` so the
     agent tools at least observe the markdown/html payload — the screenshot
     tool will return None because there is no key to sign against.
+
+    Firecrawl errors are classified via `classify_firecrawl_error`: a
+    retriable status (429/5xx) or transport/timeout escape surfaces as
+    `TransientExtractionError(provider="firecrawl")`; everything else
+    becomes the terminal `UtteranceExtractionError`.
     """
     cached = await scrape_cache.get(url)
     if cached is not None:
@@ -241,6 +293,11 @@ async def _get_or_scrape(
             only_main_content=True,
         )
     except Exception as exc:
+        transient = classify_firecrawl_error(exc)
+        if transient is not None:
+            if span is not None:
+                _set_upstream_span_attrs(span, transient)
+            raise transient from exc
         raise UtteranceExtractionError(f"firecrawl scrape failed: {exc}") from exc
 
     try:
