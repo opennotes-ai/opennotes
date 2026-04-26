@@ -525,6 +525,17 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
     # Capture orchestrator's scrape cache so we can assert discard happened.
     evict_calls: list[str] = []
 
+    # `markdown` here is intentionally substantial (> MIN_BODY_CHARS) so the
+    # TASK-1488.05 quality classifier in `_scrape_step` returns `OK` and
+    # the ladder caches the bundle — only THEN does post-scrape redirect
+    # revalidation discover the private-IP `source_url` and raise.
+    redirect_body = (
+        "A real-looking body of substantive prose with enough words to clear "
+        "the legitimacy threshold so the scrape ladder treats it as OK and "
+        "continues into the post-scrape SSRF revalidator. " * 4
+    )
+    redirect_html = f"<html><body><article>{redirect_body}</article></body></html>"
+
     class _FakeCache:
         async def get(self, url: str, *, tier: str = "scrape") -> Any:
             return None
@@ -533,8 +544,8 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
             self, url: str, scrape: Any, *, tier: str = "scrape"
         ) -> Any:
             return scrape_cache_module.CachedScrape(
-                markdown="hi",
-                html=None,
+                markdown=redirect_body,
+                html=redirect_html,
                 metadata=ScrapeMetadata(source_url="http://169.254.169.254/"),
                 storage_key="mock-storage-key",
             )
@@ -546,8 +557,8 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
 
     async def _scrape(*args: Any, **kwargs: Any) -> Any:
         return MagicMock(
-            markdown="hi",
-            html=None,
+            markdown=redirect_body,
+            html=redirect_html,
             raw_html=None,
             screenshot=None,
             links=None,
@@ -560,8 +571,16 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
     monkeypatch.setattr(
         orchestrator, "_build_scrape_cache", lambda _settings: _FakeCache()
     )
+    # Stub BOTH client factories — TASK-1488.05 splits the Tier 1 fail-fast
+    # client from the Tier 2 / extract default-retry client. The same fake
+    # serves both so call counts and behavior remain deterministic.
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda _settings: fake_client
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_build_firecrawl_tier1_client",
+        lambda _settings: fake_client,
     )
 
     # Stub section fanout so the test focuses on the post-scrape check —

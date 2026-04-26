@@ -26,6 +26,22 @@ Error handling ladder (CTU + Cloud Tasks retry contract):
                              (Cloud Tasks does NOT retry)
     any other Exception   -> log with exc_info, treat as transient (reset + 503)
 
+Scrape ladder (TASK-1488.05): `_scrape_step` runs a two-tier fetch:
+
+    Tier 1 — /scrape with single-attempt budget (`max_attempts=1`).
+             Refusal envelopes (FirecrawlBlocked) and INTERSTITIAL bundles
+             escalate to Tier 2; AUTH_WALL and LEGITIMATELY_EMPTY classifications
+             short-circuit to TerminalError(EXTRACTION_FAILED) — no escalation.
+    Tier 2 — /interact with default retry budget. A non-OK Tier 2 result
+             raises TerminalError(UNSUPPORTED_SITE) carrying both tier reasons,
+             flipping ErrorCode.UNSUPPORTED_SITE from a dead enum into a live
+             signal that the page is unrenderable for our pipeline.
+
+The ladder emits a single `vibecheck.scrape_step` Logfire span carrying
+`tier_attempted`, `tier_success`, `escalation_reason`, and
+`final_classification` so a partial trace pinpoints whether the fetch
+died on Tier 1, escalated and recovered, or burned through both tiers.
+
 `run_job` is the synchronous entrypoint the route handler awaits. The
 route itself never sees exceptions — `run_job` returns a `RunResult` with
 the HTTP status to emit. The heartbeat task is cancelled in every exit
@@ -70,10 +86,11 @@ from src.analyses.safety.web_risk_worker import run_web_risk
 from src.analyses.schemas import ErrorCode, SectionSlot, SectionSlug, SectionState
 from src.analyses.tone.flashpoint_slot import run_flashpoint
 from src.analyses.tone.scd_slot import run_scd
-from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
+from src.cache.scrape_cache import CachedScrape, ScrapeTier, SupabaseScrapeCache
 from src.config import Settings
-from src.firecrawl_client import FirecrawlClient
+from src.firecrawl_client import FirecrawlBlocked, FirecrawlClient, FirecrawlError
 from src.jobs.finalize import maybe_finalize_job
+from src.jobs.scrape_quality import ScrapeQuality, classify_scrape
 from src.jobs.section_defaults import empty_section_data as _empty_section_data
 from src.jobs.slots import mark_slot_done, mark_slot_failed, write_slot
 from src.jobs.utterance_writes import (
@@ -498,42 +515,64 @@ def _build_scrape_cache(settings: Settings) -> SupabaseScrapeCache:
 
 
 def _build_firecrawl_client(settings: Settings) -> FirecrawlClient:
-    """Factory seam mirroring `_build_scrape_cache` above."""
+    """Factory seam mirroring `_build_scrape_cache` above.
+
+    Default-retry client: `max_attempts=3` exponential-backoff. Used by the
+    extractor's /v2/extract calls and by the Tier 2 /v2/interact escalation
+    in `_scrape_step`. Callers that need the fail-fast Tier 1 probe should
+    use `_build_firecrawl_tier1_client` instead.
+    """
     return FirecrawlClient(api_key=settings.FIRECRAWL_API_KEY)
 
 
-async def _scrape_step(
-    url: str,
-    client: FirecrawlClient,
-    scrape_cache: SupabaseScrapeCache,
-) -> CachedScrape:
-    """Cache-hit → return; miss → fetch + put.
+def _build_firecrawl_tier1_client(settings: Settings) -> FirecrawlClient:
+    """Tier 1 client: single-attempt budget for fast escalation.
 
-    Returns the `CachedScrape` the caller will hand to `extract_utterances`.
-    A failure in Firecrawl itself is TransientError (try again); a scrape
-    that returns no markdown is TerminalError extraction_failed (the
-    content is unparseable no matter how many times we retry).
+    The Tier 1 /scrape probe is paired with a Tier 2 /interact fallback,
+    so retrying at this layer just delays the escalation. LinkedIn-style
+    refusals arrive in <1s and inherit no value from the default 1s/2s/4s
+    backoff. A separate seam (rather than a per-call kwarg) keeps tests
+    able to inject a fail-fast fake without touching the default client
+    used elsewhere in the pipeline.
     """
-    cached = await scrape_cache.get(url, tier="scrape")
-    if cached is not None:
-        return cached
+    return FirecrawlClient(api_key=settings.FIRECRAWL_API_KEY, max_attempts=1)
 
+
+# Tier 2 /interact action list. Default to a single 3s wait so JS-rendered
+# pages have a chance to load before content is captured. Kept conservative
+# — extending the action list would let the ladder masquerade as a richer
+# interaction tier (login flows, scroll, click), which is out of scope for
+# 1488.05 and would risk crossing ToS lines on auth-walled sites.
+_TIER2_DEFAULT_ACTIONS: list[dict[str, Any]] = [
+    {"type": "wait", "milliseconds": 3000},
+]
+
+
+def _quality_to_reason(quality: ScrapeQuality) -> str:
+    """Map a `ScrapeQuality` to a stable short reason string for log/error
+    messages. The lowercase `StrEnum` values are already log-friendly; this
+    indirection keeps a single source of truth in case we ever rename them.
+    """
+    return quality.value
+
+
+async def _cache_put_or_keyless(
+    scrape_cache: SupabaseScrapeCache,
+    url: str,
+    fresh: Any,
+    *,
+    tier: ScrapeTier,
+) -> CachedScrape:
+    """Persist `fresh` under `(url, tier)`; on DB failure fall back to a
+    keyless `CachedScrape` wrapper so the caller still has usable bytes.
+    Mirrors the pre-1488.05 fallback pattern from the original `_scrape_step`.
+    """
     try:
-        fresh = await client.scrape(
-            url,
-            formats=["markdown", "html", "screenshot@fullPage"],
-            only_main_content=True,
+        return await scrape_cache.put(url, fresh, tier=tier)
+    except Exception as exc:
+        logger.warning(
+            "scrape cache put failed for %s (tier=%s): %s", url, tier, exc
         )
-    except Exception as exc:
-        raise TransientError(f"firecrawl scrape failed: {exc}") from exc
-
-    try:
-        return await scrape_cache.put(url, fresh, tier="scrape")
-    except Exception as exc:
-        # DB upsert failed but we still have the fresh bundle. Fall back
-        # to a keyless CachedScrape so the extractor's downstream reads
-        # have usable markdown/html; next retry will re-upload.
-        logger.warning("scrape cache put failed for %s: %s", url, exc)
         return CachedScrape(
             markdown=fresh.markdown,
             html=fresh.html,
@@ -544,6 +583,264 @@ async def _scrape_step(
             warning=fresh.warning,
             storage_key=None,
         )
+
+
+@dataclass
+class _Tier1Outcome:
+    """Result of running Tier 1. The caller dispatches on these fields:
+
+      - `cached` is set on Tier 1 OK (return immediately).
+      - `terminal` is set on AUTH_WALL / LEGITIMATELY_EMPTY (raise without
+        escalating).
+      - Otherwise, `escalation_reason` + `tier1_reason` describe why we
+        need Tier 2.
+
+    `final_classification` is always populated so the orchestrator can
+    record it on the span even when we're about to raise.
+    """
+
+    cached: CachedScrape | None
+    terminal: TerminalError | None
+    escalation_reason: str | None
+    tier1_reason: str
+    final_classification: str
+
+
+async def _run_tier1(
+    url: str,
+    scrape_client: FirecrawlClient,
+    scrape_cache: SupabaseScrapeCache,
+) -> _Tier1Outcome:
+    """Tier 1 /scrape probe: classify and decide return / terminal / escalate.
+
+    Raises `TransientError` on non-refusal upstream errors so Cloud Tasks
+    redelivers via the envelope-level retry budget. AUTH_WALL and
+    LEGITIMATELY_EMPTY are returned as `terminal` outcomes (not raised here)
+    so the caller still gets to record span attributes before re-raising.
+    """
+    try:
+        fresh = await scrape_client.scrape(
+            url,
+            formats=["markdown", "html", "screenshot@fullPage"],
+            only_main_content=True,
+        )
+    except FirecrawlBlocked as exc:
+        return _Tier1Outcome(
+            cached=None,
+            terminal=None,
+            escalation_reason="firecrawl_blocked",
+            tier1_reason=f"firecrawl_blocked: {exc}",
+            # No classification ran — we never saw a bundle. Track the
+            # refusal as the "classification" for span observability.
+            final_classification="firecrawl_blocked",
+        )
+    except FirecrawlError as exc:
+        raise TransientError(f"firecrawl scrape failed: {exc}") from exc
+    except Exception as exc:
+        raise TransientError(f"firecrawl scrape failed: {exc}") from exc
+
+    quality = classify_scrape(fresh)
+    if quality is ScrapeQuality.OK:
+        cached_t1 = await _cache_put_or_keyless(
+            scrape_cache, url, fresh, tier="scrape"
+        )
+        return _Tier1Outcome(
+            cached=cached_t1,
+            terminal=None,
+            escalation_reason=None,
+            tier1_reason="ok",
+            final_classification="ok",
+        )
+    if quality is ScrapeQuality.AUTH_WALL:
+        return _Tier1Outcome(
+            cached=None,
+            terminal=TerminalError(
+                ErrorCode.EXTRACTION_FAILED,
+                "login wall on Tier 1 (auth_wall) — not escalated",
+            ),
+            escalation_reason=None,
+            tier1_reason="auth_wall",
+            final_classification="auth_wall",
+        )
+    if quality is ScrapeQuality.LEGITIMATELY_EMPTY:
+        return _Tier1Outcome(
+            cached=None,
+            terminal=TerminalError(
+                ErrorCode.EXTRACTION_FAILED,
+                "page empty on Tier 1 (legitimately_empty) — not escalated",
+            ),
+            escalation_reason=None,
+            tier1_reason="legitimately_empty",
+            final_classification="legitimately_empty",
+        )
+    # INTERSTITIAL: cache the Tier 1 row so a retry can skip the classifier,
+    # then signal escalation.
+    assert quality is ScrapeQuality.INTERSTITIAL
+    await _cache_put_or_keyless(scrape_cache, url, fresh, tier="scrape")
+    return _Tier1Outcome(
+        cached=None,
+        terminal=None,
+        escalation_reason="interstitial",
+        tier1_reason="interstitial",
+        final_classification="interstitial",
+    )
+
+
+@dataclass
+class _Tier2Outcome:
+    """Result of running Tier 2. `cached` is set on OK; otherwise
+    `tier2_reason` and `final_classification` describe the failure."""
+
+    cached: CachedScrape | None
+    tier2_reason: str
+    final_classification: str
+
+
+async def _run_tier2(
+    url: str,
+    interact_client: FirecrawlClient,
+    scrape_cache: SupabaseScrapeCache,
+) -> _Tier2Outcome:
+    """Tier 2 /interact escalation. Returns an outcome that the caller
+    converts into either a return value or `TerminalError(UNSUPPORTED_SITE)`.
+    """
+    cached_t2 = await scrape_cache.get(url, tier="interact")
+    if cached_t2 is not None:
+        return _Tier2Outcome(
+            cached=cached_t2, tier2_reason="ok", final_classification="ok"
+        )
+
+    try:
+        fresh = await interact_client.interact(
+            url,
+            actions=_TIER2_DEFAULT_ACTIONS,
+            formats=["markdown", "html", "screenshot@fullPage"],
+            only_main_content=True,
+        )
+    except FirecrawlBlocked as exc:
+        return _Tier2Outcome(
+            cached=None,
+            tier2_reason=f"firecrawl_blocked: {exc}",
+            final_classification="firecrawl_blocked",
+        )
+    except FirecrawlError as exc:
+        return _Tier2Outcome(
+            cached=None,
+            tier2_reason=f"firecrawl_error: {exc}",
+            final_classification="firecrawl_error",
+        )
+    except Exception as exc:
+        return _Tier2Outcome(
+            cached=None,
+            tier2_reason=f"unexpected_error: {exc}",
+            final_classification="unexpected_error",
+        )
+
+    quality = classify_scrape(fresh)
+    if quality is ScrapeQuality.OK:
+        cached_after_t2 = await _cache_put_or_keyless(
+            scrape_cache, url, fresh, tier="interact"
+        )
+        return _Tier2Outcome(
+            cached=cached_after_t2, tier2_reason="ok", final_classification="ok"
+        )
+    return _Tier2Outcome(
+        cached=None,
+        tier2_reason=_quality_to_reason(quality),
+        final_classification=quality.value,
+    )
+
+
+async def _scrape_step(
+    url: str,
+    scrape_client: FirecrawlClient,
+    interact_client: FirecrawlClient,
+    scrape_cache: SupabaseScrapeCache,
+) -> CachedScrape:
+    """Run the tiered scrape ladder for `url` and return a `CachedScrape`.
+
+    Tier 1 (`scrape_client.scrape`, single-attempt budget):
+      - Cache hit (tier='scrape') → return.
+      - `FirecrawlBlocked` → escalate to Tier 2 (no point classifying a
+        refusal envelope; the ladder's whole point is to retry with a
+        richer fetcher).
+      - Other `FirecrawlError` / generic exception → `TransientError` so
+        Cloud Tasks redelivers (transient upstream blips still get the
+        envelope-level retry budget at run_job).
+      - `OK` classification → cache as 'scrape' and return.
+      - `INTERSTITIAL` → cache as 'scrape' (so a retry can skip the cheap
+        classifier) and escalate to Tier 2.
+      - `AUTH_WALL` → `TerminalError(EXTRACTION_FAILED, "login wall …")`.
+        DO NOT escalate — bypassing auth is a hard ToS line.
+      - `LEGITIMATELY_EMPTY` → `TerminalError(EXTRACTION_FAILED, "page empty …")`.
+        DO NOT escalate — no richer fetch tier resurrects deleted content.
+
+    Tier 2 (`interact_client.interact`, default-retry budget):
+      - Cache hit (tier='interact') → return.
+      - Refusal / generic error / non-OK classification → `TerminalError(
+        UNSUPPORTED_SITE, "tier 1: …; tier 2: …")` with both tier reasons
+        in the message.
+      - `OK` → cache as 'interact' and return.
+
+    The whole body is wrapped in a single `logfire.span("vibecheck.scrape_step")`;
+    attributes (`tier_attempted`, `tier_success`, `escalation_reason`,
+    `final_classification`) are filled in incrementally as the ladder
+    progresses so a partial trace still pinpoints where we ended up.
+    """
+    # NOTE: TASK-1488.06 is expected to add an optional `force_tier`
+    # kwarg here for the once-only post-Gemini escalation path. The
+    # current signature stays positional-only on the four args so the
+    # follow-up can layer a keyword-only kwarg cleanly.
+    tier_attempted: list[str] = []
+    tier_success: str | None = None
+    escalation_reason: str | None = None
+    final_classification: str = "ok"
+
+    span = logfire.span("vibecheck.scrape_step", url=url)
+    with span:
+        try:
+            # Tier 1 cache hit: short-circuit before the probe runs.
+            cached = await scrape_cache.get(url, tier="scrape")
+            if cached is not None:
+                tier_attempted.append("scrape")
+                tier_success = "scrape"
+                final_classification = "ok"
+                return cached
+
+            # Tier 1 probe (cache miss).
+            tier_attempted.append("scrape")
+            t1 = await _run_tier1(url, scrape_client, scrape_cache)
+            final_classification = t1.final_classification
+            if t1.cached is not None:
+                tier_success = "scrape"
+                return t1.cached
+            if t1.terminal is not None:
+                # AUTH_WALL or LEGITIMATELY_EMPTY — no escalation.
+                raise t1.terminal
+
+            # Tier 2 escalation (refusal or interstitial).
+            assert t1.escalation_reason is not None
+            escalation_reason = t1.escalation_reason
+            tier_attempted.append("interact")
+            t2 = await _run_tier2(url, interact_client, scrape_cache)
+            final_classification = t2.final_classification
+            if t2.cached is not None:
+                tier_success = "interact"
+                return t2.cached
+
+            # Both tiers failed — UNSUPPORTED_SITE carries both reasons.
+            raise TerminalError(
+                ErrorCode.UNSUPPORTED_SITE,
+                f"tier 1: {t1.tier1_reason}; tier 2: {t2.tier2_reason}",
+            )
+        finally:
+            # Set span attributes incrementally so a partial trace still
+            # pinpoints how far we got. Done in finally so terminal /
+            # transient paths still record their state.
+            span.set_attribute("tier_attempted", list(tier_attempted))
+            span.set_attribute("tier_success", tier_success)
+            span.set_attribute("escalation_reason", escalation_reason)
+            span.set_attribute("final_classification", final_classification)
 
 
 async def _revalidate_final_url(
@@ -857,12 +1154,17 @@ async def _run_pipeline(
     without booting Firecrawl/Gemini/OpenAI.
     """
     scrape_cache = _build_scrape_cache(settings)
+    # Tier 2 / extract default-retry client; Tier 1 fail-fast probe client.
+    # Both are seams tests can monkeypatch independently; the default-retry
+    # client is shared with `extract_utterances` below so the extractor's
+    # /v2/extract calls keep their existing retry budget.
     client = _build_firecrawl_client(settings)
+    tier1_client = _build_firecrawl_tier1_client(settings)
 
-    # Scrape (cache or fresh).
+    # Scrape (cache or fresh) via the tiered ladder.
     try:
-        scrape = await _scrape_step(url, client, scrape_cache)
-    except TransientError:
+        scrape = await _scrape_step(url, tier1_client, client, scrape_cache)
+    except (TransientError, TerminalError):
         raise
     except Exception as exc:
         raise TransientError(f"scrape step failed: {exc}") from exc

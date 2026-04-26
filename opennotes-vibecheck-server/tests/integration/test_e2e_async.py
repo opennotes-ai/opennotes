@@ -99,6 +99,12 @@ async def test_post_then_internal_run_then_poll_to_done(
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda _settings: fake_firecrawl
     )
+    # TASK-1488.05: Tier 1 fail-fast client is a separate factory seam.
+    monkeypatch.setattr(
+        orchestrator,
+        "_build_firecrawl_tier1_client",
+        lambda _settings: fake_firecrawl,
+    )
 
     target_url = "https://example.com/e2e-job"
     payload = await _make_utterances_payload(target_url)
@@ -353,6 +359,12 @@ async def test_write_slot_cas_miss_propagates_503_for_redelivery(
     )
     monkeypatch.setattr(
         orchestrator, "_build_firecrawl_client", lambda _settings: fake_firecrawl
+    )
+    # TASK-1488.05: Tier 1 fail-fast client is a separate factory seam.
+    monkeypatch.setattr(
+        orchestrator,
+        "_build_firecrawl_tier1_client",
+        lambda _settings: fake_firecrawl,
     )
 
     target_url = "https://example.com/slot-cas-miss"

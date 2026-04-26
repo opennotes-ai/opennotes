@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -16,8 +16,16 @@ import asyncpg
 import pytest
 
 from src.analyses.safety._schemas import SafetyLevel, SafetyRecommendation
-from src.analyses.schemas import SectionSlug, SectionState
-from src.jobs.orchestrator import TransientError, _run_section
+from src.analyses.schemas import ErrorCode, SectionSlug, SectionState
+from src.cache.scrape_cache import CachedScrape, SupabaseScrapeCache
+from src.firecrawl_client import (
+    FirecrawlBlocked,
+    FirecrawlClient,
+    FirecrawlError,
+    ScrapeMetadata,
+    ScrapeResult,
+)
+from src.jobs.orchestrator import TerminalError, TransientError, _run_section
 
 # ---------------------------------------------------------------------------
 # TASK-1473.59 regression — write_slot DB failure must propagate as
@@ -649,3 +657,603 @@ async def test_run_pipeline_unexpected_increment_error_terminates(
         )
     assert exc_info.value.error_code == ErrorCode.EXTRACTION_FAILED
     assert "backstop counter increment failed" in exc_info.value.error_detail
+
+
+# ---------------------------------------------------------------------------
+# TASK-1488.05 — Tiered scrape ladder: /scrape (Tier 1) → /interact (Tier 2).
+# ---------------------------------------------------------------------------
+#
+# These tests drive the new `_scrape_step` policy directly (no FastAPI / DB).
+# We mock the FirecrawlClient and SupabaseScrapeCache I/O surfaces only;
+# `classify_scrape` is the real Wave 1 implementation so quality routing is
+# exercised end-to-end through the public seam.
+#
+# Key invariants:
+#   - AUTH_WALL  + LEGITIMATELY_EMPTY  → terminal pre-Gemini, NO /interact.
+#   - INTERSTITIAL + FirecrawlBlocked  → escalate to /interact.
+#   - Both tiers fail (any non-OK on Tier 2) → TerminalError(UNSUPPORTED_SITE).
+#   - Cache reads/writes use the tier dimension; INTERSTITIAL Tier 1 result
+#     IS cached so a retry can skip the cheap-tier classifier.
+
+
+class _FakeScrapeCache:
+    """In-memory `SupabaseScrapeCache` substitute keyed by (url, tier).
+
+    Records every get/put/evict call so tests can assert tier dimension
+    is respected. Matches the real cache's `tier` kwarg surface.
+    """
+
+    def __init__(self) -> None:
+        self.store: dict[tuple[str, str], CachedScrape] = {}
+        self.gets: list[tuple[str, str]] = []
+        self.puts: list[tuple[str, str]] = []
+        self.evicts: list[tuple[str, str | None]] = []
+
+    async def get(
+        self, url: str, *, tier: str = "scrape"
+    ) -> CachedScrape | None:
+        self.gets.append((url, tier))
+        return self.store.get((url, tier))
+
+    async def put(
+        self, url: str, scrape: ScrapeResult, *, tier: str = "scrape"
+    ) -> CachedScrape:
+        self.puts.append((url, tier))
+        cached = CachedScrape(
+            markdown=scrape.markdown,
+            html=scrape.html,
+            raw_html=scrape.raw_html,
+            screenshot=scrape.screenshot,
+            links=scrape.links,
+            metadata=scrape.metadata,
+            warning=scrape.warning,
+            storage_key=f"{tier}-key-{len(self.puts)}",
+        )
+        self.store[(url, tier)] = cached
+        return cached
+
+    async def evict(self, url: str, *, tier: str | None = None) -> None:
+        self.evicts.append((url, tier))
+
+
+class _FakeFirecrawlClient:
+    """FirecrawlClient stand-in scripted with per-method results.
+
+    Pass a callable for `scrape_result` / `interact_result` to either
+    return a `ScrapeResult` or raise (e.g. `FirecrawlBlocked`). Tracks
+    every call so tests can assert call counts and the action list
+    handed to /interact.
+    """
+
+    def __init__(
+        self,
+        *,
+        scrape_result: Any = None,
+        interact_result: Any = None,
+    ) -> None:
+        self._scrape_result = scrape_result
+        self._interact_result = interact_result
+        self.scrape_calls: list[tuple[str, dict[str, Any]]] = []
+        self.interact_calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def scrape(self, url: str, **kwargs: Any) -> ScrapeResult:
+        self.scrape_calls.append((url, kwargs))
+        return self._dispatch(self._scrape_result)
+
+    async def interact(
+        self, url: str, actions: list[dict[str, Any]], **kwargs: Any
+    ) -> ScrapeResult:
+        merged = {"actions": actions, **kwargs}
+        self.interact_calls.append((url, merged))
+        return self._dispatch(self._interact_result)
+
+    @staticmethod
+    def _dispatch(result: Any) -> ScrapeResult:
+        if callable(result):
+            return cast(ScrapeResult, result())
+        if result is None:
+            raise AssertionError("test did not script a result for this call")
+        return cast(ScrapeResult, result)
+
+
+def _ok_scrape_result(*, body: str = "Substantive article body. " * 20) -> ScrapeResult:
+    return ScrapeResult(
+        markdown=f"# Real Article\n\n{body}",
+        html=f"<html><body><article><h1>Real Article</h1><p>{body}</p></article></body></html>",
+        metadata=ScrapeMetadata(status_code=200, source_url="https://example.com/post"),
+    )
+
+
+def _interstitial_scrape_result() -> ScrapeResult:
+    return ScrapeResult(
+        markdown="Just a moment...",
+        html=(
+            "<html><body><div class='cf-browser-verification'>"
+            "Just a moment</div></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200, source_url="https://example.com"),
+    )
+
+
+def _auth_wall_scrape_result() -> ScrapeResult:
+    return ScrapeResult(
+        markdown="Sign in to continue",
+        html=(
+            "<html><body><form action='/login'>"
+            "<input type='password' name='pw'></form></body></html>"
+        ),
+        metadata=ScrapeMetadata(status_code=200, source_url="https://example.com/post"),
+    )
+
+
+def _legit_empty_scrape_result() -> ScrapeResult:
+    return ScrapeResult(
+        markdown="Page not found",
+        html="<html><body>Page not found</body></html>",
+        metadata=ScrapeMetadata(status_code=404, source_url="https://example.com/gone"),
+    )
+
+
+async def _call_scrape_step(
+    url: str,
+    scrape_client: _FakeFirecrawlClient,
+    interact_client: _FakeFirecrawlClient,
+    cache: _FakeScrapeCache,
+) -> CachedScrape:
+    """Type-cast helper around `_scrape_step` so test fakes (which match
+    the structural API but not the nominal type) flow through cleanly.
+    `object` first so basedpyright's `reportInvalidCast` accepts the cast.
+    """
+    from src.jobs import orchestrator
+
+    return await orchestrator._scrape_step(
+        url,
+        cast(FirecrawlClient, cast(object, scrape_client)),
+        cast(FirecrawlClient, cast(object, interact_client)),
+        cast(SupabaseScrapeCache, cast(object, cache)),
+    )
+
+
+# AC#1, AC#5 — Tier 1 OK: no escalation, span shows tier_attempted=['scrape'].
+
+
+async def test_scrape_step_tier1_ok_returns_without_escalation() -> None:
+    """OK classification on Tier 1 returns the cached scrape and never
+    calls /interact. The Tier 1 cache row is written under tier='scrape'.
+    """
+
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(scrape_result=_ok_scrape_result())
+    interact_client = _FakeFirecrawlClient(
+        interact_result=lambda: (_ for _ in ()).throw(  # never called
+            AssertionError("interact must not run on Tier 1 OK")
+        )
+    )
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert result.markdown is not None
+    assert "Real Article" in result.markdown
+    assert len(scrape_client.scrape_calls) == 1
+    assert len(interact_client.interact_calls) == 0
+    # Tier 1 result was cached under tier='scrape'.
+    assert (url, "scrape") in cache.store
+    assert (url, "scrape") in cache.puts
+
+
+# AC#1, AC#3, AC#4 — FirecrawlBlocked on Tier 1 → escalate; Tier 2 OK returns.
+
+
+async def test_scrape_step_tier1_blocked_escalates_to_interact_success() -> None:
+    """LinkedIn-style refusal on Tier 1 escalates to /interact. The Tier 2
+    OK result is what we return, and only the Tier 2 row is cached (since
+    the Tier 1 attempt produced no cacheable bundle).
+    """
+
+    url = "https://www.linkedin.com/pulse/example"
+    cache = _FakeScrapeCache()
+
+    def _blocked() -> ScrapeResult:
+        raise FirecrawlBlocked(
+            "firecrawl /v2/scrape refused: 403 do not support this site",
+            status_code=403,
+        )
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_blocked)
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(body="Tier 2 rendered body. " * 20)
+    )
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert result.markdown is not None
+    assert "Tier 2 rendered body" in result.markdown
+    assert len(scrape_client.scrape_calls) == 1
+    assert len(interact_client.interact_calls) == 1
+    # interact was called with a non-empty action list (waits for JS render).
+    interact_url, interact_kwargs = interact_client.interact_calls[0]
+    assert interact_url == url
+    assert isinstance(interact_kwargs["actions"], list)
+    assert len(interact_kwargs["actions"]) >= 1
+    # Tier 2 row cached; Tier 1 was a refusal (no bundle to cache).
+    assert (url, "interact") in cache.store
+    assert (url, "interact") in cache.puts
+    assert (url, "scrape") not in cache.store
+
+
+# AC#2, AC#6 — INTERSTITIAL on Tier 1 → escalate; Tier 1 result IS cached.
+
+
+async def test_scrape_step_tier1_interstitial_caches_then_escalates() -> None:
+    """INTERSTITIAL on Tier 1 caches the Tier 1 row (so a retry can skip
+    the cheap-tier classifier), then escalates to /interact. Tier 2 OK
+    is what we return.
+    """
+
+    url = "https://example.com/cf-protected"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_interstitial_scrape_result()
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_ok_scrape_result(body="Real content past CF. " * 20)
+    )
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert result.markdown is not None
+    assert "Real content past CF" in result.markdown
+    assert len(interact_client.interact_calls) == 1
+    # Tier 1 INTERSTITIAL row IS cached so a retry can skip classifier.
+    assert (url, "scrape") in cache.store
+    assert (url, "interact") in cache.store
+
+
+# AC#2, AC#6 — AUTH_WALL on Tier 1 → terminal pre-Gemini, NO /interact call.
+
+
+async def test_scrape_step_tier1_auth_wall_terminates_without_escalation() -> None:
+    """AUTH_WALL is a hard ToS line — never escalate. Raises
+    TerminalError(EXTRACTION_FAILED) and proves /interact was not called.
+    """
+
+    url = "https://members-only.example/article"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_auth_wall_scrape_result()
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=lambda: (_ for _ in ()).throw(
+            AssertionError("interact must NOT be called on AUTH_WALL")
+        )
+    )
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert exc_info.value.error_code is ErrorCode.EXTRACTION_FAILED
+    assert "login" in exc_info.value.error_detail.lower() or "auth" in exc_info.value.error_detail.lower()
+    # Load-bearing assertion: no /interact call when we hit an auth wall.
+    assert len(interact_client.interact_calls) == 0
+
+
+# AC#2, AC#6 — LEGITIMATELY_EMPTY on Tier 1 → terminal pre-Gemini, no /interact.
+
+
+async def test_scrape_step_tier1_legitimately_empty_terminates_without_escalation() -> None:
+    """LEGITIMATELY_EMPTY (404, deleted, empty) → terminal. No richer fetch
+    tier resurrects deleted content; calling /interact would just burn
+    Firecrawl quota.
+    """
+
+    url = "https://example.com/deleted-post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_legit_empty_scrape_result()
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=lambda: (_ for _ in ()).throw(
+            AssertionError("interact must NOT be called on LEGITIMATELY_EMPTY")
+        )
+    )
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert exc_info.value.error_code is ErrorCode.EXTRACTION_FAILED
+    assert "empty" in exc_info.value.error_detail.lower() or "page" in exc_info.value.error_detail.lower()
+    assert len(interact_client.interact_calls) == 0
+
+
+# AC#3 — Both tiers fail → TerminalError(UNSUPPORTED_SITE) with both reasons.
+
+
+async def test_scrape_step_both_tiers_blocked_raises_unsupported_site() -> None:
+    """Tier 1 INTERSTITIAL + Tier 2 still INTERSTITIAL (or any non-OK) →
+    TerminalError(UNSUPPORTED_SITE). Both tier reasons surface in the
+    error message so operators can see why we gave up.
+    """
+
+    url = "https://example.com/cf-everywhere"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_interstitial_scrape_result()
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_interstitial_scrape_result()
+    )
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert exc_info.value.error_code is ErrorCode.UNSUPPORTED_SITE
+    msg = exc_info.value.error_detail.lower()
+    # Both tier reasons surface in the message.
+    assert "tier 1" in msg or "scrape" in msg
+    assert "tier 2" in msg or "interact" in msg
+
+
+async def test_scrape_step_blocked_then_blocked_raises_unsupported_site() -> None:
+    """FirecrawlBlocked on both tiers also yields UNSUPPORTED_SITE."""
+
+    url = "https://hardblocked.example/post"
+    cache = _FakeScrapeCache()
+
+    def _blocked_t1() -> ScrapeResult:
+        raise FirecrawlBlocked("scrape refused: 403 do not support this site")
+
+    def _blocked_t2() -> ScrapeResult:
+        raise FirecrawlBlocked("interact refused: 403 do not support this site")
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_blocked_t1)
+    interact_client = _FakeFirecrawlClient(interact_result=_blocked_t2)
+
+    with pytest.raises(TerminalError) as exc_info:
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert exc_info.value.error_code is ErrorCode.UNSUPPORTED_SITE
+
+
+# AC#4 — cache reader honors tier preference (Tier 1 hit short-circuits).
+
+
+async def test_scrape_step_tier1_cache_hit_skips_firecrawl() -> None:
+    """If a Tier 1 cache row exists, return it immediately — no Firecrawl
+    call. Asserts the bottom-of-funnel cost-savings property.
+    """
+
+    url = "https://example.com/cached-post"
+    cache = _FakeScrapeCache()
+    cache.store[(url, "scrape")] = CachedScrape(
+        markdown="cached body " * 10,
+        html="<article>cached body</article>",
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key="precached-key",
+    )
+
+    def _fail() -> ScrapeResult:
+        raise AssertionError("scrape must not be called on Tier 1 cache hit")
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_fail)
+    interact_client = _FakeFirecrawlClient(interact_result=_fail)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert result.storage_key == "precached-key"
+    assert len(scrape_client.scrape_calls) == 0
+    assert len(interact_client.interact_calls) == 0
+
+
+async def test_scrape_step_tier2_cache_hit_skips_interact() -> None:
+    """If Tier 1 trips escalation but a Tier 2 cache row already exists,
+    /interact is not called — the cached interact bundle short-circuits.
+    """
+
+    url = "https://example.com/twice-seen"
+    cache = _FakeScrapeCache()
+    cache.store[(url, "interact")] = CachedScrape(
+        markdown="cached interact body " * 10,
+        html="<article>cached interact</article>",
+        metadata=ScrapeMetadata(status_code=200, source_url=url),
+        storage_key="t2-cached-key",
+    )
+
+    def _blocked() -> ScrapeResult:
+        raise FirecrawlBlocked("scrape refused: 403 do not support this site")
+
+    def _fail_interact() -> ScrapeResult:
+        raise AssertionError(
+            "interact must not be called when Tier 2 cache row already exists"
+        )
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_blocked)
+    interact_client = _FakeFirecrawlClient(interact_result=_fail_interact)
+
+    result = await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert result.storage_key == "t2-cached-key"
+    assert len(interact_client.interact_calls) == 0
+
+
+# AC#5 — Logfire span 'vibecheck.scrape_step' carries the required attributes.
+
+
+class _RecordingSpan:
+    """Captures attribute writes on a fake `logfire.span()` context."""
+
+    def __init__(self) -> None:
+        self.attrs: dict[str, Any] = {}
+
+    def __enter__(self) -> _RecordingSpan:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def set_attribute(self, key: str, value: Any) -> None:
+        self.attrs[key] = value
+
+    def set_attributes(self, mapping: dict[str, Any]) -> None:
+        self.attrs.update(mapping)
+
+
+def _install_recording_span(monkeypatch: pytest.MonkeyPatch) -> _RecordingSpan:
+    """Replace `logfire.span` with a recorder that returns the same span
+    for every call; only the outer `vibecheck.scrape_step` span carries
+    the attributes we assert on.
+    """
+    from src.jobs import orchestrator
+
+    span = _RecordingSpan()
+
+    def _factory(name: str, **kwargs: Any) -> _RecordingSpan:
+        # Inline kwargs onto the span so callers that pass attrs as
+        # span(...) keyword args still register them.
+        span.attrs.update(kwargs)
+        return span
+
+    monkeypatch.setattr(orchestrator.logfire, "span", _factory)
+    return span
+
+
+async def test_scrape_step_logfire_span_records_attributes_on_ok(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OK path: span attrs say tier_attempted=['scrape'], tier_success='scrape',
+    escalation_reason=None, final_classification='ok'.
+    """
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://example.com/post"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(scrape_result=_ok_scrape_result())
+    interact_client = _FakeFirecrawlClient()
+
+    await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert span.attrs.get("tier_attempted") == ["scrape"]
+    assert span.attrs.get("tier_success") == "scrape"
+    assert span.attrs.get("escalation_reason") is None
+    assert span.attrs.get("final_classification") == "ok"
+
+
+async def test_scrape_step_logfire_span_records_attributes_on_escalation_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Escalation path: tier_attempted=['scrape','interact'],
+    tier_success='interact', escalation_reason='firecrawl_blocked',
+    final_classification='ok'.
+    """
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://example.com/refused"
+    cache = _FakeScrapeCache()
+
+    def _blocked() -> ScrapeResult:
+        raise FirecrawlBlocked("scrape refused: do not support this site")
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_blocked)
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert span.attrs.get("tier_attempted") == ["scrape", "interact"]
+    assert span.attrs.get("tier_success") == "interact"
+    assert span.attrs.get("escalation_reason") == "firecrawl_blocked"
+    assert span.attrs.get("final_classification") == "ok"
+
+
+async def test_scrape_step_logfire_span_records_attributes_on_interstitial_escalation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """INTERSTITIAL Tier 1 → escalate: escalation_reason='interstitial'."""
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://example.com/cf"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_interstitial_scrape_result()
+    )
+    interact_client = _FakeFirecrawlClient(interact_result=_ok_scrape_result())
+
+    await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert span.attrs.get("tier_attempted") == ["scrape", "interact"]
+    assert span.attrs.get("escalation_reason") == "interstitial"
+    assert span.attrs.get("tier_success") == "interact"
+
+
+async def test_scrape_step_logfire_span_records_attributes_on_terminal_auth_wall(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AUTH_WALL terminal: tier_attempted=['scrape'], tier_success=None,
+    final_classification='auth_wall', escalation_reason=None.
+    """
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://example.com/login"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_auth_wall_scrape_result()
+    )
+    interact_client = _FakeFirecrawlClient()
+
+    with pytest.raises(TerminalError):
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert span.attrs.get("tier_attempted") == ["scrape"]
+    assert span.attrs.get("tier_success") is None
+    assert span.attrs.get("final_classification") == "auth_wall"
+    assert span.attrs.get("escalation_reason") is None
+
+
+async def test_scrape_step_logfire_span_records_attributes_on_unsupported_site(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both tiers fail: tier_success=None, final_classification reflects
+    the Tier 2 quality (e.g. 'interstitial').
+    """
+
+    span = _install_recording_span(monkeypatch)
+    url = "https://example.com/all-blocked"
+    cache = _FakeScrapeCache()
+    scrape_client = _FakeFirecrawlClient(
+        scrape_result=_interstitial_scrape_result()
+    )
+    interact_client = _FakeFirecrawlClient(
+        interact_result=_interstitial_scrape_result()
+    )
+
+    with pytest.raises(TerminalError):
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert span.attrs.get("tier_attempted") == ["scrape", "interact"]
+    assert span.attrs.get("tier_success") is None
+    assert span.attrs.get("final_classification") in {"interstitial", "auth_wall", "legitimately_empty"}
+
+
+# Generic FirecrawlError on Tier 1 (non-blocked): treated as transient, NOT
+# silently escalated. Refusal is the only signal that justifies the cheap
+# escalation; an upstream 5xx should still go through the normal retry
+# budget at run_job.
+
+
+async def test_scrape_step_tier1_generic_firecrawl_error_raises_transient() -> None:
+    """A non-refusal FirecrawlError on Tier 1 surfaces as TransientError
+    so Cloud Tasks retries the job (unchanged from pre-1488 behavior).
+    """
+
+    url = "https://example.com/upstream-flake"
+    cache = _FakeScrapeCache()
+
+    def _boom() -> ScrapeResult:
+        raise FirecrawlError("firecrawl /v2/scrape failed: 500 internal", status_code=500)
+
+    scrape_client = _FakeFirecrawlClient(scrape_result=_boom)
+    interact_client = _FakeFirecrawlClient()
+
+    with pytest.raises(TransientError):
+        await _call_scrape_step(url, scrape_client, interact_client, cache)
+
+    assert len(interact_client.interact_calls) == 0
