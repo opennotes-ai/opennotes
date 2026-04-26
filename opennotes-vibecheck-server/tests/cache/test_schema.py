@@ -237,6 +237,15 @@ class TestIdempotency:
             "    ADD COLUMN IF NOT EXISTS safety_recommendation JSONB"
         ) in schema_sql
 
+    def test_preview_description_column_is_added_idempotently(
+        self, schema_sql: str
+    ) -> None:
+        # TASK-1485.01: gallery preview blurb persisted at job-completion time.
+        assert (
+            "ALTER TABLE vibecheck_jobs\n"
+            "    ADD COLUMN IF NOT EXISTS preview_description TEXT"
+        ) in schema_sql
+
 
 class TestWebRiskLookupsTable:
     def test_create_table_if_not_exists(self, schema_sql: str) -> None:

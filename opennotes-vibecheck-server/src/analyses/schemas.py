@@ -233,6 +233,29 @@ class JobState(BaseModel):
     )
 
 
+class RecentAnalysis(BaseModel):
+    """One card in the "Recently vibe checked" gallery (TASK-1485).
+
+    Returned by `GET /api/analyses/recent`. The endpoint guarantees
+    `preview_description` is non-null at the API boundary so the frontend
+    never has to handle null preview text. `screenshot_url` is a 15-min
+    signed GCS URL; clients re-request the endpoint to refresh.
+    """
+
+    job_id: UUID = Field(
+        description="vibecheck_jobs.job_id; cards link to /analyze?job=<job_id>.",
+    )
+    source_url: str
+    page_title: str | None = None
+    screenshot_url: str = Field(
+        description="15-min signed GCS URL for the page screenshot.",
+    )
+    preview_description: str = Field(
+        description="Short blurb (~140 chars) summarizing the most interesting finding. Non-null at the API boundary.",
+    )
+    completed_at: datetime
+
+
 __all__ = [
     "ErrorCode",
     "FactsClaimsSection",
@@ -241,6 +264,7 @@ __all__ = [
     "JobStatus",
     "OpinionsSection",
     "PageKind",
+    "RecentAnalysis",
     "SafetyRecommendation",
     "SafetySection",
     "SectionSlot",
