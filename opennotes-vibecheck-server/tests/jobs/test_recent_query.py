@@ -12,14 +12,13 @@ import socket
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import asyncpg
 import pytest
 from testcontainers.postgres import PostgresContainer
 
 from src.jobs.recent_query import (
-    ScreenshotSigner,
     _has_secret_query_param,
     _is_blocked_host,
     _is_blocked_url,

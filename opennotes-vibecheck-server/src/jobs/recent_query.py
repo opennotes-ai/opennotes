@@ -1,6 +1,6 @@
 """Data access for the "Recently vibe checked" gallery (TASK-1485.03).
 
-Joins `vibecheck_jobs` × `vibecheck_scrapes` keyed by `normalized_url`,
+Joins `vibecheck_jobs` x `vibecheck_scrapes` keyed by `normalized_url`,
 applies privacy defaults BEFORE dedup/limit so excluded rows can never
 displace eligible ones, dedups to the most recent qualifying job per URL,
 filters partials below the 90% completion threshold, signs screenshot
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import re
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlsplit
 
@@ -140,12 +139,7 @@ def _is_blocked_url(raw_url: str) -> bool:
     if explicit_port is not None and explicit_port not in _SAFE_PORTS:
         return True
     # Defense-in-depth — userinfo (`user:pass@host`) is not allowed.
-    if "@" in parts.netloc.split("/", 1)[0]:
-        return True
-    return False
-
-
-_BARE_HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+$")
+    return "@" in parts.netloc.split("/", 1)[0]
 
 
 def _passes_partial_threshold(sections_raw: Any, status: str) -> bool:
@@ -218,4 +212,4 @@ async def list_recent(
     return out
 
 
-__all__ = ["list_recent", "ScreenshotSigner"]
+__all__ = ["ScreenshotSigner", "list_recent"]

@@ -101,7 +101,7 @@ def _from_sentiment(payload: SidebarPayload) -> str | None:
     label, pct = max(pcts.items(), key=lambda kv: kv[1])
     if pct <= 0:
         return None
-    return f"{int(round(pct))}% {label} sentiment overall."
+    return f"{round(pct)}% {label} sentiment overall."
 
 
 def derive_preview_description(

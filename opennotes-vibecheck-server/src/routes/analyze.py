@@ -1199,7 +1199,7 @@ async def retry_section(  # noqa: PLR0911
     )
 
 
-_RECENT_CACHE: _AsyncTTLCache[list[RecentAnalysis]] | None = None
+_recent_cache_singleton: _AsyncTTLCache[list[RecentAnalysis]] | None = None
 
 
 def _get_recent_cache(settings: Settings) -> _AsyncTTLCache[list[RecentAnalysis]]:
@@ -1208,18 +1208,18 @@ def _get_recent_cache(settings: Settings) -> _AsyncTTLCache[list[RecentAnalysis]
     Sized to the configured TTL at first access. Tests reach for this via
     `_reset_recent_cache_for_testing` to drop state between cases.
     """
-    global _RECENT_CACHE
-    if _RECENT_CACHE is None:
-        _RECENT_CACHE = _AsyncTTLCache(
+    global _recent_cache_singleton  # noqa: PLW0603
+    if _recent_cache_singleton is None:
+        _recent_cache_singleton = _AsyncTTLCache(
             ttl_seconds=settings.VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS
         )
-    return _RECENT_CACHE
+    return _recent_cache_singleton
 
 
 def _reset_recent_cache_for_testing() -> None:
     """Test-only hook so unit tests can verify TTL behavior deterministically."""
-    global _RECENT_CACHE
-    _RECENT_CACHE = None
+    global _recent_cache_singleton  # noqa: PLW0603
+    _recent_cache_singleton = None
 
 
 def _build_recent_signer() -> ScreenshotSigner:
