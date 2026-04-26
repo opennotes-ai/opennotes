@@ -54,6 +54,7 @@ from src.analyses.schemas import (
     JobStatus,
     OpinionsSection,
     PageKind,
+    RecentAnalysis,
     SafetySection,
     SectionSlot,
     SectionSlug,
@@ -63,12 +64,14 @@ from src.analyses.schemas import (
 )
 from src.analyses.tone._scd_schemas import SCDReport
 from src.cache.scrape_cache import canonical_cache_key
-from src.config import get_settings
+from src.config import Settings, get_settings
 from src.jobs.enqueue import enqueue_job, enqueue_section_retry
 from src.jobs.preview_description import (
     DerivationContext,
     derive_preview_description,
 )
+from src.jobs.recent_cache import _AsyncTTLCache, cache_key, is_cache_disabled
+from src.jobs.recent_query import ScreenshotSigner, list_recent
 from src.jobs.slots import retry_claim_slot
 from src.monitoring import get_logger
 from src.monitoring_metrics import CACHE_HITS, SINGLE_FLIGHT_LOCK_WAITS
@@ -1194,6 +1197,79 @@ async def retry_section(  # noqa: PLR0911
     return RetryResponse(
         job_id=job_id, slug=slug, slot_attempt_id=new_slot_attempt
     )
+
+
+_RECENT_CACHE: _AsyncTTLCache[list[RecentAnalysis]] | None = None
+
+
+def _get_recent_cache(settings: Settings) -> _AsyncTTLCache[list[RecentAnalysis]]:
+    """Lazily build the in-process TTL cache.
+
+    Sized to the configured TTL at first access. Tests reach for this via
+    `_reset_recent_cache_for_testing` to drop state between cases.
+    """
+    global _RECENT_CACHE
+    if _RECENT_CACHE is None:
+        _RECENT_CACHE = _AsyncTTLCache(
+            ttl_seconds=settings.VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS
+        )
+    return _RECENT_CACHE
+
+
+def _reset_recent_cache_for_testing() -> None:
+    """Test-only hook so unit tests can verify TTL behavior deterministically."""
+    global _RECENT_CACHE
+    _RECENT_CACHE = None
+
+
+def _build_recent_signer() -> ScreenshotSigner:
+    """Construct the per-request screenshot URL signer.
+
+    Reuses the same factory that scrape-revival routes use so production
+    wiring is identical. Tests inject a fake via `app.state.recent_signer`.
+    """
+    from src.routes.frame import get_scrape_cache  # noqa: PLC0415
+
+    return get_scrape_cache()
+
+
+@router.get(
+    "/analyses/recent",
+    response_model=list[RecentAnalysis],
+    summary="Recently vibe checked gallery",
+)
+async def list_recent_analyses(request: Request) -> list[RecentAnalysis]:
+    """Public, anon-accessible read of the latest qualifying analyses.
+
+    Each card carries a 15-min signed screenshot URL, the page title (when
+    extracted), a deterministic preview blurb, and the underlying job_id so
+    cards link to /analyze?job=<id>. Inclusion: status='done', or
+    status='partial' with >=90% of own-section keys done. Privacy defaults
+    drop URLs with secret-shaped query strings, loopback/private hosts, or
+    explicit non-80/443 ports — applied before cache so excluded rows
+    cannot poison the cached payload.
+
+    Wrapped in an in-process TTL cache (default 60s, validated < 900s so
+    cached signed URLs cannot outlive their signature).
+    """
+    settings = get_settings()
+    limit = settings.VIBECHECK_RECENT_ANALYSES_LIMIT
+    if limit <= 0:
+        return []
+
+    pool = _get_db_pool(request)
+    signer: ScreenshotSigner = getattr(
+        request.app.state, "recent_signer", None
+    ) or _build_recent_signer()
+
+    async def _load() -> list[RecentAnalysis]:
+        return await list_recent(pool, limit=limit, signer=signer)
+
+    if is_cache_disabled(limit):
+        return await _load()
+
+    cache = _get_recent_cache(settings)
+    return await cache.get_or_load(cache_key(limit), _load)
 
 
 __all__ = [

@@ -268,6 +268,18 @@ class SupabaseScrapeCache:
             return None
         return self._store.signed_url(storage_key, ttl_seconds=_SIGNED_URL_TTL_SECONDS)
 
+    def sign_screenshot_key(self, storage_key: str | None) -> str | None:
+        """Mint a 15-minute signed URL directly from a storage key.
+
+        TASK-1485.03 helper: the recent-analyses query reads raw rows from
+        vibecheck_scrapes and needs to sign by `screenshot_storage_key`
+        without first hydrating a `CachedScrape`. Returns None for empty/None
+        keys so the caller can drop unviewable cards.
+        """
+        if not isinstance(storage_key, str) or not storage_key:
+            return None
+        return self._store.signed_url(storage_key, ttl_seconds=_SIGNED_URL_TTL_SECONDS)
+
     def _cleanup_orphan_blob(self, storage_key: str) -> None:
         """Remove a just-uploaded blob when its corresponding DB upsert fails.
 
