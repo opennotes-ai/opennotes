@@ -108,7 +108,7 @@ class _FakeScrapeCache:
         )
         self.signed_url_calls: list[CachedScrape | ScrapeResult] = []
 
-    async def get(self, url: str) -> CachedScrape | None:
+    async def get(self, url: str, *, tier: str = "scrape") -> CachedScrape | None:
         self.get_calls.append(url)
         return self._cached
 
@@ -116,6 +116,8 @@ class _FakeScrapeCache:
         self,
         url: str,
         scrape: ScrapeResult,
+        *,
+        tier: str = "scrape",
         screenshot_bytes: bytes | None = None,
     ) -> CachedScrape:
         self.put_calls.append((url, scrape))

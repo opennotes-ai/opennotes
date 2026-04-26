@@ -514,7 +514,7 @@ async def _scrape_step(
     that returns no markdown is TerminalError extraction_failed (the
     content is unparseable no matter how many times we retry).
     """
-    cached = await scrape_cache.get(url)
+    cached = await scrape_cache.get(url, tier="scrape")
     if cached is not None:
         return cached
 
@@ -528,7 +528,7 @@ async def _scrape_step(
         raise TransientError(f"firecrawl scrape failed: {exc}") from exc
 
     try:
-        return await scrape_cache.put(url, fresh)
+        return await scrape_cache.put(url, fresh, tier="scrape")
     except Exception as exc:
         # DB upsert failed but we still have the fresh bundle. Fall back
         # to a keyless CachedScrape so the extractor's downstream reads
@@ -567,7 +567,7 @@ async def _revalidate_final_url(
         revalidate_redirect_target(final)
     except InvalidURL:
         try:
-            await scrape_cache.evict(url)
+            await scrape_cache.evict(url, tier="scrape")
         except Exception as exc:
             logger.warning(
                 "scrape cache evict failed after redirect-block for %s: %s",

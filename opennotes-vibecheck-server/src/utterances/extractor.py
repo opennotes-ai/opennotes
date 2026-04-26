@@ -283,7 +283,7 @@ async def _get_or_scrape(
     `TransientExtractionError(provider="firecrawl")`; everything else
     becomes the terminal `UtteranceExtractionError`.
     """
-    cached = await scrape_cache.get(url)
+    cached = await scrape_cache.get(url, tier="scrape")
     if cached is not None:
         return cached
 
@@ -302,7 +302,7 @@ async def _get_or_scrape(
         raise UtteranceExtractionError(f"firecrawl scrape failed: {exc}") from exc
 
     try:
-        return await scrape_cache.put(url, fresh)
+        return await scrape_cache.put(url, fresh, tier="scrape")
     except Exception:
         # Best-effort: persistence failed (e.g. DB down) but we still have
         # the fresh bundle. Wrap it as a CachedScrape with no storage_key

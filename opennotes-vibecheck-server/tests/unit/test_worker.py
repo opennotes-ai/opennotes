@@ -526,10 +526,12 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
     evict_calls: list[str] = []
 
     class _FakeCache:
-        async def get(self, url: str) -> Any:
+        async def get(self, url: str, *, tier: str = "scrape") -> Any:
             return None
 
-        async def put(self, url: str, scrape: Any) -> Any:
+        async def put(
+            self, url: str, scrape: Any, *, tier: str = "scrape"
+        ) -> Any:
             return scrape_cache_module.CachedScrape(
                 markdown="hi",
                 html=None,
@@ -537,7 +539,7 @@ async def test_post_scrape_private_redirect_marks_invalid_url(
                 storage_key="mock-storage-key",
             )
 
-        async def evict(self, url: str) -> None:
+        async def evict(self, url: str, *, tier: str | None = None) -> None:
             evict_calls.append(url)
 
     fake_client = MagicMock()

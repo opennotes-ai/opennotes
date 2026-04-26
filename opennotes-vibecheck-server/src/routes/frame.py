@@ -191,7 +191,7 @@ def get_scrape_cache() -> SupabaseScrapeCache:
 
 async def _has_cached_archive(url: str) -> bool:
     try:
-        cached = await get_scrape_cache().get(url)
+        cached = await get_scrape_cache().get(url, tier="scrape")
     except Exception as exc:
         logger.info("archive cache lookup failed for %s: %s", url, exc)
         return False
@@ -213,7 +213,7 @@ async def _revalidate_archive_final_url(
         evict = getattr(scrape_cache, "evict", None)
         if callable(evict):
             try:
-                result = evict(original_url)
+                result = evict(original_url, tier="scrape")
                 if isawaitable(result):
                     await result
             except Exception as exc:
@@ -239,7 +239,7 @@ async def archive_preview(
 ) -> Response:
     _validate_http_url(url)
     scrape_cache = get_scrape_cache()
-    cached = await scrape_cache.get(url)
+    cached = await scrape_cache.get(url, tier="scrape")
     if cached and cached.html:
         # TODO: If Firecrawl exposes a hosted archive URL in CachedScrape metadata,
         # return a redirect to that URL instead of serving cached sanitized HTML.
@@ -257,7 +257,7 @@ async def archive_preview(
             fc.scrape(url, formats=["html"], only_main_content=True),
             timeout=_ARCHIVE_REQUEST_BUDGET_SECONDS,
         )
-        stored = await scrape_cache.put(url, fresh)
+        stored = await scrape_cache.put(url, fresh, tier="scrape")
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Archive unavailable")
     except Exception as exc:

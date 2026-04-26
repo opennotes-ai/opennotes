@@ -127,7 +127,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
     scrape_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    normalized_url TEXT NOT NULL UNIQUE,
+    normalized_url TEXT NOT NULL,
+    tier TEXT NOT NULL DEFAULT 'scrape'
+        CHECK (tier IN ('scrape', 'interact')),
     url TEXT NOT NULL,
     host TEXT NOT NULL,
     page_kind TEXT NOT NULL DEFAULT 'other',
@@ -143,6 +145,9 @@ CREATE TABLE IF NOT EXISTS vibecheck_scrapes (
             'blog_index', 'article', 'other'
         ))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS
+    vibecheck_scrapes_normalized_url_tier_idx
+    ON vibecheck_scrapes (normalized_url, tier);
 
 CREATE TABLE IF NOT EXISTS vibecheck_web_risk_lookups (
     url TEXT PRIMARY KEY,
@@ -268,7 +273,9 @@ class AsyncpgScrapeCache:
         self._pool = pool
         self._ttl_hours = ttl_hours
 
-    async def get(self, url: str) -> CachedScrape | None:
+    async def get(
+        self, url: str, *, tier: str = "scrape"
+    ) -> CachedScrape | None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -276,9 +283,11 @@ class AsyncpgScrapeCache:
                        screenshot_storage_key
                 FROM vibecheck_scrapes
                 WHERE normalized_url = $1
+                  AND tier = $2
                   AND expires_at > now()
                 """,
                 url,
+                tier,
             )
         if row is None:
             return None
@@ -298,6 +307,8 @@ class AsyncpgScrapeCache:
         self,
         url: str,
         scrape: ScrapeResult,
+        *,
+        tier: str = "scrape",
         screenshot_bytes: bytes | None = None,
     ) -> CachedScrape:
         host = (
@@ -311,12 +322,12 @@ class AsyncpgScrapeCache:
             await conn.execute(
                 """
                 INSERT INTO vibecheck_scrapes (
-                    normalized_url, url, host, page_kind, page_title,
+                    normalized_url, tier, url, host, page_kind, page_title,
                     markdown, html, screenshot_storage_key,
                     scraped_at, expires_at
                 )
-                VALUES ($1, $2, $3, 'other', $4, $5, $6, NULL, $7, $8)
-                ON CONFLICT (normalized_url) DO UPDATE
+                VALUES ($1, $2, $3, $4, 'other', $5, $6, $7, NULL, $8, $9)
+                ON CONFLICT (normalized_url, tier) DO UPDATE
                 SET url = EXCLUDED.url,
                     host = EXCLUDED.host,
                     page_kind = EXCLUDED.page_kind,
@@ -328,6 +339,7 @@ class AsyncpgScrapeCache:
                     expires_at = EXCLUDED.expires_at
                 """,
                 url,
+                tier,
                 url,
                 host,
                 scrape.metadata.title if scrape.metadata else None,
@@ -347,11 +359,19 @@ class AsyncpgScrapeCache:
             storage_key=None,
         )
 
-    async def evict(self, url: str) -> None:
+    async def evict(self, url: str, *, tier: str | None = None) -> None:
         async with self._pool.acquire() as conn:
-            await conn.execute(
-                "DELETE FROM vibecheck_scrapes WHERE normalized_url = $1", url
-            )
+            if tier is None:
+                await conn.execute(
+                    "DELETE FROM vibecheck_scrapes WHERE normalized_url = $1", url
+                )
+            else:
+                await conn.execute(
+                    "DELETE FROM vibecheck_scrapes "
+                    "WHERE normalized_url = $1 AND tier = $2",
+                    url,
+                    tier,
+                )
 
     async def signed_screenshot_url(self, scrape: ScrapeResult) -> str | None:
         return None

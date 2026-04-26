@@ -201,6 +201,37 @@ REVOKE ALL ON vibecheck_scrapes FROM anon, authenticated;
 CREATE INDEX IF NOT EXISTS vibecheck_scrapes_expires_at_idx
     ON vibecheck_scrapes(expires_at);
 
+-- TASK-1488.01: tier separates Tier 1 (`scrape`, cheap Firecrawl /scrape)
+-- from Tier 2 (`interact`, post-fallback Firecrawl /interact). Both rows
+-- coexist for the same normalized_url so a Tier 1 failure cache entry
+-- can't short-circuit a retry that escalated successfully to Tier 2.
+-- Existing rows backfill to 'scrape' via the DEFAULT.
+ALTER TABLE vibecheck_scrapes
+    ADD COLUMN IF NOT EXISTS tier TEXT NOT NULL DEFAULT 'scrape';
+
+ALTER TABLE vibecheck_scrapes
+    DROP CONSTRAINT IF EXISTS vibecheck_scrapes_tier_check;
+ALTER TABLE vibecheck_scrapes
+    ADD CONSTRAINT vibecheck_scrapes_tier_check
+    CHECK (tier IN ('scrape', 'interact'));
+
+-- Replace UNIQUE(normalized_url) with composite UNIQUE(normalized_url, tier).
+-- Postgres named the original UNIQUE either via the inline column constraint
+-- (`vibecheck_scrapes_normalized_url_key`) or via an explicit CONSTRAINT
+-- name in older revisions; drop both shapes guarded by IF EXISTS so re-runs
+-- of this file leave a clean slate. The composite UNIQUE is added via a
+-- partial-unique index so re-runs are idempotent and concurrent puts get
+-- the same on_conflict target the application code expects.
+ALTER TABLE vibecheck_scrapes
+    DROP CONSTRAINT IF EXISTS vibecheck_scrapes_normalized_url_key;
+ALTER TABLE vibecheck_scrapes
+    DROP CONSTRAINT IF EXISTS vibecheck_scrapes_normalized_url_unique;
+DROP INDEX IF EXISTS vibecheck_scrapes_normalized_url_key;
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    vibecheck_scrapes_normalized_url_tier_idx
+    ON vibecheck_scrapes (normalized_url, tier);
+
 -- =========================================================================
 -- vibecheck_job_utterances (per-job utterance cache)
 -- =========================================================================
