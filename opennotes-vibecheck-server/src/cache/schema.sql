@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     safety_recommendation JSONB,
     sidebar_payload JSONB,
     cached BOOLEAN NOT NULL DEFAULT false,
+    extract_transient_attempts INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     heartbeat_at TIMESTAMPTZ,
@@ -157,6 +158,18 @@ ALTER TABLE vibecheck_jobs
 -- rows; the gallery endpoint filters them out at the API boundary.
 ALTER TABLE vibecheck_jobs
     ADD COLUMN IF NOT EXISTS preview_description TEXT;
+
+-- TASK-1474.23.03: in-row backstop counter for the extract-stage retry path.
+-- The orchestrator increments this column each time the utterance-extract
+-- arm raises a TransientExtractionError so Cloud Tasks can redeliver. Once
+-- the counter exceeds the configured cap, the orchestrator translates the
+-- next transient failure into a TerminalError(UPSTREAM_ERROR) so the job
+-- terminates instead of silently exhausting Cloud Tasks max_attempts. NOT
+-- NULL DEFAULT 0 covers legacy rows during the first deploy; the column is
+-- additive-only — no readers/writers in this subtask, those land in
+-- TASK-1474.23.03.04 + .05.
+ALTER TABLE vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS extract_transient_attempts INT NOT NULL DEFAULT 0;
 
 -- =========================================================================
 -- vibecheck_scrapes (persisted scrape bundles for retry resumption)

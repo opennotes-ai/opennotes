@@ -74,7 +74,8 @@ CREATE TABLE vibecheck_jobs (
     test_fail_slug TEXT,
     safety_recommendation JSONB,
     last_stage TEXT,
-    preview_description TEXT
+    preview_description TEXT,
+    extract_transient_attempts INT NOT NULL DEFAULT 0
 );
 """
 

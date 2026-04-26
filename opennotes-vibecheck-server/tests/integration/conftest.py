@@ -92,7 +92,8 @@ CREATE TABLE IF NOT EXISTS vibecheck_jobs (
     test_fail_slug TEXT,
     safety_recommendation JSONB,
     last_stage TEXT,
-    preview_description TEXT
+    preview_description TEXT,
+    extract_transient_attempts INT NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS vibecheck_jobs_normalized_url_idx

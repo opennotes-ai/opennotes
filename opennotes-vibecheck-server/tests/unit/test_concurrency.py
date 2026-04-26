@@ -115,6 +115,25 @@ async def _read_sections(pool: Any, job_id: UUID) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# AC (TASK-1474.23.03.01): vibecheck_jobs has the extract_transient_attempts
+# in-row backstop counter mirrored from src/cache/schema.sql. This is the
+# regression guard against test-fixture / production-schema drift — if a new
+# centralized DDL constant ever loses the column, tests that rely on
+# information_schema introspection of the testcontainer Postgres still see it.
+# ---------------------------------------------------------------------------
+
+
+async def test_extract_transient_attempts_column_exists(db_pool: Any) -> None:
+    async with db_pool.acquire() as conn:
+        col = await conn.fetchval(
+            "SELECT column_default FROM information_schema.columns "
+            "WHERE table_name='vibecheck_jobs' "
+            "AND column_name='extract_transient_attempts'"
+        )
+    assert col == "0"
+
+
+# ---------------------------------------------------------------------------
 # AC: Concurrent _run_section across different slugs — no lost writes.
 # ---------------------------------------------------------------------------
 
