@@ -157,9 +157,7 @@ async def extract_utterances(
         _register_tools(agent)
         deps = ExtractorDeps(scrape=scrape, scrape_cache=scrape_cache)
 
-        model_name = getattr(settings, "extraction_model", None) or getattr(
-            settings, "VIBECHECK_EXTRACTION_MODEL", None
-        )
+        model_name = settings.VERTEXAI_MODEL
         try:
             result = await agent.run(markdown, deps=deps)  # pyright: ignore[reportArgumentType]
         except Exception as exc:
