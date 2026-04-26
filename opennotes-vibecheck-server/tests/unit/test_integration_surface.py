@@ -83,7 +83,8 @@ CREATE TABLE vibecheck_jobs (
     finished_at TIMESTAMPTZ,
     test_fail_slug TEXT,
     safety_recommendation JSONB,
-    last_stage TEXT
+    last_stage TEXT,
+    preview_description TEXT
 );
 
 CREATE INDEX vibecheck_jobs_normalized_url_idx
@@ -98,6 +99,21 @@ CREATE TABLE vibecheck_web_risk_lookups (
     finding_payload JSONB NOT NULL,
     checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE vibecheck_job_utterances (
+    utterance_pk UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    job_id UUID NOT NULL REFERENCES vibecheck_jobs(job_id) ON DELETE CASCADE,
+    utterance_id TEXT,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL,
+    author TEXT,
+    timestamp_at TIMESTAMPTZ,
+    parent_id TEXT,
+    position INT NOT NULL DEFAULT 0,
+    page_title TEXT,
+    page_kind TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
 
@@ -133,6 +149,7 @@ async def db_pool(
     assert pool is not None
     async with pool.acquire() as conn:
         await conn.execute(
+            "DROP TABLE IF EXISTS vibecheck_job_utterances CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_analyses CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_web_risk_lookups CASCADE; "
             "DROP TABLE IF EXISTS vibecheck_jobs CASCADE;"

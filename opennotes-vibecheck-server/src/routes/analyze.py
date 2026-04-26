@@ -40,7 +40,7 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -54,6 +54,7 @@ from src.analyses.schemas import (
     JobStatus,
     OpinionsSection,
     PageKind,
+    RecentAnalysis,
     SafetySection,
     SectionSlot,
     SectionSlug,
@@ -63,8 +64,14 @@ from src.analyses.schemas import (
 )
 from src.analyses.tone._scd_schemas import SCDReport
 from src.cache.scrape_cache import canonical_cache_key
-from src.config import get_settings
+from src.config import Settings, get_settings
 from src.jobs.enqueue import enqueue_job, enqueue_section_retry
+from src.jobs.preview_description import (
+    DerivationContext,
+    derive_preview_description,
+)
+from src.jobs.recent_cache import _AsyncTTLCache, cache_key, is_cache_disabled
+from src.jobs.recent_query import ScreenshotSigner, list_recent
 from src.jobs.slots import retry_claim_slot
 from src.monitoring import get_logger
 from src.monitoring_metrics import CACHE_HITS, SINGLE_FLIGHT_LOCK_WAITS
@@ -260,6 +267,48 @@ async def _lookup_cache(conn: Any, normalized_url: str) -> dict[str, Any] | None
     return dict(row)
 
 
+_CACHE_PREVIEW_FALLBACK = "Analysis complete."
+
+
+def _derive_cache_preview(sidebar_payload: dict[str, Any]) -> str:
+    """Derive preview_description from a cached SidebarPayload dict.
+
+    Cache-hit rows bypass `jobs/finalize.py` entirely (TASK-1485.02 AC#6),
+    so the preview must be computed inline here. The cached payload's own
+    `page_title` field feeds the fallback branch; first-utterance text
+    isn't queried (the cache-hit path never extracted utterances on this
+    submit), so the function tolerates None for that field.
+
+    TASK-1485.06 P1.3: tolerate stale or malformed `vibecheck_analyses`
+    rows from older code versions. SidebarPayload schemas have evolved
+    over the lifetime of the cache (new fields, renamed fields, removed
+    fields); rolling out this PR lights up validation for cache rows
+    written by prior code. A failing model_validate must not 500 the
+    POST /api/analyze hot path — instead degrade to a generic preview
+    so the cached row still serves its primary purpose.
+    """
+    try:
+        payload = SidebarPayload.model_validate(sidebar_payload)
+    except (ValidationError, ValueError, TypeError) as exc:
+        logger.warning(
+            "cached SidebarPayload failed validation, using fallback preview: %s",
+            exc,
+        )
+        return _CACHE_PREVIEW_FALLBACK
+    ctx = DerivationContext(
+        page_title=payload.page_title,
+        first_utterance_text=None,
+    )
+    try:
+        return derive_preview_description(payload, ctx)
+    except Exception as exc:  # defensive: never 500 the cache-hit path
+        logger.warning(
+            "derive_preview_description failed on cached payload: %s",
+            exc,
+        )
+        return _CACHE_PREVIEW_FALLBACK
+
+
 async def _insert_cached_done_job(
     conn: Any,
     *,
@@ -276,13 +325,21 @@ async def _insert_cached_done_job(
     the contended cache-hit branch without producing duplicate cached
     done-job rows. The second INSERT hits ON CONFLICT DO NOTHING and the
     caller re-fetches the surviving row by normalized_url.
+
+    `preview_description` (TASK-1485.02) is derived inline from the cached
+    payload so cache-hit rows surface in the gallery alongside fresh
+    finalized rows. Without this, cache-hits would land with NULL preview
+    and the dedup-by-newest order could prefer them over fresh rows that
+    do carry preview text.
     """
+    preview_description = _derive_cache_preview(sidebar_payload)
     job_id = await conn.fetchval(
         """
         INSERT INTO vibecheck_jobs (
-            url, normalized_url, host, status, sidebar_payload, cached, finished_at
+            url, normalized_url, host, status, sidebar_payload,
+            preview_description, cached, finished_at
         )
-        VALUES ($1, $2, $3, 'done', $4::jsonb, true, now())
+        VALUES ($1, $2, $3, 'done', $4::jsonb, $5, true, now())
         ON CONFLICT (normalized_url)
             WHERE status = 'done' AND cached = true
             DO NOTHING
@@ -292,6 +349,7 @@ async def _insert_cached_done_job(
         normalized_url,
         host,
         json.dumps(sidebar_payload),
+        preview_description,
     )
     if job_id is None:
         # Concurrent submitter beat us to the insert. Re-fetch the
@@ -1164,6 +1222,79 @@ async def retry_section(  # noqa: PLR0911
     return RetryResponse(
         job_id=job_id, slug=slug, slot_attempt_id=new_slot_attempt
     )
+
+
+_recent_cache_singleton: _AsyncTTLCache[list[RecentAnalysis]] | None = None
+
+
+def _get_recent_cache(settings: Settings) -> _AsyncTTLCache[list[RecentAnalysis]]:
+    """Lazily build the in-process TTL cache.
+
+    Sized to the configured TTL at first access. Tests reach for this via
+    `_reset_recent_cache_for_testing` to drop state between cases.
+    """
+    global _recent_cache_singleton  # noqa: PLW0603
+    if _recent_cache_singleton is None:
+        _recent_cache_singleton = _AsyncTTLCache(
+            ttl_seconds=settings.VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS
+        )
+    return _recent_cache_singleton
+
+
+def _reset_recent_cache_for_testing() -> None:
+    """Test-only hook so unit tests can verify TTL behavior deterministically."""
+    global _recent_cache_singleton  # noqa: PLW0603
+    _recent_cache_singleton = None
+
+
+def _build_recent_signer() -> ScreenshotSigner:
+    """Construct the per-request screenshot URL signer.
+
+    Reuses the same factory that scrape-revival routes use so production
+    wiring is identical. Tests inject a fake via `app.state.recent_signer`.
+    """
+    from src.routes.frame import get_scrape_cache  # noqa: PLC0415
+
+    return get_scrape_cache()
+
+
+@router.get(
+    "/analyses/recent",
+    response_model=list[RecentAnalysis],
+    summary="Recently vibe checked gallery",
+)
+async def list_recent_analyses(request: Request) -> list[RecentAnalysis]:
+    """Public, anon-accessible read of the latest qualifying analyses.
+
+    Each card carries a 15-min signed screenshot URL, the page title (when
+    extracted), a deterministic preview blurb, and the underlying job_id so
+    cards link to /analyze?job=<id>. Inclusion: status='done', or
+    status='partial' with >=90% of own-section keys done. Privacy defaults
+    drop URLs with secret-shaped query strings, loopback/private hosts, or
+    explicit non-80/443 ports — applied before cache so excluded rows
+    cannot poison the cached payload.
+
+    Wrapped in an in-process TTL cache (default 60s, validated < 900s so
+    cached signed URLs cannot outlive their signature).
+    """
+    settings = get_settings()
+    limit = settings.VIBECHECK_RECENT_ANALYSES_LIMIT
+    if limit <= 0:
+        return []
+
+    pool = _get_db_pool(request)
+    signer: ScreenshotSigner = getattr(
+        request.app.state, "recent_signer", None
+    ) or _build_recent_signer()
+
+    async def _load() -> list[RecentAnalysis]:
+        return await list_recent(pool, limit=limit, signer=signer)
+
+    if is_cache_disabled(limit):
+        return await _load()
+
+    cache = _get_recent_cache(settings)
+    return await cache.get_or_load(cache_key(limit), _load)
 
 
 __all__ = [

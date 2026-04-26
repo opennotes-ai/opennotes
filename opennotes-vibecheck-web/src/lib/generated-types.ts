@@ -148,6 +148,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analyses/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recently vibe checked gallery
+         * @description Public, anon-accessible read of the latest qualifying analyses.
+         *
+         *     Each card carries a 15-min signed screenshot URL, the page title (when
+         *     extracted), a deterministic preview blurb, and the underlying job_id so
+         *     cards link to /analyze?job=<id>. Inclusion: status='done', or
+         *     status='partial' with >=90% of own-section keys done. Privacy defaults
+         *     drop URLs with secret-shaped query strings, loopback/private hosts, or
+         *     explicit non-80/443 ports — applied before cache so excluded rows
+         *     cannot poison the cached payload.
+         *
+         *     Wrapped in an in-process TTL cache (default 60s, validated < 900s so
+         *     cached signed URLs cannot outlive their signature).
+         */
+        get: operations["list_recent_analyses_api_analyses_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/_internal/jobs/{job_id}/run": {
         parameters: {
             query?: never;
@@ -651,6 +682,42 @@ export interface components {
          * @enum {string}
          */
         PageKind: "blog_post" | "forum_thread" | "hierarchical_thread" | "blog_index" | "article" | "other";
+        /**
+         * RecentAnalysis
+         * @description One card in the "Recently vibe checked" gallery (TASK-1485).
+         *
+         *     Returned by `GET /api/analyses/recent`. The endpoint guarantees
+         *     `preview_description` is non-null at the API boundary so the frontend
+         *     never has to handle null preview text. `screenshot_url` is a 15-min
+         *     signed GCS URL; clients re-request the endpoint to refresh.
+         */
+        RecentAnalysis: {
+            /**
+             * Job Id
+             * Format: uuid
+             * @description vibecheck_jobs.job_id; cards link to /analyze?job=<job_id>.
+             */
+            job_id: string;
+            /** Source Url */
+            source_url: string;
+            /** Page Title */
+            page_title?: string | null;
+            /**
+             * Screenshot Url
+             * @description 15-min signed GCS URL for the page screenshot.
+             */
+            screenshot_url: string;
+            /**
+             * Preview Description
+             * @description Short blurb (~140 chars) summarizing the most interesting finding. Non-null at the API boundary.
+             */
+            preview_description: string;
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+        };
         /**
          * RetryResponse
          * @description 202 handoff payload for a successful retry CAS.
@@ -1179,6 +1246,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recent_analyses_api_analyses_recent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentAnalysis"][];
                 };
             };
         };

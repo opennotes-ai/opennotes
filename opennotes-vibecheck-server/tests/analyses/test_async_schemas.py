@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from src.analyses.schemas import (
     ErrorCode,
@@ -12,6 +13,7 @@ from src.analyses.schemas import (
     JobState,
     JobStatus,
     PageKind,
+    RecentAnalysis,
     SectionSlot,
     SectionSlug,
     SectionState,
@@ -291,6 +293,71 @@ class TestSidebarPayloadNewSections:
     def test_sidebar_payload_video_moderation_defaults_to_empty_matches(self) -> None:
         sidebar = _empty_sidebar_payload(datetime.now(UTC))
         assert sidebar.video_moderation.matches == []
+
+
+class TestRecentAnalysis:
+    """Behavior contracts for the gallery card response shape (TASK-1485.01)."""
+
+    def _full_payload(self) -> dict[str, object]:
+        return {
+            "job_id": str(uuid4()),
+            "source_url": "https://example.com/post",
+            "page_title": "Example Post",
+            "screenshot_url": "https://signed.example.com/blob.png?token=abc",
+            "preview_description": "Top safety hit: hate speech, 0.92 confidence.",
+            "completed_at": datetime.now(UTC).isoformat(),
+        }
+
+    def test_full_payload_validates_and_round_trips(self) -> None:
+        payload = self._full_payload()
+        analysis = RecentAnalysis.model_validate(payload)
+        round_tripped = RecentAnalysis.model_validate(analysis.model_dump(mode="json"))
+        assert round_tripped.source_url == payload["source_url"]
+        assert round_tripped.preview_description == payload["preview_description"]
+
+    def test_page_title_optional_defaults_to_none(self) -> None:
+        payload = self._full_payload()
+        del payload["page_title"]
+        analysis = RecentAnalysis.model_validate(payload)
+        assert analysis.page_title is None
+
+    def test_missing_job_id_raises(self) -> None:
+        payload = self._full_payload()
+        del payload["job_id"]
+        with pytest.raises(ValidationError, match="job_id"):
+            RecentAnalysis.model_validate(payload)
+
+    def test_missing_source_url_raises(self) -> None:
+        payload = self._full_payload()
+        del payload["source_url"]
+        with pytest.raises(ValidationError, match="source_url"):
+            RecentAnalysis.model_validate(payload)
+
+    def test_missing_screenshot_url_raises(self) -> None:
+        payload = self._full_payload()
+        del payload["screenshot_url"]
+        with pytest.raises(ValidationError, match="screenshot_url"):
+            RecentAnalysis.model_validate(payload)
+
+    def test_missing_completed_at_raises(self) -> None:
+        payload = self._full_payload()
+        del payload["completed_at"]
+        with pytest.raises(ValidationError, match="completed_at"):
+            RecentAnalysis.model_validate(payload)
+
+    def test_preview_description_non_null_at_api_boundary(self) -> None:
+        """Display contract: every card has preview text. None must reject."""
+        payload = self._full_payload()
+        payload["preview_description"] = None
+        with pytest.raises(ValidationError, match="preview_description"):
+            RecentAnalysis.model_validate(payload)
+
+    def test_long_preview_description_validates(self) -> None:
+        """Soft 140-char cap is enforced at the write side, not in the schema."""
+        payload = self._full_payload()
+        payload["preview_description"] = "x" * 500
+        analysis = RecentAnalysis.model_validate(payload)
+        assert len(analysis.preview_description) == 500
 
 
 class TestUtteranceNewMediaFields:

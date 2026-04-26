@@ -281,6 +281,32 @@
         }
       }
     },
+    "/api/analyses/recent": {
+      "get": {
+        "tags": [
+          "analyze"
+        ],
+        "summary": "Recently vibe checked gallery",
+        "description": "Public, anon-accessible read of the latest qualifying analyses.\n\nEach card carries a 15-min signed screenshot URL, the page title (when\nextracted), a deterministic preview blurb, and the underlying job_id so\ncards link to /analyze?job=<id>. Inclusion: status='done', or\nstatus='partial' with >=90% of own-section keys done. Privacy defaults\ndrop URLs with secret-shaped query strings, loopback/private hosts, or\nexplicit non-80/443 ports \u2014 applied before cache so excluded rows\ncannot poison the cached payload.\n\nWrapped in an in-process TTL cache (default 60s, validated < 900s so\ncached signed URLs cannot outlive their signature).",
+        "operationId": "list_recent_analyses_api_analyses_recent_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecentAnalysis"
+                  },
+                  "type": "array",
+                  "title": "Response List Recent Analyses Api Analyses Recent Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/_internal/jobs/{job_id}/run": {
       "post": {
         "tags": [
@@ -1160,6 +1186,56 @@
         ],
         "title": "PageKind",
         "description": "Shape of the source page the extractor handled.\n\nThe extractor in TASK-1473.10 picks one of these; downstream rendering\nand analysis logic branches on the value (e.g., hierarchical_thread\nenables tree-aware flashpoint context)."
+      },
+      "RecentAnalysis": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id",
+            "description": "vibecheck_jobs.job_id; cards link to /analyze?job=<job_id>."
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "page_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Title"
+          },
+          "screenshot_url": {
+            "type": "string",
+            "title": "Screenshot Url",
+            "description": "15-min signed GCS URL for the page screenshot."
+          },
+          "preview_description": {
+            "type": "string",
+            "title": "Preview Description",
+            "description": "Short blurb (~140 chars) summarizing the most interesting finding. Non-null at the API boundary."
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "source_url",
+          "screenshot_url",
+          "preview_description",
+          "completed_at"
+        ],
+        "title": "RecentAnalysis",
+        "description": "One card in the \"Recently vibe checked\" gallery (TASK-1485).\n\nReturned by `GET /api/analyses/recent`. The endpoint guarantees\n`preview_description` is non-null at the API boundary so the frontend\nnever has to handle null preview text. `screenshot_url` is a 15-min\nsigned GCS URL; clients re-request the endpoint to refresh."
       },
       "RetryResponse": {
         "properties": {

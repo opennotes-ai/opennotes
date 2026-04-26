@@ -45,6 +45,10 @@ from src.analyses.schemas import (
 )
 from src.analyses.tone._flashpoint_schemas import FlashpointMatch
 from src.analyses.tone._scd_schemas import SCDReport
+from src.jobs.preview_description import (
+    DerivationContext,
+    derive_preview_description,
+)
 from src.jobs.section_defaults import empty_section_data
 
 _CACHE_TTL = timedelta(hours=72)
@@ -53,13 +57,39 @@ _CACHE_TTL = timedelta(hours=72)
 # blocks slot writers that grab the same row-level lock for their UPDATE.
 # We fetch `attempt_id` and `status` so the caller can verify neither has
 # drifted from the worker's expected envelope before assembling + UPSERTing.
+#
+# `page_title_meta` and `first_utterance_text` feed DerivationContext for
+# preview_description fallback branches (TASK-1485.02). The LATERAL joins
+# stay non-locking; both subqueries return NULL for fresh jobs without
+# extracted utterances and the derivation function tolerates that.
 _LOAD_SQL = """
-SELECT url, normalized_url, sections, attempt_id, status,
-       safety_recommendation,
-       sidebar_payload IS NOT NULL AS already_finalized
-FROM vibecheck_jobs
-WHERE job_id = $1
-FOR UPDATE
+SELECT
+    j.url,
+    j.normalized_url,
+    j.sections,
+    j.attempt_id,
+    j.status,
+    j.safety_recommendation,
+    j.sidebar_payload IS NOT NULL AS already_finalized,
+    meta.page_title AS page_title_meta,
+    first_utt.text AS first_utterance_text
+FROM vibecheck_jobs j
+LEFT JOIN LATERAL (
+    SELECT u.page_title
+    FROM vibecheck_job_utterances u
+    WHERE u.job_id = j.job_id
+    ORDER BY u.position
+    LIMIT 1
+) AS meta ON TRUE
+LEFT JOIN LATERAL (
+    SELECT u.text
+    FROM vibecheck_job_utterances u
+    WHERE u.job_id = j.job_id
+    ORDER BY u.position
+    LIMIT 1
+) AS first_utt ON TRUE
+WHERE j.job_id = $1
+FOR UPDATE OF j
 """
 
 _UPSERT_CACHE_SQL = """
@@ -84,6 +114,7 @@ SET status = $2::text,
     error_code = $4,
     error_message = $5,
     error_host = NULL,
+    preview_description = $7::text,
     finished_at = now(),
     updated_at = now()
 WHERE job_id = $1
@@ -296,6 +327,11 @@ async def maybe_finalize_job(  # noqa: PLR0911
             sections,
             row["safety_recommendation"],
         )
+        ctx = DerivationContext(
+            page_title=row["page_title_meta"],
+            first_utterance_text=row["first_utterance_text"],
+        )
+        preview_description = derive_preview_description(payload, ctx)
         payload_json = json.dumps(payload.model_dump(mode="json"))
         expires_at = datetime.now(UTC) + _CACHE_TTL
         await conn.execute(
@@ -312,6 +348,7 @@ async def maybe_finalize_job(  # noqa: PLR0911
             error_code,
             error_message,
             expected_task_attempt,
+            preview_description,
         )
         return True
 

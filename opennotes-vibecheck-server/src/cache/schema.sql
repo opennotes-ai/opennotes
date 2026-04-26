@@ -150,6 +150,14 @@ ALTER TABLE vibecheck_jobs
 ALTER TABLE vibecheck_jobs
     ADD COLUMN IF NOT EXISTS last_stage TEXT;
 
+-- TASK-1485.01: short preview blurb (~140 chars) populated at job-completion
+-- time and surfaced by the "Recently vibe checked" gallery on vibecheck-web.
+-- Computed deterministically from the assembled SidebarPayload so reads
+-- are O(1) and cards never recompute on every poll. Nullable on legacy
+-- rows; the gallery endpoint filters them out at the API boundary.
+ALTER TABLE vibecheck_jobs
+    ADD COLUMN IF NOT EXISTS preview_description TEXT;
+
 -- =========================================================================
 -- vibecheck_scrapes (persisted scrape bundles for retry resumption)
 -- =========================================================================

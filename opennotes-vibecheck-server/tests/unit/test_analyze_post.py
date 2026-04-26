@@ -62,7 +62,8 @@ CREATE TABLE vibecheck_jobs (
     finished_at TIMESTAMPTZ,
     test_fail_slug TEXT,
     safety_recommendation JSONB,
-    last_stage TEXT
+    last_stage TEXT,
+    preview_description TEXT
 );
 
 CREATE INDEX vibecheck_jobs_normalized_url_idx
@@ -326,7 +327,7 @@ async def test_cache_hit_inserts_done_job_and_returns_cached_true(
     # Exactly one job row exists and it is status=done with sidebar_payload.
     async with db_pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT status, sidebar_payload, cached FROM vibecheck_jobs WHERE normalized_url = $1",
+            "SELECT status, sidebar_payload, cached, preview_description FROM vibecheck_jobs WHERE normalized_url = $1",
             url,
         )
     assert len(rows) == 1
@@ -339,7 +340,47 @@ async def test_cache_hit_inserts_done_job_and_returns_cached_true(
     )
     assert stored["source_url"] == url
 
+    # TASK-1485.02 AC#6: cache-hit inserts must populate preview_description
+    # so they cannot become null-preview dedup winners in the gallery.
+    assert rows[0]["preview_description"] is not None
+    assert isinstance(rows[0]["preview_description"], str)
+    assert len(rows[0]["preview_description"]) > 0
+
     # Cache hit must not enqueue a worker — the job is already done.
+    assert enqueue_mock.await_count == 0
+
+
+async def test_cache_hit_with_stale_payload_shape_does_not_500(
+    client: httpx.AsyncClient, db_pool: Any, enqueue_mock: AsyncMock
+) -> None:
+    """TASK-1485.06 P1.3: a malformed/older-version cached row must not
+    crash POST /api/analyze. The cache hit succeeds with a fallback
+    preview_description rather than raising a SidebarPayload
+    ValidationError out of _derive_cache_preview.
+    """
+    url = "https://example.com/stale-cache-shape"
+    # Payload missing required SidebarPayload fields — simulates a row
+    # written by older code where the schema differs.
+    stale_payload = {"source_url": url, "garbage": True}
+    await _insert_cache_entry(db_pool, url, stale_payload)
+
+    resp = await client.post("/api/analyze", json={"url": url})
+
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["cached"] is True
+    assert body["status"] == "done"
+
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT preview_description FROM vibecheck_jobs WHERE normalized_url = $1",
+            url,
+        )
+    assert len(rows) == 1
+    # Fallback preview is non-null and non-empty even when the cached
+    # payload is unusable.
+    assert rows[0]["preview_description"] is not None
+    assert len(rows[0]["preview_description"]) > 0
     assert enqueue_mock.await_count == 0
 
 

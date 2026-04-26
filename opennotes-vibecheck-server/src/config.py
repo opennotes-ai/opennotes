@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -76,6 +77,32 @@ class Settings(BaseSettings):
     # Playwright spec can drive a real round-trip retry. Default False
     # so the header is always ignored in production envs.
     VIBECHECK_ALLOW_TEST_FAIL_HEADER: bool = False
+
+    # TASK-1485.03: "Recently vibe checked" gallery sizing + cache TTL.
+    # The endpoint over-fetches and post-filters in Python (90% rule,
+    # privacy filters, dedup), then truncates to LIMIT. Default 5 keeps
+    # the home-page gallery compact while leaving headroom to dial up via
+    # env var without a deploy.
+    VIBECHECK_RECENT_ANALYSES_LIMIT: int = 5
+    # Cache TTL must be < 900s (signed screenshot URLs are valid for 15min;
+    # cached signed URLs cannot outlive their signature). Field validator
+    # asserts < 900 — picking the cache-stores-signed-urls path keeps
+    # per-request CPU minimal at the cost of this constraint.
+    VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS: int = 60
+
+    @field_validator("VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS")
+    @classmethod
+    def _recent_cache_ttl_under_signed_url_validity(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError(
+                "VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS must be >= 0"
+            )
+        if value >= 900:
+            raise ValueError(
+                "VIBECHECK_RECENT_ANALYSES_CACHE_TTL_SECONDS must be < 900 "
+                "(signed screenshot URLs expire at 15 minutes)"
+            )
+        return value
 
 
 @lru_cache
