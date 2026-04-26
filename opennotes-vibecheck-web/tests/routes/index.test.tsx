@@ -91,4 +91,16 @@ describe("HomePage (landing route)", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/something went wrong/i);
   });
+
+  it("does not pin a specific duration in the latency hint", async () => {
+    renderAt("/");
+    await screen.findByRole("heading", { name: /vibecheck/i });
+    const main = document.querySelector("main");
+    expect(main).not.toBeNull();
+    const text = main!.textContent ?? "";
+    expect(text).toMatch(/recently analyzed/i);
+    expect(text).toMatch(/longer/i);
+    expect(text).not.toMatch(/\d+\s*[-–]\s*\d+\s*seconds?/i);
+    expect(text).not.toMatch(/\d+\s*seconds?/i);
+  });
 });

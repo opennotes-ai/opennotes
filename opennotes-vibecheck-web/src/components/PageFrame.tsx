@@ -9,7 +9,7 @@ export interface PageFrameProps {
   cspFrameAncestors?: string | null;
   archivedPreviewUrl?: string | null;
   screenshotUrl: string | null;
-  previewMode?: PreviewMode;
+  previewMode: PreviewMode;
 }
 
 const IFRAME_LOAD_TIMEOUT_MS = 20_000;
@@ -18,14 +18,12 @@ const ARCHIVE_LOAD_TIMEOUT_MS = 3_000;
 export default function PageFrame(props: PageFrameProps) {
   const [iframeFailed, setIframeFailed] = createSignal(false);
   const [iframeLoaded, setIframeLoaded] = createSignal(false);
-  const [iframeVerifiedRenderable, setIframeVerifiedRenderable] =
-    createSignal(false);
   const [archivedFailed, setArchivedFailed] = createSignal(false);
   const [archivedLoaded, setArchivedLoaded] = createSignal(false);
 
   const hasBlockingHint = () =>
     !props.canIframe || !!props.blockingHeader || !!props.cspFrameAncestors;
-  const requestedMode = () => props.previewMode ?? "original";
+  const requestedMode = () => props.previewMode;
   const hasArchive = () => !!props.archivedPreviewUrl && !archivedFailed();
 
   const activePreview = (): PreviewMode | "unavailable" => {
@@ -36,12 +34,11 @@ export default function PageFrame(props: PageFrameProps) {
       if (hasArchive()) return "archived";
       return props.screenshotUrl ? "screenshot" : "unavailable";
     }
-    if (iframeVerifiedRenderable() || (!hasBlockingHint() && !iframeFailed())) {
+    if (!hasBlockingHint() && !iframeFailed()) {
       return "original";
     }
-    if (hasArchive()) return "archived";
     if (props.screenshotUrl) return "screenshot";
-    return iframeFailed() ? "unavailable" : "original";
+    return "unavailable";
   };
 
   const showIframe = () => !iframeFailed();
@@ -95,7 +92,6 @@ export default function PageFrame(props: PageFrameProps) {
       currentArchiveUrl = archiveUrl;
       setIframeFailed(false);
       setIframeLoaded(false);
-      setIframeVerifiedRenderable(false);
       setArchivedFailed(false);
       setArchivedLoaded(false);
       startLoadTimeout();
@@ -142,13 +138,8 @@ export default function PageFrame(props: PageFrameProps) {
   const handleIframeLoad = () => {
     setIframeLoaded(true);
     clearLoadTimeout();
-    const loadState = classifyLoadedIframe();
-    if (loadState === "blocked") {
+    if (classifyLoadedIframe() === "blocked") {
       setIframeFailed(true);
-      return;
-    }
-    if (loadState === "rendered") {
-      setIframeVerifiedRenderable(true);
     }
   };
 
@@ -221,12 +212,14 @@ export default function PageFrame(props: PageFrameProps) {
       </Show>
 
       <Show when={showScreenshot()}>
-        <img
-          data-testid="page-frame-screenshot"
-          src={props.screenshotUrl ?? ""}
-          alt={`Screenshot of ${props.url}`}
-          class="h-full w-full flex-1 bg-background object-contain object-top"
-        />
+        <div class="min-h-0 min-w-0 flex-1 overflow-auto bg-background">
+          <img
+            data-testid="page-frame-screenshot"
+            src={props.screenshotUrl ?? ""}
+            alt={`Screenshot of ${props.url}`}
+            class="block max-w-none"
+          />
+        </div>
       </Show>
 
       <Show when={activePreview() === "unavailable"}>

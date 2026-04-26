@@ -184,4 +184,28 @@ describe("<UrlInput />", () => {
     }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
   });
+
+  it("declares the same h-* token on input and submit button", () => {
+    render(() => <UrlInput action="/submit" />);
+    const input = screen.getByLabelText(
+      /url to analyze/i,
+    ) as HTMLInputElement;
+    const button = screen.getByRole("button", {
+      name: /analyze/i,
+    }) as HTMLButtonElement;
+
+    const heightClass = /(?:^|\s)(h-\d+(?:\.\d+)?)(?:\s|$)/;
+    const inputMatch = input.className.match(heightClass);
+    const buttonMatch = button.className.match(heightClass);
+
+    expect(
+      inputMatch,
+      `Input is missing an h-* class (got "${input.className}")`,
+    ).not.toBeNull();
+    expect(
+      buttonMatch,
+      `Button is missing an h-* class (got "${button.className}")`,
+    ).not.toBeNull();
+    expect(inputMatch![1]).toBe(buttonMatch![1]);
+  });
 });

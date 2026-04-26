@@ -28,9 +28,41 @@ export interface SectionGroupProps {
   emptinessChecks?: Partial<
     Record<SectionSlugLiteral, (data: unknown) => boolean>
   >;
+  counts?: Partial<Record<SectionSlugLiteral, (data: unknown) => number>>;
   jobId?: string;
   onRetry?: (slug: SectionSlugLiteral) => void;
   cachedHint?: boolean;
+}
+
+function ChevronIcon(props: { expanded: boolean }) {
+  return (
+    <svg
+      data-testid="slot-chevron"
+      data-state={props.expanded ? "expanded" : "collapsed"}
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      class={
+        props.expanded
+          ? "shrink-0 transition-transform duration-150"
+          : "shrink-0 -rotate-90 transition-transform duration-150"
+      }
+    >
+      <path d="M3 6l5 5 5-5" />
+    </svg>
+  );
+}
+
+function formatCountBadge(count: number): string {
+  if (count <= 0) return "no results";
+  if (count === 1) return "1 result";
+  return `${count} results`;
 }
 
 function slotFor(
@@ -179,7 +211,21 @@ export default function SectionGroup(props: SectionGroupProps): JSX.Element {
                   >
                     {heading}
                   </span>
-                  <span aria-hidden="true">{isOpen() ? "-" : "+"}</span>
+                  <span class="ml-auto flex items-center gap-2">
+                    <Show when={slot().state === "done"}>
+                      <span
+                        data-testid={`slot-count-${slug}`}
+                        class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-muted-foreground"
+                      >
+                        {formatCountBadge(
+                          props.counts?.[slug]?.(
+                            (slot() as { data?: unknown }).data,
+                          ) ?? 0,
+                        )}
+                      </span>
+                    </Show>
+                    <ChevronIcon expanded={isOpen()} />
+                  </span>
                 </button>
                 <Show when={isOpen()}>
                   <div id={bodyId}>

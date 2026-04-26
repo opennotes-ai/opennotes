@@ -44,6 +44,8 @@ export interface UrlInputProps {
   onValidSubmit?: (url: string) => void;
 }
 
+const FIELD_SIZE = "h-11 text-base";
+
 export default function UrlInput(props: UrlInputProps) {
   const [value, setValue] = createSignal(props.initialValue ?? "");
   const [error, setError] = createSignal<string | null>(null);
@@ -92,13 +94,12 @@ export default function UrlInput(props: UrlInputProps) {
           }}
           aria-invalid={error() ? "true" : undefined}
           aria-describedby={error() ? "vibecheck-url-error" : undefined}
-          class="flex-1 px-4 py-3 text-base shadow-xs"
+          class={`flex-1 ${FIELD_SIZE} px-4 shadow-xs`}
         />
         <Button
           type="submit"
-          size="lg"
           disabled={props.pending}
-          class="px-5 py-3"
+          class={`${FIELD_SIZE} px-5`}
         >
           {props.pending ? "Analyzing..." : "Analyze"}
         </Button>

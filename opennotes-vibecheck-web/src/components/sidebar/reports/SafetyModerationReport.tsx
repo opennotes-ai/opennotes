@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import ExpandableText from "../ExpandableText";
 
 type HarmfulContentMatch = components["schemas"]["HarmfulContentMatch"];
 type HarmfulContentSource = HarmfulContentMatch["source"];
@@ -117,12 +118,14 @@ export default function SafetyModerationReport(
                           }
                         >
                           {(utteranceText) => (
-                            <p
-                              data-testid="safety-utterance-text"
-                              class="mt-2 text-xs leading-relaxed text-foreground"
-                            >
-                              {utteranceText()}
-                            </p>
+                            <div class="mt-2">
+                              <ExpandableText
+                                text={utteranceText()}
+                                lines={2}
+                                testId="safety-utterance-text"
+                                class="text-xs leading-relaxed text-foreground"
+                              />
+                            </div>
                           )}
                         </Show>
                       </li>

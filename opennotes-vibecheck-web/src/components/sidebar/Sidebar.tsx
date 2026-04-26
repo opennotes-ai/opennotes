@@ -217,6 +217,15 @@ const SAFETY_EMPTINESS: Partial<
     extractVideoModerationMatches(data).length === 0,
 };
 
+const SAFETY_COUNTS: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => number>
+> = {
+  safety__moderation: (data) => extractHarmfulContentMatches(data).length,
+  safety__web_risk: (data) => extractWebRiskFindings(data).length,
+  safety__image_moderation: (data) => extractImageModerationMatches(data).length,
+  safety__video_moderation: (data) => extractVideoModerationMatches(data).length,
+};
+
 const TONE_RENDER: Partial<
   Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
 > = {
@@ -240,6 +249,19 @@ const TONE_EMPTINESS: Partial<
   },
 };
 
+const TONE_COUNTS: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => number>
+> = {
+  tone_dynamics__flashpoint: (data) => extractFlashpointMatches(data).length,
+  tone_dynamics__scd: (data) => {
+    const scd = extractScd(data);
+    return (
+      (scd.tone_labels ?? []).length +
+      Object.keys(scd.per_speaker_notes ?? {}).length
+    );
+  },
+};
+
 const FACTS_RENDER: Partial<
   Record<SectionSlugLiteral, (data: unknown) => JSX.Element>
 > = {
@@ -256,6 +278,13 @@ const FACTS_EMPTINESS: Partial<
 > = {
   facts_claims__dedup: (data) => extractClaimsReport(data).deduped_claims.length === 0,
   facts_claims__known_misinfo: (data) => extractKnownMisinfo(data).length === 0,
+};
+
+const FACTS_COUNTS: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => number>
+> = {
+  facts_claims__dedup: (data) => extractClaimsReport(data).deduped_claims.length,
+  facts_claims__known_misinfo: (data) => extractKnownMisinfo(data).length,
 };
 
 const OPINIONS_RENDER: Partial<
@@ -283,6 +312,15 @@ const OPINIONS_EMPTINESS: Partial<
   },
   opinions_sentiments__subjective: (data) =>
     extractSubjectiveClaims(data).length === 0,
+};
+
+const OPINIONS_COUNTS: Partial<
+  Record<SectionSlugLiteral, (data: unknown) => number>
+> = {
+  opinions_sentiments__sentiment: (data) =>
+    extractSentimentStats(data).per_utterance.length,
+  opinions_sentiments__subjective: (data) =>
+    extractSubjectiveClaims(data).length,
 };
 
 function fillMissingSlotsAsRunning(base: SlugToSlots): SlugToSlots {
@@ -358,6 +396,7 @@ export default function Sidebar(props: SidebarProps) {
           sections={effectiveSections()}
           render={SAFETY_RENDER}
           emptinessChecks={SAFETY_EMPTINESS}
+          counts={SAFETY_COUNTS}
           jobId={props.jobId}
           onRetry={props.onRetry}
           cachedHint={props.cachedHint}
@@ -369,6 +408,7 @@ export default function Sidebar(props: SidebarProps) {
         sections={effectiveSections()}
         render={TONE_RENDER}
         emptinessChecks={TONE_EMPTINESS}
+        counts={TONE_COUNTS}
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
@@ -379,6 +419,7 @@ export default function Sidebar(props: SidebarProps) {
         sections={effectiveSections()}
         render={FACTS_RENDER}
         emptinessChecks={FACTS_EMPTINESS}
+        counts={FACTS_COUNTS}
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}
@@ -389,6 +430,7 @@ export default function Sidebar(props: SidebarProps) {
         sections={effectiveSections()}
         render={OPINIONS_RENDER}
         emptinessChecks={OPINIONS_EMPTINESS}
+        counts={OPINIONS_COUNTS}
         jobId={props.jobId}
         onRetry={props.onRetry}
         cachedHint={props.cachedHint}

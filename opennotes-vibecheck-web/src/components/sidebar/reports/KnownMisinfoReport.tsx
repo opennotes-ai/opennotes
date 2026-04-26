@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from "solid-js";
 import type { components } from "~/lib/generated-types";
+import ExpandableText from "../ExpandableText";
 
 type FactCheckMatch = components["schemas"]["FactCheckMatch"];
 
@@ -40,7 +41,12 @@ export default function KnownMisinfoReport(props: KnownMisinfoReportProps) {
                 data-testid="known-misinfo-item"
                 class="rounded-md border border-border bg-background p-2 text-xs"
               >
-                <p class="text-foreground">{claimText}</p>
+                <ExpandableText
+                  text={claimText}
+                  lines={2}
+                  testId="known-misinfo-claim-text"
+                  class="text-foreground"
+                />
                 <ul class="mt-1.5 space-y-1">
                   <For each={reviews}>
                     {(review) => (

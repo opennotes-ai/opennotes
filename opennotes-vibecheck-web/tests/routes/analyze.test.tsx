@@ -496,6 +496,70 @@ describe("AnalyzePage route", () => {
     expect(screen.getByTestId("analysis-sidebar")).not.toBeNull();
   });
 
+  it("widens the page max-width when Large is selected, not just the iframe-to-sidebar ratio", async () => {
+    renderAt("/analyze?job=job-mainwidth&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("analyze-layout")).not.toBeNull();
+    });
+
+    const main = document.querySelector("main") as HTMLElement;
+    expect(main).not.toBeNull();
+    const regularClass = main.getAttribute("class") ?? "";
+    expect(regularClass).toContain("max-w-6xl");
+
+    fireEvent.click(screen.getByRole("button", { name: "Large" }));
+    const largeClass = main.getAttribute("class") ?? "";
+    expect(largeClass).not.toContain("max-w-6xl");
+    expect(largeClass).toMatch(/max-w-\[/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Max width" }));
+    const maxClass = main.getAttribute("class") ?? "";
+    expect(maxClass).toMatch(/max-w-\[/);
+  });
+
+  it("uses outer-corners-only rounding on segmented controls so selected/hover does not show a half-rounded artifact", async () => {
+    renderAt("/analyze?job=job-segmented&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-mode-selector")).not.toBeNull();
+    });
+
+    const checkSegmentRounding = (groupTestId: string, labels: string[]) => {
+      const buttons = labels.map(
+        (label) => screen.getByRole("button", { name: label }) as HTMLElement,
+      );
+      // Sanity: all buttons live inside the same segmented group.
+      for (const b of buttons) {
+        expect(b.closest(`[data-testid='${groupTestId}']`)).not.toBeNull();
+      }
+      // None of the segment buttons should have plain `rounded-md` — that's the bug.
+      for (const b of buttons) {
+        const cls = b.getAttribute("class") ?? "";
+        expect(cls).not.toMatch(/(?:^|\s)rounded-md(?:\s|$)/);
+      }
+      const first = buttons[0].getAttribute("class") ?? "";
+      const last = buttons[buttons.length - 1].getAttribute("class") ?? "";
+      expect(first).toMatch(/rounded-l-md/);
+      expect(last).toMatch(/rounded-r-md/);
+      for (let i = 1; i < buttons.length - 1; i++) {
+        const mid = buttons[i].getAttribute("class") ?? "";
+        expect(mid).toMatch(/rounded-none/);
+      }
+    };
+
+    checkSegmentRounding("preview-mode-selector", [
+      "Original",
+      "Archived",
+      "Screenshot",
+    ]);
+    checkSegmentRounding("preview-size-selector", [
+      "Regular",
+      "Large",
+      "Max width",
+    ]);
+  });
+
   it("renders preview mode selector alongside the width selector", async () => {
     renderAt("/analyze?job=job-preview-modes&url=https://news.example.com/a");
 
@@ -564,16 +628,34 @@ describe("AnalyzePage route", () => {
     });
   });
 
-  it("keeps the preview size selector desktop-only", async () => {
+  it("keeps the preview size selector visible at narrow viewports", async () => {
     renderAt("/analyze?job=job-layout&url=https://news.example.com/a");
 
     await waitFor(() => {
       expect(screen.queryByTestId("preview-size-selector")).not.toBeNull();
     });
 
+    const selectorClass =
+      screen.getByTestId("preview-size-selector").getAttribute("class") ?? "";
+    expect(selectorClass).not.toContain("hidden");
+    expect(selectorClass).not.toMatch(/(?:^|\s)hidden(?:\s|$)/);
+    expect(selectorClass).not.toMatch(/lg:flex/);
+  });
+
+  it("can change the preview size at narrow widths without first widening the window", async () => {
+    renderAt("/analyze?job=job-layout&url=https://news.example.com/a");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("preview-size-selector")).not.toBeNull();
+    });
+
+    const largeButton = screen.getByRole("button", { name: "Large" });
+    fireEvent.click(largeButton);
+
+    expect(largeButton.getAttribute("aria-pressed")).toBe("true");
     expect(
-      screen.getByTestId("preview-size-selector").getAttribute("class"),
-    ).toContain("hidden lg:flex");
+      screen.getByTestId("analyze-layout").getAttribute("data-preview-size"),
+    ).toBe("large");
   });
 
   it("does not render CachedBadge when JobState.cached=false", async () => {
