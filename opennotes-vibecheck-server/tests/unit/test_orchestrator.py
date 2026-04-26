@@ -747,16 +747,19 @@ async def test_run_pipeline_falls_back_to_transient_when_increment_db_fails(
 
 
 @pytest.mark.asyncio
-async def test_run_pipeline_unexpected_increment_error_is_not_swallowed(
+async def test_run_pipeline_unexpected_increment_error_terminates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An unexpected exception during increment (programming bug, SQL syntax)
-    must NOT be silently swallowed by the helper. The narrow exception
-    handling lets the raw exception bubble out of `_increment_extract_transient_attempts`
-    so the outer handler `run_job` can mark the row failed (instead of
-    silently disabling the backstop forever, which is what a broad
-    except Exception would do).
+    """An unexpected exception during increment (programming bug, SQL
+    syntax) is wrapped as TerminalError(EXTRACTION_FAILED) at the call
+    site so the row flips to failed instead of silently looping. Without
+    this wrap, the bare exception would escape `_run_pipeline` and land
+    in `run_job`'s unclassified-Exception branch, which resets the row
+    to pending and returns 503 — defeating the entire backstop because
+    the counter never advances and Cloud Tasks silently exhausts at
+    max_attempts=3.
     """
+    from src.analyses.schemas import ErrorCode
     from src.jobs import orchestrator
     from src.utterances.errors import TransientExtractionError
 
@@ -778,9 +781,9 @@ async def test_run_pipeline_unexpected_increment_error_is_not_swallowed(
 
     pool = FakePool(_BuggyConn())
 
-    # The RuntimeError bubbles out — NOT swallowed as None. This is the
-    # exact behavior the broad except Exception would have hidden.
-    with pytest.raises(RuntimeError, match="simulated SQL syntax error"):
+    with pytest.raises(orchestrator.TerminalError) as exc_info:
         await orchestrator._run_pipeline(
             pool, uuid4(), uuid4(), "https://example.com", MagicMock()
         )
+    assert exc_info.value.error_code == ErrorCode.EXTRACTION_FAILED
+    assert "backstop counter increment failed" in exc_info.value.error_detail

@@ -349,19 +349,23 @@ async def _increment_extract_transient_attempts(
             job_id,
         )
         return None
-    except (asyncpg.PostgresConnectionError, asyncpg.InterfaceError) as exc:
-        # Connection-class transients (pool exhaustion, peer reset, idle
-        # disconnect): the increment didn't land but the failure mode IS
-        # transient by definition. Fall through to plain TransientError so
-        # Cloud Tasks redelivers — the next attempt's increment will catch
-        # up. Logic bugs (SQL syntax, programming errors) bubble to the
-        # outer except as TerminalError(EXTRACTION_FAILED) so they don't
-        # silently disable the backstop forever.
+    except (asyncpg.PostgresConnectionError, asyncpg.InterfaceError):
+        # Connection-class failures (pool exhaustion, peer reset, idle
+        # disconnect, "pool is closed", "connection is closed"). The
+        # increment didn't land but the failure mode is transient. Fall
+        # through to plain TransientError so Cloud Tasks redelivers — the
+        # next attempt's increment will catch up. Note: asyncpg.InterfaceError
+        # also covers some client-misuse cases ("a connection is already
+        # acquired"), but at this call site (single fetchval inside an
+        # `async with pool.acquire()`) those would be programming bugs in
+        # asyncpg/our pool code rather than transient runtime failures.
+        # Programming bugs in OUR code (SQL syntax, RuntimeError) escape
+        # this catch and the caller wraps them as TerminalError so they
+        # don't silently disable the backstop.
         logger.exception(
             "extract_transient_attempts increment hit DB connection error "
-            "for job %s: %s",
+            "for job %s",
             job_id,
-            exc,
         )
         return None
 
@@ -861,9 +865,27 @@ async def _run_pipeline(
             url, client, scrape_cache, settings=settings
         )
     except TransientExtractionError as exc:
-        new_count = await _increment_extract_transient_attempts(
-            pool, job_id, task_attempt=task_attempt
-        )
+        # Unexpected failures inside the increment helper would otherwise
+        # escape `_run_pipeline` and land in `run_job`'s unclassified
+        # `except Exception` branch — which RESETS THE JOB AND RETURNS 503
+        # (transient). That's the exact silent-drop pattern this PR is
+        # trying to close: a SQL bug or programming error in the increment
+        # SQL would cause every transient extraction to redeliver
+        # indefinitely, the counter never advances, the backstop never
+        # trips, and Cloud Tasks silently exhausts at max_attempts=3.
+        # Convert any unexpected increment failure to a TerminalError so
+        # the row flips to failed and the bug is visible to operators
+        # instead of looping forever.
+        try:
+            new_count = await _increment_extract_transient_attempts(
+                pool, job_id, task_attempt=task_attempt
+            )
+        except Exception as inc_exc:
+            raise TerminalError(
+                ErrorCode.EXTRACTION_FAILED,
+                f"backstop counter increment failed: {inc_exc}; flipping "
+                f"terminal to prevent silent Cloud Tasks exhaustion",
+            ) from inc_exc
         if (
             new_count is not None
             and new_count >= EXTRACT_TRANSIENT_MAX_ATTEMPTS
